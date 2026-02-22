@@ -1,4 +1,4 @@
-// Formatting utilities for NERVE
+// Formatting utilities for CCOS
 
 export function fmtDollars(n: number): string {
   if (Math.abs(n) >= 1_000_000) {

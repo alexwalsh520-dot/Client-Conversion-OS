@@ -33,7 +33,7 @@ export default function LoginPage() {
             margin: 0,
           }}
         >
-          Nerve
+          CCOS
         </h1>
         <p
           style={{
@@ -42,7 +42,7 @@ export default function LoginPage() {
             marginTop: 8,
           }}
         >
-          Business Operating System
+          Client Conversion OS
         </p>
 
         {/* Divider */}

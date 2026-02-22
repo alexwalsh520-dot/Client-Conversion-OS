@@ -1,4 +1,4 @@
-// Shared TypeScript interfaces for NERVE
+// Shared TypeScript interfaces for CCOS (Client Conversion OS)
 
 export interface InsightCard {
   id: string;

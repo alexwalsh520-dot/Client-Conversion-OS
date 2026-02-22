@@ -1,4 +1,4 @@
-// The Intelligence Engine — NERVE's brain
+// The Intelligence Engine — CCOS's brain
 // Analyzes business data and produces prioritized insights
 
 import type { InsightCard, MoneyOnTable, BottleneckAnalysis, AdSpendScenario } from './types';
@@ -42,20 +42,20 @@ export function computeMoneyOnTable(): MoneyOnTable {
     });
   }
 
-  // 2. Waleed underperformance
-  const waleed = coachPerformance.find(c => c.name === 'Waleed');
-  if (waleed && waleed.completionRate < BENCHMARKS.coachCompletionRate) {
+  // 2. Underperforming coaches (dynamic — flags ANY coach below benchmark)
+  const underperformers = coachPerformance.filter(c => c.completionRate < BENCHMARKS.coachCompletionRate);
+  for (const coach of underperformers) {
     const avgRevenuePerClient = revenueData.total.thisMonth /
       (coachingData.keith.activeClients + coachingData.tyson.activeClients);
-    const atRiskClients = Math.round(waleed.activeClients * (1 - waleed.completionRate / 100) * 0.5);
+    const atRiskClients = Math.round(coach.activeClients * (1 - coach.completionRate / 100) * 0.5);
     const impact = Math.round(atRiskClients * avgRevenuePerClient);
     breakdown.push({
-      stage: "Waleed's Completion Rate",
-      currentRate: waleed.completionRate,
+      stage: `${coach.name}'s Completion Rate`,
+      currentRate: coach.completionRate,
       benchmarkRate: BENCHMARKS.coachCompletionRate,
-      gap: BENCHMARKS.coachCompletionRate - waleed.completionRate,
+      gap: BENCHMARKS.coachCompletionRate - coach.completionRate,
       revenueImpact: impact,
-      description: `${atRiskClients} clients at churn risk due to ${waleed.completionRate}% completion`,
+      description: `${atRiskClients} clients at churn risk due to ${coach.completionRate}% completion`,
     });
   }
 
@@ -63,7 +63,6 @@ export function computeMoneyOnTable(): MoneyOnTable {
   const totalSpend = adPerformance.keith.spend + adPerformance.tyson.spend;
   const totalAdRevenue = adPerformance.keith.revenue + adPerformance.tyson.revenue;
   const currentROI = totalAdRevenue / totalSpend;
-  // Conservative: scale spend 50% with 90% efficiency retention
   const additionalSpend = totalSpend * 0.5;
   const additionalRevenue = Math.round(additionalSpend * currentROI * 0.9);
   breakdown.push({
@@ -126,27 +125,32 @@ export function computeMoneyOnTable(): MoneyOnTable {
 export function generateInsightFeed(): InsightCard[] {
   const cards: InsightCard[] = [];
 
-  // Alert: Waleed underperforming
-  const waleed = coachPerformance.find(c => c.name === 'Waleed');
-  if (waleed && waleed.avgRating < BENCHMARKS.coachMinRating) {
-    const waleedFeedback = coachingFeedback.filter(f => f.coachName === 'Waleed');
-    const recentIssue = waleedFeedback.length > 0
-      ? waleedFeedback[0].wins || 'needs more personalized programming'
+  // Alert: Flag any underperforming coaches dynamically
+  const teamAvgCompletion = coachPerformance.reduce((s, c) => s + c.completionRate, 0) / coachPerformance.length;
+  const underperformers = coachPerformance.filter(c => c.avgRating < BENCHMARKS.coachMinRating);
+  for (const coach of underperformers) {
+    const feedback = coachingFeedback.filter(f => f.coachName === coach.name);
+    const recentIssue = feedback.length > 0
+      ? feedback[0].wins || 'needs more personalized programming'
       : 'completion rate below benchmark';
+    const avgRevenuePerClient = revenueData.total.thisMonth /
+      (coachingData.keith.activeClients + coachingData.tyson.activeClients);
+    const atRiskClients = Math.round(coach.activeClients * (1 - coach.completionRate / 100) * 0.5);
+    const impactDollars = Math.round(atRiskClients * avgRevenuePerClient);
     cards.push({
-      id: 'alert-waleed',
+      id: `alert-coach-${coach.name.toLowerCase()}`,
       type: 'alert',
       priority: 95,
-      title: "Waleed's clients need attention",
-      body: `His completion rate is ${waleed.completionRate}% vs the team average of ${(coachPerformance.reduce((s, c) => s + c.completionRate, 0) / coachPerformance.length).toFixed(0)}%. Client feedback mentions: "${recentIssue}". This puts ~$3,200/mo in retention revenue at risk.`,
+      title: `${coach.name}'s clients need attention`,
+      body: `His completion rate is ${coach.completionRate}% vs the team average of ${teamAvgCompletion.toFixed(0)}%. Client feedback mentions: "${recentIssue}". This puts ~$${(impactDollars / 1000).toFixed(1)}K/mo in retention revenue at risk.`,
       metric: {
         label: 'Completion Rate',
-        value: `${waleed.completionRate}%`,
+        value: `${coach.completionRate}%`,
         trend: 'down',
         isGood: false,
       },
-      impactDollars: 3200,
-      impactLabel: '$3,200/mo at risk',
+      impactDollars,
+      impactLabel: `$${(impactDollars / 1000).toFixed(1)}K/mo at risk`,
       actions: [
         { label: 'View feedback', type: 'navigate', payload: 'coaching' },
         { label: 'Log improvement plan', type: 'log', payload: 'team' },
@@ -246,7 +250,7 @@ export function generateInsightFeed(): InsightCard[] {
       type: 'alert',
       priority: 70,
       title: `${ghosted.length} clients ghosted during onboarding`,
-      body: `These clients paid but stopped responding. That's $${ghostedRev.toLocaleString()} in revenue where you're not delivering value — and potential chargebacks. A 48-hour follow-up sequence could recover most of them.`,
+      body: `These clients paid but stopped responding. That's $${ghostedRev.toLocaleString()} in revenue where you're not delivering value — and potential chargebacks. Nicole should follow up with a 48-hour recovery sequence.`,
       metric: {
         label: 'Ghosted Clients',
         value: String(ghosted.length),
@@ -256,14 +260,14 @@ export function generateInsightFeed(): InsightCard[] {
       impactDollars: ghostedRev,
       impactLabel: `$${ghostedRev.toLocaleString()} at risk`,
       actions: [
-        { label: 'View clients', type: 'navigate', payload: 'sales' },
+        { label: 'View clients', type: 'navigate', payload: 'onboarding' },
       ],
       relatedArea: 'sales',
       clientFilter: 'both',
     });
   }
 
-  // Experiment: DM script change (hardcoded for Phase 1)
+  // Experiment: DM script change
   cards.push({
     id: 'exp-dm-script',
     type: 'experiment',
@@ -286,6 +290,30 @@ export function generateInsightFeed(): InsightCard[] {
   });
 
   return cards.sort((a, b) => b.priority - a.priority);
+}
+
+// ─── AI Briefing Generator ──────────────────────────────────────────
+
+export function generateBriefing(): string {
+  const totalRevenue = revenueData.total.thisMonth;
+  const growth = revenueData.total.growthPercent;
+  const totalSpend = adPerformance.keith.spend + adPerformance.tyson.spend;
+  const roi = Math.round((adPerformance.keith.revenue + adPerformance.tyson.revenue) / totalSpend * 100);
+
+  const underperformers = coachPerformance.filter(c => c.completionRate < BENCHMARKS.coachCompletionRate);
+  const ghosted = onboardingTracker.filter(c => c.status === 'ghosted');
+
+  let briefing = `Revenue hit $${(totalRevenue / 1000).toFixed(1)}K this month, up ${growth}% from last month. Your blended ad ROI is running at ${roi}% — this is strong enough to scale spend.`;
+
+  if (underperformers.length > 0) {
+    briefing += ` Watch ${underperformers.map(c => c.name).join(' and ')} — completion rates are below the ${BENCHMARKS.coachCompletionRate}% benchmark, which puts retention at risk.`;
+  }
+
+  if (ghosted.length > 0) {
+    briefing += ` ${ghosted.length} onboarding clients have gone silent — Nicole should prioritize recovery outreach today.`;
+  }
+
+  return briefing;
 }
 
 // ─── Ad Spend Scenario Modeler ───────────────────────────────────────

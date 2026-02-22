@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import TopNav from "@/components/TopNav";
+import Sidebar from "@/components/Sidebar";
 import AskClaudeButton from "@/components/AskClaudeButton";
 import SessionWrapper from "@/components/SessionWrapper";
 
@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Nerve",
-  description: "Business Operating System",
+  title: "CCOS",
+  description: "Client Conversion OS",
 };
 
 export default function RootLayout({
@@ -31,20 +31,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <SessionWrapper>
-          <TopNav />
-          <main
-            style={{
-              minHeight: "100vh",
-              paddingTop: 80,
-              paddingLeft: 40,
-              paddingRight: 40,
-              paddingBottom: 40,
-              maxWidth: 1200,
-              margin: "0 auto",
-            }}
-          >
-            {children}
-          </main>
+          <div className="app-layout">
+            <Sidebar />
+            <main className="main-content">
+              {children}
+            </main>
+          </div>
           <AskClaudeButton />
         </SessionWrapper>
       </body>

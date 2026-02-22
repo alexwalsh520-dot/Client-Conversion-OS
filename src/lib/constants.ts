@@ -1,9 +1,8 @@
-// Benchmark thresholds and constants for NERVE
+// Benchmark thresholds and constants for CCOS
 
 export const BENCHMARKS = {
-  showUpRate15Min: 85,
   showUpRate60Min: 85,
-  closeRate: 35,
+  closeRate: 60,
   coachCompletionRate: 85,
   coachMinRating: 8.0,
   coachMinNPS: 8.0,
