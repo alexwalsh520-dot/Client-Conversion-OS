@@ -17,10 +17,14 @@ import {
   TrendingUp,
   Brain,
 } from "lucide-react";
-import { adPerformance, adSpendTrend } from "@/lib/mock-data";
+import { adPerformance as mockAdPerformance, adSpendTrend } from "@/lib/mock-data";
+import { getAdPerformance } from "@/lib/data";
+import { useAsyncData } from "@/lib/use-data";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 
 export default function AdsPage() {
+  const { data: adPerformance } = useAsyncData(getAdPerformance, mockAdPerformance);
+
   // Compute aggregate KPIs
   const totalSpend = adPerformance.keith.spend + adPerformance.tyson.spend;
   const totalImpressions =

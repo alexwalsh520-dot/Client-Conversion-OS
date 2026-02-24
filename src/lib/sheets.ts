@@ -1,0 +1,547 @@
+// Google Sheets API fetching layer for CCOS
+// Authenticates via service account, reads all 5 business sheets
+// Server-side only — used by /api/sync route
+
+import { google } from "googleapis";
+
+// Sheet IDs extracted from Google Sheets URLs
+const SHEET_IDS = {
+  coachingFeedback: "196qJOcCvx37GlRA1wJ8aCDCaXBJfqJ_nqdGaVi8TfEY",
+  onboarding: "1XcQeG_ehg5BYCsSEJllelT0zVaJJwjRE1OZWf4gjeTo",
+  sales: "1890ucxVRqIPiXjs2-XoW517_RKKvPZC0tT-OU33av9o",
+  tysonAds: "1r7UXESjrCvqg3Uf0sm0GGlzKuKlkpUR1Z5RjHbcYmAY",
+  keithAds: "1DomGcRLp4NBV-nlXVq-zfq9vg8jPPNa1Wq4aalVr_Xk",
+};
+
+// Row types matching Supabase table columns (snake_case)
+export interface CoachingRow {
+  timestamp: string | null;
+  client_name: string;
+  coach_rating: number;
+  workout_completion: string;
+  missed_reason: string;
+  sleep_rating: number;
+  nutrition_rating: number;
+  energy_rating: number;
+  nps_score: number;
+  feedback: string;
+  wins: string;
+  coach_name: string;
+  date: string | null;
+}
+
+export interface OnboardingRow {
+  onboarder: string;
+  client: string;
+  email: string;
+  closer: string;
+  amount_paid: number;
+  pif: string;
+  reschedule_email_sent: boolean;
+  reminder_email: boolean;
+  reach_out_closer: boolean;
+  comments: string;
+  status: string;
+}
+
+export interface CloserRow {
+  month: string;
+  closer_name: string;
+  calls_booked: number;
+  calls_taken: number;
+  closed: number;
+  lost: number;
+  revenue: number;
+  cash_collected: number;
+  aov: number;
+  close_rate: number;
+}
+
+export interface SetterRow {
+  month: string;
+  setter_name: string;
+  messages_handled: number;
+  calls_booked: number;
+  conversion_rate: number;
+  source: string;
+}
+
+export interface AdsDailyRow {
+  source: string;
+  date: string;
+  ad_spend: number;
+  impressions: number;
+  cpi: number;
+  link_clicks: number;
+  ctr: number;
+  cpc: number;
+  messages: number;
+  cost_per_message: number;
+  calls_60_booked: number;
+  cost_per_60_booked: number;
+  calls_60_taken: number;
+  show_up_60_pct: number;
+  new_clients: number;
+  close_rate: number;
+  msg_conversion_rate: number;
+  contracted_revenue: number;
+  collected_revenue: number;
+  cost_per_client: number;
+  contracted_roi: number;
+  collected_roi: number;
+}
+
+// ---- Auth ----
+
+function getAuth() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.GOOGLE_PRIVATE_KEY;
+  if (!email || !key) {
+    throw new Error(
+      "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY"
+    );
+  }
+  return new google.auth.GoogleAuth({
+    credentials: {
+      client_email: email,
+      private_key: key.replace(/\\n/g, "\n"),
+    },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  });
+}
+
+function getSheets() {
+  return google.sheets({ version: "v4", auth: getAuth() });
+}
+
+// ---- Helpers ----
+
+function parseNum(val: string | undefined | null): number {
+  if (!val) return 0;
+  const cleaned = val.replace(/[$,%]/g, "").trim();
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+function parseBool(val: string | undefined | null): boolean {
+  if (!val) return false;
+  const lower = val.toLowerCase().trim();
+  return (
+    lower === "true" ||
+    lower.startsWith("yes") ||
+    lower === "y" ||
+    lower === "1"
+  );
+}
+
+function parseDate(val: string | undefined | null): string | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+
+  try {
+    // Handle DD/MM/YYYY HH:MM:SS format (Google Forms timestamp)
+    // e.g. "21/11/2025 12:49:50"
+    const ddmmMatch = trimmed.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/
+    );
+    if (ddmmMatch) {
+      const day = parseInt(ddmmMatch[1]);
+      const month = parseInt(ddmmMatch[2]);
+      const year = parseInt(ddmmMatch[3]);
+      // If day > 12, it's definitely DD/MM/YYYY
+      // If both ≤ 12, prefer DD/MM since Google Forms uses this format
+      if (day > 12 || day <= 12) {
+        const d = new Date(year, month - 1, day);
+        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+      }
+    }
+
+    // Handle standard date formats: "2/3/2026", "Feb 1, 2026", etc.
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+      return d.toISOString().split("T")[0]; // YYYY-MM-DD
+    }
+
+    // Handle "2.3.26" format (month.day.year with 2-digit year)
+    const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+    if (dotMatch) {
+      const month = parseInt(dotMatch[1]);
+      const day = parseInt(dotMatch[2]);
+      let year = parseInt(dotMatch[3]);
+      if (year < 100) year += 2000;
+      const d2 = new Date(year, month - 1, day);
+      if (!isNaN(d2.getTime())) return d2.toISOString().split("T")[0];
+    }
+
+    // Handle "Day, Mon DD" format like "Thu, Jan 1" — no year, skip
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse a DD/MM/YYYY HH:MM:SS timestamp into ISO format for TIMESTAMPTZ
+ */
+function parseTimestamp(val: string | undefined | null): string | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+
+  // Match "DD/MM/YYYY HH:MM:SS"
+  const m = trimmed.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/
+  );
+  if (m) {
+    const [, day, month, year, hour, min, sec] = m;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${hour.padStart(2, "0")}:${min}:${sec}`;
+  }
+
+  // Fallback to standard parsing
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+    return d.toISOString();
+  }
+
+  return null;
+}
+
+// ---- Fetch Functions ----
+
+/**
+ * Fetch coaching feedback (weekly survey) from Product Health Tracker
+ * Tab: "Form responses 1"
+ * Columns: 0-Timestamp, 1-Name, 2-Coach Rating, 3-Workout Completion,
+ * 4-Missed Reason, 5-Sleep, 6-Nutrition, 7-Energy, 8-NPS,
+ * 9-Video Testimonial, 10-Feedback, 11-Wins, 12-Coach Name, 13-Date
+ */
+export async function fetchCoachingFeedback(): Promise<CoachingRow[]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_IDS.coachingFeedback,
+    range: "'Form responses 1'!A2:N1000",
+  });
+
+  const rows = res.data.values || [];
+  return rows
+    .filter((row) => row[1]) // Must have a name
+    .map((row) => ({
+      timestamp: parseTimestamp(row[0]),
+      client_name: (row[1] || "").trim(),
+      coach_rating: parseNum(row[2]),
+      workout_completion: (row[3] || "").trim(),
+      missed_reason: (row[4] || "").trim(),
+      sleep_rating: parseNum(row[5]),
+      nutrition_rating: parseNum(row[6]),
+      energy_rating: parseNum(row[7]),
+      nps_score: parseNum(row[8]),
+      // Col 9 is "video testimonial" — skip
+      feedback: (row[10] || "").trim(),
+      wins: (row[11] || "").trim(),
+      coach_name: (row[12] || "").trim(),
+      date: parseDate(row[13]) || parseDate(row[0]),
+    }));
+}
+
+/**
+ * Fetch onboarding data from Coaching Clients Tracker
+ * Tab: "Onboarding Backlog"
+ * Row 3 has actual headers: Onboarder | Onboardee | Email | Closer |
+ * Amount Paid | PIF? | Reschedule Email sent? | Reminder Email? |
+ * Reach out with Closer | Comments
+ * Data starts at row 4
+ */
+export async function fetchOnboarding(): Promise<OnboardingRow[]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_IDS.onboarding,
+    range: "'Onboarding Backlog'!A4:J200",
+  });
+
+  const rows = res.data.values || [];
+  return rows
+    .filter((row) => row[1]) // Must have client name (Onboardee in col 1)
+    .map((row) => ({
+      onboarder: (row[0] || "").trim(),
+      client: (row[1] || "").trim(),
+      email: (row[2] || "").trim(),
+      closer: (row[3] || "").trim(),
+      amount_paid: parseNum(row[4]),
+      pif: (row[5] || "").trim().toLowerCase(),
+      reschedule_email_sent: parseBool(row[6]),
+      reminder_email: parseBool(row[7]),
+      reach_out_closer: parseBool(row[8]),
+      comments: (row[9] || "").trim(),
+      status: row[1] ? "active" : "pending", // If they have a name, they're active in backlog
+    }));
+}
+
+/**
+ * Fetch sales data from Sales Tracker
+ * Each month tab (JANUARY, FEBRUARY, MARCH) has:
+ * - Summary section rows 2-7 with aggregated stats
+ * - Call-level data starting at row 10
+ * - Columns: Row#, Date, Name, Call Taken, Call Length, Recorded?, Outcome,
+ *   Closer, Objection, Revenue, Cash Collected, Program Length, Method, Setter
+ *
+ * We read the summary rows AND aggregate call-level data per closer.
+ */
+export async function fetchSalesData(): Promise<{
+  closers: CloserRow[];
+  setters: SetterRow[];
+}> {
+  const sheets = getSheets();
+
+  // Determine current month tab name
+  const monthNames = [
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER",
+  ];
+  const now = new Date();
+  const currentMonthTab = monthNames[now.getMonth()];
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // Fetch both summary area and call data from the current month tab
+  const [summaryRes, callsRes] = await Promise.all([
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_IDS.sales,
+      range: `'${currentMonthTab}'!A1:V7`,
+    }),
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_IDS.sales,
+      range: `'${currentMonthTab}'!A10:N500`,
+    }),
+  ]);
+
+  const summaryRows = summaryRes.data.values || [];
+  const callRows = callsRes.data.values || [];
+
+  // Parse summary data from rows 3-7
+  // Row 3 (index 2): col E="Total Calls Booked:", col F=value, col G="Live Calls:", col H=value
+  // Row 4 (index 3): col E="Total Won:", col F=value
+  // Row 5 (index 4): col E="Total Lost:", col F=value
+  // Row 7 (index 6): col E="Total Calls Taken:", col F=value
+  // Row 2 (index 1): col M="Revenue Total", Row 3 col M=value
+  // Row 3 (index 2): col O="Total Cash", col P="Cash On Calls", col Q="Subscriptions"
+
+  const totalCallsBooked = parseNum(summaryRows[2]?.[5]);
+  const totalWon = parseNum(summaryRows[3]?.[5]);
+  const revenueTotal = parseNum(summaryRows[2]?.[12]);
+  const totalCash = parseNum(summaryRows[2]?.[14]);
+
+  // Aggregate call-level data by closer
+  // Columns (0-indexed from A10): 0=Call#, 1=Date, 2=Name, 3=Call Taken,
+  // 4=Call Length, 5=Recorded?, 6=Outcome, 7=Closer, 8=Objection,
+  // 9=Revenue, 10=Cash Collected, 11=Program Length, 12=Method, 13=Setter
+  const closerMap = new Map<
+    string,
+    {
+      callsBooked: number;
+      callsTaken: number;
+      closed: number;
+      lost: number;
+      revenue: number;
+      cashCollected: number;
+    }
+  >();
+  const setterMap = new Map<
+    string,
+    { callsBooked: number }
+  >();
+
+  for (const row of callRows) {
+    const closerName = (row[7] || "").trim().toUpperCase();
+    const outcome = (row[6] || "").trim().toUpperCase();
+    const callTaken = (row[3] || "").trim().toUpperCase();
+    const revenue = parseNum(row[9]);
+    const cashCollected = parseNum(row[10]);
+    const setterName = (row[13] || "").trim();
+
+    if (!closerName) continue;
+
+    // Map closer codes to names
+    let displayName = closerName;
+    if (closerName === "BROZ") displayName = "Jacob Broz";
+    else if (closerName === "WILL") displayName = "Will";
+    else if (closerName === "AVERY") displayName = "Avery";
+
+    const existing = closerMap.get(displayName) || {
+      callsBooked: 0,
+      callsTaken: 0,
+      closed: 0,
+      lost: 0,
+      revenue: 0,
+      cashCollected: 0,
+    };
+
+    existing.callsBooked += 1;
+    if (callTaken === "YES") existing.callsTaken += 1;
+    if (outcome === "WIN") existing.closed += 1;
+    if (outcome === "LOST") existing.lost += 1;
+    existing.revenue += revenue;
+    existing.cashCollected += cashCollected;
+
+    closerMap.set(displayName, existing);
+
+    // Track setter bookings
+    if (setterName) {
+      const s = setterMap.get(setterName) || { callsBooked: 0 };
+      s.callsBooked += 1;
+      setterMap.set(setterName, s);
+    }
+  }
+
+  // Build closer rows
+  const closers: CloserRow[] = Array.from(closerMap.entries()).map(
+    ([name, stats]) => ({
+      month: monthKey,
+      closer_name: name,
+      calls_booked: stats.callsBooked,
+      calls_taken: stats.callsTaken,
+      closed: stats.closed,
+      lost: stats.lost,
+      revenue: stats.revenue,
+      cash_collected: stats.cashCollected,
+      aov:
+        stats.closed > 0
+          ? Math.round(stats.revenue / stats.closed)
+          : 0,
+      close_rate:
+        stats.callsTaken > 0
+          ? Math.round((stats.closed / stats.callsTaken) * 100)
+          : 0,
+    })
+  );
+
+  // Build setter rows (limited data — just calls booked from the Setter column)
+  const setters: SetterRow[] = Array.from(setterMap.entries())
+    .filter(([name]) => name.length > 0)
+    .map(([name, stats]) => ({
+      month: monthKey,
+      setter_name: name,
+      messages_handled: 0, // Not tracked in this sheet
+      calls_booked: stats.callsBooked,
+      conversion_rate: 0, // Needs DM data
+      source: "tyson",
+    }));
+
+  return { closers, setters };
+}
+
+/**
+ * Fetch daily ads data from monthly tabs (Feb, Mar, etc.)
+ * Columns (0-indexed):
+ * 0: Date, 1: Adspend (USD), 2: Impr, 3: Cost Per Impression,
+ * 4: Link Clicks, 5: CTR, 6: CPC, 7: Messages, 8: Cost per Message,
+ * 9: 15 Min Calls Booked (SKIP), 10: Cost Per 15 Booked (SKIP),
+ * 11: 15 Calls Taken (SKIP), 12: 15 SUP-% (SKIP),
+ * 13: Cost Per 15 Call Taken (SKIP),
+ * 14: 60 Min Calls Booked, 15: Cost Per 60 Booked,
+ * 16: 60 Calls Taken, 17: 60 SUP-%,
+ * 18: Cost Per 60 Call Taken (SKIP),
+ * 19: New Clients, 20: Call Closing Rate, 21: Messages Conversion Rate,
+ * 22: Contracted Revenue, 23: Collected Revenue, 24: Cost Per New Client,
+ * 25: Contracted-ROI, 26: Collected-ROI
+ */
+export async function fetchAdsDaily(
+  sheetId: string,
+  source: "tyson" | "keith"
+): Promise<AdsDailyRow[]> {
+  const sheets = getSheets();
+  const results: AdsDailyRow[] = [];
+
+  // Fetch data from monthly tabs: Feb, Mar, Apr, ... and (Current) Jan
+  const monthTabs = [
+    "(Current) Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  for (const tab of monthTabs) {
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `'${tab}'!A3:AA200`, // Row 3 onward (skip header + targets row)
+      });
+
+      const rows = res.data.values || [];
+      for (const row of rows) {
+        const dateStr = parseDate(row[0]);
+        if (!dateStr) continue; // Skip non-date rows (blanks, "Totals", etc.)
+
+        results.push({
+          source,
+          date: dateStr,
+          ad_spend: parseNum(row[1]),
+          impressions: parseNum(row[2]),
+          cpi: parseNum(row[3]),
+          link_clicks: parseNum(row[4]),
+          ctr: parseNum(row[5]),
+          cpc: parseNum(row[6]),
+          messages: parseNum(row[7]),
+          cost_per_message: parseNum(row[8]),
+          // Skip indices 9-13 (15-min call columns)
+          calls_60_booked: parseNum(row[14]),
+          cost_per_60_booked: parseNum(row[15]),
+          calls_60_taken: parseNum(row[16]),
+          show_up_60_pct: parseNum(row[17]),
+          // Skip index 18 (Cost Per 60 Call Taken)
+          new_clients: parseNum(row[19]),
+          close_rate: parseNum(row[20]),
+          msg_conversion_rate: parseNum(row[21]),
+          contracted_revenue: parseNum(row[22]),
+          collected_revenue: parseNum(row[23]),
+          cost_per_client: parseNum(row[24]),
+          contracted_roi: parseNum(row[25]),
+          collected_roi: parseNum(row[26]),
+        });
+      }
+    } catch (e) {
+      // Some monthly tabs might be empty (future months) — that's fine
+      console.log(`[sheets] Skipping ${source}/${tab}: ${(e as Error).message?.substring(0, 80)}`);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Discover all sheet tab names in a spreadsheet (for debugging/exploration)
+ */
+export async function getSheetTabs(
+  sheetId: string
+): Promise<{ title: string; index: number; rowCount: number }[]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets.properties",
+  });
+
+  return (res.data.sheets || []).map((s) => ({
+    title: s.properties?.title || "",
+    index: s.properties?.index || 0,
+    rowCount: s.properties?.gridProperties?.rowCount || 0,
+  }));
+}
+
+// Export sheet IDs for reference
+export { SHEET_IDS };

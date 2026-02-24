@@ -1,7 +1,7 @@
 // Mock data for CCOS (Client Conversion OS)
 // Two influencer clients: Keith and Tyson
 // Coaches: Ahmad, Fatima, Waleed, Mark, Josh
-// Closers: Jacob Rose, Will
+// Closers: Jacob Broz, Will
 // Onboarding: Nicole
 // Setters: 4 DM setters (2 per client)
 
@@ -1853,7 +1853,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Marcus Rivera",
     email: "marcus.r@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1200,
     pif: true,
     rescheduleEmailSent: false,
@@ -1866,7 +1866,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Jasmine Okafor",
     email: "jasmine.okafor@yahoo.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 997,
     pif: true,
     rescheduleEmailSent: false,
@@ -1892,7 +1892,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Angela Chen",
     email: "angela.chen88@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1500,
     pif: true,
     rescheduleEmailSent: false,
@@ -1933,7 +1933,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Samantha Lee",
     email: "sam.lee.fit@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1500,
     pif: true,
     rescheduleEmailSent: false,
@@ -1959,7 +1959,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Rachel Foster",
     email: "rachelfoster@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1200,
     pif: true,
     rescheduleEmailSent: false,
@@ -1998,7 +1998,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Brittany Moore",
     email: "britt.moore@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1200,
     pif: true,
     rescheduleEmailSent: false,
@@ -2024,7 +2024,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Aisha Williams",
     email: "aisha.w@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 997,
     pif: true,
     rescheduleEmailSent: false,
@@ -2037,7 +2037,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Daniel Kim",
     email: "dkim.strong@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1500,
     pif: true,
     rescheduleEmailSent: false,
@@ -2064,7 +2064,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Jordan Taylor",
     email: "jtaylor.iron@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 1200,
     pif: true,
     rescheduleEmailSent: false,
@@ -2104,7 +2104,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Elena Vasquez",
     email: "elena.v.coaching@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 0,
     pif: false,
     rescheduleEmailSent: true,
@@ -2131,7 +2131,7 @@ export const onboardingTracker: OnboardingEntry[] = [
     onboarder: "Nicole",
     client: "Lisa Park",
     email: "lisa.park.nyc@gmail.com",
-    closer: "Jacob Rose",
+    closer: "Jacob Broz",
     amountPaid: 0,
     pif: false,
     rescheduleEmailSent: false,
@@ -2177,7 +2177,7 @@ export const salesData: SalesData = {
   subscriptions: 13841,
   closerStats: [
     {
-      name: "Jacob Rose",
+      name: "Jacob Broz",
       callsBooked: 108,
       callsTaken: 88,
       closed: 58,
@@ -2462,7 +2462,7 @@ export const teamMembers: TeamMember[] = [
   { name: "Matt", role: "Sales Manager", email: "matthew@clientconversion.io", status: "active", source: "both" },
   { name: "Ahmad", role: "Head Coach", email: "ahmad@clientconversion.io", status: "active", source: "keith" },
   { name: "Nicole", role: "Onboarding Specialist", email: "nicole@clientconversion.io", status: "active", source: "both" },
-  { name: "Jacob Rose", role: "Closer", email: "jacob@clientconversion.io", status: "active", source: "both" },
+  { name: "Jacob Broz", role: "Closer", email: "jacob@clientconversion.io", status: "active", source: "both" },
   { name: "Will", role: "Closer", email: "will@clientconversion.io", status: "active", source: "both" },
   { name: "Omar", role: "DM Setter", email: "omar@clientconversion.io", status: "active", source: "keith" },
   { name: "Lina", role: "DM Setter", email: "lina@clientconversion.io", status: "active", source: "keith" },
@@ -2500,7 +2500,7 @@ export const eodReports: EODReport[] = [
   {
     id: "eod-1",
     date: "2026-02-21",
-    submittedBy: "Jacob Rose",
+    submittedBy: "Jacob Broz",
     role: "closer",
     reportsTo: "Matt",
     callsTaken: 6,
@@ -2554,7 +2554,7 @@ export const eodReports: EODReport[] = [
   {
     id: "eod-5",
     date: "2026-02-20",
-    submittedBy: "Jacob Rose",
+    submittedBy: "Jacob Broz",
     role: "closer",
     reportsTo: "Matt",
     callsTaken: 7,

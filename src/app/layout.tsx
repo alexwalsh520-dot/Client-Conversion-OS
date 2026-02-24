@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import AskClaudeButton from "@/components/AskClaudeButton";
+import GlassGlow from "@/components/GlassGlow";
 import SessionWrapper from "@/components/SessionWrapper";
 
 const geistSans = Geist({
@@ -38,6 +39,7 @@ export default function RootLayout({
             </main>
           </div>
           <AskClaudeButton />
+          <GlassGlow />
         </SessionWrapper>
       </body>
     </html>

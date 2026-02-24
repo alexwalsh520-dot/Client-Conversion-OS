@@ -19,13 +19,17 @@ import {
 } from "lucide-react";
 import {
   coachPerformance,
-  coachingFeedback,
+  coachingFeedback as mockFeedback,
   satisfactionTrend,
   eodReports,
 } from "@/lib/mock-data";
+import { getCoachingFeedback } from "@/lib/data";
+import { useAsyncData } from "@/lib/use-data";
 import { fmtPercent } from "@/lib/formatters";
 
 export default function CoachingPage() {
+  const { data: coachingFeedback } = useAsyncData(getCoachingFeedback, mockFeedback);
+
   // Compute aggregates from coachPerformance
   const totalActiveClients = coachPerformance.reduce(
     (sum, c) => sum + c.activeClients,

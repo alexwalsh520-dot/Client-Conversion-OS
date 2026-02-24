@@ -9,14 +9,19 @@ import {
   MessageSquare,
 } from "lucide-react";
 import {
-  salesData,
+  salesData as mockSalesData,
   funnelStages,
-  setterStats,
+  setterStats as mockSetterStats,
   eodReports,
 } from "@/lib/mock-data";
+import { getSalesData, getSetterStats } from "@/lib/data";
+import { useAsyncData } from "@/lib/use-data";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 
 export default function SalesPage() {
+  const { data: salesData } = useAsyncData(getSalesData, mockSalesData);
+  const { data: setterStats } = useAsyncData(getSetterStats, mockSetterStats);
+
   const closerEodReports = eodReports.filter((r) => r.role === "closer");
 
   // Compute the max value for funnel bar scaling

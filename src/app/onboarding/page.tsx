@@ -6,10 +6,14 @@ import {
   Ghost,
   AlertTriangle,
 } from "lucide-react";
-import { onboardingTracker } from "@/lib/mock-data";
+import { onboardingTracker as mockOnboarding } from "@/lib/mock-data";
+import { getOnboardingTracker } from "@/lib/data";
+import { useAsyncData } from "@/lib/use-data";
 import { fmtDollars } from "@/lib/formatters";
 
 export default function OnboardingPage() {
+  const { data: onboardingTracker } = useAsyncData(getOnboardingTracker, mockOnboarding);
+
   // Compute KPIs
   const totalPipeline = onboardingTracker.length;
   const activeCount = onboardingTracker.filter(
