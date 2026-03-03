@@ -147,19 +147,24 @@ function getInstagramCookies(): string {
   return raw.trim();
 }
 
+function cookieFields(cookies: string): Record<string, string> {
+  if (!cookies) return {};
+  // Actors use different field names for cookies — include all common ones
+  return { cookie: cookies, cookies: cookies, sessionCookie: cookies };
+}
+
 async function scrapeBrandFollowing(
   apify: ApifyClient,
   actorId: string,
   brand: string,
   maxResults: number
 ): Promise<any[]> {
-  const cookies = getInstagramCookies();
-  const cookieField = cookies ? { cookie: cookies } : {};
+  const cf = cookieFields(getInstagramCookies());
   const inputVariants = [
-    { username: brand, resultsLimit: maxResults, listType: "following", ...cookieField },
-    { usernames: [brand], resultsLimit: maxResults, listType: "following", ...cookieField },
-    { username: brand, maxResults, listType: "following", ...cookieField },
-    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cookieField },
+    { username: brand, resultsLimit: maxResults, listType: "following", ...cf },
+    { usernames: [brand], resultsLimit: maxResults, listType: "following", ...cf },
+    { username: brand, maxResults, listType: "following", ...cf },
+    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cf },
   ];
 
   let lastError: Error | null = null;
@@ -227,15 +232,14 @@ async function findEnrichmentActor(apify: ApifyClient): Promise<string> {
 async function enrichProfiles(apify: ApifyClient, actorId: string, usernames: string[]): Promise<any[]> {
   const batchSize = 50;
   const allResults: any[] = [];
-  const cookies = getInstagramCookies();
-  const cookieField = cookies ? { cookie: cookies } : {};
+  const cf = cookieFields(getInstagramCookies());
 
   for (let i = 0; i < usernames.length; i += batchSize) {
     const batch = usernames.slice(i, i + batchSize);
     const inputVariants = [
-      { usernames: batch, ...cookieField },
-      { handles: batch, ...cookieField },
-      { profiles: batch.map((u) => `https://instagram.com/${u}`), ...cookieField },
+      { usernames: batch, ...cf },
+      { handles: batch, ...cf },
+      { profiles: batch.map((u) => `https://instagram.com/${u}`), ...cf },
     ];
 
     for (const input of inputVariants) {
