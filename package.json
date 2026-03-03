@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@reduxjs/toolkit": "^2.11.2",
     "@supabase/supabase-js": "^2.97.0",
     "apify-client": "^2.22.2",
     "dotenv": "^17.3.1",
     "googleapis": "^171.4.0",
+    "lightningcss": "^1.31.1",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
