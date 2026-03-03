@@ -142,17 +142,24 @@ async function findFollowingActor(apify: ApifyClient): Promise<string> {
   throw new Error("No Instagram following scraper found on Apify");
 }
 
+function getInstagramCookies(): string {
+  const raw = process.env.INSTAGRAM_COOKIES || "";
+  return raw.trim();
+}
+
 async function scrapeBrandFollowing(
   apify: ApifyClient,
   actorId: string,
   brand: string,
   maxResults: number
 ): Promise<any[]> {
+  const cookies = getInstagramCookies();
+  const cookieField = cookies ? { cookie: cookies } : {};
   const inputVariants = [
-    { username: brand, resultsLimit: maxResults },
-    { usernames: [brand], resultsLimit: maxResults },
-    { username: brand, maxResults },
-    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults },
+    { username: brand, resultsLimit: maxResults, listType: "following", ...cookieField },
+    { usernames: [brand], resultsLimit: maxResults, listType: "following", ...cookieField },
+    { username: brand, maxResults, listType: "following", ...cookieField },
+    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cookieField },
   ];
 
   let lastError: Error | null = null;
@@ -220,13 +227,15 @@ async function findEnrichmentActor(apify: ApifyClient): Promise<string> {
 async function enrichProfiles(apify: ApifyClient, actorId: string, usernames: string[]): Promise<any[]> {
   const batchSize = 50;
   const allResults: any[] = [];
+  const cookies = getInstagramCookies();
+  const cookieField = cookies ? { cookie: cookies } : {};
 
   for (let i = 0; i < usernames.length; i += batchSize) {
     const batch = usernames.slice(i, i + batchSize);
     const inputVariants = [
-      { usernames: batch },
-      { handles: batch },
-      { profiles: batch.map((u) => `https://instagram.com/${u}`) },
+      { usernames: batch, ...cookieField },
+      { handles: batch, ...cookieField },
+      { profiles: batch.map((u) => `https://instagram.com/${u}`), ...cookieField },
     ];
 
     for (const input of inputVariants) {
@@ -440,6 +449,13 @@ export async function POST(req: NextRequest) {
 
       try {
         send("log", { message: isTest ? "TEST MODE: 1 brand, 20 following" : `Running ${userConfig.brandAccounts.length} brands` });
+
+        const hasCookies = !!getInstagramCookies();
+        if (!hasCookies) {
+          send("log", { message: "⚠️ No INSTAGRAM_COOKIES env var found — scrapers may return limited or no results. Add your IG cookies to Vercel env vars." });
+        } else {
+          send("log", { message: "✅ Instagram cookies loaded" });
+        }
 
         // Step 1: Scrape following
         send("step", { step: 1, label: "Scraping brand following lists" });
