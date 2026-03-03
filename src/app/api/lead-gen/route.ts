@@ -160,41 +160,96 @@ const FOLLOWING_ACTORS = [
   "XLJHmaoDGuFYahmgm",  // figue/instagram-followers-and-following-scrapper
 ];
 
-async function findFollowingActor(token: string, send: (e: string, d: any) => void): Promise<string> {
-  for (const id of FOLLOWING_ACTORS) {
-    try {
-      const actor = await apifyGet(`/acts/${id}`, token);
-      if (actor) {
-        send("log", { message: `Found actor: ${actor.name || id}` });
-        return id;
-      }
-    } catch (err: any) {
-      send("log", { message: `Actor ${id}: ${err.message?.slice(0, 100) || "not found"}` });
-      continue;
-    }
-  }
-  throw new Error("No Instagram following scraper found on Apify. Make sure your APIFY_API_TOKEN is valid.");
-}
-
 function getInstagramCookieString(): string {
   const raw = (process.env.INSTAGRAM_COOKIES || "").trim();
   if (!raw) return "";
-  // If stored as JSON array, convert to "name=value; name=value" format
   if (raw.startsWith("[")) {
     try {
       const arr = JSON.parse(raw) as { name: string; value: string }[];
       return arr.map((c) => `${c.name}=${c.value}`).join("; ");
     } catch {
-      return raw; // fallback: treat as already a cookie string
+      return raw;
     }
   }
   return raw;
 }
 
-function cookieFields(cookieStr: string): Record<string, any> {
-  if (!cookieStr) return {};
-  // Actors use different field names — include all common ones
-  return { cookie: cookieStr, cookies: cookieStr, sessionCookie: cookieStr };
+function getInstagramCookieArray(): any[] {
+  const raw = (process.env.INSTAGRAM_COOKIES || "").trim();
+  if (!raw) return [];
+  if (raw.startsWith("[")) {
+    try { return JSON.parse(raw); } catch { return []; }
+  }
+  return [];
+}
+
+function extractSessionId(cookieStr: string): string {
+  const match = cookieStr.match(/sessionid=([^;]+)/);
+  return match ? match[1].trim() : "";
+}
+
+// Fetch actor's input schema from its latest build to find exact field names
+async function fetchActorSchema(
+  actorId: string,
+  token: string,
+  send?: (e: string, d: any) => void
+): Promise<{ fields: string[]; cookieField: string | null; usernameField: string | null; limitField: string | null }> {
+  const result = { fields: [] as string[], cookieField: null as string | null, usernameField: null as string | null, limitField: null as string | null };
+  try {
+    const actor = await apifyGet(`/acts/${actorId}`, token);
+    const buildId = actor?.taggedBuilds?.latest?.buildId;
+    if (buildId) {
+      const build = await apifyGet(`/acts/${actorId}/builds/${buildId}`, token);
+      if (build?.inputSchema) {
+        const schema = typeof build.inputSchema === "string" ? JSON.parse(build.inputSchema) : build.inputSchema;
+        const props = schema.properties || {};
+        result.fields = Object.keys(props);
+        if (send) send("log", { message: `  Schema fields: [${result.fields.join(", ")}]` });
+
+        // Find cookie field
+        result.cookieField = result.fields.find((f) =>
+          /cookie|session|login/i.test(f) && !/proxy/i.test(f)
+        ) || null;
+        // Find username field
+        result.usernameField = result.fields.find((f) =>
+          /username|handle|user(?!agent)/i.test(f)
+        ) || null;
+        // Find limit field
+        result.limitField = result.fields.find((f) =>
+          /limit|maxresult|count|max/i.test(f)
+        ) || null;
+
+        if (send) {
+          send("log", { message: `  Detected → cookie: "${result.cookieField}", username: "${result.usernameField}", limit: "${result.limitField}"` });
+        }
+      }
+    }
+  } catch (err: any) {
+    if (send) send("log", { message: `  Schema fetch: ${err.message?.slice(0, 80)}` });
+  }
+  return result;
+}
+
+// Build the right cookie value for a given field name
+function buildCookieValue(fieldName: string, cookieStr: string): any {
+  const lower = fieldName.toLowerCase();
+  const sessionId = extractSessionId(cookieStr);
+  const cookieArray = getInstagramCookieArray();
+
+  // If field name suggests it wants just the session ID value
+  if (lower === "sessionid" || lower === "session_id" || lower === "instagram_session_id") {
+    return sessionId;
+  }
+  // If field name suggests an array of cookies
+  if (lower === "logincookies" || lower === "login_cookies") {
+    return cookieArray.length > 0 ? cookieArray : cookieStr;
+  }
+  // "sessionCookie" could mean the sessionid value or the full string — try sessionid
+  if (lower === "sessioncookie" || lower === "session_cookie") {
+    return sessionId || cookieStr;
+  }
+  // Default: pass the full cookie header string
+  return cookieStr;
 }
 
 async function scrapeBrandFollowing(
@@ -205,44 +260,94 @@ async function scrapeBrandFollowing(
   send?: (e: string, d: any) => void
 ): Promise<any[]> {
   const cookieStr = getInstagramCookieString();
-  const cf = cookieFields(cookieStr);
+  const sessionId = extractSessionId(cookieStr);
 
-  // Debug: log cookie info so we can diagnose failures
   if (send) {
-    const hasSessionId = cookieStr.includes("sessionid");
-    send("log", { message: `  Cookies: ${cookieStr.length} chars, sessionid=${hasSessionId ? "yes" : "NO"}` });
+    send("log", { message: `  Cookies: ${cookieStr.length} chars, sessionid=${sessionId ? "yes (" + sessionId.slice(0, 8) + "...)" : "NO"}` });
   }
 
-  // Don't include listType — the actors already know they scrape "following"
-  // Adding it causes some actors to reject the input or return 0 results
-  const inputVariants = [
-    { username: brand, resultsLimit: maxResults, ...cf },
-    { usernames: [brand], resultsLimit: maxResults, ...cf },
-    { username: brand, maxResults, ...cf },
-    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cf },
-  ];
+  // Fetch the actor's actual input schema so we use the right field names
+  const schema = await fetchActorSchema(actorId, token, send);
+
+  // Build cookie payload using discovered schema field, or shotgun all common names
+  let cookiePayload: Record<string, any> = {};
+  if (schema.cookieField) {
+    cookiePayload[schema.cookieField] = buildCookieValue(schema.cookieField, cookieStr);
+  } else if (cookieStr) {
+    // Shotgun: try every common cookie field name
+    cookiePayload = {
+      cookie: cookieStr,
+      cookies: cookieStr,
+      sessionCookie: sessionId || cookieStr,
+      sessionId: sessionId,
+      session_cookie: sessionId || cookieStr,
+      loginCookies: getInstagramCookieArray().length > 0 ? getInstagramCookieArray() : cookieStr,
+    };
+  }
+
+  // Build input variants using schema-discovered field names or common fallbacks
+  const uf = schema.usernameField || "usernames";
+  const lf = schema.limitField || "resultsLimit";
+
+  const inputVariants: Record<string, any>[] = [];
+
+  // Schema-based input (most likely to work)
+  if (schema.usernameField && schema.limitField) {
+    const schemaInput: Record<string, any> = { ...cookiePayload };
+    // username fields might expect string or array
+    schemaInput[schema.usernameField] = schema.usernameField.endsWith("s") ? [brand] : brand;
+    schemaInput[schema.limitField] = maxResults;
+    inputVariants.push(schemaInput);
+    // Also try the opposite (array vs string)
+    const schemaInput2: Record<string, any> = { ...cookiePayload };
+    schemaInput2[schema.usernameField] = schema.usernameField.endsWith("s") ? brand : [brand];
+    schemaInput2[schema.limitField] = maxResults;
+    inputVariants.push(schemaInput2);
+  }
+
+  // Common fallback variants
+  inputVariants.push(
+    { usernames: [brand], resultsLimit: maxResults, ...cookiePayload },
+    { username: brand, resultsLimit: maxResults, ...cookiePayload },
+    { usernames: [brand], maxResults, ...cookiePayload },
+    { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cookiePayload },
+  );
+
+  // Dedupe variants by JSON key
+  const seen = new Set<string>();
+  const uniqueVariants = inputVariants.filter((v) => {
+    const key = JSON.stringify(Object.keys(v).sort());
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   let lastError: Error | null = null;
-  for (let vi = 0; vi < inputVariants.length; vi++) {
-    const input = inputVariants[vi];
+  for (let vi = 0; vi < uniqueVariants.length; vi++) {
+    const input = uniqueVariants[vi];
     try {
-      if (send) send("log", { message: `  Trying input format ${vi + 1}/${inputVariants.length}...` });
+      if (send) send("log", { message: `  Variant ${vi + 1}/${uniqueVariants.length}: keys=[${Object.keys(input).filter(k => !k.includes("cookie") && !k.includes("Cookie") && !k.includes("session") && !k.includes("login")).join(",")}]` });
       const run = await apifyRunActor(actorId, input, token);
       const items = await apifyGetDataset(run.defaultDatasetId, token);
       const results = (Array.isArray(items) ? items : []).map((item: any) => ({ ...item, _brandSource: brand }));
-      if (send) send("log", { message: `  Format ${vi + 1} returned ${results.length} items` });
-      return results;
+      if (send) send("log", { message: `  → ${results.length} items` });
+      if (results.length > 0) return results;
+      // Got 0 items — try next variant instead of returning empty
+      if (send) send("log", { message: `  → 0 items, trying next variant...` });
     } catch (err: any) {
       lastError = err;
       const msg = err.message || "";
-      if (send) send("log", { message: `  Format ${vi + 1} failed: ${msg.slice(0, 120)}` });
-      if (msg.includes("INPUT_SCHEMA_VIOLATION") || msg.includes("is not valid") || msg.includes("is required")) {
+      if (send) send("log", { message: `  → Failed: ${msg.slice(0, 100)}` });
+      if (msg.includes("INPUT_SCHEMA_VIOLATION") || msg.includes("is not valid") || msg.includes("is required") || msg.includes("invalid-input")) {
         continue;
       }
+      // Non-schema errors on the last variant should throw, otherwise continue
+      if (vi < uniqueVariants.length - 1) continue;
       throw err;
     }
   }
-  throw lastError || new Error(`All input formats failed for ${actorId}`);
+  // All variants returned 0 or failed
+  return [];
 }
 
 function filterByFollowers(profiles: any[], min: number, max: number) {
@@ -294,7 +399,14 @@ async function findEnrichmentActor(token: string, send: (e: string, d: any) => v
 async function enrichProfiles(token: string, actorId: string, usernames: string[]): Promise<any[]> {
   const batchSize = 50;
   const allResults: any[] = [];
-  const cf = cookieFields(getInstagramCookieString());
+  const cookieStr = getInstagramCookieString();
+  const sessionId = extractSessionId(cookieStr);
+  const cf: Record<string, any> = cookieStr ? {
+    cookie: cookieStr,
+    cookies: cookieStr,
+    sessionCookie: sessionId || cookieStr,
+    sessionId: sessionId,
+  } : {};
 
   for (let i = 0; i < usernames.length; i += batchSize) {
     const batch = usernames.slice(i, i + batchSize);
@@ -524,7 +636,23 @@ export async function POST(req: NextRequest) {
 
         // Step 1: Scrape following
         send("step", { step: 1, label: "Scraping brand following lists" });
-        const actorId = await findFollowingActor(apifyToken, send);
+
+        // Find all available actors
+        const availableActors: string[] = [];
+        for (const id of FOLLOWING_ACTORS) {
+          try {
+            const actor = await apifyGet(`/acts/${id}`, apifyToken);
+            if (actor) {
+              send("log", { message: `Found actor: ${actor.name || id} (${id})` });
+              availableActors.push(id);
+            }
+          } catch (err: any) {
+            send("log", { message: `Actor ${id}: ${err.message?.slice(0, 80) || "not found"}` });
+          }
+        }
+        if (availableActors.length === 0) {
+          throw new Error("No Instagram following scraper found on Apify. Make sure your APIFY_API_TOKEN is valid.");
+        }
 
         let allFollowing: any[] = [];
         let brandErrors = 0;
@@ -532,9 +660,22 @@ export async function POST(req: NextRequest) {
         for (const brand of userConfig.brandAccounts) {
           try {
             send("log", { message: `Scraping @${brand}...` });
-            const following = await scrapeBrandFollowing(apifyToken, actorId, brand, userConfig.maxFollowingPerBrand, send);
+
+            // Try each actor until one returns results
+            let following: any[] = [];
+            for (const actorId of availableActors) {
+              following = await scrapeBrandFollowing(apifyToken, actorId, brand, userConfig.maxFollowingPerBrand, send);
+              if (following.length > 0) {
+                send("log", { message: `  @${brand}: ${following.length} accounts (via ${actorId.slice(0, 6)}...)` });
+                break;
+              }
+              send("log", { message: `  Actor ${actorId.slice(0, 6)}... returned 0, trying next...` });
+            }
+
+            if (following.length === 0) {
+              send("log", { message: `  @${brand}: 0 accounts from all actors` });
+            }
             allFollowing.push(...following);
-            send("log", { message: `  @${brand}: ${following.length} accounts` });
           } catch (err: any) {
             send("log", { message: `  @${brand}: FAILED - ${err.message}` });
             brandErrors++;
