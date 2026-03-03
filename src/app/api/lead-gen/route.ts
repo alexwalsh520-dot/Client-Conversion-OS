@@ -125,21 +125,28 @@ function levenshteinSimilarity(a: string, b: string): number {
 
 // ─── Pipeline Steps ─────────────────────────────────────────────────────────────
 
+// Hash IDs are Apify's internal IDs — more reliable than slug lookups
 const FOLLOWING_ACTORS = [
-  "louisdeconinck/instagram-following-scraper",
-  "figue/instagram-followers-and-following-scrapper",
+  "w0pct4EQqHEnWRnj8",                                   // louisdeconinck/instagram-following-scraper
+  "XLJHmaoDGuFYahmgm",                                   // figue/instagram-followers-and-following-scrapper
+  "louisdeconinck/instagram-following-scraper",            // slug fallback
+  "figue/instagram-followers-and-following-scrapper",      // slug fallback
 ];
 
-async function findFollowingActor(apify: ApifyClient): Promise<string> {
+async function findFollowingActor(apify: ApifyClient, send: (e: string, d: any) => void): Promise<string> {
   for (const id of FOLLOWING_ACTORS) {
     try {
       const actor = await apify.actor(id).get();
-      if (actor) return id;
-    } catch {
+      if (actor) {
+        send("log", { message: `Found actor: ${actor.name || id}` });
+        return id;
+      }
+    } catch (err: any) {
+      send("log", { message: `Actor ${id}: ${err.message?.slice(0, 80) || "not found"}` });
       continue;
     }
   }
-  throw new Error("No Instagram following scraper found on Apify");
+  throw new Error("No Instagram following scraper found on Apify. Make sure your APIFY_API_TOKEN is valid.");
 }
 
 function getInstagramCookies(): string {
@@ -212,17 +219,22 @@ function deduplicateProfiles(profiles: any[]) {
 }
 
 const ENRICHMENT_ACTORS = [
-  "apify/instagram-profile-scraper",
+  "dSCLg0C3YEZ83HzYX",                              // apify/instagram-profile-scraper
+  "apify/instagram-profile-scraper",                  // slug fallback
   "scraper-mind/instagram-email-scraper",
   "scrapier/instagram-profile-email-scraper",
 ];
 
-async function findEnrichmentActor(apify: ApifyClient): Promise<string> {
+async function findEnrichmentActor(apify: ApifyClient, send: (e: string, d: any) => void): Promise<string> {
   for (const id of ENRICHMENT_ACTORS) {
     try {
       const actor = await apify.actor(id).get();
-      if (actor) return id;
-    } catch {
+      if (actor) {
+        send("log", { message: `Found enrichment: ${actor.name || id}` });
+        return id;
+      }
+    } catch (err: any) {
+      send("log", { message: `Enrichment ${id}: ${err.message?.slice(0, 80) || "not found"}` });
       continue;
     }
   }
@@ -463,8 +475,7 @@ export async function POST(req: NextRequest) {
 
         // Step 1: Scrape following
         send("step", { step: 1, label: "Scraping brand following lists" });
-        const actorId = await findFollowingActor(apify);
-        send("log", { message: `Using scraper: ${actorId}` });
+        const actorId = await findFollowingActor(apify, send);
 
         let allFollowing: any[] = [];
         let brandErrors = 0;
@@ -496,7 +507,7 @@ export async function POST(req: NextRequest) {
 
         // Step 2: Enrich
         send("step", { step: 2, label: "Enriching profiles" });
-        const enrichActorId = await findEnrichmentActor(apify);
+        const enrichActorId = await findEnrichmentActor(apify, send);
         send("log", { message: `Using enrichment: ${enrichActorId}` });
         const enrichedRaw = await enrichProfiles(apify, enrichActorId, unique.map((u: any) => u.username || u.profileUsername || u.ig_username));
 

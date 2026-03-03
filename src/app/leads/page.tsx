@@ -275,30 +275,32 @@ export default function LeadsPage() {
               Find fitness influencer leads from brand following lists, score with AI, discover YouTube channels
             </p>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {leads.length > 0 && (
               <button className="btn-secondary" onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Download size={14} />
                 Export CSV
               </button>
             )}
-            <button
-              className={running ? "btn-secondary" : "btn-primary"}
-              onClick={running ? stopPipeline : runPipeline}
-              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
-            >
-              {running ? (
-                <>
-                  <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                  Stop
-                </>
-              ) : (
-                <>
-                  <Play size={14} />
-                  {testMode ? "Test Run" : "Full Run"}
-                </>
-              )}
-            </button>
+            {running ? (
+              <button
+                className="btn-secondary"
+                onClick={stopPipeline}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
+              >
+                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                Stop
+              </button>
+            ) : (
+              <button
+                className="btn-primary"
+                onClick={runPipeline}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
+              >
+                <Play size={14} />
+                Run Pipeline
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -334,21 +336,49 @@ export default function LeadsPage() {
               {/* Mode Toggle */}
               <div style={{ gridColumn: "1 / -1" }}>
                 <label className="form-label">Run Mode</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    className={testMode ? "btn-primary" : "btn-secondary"}
-                    onClick={() => setTestMode(true)}
-                    style={{ fontSize: 12, padding: "8px 16px" }}
-                  >
-                    Test (1 brand, 20 following)
-                  </button>
-                  <button
-                    className={!testMode ? "btn-primary" : "btn-secondary"}
-                    onClick={() => setTestMode(false)}
-                    style={{ fontSize: 12, padding: "8px 16px" }}
-                  >
-                    Full Run (all brands)
-                  </button>
+                <div
+                  onClick={() => setTestMode(!testMode)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    cursor: "pointer",
+                    padding: "10px 16px",
+                    borderRadius: 8,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                    userSelect: "none",
+                  }}
+                >
+                  {/* Toggle track */}
+                  <div style={{
+                    width: 40,
+                    height: 22,
+                    borderRadius: 11,
+                    background: testMode ? "rgba(201,169,110,0.3)" : "var(--accent)",
+                    position: "relative",
+                    transition: "background 0.2s",
+                    flexShrink: 0,
+                  }}>
+                    <div style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      background: testMode ? "var(--text-secondary)" : "var(--bg-primary)",
+                      position: "absolute",
+                      top: 3,
+                      left: testMode ? 3 : 21,
+                      transition: "left 0.2s, background 0.2s",
+                    }} />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+                      {testMode ? "Test Mode" : "Full Pipeline"}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+                      {testMode ? "1 brand · 20 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · full scrape`}
+                    </span>
+                  </div>
                 </div>
               </div>
 
