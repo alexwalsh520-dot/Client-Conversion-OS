@@ -4,8 +4,38 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ApifyClient } from "apify-client";
 import Anthropic from "@anthropic-ai/sdk";
+
+// ─── Apify REST API (replaces apify-client SDK to avoid bundler issues) ────────
+
+const APIFY_BASE = "https://api.apify.com/v2";
+
+async function apifyGet(path: string, token: string) {
+  const res = await fetch(`${APIFY_BASE}${path}?token=${token}`);
+  if (!res.ok) throw new Error(`Apify ${res.status}: ${res.statusText}`);
+  const json = await res.json();
+  return json.data;
+}
+
+async function apifyRunActor(actorId: string, input: any, token: string, waitSecs = 300) {
+  const res = await fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&waitForFinish=${waitSecs}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Apify run failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  const json = await res.json();
+  return json.data;
+}
+
+async function apifyGetDataset(datasetId: string, token: string) {
+  const res = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&format=json`);
+  if (!res.ok) throw new Error(`Dataset fetch failed: ${res.status}`);
+  return res.json(); // returns array directly
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -125,24 +155,21 @@ function levenshteinSimilarity(a: string, b: string): number {
 
 // ─── Pipeline Steps ─────────────────────────────────────────────────────────────
 
-// Hash IDs are Apify's internal IDs — more reliable than slug lookups
 const FOLLOWING_ACTORS = [
-  "w0pct4EQqHEnWRnj8",                                   // louisdeconinck/instagram-following-scraper
-  "XLJHmaoDGuFYahmgm",                                   // figue/instagram-followers-and-following-scrapper
-  "louisdeconinck/instagram-following-scraper",            // slug fallback
-  "figue/instagram-followers-and-following-scrapper",      // slug fallback
+  "w0pct4EQqHEnWRnj8",  // louisdeconinck/instagram-following-scraper
+  "XLJHmaoDGuFYahmgm",  // figue/instagram-followers-and-following-scrapper
 ];
 
-async function findFollowingActor(apify: ApifyClient, send: (e: string, d: any) => void): Promise<string> {
+async function findFollowingActor(token: string, send: (e: string, d: any) => void): Promise<string> {
   for (const id of FOLLOWING_ACTORS) {
     try {
-      const actor = await apify.actor(id).get();
+      const actor = await apifyGet(`/acts/${id}`, token);
       if (actor) {
         send("log", { message: `Found actor: ${actor.name || id}` });
         return id;
       }
     } catch (err: any) {
-      send("log", { message: `Actor ${id}: ${err.message?.slice(0, 80) || "not found"}` });
+      send("log", { message: `Actor ${id}: ${err.message?.slice(0, 100) || "not found"}` });
       continue;
     }
   }
@@ -161,7 +188,7 @@ function cookieFields(cookies: string): Record<string, string> {
 }
 
 async function scrapeBrandFollowing(
-  apify: ApifyClient,
+  token: string,
   actorId: string,
   brand: string,
   maxResults: number
@@ -177,9 +204,9 @@ async function scrapeBrandFollowing(
   let lastError: Error | null = null;
   for (const input of inputVariants) {
     try {
-      const run = await apify.actor(actorId).call(input, { waitSecs: 300 });
-      const { items } = await apify.dataset(run.defaultDatasetId).listItems();
-      return items.map((item: any) => ({ ...item, _brandSource: brand }));
+      const run = await apifyRunActor(actorId, input, token);
+      const items = await apifyGetDataset(run.defaultDatasetId, token);
+      return (Array.isArray(items) ? items : []).map((item: any) => ({ ...item, _brandSource: brand }));
     } catch (err: any) {
       lastError = err;
       const msg = err.message || "";
@@ -219,29 +246,26 @@ function deduplicateProfiles(profiles: any[]) {
 }
 
 const ENRICHMENT_ACTORS = [
-  "dSCLg0C3YEZ83HzYX",                              // apify/instagram-profile-scraper
-  "apify/instagram-profile-scraper",                  // slug fallback
-  "scraper-mind/instagram-email-scraper",
-  "scrapier/instagram-profile-email-scraper",
+  "dSCLg0C3YEZ83HzYX",  // apify/instagram-profile-scraper
 ];
 
-async function findEnrichmentActor(apify: ApifyClient, send: (e: string, d: any) => void): Promise<string> {
+async function findEnrichmentActor(token: string, send: (e: string, d: any) => void): Promise<string> {
   for (const id of ENRICHMENT_ACTORS) {
     try {
-      const actor = await apify.actor(id).get();
+      const actor = await apifyGet(`/acts/${id}`, token);
       if (actor) {
         send("log", { message: `Found enrichment: ${actor.name || id}` });
         return id;
       }
     } catch (err: any) {
-      send("log", { message: `Enrichment ${id}: ${err.message?.slice(0, 80) || "not found"}` });
+      send("log", { message: `Enrichment ${id}: ${err.message?.slice(0, 100) || "not found"}` });
       continue;
     }
   }
   throw new Error("No Instagram profile enrichment actor found on Apify");
 }
 
-async function enrichProfiles(apify: ApifyClient, actorId: string, usernames: string[]): Promise<any[]> {
+async function enrichProfiles(token: string, actorId: string, usernames: string[]): Promise<any[]> {
   const batchSize = 50;
   const allResults: any[] = [];
   const cf = cookieFields(getInstagramCookies());
@@ -256,9 +280,9 @@ async function enrichProfiles(apify: ApifyClient, actorId: string, usernames: st
 
     for (const input of inputVariants) {
       try {
-        const run = await apify.actor(actorId).call(input, { waitSecs: 600 });
-        const { items } = await apify.dataset(run.defaultDatasetId).listItems();
-        allResults.push(...items);
+        const run = await apifyRunActor(actorId, input, token, 600);
+        const items = await apifyGetDataset(run.defaultDatasetId, token);
+        allResults.push(...(Array.isArray(items) ? items : []));
         break;
       } catch (err: any) {
         const msg = err.message || "";
@@ -452,7 +476,6 @@ export async function POST(req: NextRequest) {
     userConfig.maxFollowingPerBrand = 20;
   }
 
-  const apify = new ApifyClient({ token: apifyToken });
   const claude = new Anthropic({ apiKey: anthropicKey });
 
   // SSE stream
@@ -475,7 +498,7 @@ export async function POST(req: NextRequest) {
 
         // Step 1: Scrape following
         send("step", { step: 1, label: "Scraping brand following lists" });
-        const actorId = await findFollowingActor(apify, send);
+        const actorId = await findFollowingActor(apifyToken, send);
 
         let allFollowing: any[] = [];
         let brandErrors = 0;
@@ -483,7 +506,7 @@ export async function POST(req: NextRequest) {
         for (const brand of userConfig.brandAccounts) {
           try {
             send("log", { message: `Scraping @${brand}...` });
-            const following = await scrapeBrandFollowing(apify, actorId, brand, userConfig.maxFollowingPerBrand);
+            const following = await scrapeBrandFollowing(apifyToken, actorId, brand, userConfig.maxFollowingPerBrand);
             allFollowing.push(...following);
             send("log", { message: `  @${brand}: ${following.length} accounts` });
           } catch (err: any) {
@@ -507,9 +530,9 @@ export async function POST(req: NextRequest) {
 
         // Step 2: Enrich
         send("step", { step: 2, label: "Enriching profiles" });
-        const enrichActorId = await findEnrichmentActor(apify, send);
+        const enrichActorId = await findEnrichmentActor(apifyToken, send);
         send("log", { message: `Using enrichment: ${enrichActorId}` });
-        const enrichedRaw = await enrichProfiles(apify, enrichActorId, unique.map((u: any) => u.username || u.profileUsername || u.ig_username));
+        const enrichedRaw = await enrichProfiles(apifyToken, enrichActorId, unique.map((u: any) => u.username || u.profileUsername || u.ig_username));
 
         // Merge enriched with originals
         const enrichedMap = new Map<string, any>();
