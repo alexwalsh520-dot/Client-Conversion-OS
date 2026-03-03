@@ -86,6 +86,7 @@ export default function LeadsPage() {
   const [testMode, setTestMode] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
   const [brands, setBrands] = useState(DEFAULT_BRANDS.join(", "));
+  const [maxFollowing, setMaxFollowing] = useState("200");
   const [minFollowers, setMinFollowers] = useState("100000");
   const [maxFollowers, setMaxFollowers] = useState("5000000");
   const [minScore, setMinScore] = useState("60");
@@ -117,6 +118,7 @@ export default function LeadsPage() {
     try {
       const configPayload = {
         brandAccounts: brands.split(",").map((b) => b.trim()).filter(Boolean),
+        maxFollowingPerBrand: parseInt(maxFollowing) || 200,
         minFollowers: parseInt(minFollowers) || 100000,
         maxFollowers: parseInt(maxFollowers) || 5000000,
         minScore: parseInt(minScore) || 60,
@@ -376,10 +378,43 @@ export default function LeadsPage() {
                       {testMode ? "Test Mode" : "Full Pipeline"}
                     </span>
                     <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-                      {testMode ? "1 brand · 20 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · full scrape`}
+                      {testMode ? "1 brand · 20 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · ${maxFollowing} per brand`}
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Leads per Brand */}
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="form-label">Leads per Brand</label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {["100", "200", "300", "500"].map((val) => (
+                    <button
+                      key={val}
+                      onClick={() => setMaxFollowing(val)}
+                      style={{
+                        padding: "8px 20px",
+                        borderRadius: 8,
+                        border: maxFollowing === val
+                          ? "1px solid var(--accent)"
+                          : "1px solid rgba(255,255,255,0.08)",
+                        background: maxFollowing === val
+                          ? "rgba(201,169,110,0.15)"
+                          : "rgba(255,255,255,0.03)",
+                        color: maxFollowing === val ? "var(--accent)" : "var(--text-secondary)",
+                        fontWeight: maxFollowing === val ? 600 : 400,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>
+                  {testMode ? "Test mode caps at 20 regardless" : `Scrape up to ${maxFollowing} accounts per brand`}
+                </span>
               </div>
 
               {/* Brands */}

@@ -176,40 +176,66 @@ async function findFollowingActor(token: string, send: (e: string, d: any) => vo
   throw new Error("No Instagram following scraper found on Apify. Make sure your APIFY_API_TOKEN is valid.");
 }
 
-function getInstagramCookies(): string {
-  const raw = process.env.INSTAGRAM_COOKIES || "";
-  return raw.trim();
+function getInstagramCookieString(): string {
+  const raw = (process.env.INSTAGRAM_COOKIES || "").trim();
+  if (!raw) return "";
+  // If stored as JSON array, convert to "name=value; name=value" format
+  if (raw.startsWith("[")) {
+    try {
+      const arr = JSON.parse(raw) as { name: string; value: string }[];
+      return arr.map((c) => `${c.name}=${c.value}`).join("; ");
+    } catch {
+      return raw; // fallback: treat as already a cookie string
+    }
+  }
+  return raw;
 }
 
-function cookieFields(cookies: string): Record<string, string> {
-  if (!cookies) return {};
-  // Actors use different field names for cookies — include all common ones
-  return { cookie: cookies, cookies: cookies, sessionCookie: cookies };
+function cookieFields(cookieStr: string): Record<string, any> {
+  if (!cookieStr) return {};
+  // Actors use different field names — include all common ones
+  return { cookie: cookieStr, cookies: cookieStr, sessionCookie: cookieStr };
 }
 
 async function scrapeBrandFollowing(
   token: string,
   actorId: string,
   brand: string,
-  maxResults: number
+  maxResults: number,
+  send?: (e: string, d: any) => void
 ): Promise<any[]> {
-  const cf = cookieFields(getInstagramCookies());
+  const cookieStr = getInstagramCookieString();
+  const cf = cookieFields(cookieStr);
+
+  // Debug: log cookie info so we can diagnose failures
+  if (send) {
+    const hasSessionId = cookieStr.includes("sessionid");
+    send("log", { message: `  Cookies: ${cookieStr.length} chars, sessionid=${hasSessionId ? "yes" : "NO"}` });
+  }
+
+  // Don't include listType — the actors already know they scrape "following"
+  // Adding it causes some actors to reject the input or return 0 results
   const inputVariants = [
-    { username: brand, resultsLimit: maxResults, listType: "following", ...cf },
-    { usernames: [brand], resultsLimit: maxResults, listType: "following", ...cf },
-    { username: brand, maxResults, listType: "following", ...cf },
+    { username: brand, resultsLimit: maxResults, ...cf },
+    { usernames: [brand], resultsLimit: maxResults, ...cf },
+    { username: brand, maxResults, ...cf },
     { profileUrl: `https://instagram.com/${brand}`, limit: maxResults, ...cf },
   ];
 
   let lastError: Error | null = null;
-  for (const input of inputVariants) {
+  for (let vi = 0; vi < inputVariants.length; vi++) {
+    const input = inputVariants[vi];
     try {
+      if (send) send("log", { message: `  Trying input format ${vi + 1}/${inputVariants.length}...` });
       const run = await apifyRunActor(actorId, input, token);
       const items = await apifyGetDataset(run.defaultDatasetId, token);
-      return (Array.isArray(items) ? items : []).map((item: any) => ({ ...item, _brandSource: brand }));
+      const results = (Array.isArray(items) ? items : []).map((item: any) => ({ ...item, _brandSource: brand }));
+      if (send) send("log", { message: `  Format ${vi + 1} returned ${results.length} items` });
+      return results;
     } catch (err: any) {
       lastError = err;
       const msg = err.message || "";
+      if (send) send("log", { message: `  Format ${vi + 1} failed: ${msg.slice(0, 120)}` });
       if (msg.includes("INPUT_SCHEMA_VIOLATION") || msg.includes("is not valid") || msg.includes("is required")) {
         continue;
       }
@@ -268,7 +294,7 @@ async function findEnrichmentActor(token: string, send: (e: string, d: any) => v
 async function enrichProfiles(token: string, actorId: string, usernames: string[]): Promise<any[]> {
   const batchSize = 50;
   const allResults: any[] = [];
-  const cf = cookieFields(getInstagramCookies());
+  const cf = cookieFields(getInstagramCookieString());
 
   for (let i = 0; i < usernames.length; i += batchSize) {
     const batch = usernames.slice(i, i + batchSize);
@@ -473,7 +499,7 @@ export async function POST(req: NextRequest) {
 
   if (isTest) {
     userConfig.brandAccounts = [userConfig.brandAccounts[0]];
-    userConfig.maxFollowingPerBrand = 20;
+    userConfig.maxFollowingPerBrand = Math.min(userConfig.maxFollowingPerBrand, 20);
   }
 
   const claude = new Anthropic({ apiKey: anthropicKey });
@@ -487,9 +513,9 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        send("log", { message: isTest ? "TEST MODE: 1 brand, 20 following" : `Running ${userConfig.brandAccounts.length} brands` });
+        send("log", { message: isTest ? "TEST MODE: 1 brand, 20 following" : `Running ${userConfig.brandAccounts.length} brands × ${userConfig.maxFollowingPerBrand} per brand` });
 
-        const hasCookies = !!getInstagramCookies();
+        const hasCookies = !!getInstagramCookieString();
         if (!hasCookies) {
           send("log", { message: "⚠️ No INSTAGRAM_COOKIES env var found — scrapers may return limited or no results. Add your IG cookies to Vercel env vars." });
         } else {
@@ -506,7 +532,7 @@ export async function POST(req: NextRequest) {
         for (const brand of userConfig.brandAccounts) {
           try {
             send("log", { message: `Scraping @${brand}...` });
-            const following = await scrapeBrandFollowing(apifyToken, actorId, brand, userConfig.maxFollowingPerBrand);
+            const following = await scrapeBrandFollowing(apifyToken, actorId, brand, userConfig.maxFollowingPerBrand, send);
             allFollowing.push(...following);
             send("log", { message: `  @${brand}: ${following.length} accounts` });
           } catch (err: any) {
