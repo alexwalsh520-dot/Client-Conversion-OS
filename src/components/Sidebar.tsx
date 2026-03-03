@@ -10,6 +10,7 @@ import {
   Users,
   UserPlus,
   Megaphone,
+  Send,
   Crosshair,
   Brain,
   GitCommit,
@@ -25,6 +26,7 @@ const mainNav = [
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/outreach", label: "Outreach", icon: Send },
 ];
 
 const toolsNav = [
