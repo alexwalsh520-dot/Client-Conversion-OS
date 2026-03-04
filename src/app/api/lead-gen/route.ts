@@ -709,6 +709,8 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       }
 
+      const fnStart = Date.now(); // Track function start for global time budget
+
       try {
         send("log", { message: `${mode === "quick" ? "⚡ QUICK SCAN" : "🔬 FULL PIPELINE"}${isTest ? " (TEST)" : ""}: ${userConfig.brandAccounts.length} brand${userConfig.brandAccounts.length > 1 ? "s" : ""}, up to ${userConfig.maxFollowingPerBrand} following` });
 
@@ -795,44 +797,48 @@ export async function POST(req: NextRequest) {
           const qSessionId = extractSessionId(qCookieStr);
           const qCf: Record<string, any> = qCookieStr ? { cookie: qCookieStr, sessionId: qSessionId } : {};
 
-          // Small batches + strict time budget to fit within Vercel 60s limit
+          // Small batches with GLOBAL deadline — accounts for scraping time too
           const Q_BATCH = 10;
-          const Q_WAIT = 12; // seconds per Apify API call
-          const Q_BUDGET_MS = 20000; // 20s total for enrichment
-          const qStart = Date.now();
+          const Q_DEADLINE_MS = 50000; // Hard deadline: 50s from function start (leaves 10s for response)
+          const Q_MAX_WAIT = 10; // Max seconds per Apify API call
 
-          send("log", { message: `Enriching ${qUsernames.length} profiles (${Q_BUDGET_MS / 1000}s budget, batches of ${Q_BATCH})...` });
+          const timeUsed = Date.now() - fnStart;
+          const timeLeft = Q_DEADLINE_MS - timeUsed;
+          send("log", { message: `Enriching ${qUsernames.length} profiles (${Math.round(timeLeft / 1000)}s remaining, batches of ${Q_BATCH})...` });
 
-          for (let qi = 0; qi < qUsernames.length; qi += Q_BATCH) {
-            const qElapsed = Date.now() - qStart;
-            if (qElapsed > Q_BUDGET_MS) {
-              send("log", { message: `⏱ Time budget reached (${Math.round(qElapsed / 1000)}s) — enriched ${qEnrichedResults.length}` });
-              break;
-            }
-
-            const qBatch = qUsernames.slice(qi, qi + Q_BATCH);
-            const qBatchNum = Math.floor(qi / Q_BATCH) + 1;
-            const qRemaining = Math.max(5, Math.floor((Q_BUDGET_MS - qElapsed) / 1000));
-            const qWait = Math.min(Q_WAIT, qRemaining);
-
-            send("log", { message: `  Batch ${qBatchNum}: ${qBatch.length} profiles (${qWait}s limit)...` });
-
-            try {
-              const qRun = await apifyRunActor(qActorId, { usernames: qBatch, ...qCf }, apifyToken, qWait);
-              if (qRun.defaultDatasetId) {
-                try {
-                  const qItems = await apifyGetDataset(qRun.defaultDatasetId, apifyToken);
-                  const qArr = Array.isArray(qItems) ? qItems : [];
-                  qEnrichedResults.push(...qArr);
-                  send("log", { message: `  → ${qArr.length} enriched (${qRun.status})` });
-                } catch {
-                  send("log", { message: `  → Dataset fetch failed` });
-                }
+          if (timeLeft < 8000) {
+            send("log", { message: `⏱ Only ${Math.round(timeLeft / 1000)}s left — skipping enrichment, using raw data` });
+          } else {
+            for (let qi = 0; qi < qUsernames.length; qi += Q_BATCH) {
+              const elapsed = Date.now() - fnStart;
+              const remaining = Q_DEADLINE_MS - elapsed;
+              if (remaining < 8000) {
+                send("log", { message: `⏱ ${Math.round(remaining / 1000)}s left — stopping enrichment (got ${qEnrichedResults.length})` });
+                break;
               }
-            } catch (err: any) {
-              send("log", { message: `  → Error: ${(err.message || "").slice(0, 80)}` });
-              // Don't retry with alternate input formats — just stop to save time
-              break;
+
+              const qBatch = qUsernames.slice(qi, qi + Q_BATCH);
+              const qBatchNum = Math.floor(qi / Q_BATCH) + 1;
+              const qWait = Math.min(Q_MAX_WAIT, Math.floor((remaining - 5000) / 1000));
+
+              send("log", { message: `  Batch ${qBatchNum}: ${qBatch.length} profiles (${qWait}s limit, ${Math.round(remaining / 1000)}s left)...` });
+
+              try {
+                const qRun = await apifyRunActor(qActorId, { usernames: qBatch, ...qCf }, apifyToken, qWait);
+                if (qRun.defaultDatasetId) {
+                  try {
+                    const qItems = await apifyGetDataset(qRun.defaultDatasetId, apifyToken);
+                    const qArr = Array.isArray(qItems) ? qItems : [];
+                    qEnrichedResults.push(...qArr);
+                    send("log", { message: `  → ${qArr.length} enriched (${qRun.status})` });
+                  } catch {
+                    send("log", { message: `  → Dataset fetch failed` });
+                  }
+                }
+              } catch (err: any) {
+                send("log", { message: `  → Error: ${(err.message || "").slice(0, 80)}` });
+                break;
+              }
             }
           }
 
