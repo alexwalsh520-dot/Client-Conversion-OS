@@ -117,6 +117,9 @@ export default function LeadsPage() {
   const [polling, setPolling] = useState(false);
   const [pollJobId, setPollJobId] = useState<string | null>(null);
   const [enrichProgress, setEnrichProgress] = useState<string>("");
+  const [enrichStartTime, setEnrichStartTime] = useState<number | null>(null);
+  const [enrichElapsed, setEnrichElapsed] = useState(0);
+  const [enrichPct, setEnrichPct] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // History
@@ -167,6 +170,18 @@ export default function LeadsPage() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
+
+  // Tick elapsed time every second while polling
+  useEffect(() => {
+    if (!polling || !enrichStartTime) {
+      setEnrichElapsed(0);
+      return;
+    }
+    const tick = setInterval(() => {
+      setEnrichElapsed(Math.floor((Date.now() - enrichStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [polling, enrichStartTime]);
 
   // ─── History ───────────────────────────────────────────────────────────────
 
@@ -241,7 +256,9 @@ export default function LeadsPage() {
   function startPolling(jobId: string) {
     setPollJobId(jobId);
     setPolling(true);
-    setEnrichProgress("Enrichment running on Apify...");
+    setEnrichStartTime(Date.now());
+    setEnrichPct(0);
+    setEnrichProgress("Enrichment starting on Apify...");
 
     // Poll immediately, then every 5 seconds
     pollOnce(jobId);
@@ -265,6 +282,8 @@ export default function LeadsPage() {
         setRunning(false);
         setCurrentStep(null);
         setEnrichProgress("");
+        setEnrichStartTime(null);
+        setEnrichPct(100);
 
         setLeads(data.leads);
         setStats({
@@ -296,6 +315,8 @@ export default function LeadsPage() {
         setRunning(false);
         setError(data.error || "Enrichment failed");
         setEnrichProgress("");
+        setEnrichStartTime(null);
+        setEnrichPct(0);
 
       } else if (data.status === "enriching" && data.progress) {
         // Still running — update progress
@@ -303,8 +324,13 @@ export default function LeadsPage() {
         const finished = p.datasetItemCount || p.requestsFinished || 0;
         const total = p.requestsTotal || p.scrapedCount || 0;
         const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+        setEnrichPct(pct);
         setEnrichProgress(
-          `Enriching profiles on Apify... ${finished}/${total} (${pct}%) — ${p.runStatus}`
+          total > 0 && finished > 0
+            ? `Enriching profiles... ${finished}/${total} (${pct}%)`
+            : p.runStatus === "READY" || p.runStatus === "RUNNING"
+            ? "Apify actor spinning up..."
+            : `Enriching profiles... ${p.runStatus}`
         );
       }
     } catch (err: any) {
@@ -410,7 +436,10 @@ export default function LeadsPage() {
         setError(err.message);
       }
     } finally {
-      setRunning(false);
+      // Don't clear running if we transitioned to async polling
+      if (!pollTimerRef.current) {
+        setRunning(false);
+      }
     }
   }
 
@@ -422,6 +451,8 @@ export default function LeadsPage() {
     }
     setPolling(false);
     setEnrichProgress("");
+    setEnrichStartTime(null);
+    setEnrichPct(0);
     setRunning(false);
   }
 
@@ -983,23 +1014,60 @@ export default function LeadsPage() {
           )}
 
           {/* Async enrichment polling indicator */}
-          {polling && enrichProgress && (
+          {polling && (
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
                 marginBottom: 12,
-                fontSize: 13,
-                color: "var(--accent)",
-                padding: "10px 16px",
-                borderRadius: 8,
-                background: "rgba(201,169,110,0.08)",
+                borderRadius: 10,
+                background: "rgba(201,169,110,0.06)",
                 border: "1px solid rgba(201,169,110,0.15)",
+                overflow: "hidden",
               }}
             >
-              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-              {enrichProgress}
+              {/* Progress bar */}
+              <div style={{ height: 3, background: "rgba(255,255,255,0.03)", position: "relative" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${Math.max(enrichPct, 5)}%`,
+                    background: "linear-gradient(90deg, var(--accent), rgba(201,169,110,0.6))",
+                    borderRadius: 3,
+                    transition: "width 0.5s ease",
+                  }}
+                />
+              </div>
+              <div style={{ padding: "12px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--accent)" }}>
+                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                    {enrichProgress || "Enriching profiles..."}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums", display: "flex", gap: 12, alignItems: "center" }}>
+                    {/* Elapsed time */}
+                    {enrichElapsed > 0 && (
+                      <span>
+                        {enrichElapsed >= 60
+                          ? `${Math.floor(enrichElapsed / 60)}m ${enrichElapsed % 60}s`
+                          : `${enrichElapsed}s`}
+                      </span>
+                    )}
+                    {/* ETA */}
+                    {enrichPct > 5 && enrichElapsed > 10 && (
+                      <span style={{ color: "var(--accent)", fontSize: 11 }}>
+                        ~{(() => {
+                          const remaining = Math.round((enrichElapsed / enrichPct) * (100 - enrichPct));
+                          return remaining >= 60
+                            ? `${Math.floor(remaining / 60)}m ${remaining % 60}s left`
+                            : `${remaining}s left`;
+                        })()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                  Apify is enriching each profile — this typically takes 2-5 min for ~100 profiles. Results will appear automatically.
+                </div>
+              </div>
             </div>
           )}
 
@@ -1385,7 +1453,7 @@ export default function LeadsPage() {
       )}
 
       {/* Empty State */}
-      {!running && leads.length === 0 && !error && (
+      {!running && !polling && leads.length === 0 && !error && (
         <div className="section">
           <div
             className="glass-static"
