@@ -25,7 +25,7 @@ async function apifyRunActor(actorId: string, input: any, token: string, waitSec
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Apify run failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Apify run failed (${res.status}): ${text.slice(0, 500)}`);
   }
   const json = await res.json();
   return json.data;
@@ -194,6 +194,8 @@ function extractSessionId(cookieStr: string): string {
 interface ActorSchema {
   fields: string[];
   propertyTypes: Record<string, string>;
+  enumValues: Record<string, string[]>;
+  descriptions: Record<string, string>;
   cookieField: string | null;
   usernameField: string | null;
   limitField: string | null;
@@ -210,6 +212,8 @@ async function fetchActorSchema(
   const result: ActorSchema = {
     fields: [],
     propertyTypes: {},
+    enumValues: {},
+    descriptions: {},
     cookieField: null,
     usernameField: null,
     limitField: null,
@@ -227,10 +231,12 @@ async function fetchActorSchema(
         const required = new Set(schema.required || []);
         result.fields = Object.keys(props);
 
-        // Capture property types
+        // Capture property types, enums, and descriptions
         for (const [key, val] of Object.entries(props)) {
           const prop = val as any;
           result.propertyTypes[key] = prop.type || "unknown";
+          if (prop.enum) result.enumValues[key] = prop.enum;
+          if (prop.description) result.descriptions[key] = prop.description.slice(0, 200);
         }
 
         if (send) send("log", { message: `  Schema: [${result.fields.map(f => `${f}(${result.propertyTypes[f]})`).join(", ")}]` });
@@ -303,42 +309,57 @@ async function scrapeBrandFollowing(
   const base: Record<string, any> = {};
 
   // Username field — use schema type to decide array vs string
+  // Also check description for URL hints
+  const userDesc = schema.usernameField ? (schema.descriptions[schema.usernameField] || "") : "";
+  const wantsUrl = /url|link|http|profile.*url/i.test(userDesc);
+
   if (schema.usernameField) {
     const fieldType = schema.propertyTypes[schema.usernameField];
+    const brandValue = wantsUrl ? `https://www.instagram.com/${brand}/` : brand;
     if (fieldType === "array") {
-      base[schema.usernameField] = [brand];
+      base[schema.usernameField] = [brandValue];
     } else if (fieldType === "string") {
-      base[schema.usernameField] = brand;
+      base[schema.usernameField] = brandValue;
     } else {
-      // Unknown type — try plural=array, singular=string
-      base[schema.usernameField] = schema.usernameField.endsWith("s") ? [brand] : brand;
+      base[schema.usernameField] = schema.usernameField.endsWith("s") ? [brandValue] : brandValue;
     }
   } else {
-    // Fallback: try both "usernames" (array) and "username" (string)
     base.usernames = [brand];
   }
 
-  // Limit field
+  // Limit field — floor of 100 to satisfy actor minimums
   if (schema.limitField) {
     const limitName = schema.limitField.toLowerCase();
     if (limitName.includes("page")) {
-      base[schema.limitField] = Math.max(1, Math.ceil(maxResults / 50));
+      base[schema.limitField] = Math.max(2, Math.ceil(maxResults / 50));
     } else {
-      base[schema.limitField] = maxResults;
+      base[schema.limitField] = Math.max(100, maxResults);
     }
   }
 
-  // Type field — set to "following" (some actors need this to distinguish followers vs following)
+  // Type field — use enum values if available (actors may want "Followings" not "following")
   if (schema.typeField) {
-    base[schema.typeField] = "following";
+    const enums = schema.enumValues[schema.typeField];
+    if (enums && enums.length > 0) {
+      const match = enums.find((v: string) => /following/i.test(v));
+      base[schema.typeField] = match || enums[0];
+      if (send) send("log", { message: `  Type enum: [${enums.join(", ")}] → "${base[schema.typeField]}"` });
+    } else {
+      base[schema.typeField] = "following";
+    }
   }
 
   // ── Build cookie format attempts based on schema ──
   const attempts: { label: string; input: Record<string, any> }[] = [];
 
   if (!schema.cookieField) {
-    // No cookie field in schema — actor doesn't need cookies. Just run with base input.
+    // No cookie field — actor doesn't need cookies. Run with base input.
     attempts.push({ label: "no-cookies", input: { ...base } });
+    // Also try URL format for array username fields (some actors want IG profile URLs)
+    if (schema.usernameField && schema.propertyTypes[schema.usernameField] === "array" && !wantsUrl) {
+      const urlBase = { ...base, [schema.usernameField]: [`https://www.instagram.com/${brand}/`] };
+      attempts.push({ label: "no-cookies+url", input: urlBase });
+    }
   } else {
     const cookieFieldName = schema.cookieField;
     const cookieType = schema.propertyTypes[cookieFieldName];
@@ -672,7 +693,7 @@ export async function POST(req: NextRequest) {
 
   if (isTest) {
     userConfig.brandAccounts = [userConfig.brandAccounts[0]];
-    userConfig.maxFollowingPerBrand = Math.min(userConfig.maxFollowingPerBrand, 20);
+    userConfig.maxFollowingPerBrand = Math.min(userConfig.maxFollowingPerBrand, 100);
   }
 
   const claude = new Anthropic({ apiKey: anthropicKey });
@@ -744,23 +765,24 @@ export async function POST(req: NextRequest) {
           await sleep(1000);
         }
 
-        // Filter + dedupe
-        const filtered = filterByFollowers(allFollowing, userConfig.minFollowers, userConfig.maxFollowers);
-        const unique = deduplicateProfiles(filtered);
-        send("log", { message: `${unique.length} unique profiles in follower range` });
+        // Deduplicate (DON'T filter by followers yet — following scraper returns basic data without follower counts)
+        const unique = deduplicateProfiles(allFollowing);
+        send("log", { message: `${unique.length} unique profiles scraped (${allFollowing.length} raw)` });
 
         if (unique.length === 0) {
-          send("log", { message: "No profiles found in range. The free Apify tier requires Instagram cookies for full results. See the setup guide." });
+          send("log", { message: "No profiles found. Check that your Apify API token is valid and the actors are accessible." });
           send("complete", { leads: [], stats: { brands: userConfig.brandAccounts.length, brandErrors, raw: allFollowing.length, filtered: 0, enriched: 0, qualified: 0, youtube: 0 } });
           controller.close();
           return;
         }
 
-        // Step 2: Enrich
+        // Step 2: Enrich — get full profile data (followers, bio, posts, emails)
         send("step", { step: 2, label: "Enriching profiles" });
         const enrichActorId = await findEnrichmentActor(apifyToken, send);
         send("log", { message: `Using enrichment: ${enrichActorId}` });
-        const enrichedRaw = await enrichProfiles(apifyToken, enrichActorId, unique.map((u: any) => u.username || u.profileUsername || u.ig_username));
+        const usernamesToEnrich = unique.map((u: any) => u.username || u.profileUsername || u.ig_username || u.userName || "").filter(Boolean);
+        send("log", { message: `Enriching ${usernamesToEnrich.length} usernames...` });
+        const enrichedRaw = await enrichProfiles(apifyToken, enrichActorId, usernamesToEnrich);
 
         // Merge enriched with originals
         const enrichedMap = new Map<string, any>();
@@ -769,14 +791,28 @@ export async function POST(req: NextRequest) {
           if (uname) enrichedMap.set(uname, item);
         }
 
-        const profiles: LeadProfile[] = unique.map((orig: any) => {
-          const uname = (orig.username || orig.profileUsername || "").toLowerCase();
+        const allProfiles: LeadProfile[] = unique.map((orig: any) => {
+          const uname = (orig.username || orig.profileUsername || orig.userName || "").toLowerCase();
           const enriched = enrichedMap.get(uname);
           if (enriched) return normalizeProfile({ ...enriched, _brandSource: orig._brandSource });
           return normalizeProfile(orig);
         });
 
-        send("log", { message: `Enriched: ${enrichedRaw.length}. Emails found: ${profiles.filter((p) => p.igEmail).length}` });
+        send("log", { message: `Enriched: ${enrichedRaw.length}/${usernamesToEnrich.length}. Emails: ${allProfiles.filter((p) => p.igEmail).length}` });
+
+        // NOW filter by followers (after enrichment has added follower counts)
+        const profiles = allProfiles.filter((p) => {
+          if (p.followersCount === 0) return true; // Keep un-enriched profiles (no data to filter on)
+          return p.followersCount >= userConfig.minFollowers && p.followersCount <= userConfig.maxFollowers;
+        });
+        send("log", { message: `${profiles.length} in follower range (${allProfiles.length - profiles.length} filtered out)` });
+
+        if (profiles.length === 0) {
+          send("log", { message: "No profiles in follower range after enrichment." });
+          send("complete", { leads: [], stats: { brands: userConfig.brandAccounts.length, brandErrors, raw: allFollowing.length, filtered: 0, enriched: enrichedRaw.length, qualified: 0, youtube: 0 } });
+          controller.close();
+          return;
+        }
 
         // Step 3: Engagement
         send("step", { step: 3, label: "Calculating engagement" });
