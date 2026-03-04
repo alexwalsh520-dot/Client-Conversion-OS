@@ -779,7 +779,138 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // Step 2: Enrich — get full profile data (followers, bio, posts, emails)
+        // ── QUICK SCAN: time-budgeted enrichment + email extraction ──
+        // Runs BEFORE the full pipeline enrichment to avoid the 600s waitForFinish
+        // that exceeds Vercel's 60-second function timeout
+        if (mode === "quick") {
+          send("step", { step: 2, label: "Quick enrichment" });
+
+          const qUsernames = unique.map((u: any) =>
+            (u.username || u.profileUsername || u.ig_username || u.userName || "").toLowerCase()
+          ).filter(Boolean);
+
+          let qEnrichedResults: any[] = [];
+          const qActorId = ENRICHMENT_ACTORS[0]; // Use known actor ID directly — skip discovery to save time
+          const qCookieStr = getInstagramCookieString();
+          const qSessionId = extractSessionId(qCookieStr);
+          const qCf: Record<string, any> = qCookieStr ? { cookie: qCookieStr, sessionId: qSessionId } : {};
+
+          // Small batches + strict time budget to fit within Vercel 60s limit
+          const Q_BATCH = 10;
+          const Q_WAIT = 12; // seconds per Apify API call
+          const Q_BUDGET_MS = 20000; // 20s total for enrichment
+          const qStart = Date.now();
+
+          send("log", { message: `Enriching ${qUsernames.length} profiles (${Q_BUDGET_MS / 1000}s budget, batches of ${Q_BATCH})...` });
+
+          for (let qi = 0; qi < qUsernames.length; qi += Q_BATCH) {
+            const qElapsed = Date.now() - qStart;
+            if (qElapsed > Q_BUDGET_MS) {
+              send("log", { message: `⏱ Time budget reached (${Math.round(qElapsed / 1000)}s) — enriched ${qEnrichedResults.length}` });
+              break;
+            }
+
+            const qBatch = qUsernames.slice(qi, qi + Q_BATCH);
+            const qBatchNum = Math.floor(qi / Q_BATCH) + 1;
+            const qRemaining = Math.max(5, Math.floor((Q_BUDGET_MS - qElapsed) / 1000));
+            const qWait = Math.min(Q_WAIT, qRemaining);
+
+            send("log", { message: `  Batch ${qBatchNum}: ${qBatch.length} profiles (${qWait}s limit)...` });
+
+            try {
+              const qRun = await apifyRunActor(qActorId, { usernames: qBatch, ...qCf }, apifyToken, qWait);
+              if (qRun.defaultDatasetId) {
+                try {
+                  const qItems = await apifyGetDataset(qRun.defaultDatasetId, apifyToken);
+                  const qArr = Array.isArray(qItems) ? qItems : [];
+                  qEnrichedResults.push(...qArr);
+                  send("log", { message: `  → ${qArr.length} enriched (${qRun.status})` });
+                } catch {
+                  send("log", { message: `  → Dataset fetch failed` });
+                }
+              }
+            } catch (err: any) {
+              send("log", { message: `  → Error: ${(err.message || "").slice(0, 80)}` });
+              // Don't retry with alternate input formats — just stop to save time
+              break;
+            }
+          }
+
+          // Merge enriched data with originals
+          const qMap = new Map<string, any>();
+          for (const qItem of qEnrichedResults) {
+            const qu = (qItem.username || qItem.profileUsername || qItem.userName || "").toLowerCase();
+            if (qu) qMap.set(qu, qItem);
+          }
+
+          const qProfiles: LeadProfile[] = unique.map((orig: any) => {
+            const qu = (orig.username || orig.profileUsername || orig.userName || "").toLowerCase();
+            const qEnriched = qMap.get(qu);
+            if (qEnriched) return normalizeProfile({ ...qEnriched, _brandSource: orig._brandSource });
+            return normalizeProfile(orig);
+          });
+
+          send("log", { message: `Enriched: ${qEnrichedResults.length}/${qUsernames.length}` });
+
+          // Step 3: Extract emails from bios
+          send("step", { step: 3, label: "Extracting emails" });
+          const qEmailRe = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+
+          for (const p of qProfiles) {
+            if (!p.igEmail && p.biography) {
+              const m = p.biography.match(qEmailRe);
+              if (m) p.igEmail = m[0];
+            }
+            if (!p.igEmail && p.externalUrl) {
+              const mm = p.externalUrl.match(/mailto:([^\s?]+)/i);
+              if (mm) p.igEmail = mm[1];
+            }
+          }
+
+          const qWithEmail = qProfiles.filter((p) => !!p.igEmail);
+          qWithEmail.sort((a, b) => b.followersCount - a.followersCount);
+
+          send("log", { message: `⚡ Quick Scan done: ${qWithEmail.length} with email, ${qEnrichedResults.length} enriched, ${qProfiles.length} total` });
+
+          send("complete", {
+            leads: qWithEmail.map((l) => ({
+              score: 0,
+              username: l.username,
+              fullName: l.fullName,
+              igEmail: l.igEmail,
+              youtubeChannel: null,
+              youtubeMethod: null,
+              followers: l.followersCount,
+              engagementRate: null,
+              avgViews: null,
+              avgLikes: null,
+              monetization: "",
+              reason: "Quick scan — email in bio",
+              brandSource: l.brandSource,
+              biography: l.biography,
+              website: l.externalUrl,
+              profileUrl: l.profileUrl,
+              businessCategory: l.businessCategory,
+              dataAvailable: l.dataAvailable,
+            })),
+            stats: {
+              brands: userConfig.brandAccounts.length,
+              brandErrors,
+              raw: allFollowing.length,
+              filtered: unique.length,
+              enriched: qEnrichedResults.length,
+              withEmail: qWithEmail.length,
+              engagementPassed: 0,
+              qualified: qWithEmail.length,
+              youtube: 0,
+              emails: qWithEmail.length,
+            },
+          });
+          controller.close();
+          return;
+        }
+
+        // ── FULL PIPELINE: Step 2 — Enrich profiles ──
         send("step", { step: 2, label: "Enriching profiles" });
         const enrichActorId = await findEnrichmentActor(apifyToken, send);
         send("log", { message: `Using enrichment: ${enrichActorId}` });
@@ -813,67 +944,6 @@ export async function POST(req: NextRequest) {
         if (profiles.length === 0) {
           send("log", { message: "No profiles in follower range after enrichment." });
           send("complete", { leads: [], stats: { brands: userConfig.brandAccounts.length, brandErrors, raw: allFollowing.length, filtered: 0, enriched: enrichedRaw.length, qualified: 0, youtube: 0 } });
-          controller.close();
-          return;
-        }
-
-        // ── QUICK SCAN: extract emails from bios, filter, return immediately ──
-        if (mode === "quick") {
-          send("step", { step: 3, label: "Extracting emails from bios" });
-
-          const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
-
-          // Try to extract email from bio text if enrichment didn't find one
-          for (const p of profiles) {
-            if (!p.igEmail && p.biography) {
-              const match = p.biography.match(emailRegex);
-              if (match) p.igEmail = match[0];
-            }
-            if (!p.igEmail && p.externalUrl) {
-              const mailtoMatch = p.externalUrl.match(/mailto:([^\s?]+)/i);
-              if (mailtoMatch) p.igEmail = mailtoMatch[1];
-            }
-          }
-
-          const withEmail = profiles.filter((p) => !!p.igEmail);
-          withEmail.sort((a, b) => b.followersCount - a.followersCount);
-
-          send("log", { message: `⚡ ${withEmail.length} profiles with email in bio (${profiles.length - withEmail.length} had no email)` });
-
-          send("complete", {
-            leads: withEmail.map((l) => ({
-              score: 0,
-              username: l.username,
-              fullName: l.fullName,
-              igEmail: l.igEmail,
-              youtubeChannel: null,
-              youtubeMethod: null,
-              followers: l.followersCount,
-              engagementRate: null,
-              avgViews: null,
-              avgLikes: null,
-              monetization: "",
-              reason: "Quick scan — email in bio",
-              brandSource: l.brandSource,
-              biography: l.biography,
-              website: l.externalUrl,
-              profileUrl: l.profileUrl,
-              businessCategory: l.businessCategory,
-              dataAvailable: l.dataAvailable,
-            })),
-            stats: {
-              brands: userConfig.brandAccounts.length,
-              brandErrors,
-              raw: allFollowing.length,
-              filtered: unique.length,
-              enriched: profiles.length,
-              withEmail: withEmail.length,
-              engagementPassed: 0,
-              qualified: withEmail.length,
-              youtube: 0,
-              emails: withEmail.length,
-            },
-          });
           controller.close();
           return;
         }
