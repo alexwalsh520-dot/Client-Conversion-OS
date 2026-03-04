@@ -155,9 +155,12 @@ function levenshteinSimilarity(a: string, b: string): number {
 
 // ─── Pipeline Steps ─────────────────────────────────────────────────────────────
 
+// Actor priority: no-cookie actors FIRST (more reliable), cookie actors as fallback
 const FOLLOWING_ACTORS = [
-  "w0pct4EQqHEnWRnj8",  // louisdeconinck/instagram-following-scraper
-  "XLJHmaoDGuFYahmgm",  // figue/instagram-followers-and-following-scrapper
+  "scraping_solutions~instagram-scraper-followers-following-no-cookies",  // NO cookies, 500 free/run
+  "sejinius~instagram-following-scraper-pay-as-you-go",                  // NO session ID needed
+  "XLJHmaoDGuFYahmgm",  // figue — needs cookies + type:"following"
+  "w0pct4EQqHEnWRnj8",  // louisdeconinck — needs cookies, 100 free limit
 ];
 
 function getInstagramCookieString(): string {
@@ -188,13 +191,31 @@ function extractSessionId(cookieStr: string): string {
   return match ? match[1].trim() : "";
 }
 
-// Fetch actor's input schema from its latest build to find exact field names
+interface ActorSchema {
+  fields: string[];
+  propertyTypes: Record<string, string>;
+  cookieField: string | null;
+  usernameField: string | null;
+  limitField: string | null;
+  typeField: string | null;
+  needsCookies: boolean;
+}
+
+// Fetch actor's input schema from its latest build — includes field types
 async function fetchActorSchema(
   actorId: string,
   token: string,
   send?: (e: string, d: any) => void
-): Promise<{ fields: string[]; cookieField: string | null; usernameField: string | null; limitField: string | null }> {
-  const result = { fields: [] as string[], cookieField: null as string | null, usernameField: null as string | null, limitField: null as string | null };
+): Promise<ActorSchema> {
+  const result: ActorSchema = {
+    fields: [],
+    propertyTypes: {},
+    cookieField: null,
+    usernameField: null,
+    limitField: null,
+    typeField: null,
+    needsCookies: false,
+  };
   try {
     const actor = await apifyGet(`/acts/${actorId}`, token);
     const buildId = actor?.taggedBuilds?.latest?.buildId;
@@ -203,34 +224,53 @@ async function fetchActorSchema(
       if (build?.inputSchema) {
         const schema = typeof build.inputSchema === "string" ? JSON.parse(build.inputSchema) : build.inputSchema;
         const props = schema.properties || {};
+        const required = new Set(schema.required || []);
         result.fields = Object.keys(props);
-        if (send) send("log", { message: `  Schema fields: [${result.fields.join(", ")}]` });
+
+        // Capture property types
+        for (const [key, val] of Object.entries(props)) {
+          const prop = val as any;
+          result.propertyTypes[key] = prop.type || "unknown";
+        }
+
+        if (send) send("log", { message: `  Schema: [${result.fields.map(f => `${f}(${result.propertyTypes[f]})`).join(", ")}]` });
 
         // Find cookie field
         result.cookieField = result.fields.find((f) =>
           /cookie|session|login/i.test(f) && !/proxy/i.test(f)
         ) || null;
-        // Find username field
+        // Is cookie required?
+        result.needsCookies = result.cookieField ? required.has(result.cookieField) : false;
+
+        // Find username field (priority: usernames > username > handle > user)
         result.usernameField = result.fields.find((f) =>
+          /^usernames?$/i.test(f)
+        ) || result.fields.find((f) =>
           /username|handle|user(?!agent)/i.test(f)
         ) || null;
+
         // Find limit field
         result.limitField = result.fields.find((f) =>
-          /limit|maxresult|count|max/i.test(f)
+          /limit|maxresult|count|max/i.test(f) && !/proxy/i.test(f)
+        ) || null;
+
+        // Find type field (followers vs following)
+        result.typeField = result.fields.find((f) =>
+          /^type$|scrapeType|listType|mode/i.test(f)
         ) || null;
 
         if (send) {
-          send("log", { message: `  Detected → cookie: "${result.cookieField}", username: "${result.usernameField}", limit: "${result.limitField}"` });
+          send("log", { message: `  → user: "${result.usernameField}", cookie: "${result.cookieField}"(${result.needsCookies ? "required" : "optional"}), limit: "${result.limitField}", type: "${result.typeField}"` });
         }
       }
     }
   } catch (err: any) {
-    if (send) send("log", { message: `  Schema fetch: ${err.message?.slice(0, 80)}` });
+    if (send) send("log", { message: `  Schema fetch error: ${err.message?.slice(0, 80)}` });
   }
   return result;
 }
 
-// Build schema-driven inputs for a specific actor, trying multiple cookie formats
+// Build schema-driven inputs, smart about cookie formats based on schema types
 async function scrapeBrandFollowing(
   token: string,
   actorId: string,
@@ -242,74 +282,120 @@ async function scrapeBrandFollowing(
   const cookieArray = getInstagramCookieArray();
   const sessionId = extractSessionId(cookieStr);
 
-  if (send) {
-    send("log", { message: `  Cookies: ${cookieStr.length} chars, sessionid=${sessionId ? "yes" : "NO"}` });
-  }
-
   // Fetch the actor's actual input schema
   const schema = await fetchActorSchema(actorId, token, send);
-  const fields = schema.fields;
+
+  // If actor requires cookies and we don't have them, skip immediately
+  if (schema.needsCookies && !cookieStr) {
+    if (send) send("log", { message: `  ⏭ Skipping — requires cookies but none configured` });
+    return [];
+  }
 
   // ── Build the base input from schema fields ──
   const base: Record<string, any> = {};
 
-  // Username field
+  // Username field — use schema type to decide array vs string
   if (schema.usernameField) {
-    // Check schema to see if it's an array type
-    base[schema.usernameField] = schema.usernameField.endsWith("s") ? [brand] : brand;
+    const fieldType = schema.propertyTypes[schema.usernameField];
+    if (fieldType === "array") {
+      base[schema.usernameField] = [brand];
+    } else if (fieldType === "string") {
+      base[schema.usernameField] = brand;
+    } else {
+      // Unknown type — try plural=array, singular=string
+      base[schema.usernameField] = schema.usernameField.endsWith("s") ? [brand] : brand;
+    }
   } else {
+    // Fallback: try both "usernames" (array) and "username" (string)
     base.usernames = [brand];
   }
 
-  // Limit field (if it exists in schema)
+  // Limit field
   if (schema.limitField) {
-    // "maxPages" means page count, not item count — use a reasonable value
-    if (schema.limitField.toLowerCase().includes("page")) {
+    const limitName = schema.limitField.toLowerCase();
+    if (limitName.includes("page")) {
       base[schema.limitField] = Math.max(1, Math.ceil(maxResults / 50));
     } else {
       base[schema.limitField] = maxResults;
     }
   }
 
-  // Type field (figue actor needs type: "following")
-  if (fields.includes("type")) {
-    base.type = "following";
+  // Type field — set to "following" (some actors need this to distinguish followers vs following)
+  if (schema.typeField) {
+    base[schema.typeField] = "following";
   }
 
-  // ── Try multiple cookie formats ──
-  // Apify actors' "cookies" field can expect:
-  //   1. JSON array of {name,value,...} objects (most common)
-  //   2. Cookie header string "name=val; name=val"
-  //   3. JSON string of the array
-  const cookieFormats: { label: string; value: any }[] = [];
-  if (cookieArray.length > 0) {
-    cookieFormats.push({ label: "JSON array", value: cookieArray });
-    cookieFormats.push({ label: "cookie string", value: cookieStr });
-    cookieFormats.push({ label: "JSON string", value: JSON.stringify(cookieArray) });
-  } else if (cookieStr) {
-    cookieFormats.push({ label: "cookie string", value: cookieStr });
+  // ── Build cookie format attempts based on schema ──
+  const attempts: { label: string; input: Record<string, any> }[] = [];
+
+  if (!schema.cookieField) {
+    // No cookie field in schema — actor doesn't need cookies. Just run with base input.
+    attempts.push({ label: "no-cookies", input: { ...base } });
+  } else {
+    const cookieFieldName = schema.cookieField;
+    const cookieType = schema.propertyTypes[cookieFieldName];
+
+    if (cookieStr) {
+      if (send) send("log", { message: `  Cookies: ${cookieStr.length} chars, sid=${sessionId ? "yes" : "no"}, schema type=${cookieType}` });
+
+      if (cookieType === "string") {
+        // String type — try JSON string of array first, then header string, then sessionid
+        if (cookieArray.length > 0) {
+          attempts.push({ label: "JSON-string", input: { ...base, [cookieFieldName]: JSON.stringify(cookieArray) } });
+        }
+        attempts.push({ label: "header-string", input: { ...base, [cookieFieldName]: cookieStr } });
+        if (sessionId) {
+          attempts.push({ label: "sessionid-only", input: { ...base, [cookieFieldName]: `sessionid=${sessionId}` } });
+        }
+      } else if (cookieType === "array") {
+        // Array type — only try actual arrays
+        if (cookieArray.length > 0) {
+          attempts.push({ label: "JSON-array", input: { ...base, [cookieFieldName]: cookieArray } });
+        }
+      } else {
+        // Unknown type — try all formats
+        if (cookieArray.length > 0) {
+          attempts.push({ label: "JSON-string", input: { ...base, [cookieFieldName]: JSON.stringify(cookieArray) } });
+          attempts.push({ label: "header-string", input: { ...base, [cookieFieldName]: cookieStr } });
+          attempts.push({ label: "JSON-array", input: { ...base, [cookieFieldName]: cookieArray } });
+        } else if (cookieStr) {
+          attempts.push({ label: "header-string", input: { ...base, [cookieFieldName]: cookieStr } });
+        }
+      }
+    }
+
+    // Also try without cookies if they're optional
+    if (!schema.needsCookies) {
+      attempts.push({ label: "no-cookies", input: { ...base } });
+    }
   }
 
-  const cookieFieldName = schema.cookieField || "cookies";
+  if (attempts.length === 0) {
+    if (send) send("log", { message: `  ⏭ No valid input combinations` });
+    return [];
+  }
 
-  for (const cf of cookieFormats) {
-    const input = { ...base, [cookieFieldName]: cf.value };
-
+  // ── Try each attempt ──
+  for (const attempt of attempts) {
     try {
-      if (send) send("log", { message: `  Try: cookies=${cf.label}, keys=[${Object.keys(base).join(",")}]` });
-      const run = await apifyRunActor(actorId, input, token);
+      if (send) send("log", { message: `  Try: ${attempt.label}, keys=[${Object.keys(attempt.input).join(",")}]` });
+      const run = await apifyRunActor(actorId, attempt.input, token);
+
+      // Check run status
+      const status = run.status;
+      if (send && status) send("log", { message: `  Run status: ${status}` });
+      if (status === "FAILED" || status === "TIMED-OUT" || status === "ABORTED") {
+        if (send) send("log", { message: `  → Run ${status}, trying next...` });
+        continue;
+      }
+
       const items = await apifyGetDataset(run.defaultDatasetId, token);
       const results = (Array.isArray(items) ? items : []).map((item: any) => ({ ...item, _brandSource: brand }));
       if (send) send("log", { message: `  → ${results.length} items` });
       if (results.length > 0) return results;
     } catch (err: any) {
       const msg = err.message || "";
-      if (send) send("log", { message: `  → Error: ${msg.slice(0, 100)}` });
-      // Schema/input errors — try next format
-      if (msg.includes("invalid-input") || msg.includes("INPUT_SCHEMA") || msg.includes("is not valid")) {
-        continue;
-      }
-      // Other errors — still try next format
+      if (send) send("log", { message: `  → Error: ${msg.slice(0, 120)}` });
       continue;
     }
   }
