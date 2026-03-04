@@ -242,21 +242,29 @@ async function fetchActorSchema(
         // Is cookie required?
         result.needsCookies = result.cookieField ? required.has(result.cookieField) : false;
 
-        // Find username field (priority: usernames > username > handle > user)
+        // Find username field (priority: usernames > username > account > handle)
         result.usernameField = result.fields.find((f) =>
           /^usernames?$/i.test(f)
+        ) || result.fields.find((f) =>
+          /^accounts?$/i.test(f)
+        ) || result.fields.find((f) =>
+          /^userName$/i.test(f)
         ) || result.fields.find((f) =>
           /username|handle|user(?!agent)/i.test(f)
         ) || null;
 
-        // Find limit field
+        // Find limit field (exclude the username field to prevent "Account" matching "count")
         result.limitField = result.fields.find((f) =>
-          /limit|maxresult|count|max/i.test(f) && !/proxy/i.test(f)
+          f !== result.usernameField && /limit|maxresult|resultsperpage/i.test(f)
+        ) || result.fields.find((f) =>
+          f !== result.usernameField && /^count|countper|^max(?!pages)/i.test(f)
+        ) || result.fields.find((f) =>
+          f !== result.usernameField && /maxpages/i.test(f)
         ) || null;
 
         // Find type field (followers vs following)
         result.typeField = result.fields.find((f) =>
-          /^type$|scrapeType|listType|mode/i.test(f)
+          /^type$|scrapeType|listType|mode|dataToScrape/i.test(f)
         ) || null;
 
         if (send) {
