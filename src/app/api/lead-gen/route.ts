@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { getServiceSupabase } from "@/lib/supabase";
 
 // ─── Apify REST API (replaces apify-client SDK to avoid bundler issues) ────────
 
@@ -781,137 +782,69 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // ── QUICK SCAN: time-budgeted enrichment + email extraction ──
-        // Runs BEFORE the full pipeline enrichment to avoid the 600s waitForFinish
-        // that exceeds Vercel's 60-second function timeout
+        // ── QUICK SCAN: fire-and-forget async enrichment ──
+        // Scraping is done (fits in ~30s). Now start enrichment on Apify
+        // WITHOUT waiting — save job to Supabase, return immediately.
+        // Frontend polls /api/lead-gen/poll until enrichment completes.
         if (mode === "quick") {
-          send("step", { step: 2, label: "Quick enrichment" });
+          send("step", { step: 2, label: "Starting async enrichment" });
 
           const qUsernames = unique.map((u: any) =>
             (u.username || u.profileUsername || u.ig_username || u.userName || "").toLowerCase()
           ).filter(Boolean);
 
-          let qEnrichedResults: any[] = [];
-          const qActorId = ENRICHMENT_ACTORS[0]; // Use known actor ID directly — skip discovery to save time
+          const qActorId = ENRICHMENT_ACTORS[0];
           const qCookieStr = getInstagramCookieString();
           const qSessionId = extractSessionId(qCookieStr);
           const qCf: Record<string, any> = qCookieStr ? { cookie: qCookieStr, sessionId: qSessionId } : {};
 
-          // Small batches with GLOBAL deadline — accounts for scraping time too
-          const Q_BATCH = 10;
-          const Q_DEADLINE_MS = 50000; // Hard deadline: 50s from function start (leaves 10s for response)
-          const Q_MAX_WAIT = 10; // Max seconds per Apify API call
-
-          const timeUsed = Date.now() - fnStart;
-          const timeLeft = Q_DEADLINE_MS - timeUsed;
-          send("log", { message: `Enriching ${qUsernames.length} profiles (${Math.round(timeLeft / 1000)}s remaining, batches of ${Q_BATCH})...` });
-
-          if (timeLeft < 8000) {
-            send("log", { message: `⏱ Only ${Math.round(timeLeft / 1000)}s left — skipping enrichment, using raw data` });
-          } else {
-            for (let qi = 0; qi < qUsernames.length; qi += Q_BATCH) {
-              const elapsed = Date.now() - fnStart;
-              const remaining = Q_DEADLINE_MS - elapsed;
-              if (remaining < 8000) {
-                send("log", { message: `⏱ ${Math.round(remaining / 1000)}s left — stopping enrichment (got ${qEnrichedResults.length})` });
-                break;
-              }
-
-              const qBatch = qUsernames.slice(qi, qi + Q_BATCH);
-              const qBatchNum = Math.floor(qi / Q_BATCH) + 1;
-              const qWait = Math.min(Q_MAX_WAIT, Math.floor((remaining - 5000) / 1000));
-
-              send("log", { message: `  Batch ${qBatchNum}: ${qBatch.length} profiles (${qWait}s limit, ${Math.round(remaining / 1000)}s left)...` });
-
-              try {
-                const qRun = await apifyRunActor(qActorId, { usernames: qBatch, ...qCf }, apifyToken, qWait);
-                if (qRun.defaultDatasetId) {
-                  try {
-                    const qItems = await apifyGetDataset(qRun.defaultDatasetId, apifyToken);
-                    const qArr = Array.isArray(qItems) ? qItems : [];
-                    qEnrichedResults.push(...qArr);
-                    send("log", { message: `  → ${qArr.length} enriched (${qRun.status})` });
-                  } catch {
-                    send("log", { message: `  → Dataset fetch failed` });
-                  }
-                }
-              } catch (err: any) {
-                send("log", { message: `  → Error: ${(err.message || "").slice(0, 80)}` });
-                break;
-              }
-            }
+          // Fire off enrichment — waitForFinish=0 returns IMMEDIATELY
+          let enrichRunId = "";
+          let enrichDatasetId = "";
+          try {
+            send("log", { message: `Starting enrichment for ${qUsernames.length} profiles on Apify (async)...` });
+            const qRun = await apifyRunActor(qActorId, { usernames: qUsernames, ...qCf }, apifyToken, 0);
+            enrichRunId = qRun.id || "";
+            enrichDatasetId = qRun.defaultDatasetId || "";
+            send("log", { message: `✅ Enrichment started — run ${enrichRunId.slice(0, 8)}... (runs on Apify, no timeout)` });
+          } catch (err: any) {
+            send("log", { message: `⚠️ Enrichment start failed: ${(err.message || "").slice(0, 100)}` });
           }
 
-          // Merge enriched data with originals
-          const qMap = new Map<string, any>();
-          for (const qItem of qEnrichedResults) {
-            const qu = (qItem.username || qItem.profileUsername || qItem.userName || "").toLowerCase();
-            if (qu) qMap.set(qu, qItem);
-          }
-
-          const qProfiles: LeadProfile[] = unique.map((orig: any) => {
-            const qu = (orig.username || orig.profileUsername || orig.userName || "").toLowerCase();
-            const qEnriched = qMap.get(qu);
-            if (qEnriched) return normalizeProfile({ ...qEnriched, _brandSource: orig._brandSource });
-            return normalizeProfile(orig);
-          });
-
-          send("log", { message: `Enriched: ${qEnrichedResults.length}/${qUsernames.length}` });
-
-          // Step 3: Extract emails from bios
-          send("step", { step: 3, label: "Extracting emails" });
-          const qEmailRe = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
-
-          for (const p of qProfiles) {
-            if (!p.igEmail && p.biography) {
-              const m = p.biography.match(qEmailRe);
-              if (m) p.igEmail = m[0];
-            }
-            if (!p.igEmail && p.externalUrl) {
-              const mm = p.externalUrl.match(/mailto:([^\s?]+)/i);
-              if (mm) p.igEmail = mm[1];
-            }
-          }
-
-          const qWithEmail = qProfiles.filter((p) => !!p.igEmail);
-          qWithEmail.sort((a, b) => b.followersCount - a.followersCount);
-
-          send("log", { message: `⚡ Quick Scan done: ${qWithEmail.length} with email, ${qEnrichedResults.length} enriched, ${qProfiles.length} total` });
-
-          send("complete", {
-            leads: qWithEmail.map((l) => ({
-              score: 0,
-              username: l.username,
-              fullName: l.fullName,
-              igEmail: l.igEmail,
-              youtubeChannel: null,
-              youtubeMethod: null,
-              followers: l.followersCount,
-              engagementRate: null,
-              avgViews: null,
-              avgLikes: null,
-              monetization: "",
-              reason: "Quick scan — email in bio",
-              brandSource: l.brandSource,
-              biography: l.biography,
-              website: l.externalUrl,
-              profileUrl: l.profileUrl,
-              businessCategory: l.businessCategory,
-              dataAvailable: l.dataAvailable,
+          // Save job to Supabase
+          const db = getServiceSupabase();
+          const { data: job, error: dbErr } = await db.from("lead_jobs").insert({
+            status: enrichRunId ? "enriching" : "complete",
+            mode: "quick",
+            config: { brandAccounts: userConfig.brandAccounts, isTest },
+            scraped_usernames: qUsernames,
+            scraped_count: qUsernames.length,
+            brand_results: unique.map((u: any) => ({
+              username: (u.username || u.profileUsername || u.ig_username || u.userName || "").toLowerCase(),
+              brandSource: u._brandSource || "unknown",
             })),
-            stats: {
-              brands: userConfig.brandAccounts.length,
-              brandErrors,
-              raw: allFollowing.length,
-              filtered: unique.length,
-              enriched: qEnrichedResults.length,
-              withEmail: qWithEmail.length,
-              engagementPassed: 0,
-              qualified: qWithEmail.length,
-              youtube: 0,
-              emails: qWithEmail.length,
-            },
+            enrich_run_id: enrichRunId || null,
+            enrich_dataset_id: enrichDatasetId || null,
+          }).select("id").single();
+
+          const jobId = job?.id || "";
+          if (dbErr) {
+            send("log", { message: `DB error: ${dbErr.message}` });
+          }
+
+          send("log", { message: `📋 Job saved: ${jobId.slice(0, 8)}...` });
+          send("log", { message: enrichRunId
+            ? `⏳ Enrichment running on Apify — poll for results (typically 1-3 min)`
+            : `⚠️ No enrichment run — returning raw profiles` });
+
+          // Send job_started event (frontend switches to polling)
+          send("job_started", {
+            jobId,
+            enrichRunId,
+            scrapedCount: qUsernames.length,
+            brandErrors,
           });
+
           controller.close();
           return;
         }

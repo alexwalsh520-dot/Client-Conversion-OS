@@ -59,6 +59,15 @@ interface RunStats {
 
 type PipelineStep = number | null;
 
+// Poll response shape
+interface PollResponse {
+  status: "enriching" | "complete" | "failed";
+  leads?: Lead[];
+  stats?: { scrapedCount: number; enrichedCount: number; emailCount: number };
+  progress?: { runStatus: string; scrapedCount: number; datasetItemCount?: number; requestsFinished?: number; requestsTotal?: number };
+  error?: string;
+}
+
 const FULL_STEP_LABELS: Record<number, string> = {
   1: "Scraping Brands",
   2: "Enriching Profiles",
@@ -69,8 +78,7 @@ const FULL_STEP_LABELS: Record<number, string> = {
 
 const QUICK_STEP_LABELS: Record<number, string> = {
   1: "Scraping Brands",
-  2: "Enriching Profiles",
-  3: "Extracting Emails",
+  2: "Starting Enrichment",
 };
 
 const DEFAULT_BRANDS = [
@@ -93,6 +101,12 @@ export default function LeadsPage() {
   const [stats, setStats] = useState<RunStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Async polling state (Quick Scan)
+  const [polling, setPolling] = useState(false);
+  const [pollJobId, setPollJobId] = useState<string | null>(null);
+  const [enrichProgress, setEnrichProgress] = useState<string>("");
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Config
   const [testMode, setTestMode] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
@@ -109,7 +123,7 @@ export default function LeadsPage() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const totalSteps = mode === "quick" ? 3 : 5;
+  const totalSteps = mode === "quick" ? 2 : 5;
   const stepLabels = mode === "quick" ? QUICK_STEP_LABELS : FULL_STEP_LABELS;
 
   // Auto-scroll logs
@@ -119,7 +133,7 @@ export default function LeadsPage() {
 
   // Reset results when switching modes
   useEffect(() => {
-    if (!running) {
+    if (!running && !polling) {
       setLeads([]);
       setStats(null);
       setError(null);
@@ -128,6 +142,87 @@ export default function LeadsPage() {
       setSortBy(mode === "quick" ? "followers" : "score");
     }
   }, [mode]);
+
+  // Cleanup poll timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  // ─── Poll for async enrichment results ────────────────────────────────────
+
+  function startPolling(jobId: string) {
+    setPollJobId(jobId);
+    setPolling(true);
+    setEnrichProgress("Enrichment running on Apify...");
+
+    // Poll immediately, then every 5 seconds
+    pollOnce(jobId);
+    pollTimerRef.current = setInterval(() => pollOnce(jobId), 5000);
+  }
+
+  async function pollOnce(jobId: string) {
+    try {
+      const res = await fetch(`/api/lead-gen/poll?jobId=${jobId}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Poll failed" }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const data: PollResponse = await res.json();
+
+      if (data.status === "complete" && data.leads) {
+        // Done! Stop polling and show results
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+        setPolling(false);
+        setRunning(false);
+        setCurrentStep(null);
+        setEnrichProgress("");
+
+        setLeads(data.leads);
+        setStats({
+          brands: 0, // will be set from job
+          brandErrors: 0,
+          raw: data.stats?.scrapedCount || 0,
+          filtered: data.stats?.scrapedCount || 0,
+          enriched: data.stats?.enrichedCount || 0,
+          withEmail: data.stats?.emailCount || 0,
+          qualified: 0,
+          youtube: 0,
+          emails: data.stats?.emailCount || 0,
+        });
+
+        const emailCount = data.stats?.emailCount || 0;
+        const totalCount = data.leads.length;
+        setLogs((prev) => [
+          ...prev,
+          `✅ Enrichment complete — ${totalCount} profiles, ${emailCount} emails found`,
+        ]);
+
+      } else if (data.status === "failed") {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+        setPolling(false);
+        setRunning(false);
+        setError(data.error || "Enrichment failed");
+        setEnrichProgress("");
+
+      } else if (data.status === "enriching" && data.progress) {
+        // Still running — update progress
+        const p = data.progress;
+        const finished = p.datasetItemCount || p.requestsFinished || 0;
+        const total = p.requestsTotal || p.scrapedCount || 0;
+        const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+        setEnrichProgress(
+          `Enriching profiles on Apify... ${finished}/${total} (${pct}%) — ${p.runStatus}`
+        );
+      }
+    } catch (err: any) {
+      // Don't stop polling on transient errors
+      setEnrichProgress(`Checking enrichment status... (${err.message?.slice(0, 50)})`);
+    }
+  }
 
   // ─── Run Pipeline ───────────────────────────────────────────────────────────
 
@@ -192,6 +287,20 @@ export default function LeadsPage() {
                   setCurrentStep(data.step);
                   setLogs((prev) => [...prev, `── Step ${data.step}: ${data.label} ──`]);
                   break;
+                case "job_started":
+                  // Quick Scan async — SSE stream ends, switch to polling
+                  setLogs((prev) => [
+                    ...prev,
+                    `⏳ Enrichment started for ${data.scrapedCount} profiles — polling for results...`,
+                  ]);
+                  setCurrentStep(null);
+                  if (data.jobId) {
+                    startPolling(data.jobId);
+                  } else {
+                    setError("No job ID returned");
+                    setRunning(false);
+                  }
+                  break;
                 case "complete":
                   setLeads(data.leads || []);
                   setStats(data.stats || null);
@@ -218,6 +327,12 @@ export default function LeadsPage() {
 
   function stopPipeline() {
     abortRef.current?.abort();
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setPolling(false);
+    setEnrichProgress("");
     setRunning(false);
   }
 
@@ -333,14 +448,14 @@ export default function LeadsPage() {
                 Export CSV ({leads.length})
               </button>
             )}
-            {running ? (
+            {running || polling ? (
               <button
                 className="btn-secondary"
                 onClick={stopPipeline}
                 style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
               >
                 <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                Stop
+                {polling ? "Enriching..." : "Stop"}
               </button>
             ) : (
               <button
@@ -369,7 +484,7 @@ export default function LeadsPage() {
           }}
         >
           <button
-            onClick={() => !running && setMode("quick")}
+            onClick={() => !running && !polling && setMode("quick")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -379,7 +494,7 @@ export default function LeadsPage() {
               border: "none",
               fontSize: 13,
               fontWeight: mode === "quick" ? 600 : 400,
-              cursor: running ? "not-allowed" : "pointer",
+              cursor: running || polling ? "not-allowed" : "pointer",
               transition: "all 0.2s ease",
               background: mode === "quick" ? "rgba(201,169,110,0.15)" : "transparent",
               color: mode === "quick" ? "var(--accent)" : "var(--text-muted)",
@@ -389,7 +504,7 @@ export default function LeadsPage() {
             Quick Scan
           </button>
           <button
-            onClick={() => !running && setMode("full")}
+            onClick={() => !running && !polling && setMode("full")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -399,7 +514,7 @@ export default function LeadsPage() {
               border: "none",
               fontSize: 13,
               fontWeight: mode === "full" ? 600 : 400,
-              cursor: running ? "not-allowed" : "pointer",
+              cursor: running || polling ? "not-allowed" : "pointer",
               transition: "all 0.2s ease",
               background: mode === "full" ? "rgba(201,169,110,0.15)" : "transparent",
               color: mode === "full" ? "var(--accent)" : "var(--text-muted)",
@@ -578,7 +693,7 @@ export default function LeadsPage() {
       </div>
 
       {/* Pipeline Progress */}
-      {(running || logs.length > 0) && (
+      {(running || polling || logs.length > 0) && (
         <div className="section">
           <h2 className="section-title">
             <Activity size={16} />
@@ -586,7 +701,7 @@ export default function LeadsPage() {
           </h2>
 
           {/* Step Indicators */}
-          {running && (
+          {(running || polling) && (
             <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
               {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step) => (
                 <div
@@ -596,7 +711,9 @@ export default function LeadsPage() {
                     height: 4,
                     borderRadius: 2,
                     background:
-                      currentStep && step < currentStep
+                      polling
+                        ? "var(--accent)" // all steps done when polling
+                        : currentStep && step < currentStep
                         ? "var(--success)"
                         : currentStep && step === currentStep
                         ? "var(--accent)"
@@ -621,6 +738,27 @@ export default function LeadsPage() {
             >
               <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
               Step {currentStep}/{totalSteps}: {stepLabels[currentStep] || "Processing..."}
+            </div>
+          )}
+
+          {/* Async enrichment polling indicator */}
+          {polling && enrichProgress && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 12,
+                fontSize: 13,
+                color: "var(--accent)",
+                padding: "10px 16px",
+                borderRadius: 8,
+                background: "rgba(201,169,110,0.08)",
+                border: "1px solid rgba(201,169,110,0.15)",
+              }}
+            >
+              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              {enrichProgress}
             </div>
           )}
 
