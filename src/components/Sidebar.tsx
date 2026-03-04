@@ -12,6 +12,7 @@ import {
   Megaphone,
   Send,
   Crosshair,
+  Rocket,
   Brain,
   GitCommit,
   Settings,
@@ -31,6 +32,7 @@ const mainNav = [
 
 const toolsNav = [
   { href: "/leads", label: "Lead Gen", icon: Crosshair },
+  { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
   { href: "/intelligence", label: "Intelligence", icon: Brain },
   { href: "/log", label: "Change Log", icon: GitCommit },
   { href: "/settings", label: "Settings", icon: Settings },
