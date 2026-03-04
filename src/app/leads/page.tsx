@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Search,
   Zap,
+  Clock,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -68,6 +69,17 @@ interface PollResponse {
   error?: string;
 }
 
+interface HistoryRun {
+  id: string;
+  status: string;
+  mode: string;
+  created_at: string;
+  scraped_count: number;
+  lead_count: number;
+  email_count: number;
+  config: any;
+}
+
 const FULL_STEP_LABELS: Record<number, string> = {
   1: "Scraping Brands",
   2: "Enriching Profiles",
@@ -106,6 +118,12 @@ export default function LeadsPage() {
   const [pollJobId, setPollJobId] = useState<string | null>(null);
   const [enrichProgress, setEnrichProgress] = useState<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // History
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyRuns, setHistoryRuns] = useState<HistoryRun[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
   // Config
   const [testMode, setTestMode] = useState(true);
@@ -149,6 +167,74 @@ export default function LeadsPage() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
+
+  // ─── History ───────────────────────────────────────────────────────────────
+
+  async function fetchHistory() {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/lead-gen/history");
+      if (!res.ok) throw new Error("Failed to load history");
+      const data = await res.json();
+      setHistoryRuns(data.runs || []);
+    } catch {
+      setHistoryRuns([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function toggleHistory() {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next) fetchHistory();
+  }
+
+  async function downloadHistoryCSV(jobId: string) {
+    setDownloadingJobId(jobId);
+    try {
+      const res = await fetch(`/api/lead-gen/history/${jobId}`);
+      if (!res.ok) throw new Error("Failed to load job");
+      const { job } = await res.json();
+      if (!job?.results || !Array.isArray(job.results)) {
+        alert("No results stored for this run.");
+        return;
+      }
+
+      const esc = (v: any) => {
+        const str = String(v ?? "");
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const isQuick = job.mode === "quick";
+      const headers = isQuick
+        ? ["username", "full_name", "email", "followers", "biography", "website", "profile_url", "brand_source", "business_category"]
+        : ["score", "username", "full_name", "ig_email", "youtube_channel", "followers", "engagement_rate", "avg_views", "monetization", "reason", "brand_source", "biography", "website", "profile_url"];
+
+      const rows = job.results.map((l: any) =>
+        isQuick
+          ? [l.username, l.fullName, l.igEmail, l.followers, l.biography, l.website, l.profileUrl, l.brandSource, l.businessCategory]
+          : [l.score, l.username, l.fullName, l.igEmail, l.youtubeChannel || "", l.followers, l.engagementRate ?? "", l.avgViews ?? "", l.monetization, l.reason, l.brandSource, l.biography, l.website, l.profileUrl]
+      );
+
+      const csv = [headers.join(","), ...rows.map((r: any[]) => r.map(esc).join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const dateStr = new Date(job.created_at).toISOString().slice(0, 10);
+      a.download = `${isQuick ? "quick" : "full"}_leads_${dateStr}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || "Download failed");
+    } finally {
+      setDownloadingJobId(null);
+    }
+  }
 
   // ─── Poll for async enrichment results ────────────────────────────────────
 
@@ -199,6 +285,9 @@ export default function LeadsPage() {
           ...prev,
           `✅ Enrichment complete — ${totalCount} profiles, ${emailCount} emails found`,
         ]);
+
+        // Refresh history if panel is open
+        if (showHistory) fetchHistory();
 
       } else if (data.status === "failed") {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -471,57 +560,79 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Mode Tabs */}
+      {/* Mode Tabs + History Toggle */}
       <div className="section" style={{ paddingBottom: 0 }}>
-        <div
-          style={{
-            display: "inline-flex",
-            gap: 2,
-            background: "rgba(255,255,255,0.03)",
-            borderRadius: 10,
-            padding: 3,
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              display: "inline-flex",
+              gap: 2,
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: 10,
+              padding: 3,
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <button
+              onClick={() => !running && !polling && setMode("quick")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 18px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 13,
+                fontWeight: mode === "quick" ? 600 : 400,
+                cursor: running || polling ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease",
+                background: mode === "quick" ? "rgba(201,169,110,0.15)" : "transparent",
+                color: mode === "quick" ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              <Zap size={14} />
+              Quick Scan
+            </button>
+            <button
+              onClick={() => !running && !polling && setMode("full")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 18px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 13,
+                fontWeight: mode === "full" ? 600 : 400,
+                cursor: running || polling ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease",
+                background: mode === "full" ? "rgba(201,169,110,0.15)" : "transparent",
+                color: mode === "full" ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              <Brain size={14} />
+              Full Pipeline
+            </button>
+          </div>
           <button
-            onClick={() => !running && !polling && setMode("quick")}
+            onClick={toggleHistory}
+            title="Run History"
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
-              padding: "8px 18px",
+              justifyContent: "center",
+              width: 34,
+              height: 34,
               borderRadius: 8,
-              border: "none",
-              fontSize: 13,
-              fontWeight: mode === "quick" ? 600 : 400,
-              cursor: running || polling ? "not-allowed" : "pointer",
+              border: showHistory ? "1px solid rgba(201,169,110,0.3)" : "1px solid rgba(255,255,255,0.06)",
+              background: showHistory ? "rgba(201,169,110,0.12)" : "rgba(255,255,255,0.03)",
+              color: showHistory ? "var(--accent)" : "var(--text-muted)",
+              cursor: "pointer",
               transition: "all 0.2s ease",
-              background: mode === "quick" ? "rgba(201,169,110,0.15)" : "transparent",
-              color: mode === "quick" ? "var(--accent)" : "var(--text-muted)",
+              flexShrink: 0,
             }}
           >
-            <Zap size={14} />
-            Quick Scan
-          </button>
-          <button
-            onClick={() => !running && !polling && setMode("full")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 18px",
-              borderRadius: 8,
-              border: "none",
-              fontSize: 13,
-              fontWeight: mode === "full" ? 600 : 400,
-              cursor: running || polling ? "not-allowed" : "pointer",
-              transition: "all 0.2s ease",
-              background: mode === "full" ? "rgba(201,169,110,0.15)" : "transparent",
-              color: mode === "full" ? "var(--accent)" : "var(--text-muted)",
-            }}
-          >
-            <Brain size={14} />
-            Full Pipeline
+            <Clock size={15} />
           </button>
         </div>
         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
@@ -530,6 +641,136 @@ export default function LeadsPage() {
             : "Scrape → Enrich → Engagement → AI Score → YouTube. Full qualification."}
         </p>
       </div>
+
+      {/* Run History Panel */}
+      {showHistory && (
+        <div className="section">
+          <h2 className="section-title" style={{ marginBottom: 12 }}>
+            <Clock size={16} />
+            Run History
+          </h2>
+          {historyLoading ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 13, padding: 16 }}>
+              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              Loading runs...
+            </div>
+          ) : historyRuns.length === 0 ? (
+            <div className="glass-static" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              No runs yet. Run a Quick Scan or Full Pipeline to see history here.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {historyRuns.map((run) => {
+                const date = new Date(run.created_at);
+                const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                const timeStr = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                const isComplete = run.status === "complete";
+                const isFailed = run.status === "failed";
+                const isEnriching = run.status === "enriching";
+                const brands = run.config?.brandAccounts?.length || 0;
+                const isTest = run.config?.isTest;
+
+                return (
+                  <div
+                    key={run.id}
+                    className="glass-static"
+                    style={{
+                      padding: "12px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+                      {/* Status dot */}
+                      <div
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          flexShrink: 0,
+                          background: isComplete
+                            ? "var(--success)"
+                            : isFailed
+                            ? "var(--danger)"
+                            : "var(--accent)",
+                        }}
+                      />
+                      {/* Date + Time */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+                          {dateStr} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>{timeStr}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, alignItems: "center", marginTop: 2 }}>
+                          {/* Mode badge */}
+                          <span
+                            style={{
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              background: run.mode === "quick" ? "rgba(201,169,110,0.12)" : "rgba(126,201,160,0.12)",
+                              color: run.mode === "quick" ? "var(--accent)" : "var(--success)",
+                            }}
+                          >
+                            {run.mode === "quick" ? "Quick" : "Full"}
+                          </span>
+                          {isTest && (
+                            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>TEST</span>
+                          )}
+                          <span>{run.scraped_count || 0} scraped</span>
+                          {isComplete && (
+                            <>
+                              <span>·</span>
+                              <span>{run.lead_count || 0} leads</span>
+                              <span>·</span>
+                              <span style={{ color: "var(--accent)" }}>{run.email_count || 0} emails</span>
+                            </>
+                          )}
+                          {isFailed && <span style={{ color: "var(--danger)" }}>Failed</span>}
+                          {isEnriching && <span style={{ color: "var(--accent)" }}>Enriching...</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Download button */}
+                    {isComplete && (run.lead_count || 0) > 0 && (
+                      <button
+                        onClick={() => downloadHistoryCSV(run.id)}
+                        disabled={downloadingJobId === run.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "6px 12px",
+                          borderRadius: 6,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.03)",
+                          color: "var(--text-secondary)",
+                          cursor: downloadingJobId === run.id ? "wait" : "pointer",
+                          fontSize: 12,
+                          flexShrink: 0,
+                          transition: "all 0.15s ease",
+                          opacity: downloadingJobId === run.id ? 0.5 : 1,
+                        }}
+                      >
+                        {downloadingJobId === run.id ? (
+                          <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                        ) : (
+                          <Download size={12} />
+                        )}
+                        CSV
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Config Panel */}
       <div className="section">
