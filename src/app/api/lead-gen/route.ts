@@ -442,7 +442,7 @@ function filterByFollowers(profiles: any[], min: number, max: number) {
 function deduplicateProfiles(profiles: any[]) {
   const byUsername = new Map<string, any>();
   for (const p of profiles) {
-    const username = (p.username || p.profileUsername || p.ig_username || "").toLowerCase();
+    const username = (p.username || p.profileUsername || p.ig_username || p.userName || "").toLowerCase();
     if (!username) continue;
     if (byUsername.has(username)) {
       const existing = byUsername.get(username);
@@ -521,7 +521,7 @@ async function enrichProfiles(token: string, actorId: string, usernames: string[
 
 function normalizeProfile(item: any): LeadProfile {
   return {
-    username: item.username || item.profileUsername || item.ig_username || "",
+    username: item.username || item.profileUsername || item.ig_username || item.userName || "",
     fullName: item.fullName || item.name || item.profileName || "",
     biography: item.biography || item.bio || item.profileBio || "",
     igEmail: item.email || item.profileEmail || item.emailAddress || "",
@@ -530,7 +530,7 @@ function normalizeProfile(item: any): LeadProfile {
     externalUrl: item.externalUrl || item.website || item.profileWebsite || "",
     isBusinessAccount: item.isBusinessAccount || false,
     businessCategory: item.businessCategoryName || item.category || "",
-    profileUrl: item.profileUrl || `https://instagram.com/${item.username || ""}`,
+    profileUrl: item.profileUrl || `https://instagram.com/${item.username || item.userName || ""}`,
     recentPosts: item.latestPosts || item.recentPosts || item.posts_data || [],
     brandSource: item._brandSource || "unknown",
     engagementRate: null,
@@ -707,7 +707,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        send("log", { message: isTest ? "TEST MODE: 1 brand, 20 following" : `Running ${userConfig.brandAccounts.length} brands × ${userConfig.maxFollowingPerBrand} per brand` });
+        send("log", { message: isTest ? `TEST MODE: 1 brand, up to ${userConfig.maxFollowingPerBrand} following` : `Running ${userConfig.brandAccounts.length} brands × ${userConfig.maxFollowingPerBrand} per brand` });
 
         const hasCookies = !!getInstagramCookieString();
         if (!hasCookies) {
