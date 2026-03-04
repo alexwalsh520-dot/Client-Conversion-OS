@@ -18,6 +18,7 @@ import {
   CheckCircle,
   AlertCircle,
   Search,
+  Zap,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -49,20 +50,27 @@ interface RunStats {
   raw: number;
   filtered: number;
   enriched: number;
-  engagementPassed: number;
+  engagementPassed?: number;
+  withEmail?: number;
   qualified: number;
   youtube: number;
   emails: number;
 }
 
-type PipelineStep = 1 | 2 | 3 | 4 | 5 | null;
+type PipelineStep = number | null;
 
-const STEP_LABELS: Record<number, string> = {
+const FULL_STEP_LABELS: Record<number, string> = {
   1: "Scraping Brands",
   2: "Enriching Profiles",
   3: "Engagement Filter",
   4: "AI Scoring",
   5: "YouTube Discovery",
+};
+
+const QUICK_STEP_LABELS: Record<number, string> = {
+  1: "Scraping Brands",
+  2: "Enriching Profiles",
+  3: "Extracting Emails",
 };
 
 const DEFAULT_BRANDS = [
@@ -74,6 +82,9 @@ const DEFAULT_BRANDS = [
 // ─── Component ──────────────────────────────────────────────────────────────────
 
 export default function LeadsPage() {
+  // Mode
+  const [mode, setMode] = useState<"full" | "quick">("quick");
+
   // Run state
   const [running, setRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState<PipelineStep>(null);
@@ -93,15 +104,30 @@ export default function LeadsPage() {
 
   // Table
   const [searchFilter, setSearchFilter] = useState("");
-  const [sortBy, setSortBy] = useState<"score" | "followers">("score");
+  const [sortBy, setSortBy] = useState<"score" | "followers">("followers");
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const totalSteps = mode === "quick" ? 3 : 5;
+  const stepLabels = mode === "quick" ? QUICK_STEP_LABELS : FULL_STEP_LABELS;
 
   // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  // Reset results when switching modes
+  useEffect(() => {
+    if (!running) {
+      setLeads([]);
+      setStats(null);
+      setError(null);
+      setLogs([]);
+      setCurrentStep(null);
+      setSortBy(mode === "quick" ? "followers" : "score");
+    }
+  }, [mode]);
 
   // ─── Run Pipeline ───────────────────────────────────────────────────────────
 
@@ -127,7 +153,7 @@ export default function LeadsPage() {
       const res = await fetch("/api/lead-gen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ test: testMode, config: configPayload }),
+        body: JSON.stringify({ test: testMode, mode, config: configPayload }),
         signal: abortRef.current.signal,
       });
 
@@ -198,12 +224,6 @@ export default function LeadsPage() {
   // ─── CSV Export ─────────────────────────────────────────────────────────────
 
   function downloadCSV() {
-    const headers = [
-      "score", "username", "full_name", "ig_email", "youtube_channel",
-      "followers", "engagement_rate", "avg_views", "monetization", "reason",
-      "brand_source", "biography", "website", "profile_url",
-    ];
-
     const escapeCSV = (v: any) => {
       const str = String(v ?? "");
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
@@ -212,28 +232,54 @@ export default function LeadsPage() {
       return str;
     };
 
-    const rows = leads
-      .filter((l) => l.score >= (parseInt(minScore) || 60))
-      .map((l) => [
-        l.score, l.username, l.fullName, l.igEmail, l.youtubeChannel || "",
-        l.followers, l.engagementRate ?? "", l.avgViews ?? "", l.monetization,
-        l.reason, l.brandSource, l.biography, l.website, l.profileUrl,
+    if (mode === "quick") {
+      const headers = [
+        "username", "full_name", "email", "followers",
+        "biography", "website", "profile_url", "brand_source", "business_category",
+      ];
+      const rows = leads.map((l) => [
+        l.username, l.fullName, l.igEmail, l.followers,
+        l.biography, l.website, l.profileUrl, l.brandSource, l.businessCategory,
       ]);
-
-    const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `quick_leads_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const headers = [
+        "score", "username", "full_name", "ig_email", "youtube_channel",
+        "followers", "engagement_rate", "avg_views", "monetization", "reason",
+        "brand_source", "biography", "website", "profile_url",
+      ];
+      const rows = leads
+        .filter((l) => l.score >= (parseInt(minScore) || 60))
+        .map((l) => [
+          l.score, l.username, l.fullName, l.igEmail, l.youtubeChannel || "",
+          l.followers, l.engagementRate ?? "", l.avgViews ?? "", l.monetization,
+          l.reason, l.brandSource, l.biography, l.website, l.profileUrl,
+        ]);
+      const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
   // ─── Filtered + Sorted Leads ────────────────────────────────────────────────
 
   const filteredLeads = leads
-    .filter((l) => l.score >= (parseInt(minScore) || 0))
+    .filter((l) => {
+      if (mode === "full") return l.score >= (parseInt(minScore) || 0);
+      return true; // Quick scan — show all
+    })
     .filter((l) => {
       if (!searchFilter) return true;
       const q = searchFilter.toLowerCase();
@@ -241,7 +287,8 @@ export default function LeadsPage() {
         l.username.toLowerCase().includes(q) ||
         l.fullName.toLowerCase().includes(q) ||
         l.brandSource.toLowerCase().includes(q) ||
-        l.monetization.toLowerCase().includes(q)
+        (l.igEmail || "").toLowerCase().includes(q) ||
+        (l.biography || "").toLowerCase().includes(q)
       );
     })
     .sort((a, b) => (sortBy === "score" ? b.score - a.score : b.followers - a.followers));
@@ -274,14 +321,16 @@ export default function LeadsPage() {
               <span className="gradient-text">Lead Machine</span>
             </h1>
             <p className="page-subtitle">
-              Find fitness influencer leads from brand following lists, score with AI, discover YouTube channels
+              {mode === "quick"
+                ? "Fast email scraper — scan brand followers and export accounts with email in bio"
+                : "Find fitness influencer leads from brand following lists, score with AI, discover YouTube channels"}
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {leads.length > 0 && (
               <button className="btn-secondary" onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Download size={14} />
-                Export CSV
+                Export CSV ({leads.length})
               </button>
             )}
             {running ? (
@@ -299,12 +348,72 @@ export default function LeadsPage() {
                 onClick={runPipeline}
                 style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
               >
-                <Play size={14} />
-                Run Pipeline
+                {mode === "quick" ? <Zap size={14} /> : <Play size={14} />}
+                {mode === "quick" ? "Quick Scan" : "Run Pipeline"}
               </button>
             )}
           </div>
         </div>
+      </div>
+
+      {/* Mode Tabs */}
+      <div className="section" style={{ paddingBottom: 0 }}>
+        <div
+          style={{
+            display: "inline-flex",
+            gap: 2,
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: 10,
+            padding: 3,
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <button
+            onClick={() => !running && setMode("quick")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 18px",
+              borderRadius: 8,
+              border: "none",
+              fontSize: 13,
+              fontWeight: mode === "quick" ? 600 : 400,
+              cursor: running ? "not-allowed" : "pointer",
+              transition: "all 0.2s ease",
+              background: mode === "quick" ? "rgba(201,169,110,0.15)" : "transparent",
+              color: mode === "quick" ? "var(--accent)" : "var(--text-muted)",
+            }}
+          >
+            <Zap size={14} />
+            Quick Scan
+          </button>
+          <button
+            onClick={() => !running && setMode("full")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 18px",
+              borderRadius: 8,
+              border: "none",
+              fontSize: 13,
+              fontWeight: mode === "full" ? 600 : 400,
+              cursor: running ? "not-allowed" : "pointer",
+              transition: "all 0.2s ease",
+              background: mode === "full" ? "rgba(201,169,110,0.15)" : "transparent",
+              color: mode === "full" ? "var(--accent)" : "var(--text-muted)",
+            }}
+          >
+            <Brain size={14} />
+            Full Pipeline
+          </button>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
+          {mode === "quick"
+            ? "Scrape → Enrich → Export emails. No AI scoring or YouTube lookup."
+            : "Scrape → Enrich → Engagement → AI Score → YouTube. Full qualification."}
+        </p>
       </div>
 
       {/* Config Panel */}
@@ -375,10 +484,10 @@ export default function LeadsPage() {
                   </div>
                   <div>
                     <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
-                      {testMode ? "Test Mode" : "Full Pipeline"}
+                      {testMode ? "Test Mode" : "Full Run"}
                     </span>
                     <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-                      {testMode ? "1 brand · 20 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · ${maxFollowing} per brand`}
+                      {testMode ? "1 brand · up to 100 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · ${maxFollowing} per brand`}
                     </span>
                   </div>
                 </div>
@@ -413,7 +522,7 @@ export default function LeadsPage() {
                   ))}
                 </div>
                 <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>
-                  {testMode ? "Test mode caps at 20 regardless" : `Scrape up to ${maxFollowing} accounts per brand`}
+                  {testMode ? "Test mode caps at 100 regardless" : `Scrape up to ${maxFollowing} accounts per brand`}
                 </span>
               </div>
 
@@ -449,18 +558,20 @@ export default function LeadsPage() {
                 />
               </div>
 
-              {/* Score Threshold */}
-              <div>
-                <label className="form-label">Min Score (0-100)</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  value={minScore}
-                  onChange={(e) => setMinScore(e.target.value)}
-                  min={0}
-                  max={100}
-                />
-              </div>
+              {/* Score Threshold — only for Full Pipeline */}
+              {mode === "full" && (
+                <div>
+                  <label className="form-label">Min Score (0-100)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={minScore}
+                    onChange={(e) => setMinScore(e.target.value)}
+                    min={0}
+                    max={100}
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -477,7 +588,7 @@ export default function LeadsPage() {
           {/* Step Indicators */}
           {running && (
             <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-              {[1, 2, 3, 4, 5].map((step) => (
+              {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step) => (
                 <div
                   key={step}
                   style={{
@@ -509,7 +620,7 @@ export default function LeadsPage() {
               }}
             >
               <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-              Step {currentStep}/5: {STEP_LABELS[currentStep]}
+              Step {currentStep}/{totalSteps}: {stepLabels[currentStep] || "Processing..."}
             </div>
           )}
 
@@ -531,8 +642,10 @@ export default function LeadsPage() {
                 style={{
                   color: log.startsWith("──")
                     ? "var(--accent)"
-                    : log.includes("FAILED") || log.includes("error")
+                    : log.includes("FAILED") || log.includes("error") || log.includes("Error")
                     ? "var(--danger)"
+                    : log.startsWith("⚡")
+                    ? "var(--success)"
                     : "var(--text-secondary)",
                   fontWeight: log.startsWith("──") ? 600 : 400,
                 }}
@@ -573,24 +686,47 @@ export default function LeadsPage() {
             <CheckCircle size={16} />
             Run Summary
           </h2>
-          <div className="metric-grid metric-grid-4">
-            <div className="glass-static metric-card">
-              <div className="metric-card-label">Profiles Found</div>
-              <div className="metric-card-value">{stats.filtered}</div>
+          {mode === "quick" ? (
+            <div className="metric-grid metric-grid-4">
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Profiles Scraped</div>
+                <div className="metric-card-value">{stats.filtered}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Enriched</div>
+                <div className="metric-card-value">{stats.enriched}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">With Email</div>
+                <div className="metric-card-value" style={{ color: "var(--success)" }}>{stats.withEmail || stats.emails}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Hit Rate</div>
+                <div className="metric-card-value" style={{ color: "var(--accent)" }}>
+                  {stats.enriched > 0 ? Math.round(((stats.withEmail || stats.emails) / stats.enriched) * 100) : 0}%
+                </div>
+              </div>
             </div>
-            <div className="glass-static metric-card">
-              <div className="metric-card-label">Qualified</div>
-              <div className="metric-card-value" style={{ color: "var(--success)" }}>{stats.qualified}</div>
+          ) : (
+            <div className="metric-grid metric-grid-4">
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Profiles Found</div>
+                <div className="metric-card-value">{stats.filtered}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Qualified</div>
+                <div className="metric-card-value" style={{ color: "var(--success)" }}>{stats.qualified}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">YouTube Found</div>
+                <div className="metric-card-value">{stats.youtube}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label">Emails</div>
+                <div className="metric-card-value">{stats.emails}</div>
+              </div>
             </div>
-            <div className="glass-static metric-card">
-              <div className="metric-card-label">YouTube Found</div>
-              <div className="metric-card-value">{stats.youtube}</div>
-            </div>
-            <div className="glass-static metric-card">
-              <div className="metric-card-label">Emails</div>
-              <div className="metric-card-value">{stats.emails}</div>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -600,7 +736,7 @@ export default function LeadsPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 className="section-title" style={{ marginBottom: 0 }}>
               <Users size={16} />
-              Leads ({filteredLeads.length})
+              {mode === "quick" ? `Email Leads (${filteredLeads.length})` : `Leads (${filteredLeads.length})`}
             </h2>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <div style={{ position: "relative" }}>
@@ -616,56 +752,39 @@ export default function LeadsPage() {
                   style={{ paddingLeft: 32, width: 200, fontSize: 12 }}
                 />
               </div>
-              <select
-                className="form-input"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                style={{ width: 140, fontSize: 12 }}
-              >
-                <option value="score">Sort: Score</option>
-                <option value="followers">Sort: Followers</option>
-              </select>
+              {mode === "full" && (
+                <select
+                  className="form-input"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  style={{ width: 140, fontSize: 12 }}
+                >
+                  <option value="score">Sort: Score</option>
+                  <option value="followers">Sort: Followers</option>
+                </select>
+              )}
             </div>
           </div>
 
           <div className="glass-static" style={{ overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Score</th>
-                    <th>Username</th>
-                    <th>Followers</th>
-                    <th>Engagement</th>
-                    <th>Monetization</th>
-                    <th>Channels</th>
-                    <th>Brand Source</th>
-                    <th>Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeads.map((lead) => (
-                    <tr key={lead.username}>
-                      <td>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            width: 36,
-                            height: 24,
-                            borderRadius: 12,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: scoreBg(lead.score),
-                            color: scoreColor(lead.score),
-                          }}
-                        >
-                          {lead.score}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {mode === "quick" ? (
+                /* ── Quick Scan Table ── */
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Username</th>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Followers</th>
+                      <th>Bio</th>
+                      <th>Brand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeads.map((lead) => (
+                      <tr key={lead.username}>
+                        <td>
                           <a
                             href={lead.profileUrl}
                             target="_blank"
@@ -683,94 +802,204 @@ export default function LeadsPage() {
                             @{lead.username}
                             <ExternalLink size={10} style={{ color: "var(--text-muted)" }} />
                           </a>
-                          {lead.fullName && (
-                            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lead.fullName}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                        {lead.followers >= 1000000
-                          ? `${(lead.followers / 1000000).toFixed(1)}M`
-                          : `${(lead.followers / 1000).toFixed(0)}K`}
-                      </td>
-                      <td>
-                        {lead.engagementRate != null ? (
-                          <span style={{ color: lead.engagementRate >= 3 ? "var(--success)" : "var(--text-secondary)" }}>
-                            {lead.engagementRate}%
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                            {lead.fullName || "—"}
                           </span>
-                        ) : (
-                          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>N/A</span>
-                        )}
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                          {lead.monetization || "unknown"}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        </td>
+                        <td>
                           <a
-                            href={lead.profileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Instagram"
+                            href={`mailto:${lead.igEmail}`}
+                            style={{
+                              fontSize: 12,
+                              color: "var(--accent)",
+                              textDecoration: "none",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
                           >
-                            <Instagram
-                              size={14}
-                              style={{ color: "var(--text-muted)", cursor: "pointer" }}
-                            />
+                            <Mail size={12} />
+                            {lead.igEmail}
                           </a>
-                          {lead.youtubeChannel && (
+                        </td>
+                        <td style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
+                          {lead.followers >= 1000000
+                            ? `${(lead.followers / 1000000).toFixed(1)}M`
+                            : lead.followers >= 1000
+                            ? `${(lead.followers / 1000).toFixed(0)}K`
+                            : lead.followers || "—"}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              maxWidth: 240,
+                              display: "inline-block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={lead.biography}
+                          >
+                            {lead.biography || "—"}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            @{lead.brandSource}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                /* ── Full Pipeline Table ── */
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Score</th>
+                      <th>Username</th>
+                      <th>Followers</th>
+                      <th>Engagement</th>
+                      <th>Monetization</th>
+                      <th>Channels</th>
+                      <th>Brand Source</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeads.map((lead) => (
+                      <tr key={lead.username}>
+                        <td>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 36,
+                              height: 24,
+                              borderRadius: 12,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              background: scoreBg(lead.score),
+                              color: scoreColor(lead.score),
+                            }}
+                          >
+                            {lead.score}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                             <a
-                              href={lead.youtubeChannel}
+                              href={lead.profileUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              title="YouTube"
+                              style={{
+                                fontWeight: 600,
+                                color: "var(--text-primary)",
+                                textDecoration: "none",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                fontSize: 13,
+                              }}
                             >
-                              <Youtube
-                                size={14}
-                                style={{ color: "#ff4444" }}
-                              />
+                              @{lead.username}
+                              <ExternalLink size={10} style={{ color: "var(--text-muted)" }} />
                             </a>
+                            {lead.fullName && (
+                              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lead.fullName}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {lead.followers >= 1000000
+                            ? `${(lead.followers / 1000000).toFixed(1)}M`
+                            : `${(lead.followers / 1000).toFixed(0)}K`}
+                        </td>
+                        <td>
+                          {lead.engagementRate != null ? (
+                            <span style={{ color: lead.engagementRate >= 3 ? "var(--success)" : "var(--text-secondary)" }}>
+                              {lead.engagementRate}%
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>N/A</span>
                           )}
-                          {lead.igEmail && (
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                            {lead.monetization || "unknown"}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                             <a
-                              href={`mailto:${lead.igEmail}`}
-                              title={lead.igEmail}
+                              href={lead.profileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Instagram"
                             >
-                              <Mail
+                              <Instagram
                                 size={14}
-                                style={{ color: "var(--accent)" }}
+                                style={{ color: "var(--text-muted)", cursor: "pointer" }}
                               />
                             </a>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          @{lead.brandSource}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                            maxWidth: 200,
-                            display: "inline-block",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                          title={lead.reason}
-                        >
-                          {lead.reason}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            {lead.youtubeChannel && (
+                              <a
+                                href={lead.youtubeChannel}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="YouTube"
+                              >
+                                <Youtube
+                                  size={14}
+                                  style={{ color: "#ff4444" }}
+                                />
+                              </a>
+                            )}
+                            {lead.igEmail && (
+                              <a
+                                href={`mailto:${lead.igEmail}`}
+                                title={lead.igEmail}
+                              >
+                                <Mail
+                                  size={14}
+                                  style={{ color: "var(--accent)" }}
+                                />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            @{lead.brandSource}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              maxWidth: 200,
+                              display: "inline-block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={lead.reason}
+                          >
+                            {lead.reason}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -786,10 +1015,17 @@ export default function LeadsPage() {
               textAlign: "center",
             }}
           >
-            <Crosshair
-              size={32}
-              style={{ color: "var(--text-muted)", margin: "0 auto 16px" }}
-            />
+            {mode === "quick" ? (
+              <Zap
+                size={32}
+                style={{ color: "var(--accent)", margin: "0 auto 16px" }}
+              />
+            ) : (
+              <Crosshair
+                size={32}
+                style={{ color: "var(--text-muted)", margin: "0 auto 16px" }}
+              />
+            )}
             <div
               style={{
                 fontSize: 16,
@@ -798,7 +1034,7 @@ export default function LeadsPage() {
                 marginBottom: 8,
               }}
             >
-              Ready to find leads
+              {mode === "quick" ? "Ready to scan for emails" : "Ready to find leads"}
             </div>
             <div
               style={{
@@ -809,9 +1045,9 @@ export default function LeadsPage() {
                 lineHeight: 1.6,
               }}
             >
-              This tool scrapes who major fitness brands follow on Instagram,
-              qualifies them using engagement + AI scoring, and finds their
-              YouTube channels. Start with a test run to verify your API keys work.
+              {mode === "quick"
+                ? "Scan brand following lists, enrich profiles, and export every account with an email in their bio. No AI scoring or YouTube lookup — just fast email extraction."
+                : "This tool scrapes who major fitness brands follow on Instagram, qualifies them using engagement + AI scoring, and finds their YouTube channels. Start with a test run to verify your API keys work."}
             </div>
             <div
               style={{
@@ -821,48 +1057,37 @@ export default function LeadsPage() {
                 flexWrap: "wrap",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                <Instagram size={12} />
-                Apify Scraping
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                <Brain size={12} />
-                Claude AI Scoring
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                <Youtube size={12} />
-                YouTube Discovery
-              </div>
+              {mode === "quick" ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Instagram size={12} />
+                    Apify Scraping
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Users size={12} />
+                    Profile Enrichment
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Mail size={12} />
+                    Email Extraction
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Instagram size={12} />
+                    Apify Scraping
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Brain size={12} />
+                    Claude AI Scoring
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <Youtube size={12} />
+                    YouTube Discovery
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

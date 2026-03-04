@@ -683,11 +683,14 @@ export async function POST(req: NextRequest) {
   if (!apifyToken) {
     return NextResponse.json({ error: "APIFY_API_TOKEN not configured" }, { status: 500 });
   }
-  if (!anthropicKey) {
+
+  const body = await req.json().catch(() => ({}));
+  const mode: "full" | "quick" = body.mode === "quick" ? "quick" : "full";
+
+  if (mode === "full" && !anthropicKey) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured. Note: if ANTHROPIC_API_KEY is empty in your shell environment (set by Claude Desktop), add the lead-gen key to Vercel env vars." }, { status: 500 });
   }
 
-  const body = await req.json().catch(() => ({}));
   const userConfig: PipelineConfig = { ...DEFAULT_CONFIG, ...body.config };
   const isTest = body.test === true;
 
@@ -696,7 +699,7 @@ export async function POST(req: NextRequest) {
     userConfig.maxFollowingPerBrand = Math.min(userConfig.maxFollowingPerBrand, 100);
   }
 
-  const claude = new Anthropic({ apiKey: anthropicKey });
+  const claude = mode === "full" ? new Anthropic({ apiKey: anthropicKey! }) : null;
 
   // SSE stream
   const encoder = new TextEncoder();
@@ -707,7 +710,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        send("log", { message: isTest ? `TEST MODE: 1 brand, up to ${userConfig.maxFollowingPerBrand} following` : `Running ${userConfig.brandAccounts.length} brands × ${userConfig.maxFollowingPerBrand} per brand` });
+        send("log", { message: `${mode === "quick" ? "⚡ QUICK SCAN" : "🔬 FULL PIPELINE"}${isTest ? " (TEST)" : ""}: ${userConfig.brandAccounts.length} brand${userConfig.brandAccounts.length > 1 ? "s" : ""}, up to ${userConfig.maxFollowingPerBrand} following` });
 
         const hasCookies = !!getInstagramCookieString();
         if (!hasCookies) {
@@ -814,6 +817,67 @@ export async function POST(req: NextRequest) {
           return;
         }
 
+        // ── QUICK SCAN: extract emails from bios, filter, return immediately ──
+        if (mode === "quick") {
+          send("step", { step: 3, label: "Extracting emails from bios" });
+
+          const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+
+          // Try to extract email from bio text if enrichment didn't find one
+          for (const p of profiles) {
+            if (!p.igEmail && p.biography) {
+              const match = p.biography.match(emailRegex);
+              if (match) p.igEmail = match[0];
+            }
+            if (!p.igEmail && p.externalUrl) {
+              const mailtoMatch = p.externalUrl.match(/mailto:([^\s?]+)/i);
+              if (mailtoMatch) p.igEmail = mailtoMatch[1];
+            }
+          }
+
+          const withEmail = profiles.filter((p) => !!p.igEmail);
+          withEmail.sort((a, b) => b.followersCount - a.followersCount);
+
+          send("log", { message: `⚡ ${withEmail.length} profiles with email in bio (${profiles.length - withEmail.length} had no email)` });
+
+          send("complete", {
+            leads: withEmail.map((l) => ({
+              score: 0,
+              username: l.username,
+              fullName: l.fullName,
+              igEmail: l.igEmail,
+              youtubeChannel: null,
+              youtubeMethod: null,
+              followers: l.followersCount,
+              engagementRate: null,
+              avgViews: null,
+              avgLikes: null,
+              monetization: "",
+              reason: "Quick scan — email in bio",
+              brandSource: l.brandSource,
+              biography: l.biography,
+              website: l.externalUrl,
+              profileUrl: l.profileUrl,
+              businessCategory: l.businessCategory,
+              dataAvailable: l.dataAvailable,
+            })),
+            stats: {
+              brands: userConfig.brandAccounts.length,
+              brandErrors,
+              raw: allFollowing.length,
+              filtered: unique.length,
+              enriched: profiles.length,
+              withEmail: withEmail.length,
+              engagementPassed: 0,
+              qualified: withEmail.length,
+              youtube: 0,
+              emails: withEmail.length,
+            },
+          });
+          controller.close();
+          return;
+        }
+
         // Step 3: Engagement
         send("step", { step: 3, label: "Calculating engagement" });
         const withEngagement = profiles.map((p) => ({ ...p, ...calculateEngagement(p) }));
@@ -829,7 +893,7 @@ export async function POST(req: NextRequest) {
           const batch = engFiltered.slice(i, i + userConfig.concurrency);
           const results = await Promise.all(
             batch.map(async (lead) => {
-              const scoring = await scoreOneLead(claude, userConfig, lead);
+              const scoring = await scoreOneLead(claude!, userConfig, lead);
               return { ...lead, ...scoring };
             })
           );
