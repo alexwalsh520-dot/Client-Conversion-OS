@@ -17,7 +17,7 @@ function getStripeClient(client: Client): Stripe {
 
   if (!key) throw new Error(`STRIPE_SECRET_KEY_${client.toUpperCase()} not configured`);
 
-  const stripe = new Stripe(key, { apiVersion: "2025-04-30.basil" });
+  const stripe = new Stripe(key);
   stripeClients[client] = stripe;
   return stripe;
 }
