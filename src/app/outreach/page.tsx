@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -20,15 +20,17 @@ import {
   Zap,
   ArrowRight,
   Clock,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import {
-  topStats,
-  pipelineStages,
+  pipelineStages as mockPipelineStages,
   activityFeed,
-  emailPerformance,
-  dmPerformance,
   trendData,
+  type PipelineStage,
 } from "@/lib/outreach-data";
+import { getRuns } from "@/lib/outreach-store";
+import type { SmartleadAnalytics } from "@/lib/smartlead";
 import { fmtNumber, fmtPercent, fmtCompact } from "@/lib/formatters";
 
 function timeAgo(timestamp: string): string {
@@ -49,7 +51,92 @@ const activityIcons: Record<string, React.ComponentType<{ size?: number }>> = {
   move: ArrowRight,
 };
 
+// Stage colors for pipeline visualization
+const stageColors: Record<string, string> = {
+  "New Lead": "#6b8cff",
+  "Contacted": "#5b9bd5",
+  "Follow Up Needed": "#82c5c5",
+  "In Contact": "#7ec9a0",
+  "In Contact (Contacted)": "#6dbb8a",
+  "In Contact (Follow Up Needed)": "#5cad74",
+  "Lost": "#d98e8e",
+};
+
+// Mock DM reply rate (no real data source yet)
+const MOCK_DM_REPLY_RATE = 5.2;
+
 export default function OutreachPage() {
+  // Live pipeline data
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>(mockPipelineStages);
+  const [pipelineLoading, setPipelineLoading] = useState(true);
+  const [pipelineError, setPipelineError] = useState("");
+
+  // Live Smartlead analytics
+  const [smartlead, setSmartlead] = useState<SmartleadAnalytics | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState("");
+
+  // Outreach-runs data from localStorage
+  const [contactedToday, setContactedToday] = useState(0);
+  const [dmsQueuedToday, setDmsQueuedToday] = useState(0);
+
+  // Fetch pipeline data from GHL
+  useEffect(() => {
+    async function fetchPipeline() {
+      try {
+        const res = await fetch("/api/outreach/pipeline");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load pipeline");
+        if (data.stages && data.stages.length > 0) {
+          setPipelineStages(
+            data.stages.map((s: { name: string; count: number; id: string }) => ({
+              name: s.name,
+              count: s.count,
+              color: stageColors[s.name] || "#6b8cff",
+            }))
+          );
+        }
+      } catch (e) {
+        setPipelineError(e instanceof Error ? e.message : "Failed to load pipeline");
+      } finally {
+        setPipelineLoading(false);
+      }
+    }
+    fetchPipeline();
+  }, []);
+
+  // Fetch Smartlead campaign analytics
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const res = await fetch("/api/outreach/stats");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load stats");
+        setSmartlead(data as SmartleadAnalytics);
+      } catch (e) {
+        setStatsError(e instanceof Error ? e.message : "Failed to load stats");
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    fetchStats();
+  }, []);
+
+  // Get today's stats from outreach-runs localStorage
+  useEffect(() => {
+    const runs = getRuns();
+    const today = new Date().toISOString().split("T")[0];
+    const todayRuns = runs.filter((r) => r.timestamp.startsWith(today));
+    const contacted = todayRuns.reduce((s, r) => s + r.leads_imported, 0);
+    const dms = todayRuns.reduce((s, r) => s + r.dms_queued, 0);
+    setContactedToday(contacted);
+    setDmsQueuedToday(dms);
+  }, []);
+
+  const totalPipelineLeads = pipelineStages
+    .filter((s) => s.name !== "Lost")
+    .reduce((sum, s) => sum + s.count, 0);
+
   const chartData = useMemo(
     () =>
       trendData.map((d) => ({
@@ -62,10 +149,6 @@ export default function OutreachPage() {
     []
   );
 
-  const totalPipelineLeads = pipelineStages
-    .filter((s) => s.name !== "Lost")
-    .reduce((sum, s) => sum + s.count, 0);
-
   return (
     <div className="fade-up">
       {/* Header */}
@@ -76,6 +159,40 @@ export default function OutreachPage() {
         <p className="page-subtitle">
           Automated outreach pipeline — cold email + Instagram DMs
         </p>
+      </div>
+
+      {/* Data source indicators */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        {pipelineLoading && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            <Loader2 size={12} className="spin" /> Loading pipeline...
+          </div>
+        )}
+        {!pipelineLoading && !pipelineError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)" }}>
+            <Activity size={12} /> Live from GHL
+          </div>
+        )}
+        {pipelineError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--warning)" }}>
+            <AlertCircle size={12} /> Pipeline error: {pipelineError}
+          </div>
+        )}
+        {statsLoading && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            <Loader2 size={12} className="spin" /> Loading Smartlead...
+          </div>
+        )}
+        {!statsLoading && !statsError && smartlead && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)" }}>
+            <Activity size={12} /> Live from Smartlead
+          </div>
+        )}
+        {statsError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--warning)" }}>
+            <AlertCircle size={12} /> Smartlead error: {statsError}
+          </div>
+        )}
       </div>
 
       {/* ── Section 1: Top-Level Stats ──────────────────────────── */}
@@ -91,61 +208,52 @@ export default function OutreachPage() {
               {fmtNumber(totalPipelineLeads)}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              excl. lost leads
+              GHL &middot; excl. lost
             </div>
           </div>
           <div className="glass-static metric-card">
             <div className="metric-card-label">Contacted Today</div>
             <div className="metric-card-value">
-              {topStats.leadsContactedToday}
+              {fmtNumber(contactedToday)}
             </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              +{topStats.leadsContactedToday} new
+            <div className="metric-card-trend metric-card-trend-flat">
+              from outreach runs
             </div>
           </div>
           <div className="glass-static metric-card">
-            <div className="metric-card-label">Emails Sent Today</div>
+            <div className="metric-card-label">Emails Sent</div>
             <div className="metric-card-value">
-              {fmtNumber(topStats.emailsSentToday)}
+              {smartlead ? fmtNumber(smartlead.sent_count) : "—"}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              new + follow-ups
+              {smartlead ? `${fmtNumber(smartlead.unique_sent_count)} unique leads` : "loading..."}
             </div>
           </div>
           <div className="glass-static metric-card">
-            <div className="metric-card-label">DMs Sent Today</div>
+            <div className="metric-card-label">DMs Queued Today</div>
             <div className="metric-card-value">
-              {fmtNumber(topStats.dmsSentToday)}
+              {fmtNumber(dmsQueuedToday)}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              new + follow-ups
+              from outreach runs
             </div>
           </div>
           <div className="glass-static metric-card">
             <div className="metric-card-label">Email Reply Rate</div>
             <div className="metric-card-value">
-              {fmtPercent(topStats.emailReplyRate)}
+              {smartlead ? fmtPercent(smartlead.reply_rate) : "—"}
             </div>
             <div className="metric-card-trend metric-card-trend-up">
-              industry avg ~2%
+              {smartlead ? `${fmtNumber(smartlead.reply_count)} replies` : "loading..."}
             </div>
           </div>
           <div className="glass-static metric-card">
             <div className="metric-card-label">DM Reply Rate</div>
             <div className="metric-card-value">
-              {fmtPercent(topStats.dmReplyRate)}
-            </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              above target
-            </div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Active Sequences</div>
-            <div className="metric-card-value">
-              {fmtNumber(topStats.activeSequences)}
+              {fmtPercent(MOCK_DM_REPLY_RATE)}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              email + DM combined
+              estimated
             </div>
           </div>
         </div>
@@ -156,6 +264,9 @@ export default function OutreachPage() {
         <h2 className="section-title">
           <Users size={16} />
           Pipeline
+          {pipelineLoading && (
+            <Loader2 size={14} className="spin" style={{ marginLeft: 8, color: "var(--text-muted)" }} />
+          )}
         </h2>
         <div className="glass-static" style={{ padding: 24 }}>
           <div className="outreach-pipeline">
@@ -211,9 +322,12 @@ export default function OutreachPage() {
         <h2 className="section-title">
           <Send size={16} />
           Channel Performance
+          {statsLoading && (
+            <Loader2 size={14} className="spin" style={{ marginLeft: 8, color: "var(--text-muted)" }} />
+          )}
         </h2>
         <div className="metric-grid metric-grid-2">
-          {/* Email Performance */}
+          {/* Email Performance — all from Smartlead */}
           <div className="glass-static" style={{ padding: 24 }}>
             <div
               style={{
@@ -245,43 +359,47 @@ export default function OutreachPage() {
               >
                 Email Performance
               </span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
+                via Smartlead
+              </span>
             </div>
             <div className="outreach-channel-stats">
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Emails Sent</span>
                 <span className="outreach-channel-value">
-                  {fmtCompact(emailPerformance.sent.total)} /{" "}
-                  {fmtNumber(emailPerformance.sent.today)} today
+                  {smartlead ? fmtNumber(smartlead.sent_count) : "—"}
+                </span>
+              </div>
+              <div className="outreach-channel-row">
+                <span className="outreach-channel-label">Unique Leads Emailed</span>
+                <span className="outreach-channel-value">
+                  {smartlead ? fmtNumber(smartlead.unique_sent_count) : "—"}
                 </span>
               </div>
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Open Rate</span>
                 <span className="outreach-channel-value">
-                  {fmtPercent(emailPerformance.openRate)}
+                  {smartlead ? `${fmtPercent(smartlead.open_rate)} (${fmtNumber(smartlead.unique_open_count)} unique)` : "—"}
                 </span>
               </div>
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Reply Rate</span>
                 <span className="outreach-channel-value">
-                  {fmtPercent(emailPerformance.replyRate)}
+                  {smartlead ? `${fmtPercent(smartlead.reply_rate)} (${fmtNumber(smartlead.reply_count)} replies)` : "—"}
                 </span>
               </div>
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Bounce Rate</span>
                 <span className="outreach-channel-value">
-                  {fmtPercent(emailPerformance.bounceRate)}
+                  {smartlead ? `${fmtPercent(smartlead.bounce_rate)} (${fmtNumber(smartlead.bounce_count)} bounced)` : "—"}
                 </span>
               </div>
               <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Active Sequences</span>
+                <span className="outreach-channel-label">Campaign Leads</span>
                 <span className="outreach-channel-value">
-                  {fmtNumber(emailPerformance.activeSequences)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Domains Active</span>
-                <span className="outreach-channel-value">
-                  {emailPerformance.domainsActive}
+                  {smartlead
+                    ? `${fmtNumber(smartlead.total_leads)} total · ${fmtNumber(smartlead.leads_in_progress)} active · ${fmtNumber(smartlead.leads_not_started)} queued`
+                    : "—"}
                 </span>
               </div>
             </div>
@@ -319,38 +437,25 @@ export default function OutreachPage() {
               >
                 DM Performance
               </span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
+                estimated
+              </span>
             </div>
             <div className="outreach-channel-stats">
               <div className="outreach-channel-row">
-                <span className="outreach-channel-label">DMs Sent</span>
+                <span className="outreach-channel-label">DMs Queued Today</span>
                 <span className="outreach-channel-value">
-                  {fmtCompact(dmPerformance.sent.total)} /{" "}
-                  {fmtNumber(dmPerformance.sent.today)} today
+                  {fmtNumber(dmsQueuedToday)}
                 </span>
               </div>
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Reply Rate</span>
                 <span className="outreach-channel-value">
-                  {fmtPercent(dmPerformance.replyRate)}
+                  {fmtPercent(MOCK_DM_REPLY_RATE)}
                 </span>
               </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Response Rate</span>
-                <span className="outreach-channel-value">
-                  {fmtPercent(dmPerformance.responseRate)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Active Sequences</span>
-                <span className="outreach-channel-value">
-                  {fmtNumber(dmPerformance.activeSequences)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">IG Accounts Active</span>
-                <span className="outreach-channel-value">
-                  {dmPerformance.igAccountsActive}
-                </span>
+              <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 8, background: "var(--bg-secondary)", fontSize: 12, color: "var(--text-muted)" }}>
+                DM stats are estimated — no live ColdDMs API integration yet. Reply rate will update when DM tracking is connected.
               </div>
             </div>
           </div>

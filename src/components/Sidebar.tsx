@@ -12,12 +12,14 @@ import {
   Megaphone,
   Send,
   Crosshair,
+  Rocket,
   Brain,
   GitCommit,
   Settings,
   ChevronLeft,
   ChevronRight,
   LogOut,
+  MessageSquareText,
 } from "lucide-react";
 
 const mainNav = [
@@ -31,6 +33,8 @@ const mainNav = [
 
 const toolsNav = [
   { href: "/leads", label: "Lead Gen", icon: Crosshair },
+  { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
+  { href: "/dm-reviews", label: "DM Reviews", icon: MessageSquareText },
   { href: "/intelligence", label: "Intelligence", icon: Brain },
   { href: "/log", label: "Change Log", icon: GitCommit },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -61,12 +65,13 @@ export default function Sidebar() {
     });
   };
 
-  // Don't render on login page
-  if (pathname === "/login") return null;
+  // Don't render on login or public pages
+  if (pathname === "/login" || pathname === "/review") return null;
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    // Exact match or match with sub-path (e.g. /outreach matches /outreach but not /outreach-runs)
+    return pathname === href || pathname.startsWith(href + "/");
   };
 
   const renderLink = (item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> }) => {
