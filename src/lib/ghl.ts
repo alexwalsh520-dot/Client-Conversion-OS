@@ -206,8 +206,9 @@ export async function getPipelineStageCounts() {
   for (const [name, stageId] of Object.entries(pipeline.stages)) {
     try {
       const data = await searchOpportunities(pipeline.pipelineId, stageId);
-      const opportunities = data.opportunities || [];
-      stageCounts.push({ name, count: opportunities.length, id: stageId });
+      // Use meta.total for accurate count (searchOpportunities only returns up to 100)
+      const count = data.meta?.total ?? (data.opportunities || []).length;
+      stageCounts.push({ name, count, id: stageId });
     } catch {
       stageCounts.push({ name, count: 0, id: stageId });
     }
