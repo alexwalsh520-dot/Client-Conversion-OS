@@ -1,5 +1,16 @@
-// GET /api/lead-gen/poll?jobId=xxx — Poll for async enrichment results
-// Called by the frontend every 5s after a Quick Scan kicks off enrichment on Apify.
+// GET /api/lead-gen/poll?jobId=xxx — State machine that drives the entire pipeline
+//
+// States:
+//   pending    → Start scraping brand[current_brand_index] followers (async)
+//   scraping   → Check Apify run → when done, start enrichment (async)
+//   enriching  → Check Apify run → extract emails → if target met: complete
+//                                                  → else: next brand (pending)
+//   complete   → Return final results
+//   stopped    → Return saved partial results
+//   failed     → Return error + partial results
+//
+// CRITICAL FIX: All emailsFound responses now use DEDUPED count against
+// delivered_emails table, preventing UI from showing inflated numbers.
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
@@ -7,60 +18,141 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 const APIFY_BASE = "https://api.apify.com/v2";
 
-// ─── Helpers (duplicated from route.ts to keep poll endpoint self-contained) ──
+// Following scraper actors — try no-cookie first, cookie fallback
+const FOLLOWING_ACTORS = [
+  "scraping_solutions~instagram-scraper-followers-following-no-cookies",
+  "sejinius~instagram-following-scraper-pay-as-you-go",
+];
+
+// Enrichment actor (coderx — works on free tier)
+const ENRICHMENT_ACTOR = "PP60E1JIfagMaQxIP";
+
+const ENRICH_BATCH_SIZE = 100;
+const MAX_FOLLOWING_PER_BRAND = 500;
+
+// Brand accounts (same as POST)
+const DEFAULT_BRAND_ACCOUNTS = [
+  "gymshark", "1stphorm", "youngla", "darcsport", "alphaleteathletics",
+  "nvgtn", "ghostlifestyle", "rawgear", "gymreapers", "gorillawear",
+  "musclenation", "buffbunnyco", "rabornyofficial",
+];
+
+// ─── Apify helpers ───────────────────────────────────────────────────────────
 
 async function apifyGet(path: string, token: string) {
   const res = await fetch(`${APIFY_BASE}${path}?token=${token}`);
   if (!res.ok) throw new Error(`Apify ${res.status}: ${res.statusText}`);
-  const json = await res.json();
-  return json.data;
+  return (await res.json()).data;
+}
+
+async function apifyRunActor(actorId: string, input: any, token: string, waitSecs = 0) {
+  const res = await fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&waitForFinish=${waitSecs}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Apify run failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  return (await res.json()).data;
 }
 
 async function apifyGetDataset(datasetId: string, token: string) {
   const res = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&format=json`);
   if (!res.ok) throw new Error(`Dataset fetch failed: ${res.status}`);
-  return res.json(); // returns array directly
+  return res.json();
 }
 
-interface LeadProfile {
-  username: string;
-  fullName: string;
-  biography: string;
-  igEmail: string;
-  followersCount: number;
-  postsCount: number;
-  externalUrl: string;
-  isBusinessAccount: boolean;
-  businessCategory: string;
-  profileUrl: string;
-  brandSource: string;
-  dataAvailable: boolean;
+// ─── Actor input builders ─────────────────────────────────────────────────────
+
+function buildFollowingInput(actorId: string, brand: string): any {
+  if (actorId.includes("scraping_solutions") || actorId.includes("instagram-scraper-followers-following")) {
+    return {
+      Account: [brand],
+      resultsLimit: MAX_FOLLOWING_PER_BRAND,
+      dataToScrape: "Followings",
+    };
+  }
+  if (actorId.includes("sejinius") || actorId.includes("instagram-following-scraper")) {
+    return { userName: brand };
+  }
+  return { usernames: [brand] };
 }
 
-function normalizeProfile(item: any, brandSource: string): LeadProfile {
+// ─── Email extraction ────────────────────────────────────────────────────────
+
+function extractEmailsFromText(text: string): string[] {
+  if (!text) return [];
+  const re = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  return [...new Set(text.match(re) || [])];
+}
+
+function normalizeProfile(item: any, brandSource: string) {
+  const username = (item.username || item.profileUsername || item.ig_username || item.userName || "").toLowerCase();
+  const biography = item.biography || item.bio || item.profileBio || "";
+  const externalUrl = item.externalUrl || item.external_url || item.website || item.profileWebsite || "";
+
+  let email = item.email || item.profileEmail || item.emailAddress || "";
+  if (!email) {
+    const bioEmails = extractEmailsFromText(biography);
+    if (bioEmails.length > 0) email = bioEmails[0];
+  }
+  if (!email) {
+    const urlEmails = extractEmailsFromText(externalUrl);
+    if (urlEmails.length > 0) email = urlEmails[0];
+  }
+
   return {
-    username: item.username || item.profileUsername || item.ig_username || item.userName || "",
+    username,
     fullName: item.fullName || item.name || item.profileName || "",
-    biography: item.biography || item.bio || item.profileBio || "",
-    igEmail: item.email || item.profileEmail || item.emailAddress || "",
-    followersCount: item.followersCount || item.followers || item.profileFollowers || 0,
-    postsCount: item.postsCount || item.posts || 0,
-    externalUrl: item.externalUrl || item.website || item.profileWebsite || "",
-    isBusinessAccount: item.isBusinessAccount || false,
-    businessCategory: item.businessCategoryName || item.category || "",
-    profileUrl: item.profileUrl || `https://instagram.com/${item.username || item.userName || ""}`,
+    igEmail: email,
+    followers: item.followersCount || item.followers || item.profileFollowers || 0,
+    biography,
+    website: externalUrl,
+    profileUrl: item.profileUrl || `https://instagram.com/${username}`,
     brandSource,
-    dataAvailable: true,
+    businessCategory: item.businessCategoryName || item.category || "",
+    isBusinessAccount: item.isBusinessAccount || false,
   };
 }
 
-function extractEmailsFromBio(bio: string): string[] {
-  if (!bio) return [];
-  const re = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-  return [...new Set(bio.match(re) || [])];
+// ─── Activity log helper ──────────────────────────────────────────────────────
+
+function addLog(logs: any[], type: string, message: string): any[] {
+  return [...logs, { ts: new Date().toISOString(), type, message }];
 }
 
-// ─── GET Handler ──────────────────────────────────────────────────────────────
+// ─── Deduplication helper ──────────────────────────────────────────────────────
+// Returns [dedupedLeads, dedupedCount] — consistent across all responses
+
+function deduplicateLeads(emailLeads: any[], deliveredSet: Set<string>): any[] {
+  const seen = new Set<string>();
+  return emailLeads.filter((l: any) => {
+    const e = l.igEmail.toLowerCase();
+    if (deliveredSet.has(e) || seen.has(e)) return false;
+    seen.add(e);
+    return true;
+  });
+}
+
+// ─── Per-brand stats helper ─────────────────────────────────────────────────
+
+function computeBrandResults(foundLeads: any[]): Record<string, any> {
+  const results: Record<string, any> = {};
+  for (const lead of foundLeads) {
+    const brand = lead.brandSource || "unknown";
+    if (!results[brand]) {
+      results[brand] = { scraped: 0, withEmail: 0, withoutEmail: 0 };
+    }
+    results[brand].scraped++;
+    if (lead.igEmail) results[brand].withEmail++;
+    else results[brand].withoutEmail++;
+  }
+  return results;
+}
+
+// ─── GET Handler (State Machine) ─────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -80,7 +172,6 @@ export async function GET(req: NextRequest) {
 
   const db = getServiceSupabase();
 
-  // Fetch job
   const { data: job, error: fetchErr } = await db
     .from("lead_jobs")
     .select("*")
@@ -91,164 +182,740 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  // ── Already complete — return cached results ──
-  if (job.status === "complete" && job.results) {
+  const target = job.target_emails || 100;
+  const foundLeads: any[] = job.found_leads || [];
+  const emailLeads = foundLeads.filter((l: any) => l.igEmail);
+  let logs: any[] = job.activity_log || [];
+  const brandsCompleted: string[] = job.brands_completed || [];
+
+  // Read brands from job config, fall back to defaults
+  const BRAND_ACCOUNTS: string[] = (job.config?.brandAccounts?.length > 0)
+    ? job.config.brandAccounts
+    : DEFAULT_BRAND_ACCOUNTS;
+
+  // ─── CRITICAL FIX: Load delivered emails ONCE, compute deduped count ──────
+  // This ensures ALL responses show the accurate deduped count
+  const { data: deliveredEmailRows } = await db.from("delivered_emails").select("email");
+  const deliveredSet = new Set((deliveredEmailRows || []).map((e: any) => e.email.toLowerCase()));
+  const dedupedEmailLeads = deduplicateLeads(emailLeads, deliveredSet);
+  const dedupedCount = dedupedEmailLeads.length;
+  const totalScraped = foundLeads.length;
+  const profilesWithoutEmail = foundLeads.filter((l: any) => !l.igEmail).length;
+
+  // Brand results for dashboard
+  const brandResults = computeBrandResults(foundLeads);
+
+  // Base response shape used everywhere
+  const baseResponse = {
+    target,
+    brands: BRAND_ACCOUNTS,
+    brandsCompleted,
+    totalScraped,
+    profilesWithoutEmail,
+    brandResults,
+    rawEmailCount: emailLeads.length,
+    leads: dedupedEmailLeads,
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: complete
+  // ─────────────────────────────────────────────────────────────────────────
+  if (job.status === "complete") {
     return NextResponse.json({
+      ...baseResponse,
       status: "complete",
-      leads: job.results,
-      stats: {
-        scrapedCount: job.scraped_count,
-        enrichedCount: job.lead_count,
-        emailCount: job.email_count,
-      },
+      leads: job.results || dedupedEmailLeads,
+      emailsFound: (job.results || dedupedEmailLeads).length,
+      currentBrand: job.current_brand || "",
+      currentBrandIndex: job.current_brand_index || 0,
+      activityLog: logs.slice(-30),
     });
   }
 
-  // ── Failed — return error ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: failed
+  // ─────────────────────────────────────────────────────────────────────────
   if (job.status === "failed") {
     return NextResponse.json({
+      ...baseResponse,
       status: "failed",
-      error: job.error || "Enrichment failed",
+      error: job.error || "Job failed",
+      leads: dedupedEmailLeads,
+      emailsFound: dedupedCount,
+      currentBrand: job.current_brand || "",
+      activityLog: logs.slice(-30),
     });
   }
 
-  // ── Enriching — check Apify run status ──
-  if (job.status === "enriching" && job.enrich_run_id) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: stopped — User manually stopped, return saved results
+  // ─────────────────────────────────────────────────────────────────────────
+  if (job.status === "stopped") {
+    return NextResponse.json({
+      ...baseResponse,
+      status: "stopped",
+      leads: job.results || dedupedEmailLeads,
+      emailsFound: (job.results || dedupedEmailLeads).length,
+      currentBrand: job.current_brand || "",
+      currentBrandIndex: job.current_brand_index || 0,
+      activityLog: logs.slice(-30),
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: pending → Start scraping next brand's followers
+  // ─────────────────────────────────────────────────────────────────────────
+  if (job.status === "pending") {
+    const brandIndex = job.current_brand_index || 0;
+
+    // ── Target check BEFORE starting a new brand ──────────────────────────
+    if (dedupedCount >= target) {
+      const finalLeads = dedupedEmailLeads
+        .sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0))
+        .slice(0, target);
+      if (finalLeads.length > 0) {
+        const emailRows = finalLeads.map((l: any) => ({
+          email: l.igEmail.toLowerCase(),
+          username: l.username,
+          job_id: jobId,
+        }));
+        await db.from("delivered_emails").upsert(emailRows, { onConflict: "email" });
+      }
+      logs = addLog(logs, "complete", `Target reached! ${finalLeads.length} unique emails from ${brandsCompleted.length} brands.`);
+      await db.from("lead_jobs").update({
+        status: "complete",
+        found_leads: foundLeads,
+        results: finalLeads,
+        lead_count: foundLeads.length,
+        email_count: finalLeads.length,
+        brands_completed: brandsCompleted,
+        brand_results: brandResults,
+        activity_log: logs,
+        updated_at: new Date().toISOString(),
+      }).eq("id", jobId);
+      return NextResponse.json({
+        ...baseResponse,
+        status: "complete",
+        leads: finalLeads,
+        emailsFound: finalLeads.length,
+        currentBrand: "",
+        activityLog: logs.slice(-30),
+      });
+    }
+
+    // Check if we've exhausted all brands
+    if (brandIndex >= BRAND_ACCOUNTS.length) {
+      const finalLeads = dedupedEmailLeads
+        .sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0))
+        .slice(0, target);
+
+      if (finalLeads.length > 0) {
+        const emailRows = finalLeads.map((l: any) => ({
+          email: l.igEmail.toLowerCase(),
+          username: l.username,
+          job_id: jobId,
+        }));
+        await db.from("delivered_emails").upsert(emailRows, { onConflict: "email" });
+      }
+
+      logs = addLog(logs, "complete", `All ${BRAND_ACCOUNTS.length} brands processed. Found ${finalLeads.length} emails.`);
+
+      await db.from("lead_jobs").update({
+        status: "complete",
+        results: finalLeads,
+        found_leads: foundLeads,
+        lead_count: foundLeads.length,
+        email_count: finalLeads.length,
+        brand_results: brandResults,
+        activity_log: logs,
+        updated_at: new Date().toISOString(),
+      }).eq("id", jobId);
+
+      return NextResponse.json({
+        ...baseResponse,
+        status: "complete",
+        leads: finalLeads,
+        emailsFound: finalLeads.length,
+        currentBrand: "",
+        activityLog: logs.slice(-30),
+      });
+    }
+
+    const brand = BRAND_ACCOUNTS[brandIndex];
+    const actorIndex = job.scrape_actor_index || 0;
+    const actorId = FOLLOWING_ACTORS[actorIndex] || FOLLOWING_ACTORS[0];
+
+    logs = addLog(logs, "scrape_start", `Scraping @${brand} followers... (brand ${brandIndex + 1}/${BRAND_ACCOUNTS.length})`);
+
     try {
-      const run = await apifyGet(`/actor-runs/${job.enrich_run_id}`, apifyToken);
-      const runStatus = run.status; // READY, RUNNING, SUCCEEDED, FAILED, TIMED-OUT, ABORTED
+      const input = buildFollowingInput(actorId, brand);
+      const run = await apifyRunActor(actorId, input, apifyToken, 0);
 
-      if (runStatus === "SUCCEEDED") {
-        // Fetch enriched dataset
-        const datasetId = job.enrich_dataset_id || run.defaultDatasetId;
-        const enrichedItems = await apifyGetDataset(datasetId, apifyToken);
+      logs = addLog(logs, "scrape_running", `@${brand}: Apify run started (${actorId.split("~")[0]})`);
 
-        // Build brand source lookup from stored brand_results
-        const brandMap = new Map<string, string>();
-        if (Array.isArray(job.brand_results)) {
-          for (const br of job.brand_results) {
-            brandMap.set((br.username || "").toLowerCase(), br.brandSource || "unknown");
-          }
-        }
+      await db.from("lead_jobs").update({
+        status: "scraping",
+        current_brand: brand,
+        current_brand_index: brandIndex,
+        scrape_run_id: run.id || "",
+        scrape_dataset_id: run.defaultDatasetId || "",
+        scrape_actor_index: actorIndex,
+        activity_log: logs,
+        updated_at: new Date().toISOString(),
+      }).eq("id", jobId);
 
-        // Normalize profiles + extract emails from bios
-        const leads: any[] = [];
-        const enrichedMap = new Map<string, any>();
-
-        for (const item of (Array.isArray(enrichedItems) ? enrichedItems : [])) {
-          const uname = (item.username || item.profileUsername || item.ig_username || item.userName || "").toLowerCase();
-          if (uname) enrichedMap.set(uname, item);
-        }
-
-        // Process all scraped usernames — merge enriched data where available
-        const allUsernames = job.scraped_usernames || [];
-        for (const uname of allUsernames) {
-          const enriched = enrichedMap.get(uname.toLowerCase());
-          if (!enriched) continue; // skip un-enriched profiles
-
-          const brand = brandMap.get(uname.toLowerCase()) || "unknown";
-          const profile = normalizeProfile(enriched, brand);
-
-          // Extract email from profile data OR from bio
-          let email = profile.igEmail;
-          if (!email) {
-            const bioEmails = extractEmailsFromBio(profile.biography);
-            if (bioEmails.length > 0) email = bioEmails[0];
-          }
-          // Also check externalUrl bio text for emails
-          if (!email) {
-            const urlEmails = extractEmailsFromBio(profile.externalUrl);
-            if (urlEmails.length > 0) email = urlEmails[0];
-          }
-
-          leads.push({
-            username: profile.username,
-            fullName: profile.fullName,
-            igEmail: email,
-            followers: profile.followersCount,
-            biography: profile.biography,
-            website: profile.externalUrl,
-            profileUrl: profile.profileUrl,
-            brandSource: profile.brandSource,
-            businessCategory: profile.businessCategory,
-            isBusinessAccount: profile.isBusinessAccount,
-            dataAvailable: true,
-          });
-        }
-
-        // Sort: leads WITH email first, then by followers desc
-        leads.sort((a, b) => {
-          if (a.igEmail && !b.igEmail) return -1;
-          if (!a.igEmail && b.igEmail) return 1;
-          return (b.followers || 0) - (a.followers || 0);
-        });
-
-        const emailCount = leads.filter((l) => l.igEmail).length;
-
-        // Save results to Supabase
+      return NextResponse.json({
+        ...baseResponse,
+        status: "scraping",
+        emailsFound: dedupedCount,
+        currentBrand: brand,
+        currentBrandIndex: brandIndex,
+        message: `Scraping @${brand} followers...`,
+        activityLog: logs.slice(-30),
+      });
+    } catch (err: any) {
+      // If first actor fails, try second
+      if (actorIndex === 0 && FOLLOWING_ACTORS.length > 1) {
+        logs = addLog(logs, "scrape_retry", `@${brand}: Actor 1 failed, trying actor 2...`);
         await db.from("lead_jobs").update({
-          status: "complete",
-          results: leads,
-          lead_count: leads.length,
-          email_count: emailCount,
+          scrape_actor_index: 1,
+          activity_log: logs,
           updated_at: new Date().toISOString(),
         }).eq("id", jobId);
 
         return NextResponse.json({
-          status: "complete",
-          leads,
-          stats: {
-            scrapedCount: job.scraped_count,
-            enrichedCount: leads.length,
-            emailCount,
-          },
-        });
-
-      } else if (runStatus === "FAILED" || runStatus === "TIMED-OUT" || runStatus === "ABORTED") {
-        // Enrichment failed
-        const errMsg = `Enrichment ${runStatus.toLowerCase()}`;
-        await db.from("lead_jobs").update({
-          status: "failed",
-          error: errMsg,
-          updated_at: new Date().toISOString(),
-        }).eq("id", jobId);
-
-        return NextResponse.json({ status: "failed", error: errMsg });
-
-      } else {
-        // Still running (READY, RUNNING)
-        // Try to get progress info from run stats
-        const usage = run.usage || {};
-        const stats = run.stats || {};
-
-        return NextResponse.json({
-          status: "enriching",
-          progress: {
-            runStatus,
-            startedAt: run.startedAt,
-            scrapedCount: job.scraped_count,
-            // Apify stats for progress estimation
-            datasetItemCount: stats.datasetItemCount || 0,
-            requestsFinished: stats.requestsFinished || 0,
-            requestsTotal: stats.requestsTotal || job.scraped_count,
-          },
+          ...baseResponse,
+          status: "pending",
+          emailsFound: dedupedCount,
+          currentBrand: brand,
+          currentBrandIndex: brandIndex,
+          message: `Retrying @${brand} with backup scraper...`,
+          activityLog: logs.slice(-30),
         });
       }
-    } catch (err: any) {
+
+      // Skip this brand
+      logs = addLog(logs, "scrape_skip", `@${brand}: All scrapers failed, skipping. (${(err.message || "").slice(0, 60)})`);
+      await db.from("lead_jobs").update({
+        status: "pending",
+        current_brand_index: brandIndex + 1,
+        current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+        scrape_actor_index: 0,
+        brands_completed: [...brandsCompleted, brand],
+        activity_log: logs,
+        updated_at: new Date().toISOString(),
+      }).eq("id", jobId);
+
       return NextResponse.json({
-        status: "enriching",
-        progress: {
-          runStatus: "CHECKING",
-          scrapedCount: job.scraped_count,
-          error: err.message?.slice(0, 100),
-        },
+        ...baseResponse,
+        status: "pending",
+        emailsFound: dedupedCount,
+        currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+        currentBrandIndex: brandIndex + 1,
+        brandsCompleted: [...brandsCompleted, brand],
+        message: `Skipped @${brand}, moving to next...`,
+        activityLog: logs.slice(-30),
       });
     }
   }
 
-  // Fallback — unknown state
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: scraping → Check if followers scrape is done
+  // ─────────────────────────────────────────────────────────────────────────
+  if (job.status === "scraping" && job.scrape_run_id) {
+    try {
+      const run = await apifyGet(`/actor-runs/${job.scrape_run_id}`, apifyToken);
+      const runStatus = run.status;
+      const brand = job.current_brand || "unknown";
+      const brandIndex = job.current_brand_index || 0;
+
+      if (runStatus === "SUCCEEDED") {
+        const datasetId = job.scrape_dataset_id || run.defaultDatasetId;
+        const items = await apifyGetDataset(datasetId, apifyToken);
+        const followers = Array.isArray(items) ? items : [];
+
+        const usernameSet = new Set<string>();
+        for (const item of followers) {
+          const uname = (item.username || item.profileUsername || item.ig_username || item.userName || "").toLowerCase();
+          if (uname) usernameSet.add(uname);
+        }
+        const usernames = Array.from(usernameSet);
+
+        logs = addLog(logs, "scrape_done", `@${brand}: Found ${usernames.length} followers`);
+
+        if (usernames.length === 0) {
+          logs = addLog(logs, "scrape_empty", `@${brand}: 0 results, moving to next brand`);
+          await db.from("lead_jobs").update({
+            status: "pending",
+            current_brand_index: brandIndex + 1,
+            current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            scrape_run_id: "",
+            scrape_dataset_id: "",
+            scrape_actor_index: 0,
+            brands_completed: [...brandsCompleted, brand],
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "pending",
+            emailsFound: dedupedCount,
+            currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            currentBrandIndex: brandIndex + 1,
+            brandsCompleted: [...brandsCompleted, brand],
+            message: `@${brand}: no followers found, trying next brand...`,
+            activityLog: logs.slice(-30),
+          });
+        }
+
+        // Start enrichment — batch the usernames
+        const firstBatch = usernames.slice(0, ENRICH_BATCH_SIZE);
+        const remainingQueue = usernames.slice(ENRICH_BATCH_SIZE);
+
+        logs = addLog(logs, "enrich_start", `@${brand}: Enriching ${firstBatch.length} profiles (batch 1/${Math.ceil(usernames.length / ENRICH_BATCH_SIZE)})...`);
+
+        try {
+          const enrichRun = await apifyRunActor(ENRICHMENT_ACTOR, { usernames: firstBatch }, apifyToken, 0);
+
+          await db.from("lead_jobs").update({
+            status: "enriching",
+            enrich_run_id: enrichRun.id || "",
+            enrich_dataset_id: enrichRun.defaultDatasetId || "",
+            enrich_queue: remainingQueue,
+            scraped_usernames: usernames,
+            scraped_count: (job.scraped_count || 0) + usernames.length,
+            batch_number: 1,
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "enriching",
+            emailsFound: dedupedCount,
+            currentBrand: brand,
+            currentBrandIndex: brandIndex,
+            message: `@${brand}: Enriching profiles for emails...`,
+            enrichBatch: 1,
+            enrichTotalBatches: Math.ceil(usernames.length / ENRICH_BATCH_SIZE),
+            activityLog: logs.slice(-30),
+          });
+        } catch (err: any) {
+          logs = addLog(logs, "enrich_error", `@${brand}: Enrichment failed to start: ${(err.message || "").slice(0, 60)}`);
+          await db.from("lead_jobs").update({
+            status: "pending",
+            current_brand_index: brandIndex + 1,
+            current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            scrape_actor_index: 0,
+            brands_completed: [...brandsCompleted, brand],
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "pending",
+            emailsFound: dedupedCount,
+            currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            currentBrandIndex: brandIndex + 1,
+            brandsCompleted: [...brandsCompleted, brand],
+            message: `@${brand}: enrichment failed, trying next brand...`,
+            activityLog: logs.slice(-30),
+          });
+        }
+
+      } else if (runStatus === "FAILED" || runStatus === "TIMED-OUT" || runStatus === "ABORTED") {
+        const actorIndex = job.scrape_actor_index || 0;
+
+        if (actorIndex < FOLLOWING_ACTORS.length - 1) {
+          logs = addLog(logs, "scrape_retry", `@${brand}: Scraper ${runStatus.toLowerCase()}, trying backup...`);
+          await db.from("lead_jobs").update({
+            status: "pending",
+            scrape_actor_index: actorIndex + 1,
+            scrape_run_id: "",
+            scrape_dataset_id: "",
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "pending",
+            emailsFound: dedupedCount,
+            currentBrand: brand,
+            currentBrandIndex: brandIndex,
+            message: `@${brand}: retrying with backup scraper...`,
+            activityLog: logs.slice(-30),
+          });
+        }
+
+        logs = addLog(logs, "scrape_skip", `@${brand}: All scrapers failed (${runStatus}), skipping`);
+        await db.from("lead_jobs").update({
+          status: "pending",
+          current_brand_index: brandIndex + 1,
+          current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          scrape_actor_index: 0,
+          scrape_run_id: "",
+          scrape_dataset_id: "",
+          brands_completed: [...brandsCompleted, brand],
+          activity_log: logs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: "pending",
+          emailsFound: dedupedCount,
+          currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          currentBrandIndex: brandIndex + 1,
+          brandsCompleted: [...brandsCompleted, brand],
+          message: `@${brand}: scraping failed, moving on...`,
+          activityLog: logs.slice(-30),
+        });
+
+      } else {
+        // Still running
+        const stats = run.stats || {};
+        return NextResponse.json({
+          ...baseResponse,
+          status: "scraping",
+          emailsFound: dedupedCount,
+          currentBrand: brand,
+          currentBrandIndex: brandIndex,
+          message: `Scraping @${brand} followers...`,
+          runProgress: { datasetItemCount: stats.datasetItemCount || 0 },
+          activityLog: logs.slice(-30),
+        });
+      }
+    } catch (err: any) {
+      return NextResponse.json({
+        ...baseResponse,
+        status: "scraping",
+        emailsFound: dedupedCount,
+        currentBrand: job.current_brand || "",
+        currentBrandIndex: job.current_brand_index || 0,
+        message: `Checking scrape status... (${(err.message || "").slice(0, 40)})`,
+        activityLog: logs.slice(-30),
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE: enriching → Check if enrichment batch is done
+  // ─────────────────────────────────────────────────────────────────────────
+  if (job.status === "enriching" && job.enrich_run_id) {
+    try {
+      const run = await apifyGet(`/actor-runs/${job.enrich_run_id}`, apifyToken);
+      const runStatus = run.status;
+      const brand = job.current_brand || "unknown";
+      const brandIndex = job.current_brand_index || 0;
+
+      if (runStatus === "SUCCEEDED") {
+        const datasetId = job.enrich_dataset_id || run.defaultDatasetId;
+        const enrichedItems = await apifyGetDataset(datasetId, apifyToken);
+
+        // Process enriched items
+        const newLeads: any[] = [];
+        for (const item of (Array.isArray(enrichedItems) ? enrichedItems : [])) {
+          const profile = normalizeProfile(item, brand);
+          newLeads.push(profile);
+        }
+
+        const allFoundLeads = [...foundLeads, ...newLeads];
+        const allEmailLeads = allFoundLeads.filter((l: any) => l.igEmail);
+
+        // Dedup against delivered_emails (using the set loaded at top)
+        const newDedupedLeads = deduplicateLeads(allEmailLeads, deliveredSet);
+        const emailCount = newDedupedLeads.length;
+        const newTotalScraped = allFoundLeads.length;
+        const newProfilesNoEmail = allFoundLeads.filter((l: any) => !l.igEmail).length;
+        const newBrandResults = computeBrandResults(allFoundLeads);
+
+        // Count new emails found this batch
+        const prevDeduped = dedupedCount;
+        const newEmailsThisBatch = emailCount - prevDeduped;
+
+        logs = addLog(logs, "enrich_done", `@${brand}: +${Math.max(0, newEmailsThisBatch)} new emails (${emailCount}/${target} total)`);
+
+        const enrichQueue: string[] = job.enrich_queue || [];
+
+        // More profiles from THIS brand to enrich AND not at target yet?
+        if (enrichQueue.length > 0 && emailCount < target) {
+          const nextBatch = enrichQueue.slice(0, ENRICH_BATCH_SIZE);
+          const remainingQueue = enrichQueue.slice(ENRICH_BATCH_SIZE);
+          const batchNum = (job.batch_number || 1) + 1;
+
+          logs = addLog(logs, "enrich_start", `@${brand}: Enriching batch ${batchNum} (${nextBatch.length} profiles)...`);
+
+          try {
+            const newRun = await apifyRunActor(ENRICHMENT_ACTOR, { usernames: nextBatch }, apifyToken, 0);
+
+            await db.from("lead_jobs").update({
+              enrich_run_id: newRun.id || "",
+              enrich_dataset_id: newRun.defaultDatasetId || "",
+              enrich_queue: remainingQueue,
+              found_leads: allFoundLeads,
+              batch_number: batchNum,
+              brand_results: newBrandResults,
+              activity_log: logs,
+              updated_at: new Date().toISOString(),
+            }).eq("id", jobId);
+
+            return NextResponse.json({
+              ...baseResponse,
+              status: "enriching",
+              emailsFound: emailCount,
+              rawEmailCount: allEmailLeads.length,
+              leads: newDedupedLeads,
+              totalScraped: newTotalScraped,
+              profilesWithoutEmail: newProfilesNoEmail,
+              brandResults: newBrandResults,
+              currentBrand: brand,
+              currentBrandIndex: brandIndex,
+              message: `@${brand}: ${emailCount}/${target} emails — enriching batch ${batchNum}...`,
+              enrichBatch: batchNum,
+              activityLog: logs.slice(-30),
+            });
+          } catch {
+            logs = addLog(logs, "enrich_error", `@${brand}: Next batch failed, finishing brand`);
+          }
+        }
+
+        // Brand done (or target reached) — check if we're done overall
+        if (emailCount >= target) {
+          // TARGET REACHED! Complete the job
+          const finalLeads = newDedupedLeads
+            .sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0))
+            .slice(0, target);
+
+          if (finalLeads.length > 0) {
+            const emailRows = finalLeads.map((l: any) => ({
+              email: l.igEmail.toLowerCase(),
+              username: l.username,
+              job_id: jobId,
+            }));
+            await db.from("delivered_emails").upsert(emailRows, { onConflict: "email" });
+          }
+
+          logs = addLog(logs, "complete", `Target reached! ${finalLeads.length} unique emails collected from ${[...brandsCompleted, brand].length} brands.`);
+
+          await db.from("lead_jobs").update({
+            status: "complete",
+            found_leads: allFoundLeads,
+            results: finalLeads,
+            lead_count: allFoundLeads.length,
+            email_count: finalLeads.length,
+            brands_completed: [...brandsCompleted, brand],
+            brand_results: newBrandResults,
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "complete",
+            leads: finalLeads,
+            emailsFound: finalLeads.length,
+            rawEmailCount: allEmailLeads.length,
+            totalScraped: newTotalScraped,
+            profilesWithoutEmail: newProfilesNoEmail,
+            brandResults: newBrandResults,
+            currentBrand: brand,
+            currentBrandIndex: brandIndex,
+            brandsCompleted: [...brandsCompleted, brand],
+            activityLog: logs.slice(-30),
+          });
+        }
+
+        // Not at target yet — move to next brand
+        const nextBrandIndex = brandIndex + 1;
+        const updatedBrandsCompleted = [...brandsCompleted, brand];
+
+        if (nextBrandIndex >= BRAND_ACCOUNTS.length) {
+          // No more brands — complete with what we have
+          const finalLeads = newDedupedLeads
+            .sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0));
+
+          if (finalLeads.length > 0) {
+            const emailRows = finalLeads.map((l: any) => ({
+              email: l.igEmail.toLowerCase(),
+              username: l.username,
+              job_id: jobId,
+            }));
+            await db.from("delivered_emails").upsert(emailRows, { onConflict: "email" });
+          }
+
+          logs = addLog(logs, "complete", `All brands exhausted. Found ${finalLeads.length}/${target} emails.`);
+
+          await db.from("lead_jobs").update({
+            status: "complete",
+            found_leads: allFoundLeads,
+            results: finalLeads,
+            lead_count: allFoundLeads.length,
+            email_count: finalLeads.length,
+            brands_completed: updatedBrandsCompleted,
+            brand_results: newBrandResults,
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          return NextResponse.json({
+            ...baseResponse,
+            status: "complete",
+            leads: finalLeads,
+            emailsFound: finalLeads.length,
+            rawEmailCount: allEmailLeads.length,
+            totalScraped: newTotalScraped,
+            profilesWithoutEmail: newProfilesNoEmail,
+            brandResults: newBrandResults,
+            currentBrand: "",
+            brandsCompleted: updatedBrandsCompleted,
+            activityLog: logs.slice(-30),
+          });
+        }
+
+        // Move to next brand
+        logs = addLog(logs, "brand_done", `@${brand}: Done. ${emailCount}/${target} emails so far. Moving to @${BRAND_ACCOUNTS[nextBrandIndex]}...`);
+
+        await db.from("lead_jobs").update({
+          status: "pending",
+          current_brand_index: nextBrandIndex,
+          current_brand: BRAND_ACCOUNTS[nextBrandIndex],
+          scrape_run_id: "",
+          scrape_dataset_id: "",
+          scrape_actor_index: 0,
+          enrich_run_id: "",
+          enrich_dataset_id: "",
+          enrich_queue: [],
+          found_leads: allFoundLeads,
+          brands_completed: updatedBrandsCompleted,
+          brand_results: newBrandResults,
+          batch_number: 0,
+          activity_log: logs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: "pending",
+          emailsFound: emailCount,
+          rawEmailCount: allEmailLeads.length,
+          leads: newDedupedLeads,
+          totalScraped: newTotalScraped,
+          profilesWithoutEmail: newProfilesNoEmail,
+          brandResults: newBrandResults,
+          currentBrand: BRAND_ACCOUNTS[nextBrandIndex],
+          currentBrandIndex: nextBrandIndex,
+          brandsCompleted: updatedBrandsCompleted,
+          message: `@${brand} done (${emailCount} emails). Next: @${BRAND_ACCOUNTS[nextBrandIndex]}`,
+          activityLog: logs.slice(-30),
+        });
+
+      } else if (runStatus === "FAILED" || runStatus === "TIMED-OUT" || runStatus === "ABORTED") {
+        logs = addLog(logs, "enrich_error", `@${brand}: Enrichment ${runStatus.toLowerCase()}`);
+
+        const enrichQueue: string[] = job.enrich_queue || [];
+        if (enrichQueue.length > 0) {
+          const nextBatch = enrichQueue.slice(0, ENRICH_BATCH_SIZE);
+          const remainingQueue = enrichQueue.slice(ENRICH_BATCH_SIZE);
+          try {
+            const newRun = await apifyRunActor(ENRICHMENT_ACTOR, { usernames: nextBatch }, apifyToken, 0);
+            logs = addLog(logs, "enrich_retry", `@${brand}: Retrying with next batch...`);
+            await db.from("lead_jobs").update({
+              enrich_run_id: newRun.id || "",
+              enrich_dataset_id: newRun.defaultDatasetId || "",
+              enrich_queue: remainingQueue,
+              batch_number: (job.batch_number || 1) + 1,
+              activity_log: logs,
+              updated_at: new Date().toISOString(),
+            }).eq("id", jobId);
+
+            return NextResponse.json({
+              ...baseResponse,
+              status: "enriching",
+              emailsFound: dedupedCount,
+              currentBrand: brand,
+              currentBrandIndex: brandIndex,
+              message: `@${brand}: retrying enrichment...`,
+              activityLog: logs.slice(-30),
+            });
+          } catch { /* fall through */ }
+        }
+
+        // Skip to next brand
+        const nextBrandIndex = brandIndex + 1;
+        logs = addLog(logs, "brand_skip", `@${brand}: Enrichment failed, moving on`);
+
+        const isDone = nextBrandIndex >= BRAND_ACCOUNTS.length;
+        await db.from("lead_jobs").update({
+          status: isDone ? "complete" : "pending",
+          current_brand_index: nextBrandIndex,
+          current_brand: BRAND_ACCOUNTS[nextBrandIndex] || "",
+          scrape_actor_index: 0,
+          enrich_run_id: "",
+          enrich_queue: [],
+          brands_completed: [...brandsCompleted, brand],
+          brand_results: brandResults,
+          activity_log: logs,
+          ...(isDone ? {
+            results: dedupedEmailLeads,
+            email_count: dedupedCount,
+            lead_count: foundLeads.length,
+          } : {}),
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: isDone ? "complete" : "pending",
+          emailsFound: dedupedCount,
+          leads: isDone ? dedupedEmailLeads : undefined,
+          currentBrand: BRAND_ACCOUNTS[nextBrandIndex] || "",
+          currentBrandIndex: nextBrandIndex,
+          brandsCompleted: [...brandsCompleted, brand],
+          message: `@${brand}: enrichment failed, ${isDone ? "finishing up" : "trying next brand"}...`,
+          activityLog: logs.slice(-30),
+        });
+
+      } else {
+        // Still running
+        const stats = run.stats || {};
+        return NextResponse.json({
+          ...baseResponse,
+          status: "enriching",
+          emailsFound: dedupedCount,
+          currentBrand: brand,
+          currentBrandIndex: brandIndex,
+          message: `@${brand}: Extracting emails from profiles...`,
+          enrichBatch: job.batch_number || 1,
+          runProgress: {
+            datasetItemCount: stats.datasetItemCount || 0,
+            requestsFinished: stats.requestsFinished || 0,
+          },
+          activityLog: logs.slice(-30),
+        });
+      }
+    } catch (err: any) {
+      return NextResponse.json({
+        ...baseResponse,
+        status: "enriching",
+        emailsFound: dedupedCount,
+        currentBrand: job.current_brand || "",
+        currentBrandIndex: job.current_brand_index || 0,
+        message: `Checking enrichment... (${(err.message || "").slice(0, 40)})`,
+        activityLog: logs.slice(-30),
+      });
+    }
+  }
+
+  // Unknown state — return current info
   return NextResponse.json({
+    ...baseResponse,
     status: job.status,
-    scrapedCount: job.scraped_count,
+    emailsFound: dedupedCount,
+    currentBrand: job.current_brand || "",
+    currentBrandIndex: job.current_brand_index || 0,
+    activityLog: logs.slice(-30),
   });
 }

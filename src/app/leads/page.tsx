@@ -1,1544 +1,1195 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Crosshair,
-  Play,
-  Download,
-  Instagram,
-  Youtube,
   Mail,
-  Users,
-  Activity,
-  Brain,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
+  Download,
+  Play,
   Loader2,
   CheckCircle,
   AlertCircle,
-  Search,
-  Zap,
   Clock,
+  Search,
+  ExternalLink,
+  X,
+  Zap,
+  Youtube,
+  GitFork,
+  Activity,
+  BarChart3,
+  Plus,
 } from "lucide-react";
 
-// ─── Types ──────────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Lead {
-  score: number;
   username: string;
   fullName: string;
   igEmail: string;
-  youtubeChannel: string | null;
-  youtubeMethod: string | null;
+  ytEmail?: string;
+  email?: string;
   followers: number;
-  engagementRate: number | null;
-  avgViews: number | null;
-  avgLikes: number | null;
-  monetization: string;
-  reason: string;
-  brandSource: string;
-  biography: string;
-  website: string;
+  subscriberCount?: number;
+  channelTitle?: string;
+  channelUrl?: string;
+  biography?: string;
+  website?: string;
   profileUrl: string;
-  businessCategory: string;
-  dataAvailable: boolean;
+  brandSource: string;
+  businessCategory?: string;
+  isBusinessAccount?: boolean;
+  source?: string;
+  emailSource?: string;
 }
 
-interface RunStats {
-  brands: number;
-  brandErrors: number;
-  raw: number;
-  filtered: number;
-  enriched: number;
-  engagementPassed?: number;
-  withEmail?: number;
-  qualified: number;
-  youtube: number;
-  emails: number;
-}
+interface ActivityLogEntry { ts: string; type: string; message: string; }
 
-type PipelineStep = number | null;
-
-// Poll response shape
 interface PollResponse {
-  status: "enriching" | "complete" | "failed";
+  status: string;
   leads?: Lead[];
-  stats?: { scrapedCount: number; enrichedCount: number; emailCount: number };
-  progress?: { runStatus: string; scrapedCount: number; datasetItemCount?: number; requestsFinished?: number; requestsTotal?: number };
+  emailsFound: number;
+  rawEmailCount?: number;
+  target: number;
+  currentBrand?: string;
+  currentBrandIndex?: number;
+  brandsCompleted?: string[];
+  brands?: string[];
+  message?: string;
   error?: string;
+  activityLog?: ActivityLogEntry[];
+  totalScraped?: number;
+  profilesWithoutEmail?: number;
+  brandResults?: Record<string, { scraped: number; withEmail: number; withoutEmail: number }>;
+}
+
+interface YtPollResponse {
+  status: string;
+  totalProfiles: number;
+  profilesProcessed: number;
+  channelsFound: number;
+  emailsFound: number;
+  descriptionEmails?: number;
+  leads?: Lead[];
+  message?: string;
+  error?: string;
+  activityLog?: ActivityLogEntry[];
+  submittedAt?: string;
+  hoursElapsed?: number;
+  resurrected?: boolean;
 }
 
 interface HistoryRun {
-  id: string;
-  status: string;
-  mode: string;
-  created_at: string;
-  scraped_count: number;
-  lead_count: number;
-  email_count: number;
-  config: any;
+  id: string; status: string; mode: string; created_at: string;
+  scraped_count: number; lead_count: number; email_count: number; config: any;
 }
 
-const FULL_STEP_LABELS: Record<number, string> = {
-  1: "Scraping Brands",
-  2: "Enriching Profiles",
-  3: "Engagement Filter",
-  4: "AI Scoring",
-  5: "YouTube Discovery",
-};
+interface BrandStat {
+  brand: string;
+  scraped: number;
+  igEmails: number;
+  withoutEmail: number;
+  ytSearched: number;
+  ytChannelsFound: number;
+  ytEmails: number;
+  totalEmails: number;
+  fullyScraped: boolean;
+  lastScrapedAt: string | null;
+}
 
-const QUICK_STEP_LABELS: Record<number, string> = {
-  1: "Scraping Brands",
-  2: "Starting Enrichment",
-};
+interface BrandDashboardData {
+  brands: BrandStat[];
+  stats: {
+    totalBrands: number;
+    brandsScraped: number;
+    brandsFullyScraped: number;
+    totalProfilesScraped: number;
+    totalIgEmails: number;
+    totalYtEmails: number;
+    totalDelivered: number;
+  };
+}
 
-const DEFAULT_BRANDS = [
-  "gymshark", "1stphorm", "youngla", "darcsport", "alphaleteathletics",
-  "nvgtn", "ghostlifestyle", "rawgear", "gymreapers", "gorillawear",
-  "musclenation", "buffbunnyco", "rabornyofficial",
-];
-
-// ─── Component ──────────────────────────────────────────────────────────────────
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export default function LeadsPage() {
-  // Mode
-  const [mode, setMode] = useState<"full" | "quick">("quick");
-
-  // Run state
-  const [running, setRunning] = useState(false);
-  const [currentStep, setCurrentStep] = useState<PipelineStep>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  // ── Instagram scan state ──
+  const [phase, setPhase] = useState<"idle" | "running" | "complete" | "error">("idle");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [emailsFound, setEmailsFound] = useState(0);
+  const [rawEmailCount, setRawEmailCount] = useState(0);
+  const [targetEmails, setTargetEmails] = useState(100);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [stats, setStats] = useState<RunStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [currentBrand, setCurrentBrand] = useState("");
+  const [currentBrandIndex, setCurrentBrandIndex] = useState(0);
+  const [brandsCompleted, setBrandsCompleted] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [backendStatus, setBackendStatus] = useState<string>("pending");
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
+  const [totalScraped, setTotalScraped] = useState(0);
+  const [profilesWithoutEmail, setProfilesWithoutEmail] = useState(0);
 
-  // Async polling state (Quick Scan)
-  const [polling, setPolling] = useState(false);
-  const [pollJobId, setPollJobId] = useState<string | null>(null);
-  const [enrichProgress, setEnrichProgress] = useState<string>("");
-  const [enrichStartTime, setEnrichStartTime] = useState<number | null>(null);
-  const [enrichElapsed, setEnrichElapsed] = useState(0);
-  const [enrichPct, setEnrichPct] = useState(0);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ── YouTube Deep Dive state ──
+  const [ytPhase, setYtPhase] = useState<"idle" | "running" | "complete" | "error">("idle");
+  const [ytJobId, setYtJobId] = useState<string | null>(null);
+  const [ytProfileCount, setYtProfileCount] = useState(0);
+  const [ytProcessed, setYtProcessed] = useState(0);
+  const [ytChannelsFound, setYtChannelsFound] = useState(0);
+  const [ytEmailsFound, setYtEmailsFound] = useState(0);
+  const [ytLeads, setYtLeads] = useState<Lead[]>([]);
+  const [ytMessage, setYtMessage] = useState("");
+  const [ytError, setYtError] = useState<string | null>(null);
+  const [ytStatus, setYtStatus] = useState<string>("pending");
+  const [ytStartTime, setYtStartTime] = useState<number | null>(null);
+  const [ytElapsed, setYtElapsed] = useState(0);
+  const [ytSubmittedAt, setYtSubmittedAt] = useState<string | null>(null);
+  const [ytHoursElapsed, setYtHoursElapsed] = useState(0);
+  const [ytDescriptionEmails, setYtDescriptionEmails] = useState(0);
 
-  // History
+  // ── YouTube auto-start tracking ──
+  const ytAutoStartedRef = useRef(false);
+
+  // ── History ──
   const [showHistory, setShowHistory] = useState(false);
   const [historyRuns, setHistoryRuns] = useState<HistoryRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
-
-  // Config
-  const [testMode, setTestMode] = useState(true);
-  const [showConfig, setShowConfig] = useState(false);
-  const [brands, setBrands] = useState(DEFAULT_BRANDS.join(", "));
-  const [maxFollowing, setMaxFollowing] = useState("200");
-  const [minFollowers, setMinFollowers] = useState("100000");
-  const [maxFollowers, setMaxFollowers] = useState("5000000");
-  const [minScore, setMinScore] = useState("60");
-
-  // Table
   const [searchFilter, setSearchFilter] = useState("");
-  const [sortBy, setSortBy] = useState<"score" | "followers">("followers");
 
-  const logEndRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // ── Brand Dashboard ──
+  const [showBrands, setShowBrands] = useState(false);
+  const [brandDashboard, setBrandDashboard] = useState<BrandDashboardData | null>(null);
+  const [brandDashboardLoading, setBrandDashboardLoading] = useState(false);
+  const [customBrandInput, setCustomBrandInput] = useState("");
+  const [customBrands, setCustomBrands] = useState<string[]>([]);
 
-  const totalSteps = mode === "quick" ? 2 : 5;
-  const stepLabels = mode === "quick" ? QUICK_STEP_LABELS : FULL_STEP_LABELS;
+  // ── Refs ──
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ytPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-scroll logs
+  // ── Elapsed timers ──
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (!startTime || phase === "idle" || phase === "complete" || phase === "error") return;
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [startTime, phase]);
 
-  // Reset results when switching modes
   useEffect(() => {
-    if (!running && !polling) {
-      setLeads([]);
-      setStats(null);
-      setError(null);
-      setLogs([]);
-      setCurrentStep(null);
-      setSortBy(mode === "quick" ? "followers" : "score");
-    }
-  }, [mode]);
+    if (!ytStartTime || ytPhase === "idle" || ytPhase === "complete" || ytPhase === "error") return;
+    const t = setInterval(() => setYtElapsed(Math.floor((Date.now() - ytStartTime) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [ytStartTime, ytPhase]);
 
-  // Cleanup poll timer on unmount
   useEffect(() => {
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (ytPollTimerRef.current) clearInterval(ytPollTimerRef.current);
     };
   }, []);
 
-  // Tick elapsed time every second while polling
-  useEffect(() => {
-    if (!polling || !enrichStartTime) {
-      setEnrichElapsed(0);
-      return;
-    }
-    const tick = setInterval(() => {
-      setEnrichElapsed(Math.floor((Date.now() - enrichStartTime) / 1000));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [polling, enrichStartTime]);
+  function formatElapsed(s: number) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  }
 
-  // ─── History ───────────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════════════
+  //  BRAND DASHBOARD
+  // ════════════════════════════════════════════════════════════════════════════
 
-  async function fetchHistory() {
-    setHistoryLoading(true);
+  async function fetchBrandDashboard() {
+    setBrandDashboardLoading(true);
     try {
-      const res = await fetch("/api/lead-gen/history");
-      if (!res.ok) throw new Error("Failed to load history");
-      const data = await res.json();
-      setHistoryRuns(data.runs || []);
-    } catch {
-      setHistoryRuns([]);
-    } finally {
-      setHistoryLoading(false);
+      const r = await fetch("/api/lead-gen/brands");
+      const d = await r.json();
+      setBrandDashboard(d);
+    } catch { /* silent */ }
+    finally { setBrandDashboardLoading(false); }
+  }
+
+  function addCustomBrand() {
+    const brand = customBrandInput.trim().toLowerCase().replace(/^@/, "");
+    if (brand && !customBrands.includes(brand)) {
+      setCustomBrands([...customBrands, brand]);
     }
+    setCustomBrandInput("");
   }
 
-  function toggleHistory() {
-    const next = !showHistory;
-    setShowHistory(next);
-    if (next) fetchHistory();
+  function removeCustomBrand(brand: string) {
+    setCustomBrands(customBrands.filter(b => b !== brand));
   }
 
-  async function downloadHistoryCSV(jobId: string) {
-    setDownloadingJobId(jobId);
+  // ════════════════════════════════════════════════════════════════════════════
+  //  INSTAGRAM SCAN LOGIC
+  // ════════════════════════════════════════════════════════════════════════════
+
+  const pollOnce = useCallback(async (jId: string) => {
     try {
-      const res = await fetch(`/api/lead-gen/history/${jobId}`);
-      if (!res.ok) throw new Error("Failed to load job");
-      const { job } = await res.json();
-      if (!job?.results || !Array.isArray(job.results)) {
-        alert("No results stored for this run.");
-        return;
-      }
-
-      const esc = (v: any) => {
-        const str = String(v ?? "");
-        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-          return `"${str.replace(/"/g, '""')}"`;
-        }
-        return str;
-      };
-
-      const isQuick = job.mode === "quick";
-      const headers = isQuick
-        ? ["username", "full_name", "email", "followers", "biography", "website", "profile_url", "brand_source", "business_category"]
-        : ["score", "username", "full_name", "ig_email", "youtube_channel", "followers", "engagement_rate", "avg_views", "monetization", "reason", "brand_source", "biography", "website", "profile_url"];
-
-      const rows = job.results.map((l: any) =>
-        isQuick
-          ? [l.username, l.fullName, l.igEmail, l.followers, l.biography, l.website, l.profileUrl, l.brandSource, l.businessCategory]
-          : [l.score, l.username, l.fullName, l.igEmail, l.youtubeChannel || "", l.followers, l.engagementRate ?? "", l.avgViews ?? "", l.monetization, l.reason, l.brandSource, l.biography, l.website, l.profileUrl]
-      );
-
-      const csv = [headers.join(","), ...rows.map((r: any[]) => r.map(esc).join(","))].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const dateStr = new Date(job.created_at).toISOString().slice(0, 10);
-      a.download = `${isQuick ? "quick" : "full"}_leads_${dateStr}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      alert(err.message || "Download failed");
-    } finally {
-      setDownloadingJobId(null);
-    }
-  }
-
-  // ─── Poll for async enrichment results ────────────────────────────────────
-
-  function startPolling(jobId: string) {
-    setPollJobId(jobId);
-    setPolling(true);
-    setEnrichStartTime(Date.now());
-    setEnrichPct(0);
-    setEnrichProgress("Enrichment starting on Apify...");
-
-    // Poll immediately, then every 5 seconds
-    pollOnce(jobId);
-    pollTimerRef.current = setInterval(() => pollOnce(jobId), 5000);
-  }
-
-  async function pollOnce(jobId: string) {
-    try {
-      const res = await fetch(`/api/lead-gen/poll?jobId=${jobId}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Poll failed" }));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
+      const res = await fetch(`/api/lead-gen/poll?jobId=${jId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: PollResponse = await res.json();
+      setEmailsFound(data.emailsFound || 0);
+      if (data.rawEmailCount !== undefined) setRawEmailCount(data.rawEmailCount);
+      setBackendStatus(data.status);
+      if (data.message) setStatusMessage(data.message);
+      if (data.currentBrand !== undefined) setCurrentBrand(data.currentBrand);
+      if (data.currentBrandIndex !== undefined) setCurrentBrandIndex(data.currentBrandIndex);
+      if (data.brandsCompleted) setBrandsCompleted(data.brandsCompleted);
+      if (data.brands) setBrands(data.brands);
+      if (data.activityLog) setActivityLog(data.activityLog);
+      if (data.totalScraped !== undefined) setTotalScraped(data.totalScraped);
+      if (data.profilesWithoutEmail !== undefined) setProfilesWithoutEmail(data.profilesWithoutEmail);
+      // Always update leads if available (for live download)
+      if (data.leads && data.leads.length > 0) setLeads(data.leads);
 
-      if (data.status === "complete" && data.leads) {
-        // Done! Stop polling and show results
+      // AUTO-START YouTube when we have profiles without email
+      if (
+        !ytAutoStartedRef.current &&
+        data.profilesWithoutEmail &&
+        data.profilesWithoutEmail >= 10 &&
+        (data.status === "enriching" || data.status === "pending" || data.status === "scraping")
+      ) {
+        ytAutoStartedRef.current = true;
+        autoStartYouTube(jId);
+      }
+
+      if (data.status === "complete" || data.status === "stopped") {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
-        setPolling(false);
-        setRunning(false);
-        setCurrentStep(null);
-        setEnrichProgress("");
-        setEnrichStartTime(null);
-        setEnrichPct(100);
-
-        setLeads(data.leads);
-        setStats({
-          brands: 0, // will be set from job
-          brandErrors: 0,
-          raw: data.stats?.scrapedCount || 0,
-          filtered: data.stats?.scrapedCount || 0,
-          enriched: data.stats?.enrichedCount || 0,
-          withEmail: data.stats?.emailCount || 0,
-          qualified: 0,
-          youtube: 0,
-          emails: data.stats?.emailCount || 0,
-        });
-
-        const emailCount = data.stats?.emailCount || 0;
-        const totalCount = data.leads.length;
-        setLogs((prev) => [
-          ...prev,
-          `✅ Enrichment complete — ${totalCount} profiles, ${emailCount} emails found`,
-        ]);
-
-        // Refresh history if panel is open
-        if (showHistory) fetchHistory();
-
+        if (data.leads) { setLeads(data.leads); setEmailsFound(data.leads.length); }
+        if (data.rawEmailCount !== undefined) setRawEmailCount(data.rawEmailCount);
+        if (data.totalScraped) setTotalScraped(data.totalScraped);
+        if (data.profilesWithoutEmail) setProfilesWithoutEmail(data.profilesWithoutEmail);
+        setPhase("complete");
+        fetchBrandDashboard();
       } else if (data.status === "failed") {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
-        setPolling(false);
-        setRunning(false);
-        setError(data.error || "Enrichment failed");
-        setEnrichProgress("");
-        setEnrichStartTime(null);
-        setEnrichPct(0);
-
-      } else if (data.status === "enriching" && data.progress) {
-        // Still running — update progress
-        const p = data.progress;
-        const finished = p.datasetItemCount || p.requestsFinished || 0;
-        const total = p.requestsTotal || p.scrapedCount || 0;
-        const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
-        setEnrichPct(pct);
-        setEnrichProgress(
-          total > 0 && finished > 0
-            ? `Enriching profiles... ${finished}/${total} (${pct}%)`
-            : p.runStatus === "READY" || p.runStatus === "RUNNING"
-            ? "Apify actor spinning up..."
-            : `Enriching profiles... ${p.runStatus}`
-        );
+        setError(data.error || "Job failed"); setPhase("error");
+        if (data.leads?.length) { setLeads(data.leads); setEmailsFound(data.leads.length); }
       }
-    } catch (err: any) {
-      // Don't stop polling on transient errors
-      setEnrichProgress(`Checking enrichment status... (${err.message?.slice(0, 50)})`);
-    }
+    } catch { setStatusMessage("Checking status..."); }
+  }, []);
+
+  function startPolling(jId: string) {
+    setJobId(jId); setPhase("running");
+    pollOnce(jId);
+    pollTimerRef.current = setInterval(() => pollOnce(jId), 4000);
   }
 
-  // ─── Run Pipeline ───────────────────────────────────────────────────────────
-
-  async function runPipeline() {
-    setRunning(true);
-    setLogs([]);
-    setLeads([]);
-    setStats(null);
-    setError(null);
-    setCurrentStep(null);
-
-    abortRef.current = new AbortController();
-
+  async function runScan() {
+    setPhase("running"); setLeads([]); setError(null); setEmailsFound(0); setRawEmailCount(0);
+    setStatusMessage("Initializing..."); setStartTime(Date.now()); setElapsed(0);
+    setCurrentBrand(""); setCurrentBrandIndex(0); setBrandsCompleted([]); setBrands([]);
+    setBackendStatus("pending"); setActivityLog([]);
+    setTotalScraped(0); setProfilesWithoutEmail(0);
+    setYtPhase("idle"); setYtLeads([]); setYtEmailsFound(0);
+    setYtProcessed(0); setYtChannelsFound(0); setYtProfileCount(0);
+    ytAutoStartedRef.current = false;
     try {
-      const configPayload = {
-        brandAccounts: brands.split(",").map((b) => b.trim()).filter(Boolean),
-        maxFollowingPerBrand: parseInt(maxFollowing) || 200,
-        minFollowers: parseInt(minFollowers) || 100000,
-        maxFollowers: parseInt(maxFollowers) || 5000000,
-        minScore: parseInt(minScore) || 60,
-      };
-
       const res = await fetch("/api/lead-gen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetEmails, customBrands }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({ error: "Unknown" })); throw new Error(d.error); }
+      const data = await res.json();
+      if (data.brands) setBrands(data.brands);
+      if (data.jobId) startPolling(data.jobId);
+      else throw new Error("No job ID returned");
+    } catch (err: any) { setError(err.message); setPhase("error"); }
+  }
+
+  async function stopScan() {
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+    if (!jobId) { setPhase("idle"); return; }
+    setStatusMessage("Saving progress...");
+    try {
+      const res = await fetch("/api/lead-gen/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ test: testMode, mode, config: configPayload }),
-        signal: abortRef.current.signal,
+        body: JSON.stringify({ jobId }),
       });
+      const data = await res.json();
+      if (data.leads?.length > 0) {
+        setLeads(data.leads);
+        setEmailsFound(data.leads.length);
+        if (data.totalScraped) setTotalScraped(data.totalScraped);
+        if (data.profilesWithoutEmail) setProfilesWithoutEmail(data.profilesWithoutEmail);
+        if (data.brandsCompleted) setBrandsCompleted(data.brandsCompleted);
+        setPhase("complete");
+      } else {
+        setLeads([]);
+        setEmailsFound(0);
+        setPhase("complete");
+      }
+      fetchBrandDashboard();
+    } catch {
+      setPhase("idle");
+    }
+  }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  //  YOUTUBE DEEP DIVE LOGIC (auto-started from IG poll)
+  // ════════════════════════════════════════════════════════════════════════════
+
+  const ytPollOnce = useCallback(async (jId: string) => {
+    try {
+      const res = await fetch(`/api/lead-gen/youtube/poll?jobId=${jId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: YtPollResponse = await res.json();
+      setYtProcessed(data.profilesProcessed || 0);
+      setYtChannelsFound(data.channelsFound || 0);
+      setYtEmailsFound(data.emailsFound || 0);
+      setYtStatus(data.status);
+      if (data.totalProfiles) setYtProfileCount(data.totalProfiles);
+      if (data.message) setYtMessage(data.message);
+      if (data.submittedAt) setYtSubmittedAt(data.submittedAt);
+      if (data.hoursElapsed !== undefined) setYtHoursElapsed(data.hoursElapsed);
+      if (data.descriptionEmails !== undefined) setYtDescriptionEmails(data.descriptionEmails);
+
+      // Slow down polling when in yt_processing (checking every 60s instead of 5s)
+      if (data.status === "yt_processing" || data.status === "yt_scraping") {
+        if (ytPollTimerRef.current) clearInterval(ytPollTimerRef.current);
+        ytPollTimerRef.current = setInterval(() => ytPollOnce(jId), 60000);
+      }
+
+      if (data.status === "complete" || data.status === "stopped") {
+        if (ytPollTimerRef.current) clearInterval(ytPollTimerRef.current);
+        ytPollTimerRef.current = null;
+        if (data.leads) { setYtLeads(data.leads); setYtEmailsFound(data.leads.length); }
+        setYtPhase("complete");
+        fetchBrandDashboard();
+      } else if (data.status === "failed") {
+        if (ytPollTimerRef.current) clearInterval(ytPollTimerRef.current);
+        ytPollTimerRef.current = null;
+        setYtError(data.error || "Failed"); setYtPhase("error");
+        if (data.leads?.length) { setYtLeads(data.leads); setYtEmailsFound(data.leads.length); }
+      }
+    } catch { setYtMessage("Checking YouTube status..."); }
+  }, []);
+
+  async function autoStartYouTube(sourceJobId: string) {
+    setYtPhase("running"); setYtLeads([]); setYtError(null); setYtEmailsFound(0);
+    setYtProcessed(0); setYtChannelsFound(0); setYtMessage("YouTube fork starting...");
+    setYtStartTime(Date.now()); setYtElapsed(0); setYtStatus("pending");
+    try {
+      const res = await fetch("/api/lead-gen/youtube", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceJobId }),
+      });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(data.error || `HTTP ${res.status}`);
+        const d = await res.json().catch(() => ({ error: "Unknown" }));
+        throw new Error(d.error);
       }
+      const data = await res.json();
+      setYtProfileCount(data.profileCount || 0);
+      if (data.jobId) {
+        setYtJobId(data.jobId);
+        ytPollOnce(data.jobId);
+        ytPollTimerRef.current = setInterval(() => ytPollOnce(data.jobId), 5000);
+      }
+    } catch (err: any) { setYtError(err.message); setYtPhase("error"); }
+  }
 
-      // Read SSE stream
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response stream");
+  async function startYouTubeManual() {
+    if (!jobId) return;
+    ytAutoStartedRef.current = true;
+    autoStartYouTube(jobId);
+  }
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+  // ── Resume active jobs on page load (survives browser close) ──
+  useEffect(() => {
+    async function checkActiveJobs() {
+      try {
+        const res = await fetch("/api/lead-gen/active");
+        if (!res.ok) return;
+        const data = await res.json();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7);
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              switch (currentEvent) {
-                case "log":
-                  setLogs((prev) => [...prev, data.message]);
-                  break;
-                case "step":
-                  setCurrentStep(data.step);
-                  setLogs((prev) => [...prev, `── Step ${data.step}: ${data.label} ──`]);
-                  break;
-                case "job_started":
-                  // Quick Scan async — SSE stream ends, switch to polling
-                  setLogs((prev) => [
-                    ...prev,
-                    `⏳ Enrichment started for ${data.scrapedCount} profiles — polling for results...`,
-                  ]);
-                  setCurrentStep(null);
-                  if (data.jobId) {
-                    startPolling(data.jobId);
-                  } else {
-                    setError("No job ID returned");
-                    setRunning(false);
-                  }
-                  break;
-                case "complete":
-                  setLeads(data.leads || []);
-                  setStats(data.stats || null);
-                  setCurrentStep(null);
-                  break;
-                case "error":
-                  setError(data.message);
-                  break;
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
+        if (data.igJob && data.igJob.id) {
+          setJobId(data.igJob.id);
+          setPhase("running");
+          setStartTime(Date.now());
+          setBackendStatus(data.igJob.status);
+          setStatusMessage("Resuming scan...");
+          pollOnce(data.igJob.id);
+          pollTimerRef.current = setInterval(() => pollOnce(data.igJob.id), 4000);
         }
-      }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message);
-      }
-    } finally {
-      // Don't clear running if we transitioned to async polling
-      if (!pollTimerRef.current) {
-        setRunning(false);
-      }
+
+        if (data.ytJob && data.ytJob.id) {
+          setYtJobId(data.ytJob.id);
+          setYtPhase("running");
+          setYtStartTime(Date.now());
+          setYtStatus(data.ytJob.status);
+          ytAutoStartedRef.current = true;
+          if (data.ytJob.submittedAt) setYtSubmittedAt(data.ytJob.submittedAt);
+          const interval = (data.ytJob.status === "yt_processing" || data.ytJob.status === "yt_scraping") ? 60000 : 5000;
+          setYtMessage("Resuming YouTube search...");
+          ytPollOnce(data.ytJob.id);
+          ytPollTimerRef.current = setInterval(() => ytPollOnce(data.ytJob.id), interval);
+        }
+      } catch { /* silent */ }
     }
-  }
+    checkActiveJobs();
+  }, [pollOnce, ytPollOnce]);
 
-  function stopPipeline() {
-    abortRef.current?.abort();
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    setPolling(false);
-    setEnrichProgress("");
-    setEnrichStartTime(null);
-    setEnrichPct(0);
-    setRunning(false);
-  }
+  // ════════════════════════════════════════════════════════════════════════════
+  //  CSV EXPORT
+  // ════════════════════════════════════════════════════════════════════════════
 
-  // ─── CSV Export ─────────────────────────────────────────────────────────────
-
-  function downloadCSV() {
-    const escapeCSV = (v: any) => {
-      const str = String(v ?? "");
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
+  function downloadCSV(data: Lead[], label: string) {
+    if (data.length === 0) return;
+    const esc = (v: any) => {
+      const s = String(v ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
     };
-
-    if (mode === "quick") {
-      const headers = [
-        "username", "full_name", "email", "followers",
-        "biography", "website", "profile_url", "brand_source", "business_category",
-      ];
-      const rows = leads.map((l) => [
-        l.username, l.fullName, l.igEmail, l.followers,
-        l.biography, l.website, l.profileUrl, l.brandSource, l.businessCategory,
-      ]);
-      const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `quick_leads_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      const headers = [
-        "score", "username", "full_name", "ig_email", "youtube_channel",
-        "followers", "engagement_rate", "avg_views", "monetization", "reason",
-        "brand_source", "biography", "website", "profile_url",
-      ];
-      const rows = leads
-        .filter((l) => l.score >= (parseInt(minScore) || 60))
-        .map((l) => [
-          l.score, l.username, l.fullName, l.igEmail, l.youtubeChannel || "",
-          l.followers, l.engagementRate ?? "", l.avgViews ?? "", l.monetization,
-          l.reason, l.brandSource, l.biography, l.website, l.profileUrl,
-        ]);
-      const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+    const isYt = label.includes("youtube");
+    const headers = isYt
+      ? ["username", "full_name", "email", "email_source", "ig_followers", "yt_subscribers", "yt_channel", "yt_channel_url", "ig_profile", "brand_source"]
+      : ["username", "full_name", "email", "followers", "biography", "website", "profile_url", "brand_source"];
+    const rows = data.map((l) =>
+      isYt
+        ? [l.username, l.fullName, l.email || l.ytEmail || "", l.emailSource || "youtube_description", l.followers, l.subscriberCount || "", l.channelTitle || "", l.channelUrl || "", l.profileUrl, l.brandSource]
+        : [l.username, l.fullName, l.igEmail || l.email || "", l.followers, l.biography || "", l.website || "", l.profileUrl, l.brandSource]
+    );
+    const csv = [headers.join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = `${label}_${data.length}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
-  // ─── Filtered + Sorted Leads ────────────────────────────────────────────────
-
-  const filteredLeads = leads
-    .filter((l) => {
-      if (mode === "full") return l.score >= (parseInt(minScore) || 0);
-      return true; // Quick scan — show all
-    })
-    .filter((l) => {
-      if (!searchFilter) return true;
-      const q = searchFilter.toLowerCase();
-      return (
-        l.username.toLowerCase().includes(q) ||
-        l.fullName.toLowerCase().includes(q) ||
-        l.brandSource.toLowerCase().includes(q) ||
-        (l.igEmail || "").toLowerCase().includes(q) ||
-        (l.biography || "").toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => (sortBy === "score" ? b.score - a.score : b.followers - a.followers));
-
-  // ─── Score Badge Color ──────────────────────────────────────────────────────
-
-  function scoreColor(score: number) {
-    if (score >= 80) return "var(--success)";
-    if (score >= 60) return "var(--accent)";
-    if (score >= 40) return "var(--warning)";
-    return "var(--danger)";
+  // ── History ──
+  async function fetchHistory() {
+    setHistoryLoading(true);
+    try { const r = await fetch("/api/lead-gen/history"); const d = await r.json(); setHistoryRuns(d.runs || []); }
+    catch { setHistoryRuns([]); } finally { setHistoryLoading(false); }
+  }
+  async function downloadHistoryCSV(hId: string) {
+    setDownloadingJobId(hId);
+    try {
+      const r = await fetch(`/api/lead-gen/history/${hId}`); const { job } = await r.json();
+      if (!job?.results?.length) { alert("No results."); return; }
+      const isYt = job.mode === "youtube";
+      downloadCSV(job.results, isYt ? "youtube_leads" : "ig_leads");
+    } catch (e: any) { alert(e.message); } finally { setDownloadingJobId(null); }
   }
 
-  function scoreBg(score: number) {
-    if (score >= 80) return "var(--success-soft)";
-    if (score >= 60) return "var(--accent-soft)";
-    if (score >= 40) return "var(--warning-soft)";
-    return "var(--danger-soft)";
-  }
+  const filteredLeads = searchFilter
+    ? leads.filter((l) => l.username?.toLowerCase().includes(searchFilter.toLowerCase()) || l.fullName?.toLowerCase().includes(searchFilter.toLowerCase()) || (l.igEmail || "").toLowerCase().includes(searchFilter.toLowerCase()))
+    : leads;
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const isRunning = phase === "running";
+  const progressPct = targetEmails > 0 ? Math.min(100, Math.round((emailsFound / targetEmails) * 100)) : 0;
+  const emailsInBios = rawEmailCount || Math.max(0, totalScraped - profilesWithoutEmail);
+  const noEmailCount = profilesWithoutEmail || Math.max(0, totalScraped - emailsInBios);
+  const ytProgressPct = ytProfileCount > 0 ? Math.round((ytProcessed / ytProfileCount) * 100) : 0;
+  const isAnyRunning = isRunning || ytPhase === "running";
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  RENDER
+  // ════════════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="fade-up">
+    <div style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
       {/* Header */}
-      <div className="page-header">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <h1 className="page-title">
-              <span className="gradient-text">Lead Machine</span>
-            </h1>
-            <p className="page-subtitle">
-              {mode === "quick"
-                ? "Fast email scraper — scan brand followers and export accounts with email in bio"
-                : "Find fitness influencer leads from brand following lists, score with AI, discover YouTube channels"}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {leads.length > 0 && (
-              <button className="btn-secondary" onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                <Download size={14} />
-                Export CSV ({leads.length})
-              </button>
-            )}
-            {running || polling ? (
-              <button
-                className="btn-secondary"
-                onClick={stopPipeline}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
-              >
-                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                {polling ? "Enriching..." : "Stop"}
-              </button>
-            ) : (
-              <button
-                className="btn-primary"
-                onClick={runPipeline}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
-              >
-                {mode === "quick" ? <Zap size={14} /> : <Play size={14} />}
-                {mode === "quick" ? "Quick Scan" : "Run Pipeline"}
-              </button>
-            )}
-          </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Zap size={28} style={{ color: "#c9a96e" }} /> Lead Machine
+          </h1>
+          <p style={{ color: "#666", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+            Scrape fitness brand followers for emails — IG bios + YouTube channels
+          </p>
         </div>
-      </div>
-
-      {/* Mode Tabs + History Toggle */}
-      <div className="section" style={{ paddingBottom: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={() => { setShowBrands(!showBrands); if (!showBrands && !brandDashboard) fetchBrandDashboard(); }}
             style={{
-              display: "inline-flex",
-              gap: 2,
-              background: "rgba(255,255,255,0.03)",
-              borderRadius: 10,
-              padding: 3,
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: showBrands ? "rgba(201,169,110,0.12)" : "rgba(255,255,255,0.04)",
+              border: showBrands ? "1px solid rgba(201,169,110,0.25)" : "1px solid rgba(255,255,255,0.08)",
+              color: showBrands ? "#c9a96e" : "#777", padding: "0.5rem 1rem", borderRadius: "0.5rem",
+              cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.375rem",
             }}
           >
-            <button
-              onClick={() => !running && !polling && setMode("quick")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 18px",
-                borderRadius: 8,
-                border: "none",
-                fontSize: 13,
-                fontWeight: mode === "quick" ? 600 : 400,
-                cursor: running || polling ? "not-allowed" : "pointer",
-                transition: "all 0.2s ease",
-                background: mode === "quick" ? "rgba(201,169,110,0.15)" : "transparent",
-                color: mode === "quick" ? "var(--accent)" : "var(--text-muted)",
-              }}
-            >
-              <Zap size={14} />
-              Quick Scan
-            </button>
-            <button
-              onClick={() => !running && !polling && setMode("full")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 18px",
-                borderRadius: 8,
-                border: "none",
-                fontSize: 13,
-                fontWeight: mode === "full" ? 600 : 400,
-                cursor: running || polling ? "not-allowed" : "pointer",
-                transition: "all 0.2s ease",
-                background: mode === "full" ? "rgba(201,169,110,0.15)" : "transparent",
-                color: mode === "full" ? "var(--accent)" : "var(--text-muted)",
-              }}
-            >
-              <Brain size={14} />
-              Full Pipeline
-            </button>
-          </div>
-          <button
-            onClick={toggleHistory}
-            title="Run History"
+            <BarChart3 size={14} /> Brands
+          </button>
+          <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory(); }}
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 34,
-              height: 34,
-              borderRadius: 8,
-              border: showHistory ? "1px solid rgba(201,169,110,0.3)" : "1px solid rgba(255,255,255,0.06)",
-              background: showHistory ? "rgba(201,169,110,0.12)" : "rgba(255,255,255,0.03)",
-              color: showHistory ? "var(--accent)" : "var(--text-muted)",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              flexShrink: 0,
+              background: showHistory ? "rgba(201,169,110,0.12)" : "rgba(255,255,255,0.04)",
+              border: showHistory ? "1px solid rgba(201,169,110,0.25)" : "1px solid rgba(255,255,255,0.08)",
+              color: showHistory ? "#c9a96e" : "#777", padding: "0.5rem 1rem", borderRadius: "0.5rem",
+              cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.375rem",
             }}
           >
-            <Clock size={15} />
+            <Clock size={14} /> History
           </button>
         </div>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
-          {mode === "quick"
-            ? "Scrape → Enrich → Export emails. No AI scoring or YouTube lookup."
-            : "Scrape → Enrich → Engagement → AI Score → YouTube. Full qualification."}
-        </p>
       </div>
 
-      {/* Run History Panel */}
-      {showHistory && (
-        <div className="section">
-          <h2 className="section-title" style={{ marginBottom: 12 }}>
-            <Clock size={16} />
-            Run History
-          </h2>
-          {historyLoading ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 13, padding: 16 }}>
-              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-              Loading runs...
+      {/* ══════════════════════════════════════════════════════════════════════
+          BRAND DASHBOARD (toggled by button)
+         ══════════════════════════════════════════════════════════════════════ */}
+      {showBrands && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "1rem", padding: "1.5rem", marginBottom: "1.5rem",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <BarChart3 size={16} style={{ color: "#c9a96e" }} />
+              <h3 style={{ color: "#fff", fontSize: "0.9375rem", fontWeight: 600, margin: 0 }}>Brand Coverage</h3>
             </div>
-          ) : historyRuns.length === 0 ? (
-            <div className="glass-static" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-              No runs yet. Run a Quick Scan or Full Pipeline to see history here.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {historyRuns.map((run) => {
-                const date = new Date(run.created_at);
-                const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-                const timeStr = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-                const isComplete = run.status === "complete";
-                const isFailed = run.status === "failed";
-                const isEnriching = run.status === "enriching";
-                const brands = run.config?.brandAccounts?.length || 0;
-                const isTest = run.config?.isTest;
-
-                return (
-                  <div
-                    key={run.id}
-                    className="glass-static"
-                    style={{
-                      padding: "12px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-                      {/* Status dot */}
-                      <div
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          flexShrink: 0,
-                          background: isComplete
-                            ? "var(--success)"
-                            : isFailed
-                            ? "var(--danger)"
-                            : "var(--accent)",
-                        }}
-                      />
-                      {/* Date + Time */}
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
-                          {dateStr} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>{timeStr}</span>
-                        </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, alignItems: "center", marginTop: 2 }}>
-                          {/* Mode badge */}
-                          <span
-                            style={{
-                              padding: "1px 6px",
-                              borderRadius: 4,
-                              fontSize: 10,
-                              fontWeight: 600,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              background: run.mode === "quick" ? "rgba(201,169,110,0.12)" : "rgba(126,201,160,0.12)",
-                              color: run.mode === "quick" ? "var(--accent)" : "var(--success)",
-                            }}
-                          >
-                            {run.mode === "quick" ? "Quick" : "Full"}
-                          </span>
-                          {isTest && (
-                            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>TEST</span>
-                          )}
-                          <span>{run.scraped_count || 0} scraped</span>
-                          {isComplete && (
-                            <>
-                              <span>·</span>
-                              <span>{run.lead_count || 0} leads</span>
-                              <span>·</span>
-                              <span style={{ color: "var(--accent)" }}>{run.email_count || 0} emails</span>
-                            </>
-                          )}
-                          {isFailed && <span style={{ color: "var(--danger)" }}>Failed</span>}
-                          {isEnriching && <span style={{ color: "var(--accent)" }}>Enriching...</span>}
-                        </div>
-                      </div>
-                    </div>
-                    {/* Download button */}
-                    {isComplete && (run.lead_count || 0) > 0 && (
-                      <button
-                        onClick={() => downloadHistoryCSV(run.id)}
-                        disabled={downloadingJobId === run.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                          padding: "6px 12px",
-                          borderRadius: 6,
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          background: "rgba(255,255,255,0.03)",
-                          color: "var(--text-secondary)",
-                          cursor: downloadingJobId === run.id ? "wait" : "pointer",
-                          fontSize: 12,
-                          flexShrink: 0,
-                          transition: "all 0.15s ease",
-                          opacity: downloadingJobId === run.id ? 0.5 : 1,
-                        }}
-                      >
-                        {downloadingJobId === run.id ? (
-                          <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-                        ) : (
-                          <Download size={12} />
-                        )}
-                        CSV
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Config Panel */}
-      <div className="section">
-        <button
-          onClick={() => setShowConfig(!showConfig)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            fontSize: 13,
-            textTransform: "uppercase",
-            letterSpacing: "1px",
-            fontWeight: 500,
-            padding: 0,
-            marginBottom: showConfig ? 16 : 0,
-          }}
-        >
-          <Crosshair size={14} />
-          Configuration
-          {showConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-
-        {showConfig && (
-          <div className="glass-static" style={{ padding: 24 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              {/* Mode Toggle */}
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label className="form-label">Run Mode</label>
-                <div
-                  onClick={() => setTestMode(!testMode)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    cursor: "pointer",
-                    padding: "10px 16px",
-                    borderRadius: 8,
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.06)",
-                    userSelect: "none",
-                  }}
-                >
-                  {/* Toggle track */}
-                  <div style={{
-                    width: 40,
-                    height: 22,
-                    borderRadius: 11,
-                    background: testMode ? "rgba(201,169,110,0.3)" : "var(--accent)",
-                    position: "relative",
-                    transition: "background 0.2s",
-                    flexShrink: 0,
-                  }}>
-                    <div style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      background: testMode ? "var(--text-secondary)" : "var(--bg-primary)",
-                      position: "absolute",
-                      top: 3,
-                      left: testMode ? 3 : 21,
-                      transition: "left 0.2s, background 0.2s",
-                    }} />
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
-                      {testMode ? "Test Mode" : "Full Run"}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-                      {testMode ? "1 brand · up to 100 accounts · fast" : `All ${brands.split(",").filter(Boolean).length} brands · ${maxFollowing} per brand`}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Leads per Brand */}
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label className="form-label">Leads per Brand</label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {["100", "200", "300", "500"].map((val) => (
-                    <button
-                      key={val}
-                      onClick={() => setMaxFollowing(val)}
-                      style={{
-                        padding: "8px 20px",
-                        borderRadius: 8,
-                        border: maxFollowing === val
-                          ? "1px solid var(--accent)"
-                          : "1px solid rgba(255,255,255,0.08)",
-                        background: maxFollowing === val
-                          ? "rgba(201,169,110,0.15)"
-                          : "rgba(255,255,255,0.03)",
-                        color: maxFollowing === val ? "var(--accent)" : "var(--text-secondary)",
-                        fontWeight: maxFollowing === val ? 600 : 400,
-                        fontSize: 13,
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-                <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>
-                  {testMode ? "Test mode caps at 100 regardless" : `Scrape up to ${maxFollowing} accounts per brand`}
-                </span>
-              </div>
-
-              {/* Brands */}
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label className="form-label">Brand Accounts (comma-separated)</label>
-                <textarea
-                  className="form-input"
-                  value={brands}
-                  onChange={(e) => setBrands(e.target.value)}
-                  rows={3}
-                  style={{ resize: "vertical", fontFamily: "var(--font-mono)", fontSize: 12 }}
-                />
-              </div>
-
-              {/* Follower Range */}
-              <div>
-                <label className="form-label">Min Followers</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  value={minFollowers}
-                  onChange={(e) => setMinFollowers(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="form-label">Max Followers</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  value={maxFollowers}
-                  onChange={(e) => setMaxFollowers(e.target.value)}
-                />
-              </div>
-
-              {/* Score Threshold — only for Full Pipeline */}
-              {mode === "full" && (
-                <div>
-                  <label className="form-label">Min Score (0-100)</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    value={minScore}
-                    onChange={(e) => setMinScore(e.target.value)}
-                    min={0}
-                    max={100}
-                  />
-                </div>
-              )}
-            </div>
+            <button onClick={fetchBrandDashboard} style={{
+              background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: "0.6875rem",
+              display: "flex", alignItems: "center", gap: "0.25rem",
+            }}>
+              {brandDashboardLoading ? <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> : <Activity size={10} />}
+              Refresh
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* Pipeline Progress */}
-      {(running || polling || logs.length > 0) && (
-        <div className="section">
-          <h2 className="section-title">
-            <Activity size={16} />
-            Pipeline Progress
-          </h2>
+          {/* Add custom brand */}
+          <div style={{ display: "flex", gap: "0.375rem", marginBottom: "1rem" }}>
+            <input
+              type="text"
+              value={customBrandInput}
+              onChange={(e) => setCustomBrandInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addCustomBrand()}
+              placeholder="Add Instagram account to scrape..."
+              style={{
+                flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "0.375rem", padding: "0.5rem 0.75rem", color: "#ccc", fontSize: "0.8125rem", outline: "none",
+              }}
+            />
+            <button onClick={addCustomBrand} style={{
+              background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.2)",
+              color: "#c9a96e", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer",
+              fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem",
+            }}>
+              <Plus size={12} /> Add
+            </button>
+          </div>
 
-          {/* Step Indicators */}
-          {(running || polling) && (
-            <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-              {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step) => (
-                <div
-                  key={step}
-                  style={{
-                    flex: 1,
-                    height: 4,
-                    borderRadius: 2,
-                    background:
-                      polling
-                        ? "var(--accent)" // all steps done when polling
-                        : currentStep && step < currentStep
-                        ? "var(--success)"
-                        : currentStep && step === currentStep
-                        ? "var(--accent)"
-                        : "var(--border-primary)",
-                    transition: "background 0.3s ease",
-                  }}
-                />
+          {customBrands.length > 0 && (
+            <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+              {customBrands.map(b => (
+                <span key={b} style={{
+                  background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.15)",
+                  color: "#c9a96e", padding: "0.25rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
+                  display: "flex", alignItems: "center", gap: "0.25rem",
+                }}>
+                  @{b}
+                  <button onClick={() => removeCustomBrand(b)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", padding: 0, lineHeight: 1 }}><X size={10} /></button>
+                </span>
               ))}
             </div>
           )}
 
-          {running && currentStep && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 12,
-                fontSize: 13,
-                color: "var(--accent)",
-              }}
-            >
-              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-              Step {currentStep}/{totalSteps}: {stepLabels[currentStep] || "Processing..."}
+          {brandDashboardLoading && !brandDashboard && (
+            <div style={{ textAlign: "center", padding: "1rem", color: "#555" }}>
+              <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
             </div>
           )}
 
-          {/* Async enrichment polling indicator */}
-          {polling && (
-            <div
-              style={{
-                marginBottom: 12,
-                borderRadius: 10,
-                background: "rgba(201,169,110,0.06)",
-                border: "1px solid rgba(201,169,110,0.15)",
-                overflow: "hidden",
-              }}
-            >
+          {brandDashboard && (
+            <>
+              {/* Summary stats */}
+              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+                <StatBox label="Profiles Scraped" value={brandDashboard.stats.totalProfilesScraped.toLocaleString()} color="#888" />
+                <StatBox label="IG Emails" value={brandDashboard.stats.totalIgEmails} color="#c9a96e" />
+                <StatBox label="YT Emails" value={brandDashboard.stats.totalYtEmails} color="#ff4444" />
+                <StatBox label="Total Delivered" value={brandDashboard.stats.totalDelivered} color="#22c55e" />
+              </div>
+
+              {/* Brand table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                      <th style={{ textAlign: "left", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Brand</th>
+                      <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Followers Scraped</th>
+                      <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bio Emails</th>
+                      <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>YT Emails</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {brandDashboard.brands.map((b) => (
+                      <tr key={b.brand} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding: "0.5rem 0.75rem", color: b.scraped > 0 ? "#bbb" : "#444" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                            @{b.brand}
+                            {b.fullyScraped && <CheckCircle size={10} style={{ color: "rgba(34,197,94,0.6)" }} />}
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.scraped > 0 ? "#999" : "#333", fontVariantNumeric: "tabular-nums" }}>
+                          {b.scraped > 0 ? b.scraped.toLocaleString() : "—"}
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.igEmails > 0 ? "#c9a96e" : "#333", fontVariantNumeric: "tabular-nums" }}>
+                          {b.igEmails > 0 ? b.igEmails : "—"}
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.ytEmails > 0 ? "#ff4444" : "#333", fontVariantNumeric: "tabular-nums" }}>
+                          {b.ytEmails > 0 ? b.ytEmails : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          IDLE STATE — Start scan
+         ══════════════════════════════════════════════════════════════════════ */}
+      {phase === "idle" && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "1rem", padding: "2.5rem", marginBottom: "1.5rem", textAlign: "center",
+        }}>
+          <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(201,169,110,0.08)", border: "2px solid rgba(201,169,110,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
+            <Mail size={28} style={{ color: "#c9a96e" }} />
+          </div>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "#fff", margin: "0 0 0.5rem" }}>Get {targetEmails} New Emails</h2>
+          <p style={{ color: "#666", fontSize: "0.875rem", maxWidth: "560px", margin: "0 auto", lineHeight: 1.6 }}>
+            Scrapes followers from fitness brands, extracts emails from
+            <span style={{ color: "#c9a96e" }}> Instagram bios</span>, then searches
+            <span style={{ color: "#ff4444" }}> YouTube</span> for profiles without emails.
+          </p>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem", margin: "1.25rem 0" }}>
+            <span style={{ color: "#666", fontSize: "0.8125rem" }}>Target:</span>
+            {[50, 100, 200].map((n) => (
+              <button key={n} onClick={() => setTargetEmails(n)} style={{
+                padding: "0.375rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer",
+                border: targetEmails === n ? "1px solid rgba(201,169,110,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                background: targetEmails === n ? "rgba(201,169,110,0.1)" : "rgba(255,255,255,0.03)",
+                color: targetEmails === n ? "#c9a96e" : "#777",
+              }}>{n}</button>
+            ))}
+          </div>
+          <button onClick={runScan} style={{
+            background: "linear-gradient(135deg, #c9a96e 0%, #b08d4f 100%)", color: "#000", border: "none",
+            padding: "0.875rem 2.5rem", borderRadius: "0.625rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: "0.5rem", boxShadow: "0 4px 24px rgba(201,169,110,0.25)",
+          }}><Play size={18} /> Start Scan</button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          RUNNING STATE
+         ══════════════════════════════════════════════════════════════════════ */}
+      {isAnyRunning && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "1rem", padding: "1.75rem", marginBottom: "1.5rem",
+        }}>
+          {/* Top bar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#c9a96e", animation: "nodePulse 2s ease-in-out infinite", boxShadow: "0 0 6px rgba(201,169,110,0.4)" }} />
+              <span style={{ color: "#aaa", fontSize: "0.875rem", fontWeight: 600 }}>
+                {currentBrand ? `@${currentBrand}` : "Initializing"}
+              </span>
+              <span style={{ color: "#555", fontSize: "0.75rem" }}>{formatElapsed(elapsed)}</span>
+              {brandsCompleted.length > 0 && (
+                <span style={{ fontSize: "0.625rem", color: "#555", background: "rgba(255,255,255,0.04)", padding: "0.125rem 0.5rem", borderRadius: "0.25rem" }}>
+                  {brandsCompleted.length}/{brands.length} brands
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {/* Download now button (during running) */}
+              {leads.length > 0 && (
+                <button onClick={() => downloadCSV(leads, "ig_leads")} style={{
+                  background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.2)",
+                  color: "#c9a96e", padding: "0.375rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer",
+                  fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem",
+                }}>
+                  <Download size={11} /> CSV ({leads.length})
+                </button>
+              )}
+              <button onClick={stopScan} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#666", padding: "0.375rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                <X size={11} /> Stop
+              </button>
+            </div>
+          </div>
+
+          {/* Fork visualization */}
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem" }}>
+            {/* LEFT FORK: Bio Email Extraction */}
+            <div style={{
+              flex: 1, background: "rgba(201,169,110,0.03)", border: "1px solid rgba(201,169,110,0.1)",
+              borderRadius: "0.75rem", padding: "1.25rem", position: "relative",
+            }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "2px", background: "linear-gradient(90deg, #c9a96e, transparent)", borderRadius: "0.75rem 0.75rem 0 0" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                <Mail size={14} style={{ color: "#c9a96e" }} />
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#c9a96e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bio Emails</span>
+              </div>
+
+              {/* Primary number: emails found in bios */}
+              <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
+                <div style={{ fontSize: "2.5rem", fontWeight: 700, color: "#c9a96e", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {emailsFound}<span style={{ fontSize: "1rem", color: "#555", fontWeight: 400 }}>/{targetEmails}</span>
+                </div>
+                <div style={{ color: "#888", fontSize: "0.6875rem", marginTop: "0.25rem" }}>new unique emails</div>
+                {rawEmailCount > 0 && rawEmailCount !== emailsFound && (
+                  <div style={{ color: "#555", fontSize: "0.5625rem", marginTop: "0.125rem" }}>
+                    {rawEmailCount} found in bios ({rawEmailCount - emailsFound} already delivered)
+                  </div>
+                )}
+              </div>
+
               {/* Progress bar */}
-              <div style={{ height: 3, background: "rgba(255,255,255,0.03)", position: "relative" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.max(enrichPct, 5)}%`,
-                    background: "linear-gradient(90deg, var(--accent), rgba(201,169,110,0.6))",
-                    borderRadius: 3,
-                    transition: "width 0.5s ease",
-                  }}
-                />
+              <div style={{ height: "3px", background: "rgba(255,255,255,0.04)", borderRadius: "2px", overflow: "hidden", marginBottom: "0.75rem" }}>
+                <div style={{ height: "100%", background: "linear-gradient(90deg, #c9a96e, #dbb978)", borderRadius: "2px", width: `${progressPct}%`, transition: "width 0.6s ease" }} />
               </div>
-              <div style={{ padding: "12px 16px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--accent)" }}>
-                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                    {enrichProgress || "Enriching profiles..."}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums", display: "flex", gap: 12, alignItems: "center" }}>
-                    {/* Elapsed time */}
-                    {enrichElapsed > 0 && (
-                      <span>
-                        {enrichElapsed >= 60
-                          ? `${Math.floor(enrichElapsed / 60)}m ${enrichElapsed % 60}s`
-                          : `${enrichElapsed}s`}
-                      </span>
-                    )}
-                    {/* ETA */}
-                    {enrichPct > 5 && enrichElapsed > 10 && (
-                      <span style={{ color: "var(--accent)", fontSize: 11 }}>
-                        ~{(() => {
-                          const remaining = Math.round((enrichElapsed / enrichPct) * (100 - enrichPct));
-                          return remaining >= 60
-                            ? `${Math.floor(remaining / 60)}m ${remaining % 60}s left`
-                            : `${remaining}s left`;
-                        })()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-                  Apify is enriching each profile — this typically takes 2-5 min for ~100 profiles. Results will appear automatically.
-                </div>
+
+              {/* Pipeline steps */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
+                {(["scraping", "enriching"] as const).map((stage) => {
+                  const isActive = backendStatus === stage && phase === "running";
+                  const isDone = phase === "complete";
+                  return (
+                    <div key={stage} style={{
+                      display: "flex", alignItems: "center", gap: "0.25rem",
+                      fontSize: "0.625rem", color: isDone ? "#22c55e" : isActive ? "#c9a96e" : "#444",
+                    }}>
+                      {isDone ? <CheckCircle size={9} /> : isActive ? <Loader2 size={9} style={{ animation: "spin 1s linear infinite" }} /> : <div style={{ width: 9, height: 9, borderRadius: "50%", border: "1px solid #333" }} />}
+                      {stage === "scraping" ? "Scrape" : "Enrich"}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Stats */}
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem", justifyContent: "center", fontSize: "0.625rem", color: "#555" }}>
+                <span>{totalScraped} profiles</span>
+                <span>{emailsInBios} with email</span>
+                <span>{noEmailCount} no email</span>
               </div>
             </div>
-          )}
 
-          {/* Log Output */}
-          <div
-            className="glass-static"
-            style={{
-              padding: 16,
-              maxHeight: 200,
-              overflowY: "auto",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              lineHeight: 1.6,
-            }}
-          >
-            {logs.map((log, i) => (
-              <div
-                key={i}
-                style={{
-                  color: log.startsWith("──")
-                    ? "var(--accent)"
-                    : log.includes("FAILED") || log.includes("error") || log.includes("Error")
-                    ? "var(--danger)"
-                    : log.startsWith("⚡")
-                    ? "var(--success)"
-                    : "var(--text-secondary)",
-                  fontWeight: log.startsWith("──") ? 600 : 400,
-                }}
-              >
-                {log}
+            {/* CENTER: Fork indicator */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "40px", flexShrink: 0 }}>
+              <GitFork size={20} style={{ color: "#444", transform: "rotate(180deg)" }} />
+              <div style={{ fontSize: "0.5rem", color: "#333", marginTop: "0.25rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>Fork</div>
+            </div>
+
+            {/* RIGHT FORK: YouTube Channel Search */}
+            <div style={{
+              flex: 1, background: ytPhase !== "idle" ? "rgba(255,0,0,0.02)" : "rgba(255,255,255,0.01)",
+              border: `1px solid ${ytPhase !== "idle" ? "rgba(255,0,0,0.08)" : "rgba(255,255,255,0.04)"}`,
+              borderRadius: "0.75rem", padding: "1.25rem", position: "relative",
+            }}>
+              {ytPhase !== "idle" && (
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "2px", background: "linear-gradient(90deg, #ff4444, transparent)", borderRadius: "0.75rem 0.75rem 0 0" }} />
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                <Youtube size={14} style={{ color: ytPhase !== "idle" ? "#ff4444" : "#333" }} />
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: ytPhase !== "idle" ? "#ff4444" : "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  YouTube
+                </span>
+                {ytPhase === "running" && <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ff4444", animation: "nodePulse 2s ease-in-out infinite" }} />}
+              </div>
+
+              {ytPhase === "idle" && (
+                <div style={{ textAlign: "center", padding: "1rem 0" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#444", lineHeight: 1.6 }}>
+                    Waiting for no-email profiles...
+                  </div>
+                  <div style={{ fontSize: "0.625rem", color: "#333", marginTop: "0.5rem" }}>
+                    Auto-starts when 10+ profiles have no bio email
+                  </div>
+                </div>
+              )}
+
+              {ytPhase === "running" && (ytStatus === "yt_processing" || ytStatus === "yt_scraping") && (
+                <>
+                  <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
+                    <Loader2 size={20} style={{ color: "#ff4444", margin: "0 auto 0.5rem", animation: "spin 3s linear infinite" }} />
+                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#ff4444", lineHeight: 1.3 }}>
+                      {ytStatus === "yt_scraping" ? "Submitting channels..." : "Extracting business emails"}
+                    </div>
+                    <div style={{ fontSize: "0.625rem", color: "#555", marginTop: "0.375rem", lineHeight: 1.5 }}>
+                      {ytStatus === "yt_processing"
+                        ? `Google accounts solving reCAPTCHA... ${ytHoursElapsed > 0 ? `${ytHoursElapsed}h elapsed` : "just started"}`
+                        : "Submitting to reCAPTCHA solver..."}
+                    </div>
+                  </div>
+                  {ytDescriptionEmails > 0 && (
+                    <div style={{ fontSize: "0.5625rem", color: "#666", textAlign: "center", marginBottom: "0.5rem" }}>
+                      {ytDescriptionEmails} description emails found during channel search
+                    </div>
+                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.625rem", color: "#555", alignItems: "center" }}>
+                    <span>{ytChannelsFound} channels submitted</span>
+                    <span style={{ color: "#888" }}>~3-48 hours processing time</span>
+                  </div>
+                  <div style={{
+                    marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "rgba(34,197,94,0.04)",
+                    border: "1px solid rgba(34,197,94,0.1)", borderRadius: "0.375rem", textAlign: "center",
+                  }}>
+                    <span style={{ fontSize: "0.625rem", color: "#22c55e" }}>
+                      ✓ Safe to close your browser — this runs on our servers
+                    </span>
+                  </div>
+                  {ytStatus === "yt_processing" && (
+                    <div style={{ textAlign: "center", marginTop: "0.5rem" }}>
+                      <button
+                        onClick={() => { if (ytJobId) ytPollOnce(ytJobId); }}
+                        style={{ fontSize: "0.5625rem", color: "#c9a96e", background: "none", border: "1px solid rgba(201,169,110,0.2)", borderRadius: "0.25rem", padding: "0.25rem 0.5rem", cursor: "pointer" }}
+                      >
+                        Check Now
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {ytPhase === "running" && ytStatus !== "yt_processing" && ytStatus !== "yt_scraping" && (
+                <>
+                  <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
+                    <div style={{ fontSize: "2.5rem", fontWeight: 700, color: "#ff4444", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                      {ytEmailsFound}
+                    </div>
+                    <div style={{ color: "#888", fontSize: "0.6875rem", marginTop: "0.25rem" }}>description emails found</div>
+                  </div>
+                  <div style={{ height: "3px", background: "rgba(255,255,255,0.04)", borderRadius: "2px", overflow: "hidden", marginBottom: "0.75rem" }}>
+                    <div style={{ height: "100%", background: "linear-gradient(90deg, #ff4444, #ff6666)", borderRadius: "2px", width: `${ytProgressPct}%`, transition: "width 0.6s ease" }} />
+                  </div>
+                  {/* YouTube pipeline breakdown */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.625rem", color: "#555", alignItems: "center" }}>
+                    <span>{ytProcessed}/{ytProfileCount} profiles searched</span>
+                    <span>{ytChannelsFound} channels found</span>
+                    <span style={{ color: "#ff4444" }}>{ytEmailsFound} emails from descriptions</span>
+                  </div>
+                  <div style={{ fontSize: "0.5625rem", color: "#444", textAlign: "center", marginTop: "0.5rem" }}>
+                    {formatElapsed(ytElapsed)}
+                  </div>
+                </>
+              )}
+
+              {ytPhase === "complete" && (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "2rem", fontWeight: 700, color: "#22c55e", lineHeight: 1 }}>{ytLeads.length}</div>
+                  <div style={{ color: "#888", fontSize: "0.6875rem", marginTop: "0.25rem" }}>YT emails found</div>
+                  <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginTop: "0.375rem", fontSize: "0.5625rem" }}>
+                    <span style={{ color: "#ff4444" }}>{ytLeads.filter(l => l.emailSource === "youtube_recaptcha").length} reCAPTCHA</span>
+                    <span style={{ color: "#c9a96e" }}>{ytLeads.filter(l => l.emailSource !== "youtube_recaptcha").length} description</span>
+                  </div>
+                  <div style={{ fontSize: "0.5625rem", color: "#555", marginTop: "0.25rem" }}>
+                    {ytChannelsFound} channels found · {ytProcessed} searched
+                  </div>
+                </div>
+              )}
+
+              {ytPhase === "error" && (
+                <div style={{ textAlign: "center" }}>
+                  <AlertCircle size={16} style={{ color: "#ef4444", margin: "0 auto 0.25rem" }} />
+                  <div style={{ fontSize: "0.6875rem", color: "#888" }}>{ytError}</div>
+                  {ytLeads.length > 0 && <div style={{ fontSize: "0.625rem", color: "#c9a96e", marginTop: "0.25rem" }}>{ytLeads.length} emails found</div>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Activity log */}
+          <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "0.5rem", padding: "0.75rem 1rem", maxHeight: "120px", overflow: "auto" }}>
+            <div style={{ fontSize: "0.5625rem", color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.5rem" }}>Activity</div>
+            {activityLog.slice(-8).reverse().map((log, i) => (
+              <div key={i} style={{ fontSize: "0.6875rem", color: log.type.includes("error") || log.type.includes("fail") ? "#ef4444" : log.type.includes("done") || log.type.includes("complete") ? "#22c55e" : "#666", marginBottom: "0.25rem", lineHeight: 1.4 }}>
+                {log.message}
               </div>
             ))}
-            <div ref={logEndRef} />
           </div>
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="section">
-          <div
-            className="glass-static"
-            style={{
-              padding: 16,
-              borderLeft: "3px solid var(--danger)",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              color: "var(--danger)",
-              fontSize: 13,
-            }}
-          >
-            <AlertCircle size={16} />
-            {error}
-          </div>
-        </div>
-      )}
-
-      {/* Stats Summary */}
-      {stats && (
-        <div className="section">
-          <h2 className="section-title">
-            <CheckCircle size={16} />
-            Run Summary
-          </h2>
-          {mode === "quick" ? (
-            <div className="metric-grid metric-grid-4">
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Profiles Scraped</div>
-                <div className="metric-card-value">{stats.filtered}</div>
-              </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Enriched</div>
-                <div className="metric-card-value">{stats.enriched}</div>
-              </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">With Email</div>
-                <div className="metric-card-value" style={{ color: "var(--success)" }}>{stats.withEmail || stats.emails}</div>
-              </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Hit Rate</div>
-                <div className="metric-card-value" style={{ color: "var(--accent)" }}>
-                  {stats.enriched > 0 ? Math.round(((stats.withEmail || stats.emails) / stats.enriched) * 100) : 0}%
-                </div>
-              </div>
+      {/* ══════════════════════════════════════════════════════════════════════
+          COMPLETE STATE — Results
+         ══════════════════════════════════════════════════════════════════════ */}
+      {phase === "complete" && !isRunning && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "1rem", padding: "2rem", marginBottom: "1.5rem",
+        }}>
+          {/* Summary */}
+          <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+            <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "rgba(34,197,94,0.08)", border: "2px solid rgba(34,197,94,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 0.75rem" }}>
+              <CheckCircle size={24} style={{ color: "#22c55e" }} />
             </div>
-          ) : (
-            <div className="metric-grid metric-grid-4">
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Profiles Found</div>
-                <div className="metric-card-value">{stats.filtered}</div>
+            <h3 style={{ color: "#fff", fontSize: "1.125rem", fontWeight: 600, margin: "0 0 0.25rem" }}>
+              Scan Complete
+            </h3>
+            <p style={{ color: "#666", fontSize: "0.8125rem" }}>
+              {formatElapsed(elapsed)} · {brandsCompleted.length} brands · {totalScraped} profiles checked
+            </p>
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap", justifyContent: "center" }}>
+            <StatBox label="Profiles" value={totalScraped} color="#888" />
+            <StatBox label="Had Email in Bio" value={emailsInBios} color="#c9a96e" />
+            <StatBox label="No Bio Email" value={noEmailCount} color="#555" />
+            <StatBox label="New Unique" value={emailsFound} color="#22c55e" sub={rawEmailCount > emailsFound ? `${rawEmailCount - emailsFound} already delivered` : undefined} />
+          </div>
+
+          {/* Download cards */}
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+            {/* IG CSV */}
+            <div style={{
+              flex: "1 1 300px", background: "rgba(201,169,110,0.03)", border: "1px solid rgba(201,169,110,0.1)",
+              borderRadius: "0.75rem", padding: "1.25rem", textAlign: "center",
+            }}>
+              <Mail size={18} style={{ color: "#c9a96e", margin: "0 auto 0.5rem" }} />
+              <div style={{ fontSize: "2rem", fontWeight: 700, color: "#c9a96e" }}>{leads.length}</div>
+              <div style={{ color: "#888", fontSize: "0.75rem", marginBottom: "0.75rem" }}>Instagram Bio Emails</div>
+              <button onClick={() => downloadCSV(leads, "ig_leads")} disabled={leads.length === 0} style={{
+                background: leads.length > 0 ? "linear-gradient(135deg, #c9a96e 0%, #b08d4f 100%)" : "rgba(255,255,255,0.04)",
+                color: leads.length > 0 ? "#000" : "#555", border: "none",
+                padding: "0.5rem 1.25rem", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 600,
+                cursor: leads.length > 0 ? "pointer" : "default",
+                display: "inline-flex", alignItems: "center", gap: "0.375rem",
+              }}>
+                <Download size={14} /> IG CSV ({leads.length})
+              </button>
+            </div>
+
+            {/* YT CSV */}
+            <div style={{
+              flex: "1 1 300px",
+              background: ytPhase === "complete" ? "rgba(255,0,0,0.02)" : "rgba(255,255,255,0.01)",
+              border: `1px solid ${ytPhase === "complete" ? "rgba(255,0,0,0.08)" : "rgba(255,255,255,0.04)"}`,
+              borderRadius: "0.75rem", padding: "1.25rem", textAlign: "center",
+            }}>
+              <Youtube size={18} style={{ color: ytPhase === "complete" ? "#ff4444" : "#444", margin: "0 auto 0.5rem" }} />
+              <div style={{ fontSize: "2rem", fontWeight: 700, color: ytPhase === "complete" ? "#ff4444" : "#555" }}>
+                {ytPhase === "complete" ? ytLeads.length : ytPhase === "running" ? ytEmailsFound : "—"}
               </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Qualified</div>
-                <div className="metric-card-value" style={{ color: "var(--success)" }}>{stats.qualified}</div>
+              <div style={{ color: "#888", fontSize: "0.75rem", marginBottom: "0.75rem" }}>YouTube Emails</div>
+
+              {ytPhase === "complete" && ytLeads.length > 0 && (
+                <>
+                  <div style={{ fontSize: "0.625rem", color: "#555", marginBottom: "0.25rem" }}>
+                    {ytChannelsFound} channels · {ytProcessed} profiles searched
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginBottom: "0.5rem", fontSize: "0.5625rem" }}>
+                    <span style={{ color: "#ff4444" }}>{ytLeads.filter(l => l.emailSource === "youtube_recaptcha").length} reCAPTCHA</span>
+                    <span style={{ color: "#c9a96e" }}>{ytLeads.filter(l => l.emailSource !== "youtube_recaptcha").length} description</span>
+                  </div>
+                  <button onClick={() => downloadCSV(ytLeads, "youtube_leads")} style={{
+                    background: "linear-gradient(135deg, #ff4444 0%, #cc0000 100%)", color: "#fff", border: "none",
+                    padding: "0.5rem 1.25rem", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 600,
+                    cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem",
+                  }}>
+                    <Download size={14} /> YT CSV ({ytLeads.length})
+                  </button>
+                </>
+              )}
+              {ytPhase === "running" && (
+                <div style={{ fontSize: "0.6875rem", color: "#888" }}>
+                  <Loader2 size={12} style={{ animation: "spin 1s linear infinite", display: "inline" }} /> Searching... {ytProcessed}/{ytProfileCount} profiles · {ytChannelsFound} channels
+                </div>
+              )}
+              {ytPhase === "idle" && noEmailCount > 0 && (
+                <button onClick={startYouTubeManual} style={{
+                  background: "rgba(255,0,0,0.06)", border: "1px solid rgba(255,0,0,0.15)",
+                  color: "#ff4444", padding: "0.5rem 1.25rem", borderRadius: "0.375rem", fontSize: "0.8125rem",
+                  cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem",
+                }}>
+                  <Youtube size={14} /> Search {noEmailCount} profiles
+                </button>
+              )}
+              {ytPhase === "error" && (
+                <button onClick={startYouTubeManual} style={btnSecondary}>Retry YouTube</button>
+              )}
+            </div>
+          </div>
+
+          {/* New Scan button */}
+          <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+            <button onClick={() => { setPhase("idle"); setLeads([]); setEmailsFound(0); setRawEmailCount(0); setActivityLog([]); setBrandsCompleted([]); setYtPhase("idle"); setYtLeads([]); ytAutoStartedRef.current = false; }} style={btnSecondary}>
+              <Play size={14} /> New Scan
+            </button>
+          </div>
+
+          {/* Search + Table */}
+          {leads.length > 0 && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "0.5rem", padding: "0.5rem 0.75rem", marginBottom: "1rem" }}>
+                <Search size={14} style={{ color: "#555" }} />
+                <input type="text" placeholder="Search leads..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)}
+                  style={{ background: "transparent", border: "none", color: "#ccc", fontSize: "0.8125rem", outline: "none", width: "100%" }} />
               </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">YouTube Found</div>
-                <div className="metric-card-value">{stats.youtube}</div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                      <th style={thStyle}>#</th><th style={thStyle}>Username</th><th style={thStyle}>Name</th>
+                      <th style={thStyle}>Email</th><th style={{ ...thStyle, textAlign: "right" }}>Followers</th><th style={thStyle}>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeads.slice(0, 200).map((l, i) => (
+                      <tr key={l.username + i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ ...tdStyle, color: "#444" }}>{i + 1}</td>
+                        <td style={tdStyle}><a href={l.profileUrl || `https://instagram.com/${l.username}`} target="_blank" rel="noopener noreferrer" style={{ color: "#c9a96e", textDecoration: "none", display: "flex", alignItems: "center", gap: "0.25rem" }}>@{l.username} <ExternalLink size={10} /></a></td>
+                        <td style={{ ...tdStyle, color: "#999" }}>{l.fullName}</td>
+                        <td style={tdStyle}><span style={{ color: "#22c55e", fontFamily: "monospace", fontSize: "0.75rem" }}>{l.igEmail}</span></td>
+                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.followers ? l.followers.toLocaleString() : "—"}</td>
+                        <td style={{ ...tdStyle, color: "#555" }}>@{l.brandSource}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="glass-static metric-card">
-                <div className="metric-card-label">Emails</div>
-                <div className="metric-card-value">{stats.emails}</div>
+            </>
+          )}
+
+          {/* YouTube results table */}
+          {ytLeads.length > 0 && (
+            <div style={{ marginTop: "1.5rem", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "1.5rem" }}>
+              <h4 style={{ color: "#ff4444", fontSize: "0.875rem", fontWeight: 600, margin: "0 0 1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Youtube size={16} /> YouTube Emails
+              </h4>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                      <th style={thStyle}>#</th><th style={thStyle}>Instagram</th><th style={thStyle}>YouTube Channel</th>
+                      <th style={thStyle}>Email</th><th style={thStyle}>Source</th><th style={{ ...thStyle, textAlign: "right" }}>Subscribers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ytLeads.slice(0, 200).map((l, i) => (
+                      <tr key={(l.username || "") + i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ ...tdStyle, color: "#444" }}>{i + 1}</td>
+                        <td style={tdStyle}><a href={`https://instagram.com/${l.username}`} target="_blank" rel="noopener noreferrer" style={{ color: "#c9a96e", textDecoration: "none" }}>@{l.username}</a></td>
+                        <td style={tdStyle}>
+                          {l.channelUrl ? (
+                            <a href={l.channelUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff4444", textDecoration: "none", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                              {l.channelTitle || "Channel"} <ExternalLink size={10} />
+                            </a>
+                          ) : <span style={{ color: "#555" }}>{l.channelTitle || "—"}</span>}
+                        </td>
+                        <td style={tdStyle}><span style={{ color: "#22c55e", fontFamily: "monospace", fontSize: "0.75rem" }}>{l.email || l.ytEmail || ""}</span></td>
+                        <td style={tdStyle}>
+                          <span style={{
+                            fontSize: "0.5625rem", padding: "0.125rem 0.375rem", borderRadius: "0.25rem",
+                            background: l.emailSource === "youtube_recaptcha" ? "rgba(255,0,0,0.08)" : "rgba(201,169,110,0.08)",
+                            color: l.emailSource === "youtube_recaptcha" ? "#ff4444" : "#c9a96e",
+                          }}>
+                            {l.emailSource === "youtube_recaptcha" ? "reCAPTCHA" : "Description"}
+                          </span>
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.subscriberCount ? l.subscriberCount.toLocaleString() : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Results Table */}
-      {leads.length > 0 && (
-        <div className="section">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 className="section-title" style={{ marginBottom: 0 }}>
-              <Users size={16} />
-              {mode === "quick" ? `Email Leads (${filteredLeads.length})` : `Leads (${filteredLeads.length})`}
-            </h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <div style={{ position: "relative" }}>
-                <Search
-                  size={14}
-                  style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
-                />
-                <input
-                  className="form-input"
-                  placeholder="Search leads..."
-                  value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
-                  style={{ paddingLeft: 32, width: 200, fontSize: 12 }}
-                />
-              </div>
-              {mode === "full" && (
-                <select
-                  className="form-input"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  style={{ width: 140, fontSize: 12 }}
-                >
-                  <option value="score">Sort: Score</option>
-                  <option value="followers">Sort: Followers</option>
-                </select>
-              )}
-            </div>
-          </div>
-
-          <div className="glass-static" style={{ overflow: "hidden" }}>
-            <div style={{ overflowX: "auto" }}>
-              {mode === "quick" ? (
-                /* ── Quick Scan Table ── */
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Username</th>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Followers</th>
-                      <th>Bio</th>
-                      <th>Brand</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLeads.map((lead) => (
-                      <tr key={lead.username}>
-                        <td>
-                          <a
-                            href={lead.profileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              fontWeight: 600,
-                              color: "var(--text-primary)",
-                              textDecoration: "none",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              fontSize: 13,
-                            }}
-                          >
-                            @{lead.username}
-                            <ExternalLink size={10} style={{ color: "var(--text-muted)" }} />
-                          </a>
-                        </td>
-                        <td>
-                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                            {lead.fullName || "—"}
-                          </span>
-                        </td>
-                        <td>
-                          <a
-                            href={`mailto:${lead.igEmail}`}
-                            style={{
-                              fontSize: 12,
-                              color: "var(--accent)",
-                              textDecoration: "none",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                            }}
-                          >
-                            <Mail size={12} />
-                            {lead.igEmail}
-                          </a>
-                        </td>
-                        <td style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
-                          {lead.followers >= 1000000
-                            ? `${(lead.followers / 1000000).toFixed(1)}M`
-                            : lead.followers >= 1000
-                            ? `${(lead.followers / 1000).toFixed(0)}K`
-                            : lead.followers || "—"}
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: "var(--text-muted)",
-                              maxWidth: 240,
-                              display: "inline-block",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                            title={lead.biography}
-                          >
-                            {lead.biography || "—"}
-                          </span>
-                        </td>
-                        <td>
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                            @{lead.brandSource}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                /* ── Full Pipeline Table ── */
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Score</th>
-                      <th>Username</th>
-                      <th>Followers</th>
-                      <th>Engagement</th>
-                      <th>Monetization</th>
-                      <th>Channels</th>
-                      <th>Brand Source</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLeads.map((lead) => (
-                      <tr key={lead.username}>
-                        <td>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              width: 36,
-                              height: 24,
-                              borderRadius: 12,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              background: scoreBg(lead.score),
-                              color: scoreColor(lead.score),
-                            }}
-                          >
-                            {lead.score}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <a
-                              href={lead.profileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                fontWeight: 600,
-                                color: "var(--text-primary)",
-                                textDecoration: "none",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 4,
-                                fontSize: 13,
-                              }}
-                            >
-                              @{lead.username}
-                              <ExternalLink size={10} style={{ color: "var(--text-muted)" }} />
-                            </a>
-                            {lead.fullName && (
-                              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lead.fullName}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                          {lead.followers >= 1000000
-                            ? `${(lead.followers / 1000000).toFixed(1)}M`
-                            : `${(lead.followers / 1000).toFixed(0)}K`}
-                        </td>
-                        <td>
-                          {lead.engagementRate != null ? (
-                            <span style={{ color: lead.engagementRate >= 3 ? "var(--success)" : "var(--text-secondary)" }}>
-                              {lead.engagementRate}%
-                            </span>
-                          ) : (
-                            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>N/A</span>
-                          )}
-                        </td>
-                        <td>
-                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                            {lead.monetization || "unknown"}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <a
-                              href={lead.profileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Instagram"
-                            >
-                              <Instagram
-                                size={14}
-                                style={{ color: "var(--text-muted)", cursor: "pointer" }}
-                              />
-                            </a>
-                            {lead.youtubeChannel && (
-                              <a
-                                href={lead.youtubeChannel}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="YouTube"
-                              >
-                                <Youtube
-                                  size={14}
-                                  style={{ color: "#ff4444" }}
-                                />
-                              </a>
-                            )}
-                            {lead.igEmail && (
-                              <a
-                                href={`mailto:${lead.igEmail}`}
-                                title={lead.igEmail}
-                              >
-                                <Mail
-                                  size={14}
-                                  style={{ color: "var(--accent)" }}
-                                />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                            @{lead.brandSource}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: "var(--text-muted)",
-                              maxWidth: 200,
-                              display: "inline-block",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                            title={lead.reason}
-                          >
-                            {lead.reason}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+      {/* ERROR STATE */}
+      {phase === "error" && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "1rem", padding: "2rem", marginBottom: "1.5rem", textAlign: "center",
+        }}>
+          <AlertCircle size={32} style={{ color: "#ef4444", margin: "0 auto 0.75rem" }} />
+          <h3 style={{ color: "#ef4444", fontSize: "1rem", fontWeight: 600, margin: "0 0 0.5rem" }}>Scan Failed</h3>
+          <p style={{ color: "#888", fontSize: "0.875rem", margin: "0 0 1rem" }}>{error}</p>
+          {leads.length > 0 && <p style={{ color: "#c9a96e", fontSize: "0.8125rem", margin: "0 0 1rem" }}>{leads.length} emails found before error.</p>}
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+            {leads.length > 0 && <button onClick={() => downloadCSV(leads, "ig_leads")} style={btnSecondary}><Download size={14} /> Download {leads.length}</button>}
+            <button onClick={() => { setPhase("idle"); setError(null); }} style={btnSecondary}>Try Again</button>
           </div>
         </div>
       )}
 
-      {/* Empty State */}
-      {!running && !polling && leads.length === 0 && !error && (
-        <div className="section">
-          <div
-            className="glass-static"
-            style={{
-              padding: 48,
-              textAlign: "center",
-            }}
-          >
-            {mode === "quick" ? (
-              <Zap
-                size={32}
-                style={{ color: "var(--accent)", margin: "0 auto 16px" }}
-              />
-            ) : (
-              <Crosshair
-                size={32}
-                style={{ color: "var(--text-muted)", margin: "0 auto 16px" }}
-              />
-            )}
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                marginBottom: 8,
-              }}
-            >
-              {mode === "quick" ? "Ready to scan for emails" : "Ready to find leads"}
+      {/* ══════════════════════════════════════════════════════════════════════
+          HISTORY PANEL
+         ══════════════════════════════════════════════════════════════════════ */}
+      {showHistory && (
+        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "1rem", padding: "1.5rem" }}>
+          <h3 style={{ color: "#fff", fontSize: "1rem", fontWeight: 600, margin: "0 0 1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Clock size={16} style={{ color: "#c9a96e" }} /> Past Runs
+          </h3>
+          {historyLoading && <div style={{ textAlign: "center", padding: "1rem", color: "#666" }}><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Loading...</div>}
+          {!historyLoading && historyRuns.length === 0 && <p style={{ color: "#555", fontSize: "0.8125rem", textAlign: "center" }}>No past runs yet.</p>}
+          {!historyLoading && historyRuns.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {historyRuns.map((run) => (
+                <div key={run.id} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "0.75rem 1rem", background: "rgba(255,255,255,0.015)",
+                  border: "1px solid rgba(255,255,255,0.05)", borderRadius: "0.5rem", fontSize: "0.8125rem",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    {run.mode === "youtube" ? <Youtube size={14} style={{ color: "#ff4444" }} /> :
+                      <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: run.status === "complete" ? "#22c55e" : run.status === "stopped" ? "#c9a96e" : run.status === "failed" ? "#ef4444" : "#eab308" }} />
+                    }
+                    <div>
+                      <div style={{ color: "#bbb", display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                        {new Date(run.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        {run.mode === "youtube" && <span style={{ fontSize: "0.625rem", color: "#ff4444", background: "rgba(255,0,0,0.08)", padding: "0.125rem 0.375rem", borderRadius: "0.25rem" }}>YT</span>}
+                        {run.status === "stopped" && <span style={{ fontSize: "0.625rem", color: "#c9a96e", background: "rgba(201,169,110,0.08)", padding: "0.125rem 0.375rem", borderRadius: "0.25rem" }}>Stopped</span>}
+                      </div>
+                      <div style={{ color: "#555", fontSize: "0.75rem" }}>{run.email_count || 0} emails</div>
+                    </div>
+                  </div>
+                  {(run.status === "complete" || run.status === "stopped") && run.email_count > 0 && (
+                    <button onClick={() => downloadHistoryCSV(run.id)} disabled={downloadingJobId === run.id} style={{
+                      background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.15)",
+                      color: "#c9a96e", padding: "0.25rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer",
+                      fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem",
+                    }}>
+                      {downloadingJobId === run.id ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Download size={12} />} CSV
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                maxWidth: 440,
-                margin: "0 auto 24px",
-                lineHeight: 1.6,
-              }}
-            >
-              {mode === "quick"
-                ? "Scan brand following lists, enrich profiles, and export every account with an email in their bio. No AI scoring or YouTube lookup — just fast email extraction."
-                : "This tool scrapes who major fitness brands follow on Instagram, qualifies them using engagement + AI scoring, and finds their YouTube channels. Start with a test run to verify your API keys work."}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                justifyContent: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              {mode === "quick" ? (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Instagram size={12} />
-                    Apify Scraping
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Users size={12} />
-                    Profile Enrichment
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Mail size={12} />
-                    Email Extraction
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Instagram size={12} />
-                    Apify Scraping
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Brain size={12} />
-                    Claude AI Scoring
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    <Youtube size={12} />
-                    YouTube Discovery
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       )}
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes nodePulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(201,169,110,0.3); }
+          50% { opacity: 0.6; box-shadow: 0 0 12px rgba(201,169,110,0.5); }
+        }
+      `}</style>
     </div>
   );
 }
+
+// ─── Shared Components ──────────────────────────────────────────────────────
+
+function StatBox({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color: string }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+      borderRadius: "0.625rem", padding: "0.75rem 1rem", textAlign: "center", flex: "1 1 0", minWidth: "100px",
+    }}>
+      <div style={{ fontSize: "1.5rem", fontWeight: 700, color, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: "0.6875rem", color: "#555", marginTop: "0.25rem" }}>{label}</div>
+      {sub && <div style={{ fontSize: "0.5625rem", color: "#3a3a3a", marginTop: "0.125rem" }}>{sub}</div>}
+    </div>
+  );
+}
+
+const thStyle: React.CSSProperties = { textAlign: "left", padding: "0.625rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" };
+const tdStyle: React.CSSProperties = { padding: "0.5rem 0.75rem", color: "#ccc" };
+const btnSecondary: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#bbb", padding: "0.625rem 1.5rem", borderRadius: "0.5rem", fontSize: "0.875rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.375rem" };
