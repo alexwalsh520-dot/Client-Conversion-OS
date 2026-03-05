@@ -24,14 +24,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 import {
-  topStats as mockTopStats,
   pipelineStages as mockPipelineStages,
   activityFeed,
-  emailPerformance as mockEmailPerformance,
-  dmPerformance,
   trendData,
   type PipelineStage,
 } from "@/lib/outreach-data";
+import { getRuns } from "@/lib/outreach-store";
 import { fmtNumber, fmtPercent, fmtCompact } from "@/lib/formatters";
 
 function timeAgo(timestamp: string): string {
@@ -63,6 +61,9 @@ const stageColors: Record<string, string> = {
   "Lost": "#d98e8e",
 };
 
+// Mock DM reply rate (no real data source yet)
+const MOCK_DM_REPLY_RATE = 5.2;
+
 export default function OutreachPage() {
   // Live pipeline data
   const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>(mockPipelineStages);
@@ -73,6 +74,10 @@ export default function OutreachPage() {
   const [smartleadStats, setSmartleadStats] = useState<Record<string, unknown> | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState("");
+
+  // Outreach-runs data from localStorage
+  const [contactedToday, setContactedToday] = useState(0);
+  const [dmsQueuedToday, setDmsQueuedToday] = useState(0);
 
   // Fetch pipeline data
   useEffect(() => {
@@ -116,25 +121,37 @@ export default function OutreachPage() {
     fetchStats();
   }, []);
 
-  // Derive top stats from live data when available
+  // Get today's stats from outreach-runs localStorage
+  useEffect(() => {
+    const runs = getRuns();
+    const today = new Date().toISOString().split("T")[0];
+    const todayRuns = runs.filter((r) => r.timestamp.startsWith(today));
+    const contacted = todayRuns.reduce((s, r) => s + r.leads_imported, 0);
+    const dms = todayRuns.reduce((s, r) => s + r.dms_queued, 0);
+    setContactedToday(contacted);
+    setDmsQueuedToday(dms);
+  }, []);
+
+  // Derive top stats from live data
   const topStats = useMemo(() => {
     const totalInPipeline = pipelineStages
       .filter((s) => s.name !== "Lost")
       .reduce((sum, s) => sum + s.count, 0);
 
-    if (smartleadStats) {
-      return {
-        totalLeadsInPipeline: totalInPipeline,
-        leadsContactedToday: mockTopStats.leadsContactedToday,
-        emailsSentToday: (smartleadStats as { sent_count?: number }).sent_count || mockTopStats.emailsSentToday,
-        dmsSentToday: mockTopStats.dmsSentToday,
-        emailReplyRate: (smartleadStats as { reply_rate?: number }).reply_rate || mockTopStats.emailReplyRate,
-        dmReplyRate: mockTopStats.dmReplyRate,
-        activeSequences: mockTopStats.activeSequences,
-      };
-    }
-    return { ...mockTopStats, totalLeadsInPipeline: totalInPipeline };
-  }, [pipelineStages, smartleadStats]);
+    const sl = smartleadStats as {
+      sent_count?: number;
+      reply_rate?: number;
+    } | null;
+
+    return {
+      totalLeadsInPipeline: totalInPipeline,
+      contactedToday,
+      emailsSent: sl?.sent_count || 0,
+      dmsSentToday: dmsQueuedToday,
+      emailReplyRate: sl?.reply_rate || 0,
+      dmReplyRate: MOCK_DM_REPLY_RATE,
+    };
+  }, [pipelineStages, smartleadStats, contactedToday, dmsQueuedToday]);
 
   // Email performance from Smartlead stats
   const emailPerformance = useMemo(() => {
@@ -144,21 +161,15 @@ export default function OutreachPage() {
         open_rate?: number;
         reply_rate?: number;
         bounce_rate?: number;
-        sequence_count?: number;
       };
       return {
-        ...mockEmailPerformance,
-        sent: {
-          total: stats.sent_count || mockEmailPerformance.sent.total,
-          today: mockEmailPerformance.sent.today,
-        },
-        openRate: stats.open_rate || mockEmailPerformance.openRate,
-        replyRate: stats.reply_rate || mockEmailPerformance.replyRate,
-        bounceRate: stats.bounce_rate || mockEmailPerformance.bounceRate,
-        activeSequences: stats.sequence_count || mockEmailPerformance.activeSequences,
+        sent: stats.sent_count || 0,
+        openRate: stats.open_rate || 0,
+        replyRate: stats.reply_rate || 0,
+        bounceRate: stats.bounce_rate || 0,
       };
     }
-    return mockEmailPerformance;
+    return { sent: 0, openRate: 0, replyRate: 0, bounceRate: 0 };
   }, [smartleadStats]);
 
   const chartData = useMemo(
@@ -239,28 +250,28 @@ export default function OutreachPage() {
           <div className="glass-static metric-card">
             <div className="metric-card-label">Contacted Today</div>
             <div className="metric-card-value">
-              {topStats.leadsContactedToday}
+              {fmtNumber(topStats.contactedToday)}
             </div>
             <div className="metric-card-trend metric-card-trend-up">
-              +{topStats.leadsContactedToday} new
+              from outreach runs
             </div>
           </div>
           <div className="glass-static metric-card">
-            <div className="metric-card-label">Emails Sent Today</div>
+            <div className="metric-card-label">Emails Sent</div>
             <div className="metric-card-value">
-              {fmtNumber(topStats.emailsSentToday)}
+              {fmtCompact(topStats.emailsSent)}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              new + follow-ups
+              Smartlead campaign total
             </div>
           </div>
           <div className="glass-static metric-card">
-            <div className="metric-card-label">DMs Sent Today</div>
+            <div className="metric-card-label">DMs Queued Today</div>
             <div className="metric-card-value">
               {fmtNumber(topStats.dmsSentToday)}
             </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              new + follow-ups
+              from outreach runs
             </div>
           </div>
           <div className="glass-static metric-card">
@@ -269,7 +280,7 @@ export default function OutreachPage() {
               {fmtPercent(topStats.emailReplyRate)}
             </div>
             <div className="metric-card-trend metric-card-trend-up">
-              industry avg ~2%
+              from Smartlead
             </div>
           </div>
           <div className="glass-static metric-card">
@@ -277,17 +288,8 @@ export default function OutreachPage() {
             <div className="metric-card-value">
               {fmtPercent(topStats.dmReplyRate)}
             </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              above target
-            </div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Active Sequences</div>
-            <div className="metric-card-value">
-              {fmtNumber(topStats.activeSequences)}
-            </div>
             <div className="metric-card-trend metric-card-trend-flat">
-              email + DM combined
+              estimated
             </div>
           </div>
         </div>
@@ -396,10 +398,9 @@ export default function OutreachPage() {
             </div>
             <div className="outreach-channel-stats">
               <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Emails Sent</span>
+                <span className="outreach-channel-label">Total Emails Sent</span>
                 <span className="outreach-channel-value">
-                  {fmtCompact(emailPerformance.sent.total)} /{" "}
-                  {fmtNumber(emailPerformance.sent.today)} today
+                  {fmtCompact(emailPerformance.sent)}
                 </span>
               </div>
               <div className="outreach-channel-row">
@@ -418,18 +419,6 @@ export default function OutreachPage() {
                 <span className="outreach-channel-label">Bounce Rate</span>
                 <span className="outreach-channel-value">
                   {fmtPercent(emailPerformance.bounceRate)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Active Sequences</span>
-                <span className="outreach-channel-value">
-                  {fmtNumber(emailPerformance.activeSequences)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Domains Active</span>
-                <span className="outreach-channel-value">
-                  {emailPerformance.domainsActive}
                 </span>
               </div>
             </div>
@@ -470,35 +459,24 @@ export default function OutreachPage() {
             </div>
             <div className="outreach-channel-stats">
               <div className="outreach-channel-row">
-                <span className="outreach-channel-label">DMs Sent</span>
+                <span className="outreach-channel-label">DMs Queued Today</span>
                 <span className="outreach-channel-value">
-                  {fmtCompact(dmPerformance.sent.total)} /{" "}
-                  {fmtNumber(dmPerformance.sent.today)} today
+                  {fmtNumber(dmsQueuedToday)}
                 </span>
               </div>
               <div className="outreach-channel-row">
                 <span className="outreach-channel-label">Reply Rate</span>
                 <span className="outreach-channel-value">
-                  {fmtPercent(dmPerformance.replyRate)}
+                  {fmtPercent(MOCK_DM_REPLY_RATE)}
                 </span>
               </div>
               <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Response Rate</span>
-                <span className="outreach-channel-value">
-                  {fmtPercent(dmPerformance.responseRate)}
+                <span className="outreach-channel-label">
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    (mock data — no live source yet)
+                  </span>
                 </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">Active Sequences</span>
-                <span className="outreach-channel-value">
-                  {fmtNumber(dmPerformance.activeSequences)}
-                </span>
-              </div>
-              <div className="outreach-channel-row">
-                <span className="outreach-channel-label">IG Accounts Active</span>
-                <span className="outreach-channel-value">
-                  {dmPerformance.igAccountsActive}
-                </span>
+                <span className="outreach-channel-value" />
               </div>
             </div>
           </div>

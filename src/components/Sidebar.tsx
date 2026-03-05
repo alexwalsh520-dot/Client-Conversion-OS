@@ -68,7 +68,8 @@ export default function Sidebar() {
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    // Exact match or match with sub-path (e.g. /outreach matches /outreach but not /outreach-runs)
+    return pathname === href || pathname.startsWith(href + "/");
   };
 
   const renderLink = (item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> }) => {
