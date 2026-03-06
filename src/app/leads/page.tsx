@@ -197,6 +197,7 @@ export default function LeadsPage() {
   // ── Brand Bank ──
   const [brandBank, setBrandBank] = useState<BrandBankResponse | null>(null);
   const [brandBankLoading, setBrandBankLoading] = useState(false);
+  const [brandBankError, setBrandBankError] = useState<string | null>(null);
   const [selectedBrands, setSelectedBrands] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [addBrandInput, setAddBrandInput] = useState("");
@@ -242,25 +243,35 @@ export default function LeadsPage() {
 
   async function fetchBrandBank() {
     setBrandBankLoading(true);
+    setBrandBankError(null);
     try {
       const r = await fetch("/api/lead-gen/brand-bank");
+      const d = await r.json().catch(() => null);
+
       if (!r.ok) {
-        console.error("[brand-bank] fetch failed:", r.status, r.statusText);
+        const msg = d?.error || `HTTP ${r.status} ${r.statusText}`;
+        console.error("[brand-bank] fetch failed:", msg);
+        setBrandBankError(msg);
         return;
       }
-      const d = await r.json();
-      console.log("[brand-bank] loaded", d?.brands?.length ?? 0, "brands");
+
       if (!d?.brands || !Array.isArray(d.brands)) {
-        console.error("[brand-bank] unexpected response shape:", d);
+        const msg = `Unexpected response: ${JSON.stringify(d).slice(0, 200)}`;
+        console.error("[brand-bank]", msg);
+        setBrandBankError(msg);
         return;
       }
+
+      console.log("[brand-bank] loaded", d.brands.length, "brands");
       setBrandBank(d as BrandBankResponse);
       // Auto-select all brands on first load
       if (selectedBrands.size === 0 && d.brands.length > 0) {
         setSelectedBrands(new Set(d.brands.map((b: BrandBankItem) => b.handle)));
       }
-    } catch (err) {
-      console.error("[brand-bank] error:", err);
+    } catch (err: any) {
+      const msg = err?.message || "Network error";
+      console.error("[brand-bank] error:", msg);
+      setBrandBankError(msg);
     } finally {
       setBrandBankLoading(false);
     }
@@ -791,6 +802,11 @@ export default function LeadsPage() {
             <div style={{ textAlign: "center", padding: "2rem", color: "#888" }}>
               <AlertCircle size={20} style={{ color: "#c9a96e", margin: "0 auto 0.5rem" }} />
               <div style={{ fontSize: "0.8125rem", marginBottom: "0.5rem" }}>Failed to load brand bank</div>
+              {brandBankError && (
+                <div style={{ fontSize: "0.6875rem", color: "#f87171", marginBottom: "0.75rem", fontFamily: "monospace", maxWidth: "500px", margin: "0 auto 0.75rem", wordBreak: "break-all" }}>
+                  {brandBankError}
+                </div>
+              )}
               <button onClick={fetchBrandBank} style={{
                 padding: "0.375rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.75rem",
                 background: "rgba(201,169,110,0.1)", border: "1px solid rgba(201,169,110,0.3)",
