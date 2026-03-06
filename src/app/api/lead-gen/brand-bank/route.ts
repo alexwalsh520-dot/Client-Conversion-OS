@@ -26,7 +26,8 @@ export async function GET() {
     .order("handle");
 
   if (brandErr || !brands) {
-    return NextResponse.json({ error: "Failed to load brands" }, { status: 500 });
+    console.error("[brand-bank] DB error:", brandErr?.message, brandErr?.code);
+    return NextResponse.json({ error: `Failed to load brands: ${brandErr?.message || "no data"}` }, { status: 500 });
   }
 
   // Get per-brand stats from scraped_profiles in one query

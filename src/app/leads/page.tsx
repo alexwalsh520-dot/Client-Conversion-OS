@@ -244,14 +244,26 @@ export default function LeadsPage() {
     setBrandBankLoading(true);
     try {
       const r = await fetch("/api/lead-gen/brand-bank");
-      const d: BrandBankResponse = await r.json();
-      setBrandBank(d);
+      if (!r.ok) {
+        console.error("[brand-bank] fetch failed:", r.status, r.statusText);
+        return;
+      }
+      const d = await r.json();
+      console.log("[brand-bank] loaded", d?.brands?.length ?? 0, "brands");
+      if (!d?.brands || !Array.isArray(d.brands)) {
+        console.error("[brand-bank] unexpected response shape:", d);
+        return;
+      }
+      setBrandBank(d as BrandBankResponse);
       // Auto-select all brands on first load
       if (selectedBrands.size === 0 && d.brands.length > 0) {
-        setSelectedBrands(new Set(d.brands.map((b) => b.handle)));
+        setSelectedBrands(new Set(d.brands.map((b: BrandBankItem) => b.handle)));
       }
-    } catch { /* silent */ }
-    finally { setBrandBankLoading(false); }
+    } catch (err) {
+      console.error("[brand-bank] error:", err);
+    } finally {
+      setBrandBankLoading(false);
+    }
   }
 
   useEffect(() => { fetchBrandBank(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -771,6 +783,19 @@ export default function LeadsPage() {
             <div style={{ textAlign: "center", padding: "2rem", color: "#555" }}>
               <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
               <div style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>Loading brand bank...</div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!brandBankLoading && !brandBank && (
+            <div style={{ textAlign: "center", padding: "2rem", color: "#888" }}>
+              <AlertCircle size={20} style={{ color: "#c9a96e", margin: "0 auto 0.5rem" }} />
+              <div style={{ fontSize: "0.8125rem", marginBottom: "0.5rem" }}>Failed to load brand bank</div>
+              <button onClick={fetchBrandBank} style={{
+                padding: "0.375rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.75rem",
+                background: "rgba(201,169,110,0.1)", border: "1px solid rgba(201,169,110,0.3)",
+                color: "#c9a96e", cursor: "pointer",
+              }}>Retry</button>
             </div>
           )}
 
