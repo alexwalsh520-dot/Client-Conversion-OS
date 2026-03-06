@@ -1,18 +1,14 @@
 // GET /api/lead-gen/brands — Brand dashboard data
 //
-// Aggregates per-brand stats across ALL completed/stopped jobs.
-// Shows which brands have been fully scraped, email yield per brand,
-// and YouTube coverage.
+// Reads from brand_bank + scraped_profiles tables for accurate per-brand stats.
+// Also includes YouTube coverage from lead_jobs history.
 
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 
-const BRAND_ACCOUNTS = [
-  "gymshark", "1stphorm", "youngla", "darcsport", "alphaleteathletics",
-  "nvgtn", "ghostlifestyle", "rawgear", "gymreapers", "gorillawear",
-  "musclenation", "buffbunnyco", "rabornyofficial",
-];
+const STALE_DAYS = 30;
+const MIN_FOLLOWERS_PER_BRAND = 400;
 
 export async function GET() {
   const session = await auth();
@@ -22,109 +18,101 @@ export async function GET() {
 
   const db = getServiceSupabase();
 
-  // Get all IG jobs (non-youtube) that are complete or stopped
-  const { data: igJobs } = await db
-    .from("lead_jobs")
-    .select("brand_results, brands_completed, found_leads, status, created_at")
-    .in("status", ["complete", "stopped"])
-    .neq("mode", "youtube")
-    .order("created_at", { ascending: false })
-    .limit(50);
+  // Get all brands from brand_bank
+  const { data: brands, error: brandErr } = await db
+    .from("brand_bank")
+    .select("*")
+    .eq("is_active", true)
+    .order("handle");
 
-  // Get all YouTube jobs that are complete
+  if (brandErr || !brands) {
+    return NextResponse.json({ error: "Failed to load brands" }, { status: 500 });
+  }
+
+  const handles = brands.map((b) => b.handle);
+
+  // Get per-brand stats from scraped_profiles
+  const { data: profileStats } = await db
+    .from("scraped_profiles")
+    .select("brand_source, has_email, enriched_at")
+    .in("brand_source", handles);
+
+  // Aggregate stats
+  const statsMap: Record<string, { scraped: number; withEmail: number; withoutEmail: number; unenriched: number }> = {};
+  for (const h of handles) {
+    statsMap[h] = { scraped: 0, withEmail: 0, withoutEmail: 0, unenriched: 0 };
+  }
+  for (const p of profileStats || []) {
+    const s = statsMap[p.brand_source];
+    if (!s) continue;
+    s.scraped++;
+    if (p.enriched_at) {
+      if (p.has_email) s.withEmail++;
+      else s.withoutEmail++;
+    } else {
+      s.unenriched++;
+    }
+  }
+
+  // Get YouTube stats from lead_jobs
   const { data: ytJobs } = await db
     .from("lead_jobs")
-    .select("yt_channel_results, status, created_at")
+    .select("yt_channel_results")
     .eq("mode", "youtube")
     .in("status", ["complete", "stopped"])
     .order("created_at", { ascending: false })
     .limit(50);
+
+  const ytStats: Record<string, { ytSearched: number; ytChannelsFound: number; ytEmails: number }> = {};
+  for (const h of handles) {
+    ytStats[h] = { ytSearched: 0, ytChannelsFound: 0, ytEmails: 0 };
+  }
+  for (const ytJob of (ytJobs || [])) {
+    const results: any[] = ytJob.yt_channel_results || [];
+    for (const r of results) {
+      const brand = r.brandSource || "";
+      if (!ytStats[brand]) continue;
+      ytStats[brand].ytSearched++;
+      if (r.found) ytStats[brand].ytChannelsFound++;
+      if (r.email) ytStats[brand].ytEmails++;
+    }
+  }
 
   // Get delivered emails count
   const { count: totalDelivered } = await db
     .from("delivered_emails")
     .select("*", { count: "exact", head: true });
 
-  // Aggregate per-brand stats from IG jobs
-  const brandStats: Record<string, {
-    scraped: number;
-    igEmails: number;
-    withoutEmail: number;
-    ytSearched: number;
-    ytChannelsFound: number;
-    ytEmails: number;
-    fullyScraped: boolean;
-    lastScrapedAt: string | null;
-  }> = {};
+  const now = Date.now();
+  const staleMs = STALE_DAYS * 86400000;
 
-  // Initialize all brands
-  for (const brand of BRAND_ACCOUNTS) {
-    brandStats[brand] = {
-      scraped: 0,
-      igEmails: 0,
-      withoutEmail: 0,
-      ytSearched: 0,
-      ytChannelsFound: 0,
-      ytEmails: 0,
-      fullyScraped: false,
-      lastScrapedAt: null,
+  // Build response array
+  const brandsArray = brands.map((b) => {
+    const s = statsMap[b.handle] || { scraped: 0, withEmail: 0, withoutEmail: 0, unenriched: 0 };
+    const yt = ytStats[b.handle] || { ytSearched: 0, ytChannelsFound: 0, ytEmails: 0 };
+    const lastScraped = b.last_scraped_at ? new Date(b.last_scraped_at).getTime() : 0;
+    const isStale = !lastScraped || (now - lastScraped) > staleMs;
+    const fullyScraped = s.scraped >= MIN_FOLLOWERS_PER_BRAND && !isStale;
+
+    return {
+      brand: b.handle,
+      display_name: b.display_name,
+      category: b.category,
+      scraped: s.scraped,
+      igEmails: s.withEmail,
+      withoutEmail: s.withoutEmail,
+      unenriched: s.unenriched,
+      ...yt,
+      totalEmails: s.withEmail + yt.ytEmails,
+      fullyScraped,
+      lastScrapedAt: b.last_scraped_at,
+      isStale,
+      needsScrape: s.scraped < MIN_FOLLOWERS_PER_BRAND || isStale,
     };
-  }
-
-  // Accumulate from IG jobs (use brand_results if available, else compute from found_leads)
-  for (const job of (igJobs || [])) {
-    const brandsCompleted: string[] = job.brands_completed || [];
-
-    if (job.brand_results && typeof job.brand_results === "object") {
-      for (const [brand, stats] of Object.entries(job.brand_results as Record<string, any>)) {
-        if (!brandStats[brand]) continue;
-        brandStats[brand].scraped += stats.scraped || 0;
-        brandStats[brand].igEmails += stats.withEmail || 0;
-        brandStats[brand].withoutEmail += stats.withoutEmail || 0;
-      }
-    } else if (job.found_leads && Array.isArray(job.found_leads)) {
-      // Fallback: compute from found_leads
-      for (const lead of job.found_leads) {
-        const brand = lead.brandSource || "";
-        if (!brandStats[brand]) continue;
-        brandStats[brand].scraped++;
-        if (lead.igEmail) brandStats[brand].igEmails++;
-        else brandStats[brand].withoutEmail++;
-      }
-    }
-
-    // Track which brands were fully scraped (only if we actually have data)
-    for (const brand of brandsCompleted) {
-      if (brandStats[brand] && brandStats[brand].scraped > 0) {
-        brandStats[brand].fullyScraped = true;
-        if (!brandStats[brand].lastScrapedAt) {
-          brandStats[brand].lastScrapedAt = job.created_at;
-        }
-      }
-    }
-  }
-
-  // Accumulate from YouTube jobs
-  for (const ytJob of (ytJobs || [])) {
-    const results: any[] = ytJob.yt_channel_results || [];
-    for (const r of results) {
-      const brand = r.brandSource || "";
-      if (!brandStats[brand]) continue;
-      brandStats[brand].ytSearched++;
-      if (r.found) brandStats[brand].ytChannelsFound++;
-      if (r.email) brandStats[brand].ytEmails++;
-    }
-  }
-
-  // Build response array sorted by scraped count desc
-  const brandsArray = BRAND_ACCOUNTS.map((brand) => ({
-    brand,
-    ...brandStats[brand],
-    totalEmails: brandStats[brand].igEmails + brandStats[brand].ytEmails,
-  })).sort((a, b) => b.scraped - a.scraped);
+  }).sort((a, b) => b.scraped - a.scraped);
 
   const totalStats = {
-    totalBrands: BRAND_ACCOUNTS.length,
+    totalBrands: brands.length,
     brandsScraped: brandsArray.filter((b) => b.scraped > 0).length,
     brandsFullyScraped: brandsArray.filter((b) => b.fullyScraped).length,
     totalProfilesScraped: brandsArray.reduce((sum, b) => sum + b.scraped, 0),

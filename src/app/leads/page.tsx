@@ -18,6 +18,8 @@ import {
   Activity,
   BarChart3,
   Plus,
+  Check,
+  Filter,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -83,6 +85,29 @@ interface HistoryRun {
   scraped_count: number; lead_count: number; email_count: number; config: any;
 }
 
+interface BrandBankItem {
+  id: string;
+  handle: string;
+  display_name: string;
+  category: string;
+  follower_count_estimate: number | null;
+  is_active: boolean;
+  last_scraped_at: string | null;
+  followers_scraped: number;
+  emails_found: number;
+  unenriched_count: number;
+  is_stale: boolean;
+  needs_scrape: boolean;
+}
+
+interface BrandBankResponse {
+  brands: BrandBankItem[];
+  totalDelivered: number;
+  totalBrands: number;
+  brandsNeedingScrape: number;
+  brandsCached: number;
+}
+
 interface BrandStat {
   brand: string;
   scraped: number;
@@ -108,6 +133,16 @@ interface BrandDashboardData {
     totalDelivered: number;
   };
 }
+
+const CATEGORIES: { key: string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "fitness_apparel", label: "Apparel" },
+  { key: "supplements", label: "Supplements" },
+  { key: "athlete_brand", label: "Athletes" },
+  { key: "fitness_equipment", label: "Equipment" },
+  { key: "fitness_media", label: "Media" },
+  { key: "fitness_programs", label: "Programs" },
+];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -159,12 +194,18 @@ export default function LeadsPage() {
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
 
+  // ── Brand Bank ──
+  const [brandBank, setBrandBank] = useState<BrandBankResponse | null>(null);
+  const [brandBankLoading, setBrandBankLoading] = useState(false);
+  const [selectedBrands, setSelectedBrands] = useState<Set<string>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [addBrandInput, setAddBrandInput] = useState("");
+  const [addingBrand, setAddingBrand] = useState(false);
+
   // ── Brand Dashboard ──
   const [showBrands, setShowBrands] = useState(false);
   const [brandDashboard, setBrandDashboard] = useState<BrandDashboardData | null>(null);
   const [brandDashboardLoading, setBrandDashboardLoading] = useState(false);
-  const [customBrandInput, setCustomBrandInput] = useState("");
-  const [customBrands, setCustomBrands] = useState<string[]>([]);
 
   // ── Refs ──
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -196,6 +237,80 @@ export default function LeadsPage() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  //  BRAND BANK (load on mount)
+  // ════════════════════════════════════════════════════════════════════════════
+
+  async function fetchBrandBank() {
+    setBrandBankLoading(true);
+    try {
+      const r = await fetch("/api/lead-gen/brand-bank");
+      const d: BrandBankResponse = await r.json();
+      setBrandBank(d);
+      // Auto-select all brands on first load
+      if (selectedBrands.size === 0 && d.brands.length > 0) {
+        setSelectedBrands(new Set(d.brands.map((b) => b.handle)));
+      }
+    } catch { /* silent */ }
+    finally { setBrandBankLoading(false); }
+  }
+
+  useEffect(() => { fetchBrandBank(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleBrand(handle: string) {
+    setSelectedBrands((prev) => {
+      const next = new Set(prev);
+      if (next.has(handle)) next.delete(handle);
+      else next.add(handle);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    if (!brandBank) return;
+    const filtered = filteredBrandBank;
+    setSelectedBrands(new Set(filtered.map((b) => b.handle)));
+  }
+
+  function selectNewOnly() {
+    if (!brandBank) return;
+    setSelectedBrands(new Set(brandBank.brands.filter((b) => b.needs_scrape).map((b) => b.handle)));
+  }
+
+  function deselectAll() {
+    setSelectedBrands(new Set());
+  }
+
+  async function addBrandToBank() {
+    const handle = addBrandInput.trim().toLowerCase().replace(/^@/, "");
+    if (!handle || handle.length < 2) return;
+    setAddingBrand(true);
+    try {
+      const r = await fetch("/api/lead-gen/brand-bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle }),
+      });
+      if (r.ok) {
+        setAddBrandInput("");
+        await fetchBrandBank();
+        setSelectedBrands((prev) => new Set([...prev, handle]));
+      }
+    } catch { /* silent */ }
+    finally { setAddingBrand(false); }
+  }
+
+  const filteredBrandBank = brandBank?.brands.filter((b) =>
+    categoryFilter === "all" || b.category === categoryFilter
+  ) || [];
+
+  // Compute scan info
+  const selectedBrandsArr = Array.from(selectedBrands);
+  const selectedBrandsInfo = brandBank?.brands.filter((b) => selectedBrands.has(b.handle)) || [];
+  const brandsNeedingScrape = selectedBrandsInfo.filter((b) => b.needs_scrape).length;
+  const brandsCachedCount = selectedBrandsInfo.length - brandsNeedingScrape;
+  const estimatedApifyCalls = brandsNeedingScrape * 6; // ~6 calls per brand (follower scrape + enrichment batches)
+
+  // ════════════════════════════════════════════════════════════════════════════
   //  BRAND DASHBOARD
   // ════════════════════════════════════════════════════════════════════════════
 
@@ -207,18 +322,6 @@ export default function LeadsPage() {
       setBrandDashboard(d);
     } catch { /* silent */ }
     finally { setBrandDashboardLoading(false); }
-  }
-
-  function addCustomBrand() {
-    const brand = customBrandInput.trim().toLowerCase().replace(/^@/, "");
-    if (brand && !customBrands.includes(brand)) {
-      setCustomBrands([...customBrands, brand]);
-    }
-    setCustomBrandInput("");
-  }
-
-  function removeCustomBrand(brand: string) {
-    setCustomBrands(customBrands.filter(b => b !== brand));
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -241,7 +344,6 @@ export default function LeadsPage() {
       if (data.activityLog) setActivityLog(data.activityLog);
       if (data.totalScraped !== undefined) setTotalScraped(data.totalScraped);
       if (data.profilesWithoutEmail !== undefined) setProfilesWithoutEmail(data.profilesWithoutEmail);
-      // Always update leads if available (for live download)
       if (data.leads && data.leads.length > 0) setLeads(data.leads);
 
       // AUTO-START YouTube when we have profiles without email
@@ -264,6 +366,7 @@ export default function LeadsPage() {
         if (data.profilesWithoutEmail) setProfilesWithoutEmail(data.profilesWithoutEmail);
         setPhase("complete");
         fetchBrandDashboard();
+        fetchBrandBank(); // Refresh brand bank after scan completes
       } else if (data.status === "failed") {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
@@ -280,6 +383,7 @@ export default function LeadsPage() {
   }
 
   async function runScan() {
+    if (selectedBrandsArr.length === 0) return;
     setPhase("running"); setLeads([]); setError(null); setEmailsFound(0); setRawEmailCount(0);
     setStatusMessage("Initializing..."); setStartTime(Date.now()); setElapsed(0);
     setCurrentBrand(""); setCurrentBrandIndex(0); setBrandsCompleted([]); setBrands([]);
@@ -291,7 +395,7 @@ export default function LeadsPage() {
     try {
       const res = await fetch("/api/lead-gen", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetEmails, customBrands }),
+        body: JSON.stringify({ targetEmails, brandHandles: selectedBrandsArr }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({ error: "Unknown" })); throw new Error(d.error); }
       const data = await res.json();
@@ -325,6 +429,7 @@ export default function LeadsPage() {
         setPhase("complete");
       }
       fetchBrandDashboard();
+      fetchBrandBank();
     } catch {
       setPhase("idle");
     }
@@ -349,7 +454,6 @@ export default function LeadsPage() {
       if (data.hoursElapsed !== undefined) setYtHoursElapsed(data.hoursElapsed);
       if (data.descriptionEmails !== undefined) setYtDescriptionEmails(data.descriptionEmails);
 
-      // Slow down polling when in yt_processing (checking every 60s instead of 5s)
       if (data.status === "yt_processing" || data.status === "yt_scraping") {
         if (ytPollTimerRef.current) clearInterval(ytPollTimerRef.current);
         ytPollTimerRef.current = setInterval(() => ytPollOnce(jId), 60000);
@@ -399,7 +503,7 @@ export default function LeadsPage() {
     autoStartYouTube(jobId);
   }
 
-  // ── Resume active jobs on page load (survives browser close) ──
+  // ── Resume active jobs on page load ──
   useEffect(() => {
     async function checkActiveJobs() {
       try {
@@ -513,7 +617,7 @@ export default function LeadsPage() {
               cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.375rem",
             }}
           >
-            <BarChart3 size={14} /> Brands
+            <BarChart3 size={14} /> Stats
           </button>
           <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory(); }}
             style={{
@@ -529,7 +633,7 @@ export default function LeadsPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          BRAND DASHBOARD (toggled by button)
+          BRAND STATS DASHBOARD (toggled by button)
          ══════════════════════════════════════════════════════════════════════ */}
       {showBrands && (
         <div style={{
@@ -539,7 +643,7 @@ export default function LeadsPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <BarChart3 size={16} style={{ color: "#c9a96e" }} />
-              <h3 style={{ color: "#fff", fontSize: "0.9375rem", fontWeight: 600, margin: 0 }}>Brand Coverage</h3>
+              <h3 style={{ color: "#fff", fontSize: "0.9375rem", fontWeight: 600, margin: 0 }}>Cumulative Stats</h3>
             </div>
             <button onClick={fetchBrandDashboard} style={{
               background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: "0.6875rem",
@@ -550,43 +654,6 @@ export default function LeadsPage() {
             </button>
           </div>
 
-          {/* Add custom brand */}
-          <div style={{ display: "flex", gap: "0.375rem", marginBottom: "1rem" }}>
-            <input
-              type="text"
-              value={customBrandInput}
-              onChange={(e) => setCustomBrandInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addCustomBrand()}
-              placeholder="Add Instagram account to scrape..."
-              style={{
-                flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "0.375rem", padding: "0.5rem 0.75rem", color: "#ccc", fontSize: "0.8125rem", outline: "none",
-              }}
-            />
-            <button onClick={addCustomBrand} style={{
-              background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.2)",
-              color: "#c9a96e", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer",
-              fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem",
-            }}>
-              <Plus size={12} /> Add
-            </button>
-          </div>
-
-          {customBrands.length > 0 && (
-            <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-              {customBrands.map(b => (
-                <span key={b} style={{
-                  background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.15)",
-                  color: "#c9a96e", padding: "0.25rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.6875rem",
-                  display: "flex", alignItems: "center", gap: "0.25rem",
-                }}>
-                  @{b}
-                  <button onClick={() => removeCustomBrand(b)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", padding: 0, lineHeight: 1 }}><X size={10} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-
           {brandDashboardLoading && !brandDashboard && (
             <div style={{ textAlign: "center", padding: "1rem", color: "#555" }}>
               <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
@@ -595,21 +662,20 @@ export default function LeadsPage() {
 
           {brandDashboard && (
             <>
-              {/* Summary stats */}
               <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+                <StatBox label="Brands" value={`${brandDashboard.stats.brandsScraped}/${brandDashboard.stats.totalBrands}`} color="#888" />
                 <StatBox label="Profiles Scraped" value={brandDashboard.stats.totalProfilesScraped.toLocaleString()} color="#888" />
                 <StatBox label="IG Emails" value={brandDashboard.stats.totalIgEmails} color="#c9a96e" />
                 <StatBox label="YT Emails" value={brandDashboard.stats.totalYtEmails} color="#ff4444" />
                 <StatBox label="Total Delivered" value={brandDashboard.stats.totalDelivered} color="#22c55e" />
               </div>
 
-              {/* Brand table */}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                       <th style={{ textAlign: "left", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Brand</th>
-                      <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Followers Scraped</th>
+                      <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Scraped</th>
                       <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bio Emails</th>
                       <th style={{ textAlign: "right", padding: "0.5rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>YT Emails</th>
                     </tr>
@@ -624,13 +690,13 @@ export default function LeadsPage() {
                           </span>
                         </td>
                         <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.scraped > 0 ? "#999" : "#333", fontVariantNumeric: "tabular-nums" }}>
-                          {b.scraped > 0 ? b.scraped.toLocaleString() : "—"}
+                          {b.scraped > 0 ? b.scraped.toLocaleString() : "\u2014"}
                         </td>
                         <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.igEmails > 0 ? "#c9a96e" : "#333", fontVariantNumeric: "tabular-nums" }}>
-                          {b.igEmails > 0 ? b.igEmails : "—"}
+                          {b.igEmails > 0 ? b.igEmails : "\u2014"}
                         </td>
                         <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: b.ytEmails > 0 ? "#ff4444" : "#333", fontVariantNumeric: "tabular-nums" }}>
-                          {b.ytEmails > 0 ? b.ytEmails : "—"}
+                          {b.ytEmails > 0 ? b.ytEmails : "\u2014"}
                         </td>
                       </tr>
                     ))}
@@ -643,39 +709,199 @@ export default function LeadsPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
-          IDLE STATE — Start scan
+          IDLE STATE — Brand Bank Grid + Smart Scan
          ══════════════════════════════════════════════════════════════════════ */}
       {phase === "idle" && (
         <div style={{
           background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-          borderRadius: "1rem", padding: "2.5rem", marginBottom: "1.5rem", textAlign: "center",
+          borderRadius: "1rem", padding: "2rem", marginBottom: "1.5rem",
         }}>
-          <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(201,169,110,0.08)", border: "2px solid rgba(201,169,110,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
-            <Mail size={28} style={{ color: "#c9a96e" }} />
+          {/* Target selector */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Mail size={18} style={{ color: "#c9a96e" }} />
+              <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: "#fff", margin: 0 }}>Select Brands to Scan</h2>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ color: "#666", fontSize: "0.75rem" }}>Target:</span>
+              {[50, 100, 200].map((n) => (
+                <button key={n} onClick={() => setTargetEmails(n)} style={{
+                  padding: "0.25rem 0.5rem", borderRadius: "0.25rem", fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
+                  border: targetEmails === n ? "1px solid rgba(201,169,110,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                  background: targetEmails === n ? "rgba(201,169,110,0.1)" : "rgba(255,255,255,0.03)",
+                  color: targetEmails === n ? "#c9a96e" : "#777",
+                }}>{n}</button>
+              ))}
+            </div>
           </div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "#fff", margin: "0 0 0.5rem" }}>Get {targetEmails} New Emails</h2>
-          <p style={{ color: "#666", fontSize: "0.875rem", maxWidth: "560px", margin: "0 auto", lineHeight: 1.6 }}>
-            Scrapes followers from fitness brands, extracts emails from
-            <span style={{ color: "#c9a96e" }}> Instagram bios</span>, then searches
-            <span style={{ color: "#ff4444" }}> YouTube</span> for profiles without emails.
-          </p>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem", margin: "1.25rem 0" }}>
-            <span style={{ color: "#666", fontSize: "0.8125rem" }}>Target:</span>
-            {[50, 100, 200].map((n) => (
-              <button key={n} onClick={() => setTargetEmails(n)} style={{
-                padding: "0.375rem 0.75rem", borderRadius: "0.375rem", fontSize: "0.8125rem", fontWeight: 500, cursor: "pointer",
-                border: targetEmails === n ? "1px solid rgba(201,169,110,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                background: targetEmails === n ? "rgba(201,169,110,0.1)" : "rgba(255,255,255,0.03)",
-                color: targetEmails === n ? "#c9a96e" : "#777",
-              }}>{n}</button>
-            ))}
+          {/* Category filter tabs */}
+          <div style={{ display: "flex", gap: "0.375rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+            {CATEGORIES.map((cat) => {
+              const count = cat.key === "all"
+                ? brandBank?.brands.length || 0
+                : brandBank?.brands.filter((b) => b.category === cat.key).length || 0;
+              return (
+                <button key={cat.key} onClick={() => setCategoryFilter(cat.key)} style={{
+                  padding: "0.25rem 0.625rem", borderRadius: "0.25rem", fontSize: "0.6875rem", cursor: "pointer",
+                  border: categoryFilter === cat.key ? "1px solid rgba(201,169,110,0.3)" : "1px solid rgba(255,255,255,0.06)",
+                  background: categoryFilter === cat.key ? "rgba(201,169,110,0.08)" : "transparent",
+                  color: categoryFilter === cat.key ? "#c9a96e" : "#666",
+                  display: "flex", alignItems: "center", gap: "0.25rem",
+                }}>
+                  <Filter size={9} />
+                  {cat.label} <span style={{ color: "#444" }}>({count})</span>
+                </button>
+              );
+            })}
           </div>
-          <button onClick={runScan} style={{
-            background: "linear-gradient(135deg, #c9a96e 0%, #b08d4f 100%)", color: "#000", border: "none",
-            padding: "0.875rem 2.5rem", borderRadius: "0.625rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer",
-            display: "inline-flex", alignItems: "center", gap: "0.5rem", boxShadow: "0 4px 24px rgba(201,169,110,0.25)",
-          }}><Play size={18} /> Start Scan</button>
+
+          {/* Selection buttons */}
+          <div style={{ display: "flex", gap: "0.375rem", marginBottom: "1rem" }}>
+            <button onClick={selectAll} style={{ ...btnSmall, color: "#888" }}>Select All</button>
+            <button onClick={selectNewOnly} style={{ ...btnSmall, color: "#c9a96e", borderColor: "rgba(201,169,110,0.2)" }}>Select New Only</button>
+            <button onClick={deselectAll} style={{ ...btnSmall, color: "#666" }}>Clear</button>
+            <span style={{ color: "#555", fontSize: "0.6875rem", display: "flex", alignItems: "center", marginLeft: "0.5rem" }}>
+              {selectedBrands.size} selected
+            </span>
+          </div>
+
+          {/* Brand bank loading */}
+          {brandBankLoading && !brandBank && (
+            <div style={{ textAlign: "center", padding: "2rem", color: "#555" }}>
+              <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
+              <div style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>Loading brand bank...</div>
+            </div>
+          )}
+
+          {/* Brand Grid */}
+          {brandBank && (
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+              gap: "0.5rem", marginBottom: "1.25rem", maxHeight: "400px", overflowY: "auto",
+              padding: "0.25rem",
+            }}>
+              {filteredBrandBank.map((b) => {
+                const isSelected = selectedBrands.has(b.handle);
+                const statusColor = !b.needs_scrape ? "#22c55e" : b.followers_scraped > 0 ? "#c9a96e" : "#555";
+                const statusLabel = !b.needs_scrape ? "Cached" : b.followers_scraped > 0 ? "Stale" : "New";
+
+                return (
+                  <div
+                    key={b.handle}
+                    onClick={() => toggleBrand(b.handle)}
+                    style={{
+                      background: isSelected ? "rgba(201,169,110,0.06)" : "rgba(255,255,255,0.015)",
+                      border: `1px solid ${isSelected ? "rgba(201,169,110,0.25)" : "rgba(255,255,255,0.05)"}`,
+                      borderRadius: "0.5rem", padding: "0.625rem 0.75rem", cursor: "pointer",
+                      transition: "all 0.15s ease",
+                      position: "relative",
+                    }}
+                  >
+                    {/* Checkbox */}
+                    <div style={{
+                      position: "absolute", top: "0.5rem", right: "0.5rem",
+                      width: "16px", height: "16px", borderRadius: "3px",
+                      border: `1.5px solid ${isSelected ? "#c9a96e" : "rgba(255,255,255,0.15)"}`,
+                      background: isSelected ? "rgba(201,169,110,0.2)" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {isSelected && <Check size={10} style={{ color: "#c9a96e" }} />}
+                    </div>
+
+                    {/* Handle + name */}
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isSelected ? "#ddd" : "#999", marginBottom: "0.25rem" }}>
+                      @{b.handle}
+                    </div>
+                    <div style={{ fontSize: "0.625rem", color: "#555", marginBottom: "0.375rem" }}>
+                      {b.display_name}
+                    </div>
+
+                    {/* Stats row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.5625rem" }}>
+                      <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+                      {b.followers_scraped > 0 && (
+                        <span style={{ color: "#555" }}>{b.followers_scraped} scraped</span>
+                      )}
+                      {b.emails_found > 0 && (
+                        <span style={{ color: "#c9a96e" }}>{b.emails_found} emails</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add brand form */}
+          <div style={{ display: "flex", gap: "0.375rem", marginBottom: "1.25rem" }}>
+            <input
+              type="text"
+              value={addBrandInput}
+              onChange={(e) => setAddBrandInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addBrandToBank()}
+              placeholder="Add new @brand to bank..."
+              style={{
+                flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "0.375rem", padding: "0.5rem 0.75rem", color: "#ccc", fontSize: "0.8125rem", outline: "none",
+              }}
+            />
+            <button onClick={addBrandToBank} disabled={addingBrand} style={{
+              background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.2)",
+              color: "#c9a96e", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", cursor: "pointer",
+              fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem",
+              opacity: addingBrand ? 0.5 : 1,
+            }}>
+              {addingBrand ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Plus size={12} />} Add
+            </button>
+          </div>
+
+          {/* Smart Scan button */}
+          <div style={{ textAlign: "center" }}>
+            {/* Scan info */}
+            {selectedBrands.size > 0 && (
+              <div style={{ fontSize: "0.75rem", color: "#666", marginBottom: "0.75rem" }}>
+                {brandsNeedingScrape > 0 && (
+                  <span style={{ color: "#c9a96e" }}>{brandsNeedingScrape} brands need scraping</span>
+                )}
+                {brandsNeedingScrape > 0 && brandsCachedCount > 0 && <span> · </span>}
+                {brandsCachedCount > 0 && (
+                  <span style={{ color: "#22c55e" }}>{brandsCachedCount} cached (0 Apify calls)</span>
+                )}
+                {brandsNeedingScrape > 0 && (
+                  <span style={{ color: "#555" }}> · ~{estimatedApifyCalls} Apify calls</span>
+                )}
+                {brandsNeedingScrape === 0 && brandsCachedCount > 0 && (
+                  <span style={{ color: "#22c55e", fontWeight: 600 }}> — Re-enrich only, no Apify credits</span>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={runScan}
+              disabled={selectedBrands.size === 0}
+              style={{
+                background: selectedBrands.size > 0 ? "linear-gradient(135deg, #c9a96e 0%, #b08d4f 100%)" : "rgba(255,255,255,0.04)",
+                color: selectedBrands.size > 0 ? "#000" : "#555", border: "none",
+                padding: "0.875rem 2.5rem", borderRadius: "0.625rem", fontSize: "1rem", fontWeight: 600,
+                cursor: selectedBrands.size > 0 ? "pointer" : "default",
+                display: "inline-flex", alignItems: "center", gap: "0.5rem",
+                boxShadow: selectedBrands.size > 0 ? "0 4px 24px rgba(201,169,110,0.25)" : "none",
+                opacity: selectedBrands.size > 0 ? 1 : 0.5,
+              }}
+            >
+              <Play size={18} />
+              {brandsNeedingScrape === 0 && selectedBrands.size > 0
+                ? "Re-enrich Only"
+                : `Scan ${selectedBrands.size} Brands`}
+            </button>
+
+            {selectedBrands.size === 0 && (
+              <div style={{ fontSize: "0.6875rem", color: "#555", marginTop: "0.5rem" }}>
+                Select at least one brand to start
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -702,7 +928,6 @@ export default function LeadsPage() {
               )}
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              {/* Download now button (during running) */}
               {leads.length > 0 && (
                 <button onClick={() => downloadCSV(leads, "ig_leads")} style={{
                   background: "rgba(201,169,110,0.08)", border: "1px solid rgba(201,169,110,0.2)",
@@ -731,7 +956,6 @@ export default function LeadsPage() {
                 <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#c9a96e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bio Emails</span>
               </div>
 
-              {/* Primary number: emails found in bios */}
               <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
                 <div style={{ fontSize: "2.5rem", fontWeight: 700, color: "#c9a96e", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                   {emailsFound}<span style={{ fontSize: "1rem", color: "#555", fontWeight: 400 }}>/{targetEmails}</span>
@@ -744,12 +968,10 @@ export default function LeadsPage() {
                 )}
               </div>
 
-              {/* Progress bar */}
               <div style={{ height: "3px", background: "rgba(255,255,255,0.04)", borderRadius: "2px", overflow: "hidden", marginBottom: "0.75rem" }}>
                 <div style={{ height: "100%", background: "linear-gradient(90deg, #c9a96e, #dbb978)", borderRadius: "2px", width: `${progressPct}%`, transition: "width 0.6s ease" }} />
               </div>
 
-              {/* Pipeline steps */}
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
                 {(["scraping", "enriching"] as const).map((stage) => {
                   const isActive = backendStatus === stage && phase === "running";
@@ -766,7 +988,6 @@ export default function LeadsPage() {
                 })}
               </div>
 
-              {/* Stats */}
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem", justifyContent: "center", fontSize: "0.625rem", color: "#555" }}>
                 <span>{totalScraped} profiles</span>
                 <span>{emailsInBios} with email</span>
@@ -835,7 +1056,7 @@ export default function LeadsPage() {
                     border: "1px solid rgba(34,197,94,0.1)", borderRadius: "0.375rem", textAlign: "center",
                   }}>
                     <span style={{ fontSize: "0.625rem", color: "#22c55e" }}>
-                      ✓ Safe to close your browser — this runs on our servers
+                      Safe to close your browser — runs on our servers
                     </span>
                   </div>
                   {ytStatus === "yt_processing" && (
@@ -862,7 +1083,6 @@ export default function LeadsPage() {
                   <div style={{ height: "3px", background: "rgba(255,255,255,0.04)", borderRadius: "2px", overflow: "hidden", marginBottom: "0.75rem" }}>
                     <div style={{ height: "100%", background: "linear-gradient(90deg, #ff4444, #ff6666)", borderRadius: "2px", width: `${ytProgressPct}%`, transition: "width 0.6s ease" }} />
                   </div>
-                  {/* YouTube pipeline breakdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.625rem", color: "#555", alignItems: "center" }}>
                     <span>{ytProcessed}/{ytProfileCount} profiles searched</span>
                     <span>{ytChannelsFound} channels found</span>
@@ -902,7 +1122,7 @@ export default function LeadsPage() {
           <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "0.5rem", padding: "0.75rem 1rem", maxHeight: "120px", overflow: "auto" }}>
             <div style={{ fontSize: "0.5625rem", color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.5rem" }}>Activity</div>
             {activityLog.slice(-8).reverse().map((log, i) => (
-              <div key={i} style={{ fontSize: "0.6875rem", color: log.type.includes("error") || log.type.includes("fail") ? "#ef4444" : log.type.includes("done") || log.type.includes("complete") ? "#22c55e" : "#666", marginBottom: "0.25rem", lineHeight: 1.4 }}>
+              <div key={i} style={{ fontSize: "0.6875rem", color: log.type.includes("error") || log.type.includes("fail") ? "#ef4444" : log.type.includes("done") || log.type.includes("complete") || log.type.includes("cached") ? "#22c55e" : "#666", marginBottom: "0.25rem", lineHeight: 1.4 }}>
                 {log.message}
               </div>
             ))}
@@ -918,7 +1138,6 @@ export default function LeadsPage() {
           background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: "1rem", padding: "2rem", marginBottom: "1.5rem",
         }}>
-          {/* Summary */}
           <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
             <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "rgba(34,197,94,0.08)", border: "2px solid rgba(34,197,94,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 0.75rem" }}>
               <CheckCircle size={24} style={{ color: "#22c55e" }} />
@@ -931,7 +1150,6 @@ export default function LeadsPage() {
             </p>
           </div>
 
-          {/* Stats row */}
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap", justifyContent: "center" }}>
             <StatBox label="Profiles" value={totalScraped} color="#888" />
             <StatBox label="Had Email in Bio" value={emailsInBios} color="#c9a96e" />
@@ -939,7 +1157,6 @@ export default function LeadsPage() {
             <StatBox label="New Unique" value={emailsFound} color="#22c55e" sub={rawEmailCount > emailsFound ? `${rawEmailCount - emailsFound} already delivered` : undefined} />
           </div>
 
-          {/* Download cards */}
           <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
             {/* IG CSV */}
             <div style={{
@@ -969,7 +1186,7 @@ export default function LeadsPage() {
             }}>
               <Youtube size={18} style={{ color: ytPhase === "complete" ? "#ff4444" : "#444", margin: "0 auto 0.5rem" }} />
               <div style={{ fontSize: "2rem", fontWeight: 700, color: ytPhase === "complete" ? "#ff4444" : "#555" }}>
-                {ytPhase === "complete" ? ytLeads.length : ytPhase === "running" ? ytEmailsFound : "—"}
+                {ytPhase === "complete" ? ytLeads.length : ytPhase === "running" ? ytEmailsFound : "\u2014"}
               </div>
               <div style={{ color: "#888", fontSize: "0.75rem", marginBottom: "0.75rem" }}>YouTube Emails</div>
 
@@ -1013,7 +1230,7 @@ export default function LeadsPage() {
 
           {/* New Scan button */}
           <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-            <button onClick={() => { setPhase("idle"); setLeads([]); setEmailsFound(0); setRawEmailCount(0); setActivityLog([]); setBrandsCompleted([]); setYtPhase("idle"); setYtLeads([]); ytAutoStartedRef.current = false; }} style={btnSecondary}>
+            <button onClick={() => { setPhase("idle"); setLeads([]); setEmailsFound(0); setRawEmailCount(0); setActivityLog([]); setBrandsCompleted([]); setYtPhase("idle"); setYtLeads([]); ytAutoStartedRef.current = false; fetchBrandBank(); }} style={btnSecondary}>
               <Play size={14} /> New Scan
             </button>
           </div>
@@ -1041,7 +1258,7 @@ export default function LeadsPage() {
                         <td style={tdStyle}><a href={l.profileUrl || `https://instagram.com/${l.username}`} target="_blank" rel="noopener noreferrer" style={{ color: "#c9a96e", textDecoration: "none", display: "flex", alignItems: "center", gap: "0.25rem" }}>@{l.username} <ExternalLink size={10} /></a></td>
                         <td style={{ ...tdStyle, color: "#999" }}>{l.fullName}</td>
                         <td style={tdStyle}><span style={{ color: "#22c55e", fontFamily: "monospace", fontSize: "0.75rem" }}>{l.igEmail}</span></td>
-                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.followers ? l.followers.toLocaleString() : "—"}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.followers ? l.followers.toLocaleString() : "\u2014"}</td>
                         <td style={{ ...tdStyle, color: "#555" }}>@{l.brandSource}</td>
                       </tr>
                     ))}
@@ -1075,7 +1292,7 @@ export default function LeadsPage() {
                             <a href={l.channelUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff4444", textDecoration: "none", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                               {l.channelTitle || "Channel"} <ExternalLink size={10} />
                             </a>
-                          ) : <span style={{ color: "#555" }}>{l.channelTitle || "—"}</span>}
+                          ) : <span style={{ color: "#555" }}>{l.channelTitle || "\u2014"}</span>}
                         </td>
                         <td style={tdStyle}><span style={{ color: "#22c55e", fontFamily: "monospace", fontSize: "0.75rem" }}>{l.email || l.ytEmail || ""}</span></td>
                         <td style={tdStyle}>
@@ -1087,7 +1304,7 @@ export default function LeadsPage() {
                             {l.emailSource === "youtube_recaptcha" ? "reCAPTCHA" : "Description"}
                           </span>
                         </td>
-                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.subscriberCount ? l.subscriberCount.toLocaleString() : "—"}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", color: "#999" }}>{l.subscriberCount ? l.subscriberCount.toLocaleString() : "\u2014"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1193,3 +1410,4 @@ function StatBox({ label, value, sub, color }: { label: string; value: number | 
 const thStyle: React.CSSProperties = { textAlign: "left", padding: "0.625rem 0.75rem", color: "#666", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" };
 const tdStyle: React.CSSProperties = { padding: "0.5rem 0.75rem", color: "#ccc" };
 const btnSecondary: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#bbb", padding: "0.625rem 1.5rem", borderRadius: "0.5rem", fontSize: "0.875rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.375rem" };
+const btnSmall: React.CSSProperties = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", padding: "0.25rem 0.625rem", borderRadius: "0.25rem", fontSize: "0.6875rem", cursor: "pointer" };

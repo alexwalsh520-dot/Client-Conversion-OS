@@ -30,12 +30,7 @@ const ENRICHMENT_ACTOR = "PP60E1JIfagMaQxIP";
 const ENRICH_BATCH_SIZE = 100;
 const MAX_FOLLOWING_PER_BRAND = 500;
 
-// Brand accounts (same as POST)
-const DEFAULT_BRAND_ACCOUNTS = [
-  "gymshark", "1stphorm", "youngla", "darcsport", "alphaleteathletics",
-  "nvgtn", "ghostlifestyle", "rawgear", "gymreapers", "gorillawear",
-  "musclenation", "buffbunnyco", "rabornyofficial",
-];
+// No hardcoded brand list — brands come from brand_bank via job config
 
 // ─── Apify helpers ───────────────────────────────────────────────────────────
 
@@ -188,10 +183,9 @@ export async function GET(req: NextRequest) {
   let logs: any[] = job.activity_log || [];
   const brandsCompleted: string[] = job.brands_completed || [];
 
-  // Read brands from job config, fall back to defaults
-  const BRAND_ACCOUNTS: string[] = (job.config?.brandAccounts?.length > 0)
-    ? job.config.brandAccounts
-    : DEFAULT_BRAND_ACCOUNTS;
+  // Read brands from job config
+  const BRAND_ACCOUNTS: string[] = job.config?.allBrands || job.config?.brandAccounts || [];
+  const cachedBrands: Set<string> = new Set(job.config?.brandsCached || []);
 
   // ─── CRITICAL FIX: Load delivered emails ONCE, compute deduped count ──────
   // This ensures ALL responses show the accurate deduped count
@@ -342,6 +336,99 @@ export async function GET(req: NextRequest) {
     }
 
     const brand = BRAND_ACCOUNTS[brandIndex];
+
+    // ── CACHE CHECK: Skip Apify scrape if brand is cached ──────────────────
+    if (cachedBrands.has(brand)) {
+      // Load unenriched usernames from scraped_profiles
+      const { data: unenrichedRows } = await db
+        .from("scraped_profiles")
+        .select("username")
+        .eq("brand_source", brand)
+        .is("enriched_at", null);
+
+      const unenriched = (unenrichedRows || []).map((r: any) => r.username);
+
+      if (unenriched.length === 0) {
+        // Brand fully processed — skip entirely
+        logs = addLog(logs, "brand_cached", `@${brand}: Already scraped & enriched (cached). Skipping.`);
+        const updatedCompleted = [...brandsCompleted, brand];
+        await db.from("lead_jobs").update({
+          status: "pending",
+          current_brand_index: brandIndex + 1,
+          current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          scrape_actor_index: 0,
+          brands_completed: updatedCompleted,
+          activity_log: logs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: "pending",
+          emailsFound: dedupedCount,
+          currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          currentBrandIndex: brandIndex + 1,
+          brandsCompleted: updatedCompleted,
+          message: `@${brand}: cached ✓ — skipping`,
+          activityLog: logs.slice(-30),
+        });
+      }
+
+      // Has unenriched profiles — skip scrape, go straight to enrichment
+      logs = addLog(logs, "enrich_cached", `@${brand}: ${unenriched.length} unenriched profiles from cache (skipping scrape)`);
+      const firstBatch = unenriched.slice(0, ENRICH_BATCH_SIZE);
+      const remainingQueue = unenriched.slice(ENRICH_BATCH_SIZE);
+
+      try {
+        const enrichRun = await apifyRunActor(ENRICHMENT_ACTOR, { usernames: firstBatch }, apifyToken, 0);
+        await db.from("lead_jobs").update({
+          status: "enriching",
+          current_brand: brand,
+          current_brand_index: brandIndex,
+          enrich_run_id: enrichRun.id || "",
+          enrich_dataset_id: enrichRun.defaultDatasetId || "",
+          enrich_queue: remainingQueue,
+          scraped_usernames: unenriched,
+          scraped_count: (job.scraped_count || 0) + unenriched.length,
+          batch_number: 1,
+          activity_log: logs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: "enriching",
+          emailsFound: dedupedCount,
+          currentBrand: brand,
+          currentBrandIndex: brandIndex,
+          message: `@${brand}: Enriching ${unenriched.length} cached profiles...`,
+          activityLog: logs.slice(-30),
+        });
+      } catch (err: any) {
+        logs = addLog(logs, "enrich_error", `@${brand}: Enrichment from cache failed: ${(err.message || "").slice(0, 60)}`);
+        // Skip brand
+        await db.from("lead_jobs").update({
+          status: "pending",
+          current_brand_index: brandIndex + 1,
+          current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          brands_completed: [...brandsCompleted, brand],
+          activity_log: logs,
+          updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+
+        return NextResponse.json({
+          ...baseResponse,
+          status: "pending",
+          emailsFound: dedupedCount,
+          currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+          currentBrandIndex: brandIndex + 1,
+          message: `@${brand}: cache enrichment failed, moving on...`,
+          activityLog: logs.slice(-30),
+        });
+      }
+    }
+
+    // ── NORMAL PATH: Scrape followers from Apify ─────────────────────────
     const actorIndex = job.scrape_actor_index || 0;
     const actorId = FOLLOWING_ACTORS[actorIndex] || FOLLOWING_ACTORS[0];
 
@@ -443,6 +530,39 @@ export async function GET(req: NextRequest) {
 
         logs = addLog(logs, "scrape_done", `@${brand}: Found ${usernames.length} followers`);
 
+        // ── Save scraped followers to scraped_profiles cache ──────────────
+        if (usernames.length > 0) {
+          const profileRows = usernames.map((u: string) => ({
+            username: u,
+            brand_source: brand,
+            has_email: false,
+          }));
+          // Batch upsert in chunks of 100
+          for (let i = 0; i < profileRows.length; i += 100) {
+            await db.from("scraped_profiles")
+              .upsert(profileRows.slice(i, i + 100), { onConflict: "username,brand_source" });
+          }
+          // Update brand_bank
+          await db.from("brand_bank").update({
+            last_scraped_at: new Date().toISOString(),
+            followers_scraped: usernames.length,
+          }).eq("handle", brand);
+        }
+
+        // ── Filter out already-enriched usernames ────────────────────────
+        const { data: alreadyEnrichedRows } = await db
+          .from("scraped_profiles")
+          .select("username")
+          .in("username", usernames.slice(0, 500))
+          .not("enriched_at", "is", null);
+
+        const enrichedSet = new Set((alreadyEnrichedRows || []).map((r: any) => r.username));
+        const toEnrich = usernames.filter((u: string) => !enrichedSet.has(u));
+
+        if (toEnrich.length < usernames.length) {
+          logs = addLog(logs, "enrich_skip_cached", `@${brand}: ${usernames.length - toEnrich.length} profiles already enriched, ${toEnrich.length} to enrich`);
+        }
+
         if (usernames.length === 0) {
           logs = addLog(logs, "scrape_empty", `@${brand}: 0 results, moving to next brand`);
           await db.from("lead_jobs").update({
@@ -469,11 +589,40 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        // Start enrichment — batch the usernames
-        const firstBatch = usernames.slice(0, ENRICH_BATCH_SIZE);
-        const remainingQueue = usernames.slice(ENRICH_BATCH_SIZE);
+        // All scraped profiles already enriched? Skip to next brand
+        if (toEnrich.length === 0) {
+          logs = addLog(logs, "enrich_skip_all", `@${brand}: All ${usernames.length} profiles already enriched. Skipping.`);
+          const updatedCompleted = [...brandsCompleted, brand];
+          await db.from("lead_jobs").update({
+            status: "pending",
+            current_brand_index: brandIndex + 1,
+            current_brand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            scrape_run_id: "",
+            scrape_dataset_id: "",
+            scrape_actor_index: 0,
+            brands_completed: updatedCompleted,
+            scraped_count: (job.scraped_count || 0) + usernames.length,
+            activity_log: logs,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
 
-        logs = addLog(logs, "enrich_start", `@${brand}: Enriching ${firstBatch.length} profiles (batch 1/${Math.ceil(usernames.length / ENRICH_BATCH_SIZE)})...`);
+          return NextResponse.json({
+            ...baseResponse,
+            status: "pending",
+            emailsFound: dedupedCount,
+            currentBrand: BRAND_ACCOUNTS[brandIndex + 1] || "",
+            currentBrandIndex: brandIndex + 1,
+            brandsCompleted: updatedCompleted,
+            message: `@${brand}: all profiles already enriched — skipping`,
+            activityLog: logs.slice(-30),
+          });
+        }
+
+        // Start enrichment — batch the unenriched profiles only
+        const firstBatch = toEnrich.slice(0, ENRICH_BATCH_SIZE);
+        const remainingQueue = toEnrich.slice(ENRICH_BATCH_SIZE);
+
+        logs = addLog(logs, "enrich_start", `@${brand}: Enriching ${firstBatch.length} profiles (batch 1/${Math.ceil(toEnrich.length / ENRICH_BATCH_SIZE)})...`);
 
         try {
           const enrichRun = await apifyRunActor(ENRICHMENT_ACTOR, { usernames: firstBatch }, apifyToken, 0);
@@ -498,7 +647,7 @@ export async function GET(req: NextRequest) {
             currentBrandIndex: brandIndex,
             message: `@${brand}: Enriching profiles for emails...`,
             enrichBatch: 1,
-            enrichTotalBatches: Math.ceil(usernames.length / ENRICH_BATCH_SIZE),
+            enrichTotalBatches: Math.ceil(toEnrich.length / ENRICH_BATCH_SIZE),
             activityLog: logs.slice(-30),
           });
         } catch (err: any) {
@@ -624,6 +773,26 @@ export async function GET(req: NextRequest) {
 
         const allFoundLeads = [...foundLeads, ...newLeads];
         const allEmailLeads = allFoundLeads.filter((l: any) => l.igEmail);
+
+        // ── Update scraped_profiles with enrichment results ──────────────
+        if (newLeads.length > 0) {
+          const enrichNow = new Date().toISOString();
+          const withEmail = newLeads.filter((l: any) => l.igEmail && l.username).map((l: any) => l.username);
+          const withoutEmail = newLeads.filter((l: any) => !l.igEmail && l.username).map((l: any) => l.username);
+
+          if (withEmail.length > 0) {
+            await db.from("scraped_profiles")
+              .update({ enriched_at: enrichNow, has_email: true })
+              .in("username", withEmail)
+              .eq("brand_source", brand);
+          }
+          if (withoutEmail.length > 0) {
+            await db.from("scraped_profiles")
+              .update({ enriched_at: enrichNow, has_email: false })
+              .in("username", withoutEmail)
+              .eq("brand_source", brand);
+          }
+        }
 
         // Dedup against delivered_emails (using the set loaded at top)
         const newDedupedLeads = deduplicateLeads(allEmailLeads, deliveredSet);

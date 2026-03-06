@@ -102,6 +102,47 @@ export async function POST(req: NextRequest) {
     message: `Stopped by user. ${finalLeads.length} emails saved from ${(job.brands_completed || []).length} brands.`,
   });
 
+  // ── Flush any scraped/enriched profiles to scraped_profiles cache ──────
+  // This preserves partial work so it's not lost when the job is stopped
+  const scrapedUsernames: string[] = job.scraped_usernames || [];
+  const currentBrand = job.current_brand || "";
+
+  if (scrapedUsernames.length > 0 && currentBrand) {
+    const profileRows = scrapedUsernames.map((u: string) => ({
+      username: u,
+      brand_source: currentBrand,
+      has_email: false,
+    }));
+    for (let i = 0; i < profileRows.length; i += 100) {
+      await db.from("scraped_profiles")
+        .upsert(profileRows.slice(i, i + 100), { onConflict: "username,brand_source" });
+    }
+  }
+
+  // Also mark enriched profiles from found_leads
+  if (foundLeads.length > 0) {
+    const enrichNow = new Date().toISOString();
+    const brandsInLeads = [...new Set(foundLeads.map((l: any) => l.brandSource).filter(Boolean))];
+    for (const b of brandsInLeads) {
+      const brandLeads = foundLeads.filter((l: any) => l.brandSource === b);
+      const withEmail = brandLeads.filter((l: any) => l.igEmail && l.username).map((l: any) => l.username);
+      const withoutEmail = brandLeads.filter((l: any) => !l.igEmail && l.username).map((l: any) => l.username);
+
+      if (withEmail.length > 0) {
+        await db.from("scraped_profiles")
+          .update({ enriched_at: enrichNow, has_email: true })
+          .in("username", withEmail)
+          .eq("brand_source", b);
+      }
+      if (withoutEmail.length > 0) {
+        await db.from("scraped_profiles")
+          .update({ enriched_at: enrichNow, has_email: false })
+          .in("username", withoutEmail)
+          .eq("brand_source", b);
+      }
+    }
+  }
+
   // Mark job as stopped with saved results + brand_results
   await db.from("lead_jobs").update({
     status: "stopped",
