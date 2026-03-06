@@ -14,14 +14,21 @@ export async function GET() {
   checks.supabase_url = url ? `SET (${url.slice(0, 30)}...)` : "MISSING";
   checks.service_role_key = key ? `SET (${key.slice(0, 10)}...)` : "MISSING";
 
-  // List all env var KEYS that contain 'SUPA' or 'NEXT_PUBLIC' (values are hidden)
-  const relevantKeys = Object.keys(process.env).filter(
-    (k) => k.includes("SUPA") || k.includes("NEXT_PUBLIC") || k === "NODE_ENV" || k === "VERCEL_ENV"
-  );
-  checks.env_keys = relevantKeys.join(", ") || "NONE FOUND";
-  checks.node_env = process.env.NODE_ENV || "undefined";
-  checks.vercel_env = process.env.VERCEL_ENV || "undefined";
-  checks.total_env_keys = String(Object.keys(process.env).length);
+  // List all env var KEYS (not values) to see what's available at runtime
+  const allKeys = Object.keys(process.env).sort();
+  const supaKeys = allKeys.filter((k) => k.includes("SUPA") || k.includes("NEXT_PUBLIC"));
+  const authKeys = allKeys.filter((k) => k.startsWith("AUTH_"));
+  const vercelKeys = allKeys.filter((k) => k.startsWith("VERCEL") || k === "NODE_ENV");
+
+  checks.supabase_keys = supaKeys.length ? supaKeys.join(", ") : "NONE";
+  checks.auth_keys = authKeys.length ? authKeys.join(", ") : "NONE";
+  checks.vercel_keys = vercelKeys.join(", ");
+  checks.total_env_keys = String(allKeys.length);
+
+  // Also try direct access patterns
+  checks.direct_supa_url = typeof process.env["NEXT_PUBLIC_SUPABASE_URL"];
+  checks.direct_service_key = typeof process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  checks.direct_auth_secret = typeof process.env["AUTH_SECRET"] === "string" ? "SET" : "MISSING";
 
   if (!url || !key) {
     return NextResponse.json({ checks, error: "Missing env vars" }, { status: 500 });
