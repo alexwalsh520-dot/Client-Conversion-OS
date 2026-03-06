@@ -29,6 +29,16 @@ export async function GET() {
   checks.direct_supa_url = typeof process.env["NEXT_PUBLIC_SUPABASE_URL"];
   checks.direct_service_key = typeof process.env["SUPABASE_SERVICE_ROLE_KEY"];
   checks.direct_auth_secret = typeof process.env["AUTH_SECRET"] === "string" ? "SET" : "MISSING";
+  checks.test_var = typeof process.env["MY_TEST_VAR"] === "string" ? "SET" : "MISSING";
+
+  // List ALL non-system custom env keys
+  const customKeys = allKeys.filter(
+    (k) =>
+      !k.startsWith("VERCEL") &&
+      !k.startsWith("__") &&
+      !["HOME", "PATH", "USER", "SHELL", "LANG", "TERM", "NODE_ENV", "NODE_PATH", "HOSTNAME", "PWD", "OLDPWD", "SHLVL", "TMPDIR", "TZ", "LC_ALL", "LC_CTYPE", "AWS_REGION", "AWS_LAMBDA_FUNCTION_NAME", "AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "AWS_LAMBDA_FUNCTION_VERSION", "AWS_LAMBDA_LOG_GROUP_NAME", "AWS_LAMBDA_LOG_STREAM_NAME", "AWS_EXECUTION_ENV", "_HANDLER", "LAMBDA_TASK_ROOT", "LAMBDA_RUNTIME_DIR", "AWS_DEFAULT_REGION", "AWS_LAMBDA_RUNTIME_API", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "_AWS_XRAY_DAEMON_ADDRESS", "_AWS_XRAY_DAEMON_PORT", "AWS_XRAY_DAEMON_ADDRESS", "AWS_XRAY_CONTEXT_MISSING", "_X_AMZN_TRACE_ID"].includes(k)
+  );
+  checks.custom_keys = customKeys.join(", ") || "NONE";
 
   if (!url || !key) {
     return NextResponse.json({ checks, error: "Missing env vars" }, { status: 500 });
