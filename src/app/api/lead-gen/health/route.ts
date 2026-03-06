@@ -14,6 +14,15 @@ export async function GET() {
   checks.supabase_url = url ? `SET (${url.slice(0, 30)}...)` : "MISSING";
   checks.service_role_key = key ? `SET (${key.slice(0, 10)}...)` : "MISSING";
 
+  // List all env var KEYS that contain 'SUPA' or 'NEXT_PUBLIC' (values are hidden)
+  const relevantKeys = Object.keys(process.env).filter(
+    (k) => k.includes("SUPA") || k.includes("NEXT_PUBLIC") || k === "NODE_ENV" || k === "VERCEL_ENV"
+  );
+  checks.env_keys = relevantKeys.join(", ") || "NONE FOUND";
+  checks.node_env = process.env.NODE_ENV || "undefined";
+  checks.vercel_env = process.env.VERCEL_ENV || "undefined";
+  checks.total_env_keys = String(Object.keys(process.env).length);
+
   if (!url || !key) {
     return NextResponse.json({ checks, error: "Missing env vars" }, { status: 500 });
   }
