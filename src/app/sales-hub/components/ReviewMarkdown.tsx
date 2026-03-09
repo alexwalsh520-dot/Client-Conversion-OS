@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 
 interface ReviewMarkdownProps {
   content: string;
@@ -12,8 +12,8 @@ interface ParsedBlock {
   items?: string[];
 }
 
-function parseInline(text: string): JSX.Element[] {
-  const elements: JSX.Element[] = [];
+function parseInline(text: string): React.ReactElement[] {
+  const elements: React.ReactElement[] = [];
   // Match **bold** and `code` spans
   const regex = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
   let lastIndex = 0;
@@ -160,7 +160,7 @@ function parseBlocks(content: string): ParsedBlock[] {
   return blocks;
 }
 
-export function ReviewMarkdown({ content }: ReviewMarkdownProps): JSX.Element {
+export function ReviewMarkdown({ content }: ReviewMarkdownProps): React.ReactElement {
   const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
