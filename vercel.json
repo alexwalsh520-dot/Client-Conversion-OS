@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/pre-call-briefs",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/weekly-report",
