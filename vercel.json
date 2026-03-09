@@ -4,6 +4,14 @@
     {
       "path": "/api/sync",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/pre-call-briefs",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/weekly-report",
+      "schedule": "0 14 * * 1"
     }
   ]
 }

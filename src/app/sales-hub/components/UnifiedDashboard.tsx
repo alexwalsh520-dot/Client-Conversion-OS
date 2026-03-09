@@ -1,0 +1,434 @@
+"use client";
+
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import {
+  Loader2,
+  Users,
+  MessageCircle,
+  Link2,
+  CreditCard,
+  Phone,
+  PhoneCall,
+  TrendingUp,
+  Trophy,
+  XCircle,
+  DollarSign,
+  Banknote,
+  BarChart3,
+  Clock,
+  AlertTriangle,
+  ShoppingCart,
+  HelpCircle,
+} from "lucide-react";
+import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
+import { getEffectiveDates } from "./FilterBar";
+import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../types";
+
+/* ── Types ────────────────────────────────────────────────────────── */
+
+interface StripeData {
+  subscriptionsSold: number;
+}
+
+interface DataState<T> {
+  data: T | null;
+  loading: boolean;
+  error: string;
+}
+
+interface UnifiedDashboardProps {
+  filters: Filters;
+}
+
+/* ── Fetch helper ─────────────────────────────────────────────────── */
+
+async function fetchJSON<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
+  return res.json();
+}
+
+/* ── Manychat aggregation ─────────────────────────────────────────── */
+
+function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDashboard {
+  return {
+    newLeads: a.newLeads + b.newLeads,
+    leadsEngaged: a.leadsEngaged + b.leadsEngaged,
+    callLinksSent: a.callLinksSent + b.callLinksSent,
+    subLinksSent: a.subLinksSent + b.subLinksSent,
+  };
+}
+
+/* ── KPI card renderer ────────────────────────────────────────────── */
+
+function renderKPICard(
+  icon: ReactNode,
+  label: string,
+  value: string | number,
+  loading: boolean,
+  error: string,
+  color?: string,
+) {
+  return (
+    <div className="glass-static metric-card">
+      <div
+        className="metric-card-label"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        {icon}
+        {label}
+      </div>
+      {loading ? (
+        <div style={{ paddingTop: 4 }}>
+          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+        </div>
+      ) : error ? (
+        <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
+      ) : (
+        <div className="metric-card-value" style={color ? { color } : undefined}>
+          {value}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Component ────────────────────────────────────────────────────── */
+
+export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
+  const { dateFrom, dateTo } = getEffectiveDates(filters);
+
+  /* -- Manychat state -- */
+  const [manychat, setManychat] = useState<DataState<ManychatDashboard>>({
+    data: null,
+    loading: true,
+    error: "",
+  });
+
+  /* -- Sheet state -- */
+  const [sheet, setSheet] = useState<DataState<SheetRow[]>>({
+    data: null,
+    loading: true,
+    error: "",
+  });
+
+  /* -- Stripe state -- */
+  const [stripe, setStripe] = useState<DataState<StripeData>>({
+    data: null,
+    loading: true,
+    error: "",
+  });
+
+  /* ── Fetch Manychat ─────────────────────────────────────────────── */
+  const fetchManychat = useCallback(async () => {
+    setManychat({ data: null, loading: true, error: "" });
+    try {
+      if (filters.client === "all") {
+        const [tyson, keith] = await Promise.all([
+          fetchJSON<ManychatMetrics>(
+            `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
+          fetchJSON<ManychatMetrics>(
+            `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
+        ]);
+        setManychat({
+          data: sumDashboards(tyson.dashboard, keith.dashboard),
+          loading: false,
+          error: "",
+        });
+      } else {
+        const res = await fetchJSON<ManychatMetrics>(
+          `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        );
+        setManychat({ data: res.dashboard, loading: false, error: "" });
+      }
+    } catch (err) {
+      setManychat({
+        data: null,
+        loading: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }, [filters.client, dateFrom, dateTo]);
+
+  /* ── Fetch Sheet ────────────────────────────────────────────────── */
+  const fetchSheet = useCallback(async () => {
+    setSheet({ data: null, loading: true, error: "" });
+    try {
+      const res = await fetchJSON<SheetRow[]>(
+        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}&client=${filters.client}`,
+      );
+      setSheet({ data: res, loading: false, error: "" });
+    } catch (err) {
+      setSheet({
+        data: null,
+        loading: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }, [filters.client, dateFrom, dateTo]);
+
+  /* ── Fetch Stripe ───────────────────────────────────────────────── */
+  const fetchStripe = useCallback(async () => {
+    setStripe({ data: null, loading: true, error: "" });
+    try {
+      if (filters.client === "all") {
+        const [tyson, keith] = await Promise.all([
+          fetchJSON<StripeData>(
+            `/api/sales-hub/stripe-sales?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
+          fetchJSON<StripeData>(
+            `/api/sales-hub/stripe-sales?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
+        ]);
+        setStripe({
+          data: {
+            subscriptionsSold: tyson.subscriptionsSold + keith.subscriptionsSold,
+          },
+          loading: false,
+          error: "",
+        });
+      } else {
+        const res = await fetchJSON<StripeData>(
+          `/api/sales-hub/stripe-sales?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        );
+        setStripe({ data: res, loading: false, error: "" });
+      }
+    } catch (err) {
+      setStripe({
+        data: null,
+        loading: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }, [filters.client, dateFrom, dateTo]);
+
+  /* ── Trigger fetches on filter change ───────────────────────────── */
+  useEffect(() => {
+    fetchManychat();
+  }, [fetchManychat]);
+
+  useEffect(() => {
+    fetchSheet();
+  }, [fetchSheet]);
+
+  useEffect(() => {
+    fetchStripe();
+  }, [fetchStripe]);
+
+  /* ── Computed closer metrics ────────────────────────────────────── */
+  const closerMetrics = useMemo(() => {
+    if (!sheet.data) return null;
+    const rows = sheet.data;
+
+    const callsBooked = rows.length;
+    const callsTaken = rows.filter((r) => r.callTaken).length;
+    const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
+
+    const wins = rows.filter((r) => r.outcome === "WIN").length;
+    const losses = rows.filter((r) => r.outcome === "LOST").length;
+    const pcfus = rows.filter((r) => r.outcome === "PCFU").length;
+    const denominator = wins + losses + pcfus;
+    const closeRate = denominator > 0 ? (wins / denominator) * 100 : 0;
+
+    const winRows = rows.filter((r) => r.outcome === "WIN");
+    const revenue = winRows.reduce((sum, r) => sum + r.revenue, 0);
+    const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
+    const aov = wins > 0 ? revenue / wins : 0;
+
+    const noShows = rows.filter((r) => r.outcome === "NS-RS").length;
+
+    // Top objection: most frequent non-empty objection
+    const objectionCounts: Record<string, number> = {};
+    for (const r of rows) {
+      const obj = r.objection?.trim();
+      if (obj) {
+        objectionCounts[obj] = (objectionCounts[obj] || 0) + 1;
+      }
+    }
+    const topObjection =
+      Object.keys(objectionCounts).length > 0
+        ? Object.entries(objectionCounts).sort((a, b) => b[1] - a[1])[0][0]
+        : "None";
+
+    return {
+      callsBooked,
+      callsTaken,
+      showRate,
+      wins,
+      losses,
+      closeRate,
+      revenue,
+      cashCollected,
+      aov,
+      pcfus,
+      noShows,
+      topObjection,
+    };
+  }, [sheet.data]);
+
+  /* ── Render ─────────────────────────────────────────────────────── */
+  return (
+    <div>
+      {/* DM Metrics */}
+      <div className="section">
+        <h2 className="section-title">
+          <MessageCircle size={16} />
+          DM Metrics
+        </h2>
+        <div className="metric-grid metric-grid-4">
+          {renderKPICard(
+            <Users size={12} style={{ color: "var(--accent)" }} />,
+            "New Leads",
+            manychat.data ? fmtNumber(manychat.data.newLeads) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
+            "Leads Engaged",
+            manychat.data ? fmtNumber(manychat.data.leadsEngaged) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <Link2 size={12} style={{ color: "var(--accent)" }} />,
+            "Call Links Sent",
+            manychat.data ? fmtNumber(manychat.data.callLinksSent) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
+            "Sub Links Sent",
+            manychat.data ? fmtNumber(manychat.data.subLinksSent) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+        </div>
+      </div>
+
+      {/* Closer Metrics */}
+      <div className="section">
+        <h2 className="section-title">
+          <PhoneCall size={16} />
+          Closer Metrics
+        </h2>
+        <div className="metric-grid metric-grid-4">
+          {renderKPICard(
+            <Phone size={12} style={{ color: "var(--accent)" }} />,
+            "Calls Booked",
+            closerMetrics ? fmtNumber(closerMetrics.callsBooked) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
+            "Calls Taken",
+            closerMetrics ? fmtNumber(closerMetrics.callsTaken) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
+            "Show Rate",
+            closerMetrics ? fmtPercent(closerMetrics.showRate) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <Trophy size={12} style={{ color: "var(--success)" }} />,
+            "Wins",
+            closerMetrics ? fmtNumber(closerMetrics.wins) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+        </div>
+
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
+            <XCircle size={12} style={{ color: "var(--danger)" }} />,
+            "Losses",
+            closerMetrics ? fmtNumber(closerMetrics.losses) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--danger)",
+          )}
+          {renderKPICard(
+            <BarChart3 size={12} style={{ color: "var(--accent)" }} />,
+            "Close Rate",
+            closerMetrics ? fmtPercent(closerMetrics.closeRate) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <DollarSign size={12} style={{ color: "var(--success)" }} />,
+            "Revenue",
+            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <Banknote size={12} style={{ color: "var(--success)" }} />,
+            "Cash Collected",
+            closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+        </div>
+
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
+            <BarChart3 size={12} style={{ color: "var(--success)" }} />,
+            "AOV",
+            closerMetrics ? fmtDollars(closerMetrics.aov) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <Clock size={12} style={{ color: "var(--warning)" }} />,
+            "Pending Follow-Ups",
+            closerMetrics ? fmtNumber(closerMetrics.pcfus) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--warning)",
+          )}
+          {renderKPICard(
+            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
+            "No Shows",
+            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--danger)",
+          )}
+          {renderKPICard(
+            <ShoppingCart size={12} style={{ color: "var(--accent)" }} />,
+            "Subscriptions Sold",
+            stripe.data ? fmtNumber(stripe.data.subscriptionsSold) : "—",
+            stripe.loading,
+            stripe.error,
+          )}
+        </div>
+
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
+            <HelpCircle size={12} style={{ color: "var(--warning)" }} />,
+            "Top Objection",
+            closerMetrics ? closerMetrics.topObjection : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--warning)",
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Re-export sheet state for sibling components ─────────────────── */
+export type { DataState };

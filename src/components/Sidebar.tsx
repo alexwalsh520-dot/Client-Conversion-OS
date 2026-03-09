@@ -19,7 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  MessageSquareText,
+  BarChart3,
 } from "lucide-react";
 
 const mainNav = [
@@ -34,7 +34,7 @@ const mainNav = [
 const toolsNav = [
   { href: "/leads", label: "Lead Gen", icon: Crosshair },
   { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
-  { href: "/dm-reviews", label: "DM Reviews", icon: MessageSquareText },
+  { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/intelligence", label: "Intelligence", icon: Brain },
   { href: "/log", label: "Change Log", icon: GitCommit },
   { href: "/settings", label: "Settings", icon: Settings },

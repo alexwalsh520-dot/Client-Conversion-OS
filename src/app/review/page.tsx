@@ -20,7 +20,7 @@ export default function SetterSubmitPage() {
     setShowSuccess(false);
 
     try {
-      const res = await fetch("/api/dm-reviews/transcripts", {
+      const res = await fetch("/api/sales-hub/transcripts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ setterName: setter, transcript }),

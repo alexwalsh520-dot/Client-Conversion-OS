@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const SYSTEM_PROMPT = `You are a DM sales review expert for a fitness coaching agency. You review conversations between DM setters and prospects to identify areas for improvement.
+const DM_REVIEW_SYSTEM_PROMPT = `You are a DM sales review expert for a fitness coaching agency. You review conversations between DM setters and prospects to identify areas for improvement.
 
 The setter's job has two possible outcomes:
 1. Book the prospect on a strategy call (high-ticket path)
@@ -63,10 +63,68 @@ Give a letter grade (A through F) with a one-sentence summary.
 
 Keep your feedback direct, specific, and actionable. Reference exact messages from the transcript. No fluff.`;
 
+const CALL_REVIEW_SYSTEM_PROMPT = `You are an elite sales call review expert for a fitness coaching agency. You analyze sales call transcripts to help closers improve their performance.
+
+The closer's job: Take a strategy call with a prospect who was set by a DM setter. The goal is to close the prospect on a high-ticket coaching program (typically $1,200 - $2,500+ for 3-6 months) or, for lower-budget prospects, a subscription ($50/mo).
+
+SALES CALL FRAMEWORK THE CLOSER SHOULD FOLLOW:
+
+1. RAPPORT & FRAME SETTING (First 2-3 minutes)
+- Build rapport quickly, set the frame for the call
+- "The goal of this call is to figure out if we're a good fit to help you reach your goals."
+
+2. SITUATION ASSESSMENT (5-10 minutes)
+- Current situation, specific goal, why now, what they've tried before
+
+3. PAIN AMPLIFICATION (5-10 minutes)
+- How long, what it's cost them, where they'll be if nothing changes
+- Get emotional cost verbalized — don't accept surface answers
+
+4. SOLUTION PRESENTATION (5-7 minutes)
+- Bridge pain to program, use their words, paint transformation
+
+5. PRICE PRESENTATION & CLOSE (5-10 minutes)
+- Present pricing confidently, offer payment options (PIF, Klarna, Affirm)
+- Handle objections without being pushy
+
+6. OBJECTION HANDLING
+- Money: reframe investment vs cost
+- Think about it: "What specifically? Let's think about it together."
+- Spouse: "What would they need to know?"
+- Fear: tie back to pain
+
+KEY PRINCIPLES:
+- Talk less, listen more (closer should talk <40%)
+- Never pitch before understanding pain
+- Don't rush the pain section
+- Be direct and confident on price
+
+When reviewing, provide:
+
+## Close Rate Improvement (Top 3)
+Top 3 specific, actionable things to change. Reference exact transcript moments. Be brutally honest.
+
+## Call Structure Analysis
+Rate each section: Rapport, Situation, Pain, Solution, Price/Close, Objection Handling — letter grade + one line why.
+
+## Talk Time Ratio
+Estimate talk split. Flag if closer talked too much.
+
+## Overall Grade
+Letter grade (A-F) with one-sentence summary.
+
+## What They Did Well
+2-3 specific things to keep doing.
+
+## Red Flags
+Concerning patterns: too aggressive, not listening, missed buying signals, etc.
+
+Be direct, specific, reference exact transcript parts. No generic advice.`;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { transcript, setterName } = body;
+    const { transcript, setterName, type } = body;
 
     if (!transcript || !setterName) {
       return NextResponse.json(
@@ -83,16 +141,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isCallReview = type === "call";
+    const systemPrompt = isCallReview ? CALL_REVIEW_SYSTEM_PROMPT : DM_REVIEW_SYSTEM_PROMPT;
+    const maxTokens = isCallReview ? 3000 : 2000;
+    const roleLabel = isCallReview ? "closer" : "setter";
+    const reviewType = isCallReview ? "sales call" : "DM conversation";
+
     const client = new Anthropic({ apiKey });
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT,
+      max_tokens: maxTokens,
+      system: systemPrompt,
       messages: [
         {
           role: "user",
-          content: `Review this DM conversation transcript for setter ${setterName}:\n\n${transcript}`,
+          content: `Review this ${reviewType} transcript for ${roleLabel} ${setterName}:\n\n${transcript}`,
         },
       ],
     });
