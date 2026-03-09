@@ -156,10 +156,10 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   const fetchSheet = useCallback(async () => {
     setSheet({ data: null, loading: true, error: "" });
     try {
-      const res = await fetchJSON<SheetRow[]>(
+      const res = await fetchJSON<{ rows: SheetRow[] }>(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}&client=${filters.client}`,
       );
-      setSheet({ data: res, loading: false, error: "" });
+      setSheet({ data: res.rows, loading: false, error: "" });
     } catch (err) {
       setSheet({
         data: null,
