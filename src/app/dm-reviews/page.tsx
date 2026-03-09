@@ -107,9 +107,9 @@ export default function DMReviewsPage() {
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [transcriptsLoading, setTranscriptsLoading] = useState(true);
   const [transcriptsError, setTranscriptsError] = useState("");
-  const [filterSetter, setFilterSetter] = useState("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewingSetter, setReviewingSetter] = useState<string | null>(null);
+  const [latestReviewResult, setLatestReviewResult] = useState<{ setter: string; result: string } | null>(null);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
   // Derived
   const effectiveDateFrom = dateMode === "mtd" ? getMonthStart() : dateFrom;
@@ -169,8 +169,7 @@ export default function DMReviewsPage() {
     // Transcripts
     setTranscriptsLoading(true);
     setTranscriptsError("");
-    const tParams = filterSetter !== "all" ? `${params}&setter=${filterSetter}` : params;
-    fetch(`/api/dm-reviews/transcripts?${tParams}`)
+    fetch(`/api/dm-reviews/transcripts?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -181,47 +180,93 @@ export default function DMReviewsPage() {
       })
       .catch((err) => setTranscriptsError(err.message))
       .finally(() => setTranscriptsLoading(false));
-  }, [client, effectiveDateFrom, effectiveDateTo, filterSetter]);
+  }, [client, effectiveDateFrom, effectiveDateTo]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // ── Run AI review on a transcript ─────────────────────────
+  // ── Derived: pending transcripts by setter, review history ──
 
-  const handleRunReview = async (t: Transcript) => {
-    setReviewingId(t.id);
+  const pendingBySetter = setters.reduce((acc, s) => {
+    acc[s] = transcripts.filter((t) => t.setter_name === s && !t.reviewed);
+    return acc;
+  }, {} as Record<string, Transcript[]>);
+
+  // Build review history by grouping reviewed transcripts with same review_result
+  const reviewedTranscripts = transcripts.filter((t) => t.reviewed && t.review_result);
+  const reviewMap = new Map<string, { setter: string; result: string; date: string; count: number; id: string }>();
+  for (const t of reviewedTranscripts) {
+    const key = t.review_result!;
+    if (!reviewMap.has(key)) {
+      reviewMap.set(key, {
+        setter: t.setter_name,
+        result: t.review_result!,
+        date: t.reviewed_at || t.submitted_at,
+        count: 1,
+        id: t.id,
+      });
+    } else {
+      reviewMap.get(key)!.count++;
+    }
+  }
+  const reviewHistory = Array.from(reviewMap.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  // ── Run AI review on all pending transcripts for a setter ──
+
+  const handleStartReview = async (setter: string) => {
+    const pending = pendingBySetter[setter];
+    if (!pending || pending.length === 0) return;
+
+    setReviewingSetter(setter);
+    setLatestReviewResult(null);
 
     try {
-      // Call Claude for review
+      // Combine all transcripts into one prompt
+      const combined = pending
+        .map(
+          (t, i) =>
+            `--- Conversation ${i + 1} (submitted ${new Date(t.submitted_at).toLocaleDateString()}) ---\n${t.transcript}`
+        )
+        .join("\n\n");
+
+      // Call Claude for batch review
       const res = await fetch("/api/dm-reviews/review-transcript", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: t.transcript, setterName: t.setter_name }),
+        body: JSON.stringify({ transcript: combined, setterName: setter }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // Save result to database
-      await fetch("/api/dm-reviews/transcripts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: t.id, reviewResult: data.review }),
-      });
+      // Save result to all transcripts in the batch
+      await Promise.all(
+        pending.map((t) =>
+          fetch("/api/dm-reviews/transcripts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: t.id, reviewResult: data.review }),
+          })
+        )
+      );
 
       // Update local state
+      const now = new Date().toISOString();
       setTranscripts((prev) =>
         prev.map((tr) =>
-          tr.id === t.id
-            ? { ...tr, reviewed: true, review_result: data.review, reviewed_at: new Date().toISOString() }
+          pending.find((p) => p.id === tr.id)
+            ? { ...tr, reviewed: true, review_result: data.review, reviewed_at: now }
             : tr
         )
       );
-      setExpandedId(t.id);
+
+      setLatestReviewResult({ setter, result: data.review });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Review failed");
     } finally {
-      setReviewingId(null);
+      setReviewingSetter(null);
     }
   };
 
@@ -586,33 +631,13 @@ export default function DMReviewsPage() {
         </div>
       </div>
 
-      {/* ═══ Section 4: Submitted Transcripts ═══ */}
+      {/* ═══ Section 4: DM Review ═══ */}
       <div className="section">
         <h2 className="section-title">
           <MessageSquareText size={16} />
-          Submitted Transcripts
+          DM Review
         </h2>
 
-        {/* Filter by setter */}
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            className={`context-tab ${filterSetter === "all" ? "context-tab-active" : ""}`}
-            onClick={() => setFilterSetter("all")}
-          >
-            All
-          </button>
-          {setters.map((s) => (
-            <button
-              key={s}
-              className={`context-tab ${filterSetter === s ? "context-tab-active" : ""}`}
-              onClick={() => setFilterSetter(s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        {/* Transcript list */}
         {transcriptsLoading ? (
           <div className="glass-static" style={{ padding: 40, textAlign: "center" }}>
             <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
@@ -625,7 +650,99 @@ export default function DMReviewsPage() {
             <AlertCircle size={16} style={{ color: "var(--danger)" }} />
             <span style={{ fontSize: 13, color: "var(--danger)" }}>{transcriptsError}</span>
           </div>
-        ) : transcripts.length === 0 ? (
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {setters.map((setter) => {
+              const pending = pendingBySetter[setter] || [];
+              const isReviewing = reviewingSetter === setter;
+              const showResult = latestReviewResult?.setter === setter;
+
+              return (
+                <div key={setter} className="glass-static" style={{ overflow: "hidden" }}>
+                  <div
+                    style={{
+                      padding: "18px 20px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          fontSize: 15,
+                        }}
+                      >
+                        {setter}
+                      </span>
+                      <span
+                        style={{
+                          color: pending.length > 0 ? "var(--accent)" : "var(--text-muted)",
+                          fontSize: 13,
+                        }}
+                      >
+                        {pending.length} pending transcript{pending.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleStartReview(setter)}
+                      disabled={isReviewing || pending.length === 0}
+                      style={{
+                        opacity: isReviewing || pending.length === 0 ? 0.5 : 1,
+                        cursor: isReviewing || pending.length === 0 ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {isReviewing ? (
+                        <>
+                          <Loader2 size={14} className="spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        "Start Review"
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Show review result inline after running */}
+                  {showResult && latestReviewResult && (
+                    <div style={{ borderTop: "1px solid var(--border-primary)", padding: 20 }}>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 500,
+                          textTransform: "uppercase",
+                          letterSpacing: 1,
+                          color: "var(--text-muted)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        AI Review &middot; {pending.length} transcript{pending.length !== 1 ? "s" : ""} analyzed &middot; Just now
+                      </div>
+                      <ReviewMarkdown content={latestReviewResult.result} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ═══ Section 5: Review History ═══ */}
+      <div className="section">
+        <h2 className="section-title">
+          <ClipboardCheck size={16} />
+          Review History
+        </h2>
+
+        {transcriptsLoading ? (
+          <div className="glass-static" style={{ padding: 40, textAlign: "center" }}>
+            <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+          </div>
+        ) : reviewHistory.length === 0 ? (
           <div
             className="glass-static"
             style={{
@@ -635,23 +752,16 @@ export default function DMReviewsPage() {
               fontSize: 13,
             }}
           >
-            No transcripts submitted yet for this period.
-            <br />
-            <span style={{ fontSize: 12, marginTop: 4, display: "inline-block" }}>
-              Setters submit at: <code style={{ color: "var(--accent)" }}>/review</code>
-            </span>
+            No reviews completed yet.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {transcripts.map((t) => {
-              const isExpanded = expandedId === t.id;
-              const isReviewing = reviewingId === t.id;
-              const date = new Date(t.submitted_at);
-              const snippet = t.transcript.slice(0, 120).replace(/\n/g, " ");
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {reviewHistory.map((review) => {
+              const isExpanded = expandedHistoryId === review.id;
+              const date = new Date(review.date);
 
               return (
-                <div key={t.id} className="glass-static" style={{ overflow: "hidden" }}>
-                  {/* Header row */}
+                <div key={review.id} className="glass-static" style={{ overflow: "hidden" }}>
                   <div
                     style={{
                       padding: "14px 20px",
@@ -660,37 +770,35 @@ export default function DMReviewsPage() {
                       gap: 12,
                       cursor: "pointer",
                     }}
-                    onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                    onClick={() => setExpandedHistoryId(isExpanded ? null : review.id)}
                   >
-                    <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, minWidth: 80 }}>
-                      {t.setter_name}
-                    </span>
-                    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                      {date.toLocaleDateString("en-US", { month: "short", day: "numeric" })} at{" "}
-                      {date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                    </span>
-                    {t.reviewed ? (
-                      <span
-                        className="status-badge status-completed"
-                        style={{ marginLeft: 4 }}
-                      >
-                        Reviewed
-                      </span>
-                    ) : (
-                      <span className="status-badge status-pending">Pending</span>
-                    )}
                     <span
                       style={{
-                        flex: 1,
-                        color: "var(--text-muted)",
-                        fontSize: 12,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        fontWeight: 600,
+                        color: "var(--text-primary)",
+                        fontSize: 14,
+                        minWidth: 80,
                       }}
                     >
-                      {snippet}...
+                      {review.setter}
                     </span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                      {date.toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}{" "}
+                      at {date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--accent)",
+                      }}
+                    >
+                      {review.count} transcript{review.count !== 1 ? "s" : ""}
+                    </span>
+                    <span style={{ flex: 1 }} />
                     {isExpanded ? (
                       <ChevronUp size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
                     ) : (
@@ -698,83 +806,9 @@ export default function DMReviewsPage() {
                     )}
                   </div>
 
-                  {/* Expanded content */}
                   {isExpanded && (
                     <div style={{ borderTop: "1px solid var(--border-primary)", padding: 20 }}>
-                      {/* Transcript text */}
-                      <div
-                        style={{
-                          background: "var(--bg-glass)",
-                          borderRadius: 8,
-                          padding: "16px",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          lineHeight: 1.6,
-                          color: "var(--text-secondary)",
-                          maxHeight: 300,
-                          overflowY: "auto",
-                          whiteSpace: "pre-wrap",
-                          marginBottom: 16,
-                        }}
-                      >
-                        {t.transcript}
-                      </div>
-
-                      {/* Run Review button or show result */}
-                      {t.reviewed && t.review_result ? (
-                        <div
-                          style={{
-                            padding: 20,
-                            borderRadius: 10,
-                            background: "var(--bg-glass)",
-                            border: "1px solid var(--border-primary)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 500,
-                              textTransform: "uppercase",
-                              letterSpacing: 1,
-                              color: "var(--text-muted)",
-                              marginBottom: 12,
-                            }}
-                          >
-                            AI Review
-                            {t.reviewed_at && (
-                              <span style={{ marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
-                                &middot; {new Date(t.reviewed_at).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
-                          <ReviewMarkdown content={t.review_result} />
-                        </div>
-                      ) : (
-                        <button
-                          className="btn-primary"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRunReview(t);
-                          }}
-                          disabled={isReviewing}
-                          style={{
-                            opacity: isReviewing ? 0.5 : 1,
-                            cursor: isReviewing ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          {isReviewing ? (
-                            <>
-                              <Loader2 size={14} className="spin" />
-                              Analyzing...
-                            </>
-                          ) : (
-                            <>
-                              <MessageSquareText size={14} />
-                              Run Review
-                            </>
-                          )}
-                        </button>
-                      )}
+                      <ReviewMarkdown content={review.result} />
                     </div>
                   )}
                 </div>
