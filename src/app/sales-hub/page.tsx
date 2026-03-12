@@ -11,7 +11,6 @@ import {
   Calendar,
   History,
   ChevronDown,
-  ChevronUp,
   Loader2,
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
@@ -62,57 +61,75 @@ function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <section id={id} style={{ marginBottom: 24, scrollMarginTop: 72 }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "14px 18px",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: open ? "12px 12px 0 0" : 12,
-          background: "var(--bg-card)",
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-        }}
-      >
-        <span style={{ color: "var(--accent)", display: "flex", alignItems: "center" }}>
-          {icon}
-        </span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "left",
-            fontSize: 15,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-            letterSpacing: "-0.2px",
-          }}
-        >
-          {title}
-        </span>
-        {open ? (
-          <ChevronUp size={16} style={{ color: "var(--text-muted)" }} />
-        ) : (
-          <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
-        )}
-      </button>
-
+    <section id={id} style={{ marginBottom: 16, scrollMarginTop: 72 }}>
       <div
         style={{
-          maxHeight: open ? 5000 : 0,
+          borderRadius: 12,
+          border: "1px solid var(--border-subtle)",
           overflow: "hidden",
-          opacity: open ? 1 : 0,
-          transition: "max-height 0.35s ease, opacity 0.25s ease",
-          border: open ? "1px solid var(--border-subtle)" : "none",
-          borderTop: "none",
-          borderRadius: "0 0 12px 12px",
-          background: "var(--bg-card)",
+          borderLeft: open ? "3px solid var(--accent)" : "1px solid var(--border-subtle)",
+          transition: "border-color 0.2s ease",
         }}
       >
-        <div style={{ padding: "20px 18px" }}>{children}</div>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px 18px",
+            background: "var(--bg-card)",
+            cursor: "pointer",
+            border: "none",
+            transition: "background 0.15s ease",
+          }}
+        >
+          <span style={{
+            color: open ? "var(--accent)" : "var(--text-muted)",
+            display: "flex", alignItems: "center",
+            transition: "color 0.2s ease",
+          }}>
+            {icon}
+          </span>
+          <span
+            style={{
+              flex: 1,
+              textAlign: "left",
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              letterSpacing: "-0.2px",
+            }}
+          >
+            {title}
+          </span>
+          <ChevronDown
+            size={15}
+            style={{
+              color: "var(--text-muted)",
+              transition: "transform 0.25s ease",
+              transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          />
+        </button>
+
+        <div
+          style={{
+            maxHeight: open ? 5000 : 0,
+            overflow: "hidden",
+            opacity: open ? 1 : 0,
+            transition: "max-height 0.35s ease, opacity 0.25s ease",
+          }}
+        >
+          <div style={{
+            padding: "20px 18px",
+            borderTop: "1px solid var(--border-subtle)",
+            background: "var(--bg-card)",
+          }}>
+            {children}
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -190,10 +207,12 @@ export default function SalesHubPage() {
           top: 0,
           zIndex: 10,
           display: "flex",
-          gap: 4,
+          gap: 6,
           padding: "10px 0",
-          marginBottom: 20,
-          background: "var(--bg-primary)",
+          marginBottom: 16,
+          background: "rgba(9, 9, 11, 0.85)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
           borderBottom: "1px solid var(--border-subtle)",
           overflowX: "auto",
         }}
@@ -202,24 +221,23 @@ export default function SalesHubPage() {
           <button
             key={id}
             onClick={() => scrollTo(id)}
-            className="context-tab"
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              borderRadius: 8,
-              border: "1px solid var(--border-subtle)",
-              background: "var(--bg-card)",
+              gap: 5,
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.03)",
               color: "var(--text-secondary)",
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 500,
               cursor: "pointer",
               whiteSpace: "nowrap",
               transition: "all 0.15s ease",
             }}
           >
-            <Icon size={14} />
+            <Icon size={13} />
             {label}
           </button>
         ))}

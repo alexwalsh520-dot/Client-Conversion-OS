@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useCallback, Fragment, type ReactNode } from "react";
 import {
   Loader2,
   Users,
@@ -14,10 +14,10 @@ import {
   XCircle,
   DollarSign,
   Banknote,
-  BarChart3,
   Clock,
   AlertTriangle,
-  ShoppingCart,
+  ArrowRight,
+  BarChart3,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
@@ -59,38 +59,39 @@ function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDash
   };
 }
 
-/* ── KPI card renderer ────────────────────────────────────────────── */
+/* ── Sub-components ──────────────────────────────────────────────── */
 
-function renderKPICard(
-  icon: ReactNode,
-  label: string,
-  value: string | number,
-  loading: boolean,
-  error: string,
-  color?: string,
-) {
+function DashLabel({ icon, children, first }: { icon: ReactNode; children: ReactNode; first?: boolean }) {
   return (
-    <div className="glass-static metric-card">
-      <div
-        className="metric-card-label"
-        style={{ display: "flex", alignItems: "center", gap: 6 }}
-      >
-        {icon}
-        {label}
-      </div>
-      {loading ? (
-        <div style={{ paddingTop: 4 }}>
-          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
-        </div>
-      ) : error ? (
-        <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
-      ) : (
-        <div className="metric-card-value" style={color ? { color } : undefined}>
-          {value}
-        </div>
-      )}
+    <div
+      style={{
+        fontSize: 11,
+        textTransform: "uppercase",
+        letterSpacing: "1px",
+        color: "var(--text-muted)",
+        fontWeight: 600,
+        margin: first ? "0 0 12px" : "28px 0 12px",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      {icon}
+      {children}
     </div>
   );
+}
+
+function LoadingPulse() {
+  return (
+    <div style={{ padding: 12 }}>
+      <Loader2 size={18} className="spin" style={{ color: "var(--text-muted)" }} />
+    </div>
+  );
+}
+
+function ErrorMsg() {
+  return <div style={{ fontSize: 12, color: "var(--danger)" }}>Failed to load</div>;
 }
 
 /* ── Component ────────────────────────────────────────────────────── */
@@ -167,13 +168,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   }, [filters.client, dateFrom, dateTo]);
 
   /* ── Trigger fetches on filter change ───────────────────────────── */
-  useEffect(() => {
-    fetchManychat();
-  }, [fetchManychat]);
-
-  useEffect(() => {
-    fetchSheet();
-  }, [fetchSheet]);
+  useEffect(() => { fetchManychat(); }, [fetchManychat]);
+  useEffect(() => { fetchSheet(); }, [fetchSheet]);
 
   /* ── Computed closer metrics ────────────────────────────────────── */
   const closerMetrics = useMemo(() => {
@@ -182,7 +178,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
 
     const callsBooked = rows.length;
     const callsTaken = rows.filter((r) => r.callTaken).length;
-    // No-shows = calls where Call Taken column is "no" (callTaken === false)
     const noShows = rows.filter((r) => !r.callTaken).length;
     const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
 
@@ -200,167 +195,296 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     const subscriptionsSold = sheet.data.subscriptionsSold;
 
     return {
-      callsBooked,
-      callsTaken,
-      showRate,
-      wins,
-      losses,
-      closeRate,
-      cashCollected,
-      aov,
-      pcfus,
-      noShows,
-      revenue,
-      subscriptionsSold,
+      callsBooked, callsTaken, showRate, wins, losses, closeRate,
+      cashCollected, aov, pcfus, noShows, revenue, subscriptionsSold,
     };
   }, [sheet.data]);
+
+  /* ── Helpers ────────────────────────────────────────────────────── */
+
+  const rateColor = (rate: number) =>
+    rate >= 70 ? "var(--success)" : rate >= 50 ? "var(--warning)" : "var(--danger)";
 
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
-      {/* DM Metrics */}
-      <div className="section">
-        <h2 className="section-title">
-          <MessageCircle size={16} />
-          DM Metrics
-        </h2>
-        <div className="metric-grid metric-grid-4">
-          {renderKPICard(
-            <Users size={12} style={{ color: "var(--accent)" }} />,
-            "New Leads",
-            manychat.data ? fmtNumber(manychat.data.newLeads) : "—",
-            manychat.loading,
-            manychat.error,
+      {/* ── Revenue Overview ──────────────────────────────────────── */}
+      <DashLabel icon={<DollarSign size={12} />} first>Revenue</DashLabel>
+      <div className="metric-grid metric-grid-2">
+        {/* Cash Collected */}
+        <div className="glass-static" style={{ padding: "24px 28px" }}>
+          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <Banknote size={14} style={{ color: "var(--success)" }} />
+                <span style={{
+                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
+                  textTransform: "uppercase", letterSpacing: "0.3px",
+                }}>
+                  Cash Collected
+                </span>
+              </div>
+              <div style={{
+                fontSize: 36, fontWeight: 700, color: "var(--success)",
+                letterSpacing: "-1.5px", lineHeight: 1,
+              }}>
+                {closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—"}
+              </div>
+              <div style={{
+                marginTop: 14, display: "flex", gap: 20,
+                fontSize: 13, color: "var(--text-secondary)",
+              }}>
+                <span>
+                  from <strong style={{ color: "var(--text-primary)" }}>{closerMetrics?.wins ?? 0}</strong> wins
+                </span>
+                <span>
+                  AOV <strong style={{ color: "var(--text-primary)" }}>{closerMetrics ? fmtDollars(closerMetrics.aov) : "—"}</strong>
+                </span>
+              </div>
+            </>
           )}
-          {renderKPICard(
-            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
-            "Leads Engaged",
-            manychat.data ? fmtNumber(manychat.data.leadsEngaged) : "—",
-            manychat.loading,
-            manychat.error,
-          )}
-          {renderKPICard(
-            <Link2 size={12} style={{ color: "var(--accent)" }} />,
-            "Call Links Sent",
-            manychat.data ? fmtNumber(manychat.data.callLinksSent) : "—",
-            manychat.loading,
-            manychat.error,
-          )}
-          {renderKPICard(
-            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
-            "Sub Links Sent",
-            manychat.data ? fmtNumber(manychat.data.subLinksSent) : "—",
-            manychat.loading,
-            manychat.error,
+        </div>
+
+        {/* Total Revenue */}
+        <div className="glass-static" style={{ padding: "24px 28px" }}>
+          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <DollarSign size={14} style={{ color: "var(--success)" }} />
+                <span style={{
+                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
+                  textTransform: "uppercase", letterSpacing: "0.3px",
+                }}>
+                  Total Revenue
+                </span>
+              </div>
+              <div style={{
+                fontSize: 36, fontWeight: 700, color: "var(--success)",
+                letterSpacing: "-1.5px", lineHeight: 1,
+              }}>
+                {closerMetrics ? fmtDollars(closerMetrics.revenue) : "—"}
+              </div>
+              <div style={{
+                marginTop: 14, display: "flex", gap: 20,
+                fontSize: 13, color: "var(--text-secondary)",
+              }}>
+                <span>
+                  Subs sold <strong style={{ color: "var(--text-primary)" }}>{closerMetrics?.subscriptionsSold ?? 0}</strong>
+                </span>
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Closer Metrics */}
-      <div className="section">
-        <h2 className="section-title">
-          <PhoneCall size={16} />
-          Closer Metrics
-        </h2>
-        <div className="metric-grid metric-grid-4">
-          {renderKPICard(
-            <Banknote size={12} style={{ color: "var(--success)" }} />,
-            "Cash Collected",
-            closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
-          )}
-          {renderKPICard(
-            <BarChart3 size={12} style={{ color: "var(--success)" }} />,
-            "AOV",
-            closerMetrics ? fmtDollars(closerMetrics.aov) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
-          )}
-          {renderKPICard(
-            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
-            "Close Rate",
-            closerMetrics ? fmtPercent(closerMetrics.closeRate) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
-            "Show Rate",
-            closerMetrics ? fmtPercent(closerMetrics.showRate) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-        </div>
-
-        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-          {renderKPICard(
-            <Phone size={12} style={{ color: "var(--accent)" }} />,
-            "Calls Booked",
-            closerMetrics ? fmtNumber(closerMetrics.callsBooked) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
-            "Calls Taken",
-            closerMetrics ? fmtNumber(closerMetrics.callsTaken) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <Trophy size={12} style={{ color: "var(--success)" }} />,
-            "Wins",
-            closerMetrics ? fmtNumber(closerMetrics.wins) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
-          )}
-          {renderKPICard(
-            <XCircle size={12} style={{ color: "var(--danger)" }} />,
-            "Losses",
-            closerMetrics ? fmtNumber(closerMetrics.losses) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--danger)",
+      {/* ── Conversion Rates ─────────────────────────────────────── */}
+      <DashLabel icon={<TrendingUp size={12} />}>Conversion</DashLabel>
+      <div className="metric-grid metric-grid-2">
+        {/* Close Rate */}
+        <div className="glass-static" style={{ padding: "20px 24px" }}>
+          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : closerMetrics && (
+            <>
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                marginBottom: 14,
+              }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
+                  textTransform: "uppercase", letterSpacing: "0.3px",
+                }}>
+                  <TrendingUp size={14} style={{ color: rateColor(closerMetrics.closeRate) }} />
+                  Close Rate
+                </div>
+                <div style={{
+                  fontSize: 28, fontWeight: 700,
+                  color: rateColor(closerMetrics.closeRate), letterSpacing: "-1px",
+                }}>
+                  {fmtPercent(closerMetrics.closeRate)}
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div style={{
+                height: 6, background: "rgba(255,255,255,0.06)",
+                borderRadius: 3, overflow: "hidden", marginBottom: 14,
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.min(closerMetrics.closeRate, 100)}%`,
+                  background: rateColor(closerMetrics.closeRate),
+                  borderRadius: 3,
+                  transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                }} />
+              </div>
+              <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
+                <span><strong style={{ color: "var(--success)" }}>{closerMetrics.wins}</strong> wins</span>
+                <span><strong style={{ color: "var(--danger)" }}>{closerMetrics.losses}</strong> losses</span>
+                <span><strong style={{ color: "var(--warning)" }}>{closerMetrics.pcfus}</strong> pending</span>
+              </div>
+            </>
           )}
         </div>
 
-        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-          {renderKPICard(
-            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
-            "No Shows",
-            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--danger)",
-          )}
-          {renderKPICard(
-            <Clock size={12} style={{ color: "var(--warning)" }} />,
-            "Pending Follow-Ups",
-            closerMetrics ? fmtNumber(closerMetrics.pcfus) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--warning)",
-          )}
-          {renderKPICard(
-            <ShoppingCart size={12} style={{ color: "var(--accent)" }} />,
-            "Subscriptions Sold",
-            closerMetrics ? fmtNumber(closerMetrics.subscriptionsSold) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <DollarSign size={12} style={{ color: "var(--success)" }} />,
-            "Money",
-            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
+        {/* Show Rate */}
+        <div className="glass-static" style={{ padding: "20px 24px" }}>
+          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : closerMetrics && (
+            <>
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                marginBottom: 14,
+              }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
+                  textTransform: "uppercase", letterSpacing: "0.3px",
+                }}>
+                  <PhoneCall size={14} style={{ color: rateColor(closerMetrics.showRate) }} />
+                  Show Rate
+                </div>
+                <div style={{
+                  fontSize: 28, fontWeight: 700,
+                  color: rateColor(closerMetrics.showRate), letterSpacing: "-1px",
+                }}>
+                  {fmtPercent(closerMetrics.showRate)}
+                </div>
+              </div>
+              <div style={{
+                height: 6, background: "rgba(255,255,255,0.06)",
+                borderRadius: 3, overflow: "hidden", marginBottom: 14,
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.min(closerMetrics.showRate, 100)}%`,
+                  background: rateColor(closerMetrics.showRate),
+                  borderRadius: 3,
+                  transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                }} />
+              </div>
+              <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
+                <span>
+                  <strong style={{ color: "var(--text-primary)" }}>{closerMetrics.callsTaken}</strong> / {closerMetrics.callsBooked} showed
+                </span>
+                <span>
+                  <strong style={{ color: "var(--danger)" }}>{closerMetrics.noShows}</strong> no-shows
+                </span>
+              </div>
+            </>
           )}
         </div>
+      </div>
+
+      {/* ── Pipeline ─────────────────────────────────────────────── */}
+      <DashLabel icon={<BarChart3 size={12} />}>Pipeline</DashLabel>
+      {sheet.loading ? (
+        <div className="glass-static" style={{ padding: 24, textAlign: "center" }}>
+          <LoadingPulse />
+        </div>
+      ) : sheet.error ? (
+        <div className="glass-static" style={{ padding: 24 }}><ErrorMsg /></div>
+      ) : closerMetrics && (
+        <div className="glass-static" style={{ padding: "20px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Funnel stages */}
+            {[
+              { label: "Booked", value: closerMetrics.callsBooked, color: "var(--accent)", icon: <Phone size={13} /> },
+              { label: "Taken", value: closerMetrics.callsTaken, color: "var(--accent)", icon: <PhoneCall size={13} /> },
+              { label: "Wins", value: closerMetrics.wins, color: "var(--success)", icon: <Trophy size={13} /> },
+            ].map((stage, i) => (
+              <Fragment key={stage.label}>
+                {i > 0 && (
+                  <ArrowRight
+                    size={16}
+                    style={{ color: "var(--text-muted)", flexShrink: 0, opacity: 0.3 }}
+                  />
+                )}
+                <div style={{
+                  flex: 1, textAlign: "center", padding: "16px 8px",
+                  borderRadius: 10, background: "rgba(255,255,255,0.025)",
+                  border: "1px solid var(--border-subtle)",
+                }}>
+                  <div style={{ marginBottom: 6, color: stage.color, opacity: 0.7 }}>
+                    {stage.icon}
+                  </div>
+                  <div style={{
+                    fontSize: 24, fontWeight: 700, color: stage.color,
+                    letterSpacing: "-0.5px",
+                  }}>
+                    {fmtNumber(stage.value)}
+                  </div>
+                  <div style={{
+                    fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
+                    marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
+                  }}>
+                    {stage.label}
+                  </div>
+                </div>
+              </Fragment>
+            ))}
+
+            {/* Separator */}
+            <div style={{
+              width: 1, height: 52, background: "var(--border-subtle)",
+              flexShrink: 0, margin: "0 6px",
+            }} />
+
+            {/* Outcome stages */}
+            {[
+              { label: "Losses", value: closerMetrics.losses, color: "var(--danger)", icon: <XCircle size={13} /> },
+              { label: "No Shows", value: closerMetrics.noShows, color: "var(--danger)", icon: <AlertTriangle size={13} /> },
+              { label: "Pending", value: closerMetrics.pcfus, color: "var(--warning)", icon: <Clock size={13} /> },
+            ].map((stage) => (
+              <div key={stage.label} style={{
+                flex: 1, textAlign: "center", padding: "16px 8px",
+                borderRadius: 10, background: "rgba(255,255,255,0.015)",
+              }}>
+                <div style={{ marginBottom: 6, color: stage.color, opacity: 0.5 }}>
+                  {stage.icon}
+                </div>
+                <div style={{
+                  fontSize: 22, fontWeight: 700, color: stage.color,
+                  letterSpacing: "-0.5px",
+                }}>
+                  {fmtNumber(stage.value)}
+                </div>
+                <div style={{
+                  fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
+                  marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
+                }}>
+                  {stage.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── DM Metrics ───────────────────────────────────────────── */}
+      <DashLabel icon={<MessageCircle size={12} />}>DM Performance</DashLabel>
+      <div className="metric-grid metric-grid-4">
+        {[
+          { icon: <Users size={12} style={{ color: "var(--accent)" }} />, label: "New Leads", value: manychat.data?.newLeads },
+          { icon: <MessageCircle size={12} style={{ color: "var(--accent)" }} />, label: "Engaged", value: manychat.data?.leadsEngaged },
+          { icon: <Link2 size={12} style={{ color: "var(--accent)" }} />, label: "Call Links", value: manychat.data?.callLinksSent },
+          { icon: <CreditCard size={12} style={{ color: "var(--accent)" }} />, label: "Sub Links", value: manychat.data?.subLinksSent },
+        ].map((m) => (
+          <div key={m.label} className="glass-static metric-card">
+            <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {m.icon}
+              {m.label}
+            </div>
+            {manychat.loading ? (
+              <div style={{ paddingTop: 4 }}>
+                <Loader2 size={16} className="spin" style={{ color: "var(--text-muted)" }} />
+              </div>
+            ) : manychat.error ? (
+              <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
+            ) : (
+              <div className="metric-card-value">
+                {m.value != null ? fmtNumber(m.value) : "—"}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

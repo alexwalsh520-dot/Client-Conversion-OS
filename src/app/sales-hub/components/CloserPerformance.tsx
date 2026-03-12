@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Loader2, Trophy, Users } from "lucide-react";
+import { Loader2, Trophy } from "lucide-react";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 import type { Filters, SheetRow } from "../types";
 
@@ -42,7 +42,6 @@ interface SetterQualityRow {
 const CLOSERS = ["Broz", "Will", "Austin"];
 
 function parseCallLength(len: string): number {
-  // Expects formats like "12:34" (mm:ss) or a raw number (minutes)
   if (!len || len.trim() === "") return 0;
   const parts = len.split(":");
   if (parts.length === 2) {
@@ -80,7 +79,6 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
   const cash = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
   const aov = wins > 0 ? revenue / wins : 0;
 
-  // Average call length from taken calls
   const callLengths = takenRows
     .map((r) => parseCallLength(r.callLength))
     .filter((s) => s > 0);
@@ -89,7 +87,6 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
       ? callLengths.reduce((a, b) => a + b, 0) / callLengths.length
       : 0;
 
-  // Top objection
   const objCounts: Record<string, number> = {};
   for (const r of closerRows) {
     const obj = r.objection?.trim();
@@ -161,6 +158,12 @@ function findTopPerformer(
   return topVal > 0 ? top.name : null;
 }
 
+/* ── Rate color helper ────────────────────────────────────────────── */
+
+function rateColor(rate: number): string {
+  return rate >= 70 ? "var(--success)" : rate >= 50 ? "var(--warning)" : "var(--danger)";
+}
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function CloserPerformance({
@@ -198,10 +201,6 @@ export default function CloserPerformance({
   if (loading) {
     return (
       <div className="section">
-        <h2 className="section-title">
-          <Trophy size={16} />
-          Closer Performance
-        </h2>
         <div
           className="glass-static"
           style={{
@@ -221,10 +220,6 @@ export default function CloserPerformance({
   if (error) {
     return (
       <div className="section">
-        <h2 className="section-title">
-          <Trophy size={16} />
-          Closer Performance
-        </h2>
         <div
           className="glass-static"
           style={{ padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13 }}
@@ -239,10 +234,6 @@ export default function CloserPerformance({
   if (closerStats.length === 0) {
     return (
       <div className="section">
-        <h2 className="section-title">
-          <Trophy size={16} />
-          Closer Performance
-        </h2>
         <div
           className="glass-static"
           style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}
@@ -253,156 +244,179 @@ export default function CloserPerformance({
     );
   }
 
-  /* ── Render helper for top performer badge ──────────────────────── */
-  function TopBadge({ show }: { show: boolean }) {
-    if (!show) return null;
-    return (
-      <span
-        className="status-badge status-active"
-        style={{ marginLeft: 6, fontSize: 9, padding: "2px 8px" }}
-      >
-        TOP
-      </span>
-    );
-  }
-
+  /* ── Render ─────────────────────────────────────────────────────── */
   return (
-    <div className="section">
-      <h2 className="section-title">
-        <Trophy size={16} />
-        Closer Performance
-      </h2>
+    <div>
+      {/* Closer Cards */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${Math.min(closerStats.length, 3)}, 1fr)`,
+        gap: 16,
+      }}>
+        {closerStats.map((s) => {
+          const isTopCash = topPerformers.cash === s.name;
+          const sqRows = setterQualityData[s.name] || [];
 
-      {/* Main performance table */}
-      <div className="glass-static" style={{ overflow: "auto" }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Closer</th>
-              <th>Cash</th>
-              <th>AOV</th>
-              <th>Close Rate</th>
-              <th>Show Rate</th>
-              <th>Booked</th>
-              <th>Taken</th>
-              <th>Wins</th>
-              <th>Losses</th>
-              <th>Avg Call</th>
-              <th>Top Objection</th>
-            </tr>
-          </thead>
-          <tbody>
-            {closerStats.map((s) => (
-              <tr key={s.name}>
-                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+          return (
+            <div key={s.name} className="glass-static" style={{ padding: "22px 24px" }}>
+              {/* Header */}
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                marginBottom: 18,
+              }}>
+                <span style={{
+                  fontSize: 18, fontWeight: 700, color: "var(--text-primary)",
+                  letterSpacing: "-0.3px",
+                }}>
                   {s.name}
-                </td>
-                <td style={{ color: "var(--success)" }}>
-                  {fmtDollars(s.cash)}
-                  <TopBadge show={topPerformers.cash === s.name} />
-                </td>
-                <td>
-                  {fmtDollars(s.aov)}
-                  <TopBadge show={topPerformers.aov === s.name} />
-                </td>
-                <td>
-                  {fmtPercent(s.closeRate)}
-                  <TopBadge show={topPerformers.closeRate === s.name} />
-                </td>
-                <td>
-                  {fmtPercent(s.showRate)}
-                  <TopBadge show={topPerformers.showRate === s.name} />
-                </td>
-                <td>{fmtNumber(s.callsBooked)}</td>
-                <td>{fmtNumber(s.callsTaken)}</td>
-                <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
-                <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
-                <td>{s.avgCallLength}</td>
-                <td
-                  style={{
-                    maxWidth: 140,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={s.topObjection}
-                >
-                  {s.topObjection}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Setter Quality sub-section */}
-      <div style={{ marginTop: 24 }}>
-        <h3
-          className="section-title"
-          style={{ fontSize: 12, marginBottom: 12 }}
-        >
-          <Users size={14} />
-          Setter Quality by Closer
-        </h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${Math.min(closerStats.length, 3)}, 1fr)`,
-            gap: 16,
-          }}
-        >
-          {closerStats.map((closer) => {
-            const rows = setterQualityData[closer.name] || [];
-            return (
-              <div key={closer.name} className="glass-static" style={{ overflow: "hidden" }}>
-                <div
-                  style={{
-                    padding: "12px 16px 8px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "var(--text-primary)",
-                    borderBottom: "1px solid var(--border-primary)",
-                  }}
-                >
-                  {closer.name}
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Setter</th>
-                      <th>Booked</th>
-                      <th>Taken</th>
-                      <th>Show Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          style={{ textAlign: "center", color: "var(--text-muted)" }}
-                        >
-                          No data
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((sq) => (
-                        <tr key={sq.setter}>
-                          <td style={{ fontWeight: 500, color: "var(--text-primary)" }}>
-                            {sq.setter}
-                          </td>
-                          <td>{fmtNumber(sq.booked)}</td>
-                          <td>{fmtNumber(sq.taken)}</td>
-                          <td>{fmtPercent(sq.showRate)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                </span>
+                {isTopCash && (
+                  <span
+                    className="status-badge status-active"
+                    style={{ fontSize: 9, padding: "2px 8px" }}
+                  >
+                    TOP
+                  </span>
+                )}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Cash Collected — hero stat */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{
+                  fontSize: 30, fontWeight: 700, color: "var(--success)",
+                  letterSpacing: "-1px", lineHeight: 1,
+                }}>
+                  {fmtDollars(s.cash)}
+                </div>
+                <div style={{
+                  fontSize: 11, color: "var(--text-muted)", fontWeight: 500,
+                  marginTop: 6, textTransform: "uppercase", letterSpacing: "0.3px",
+                }}>
+                  Cash Collected
+                </div>
+              </div>
+
+              {/* Close Rate */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  marginBottom: 6,
+                }}>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
+                    Close Rate
+                  </span>
+                  <span style={{
+                    fontSize: 16, fontWeight: 700, color: rateColor(s.closeRate),
+                  }}>
+                    {fmtPercent(s.closeRate)}
+                  </span>
+                </div>
+                <div style={{
+                  height: 5, background: "rgba(255,255,255,0.06)",
+                  borderRadius: 3, overflow: "hidden", marginBottom: 6,
+                }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${Math.min(s.closeRate, 100)}%`,
+                    background: rateColor(s.closeRate),
+                    borderRadius: 3,
+                    transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                  }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--success)" }}>{s.wins}W</span>
+                  {" · "}
+                  <span style={{ color: "var(--danger)" }}>{s.losses}L</span>
+                  {" · "}
+                  <span style={{ color: "var(--warning)" }}>{s.pcfus} PCFU</span>
+                </div>
+              </div>
+
+              {/* Show Rate */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  marginBottom: 6,
+                }}>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
+                    Show Rate
+                  </span>
+                  <span style={{
+                    fontSize: 16, fontWeight: 700, color: rateColor(s.showRate),
+                  }}>
+                    {fmtPercent(s.showRate)}
+                  </span>
+                </div>
+                <div style={{
+                  height: 5, background: "rgba(255,255,255,0.06)",
+                  borderRadius: 3, overflow: "hidden", marginBottom: 6,
+                }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${Math.min(s.showRate, 100)}%`,
+                    background: rateColor(s.showRate),
+                    borderRadius: 3,
+                    transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                  }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                  {s.callsTaken}/{s.callsBooked} showed
+                </div>
+              </div>
+
+              {/* Supporting stats */}
+              <div style={{
+                display: "flex", gap: 12, flexWrap: "wrap",
+                padding: "12px 0 0", borderTop: "1px solid var(--border-subtle)",
+                fontSize: 12, color: "var(--text-secondary)",
+              }}>
+                <span>
+                  AOV{" "}
+                  <strong style={{ color: "var(--text-primary)" }}>{fmtDollars(s.aov)}</strong>
+                </span>
+                <span>
+                  Avg{" "}
+                  <strong style={{ color: "var(--text-primary)" }}>{s.avgCallLength}</strong>
+                </span>
+                <span style={{
+                  padding: "2px 8px", borderRadius: 4,
+                  background: "rgba(255,255,255,0.04)", fontSize: 11,
+                }}>
+                  {s.topObjection}
+                </span>
+              </div>
+
+              {/* Setter Quality (inline compact) */}
+              {sqRows.length > 0 && (
+                <div style={{
+                  marginTop: 14, padding: "12px 0 0",
+                  borderTop: "1px solid var(--border-subtle)",
+                }}>
+                  <div style={{
+                    fontSize: 10, color: "var(--text-muted)", fontWeight: 600,
+                    textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8,
+                  }}>
+                    Setter Quality
+                  </div>
+                  {sqRows.map((sq) => (
+                    <div key={sq.setter} style={{
+                      display: "flex", justifyContent: "space-between",
+                      fontSize: 12, marginBottom: 4, color: "var(--text-secondary)",
+                    }}>
+                      <span style={{ fontWeight: 500 }}>{sq.setter}</span>
+                      <span>
+                        {sq.taken}/{sq.booked}{" "}
+                        <strong style={{ color: rateColor(sq.showRate) }}>
+                          {fmtPercent(sq.showRate)}
+                        </strong>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
