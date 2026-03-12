@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { Loader2, Trophy } from "lucide-react";
+import { Loader2, Trophy, Crown, Flame, Zap, Target } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+} from "recharts";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 import type { Filters, SheetRow } from "../types";
 
@@ -244,172 +248,237 @@ export default function CloserPerformance({
     );
   }
 
+  /* ── Leaderboard helpers ──────────────────────────────────────── */
+  const ranked = useMemo(() => {
+    return [...closerStats].sort((a, b) => b.cash - a.cash);
+  }, [closerStats]);
+
+  const podiumColors = ["#c9a96e", "#a0a0a0", "#cd7f32"]; // gold, silver, bronze
+  const podiumLabels = (rank: number, s: CloserStats) => {
+    if (rank === 0) return { icon: <Crown size={16} />, tag: "Top Earner", tagColor: "#c9a96e" };
+    if (s.closeRate >= 60) return { icon: <Flame size={14} />, tag: "On Fire", tagColor: "#f97316" };
+    if (s.showRate >= 80) return { icon: <Zap size={14} />, tag: "Reliable", tagColor: "#38bdf8" };
+    return { icon: <Target size={14} />, tag: "Building", tagColor: "#6b7280" };
+  };
+
+  /* ── Chart data ────────────────────────────────────────────────── */
+  const cashChartData = ranked.map((s) => ({
+    name: s.name, cash: s.cash, closeRate: s.closeRate,
+  }));
+
+  const radarData = ranked.length > 0 ? [
+    { metric: "Close %", ...Object.fromEntries(ranked.map((s) => [s.name, s.closeRate])) },
+    { metric: "Show %", ...Object.fromEntries(ranked.map((s) => [s.name, s.showRate])) },
+    { metric: "Calls", ...Object.fromEntries(ranked.map((s) => [s.name, Math.min(s.callsBooked * 5, 100)])) },
+    { metric: "AOV", ...Object.fromEntries(ranked.map((s) => [s.name, Math.min(s.aov / 50, 100)])) },
+    { metric: "Revenue", ...Object.fromEntries(ranked.map((s) => {
+      const maxRev = Math.max(...ranked.map((r) => r.revenue));
+      return [s.name, maxRev > 0 ? (s.revenue / maxRev) * 100 : 0];
+    })) },
+  ] : [];
+
+  const radarColors = ["#c9a96e", "#82c5c5", "#b8a4d9"];
+
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
-      {/* Closer Cards */}
+      {/* ── LEADERBOARD ────────────────────────────────────────────── */}
+      <div className="glass-static" style={{ padding: "24px", marginBottom: 16 }}>
+        <div style={{
+          fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
+          textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 16,
+        }}>
+          Leaderboard
+        </div>
+
+        {/* Podium cards */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          {ranked.map((s, i) => {
+            const { icon, tag, tagColor } = podiumLabels(i, s);
+            return (
+              <div key={s.name} style={{
+                flex: 1, padding: "18px 16px",
+                background: i === 0 ? "rgba(201,169,110,0.08)" : "rgba(255,255,255,0.02)",
+                border: `1px solid ${i === 0 ? "rgba(201,169,110,0.3)" : "var(--border-subtle)"}`,
+                borderRadius: 10, position: "relative", overflow: "hidden",
+              }}>
+                {/* Rank badge */}
+                <div style={{
+                  position: "absolute", top: 12, right: 12,
+                  width: 26, height: 26, borderRadius: "50%",
+                  background: podiumColors[i] || "#555",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12, fontWeight: 800, color: "#000",
+                }}>
+                  {i + 1}
+                </div>
+
+                {/* Trophy for #1 */}
+                {i === 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Trophy size={22} style={{ color: "#c9a96e" }} />
+                  </div>
+                )}
+
+                <div style={{
+                  fontSize: 20, fontWeight: 700, color: "var(--text-primary)",
+                  letterSpacing: "-0.3px", marginBottom: 4,
+                }}>
+                  {s.name}
+                </div>
+
+                {/* Fun tag */}
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "3px 10px", borderRadius: 20,
+                  background: `${tagColor}18`, color: tagColor,
+                  fontSize: 10, fontWeight: 600, marginBottom: 14,
+                }}>
+                  {icon} {tag}
+                </div>
+
+                {/* Hero cash */}
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--success)", letterSpacing: "-1px", lineHeight: 1 }}>
+                  {fmtDollars(s.cash)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.3px" }}>
+                  Cash Collected
+                </div>
+
+                {/* Quick stats row */}
+                <div style={{ display: "flex", gap: 10, marginTop: 12, fontSize: 12, color: "var(--text-secondary)" }}>
+                  <span><strong style={{ color: rateColor(s.closeRate) }}>{fmtPercent(s.closeRate)}</strong> close</span>
+                  <span><strong style={{ color: rateColor(s.showRate) }}>{fmtPercent(s.showRate)}</strong> show</span>
+                  <span><strong style={{ color: "var(--text-primary)" }}>{s.wins}W</strong>/{s.losses}L</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── CHARTS ROW ─────────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        {/* Cash Comparison Bar */}
+        <div className="glass-static" style={{ padding: "20px 16px" }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+            Cash Collected
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={cashChartData} barCategoryGap="30%">
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 12 }} />
+              <YAxis hide />
+              <Tooltip
+                cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                contentStyle={{ background: "#1a1a1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: "rgba(255,255,255,0.7)" }}
+                formatter={(v: number | undefined) => [`$${(v ?? 0).toLocaleString()}`, "Cash"]}
+              />
+              <Bar dataKey="cash" radius={[6, 6, 0, 0]}>
+                {cashChartData.map((_, i) => (
+                  <Cell key={i} fill={podiumColors[i] || "#555"} fillOpacity={0.8} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Radar Comparison */}
+        <div className="glass-static" style={{ padding: "20px 16px" }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+            Performance Profile
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <RadarChart data={radarData}>
+              <PolarGrid stroke="rgba(255,255,255,0.08)" />
+              <PolarAngleAxis dataKey="metric" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 10 }} />
+              <PolarRadiusAxis hide />
+              {ranked.map((s, i) => (
+                <Radar
+                  key={s.name} name={s.name} dataKey={s.name}
+                  stroke={radarColors[i]} fill={radarColors[i]}
+                  fillOpacity={0.12} strokeWidth={1.5}
+                />
+              ))}
+              <Tooltip
+                contentStyle={{ background: "#1a1a1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── DETAIL CARDS ───────────────────────────────────────────── */}
       <div style={{
         display: "grid",
         gridTemplateColumns: `repeat(${Math.min(closerStats.length, 3)}, 1fr)`,
         gap: 16,
       }}>
-        {closerStats.map((s) => {
-          const isTopCash = topPerformers.cash === s.name;
+        {ranked.map((s, i) => {
           const sqRows = setterQualityData[s.name] || [];
 
           return (
-            <div key={s.name} className="glass-static" style={{ padding: "22px 24px" }}>
+            <div key={s.name} className="glass-static" style={{ padding: "20px 22px" }}>
               {/* Header */}
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                marginBottom: 18,
-              }}>
-                <span style={{
-                  fontSize: 18, fontWeight: 700, color: "var(--text-primary)",
-                  letterSpacing: "-0.3px",
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: "50%",
+                  background: podiumColors[i] || "#555",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 10, fontWeight: 800, color: "#000",
                 }}>
+                  {i + 1}
+                </div>
+                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.2px" }}>
                   {s.name}
                 </span>
-                {isTopCash && (
-                  <span
-                    className="status-badge status-active"
-                    style={{ fontSize: 9, padding: "2px 8px" }}
-                  >
-                    TOP
-                  </span>
-                )}
-              </div>
-
-              {/* Cash Collected — hero stat */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{
-                  fontSize: 30, fontWeight: 700, color: "var(--success)",
-                  letterSpacing: "-1px", lineHeight: 1,
-                }}>
-                  {fmtDollars(s.cash)}
-                </div>
-                <div style={{
-                  fontSize: 11, color: "var(--text-muted)", fontWeight: 500,
-                  marginTop: 6, textTransform: "uppercase", letterSpacing: "0.3px",
-                }}>
-                  Cash Collected
-                </div>
               </div>
 
               {/* Close Rate */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  marginBottom: 6,
-                }}>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-                    Close Rate
-                  </span>
-                  <span style={{
-                    fontSize: 16, fontWeight: 700, color: rateColor(s.closeRate),
-                  }}>
-                    {fmtPercent(s.closeRate)}
-                  </span>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>Close Rate</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: rateColor(s.closeRate) }}>{fmtPercent(s.closeRate)}</span>
                 </div>
-                <div style={{
-                  height: 5, background: "rgba(255,255,255,0.06)",
-                  borderRadius: 3, overflow: "hidden", marginBottom: 6,
-                }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${Math.min(s.closeRate, 100)}%`,
-                    background: rateColor(s.closeRate),
-                    borderRadius: 3,
-                    transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
-                  }} />
+                <div style={{ height: 5, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                  <div style={{ height: "100%", width: `${Math.min(s.closeRate, 100)}%`, background: rateColor(s.closeRate), borderRadius: 3, transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)" }} />
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                  <span style={{ color: "var(--success)" }}>{s.wins}W</span>
-                  {" · "}
-                  <span style={{ color: "var(--danger)" }}>{s.losses}L</span>
-                  {" · "}
+                <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--success)" }}>{s.wins}W</span>{" · "}
+                  <span style={{ color: "var(--danger)" }}>{s.losses}L</span>{" · "}
                   <span style={{ color: "var(--warning)" }}>{s.pcfus} PCFU</span>
                 </div>
               </div>
 
               {/* Show Rate */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  marginBottom: 6,
-                }}>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-                    Show Rate
-                  </span>
-                  <span style={{
-                    fontSize: 16, fontWeight: 700, color: rateColor(s.showRate),
-                  }}>
-                    {fmtPercent(s.showRate)}
-                  </span>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>Show Rate</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: rateColor(s.showRate) }}>{fmtPercent(s.showRate)}</span>
                 </div>
-                <div style={{
-                  height: 5, background: "rgba(255,255,255,0.06)",
-                  borderRadius: 3, overflow: "hidden", marginBottom: 6,
-                }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${Math.min(s.showRate, 100)}%`,
-                    background: rateColor(s.showRate),
-                    borderRadius: 3,
-                    transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
-                  }} />
+                <div style={{ height: 5, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
+                  <div style={{ height: "100%", width: `${Math.min(s.showRate, 100)}%`, background: rateColor(s.showRate), borderRadius: 3, transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)" }} />
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                  {s.callsTaken}/{s.callsBooked} showed
-                </div>
+                <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>{s.callsTaken}/{s.callsBooked} showed</div>
               </div>
 
-              {/* Supporting stats */}
-              <div style={{
-                display: "flex", gap: 12, flexWrap: "wrap",
-                padding: "12px 0 0", borderTop: "1px solid var(--border-subtle)",
-                fontSize: 12, color: "var(--text-secondary)",
-              }}>
-                <span>
-                  AOV{" "}
-                  <strong style={{ color: "var(--text-primary)" }}>{fmtDollars(s.aov)}</strong>
-                </span>
-                <span>
-                  Avg{" "}
-                  <strong style={{ color: "var(--text-primary)" }}>{s.avgCallLength}</strong>
-                </span>
-                <span style={{
-                  padding: "2px 8px", borderRadius: 4,
-                  background: "rgba(255,255,255,0.04)", fontSize: 11,
-                }}>
-                  {s.topObjection}
-                </span>
+              {/* Stats row */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "10px 0 0", borderTop: "1px solid var(--border-subtle)", fontSize: 11, color: "var(--text-secondary)" }}>
+                <span>AOV <strong style={{ color: "var(--text-primary)" }}>{fmtDollars(s.aov)}</strong></span>
+                <span>Avg <strong style={{ color: "var(--text-primary)" }}>{s.avgCallLength}</strong></span>
+                <span style={{ padding: "1px 7px", borderRadius: 4, background: "rgba(255,255,255,0.04)", fontSize: 10 }}>{s.topObjection}</span>
               </div>
 
-              {/* Setter Quality (inline compact) */}
+              {/* Setter Quality */}
               {sqRows.length > 0 && (
-                <div style={{
-                  marginTop: 14, padding: "12px 0 0",
-                  borderTop: "1px solid var(--border-subtle)",
-                }}>
-                  <div style={{
-                    fontSize: 10, color: "var(--text-muted)", fontWeight: 600,
-                    textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8,
-                  }}>
+                <div style={{ marginTop: 12, padding: "10px 0 0", borderTop: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: 9, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
                     Setter Quality
                   </div>
                   {sqRows.map((sq) => (
-                    <div key={sq.setter} style={{
-                      display: "flex", justifyContent: "space-between",
-                      fontSize: 12, marginBottom: 4, color: "var(--text-secondary)",
-                    }}>
+                    <div key={sq.setter} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3, color: "var(--text-secondary)" }}>
                       <span style={{ fontWeight: 500 }}>{sq.setter}</span>
-                      <span>
-                        {sq.taken}/{sq.booked}{" "}
-                        <strong style={{ color: rateColor(sq.showRate) }}>
-                          {fmtPercent(sq.showRate)}
-                        </strong>
-                      </span>
+                      <span>{sq.taken}/{sq.booked} <strong style={{ color: rateColor(sq.showRate) }}>{fmtPercent(sq.showRate)}</strong></span>
                     </div>
                   ))}
                 </div>
