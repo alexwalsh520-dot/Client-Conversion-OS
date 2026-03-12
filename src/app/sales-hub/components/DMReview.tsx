@@ -185,6 +185,22 @@ export default function DMReview({ filters }: DMReviewProps) {
           body: JSON.stringify({ review: data.review, type: "dm", setterName: setter.name }),
         }).catch(() => {});
 
+        // Save to report history (fire and forget)
+        {
+          const { dateFrom: rhFrom, dateTo: rhTo } = getEffectiveDates(filters);
+          fetch("/api/sales-hub/report-history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "dm_review",
+              subject: setter.name,
+              date_from: rhFrom,
+              date_to: rhTo,
+              content: data.review,
+            }),
+          }).catch(() => {});
+        }
+
         // Save review results back to each transcript
         for (const t of toReview) {
           try {
@@ -224,7 +240,7 @@ export default function DMReview({ filters }: DMReviewProps) {
         setReviewingSetter(null);
       }
     },
-    []
+    [filters]
   );
 
   /* ── Reviewed transcripts (history) ──────────────────────────── */

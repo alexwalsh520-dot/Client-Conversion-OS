@@ -191,6 +191,22 @@ export default function CallReview({ filters }: CallReviewProps) {
             closerName,
           }),
         }).catch(() => {});
+
+        // Save to report history (fire and forget)
+        {
+          const { dateFrom: rhFrom, dateTo: rhTo } = getEffectiveDates(filters);
+          fetch("/api/sales-hub/report-history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "call_review",
+              subject: closerName,
+              date_from: rhFrom,
+              date_to: rhTo,
+              content: reviewData.review,
+            }),
+          }).catch(() => {});
+        }
       } catch (err) {
         setReviewErrors((prev) => ({
           ...prev,

@@ -8,6 +8,8 @@ import {
   MessageSquareText,
   Shield,
   FileText,
+  Calendar,
+  History,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -21,6 +23,8 @@ import CallReview from "./components/CallReview";
 import DMReview from "./components/DMReview";
 import LeadIntelligence from "./components/LeadIntelligence";
 import WeeklyReport from "./components/WeeklyReport";
+import DailyBriefs from "./components/DailyBriefs";
+import ReportHistory from "./components/ReportHistory";
 
 /* ------------------------------------------------------------------ */
 /*  Section nav items                                                  */
@@ -34,6 +38,8 @@ const SECTIONS = [
   { id: "dm-reviews", label: "DM Reviews", icon: MessageSquareText },
   { id: "intelligence", label: "Lead Intelligence", icon: Shield },
   { id: "reports", label: "Reports", icon: FileText },
+  { id: "daily-briefs", label: "Briefs", icon: Calendar },
+  { id: "report-history", label: "History", icon: History },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -323,6 +329,24 @@ export default function SalesHubPage() {
         icon={<FileText size={18} />}
       >
         <WeeklyReport filters={filters} />
+      </CollapsibleSection>
+
+      {/* Section 8: Daily Briefs */}
+      <CollapsibleSection
+        id="daily-briefs"
+        title="Daily Closer Briefs"
+        icon={<Calendar size={18} />}
+      >
+        <DailyBriefs filters={filters} />
+      </CollapsibleSection>
+
+      {/* Section 9: Report History */}
+      <CollapsibleSection
+        id="report-history"
+        title="Report History"
+        icon={<History size={18} />}
+      >
+        <ReportHistory />
       </CollapsibleSection>
     </div>
   );

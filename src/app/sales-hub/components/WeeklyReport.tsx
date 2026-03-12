@@ -102,6 +102,20 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
         },
         ...prev.slice(0, 9),
       ]);
+
+      // Save to report history (fire and forget)
+      fetch("/api/sales-hub/report-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: activeTab === "marketing" ? "weekly_marketing" : "weekly_sales",
+          subject: "all",
+          date_from: df,
+          date_to: dt,
+          content: data.report,
+          pdf_base64: data.pdfBase64 || null,
+        }),
+      }).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate report");
     } finally {
