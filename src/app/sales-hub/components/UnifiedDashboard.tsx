@@ -1,22 +1,24 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useCallback, Fragment, type ReactNode } from "react";
 import {
   Loader2,
   Users,
   MessageCircle,
   Link2,
   CreditCard,
+  Phone,
+  PhoneCall,
   TrendingUp,
+  Trophy,
+  XCircle,
   DollarSign,
   Banknote,
-  PhoneCall,
+  Clock,
+  AlertTriangle,
+  ArrowRight,
   BarChart3,
 } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie,
-} from "recharts";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../types";
@@ -90,6 +92,50 @@ function LoadingPulse() {
 
 function ErrorMsg() {
   return <div style={{ fontSize: 12, color: "var(--danger)" }}>Failed to load</div>;
+}
+
+/* ── Bottleneck detection ────────────────────────────────────────── */
+
+interface BottleneckResult {
+  stage: string;
+  dropPct: number;
+  message: string;
+  severity: "critical" | "warning" | "ok";
+}
+
+function detectBottleneck(metrics: {
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  losses: number;
+  noShows: number;
+  pcfus: number;
+  closeRate: number;
+  showRate: number;
+}): BottleneckResult | null {
+  if (metrics.callsBooked === 0) return null;
+
+  const showDrop = 100 - metrics.showRate;
+  const closeDrop = 100 - metrics.closeRate;
+
+  // Which is worse?
+  if (showDrop >= closeDrop && showDrop > 20) {
+    return {
+      stage: "Show Rate",
+      dropPct: showDrop,
+      message: `Losing ${Math.round(showDrop)}% of booked calls to no-shows (${metrics.noShows} no-shows out of ${metrics.callsBooked} booked)`,
+      severity: showDrop >= 40 ? "critical" : "warning",
+    };
+  }
+  if (closeDrop > showDrop && closeDrop > 30) {
+    return {
+      stage: "Close Rate",
+      dropPct: closeDrop,
+      message: `Converting only ${fmtPercent(metrics.closeRate, 0)} of calls taken — ${metrics.losses} losses vs ${metrics.wins} wins`,
+      severity: closeDrop >= 60 ? "critical" : "warning",
+    };
+  }
+  return null;
 }
 
 /* ── Component ────────────────────────────────────────────────────── */
@@ -198,6 +244,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     };
   }, [sheet.data]);
 
+  /* ── Bottleneck detection ───────────────────────────────────────── */
+  const bottleneck = useMemo(() => {
+    if (!closerMetrics) return null;
+    return detectBottleneck(closerMetrics);
+  }, [closerMetrics]);
+
   /* ── Helpers ────────────────────────────────────────────────────── */
 
   const rateColor = (rate: number) =>
@@ -206,6 +258,41 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
+
+      {/* ── BOTTLENECK ALERT ────────────────────────────────────────── */}
+      {bottleneck && (
+        <div style={{
+          padding: "14px 18px",
+          marginBottom: 20,
+          borderRadius: 10,
+          border: `1px solid ${bottleneck.severity === "critical" ? "rgba(248,113,113,0.4)" : "rgba(250,204,21,0.3)"}`,
+          background: bottleneck.severity === "critical" ? "rgba(248,113,113,0.06)" : "rgba(250,204,21,0.05)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+        }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%", marginTop: 5, flexShrink: 0,
+            background: bottleneck.severity === "critical" ? "var(--danger)" : "var(--warning)",
+            boxShadow: bottleneck.severity === "critical"
+              ? "0 0 8px rgba(248,113,113,0.5)"
+              : "0 0 8px rgba(250,204,21,0.4)",
+          }} />
+          <div>
+            <div style={{
+              fontSize: 12, fontWeight: 700,
+              color: bottleneck.severity === "critical" ? "var(--danger)" : "var(--warning)",
+              marginBottom: 3,
+            }}>
+              #1 Bottleneck: {bottleneck.stage}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+              {bottleneck.message}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Revenue Overview ──────────────────────────────────────── */}
       <DashLabel icon={<DollarSign size={12} />} first>Revenue</DashLabel>
       <div className="metric-grid metric-grid-2">
@@ -371,8 +458,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         </div>
       </div>
 
-      {/* ── Pipeline + Outcomes ─────────────────────────────────── */}
-      <DashLabel icon={<BarChart3 size={12} />}>Pipeline &amp; Outcomes</DashLabel>
+      {/* ── Pipeline with Drop-off Indicators ────────────────────── */}
+      <DashLabel icon={<BarChart3 size={12} />}>Pipeline</DashLabel>
       {sheet.loading ? (
         <div className="glass-static" style={{ padding: 24, textAlign: "center" }}>
           <LoadingPulse />
@@ -380,92 +467,105 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       ) : sheet.error ? (
         <div className="glass-static" style={{ padding: 24 }}><ErrorMsg /></div>
       ) : closerMetrics && (() => {
-        const funnelData = [
-          { name: "Booked", value: closerMetrics.callsBooked, fill: "#c9a96e" },
-          { name: "Showed", value: closerMetrics.callsTaken, fill: "#c9a96e" },
-          { name: "Wins", value: closerMetrics.wins, fill: "#4ade80" },
-        ];
-        const outcomeData = [
-          { name: "Wins", value: closerMetrics.wins, fill: "#4ade80" },
-          { name: "Losses", value: closerMetrics.losses, fill: "#f87171" },
-          { name: "Pending", value: closerMetrics.pcfus, fill: "#facc15" },
-          { name: "No Shows", value: closerMetrics.noShows, fill: "#6b7280" },
-        ].filter((d) => d.value > 0);
-        const total = closerMetrics.wins + closerMetrics.losses + closerMetrics.pcfus + closerMetrics.noShows;
+        const showDropPct = closerMetrics.callsBooked > 0
+          ? Math.round(((closerMetrics.callsBooked - closerMetrics.callsTaken) / closerMetrics.callsBooked) * 100)
+          : 0;
+        const closeDropPct = closerMetrics.callsTaken > 0
+          ? Math.round(((closerMetrics.callsTaken - closerMetrics.wins) / closerMetrics.callsTaken) * 100)
+          : 0;
+        const worstDrop = showDropPct >= closeDropPct ? "show" : "close";
+
         return (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {/* Funnel Bar Chart */}
-            <div className="glass-static" style={{ padding: "20px 16px" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
-                Call Funnel
-              </div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={funnelData} barCategoryGap="25%">
-                  <XAxis
-                    dataKey="name" axisLine={false} tickLine={false}
-                    tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }}
-                  />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={{ fill: "rgba(255,255,255,0.03)" }}
-                    contentStyle={{ background: "#1a1a1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                    labelStyle={{ color: "rgba(255,255,255,0.7)" }}
-                    itemStyle={{ color: "#fff" }}
-                  />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {funnelData.map((d, i) => (
-                      <Cell key={i} fill={d.fill} fillOpacity={0.85} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {/* Outcome Donut */}
-            <div className="glass-static" style={{ padding: "20px 16px" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
-                Outcome Split
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 130, height: 130, position: "relative", flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={outcomeData} dataKey="value" innerRadius={38} outerRadius={58}
-                        paddingAngle={3} stroke="none"
-                      >
-                        {outcomeData.map((d, i) => (
-                          <Cell key={i} fill={d.fill} fillOpacity={0.9} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ background: "#1a1a1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                        itemStyle={{ color: "#fff" }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  {/* Center label */}
+          <div className="glass-static" style={{ padding: "20px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+              {/* Funnel stages with drop-off indicators */}
+              {[
+                { label: "Booked", value: closerMetrics.callsBooked, color: "var(--accent)", icon: <Phone size={13} />, dropAfter: showDropPct, dropKey: "show" as const },
+                { label: "Showed", value: closerMetrics.callsTaken, color: "var(--accent)", icon: <PhoneCall size={13} />, dropAfter: closeDropPct, dropKey: "close" as const },
+                { label: "Wins", value: closerMetrics.wins, color: "var(--success)", icon: <Trophy size={13} />, dropAfter: null, dropKey: null },
+              ].map((stage, i) => (
+                <Fragment key={stage.label}>
+                  {i > 0 && (
+                    <ArrowRight
+                      size={16}
+                      style={{ color: "var(--text-muted)", flexShrink: 0, opacity: 0.3, margin: "0 2px" }}
+                    />
+                  )}
                   <div style={{
-                    position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-                    alignItems: "center", justifyContent: "center", pointerEvents: "none",
+                    flex: 1, textAlign: "center", padding: "16px 8px",
+                    borderRadius: 10, background: "rgba(255,255,255,0.025)",
+                    border: "1px solid var(--border-subtle)",
                   }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{total}</div>
-                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.5px" }}>total</div>
+                    <div style={{ marginBottom: 6, color: stage.color, opacity: 0.7 }}>
+                      {stage.icon}
+                    </div>
+                    <div style={{
+                      fontSize: 24, fontWeight: 700, color: stage.color,
+                      letterSpacing: "-0.5px",
+                    }}>
+                      {fmtNumber(stage.value)}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
+                      marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
+                    }}>
+                      {stage.label}
+                    </div>
+                  </div>
+
+                  {/* Drop-off indicator */}
+                  {stage.dropAfter !== null && stage.dropAfter > 0 && (
+                    <div style={{
+                      padding: "4px 7px", borderRadius: 6, margin: "0 2px",
+                      background: worstDrop === stage.dropKey ? "rgba(248,113,113,0.12)" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${worstDrop === stage.dropKey ? "rgba(248,113,113,0.3)" : "transparent"}`,
+                      flexShrink: 0,
+                    }}>
+                      <div style={{
+                        fontSize: 10, fontWeight: 700,
+                        color: worstDrop === stage.dropKey ? "var(--danger)" : "var(--text-muted)",
+                        whiteSpace: "nowrap",
+                      }}>
+                        -{stage.dropAfter}%
+                      </div>
+                    </div>
+                  )}
+                </Fragment>
+              ))}
+
+              {/* Separator */}
+              <div style={{
+                width: 1, height: 52, background: "var(--border-subtle)",
+                flexShrink: 0, margin: "0 8px",
+              }} />
+
+              {/* Outcome stages */}
+              {[
+                { label: "Losses", value: closerMetrics.losses, color: "var(--danger)", icon: <XCircle size={13} /> },
+                { label: "No Shows", value: closerMetrics.noShows, color: "var(--danger)", icon: <AlertTriangle size={13} /> },
+                { label: "Pending", value: closerMetrics.pcfus, color: "var(--warning)", icon: <Clock size={13} /> },
+              ].map((stage) => (
+                <div key={stage.label} style={{
+                  flex: 1, textAlign: "center", padding: "16px 8px",
+                  borderRadius: 10, background: "rgba(255,255,255,0.015)",
+                }}>
+                  <div style={{ marginBottom: 6, color: stage.color, opacity: 0.5 }}>
+                    {stage.icon}
+                  </div>
+                  <div style={{
+                    fontSize: 22, fontWeight: 700, color: stage.color,
+                    letterSpacing: "-0.5px",
+                  }}>
+                    {fmtNumber(stage.value)}
+                  </div>
+                  <div style={{
+                    fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
+                    marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
+                  }}>
+                    {stage.label}
                   </div>
                 </div>
-                {/* Legend */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {outcomeData.map((d) => (
-                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: d.fill, flexShrink: 0 }} />
-                      <span style={{ fontWeight: 500 }}>{d.value}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{d.name}</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: 10, marginLeft: "auto" }}>
-                        {total > 0 ? `${Math.round((d.value / total) * 100)}%` : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         );
