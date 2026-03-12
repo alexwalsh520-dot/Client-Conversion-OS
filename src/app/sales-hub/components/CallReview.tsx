@@ -129,15 +129,18 @@ export default function CallReview({ filters }: CallReviewProps) {
           throw new Error("No calls found for this closer in the selected date range.");
         }
 
-        // Combine transcripts
+        // Combine transcripts — transcript is an array of { speaker, text, timestamp } segments
         const aggregate = meetings
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((m: any) => m.transcript || m.transcriptText)
+          .filter((m: any) => m.transcript && Array.isArray(m.transcript) && m.transcript.length > 0)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .map((m: any) => {
             const title = m.title || "Untitled Call";
-            const transcript = m.transcript || m.transcriptText || "";
-            return `--- Call: ${title} ---\n\n${transcript}`;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const transcriptText = m.transcript
+              .map((seg: { speaker?: string; text?: string }) => `${seg.speaker || "Speaker"}: ${seg.text || ""}`)
+              .join("\n");
+            return `--- Call: ${title} ---\n\n${transcriptText}`;
           })
           .join("\n\n\n");
 

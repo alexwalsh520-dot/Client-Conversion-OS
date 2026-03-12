@@ -18,12 +18,12 @@ async function fetchFathomTranscripts(
 
   try {
     const res = await fetch(
-      `https://api.fathom.ai/external/v1/meetings?after=${dateFrom}&before=${dateTo}`,
+      `https://api.fathom.ai/external/v1/meetings?created_after=${dateFrom}&created_before=${dateTo}T23:59:59Z`,
       { headers: { "X-Api-Key": apiKey } }
     );
     if (!res.ok) return [];
     const data = await res.json();
-    const meetings = data.meetings || data || [];
+    const meetings = data.items || [];
     if (!Array.isArray(meetings)) return [];
 
     const transcripts: string[] = [];

@@ -11,7 +11,7 @@ import { createHmac } from "crypto";
 export interface FathomAttendee {
   name: string;
   email: string;
-  internal: boolean;
+  is_external: boolean;
 }
 
 export interface FathomTranscriptSegment {
@@ -23,15 +23,19 @@ export interface FathomTranscriptSegment {
 export interface FathomMeeting {
   id: string;
   title: string;
+  meeting_title?: string;
   url: string;
   created_at: string;
-  attendees: FathomAttendee[];
+  calendar_invitees: FathomAttendee[];
   transcript?: FathomTranscriptSegment[];
-  summary?: string;
+  default_summary?: string;
+  share_url?: string;
+  recording_id?: number;
+  recorded_by?: { name: string; email: string };
 }
 
 interface FathomListResponse {
-  meetings: FathomMeeting[];
+  items: FathomMeeting[];
   has_more?: boolean;
   next_cursor?: string;
 }
@@ -129,10 +133,10 @@ export async function listMeetings(opts?: {
       : path;
 
     const data = await fathomFetch<FathomListResponse>(paginatedPath);
-    const meetings = data.meetings || [];
+    const meetings = data.items || [];
     allMeetings.push(...meetings);
 
-    hasMore = data.has_more === true && !!data.next_cursor;
+    hasMore = meetings.length > 0 && !!data.next_cursor;
     cursor = data.next_cursor;
   }
 

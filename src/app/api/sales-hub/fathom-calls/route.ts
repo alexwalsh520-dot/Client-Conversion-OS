@@ -22,15 +22,21 @@ export async function GET(req: NextRequest) {
       includeTranscript,
     });
 
-    // Optionally filter by closer name (checks title and attendees)
+    // Optionally filter by closer name (checks title and calendar_invitees name/email)
     if (closer) {
       const closerLower = closer.toLowerCase();
       meetings = meetings.filter((meeting) => {
         // Check if closer name appears in meeting title
         if (meeting.title?.toLowerCase().includes(closerLower)) return true;
 
-        // Check if closer is among attendees
-        if (meeting.attendees?.some((a) => a.name?.toLowerCase().includes(closerLower))) {
+        // Check calendar invitees — match name or email prefix
+        if (
+          meeting.calendar_invitees?.some((a) => {
+            const nameLower = (a.name || "").toLowerCase();
+            const emailLower = (a.email || "").toLowerCase();
+            return nameLower.includes(closerLower) || emailLower.includes(closerLower);
+          })
+        ) {
           return true;
         }
 
