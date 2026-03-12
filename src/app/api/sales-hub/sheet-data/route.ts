@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchSheetData, SheetRow } from "@/lib/google-sheets";
+import { fetchSheetData, fetchSubscriptionsSold, SheetRow } from "@/lib/google-sheets";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -15,7 +15,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    let rows: SheetRow[] = await fetchSheetData(dateFrom, dateTo);
+    const [allRows, subscriptionsSold] = await Promise.all([
+      fetchSheetData(dateFrom, dateTo),
+      fetchSubscriptionsSold(dateFrom, dateTo),
+    ]);
+
+    let rows: SheetRow[] = allRows;
 
     // Optionally filter by client (maps to the Offer column)
     if (client) {
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ rows });
+    return NextResponse.json({ rows, subscriptionsSold });
   } catch (err) {
     console.error("Sheet data error:", err);
     return NextResponse.json(

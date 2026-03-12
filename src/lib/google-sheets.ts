@@ -311,3 +311,49 @@ export async function fetchSheetData(
 
   return allRows;
 }
+
+/**
+ * Fetch the subscriptions sold count from cell Q3 in a monthly tab.
+ * The sheet has a summary cell at Q3 that contains the subscription count.
+ */
+export async function fetchSubscriptionsSold(
+  dateFrom: string,
+  dateTo: string
+): Promise<number> {
+  const from = new Date(dateFrom + "T00:00:00");
+  const to = new Date(dateTo + "T23:59:59");
+
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) return 0;
+
+  // Determine which monthly tabs to query
+  const tabsToQuery = new Set<string>();
+  const cursor = new Date(from);
+  cursor.setDate(1);
+  while (cursor <= to) {
+    tabsToQuery.add(getMonthTab(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  const sheetId = getSheetId();
+  const apiKey = getApiKey();
+  let total = 0;
+
+  for (const tab of tabsToQuery) {
+    try {
+      const range = encodeURIComponent(`${tab}!Q3`);
+      const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const json = await response.json();
+      const val = json.values?.[0]?.[0];
+      if (val) {
+        const num = parseInt(String(val).replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(num)) total += num;
+      }
+    } catch {
+      // Non-critical — continue
+    }
+  }
+
+  return total;
+}

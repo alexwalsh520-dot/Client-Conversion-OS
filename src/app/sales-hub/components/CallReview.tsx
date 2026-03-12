@@ -1,20 +1,26 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Phone,
+  Play,
   Loader2,
   AlertCircle,
   History,
   ChevronDown,
   ChevronUp,
   Download,
+  FileText,
 } from "lucide-react";
 import type { Filters } from "../types";
 import { getEffectiveDates } from "./FilterBar";
 import { ReviewMarkdown } from "./ReviewMarkdown";
 
 /* ── Types ────────────────────────────────────────────────────────── */
+
+interface CallReviewProps {
+  filters: Filters;
+}
 
 interface ReviewHistoryEntry {
   id: string;
@@ -23,11 +29,7 @@ interface ReviewHistoryEntry {
   timestamp: string;
 }
 
-interface CallReviewProps {
-  filters: Filters;
-}
-
-/* ── Helpers ──────────────────────────────────────────────────────── */
+/* ── Constants ────────────────────────────────────────────────────── */
 
 const CLOSERS = ["Broz", "Will", "Austin"];
 
@@ -41,254 +43,350 @@ function formatDate(iso: string): string {
   });
 }
 
-const downloadReview = (content: string, closerName: string) => {
-  const blob = new Blob([content], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `call-review-${closerName}-${new Date().toISOString().split("T")[0]}.md`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function CallReview({ filters }: CallReviewProps) {
-  const [closer, setCloser] = useState(CLOSERS[0]);
+  // Per-closer call counts
+  const [callCounts, setCallCounts] = useState<Record<string, number>>({});
+  const [countsLoading, setCountsLoading] = useState(false);
 
-  // Loading / error
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Per-closer review state
+  const [reviewingCloser, setReviewingCloser] = useState<string | null>(null);
+  const [reviewResults, setReviewResults] = useState<Record<string, string>>({});
+  const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({});
 
-  // Review result
-  const [reviewResult, setReviewResult] = useState<string | null>(null);
-
-  // Review history
+  // History
   const [reviewHistory, setReviewHistory] = useState<ReviewHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  /* ── Run full review pipeline ──────────────────────────────────── */
+  /* ── Fetch call counts for each closer ───────────────────────── */
 
-  const runReview = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setReviewResult(null);
-
+  const fetchCallCounts = useCallback(async () => {
+    setCountsLoading(true);
     try {
-      // 1. Fetch all calls from Fathom for this closer + date range
       const { dateFrom, dateTo } = getEffectiveDates(filters);
-      const params = new URLSearchParams({
-        closer,
-        dateFrom,
-        dateTo,
-        includeTranscript: "true",
-      });
+      const counts: Record<string, number> = {};
 
-      const fetchRes = await fetch(`/api/sales-hub/fathom-calls?${params}`);
-      const fetchData = await fetchRes.json();
-
-      if (fetchData.error && fetchData.error.includes("not configured")) {
-        throw new Error(
-          "Fathom API not configured. Add FATHOM_API_KEY in Vercel environment variables."
-        );
-      }
-
-      if (!fetchRes.ok) {
-        throw new Error(fetchData.error || "Failed to fetch calls from Fathom");
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const meetings = fetchData.meetings || [];
-
-      if (meetings.length === 0) {
-        throw new Error(
-          "No calls found for this closer in the selected date range."
-        );
-      }
-
-      // 2. Combine all transcripts into one aggregate
-      const aggregate = meetings
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((m: any) => m.transcript || m.transcriptText)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((m: any) => {
-          const title = m.title || "Untitled Call";
-          const transcript = m.transcript || m.transcriptText || "";
-          return `--- Call: ${title} ---\n\n${transcript}`;
+      await Promise.all(
+        CLOSERS.map(async (closer) => {
+          try {
+            const params = new URLSearchParams({ closer, dateFrom, dateTo });
+            const res = await fetch(`/api/sales-hub/fathom-calls?${params}`);
+            const data = await res.json();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            counts[closer] = (data.meetings || []).length;
+          } catch {
+            counts[closer] = 0;
+          }
         })
-        .join("\n\n\n");
+      );
 
-      if (!aggregate.trim()) {
-        throw new Error(
-          "Calls were found but none had transcripts available."
-        );
-      }
-
-      // 3. Send aggregate to review endpoint
-      const reviewRes = await fetch("/api/sales-hub/review-transcript", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: aggregate,
-          setterName: closer,
-          type: "call",
-        }),
-      });
-
-      const reviewData = await reviewRes.json();
-
-      if (!reviewRes.ok) {
-        throw new Error(reviewData.error || "Failed to run review");
-      }
-
-      setReviewResult(reviewData.review);
-
-      // Save to history
-      setReviewHistory((prev) => [
-        {
-          id: crypto.randomUUID(),
-          closerName: closer,
-          review: reviewData.review,
-          timestamp: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-
-      // 4. Send to Slack (fire and forget)
-      fetch("/api/sales-hub/send-review-slack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          review: reviewData.review,
-          type: "call",
-          closerName: closer,
-        }),
-      }).catch(() => {});
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setCallCounts(counts);
+    } catch {
+      // Non-critical
     } finally {
-      setLoading(false);
+      setCountsLoading(false);
     }
-  }, [closer, filters]);
+  }, [filters]);
+
+  useEffect(() => {
+    fetchCallCounts();
+  }, [fetchCallCounts]);
+
+  /* ── Run review for a closer ─────────────────────────────────── */
+
+  const runCloserReview = useCallback(
+    async (closerName: string) => {
+      setReviewingCloser(closerName);
+      setReviewErrors((prev) => ({ ...prev, [closerName]: "" }));
+
+      try {
+        const { dateFrom, dateTo } = getEffectiveDates(filters);
+        const params = new URLSearchParams({
+          closer: closerName,
+          dateFrom,
+          dateTo,
+          includeTranscript: "true",
+        });
+
+        const fetchRes = await fetch(`/api/sales-hub/fathom-calls?${params}`);
+        const fetchData = await fetchRes.json();
+
+        if (fetchData.error && fetchData.error.includes("not configured")) {
+          throw new Error(
+            "Fathom API not configured. Add FATHOM_API_KEY in Vercel environment variables."
+          );
+        }
+
+        if (!fetchRes.ok) {
+          throw new Error(fetchData.error || "Failed to fetch calls from Fathom");
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const meetings = fetchData.meetings || [];
+
+        if (meetings.length === 0) {
+          throw new Error("No calls found for this closer in the selected date range.");
+        }
+
+        // Combine transcripts
+        const aggregate = meetings
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .filter((m: any) => m.transcript || m.transcriptText)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((m: any) => {
+            const title = m.title || "Untitled Call";
+            const transcript = m.transcript || m.transcriptText || "";
+            return `--- Call: ${title} ---\n\n${transcript}`;
+          })
+          .join("\n\n\n");
+
+        if (!aggregate.trim()) {
+          throw new Error("Calls were found but none had transcripts available.");
+        }
+
+        // Send for review
+        const reviewRes = await fetch("/api/sales-hub/review-transcript", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: aggregate,
+            setterName: closerName,
+            type: "call",
+          }),
+        });
+
+        const reviewData = await reviewRes.json();
+
+        if (!reviewRes.ok) {
+          throw new Error(reviewData.error || "Failed to run review");
+        }
+
+        setReviewResults((prev) => ({
+          ...prev,
+          [closerName]: reviewData.review,
+        }));
+
+        // Save to history
+        setReviewHistory((prev) => [
+          {
+            id: crypto.randomUUID(),
+            closerName,
+            review: reviewData.review,
+            timestamp: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+
+        // Send to Slack (fire and forget)
+        fetch("/api/sales-hub/send-review-slack", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            review: reviewData.review,
+            type: "call",
+            closerName,
+          }),
+        }).catch(() => {});
+      } catch (err) {
+        setReviewErrors((prev) => ({
+          ...prev,
+          [closerName]: err instanceof Error ? err.message : "Failed to run review",
+        }));
+      } finally {
+        setReviewingCloser(null);
+      }
+    },
+    [filters]
+  );
 
   /* ── Render ──────────────────────────────────────────────────── */
 
   return (
     <div className="section">
-      {/* Controls */}
-      <div className="glass-static" style={{ padding: 20 }}>
+      <h2 className="section-title">
+        <Phone size={16} />
+        Call Transcript Review
+      </h2>
+
+      {/* Loading counts */}
+      {countsLoading && (
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: 8,
+            padding: 40,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label
-              className="form-label"
-              style={{ margin: 0, whiteSpace: "nowrap" }}
-            >
-              Closer
-            </label>
-            <select
-              className="form-input"
-              value={closer}
-              onChange={(e) => setCloser(e.target.value)}
-              style={{ width: "auto", minWidth: 140, padding: "8px 12px" }}
-            >
-              {CLOSERS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            className="btn-primary"
-            onClick={runReview}
-            disabled={loading}
-            style={{ opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? (
-              <Loader2 size={14} className="spin" />
-            ) : (
-              <Phone size={14} />
-            )}
-            {loading ? "Reviewing..." : "Review"}
-          </button>
+          <Loader2
+            size={20}
+            className="spin"
+            style={{ color: "var(--text-muted)" }}
+          />
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Loading call data...
+          </span>
         </div>
+      )}
 
-        {/* Loading state */}
-        {loading && (
-          <div
-            style={{
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "14px 16px",
-              background: "rgba(255,255,255,0.04)",
-              borderRadius: 8,
-              fontSize: 13,
-              color: "var(--text-secondary)",
-            }}
-          >
-            <Loader2 size={16} className="spin" style={{ color: "var(--accent)" }} />
-            Fetching calls and generating review...
-          </div>
-        )}
+      {/* Closer cards */}
+      {!countsLoading && (
+        <div
+          className="metric-grid metric-grid-3"
+          style={{ marginBottom: 24 }}
+        >
+          {CLOSERS.map((closerName) => {
+            const isReviewing = reviewingCloser === closerName;
+            const result = reviewResults[closerName];
+            const reviewError = reviewErrors[closerName];
+            const count = callCounts[closerName] || 0;
 
-        {/* Error state */}
-        {error && (
-          <div
-            style={{
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 16px",
-              background: "var(--danger-soft)",
-              borderRadius: 8,
-              fontSize: 13,
-              color: "var(--danger)",
-            }}
-          >
-            <AlertCircle size={16} />
-            {error}
-          </div>
-        )}
+            return (
+              <div key={closerName} className="glass-static" style={{ padding: 20 }}>
+                {/* Closer header */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--accent)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 600,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {closerName}
+                    </span>
+                  </div>
+                </div>
 
-        {/* Review result */}
-        {reviewResult && (
-          <div style={{ marginTop: 20 }}>
-            <div
-              className="glass-static"
-              style={{ padding: 20, marginBottom: 12 }}
-            >
-              <ReviewMarkdown content={reviewResult} />
-            </div>
+                {/* Stat row */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    marginBottom: 16,
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ color: "var(--text-secondary)" }}>
+                    Calls:{" "}
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </div>
+                </div>
 
-            <button
-              className="btn-primary"
-              onClick={() => downloadReview(reviewResult, closer)}
-              style={{
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid var(--border-primary)",
-              }}
-            >
-              <Download size={14} />
-              Download Review
-            </button>
-          </div>
-        )}
-      </div>
+                {/* Review button */}
+                <button
+                  className="btn-primary"
+                  onClick={() => runCloserReview(closerName)}
+                  disabled={isReviewing || count === 0}
+                  style={{
+                    opacity: isReviewing || count === 0 ? 0.7 : 1,
+                    width: "100%",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isReviewing ? (
+                    <Loader2 size={14} className="spin" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                  Review{count > 0 ? ` (${count})` : ""}
+                </button>
+
+                {/* Review error */}
+                {reviewError && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "10px 14px",
+                      background: "var(--danger-soft)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      color: "var(--danger)",
+                    }}
+                  >
+                    <AlertCircle size={14} />
+                    {reviewError}
+                  </div>
+                )}
+
+                {/* Inline review result */}
+                {result && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 16,
+                      background: "rgba(0,0,0,0.2)",
+                      borderRadius: 12,
+                      borderLeft: "3px solid var(--accent)",
+                    }}
+                  >
+                    <ReviewMarkdown content={result} />
+                  </div>
+                )}
+
+                {/* Download button */}
+                {result && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        const blob = new Blob([result], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `call-review-${closerName}-${new Date().toISOString().split("T")[0]}.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      style={{ fontSize: 12 }}
+                    >
+                      <Download size={12} />
+                      Download Review
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Review History ──────────────────────────────────────── */}
       {reviewHistory.length > 0 && (
-        <div style={{ marginTop: 24 }}>
+        <div>
           <button
             className="section-title"
             onClick={() => setHistoryOpen(!historyOpen)}
@@ -312,10 +410,14 @@ export default function CallReview({ filters }: CallReviewProps) {
 
           {historyOpen && (
             <div
-              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
             >
               {reviewHistory.map((entry) => (
-                <HistoryCard key={entry.id} entry={entry} />
+                <ReviewHistoryCard key={entry.id} entry={entry} />
               ))}
             </div>
           )}
@@ -325,9 +427,9 @@ export default function CallReview({ filters }: CallReviewProps) {
   );
 }
 
-/* ── History Card (collapsible) ───────────────────────────────── */
+/* ── Review History Card ──────────────────────────────────────── */
 
-function HistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
+function ReviewHistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -348,10 +450,7 @@ function HistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Phone
-            size={14}
-            style={{ color: "var(--accent)", flexShrink: 0 }}
-          />
+          <FileText size={14} style={{ color: "var(--accent)" }} />
           <span
             style={{
               fontSize: 14,
@@ -359,7 +458,7 @@ function HistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
               color: "var(--text-primary)",
             }}
           >
-            Call Review — {entry.closerName}
+            {entry.closerName}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -373,6 +472,7 @@ function HistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
           )}
         </div>
       </button>
+
       {open && (
         <div
           style={{
@@ -384,15 +484,19 @@ function HistoryCard({ entry }: { entry: ReviewHistoryEntry }) {
             <ReviewMarkdown content={entry.review} />
           </div>
           <button
-            className="btn-primary"
-            onClick={() => downloadReview(entry.review, entry.closerName)}
-            style={{
-              marginTop: 12,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid var(--border-primary)",
+            className="btn-secondary"
+            onClick={() => {
+              const blob = new Blob([entry.review], { type: "text/markdown" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `call-review-${entry.closerName}-${new Date().toISOString().split("T")[0]}.md`;
+              a.click();
+              URL.revokeObjectURL(url);
             }}
+            style={{ marginTop: 12, fontSize: 12 }}
           >
-            <Download size={14} />
+            <Download size={12} />
             Download Review
           </button>
         </div>

@@ -18,15 +18,15 @@ import {
   Clock,
   AlertTriangle,
   ShoppingCart,
-  HelpCircle,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
-import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../types";
+import type { Filters, SheetRow, ManychatDashboard } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
-interface StripeData {
+interface SheetApiResponse {
+  rows: SheetRow[];
   subscriptionsSold: number;
 }
 
@@ -105,15 +105,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     error: "",
   });
 
-  /* -- Sheet state -- */
-  const [sheet, setSheet] = useState<DataState<SheetRow[]>>({
-    data: null,
-    loading: true,
-    error: "",
-  });
-
-  /* -- Stripe state -- */
-  const [stripe, setStripe] = useState<DataState<StripeData>>({
+  /* -- Sheet state (includes subscriptionsSold from Q3) -- */
+  const [sheet, setSheet] = useState<DataState<{ rows: SheetRow[]; subscriptionsSold: number }>>({
     data: null,
     loading: true,
     error: "",
@@ -160,47 +153,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         filters.client !== "all"
           ? `&client=${filters.client === "tyson" ? "Tyson Sonnek" : "Keith Holland"}`
           : "";
-      const res = await fetchJSON<{ rows: SheetRow[] }>(
+      const res = await fetchJSON<SheetApiResponse>(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`,
       );
-      setSheet({ data: res.rows, loading: false, error: "" });
+      setSheet({ data: { rows: res.rows, subscriptionsSold: res.subscriptionsSold }, loading: false, error: "" });
     } catch (err) {
       setSheet({
-        data: null,
-        loading: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
-  }, [filters.client, dateFrom, dateTo]);
-
-  /* ── Fetch Stripe ───────────────────────────────────────────────── */
-  const fetchStripe = useCallback(async () => {
-    setStripe({ data: null, loading: true, error: "" });
-    try {
-      if (filters.client === "all") {
-        const [tyson, keith] = await Promise.all([
-          fetchJSON<StripeData>(
-            `/api/sales-hub/stripe-sales?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-          ),
-          fetchJSON<StripeData>(
-            `/api/sales-hub/stripe-sales?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-          ),
-        ]);
-        setStripe({
-          data: {
-            subscriptionsSold: tyson.subscriptionsSold + keith.subscriptionsSold,
-          },
-          loading: false,
-          error: "",
-        });
-      } else {
-        const res = await fetchJSON<StripeData>(
-          `/api/sales-hub/stripe-sales?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-        );
-        setStripe({ data: res, loading: false, error: "" });
-      }
-    } catch (err) {
-      setStripe({
         data: null,
         loading: false,
         error: err instanceof Error ? err.message : "Unknown error",
@@ -217,17 +175,15 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     fetchSheet();
   }, [fetchSheet]);
 
-  useEffect(() => {
-    fetchStripe();
-  }, [fetchStripe]);
-
   /* ── Computed closer metrics ────────────────────────────────────── */
   const closerMetrics = useMemo(() => {
     if (!sheet.data) return null;
-    const rows = sheet.data;
+    const rows = sheet.data.rows;
 
     const callsBooked = rows.length;
     const callsTaken = rows.filter((r) => r.callTaken).length;
+    // No-shows = calls where Call Taken column is "no" (callTaken === false)
+    const noShows = rows.filter((r) => !r.callTaken).length;
     const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
 
     const wins = rows.filter((r) => r.outcome === "WIN").length;
@@ -241,20 +197,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
     const aov = wins > 0 ? revenue / wins : 0;
 
-    const noShows = rows.filter((r) => r.outcome === "NS-RS").length;
-
-    // Top objection: most frequent non-empty objection
-    const objectionCounts: Record<string, number> = {};
-    for (const r of rows) {
-      const obj = r.objection?.trim();
-      if (obj) {
-        objectionCounts[obj] = (objectionCounts[obj] || 0) + 1;
-      }
-    }
-    const topObjection =
-      Object.keys(objectionCounts).length > 0
-        ? Object.entries(objectionCounts).sort((a, b) => b[1] - a[1])[0][0]
-        : "None";
+    const subscriptionsSold = sheet.data.subscriptionsSold;
 
     return {
       callsBooked,
@@ -263,12 +206,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       wins,
       losses,
       closeRate,
-      revenue,
       cashCollected,
       aov,
       pcfus,
       noShows,
-      topObjection,
+      revenue,
+      subscriptionsSold,
     };
   }, [sheet.data]);
 
@@ -321,6 +264,39 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         </h2>
         <div className="metric-grid metric-grid-4">
           {renderKPICard(
+            <Banknote size={12} style={{ color: "var(--success)" }} />,
+            "Cash Collected",
+            closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <BarChart3 size={12} style={{ color: "var(--success)" }} />,
+            "AOV",
+            closerMetrics ? fmtDollars(closerMetrics.aov) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
+            "Close Rate",
+            closerMetrics ? fmtPercent(closerMetrics.closeRate) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
+            "Show Rate",
+            closerMetrics ? fmtPercent(closerMetrics.showRate) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+        </div>
+
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
             <Phone size={12} style={{ color: "var(--accent)" }} />,
             "Calls Booked",
             closerMetrics ? fmtNumber(closerMetrics.callsBooked) : "—",
@@ -335,13 +311,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             sheet.error,
           )}
           {renderKPICard(
-            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
-            "Show Rate",
-            closerMetrics ? fmtPercent(closerMetrics.showRate) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
             <Trophy size={12} style={{ color: "var(--success)" }} />,
             "Wins",
             closerMetrics ? fmtNumber(closerMetrics.wins) : "—",
@@ -349,9 +318,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             sheet.error,
             "var(--success)",
           )}
-        </div>
-
-        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
           {renderKPICard(
             <XCircle size={12} style={{ color: "var(--danger)" }} />,
             "Losses",
@@ -360,39 +326,16 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             sheet.error,
             "var(--danger)",
           )}
-          {renderKPICard(
-            <BarChart3 size={12} style={{ color: "var(--accent)" }} />,
-            "Close Rate",
-            closerMetrics ? fmtPercent(closerMetrics.closeRate) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <DollarSign size={12} style={{ color: "var(--success)" }} />,
-            "Revenue",
-            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
-          )}
-          {renderKPICard(
-            <Banknote size={12} style={{ color: "var(--success)" }} />,
-            "Cash Collected",
-            closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
-          )}
         </div>
 
         <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
           {renderKPICard(
-            <BarChart3 size={12} style={{ color: "var(--success)" }} />,
-            "AOV",
-            closerMetrics ? fmtDollars(closerMetrics.aov) : "—",
+            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
+            "No Shows",
+            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
             sheet.loading,
             sheet.error,
-            "var(--success)",
+            "var(--danger)",
           )}
           {renderKPICard(
             <Clock size={12} style={{ color: "var(--warning)" }} />,
@@ -403,30 +346,19 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             "var(--warning)",
           )}
           {renderKPICard(
-            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
-            "No Shows",
-            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--danger)",
-          )}
-          {renderKPICard(
             <ShoppingCart size={12} style={{ color: "var(--accent)" }} />,
             "Subscriptions Sold",
-            stripe.data ? fmtNumber(stripe.data.subscriptionsSold) : "—",
-            stripe.loading,
-            stripe.error,
-          )}
-        </div>
-
-        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-          {renderKPICard(
-            <HelpCircle size={12} style={{ color: "var(--warning)" }} />,
-            "Top Objection",
-            closerMetrics ? closerMetrics.topObjection : "—",
+            closerMetrics ? fmtNumber(closerMetrics.subscriptionsSold) : "—",
             sheet.loading,
             sheet.error,
-            "var(--warning)",
+          )}
+          {renderKPICard(
+            <DollarSign size={12} style={{ color: "var(--success)" }} />,
+            "Money",
+            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
           )}
         </div>
       </div>
