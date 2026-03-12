@@ -180,7 +180,7 @@ export default function CloserPerformance({
     return {
       showRate: findTopPerformer(closerStats, "showRate"),
       closeRate: findTopPerformer(closerStats, "closeRate"),
-      revenue: findTopPerformer(closerStats, "revenue"),
+      cash: findTopPerformer(closerStats, "cash"),
       aov: findTopPerformer(closerStats, "aov"),
     };
   }, [closerStats]);
@@ -279,17 +279,15 @@ export default function CloserPerformance({
           <thead>
             <tr>
               <th>Closer</th>
-              <th>Booked</th>
-              <th>Taken</th>
-              <th>Show Rate</th>
-              <th>Wins</th>
-              <th>Losses</th>
-              <th>Close Rate</th>
-              <th>Revenue</th>
               <th>Cash</th>
               <th>AOV</th>
+              <th>Close Rate</th>
+              <th>Show Rate</th>
+              <th>Booked</th>
+              <th>Taken</th>
+              <th>Wins</th>
+              <th>Losses</th>
               <th>Avg Call</th>
-              <th>PCFUs</th>
               <th>Top Objection</th>
             </tr>
           </thead>
@@ -299,29 +297,27 @@ export default function CloserPerformance({
                 <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                   {s.name}
                 </td>
-                <td>{fmtNumber(s.callsBooked)}</td>
-                <td>{fmtNumber(s.callsTaken)}</td>
-                <td>
-                  {fmtPercent(s.showRate)}
-                  <TopBadge show={topPerformers.showRate === s.name} />
-                </td>
-                <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
-                <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
-                <td>
-                  {fmtPercent(s.closeRate)}
-                  <TopBadge show={topPerformers.closeRate === s.name} />
-                </td>
                 <td style={{ color: "var(--success)" }}>
-                  {fmtDollars(s.revenue)}
-                  <TopBadge show={topPerformers.revenue === s.name} />
+                  {fmtDollars(s.cash)}
+                  <TopBadge show={topPerformers.cash === s.name} />
                 </td>
-                <td style={{ color: "var(--success)" }}>{fmtDollars(s.cash)}</td>
                 <td>
                   {fmtDollars(s.aov)}
                   <TopBadge show={topPerformers.aov === s.name} />
                 </td>
+                <td>
+                  {fmtPercent(s.closeRate)}
+                  <TopBadge show={topPerformers.closeRate === s.name} />
+                </td>
+                <td>
+                  {fmtPercent(s.showRate)}
+                  <TopBadge show={topPerformers.showRate === s.name} />
+                </td>
+                <td>{fmtNumber(s.callsBooked)}</td>
+                <td>{fmtNumber(s.callsTaken)}</td>
+                <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
+                <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
                 <td>{s.avgCallLength}</td>
-                <td style={{ color: "var(--warning)" }}>{fmtNumber(s.pcfus)}</td>
                 <td
                   style={{
                     maxWidth: 140,

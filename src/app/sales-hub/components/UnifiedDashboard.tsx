@@ -156,8 +156,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   const fetchSheet = useCallback(async () => {
     setSheet({ data: null, loading: true, error: "" });
     try {
+      const clientParam =
+        filters.client !== "all"
+          ? `&client=${filters.client === "tyson" ? "Tyson Sonnek" : "Keith Holland"}`
+          : "";
       const res = await fetchJSON<{ rows: SheetRow[] }>(
-        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}&client=${filters.client}`,
+        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`,
       );
       setSheet({ data: res.rows, loading: false, error: "" });
     } catch (err) {

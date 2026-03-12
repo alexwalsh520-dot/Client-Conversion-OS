@@ -157,3 +157,76 @@ export async function postRichMessage(
 
   return result.ok;
 }
+
+/**
+ * Upload a file (e.g. PDF) to a Slack channel or DM.
+ * Uses the files.uploadV2 API.
+ */
+export async function uploadFileToSlack(
+  channelId: string,
+  fileBuffer: Buffer,
+  filename: string,
+  title: string,
+  initialComment?: string
+): Promise<boolean> {
+  const token = getBotToken();
+  if (!token || !channelId) return false;
+
+  try {
+    // Step 1: Get upload URL
+    const getUrlRes = await fetch(`${SLACK_API_BASE}/files.getUploadURLExternal`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        filename,
+        length: String(fileBuffer.length),
+      }),
+    });
+
+    const getUrlData = await getUrlRes.json() as { ok: boolean; upload_url?: string; file_id?: string; error?: string };
+    if (!getUrlData.ok || !getUrlData.upload_url || !getUrlData.file_id) {
+      console.error("[slack] files.getUploadURLExternal failed:", getUrlData.error);
+      return false;
+    }
+
+    // Step 2: Upload file content
+    const uploadRes = await fetch(getUrlData.upload_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: new Uint8Array(fileBuffer),
+    });
+
+    if (!uploadRes.ok) {
+      console.error("[slack] File upload failed:", uploadRes.status);
+      return false;
+    }
+
+    // Step 3: Complete upload
+    const completeRes = await fetch(`${SLACK_API_BASE}/files.completeUploadExternal`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        files: [{ id: getUrlData.file_id, title }],
+        channel_id: channelId,
+        initial_comment: initialComment || "",
+      }),
+    });
+
+    const completeData = await completeRes.json() as { ok: boolean; error?: string };
+    if (!completeData.ok) {
+      console.error("[slack] files.completeUploadExternal failed:", completeData.error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[slack] uploadFileToSlack error:", err);
+    return false;
+  }
+}

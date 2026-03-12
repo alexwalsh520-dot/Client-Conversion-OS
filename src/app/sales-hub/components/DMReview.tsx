@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Download,
 } from "lucide-react";
 import type { Filters } from "../types";
 import { getEffectiveDates } from "./FilterBar";
@@ -140,15 +141,15 @@ export default function DMReview({ filters }: DMReviewProps) {
 
   const runSetterReview = useCallback(
     async (setter: SetterGroup) => {
-      const unreviewed = setter.transcripts.filter((t) => !t.reviewed);
-      if (unreviewed.length === 0) return;
+      const toReview = setter.transcripts;
+      if (toReview.length === 0) return;
 
       setReviewingSetter(setter.name);
       setReviewErrors((prev) => ({ ...prev, [setter.name]: "" }));
 
       try {
-        // Combine all unreviewed transcripts
-        const combined = unreviewed
+        // Combine all transcripts
+        const combined = toReview
           .map(
             (t, i) =>
               `--- Conversation ${i + 1} (Submitted: ${formatDate(t.submitted_at)}) ---\n${t.transcript}`
@@ -177,8 +178,15 @@ export default function DMReview({ filters }: DMReviewProps) {
           [setter.name]: data.review,
         }));
 
+        // Send to Slack (fire and forget)
+        fetch("/api/sales-hub/send-review-slack", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ review: data.review, type: "dm", setterName: setter.name }),
+        }).catch(() => {});
+
         // Save review results back to each transcript
-        for (const t of unreviewed) {
+        for (const t of toReview) {
           try {
             await fetch("/api/sales-hub/transcripts", {
               method: "PATCH",
@@ -196,7 +204,7 @@ export default function DMReview({ filters }: DMReviewProps) {
         // Update local state to mark as reviewed
         setTranscripts((prev) =>
           prev.map((t) =>
-            unreviewed.some((u) => u.id === t.id)
+            toReview.some((u) => u.id === t.id)
               ? {
                   ...t,
                   reviewed: true,
@@ -378,9 +386,9 @@ export default function DMReview({ filters }: DMReviewProps) {
                 <button
                   className="btn-primary"
                   onClick={() => runSetterReview(setter)}
-                  disabled={isReviewing || setter.pending === 0}
+                  disabled={isReviewing || setter.transcripts.length === 0}
                   style={{
-                    opacity: isReviewing || setter.pending === 0 ? 0.7 : 1,
+                    opacity: isReviewing || setter.transcripts.length === 0 ? 0.7 : 1,
                     width: "100%",
                     justifyContent: "center",
                   }}
@@ -390,9 +398,7 @@ export default function DMReview({ filters }: DMReviewProps) {
                   ) : (
                     <Play size={14} />
                   )}
-                  {setter.pending === 0
-                    ? "All Reviewed"
-                    : `Start Review (${setter.pending})`}
+                  Review{setter.transcripts.length > 0 ? ` (${setter.transcripts.length})` : ""}
                 </button>
 
                 {/* Review error */}
@@ -427,6 +433,28 @@ export default function DMReview({ filters }: DMReviewProps) {
                     }}
                   >
                     <ReviewMarkdown content={result} />
+                  </div>
+                )}
+
+                {/* Download button */}
+                {result && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        const blob = new Blob([result], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `dm-review-${setter.name}-${new Date().toISOString().split("T")[0]}.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      style={{ fontSize: 12 }}
+                    >
+                      <Download size={12} />
+                      Download Review
+                    </button>
                   </div>
                 )}
               </div>

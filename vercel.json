@@ -6,6 +6,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/daily-briefs",
+      "schedule": "0 10 * * *"
+    },
+    {
       "path": "/api/cron/pre-call-briefs",
       "schedule": "0 8 * * *"
     },
