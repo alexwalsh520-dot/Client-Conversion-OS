@@ -1,6 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listMeetings, FathomMeeting } from "@/lib/fathom";
 
+// Known team member emails — anyone NOT in this set is a prospect
+const TEAM_EMAILS = new Set([
+  "matthew@clientconversion.io",
+  "alex@clientconversion.io",
+  "alexwalsh520@gmail.com",
+  "brozee2019@gmail.com",
+  "will@start2finishcoaching.com",
+  "williamluke.buckley21@gmail.com",
+  "austinrichard6@gmail.com",
+  "austinr@gfpenterprises.com",
+  "tysonnek29@gmail.com",
+  "saeed16765@gmail.com",
+  "keithholland35@gmail.com",
+  "averyjfisk@gmail.com",
+  "isaac@sendblue.com",
+  // Setters
+  "gideonadebowale11@gmail.com",
+  "amaraedwin9@gmail.com",
+  "umunnakelechi89@gmail.com",
+  "nwosudebbie@gmail.com",
+]);
+
+// Internal meeting title patterns — never sales calls
+const INTERNAL_TITLE_PATTERNS = [
+  "sales team huddle",
+  "c suite",
+  "management",
+  "setter connect",
+  "training",
+  "interview",
+  "1:1",
+  "huddle",
+];
+
+/**
+ * A sales call must have at least one attendee who is NOT a known team member.
+ * Also excludes meetings whose titles match known internal patterns.
+ */
+function isSalesCall(meeting: FathomMeeting): boolean {
+  const titleLower = (meeting.title || "").toLowerCase();
+
+  // Exclude internal meeting patterns
+  for (const pattern of INTERNAL_TITLE_PATTERNS) {
+    if (titleLower.includes(pattern)) return false;
+  }
+
+  // Must have at least one non-team attendee (i.e. a prospect)
+  const invitees = meeting.calendar_invitees || [];
+  const hasProspect = invitees.some(
+    (a) => a.email && !TEAM_EMAILS.has(a.email.toLowerCase())
+  );
+
+  return hasProspect;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const closer = searchParams.get("closer");
@@ -21,6 +76,9 @@ export async function GET(req: NextRequest) {
       createdBefore: dateTo ? `${dateTo}T23:59:59Z` : undefined,
       includeTranscript,
     });
+
+    // Filter to sales calls only — exclude team huddles, training, interviews, etc.
+    meetings = meetings.filter(isSalesCall);
 
     // Optionally filter by closer name (checks title and calendar_invitees name/email)
     if (closer) {
