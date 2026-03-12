@@ -30,35 +30,35 @@ export async function GET(req: NextRequest) {
     const host = req.headers.get("host") || "localhost:3000";
     const baseUrl = `${protocol}://${host}`;
 
-    // Call the weekly-report POST endpoint internally
-    const reportRes = await fetch(`${baseUrl}/api/sales-hub/weekly-report`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        dateFrom,
-        dateTo,
-        sendToSlack: true,
+    // Fire both reports in parallel
+    const [marketingRes, salesRes] = await Promise.all([
+      fetch(`${baseUrl}/api/sales-hub/weekly-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom, dateTo, sendToSlack: true }),
+      }).catch((err) => {
+        console.error("[cron/weekly-report] Marketing report failed:", err);
+        return null;
       }),
-    });
+      fetch(`${baseUrl}/api/sales-hub/weekly-sales-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom, dateTo, sendToSlack: true }),
+      }).catch((err) => {
+        console.error("[cron/weekly-report] Sales report failed:", err);
+        return null;
+      }),
+    ]);
 
-    if (!reportRes.ok) {
-      const errorData = await reportRes.json().catch(() => ({}));
-      console.error("[cron/weekly-report] Report generation failed:", errorData);
-      return NextResponse.json(
-        { success: false, error: errorData.error || `Report endpoint returned ${reportRes.status}` },
-        { status: 500 }
-      );
-    }
-
-    const result = await reportRes.json();
+    const marketingResult = marketingRes?.ok ? await marketingRes.json().catch(() => ({})) : null;
+    const salesResult = salesRes?.ok ? await salesRes.json().catch(() => ({})) : null;
 
     return NextResponse.json({
       success: true,
       dateFrom,
       dateTo,
-      slackSent: result.slackSent || false,
+      marketing: { sent: marketingResult?.slackSent || false, ok: !!marketingResult },
+      sales: { sent: salesResult?.slackSent || false, ok: !!salesResult },
     });
   } catch (err) {
     console.error("[cron/weekly-report] Error:", err);

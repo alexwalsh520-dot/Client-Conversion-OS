@@ -12,6 +12,8 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  TrendingUp,
+  BarChart3,
 } from "lucide-react";
 import type { Filters } from "../types";
 import { getEffectiveDates } from "./FilterBar";
@@ -25,6 +27,7 @@ interface WeeklyReportProps {
 
 interface ReportRun {
   id: string;
+  type: "marketing" | "sales";
   dateFrom: string;
   dateTo: string;
   generatedAt: string;
@@ -32,9 +35,12 @@ interface ReportRun {
   pdfBase64: string | null;
 }
 
+type ReportTab = "marketing" | "sales";
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function WeeklyReport({ filters }: WeeklyReportProps) {
+  const [activeTab, setActiveTab] = useState<ReportTab>("marketing");
   const [report, setReport] = useState<string | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,10 +49,14 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
   const [slackSending, setSlackSending] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
-
-  // Recent runs history
   const [recentRuns, setRecentRuns] = useState<ReportRun[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  const getEndpoint = (tab: ReportTab) =>
+    tab === "marketing" ? "/api/sales-hub/weekly-report" : "/api/sales-hub/weekly-sales-report";
+
+  const getLabel = (tab: ReportTab) =>
+    tab === "marketing" ? "Marketing Report" : "Sales Report";
 
   /* ── Generate report ────────────────────────────────────────── */
 
@@ -61,7 +71,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
     try {
       const { dateFrom, dateTo } = getEffectiveDates(filters);
 
-      const res = await fetch("/api/sales-hub/weekly-report", {
+      const res = await fetch(getEndpoint(activeTab), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dateFrom, dateTo, sendToSlack: false }),
@@ -79,37 +89,37 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
 
       if (data.slackSent) setSlackSent(true);
 
-      // Save to recent runs
+      const { dateFrom: df, dateTo: dt } = getEffectiveDates(filters);
       setRecentRuns((prev) => [
         {
           id: crypto.randomUUID(),
-          dateFrom,
-          dateTo,
+          type: activeTab,
+          dateFrom: df,
+          dateTo: dt,
           generatedAt: new Date().toISOString(),
           report: data.report,
           pdfBase64: data.pdfBase64 || null,
         },
-        ...prev.slice(0, 9), // Keep max 10
+        ...prev.slice(0, 9),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate report");
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, activeTab]);
 
   /* ── Send to Slack ──────────────────────────────────────────── */
 
   const sendToSlack = useCallback(async () => {
     if (!report) return;
-
     setSlackSending(true);
     setSlackError(null);
 
     try {
       const { dateFrom, dateTo } = getEffectiveDates(filters);
 
-      const res = await fetch("/api/sales-hub/weekly-report", {
+      const res = await fetch(getEndpoint(activeTab), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dateFrom, dateTo, sendToSlack: true }),
@@ -117,9 +127,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to send to Slack");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to send to Slack");
 
       if (data.slackSent) {
         setSlackSent(true);
@@ -131,34 +139,45 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
     } finally {
       setSlackSending(false);
     }
-  }, [report, filters]);
+  }, [report, filters, activeTab]);
 
-  /* ── Download PDF ──────────────────────────────────────────── */
+  /* ── Downloads ──────────────────────────────────────────────── */
 
-  const downloadPDF = useCallback((base64: string, dateFrom: string, dateTo: string) => {
+  const downloadPDF = useCallback((base64: string, dateFrom: string, dateTo: string, type: string) => {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `weekly-report-${dateFrom}-to-${dateTo}.pdf`;
+    a.download = `weekly-${type}-report-${dateFrom}-to-${dateTo}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }, []);
 
-  const downloadMarkdown = useCallback((content: string, dateFrom: string, dateTo: string) => {
+  const downloadMarkdown = useCallback((content: string, dateFrom: string, dateTo: string, type: string) => {
     const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `weekly-report-${dateFrom}-to-${dateTo}.md`;
+    a.download = `weekly-${type}-report-${dateFrom}-to-${dateTo}.md`;
     a.click();
     URL.revokeObjectURL(url);
   }, []);
+
+  /* ── Tab switch resets ─────────────────────────────────────── */
+
+  const switchTab = (tab: ReportTab) => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    setReport(null);
+    setPdfBase64(null);
+    setError(null);
+    setSlackSent(false);
+    setSlackError(null);
+    setGeneratedAt(null);
+  };
 
   /* ── Render ──────────────────────────────────────────────────── */
 
@@ -168,8 +187,46 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
     <div className="section">
       <h2 className="section-title">
         <FileBarChart size={16} />
-        Weekly Marketing Report
+        Weekly Reports
       </h2>
+
+      {/* Tab switcher */}
+      <div
+        style={{
+          display: "flex",
+          gap: 0,
+          marginBottom: 16,
+          borderRadius: 10,
+          overflow: "hidden",
+          border: "1px solid var(--border-subtle)",
+        }}
+      >
+        {(["marketing", "sales"] as ReportTab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => switchTab(tab)}
+            style={{
+              flex: 1,
+              padding: "10px 16px",
+              background: activeTab === tab ? "var(--accent-soft)" : "var(--bg-card)",
+              border: "none",
+              borderRight: tab === "marketing" ? "1px solid var(--border-subtle)" : "none",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: activeTab === tab ? 600 : 500,
+              color: activeTab === tab ? "var(--accent)" : "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              transition: "all 0.15s ease",
+            }}
+          >
+            {tab === "marketing" ? <TrendingUp size={14} /> : <BarChart3 size={14} />}
+            {getLabel(tab)}
+          </button>
+        ))}
+      </div>
 
       {/* Auto-generation note */}
       <div
@@ -184,8 +241,10 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
       >
         <Clock size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          Reports auto-generate every Monday at 9 AM EST and are sent to Slack as PDF.
-          Includes transcript analysis and 30 ad copies per client.
+          {activeTab === "marketing"
+            ? "Marketing reports include transcript analysis, ad performance insights, and 30 ad copies per client."
+            : "Sales reports provide system-level analysis: funnel leaks, revenue optimization, closer comparison, and a 30-day roadmap."}
+          {" "}Both auto-generate every Monday at 5 AM EST and are sent to Slack as PDF.
         </span>
       </div>
 
@@ -203,7 +262,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
         >
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
-              Generate Performance Report
+              Generate {getLabel(activeTab)}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
               Period: {dateFrom} to {dateTo}
@@ -218,7 +277,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
               style={{ opacity: loading ? 0.7 : 1 }}
             >
               {loading ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
-              {loading ? "Generating..." : "Generate Report"}
+              {loading ? "Generating..." : `Generate ${getLabel(activeTab)}`}
             </button>
 
             {report && (
@@ -236,7 +295,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                 {pdfBase64 && (
                   <button
                     className="btn-secondary"
-                    onClick={() => downloadPDF(pdfBase64, dateFrom, dateTo)}
+                    onClick={() => downloadPDF(pdfBase64, dateFrom, dateTo, activeTab)}
                   >
                     <Download size={14} />
                     Download PDF
@@ -246,7 +305,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                 {!pdfBase64 && (
                   <button
                     className="btn-secondary"
-                    onClick={() => downloadMarkdown(report, dateFrom, dateTo)}
+                    onClick={() => downloadMarkdown(report, dateFrom, dateTo, activeTab)}
                   >
                     <Download size={14} />
                     Download
@@ -271,10 +330,10 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
           >
             <Loader2 size={28} className="spin" style={{ color: "var(--accent)" }} />
             <div style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
-              Generating weekly report with transcript analysis...
+              Generating {getLabel(activeTab).toLowerCase()}...
               <br />
               <span style={{ fontSize: 11 }}>
-                This may take 30-60 seconds while aggregating data, transcripts, and generating ad copy.
+                This may take 30-60 seconds while aggregating data and transcripts.
               </span>
             </div>
           </div>
@@ -349,7 +408,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                 padding: 20,
                 background: "rgba(0,0,0,0.15)",
                 borderRadius: 12,
-                borderLeft: "3px solid var(--accent)",
+                borderLeft: `3px solid ${activeTab === "marketing" ? "var(--accent)" : "var(--success)"}`,
                 maxHeight: 600,
                 overflowY: "auto",
               }}
@@ -392,6 +451,19 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                     }}
                   >
                     <div>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          background: run.type === "marketing" ? "var(--accent-soft)" : "var(--success-soft, rgba(34,197,94,0.1))",
+                          color: run.type === "marketing" ? "var(--accent)" : "var(--success, #22c55e)",
+                          fontWeight: 600,
+                          marginRight: 10,
+                        }}
+                      >
+                        {run.type === "marketing" ? "Marketing" : "Sales"}
+                      </span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
                         {run.dateFrom} to {run.dateTo}
                       </span>
@@ -408,7 +480,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                       {run.pdfBase64 ? (
                         <button
                           className="btn-secondary"
-                          onClick={() => downloadPDF(run.pdfBase64!, run.dateFrom, run.dateTo)}
+                          onClick={() => downloadPDF(run.pdfBase64!, run.dateFrom, run.dateTo, run.type)}
                           style={{ fontSize: 11, padding: "4px 10px" }}
                         >
                           <Download size={12} />
@@ -417,7 +489,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                       ) : (
                         <button
                           className="btn-secondary"
-                          onClick={() => downloadMarkdown(run.report, run.dateFrom, run.dateTo)}
+                          onClick={() => downloadMarkdown(run.report, run.dateFrom, run.dateTo, run.type)}
                           style={{ fontSize: 11, padding: "4px 10px" }}
                         >
                           <Download size={12} />

@@ -316,10 +316,10 @@ export default function SalesHubPage() {
         <LeadIntelligence filters={filters} sheetData={sheetData} />
       </CollapsibleSection>
 
-      {/* Section 7: Weekly Report */}
+      {/* Section 7: Weekly Reports */}
       <CollapsibleSection
         id="reports"
-        title="Weekly Marketing Report"
+        title="Weekly Reports"
         icon={<FileText size={18} />}
       >
         <WeeklyReport filters={filters} />

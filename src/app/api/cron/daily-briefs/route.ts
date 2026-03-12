@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { postToSlack } from "@/lib/slack";
 import { uploadFileToSlack } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
+import { listMeetings, FathomMeeting } from "@/lib/fathom";
 
 /* ── Config ─────────────────────────────────────────────────────── */
 
@@ -60,6 +61,33 @@ Format the brief as follows:
 
 [If no follow-up is needed for a prospect, DO NOT include them in this section.]
 [If no follow-ups are recommended at all, write "No follow-ups recommended at this time."]
+
+---
+
+---
+
+## Coaching — Your Calls from Yesterday
+
+If yesterday's call transcripts are provided, include this section. If no transcripts are available, omit this entire section.
+
+Based on yesterday's sales calls, provide ultra-short coaching:
+
+### STOP / START / KEEP
+- **STOP:** [1 behavior to eliminate — one sentence]
+- **START:** [1 behavior to adopt with example phrase — one sentence]
+- **KEEP:** [1 strength to reinforce — one sentence]
+
+### Tactical Advice
+[1-3 bullet points max. Each a one-liner. Focus on lowest-hanging fruit from yesterday's calls.]
+
+### Red Flags
+[1-3 one-liner bullet points. Only if applicable — omit if none.]
+
+### Drill
+[ONE single drill to practice today. One sentence.]
+
+### If I Ran Your Calls
+[1-3 bullet points max. Each shows one specific moment you'd handle differently with the exact phrasing you'd use.]
 
 ---
 
@@ -313,6 +341,39 @@ export async function GET(req: NextRequest) {
       closerProspects[assignedCloser].push(prospect);
     }
 
+    // Fetch yesterday's Fathom calls for coaching section
+    const yesterday = new Date(estOffset);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+    // Known team emails — used to filter out internal calls
+    const TEAM_EMAILS = new Set([
+      "matthew@clientconversion.io", "alex@clientconversion.io", "alexwalsh520@gmail.com",
+      "brozee2019@gmail.com", "will@start2finishcoaching.com", "williamluke.buckley21@gmail.com",
+      "austinrichard6@gmail.com", "austinr@gfpenterprises.com", "tysonnek29@gmail.com",
+      "saeed16765@gmail.com", "keithholland35@gmail.com", "averyjfisk@gmail.com", "isaac@sendblue.com",
+      "gideonadebowale11@gmail.com", "amaraedwin9@gmail.com", "umunnakelechi89@gmail.com", "nwosudebbie@gmail.com",
+    ]);
+    const INTERNAL_TITLES = ["sales team huddle", "c suite", "management", "setter connect", "training", "interview", "1:1", "huddle"];
+
+    let yesterdayMeetings: FathomMeeting[] = [];
+    try {
+      yesterdayMeetings = await listMeetings({
+        createdAfter: yesterdayStr,
+        createdBefore: `${yesterdayStr}T23:59:59Z`,
+        includeTranscript: true,
+      });
+      // Filter to sales calls only
+      yesterdayMeetings = yesterdayMeetings.filter((m) => {
+        const titleLower = (m.title || "").toLowerCase();
+        if (INTERNAL_TITLES.some((p) => titleLower.includes(p))) return false;
+        const invitees = m.calendar_invitees || [];
+        return invitees.some((a) => a.email && !TEAM_EMAILS.has(a.email.toLowerCase()));
+      });
+    } catch (err) {
+      console.warn("[daily-briefs] Fathom fetch error:", err);
+    }
+
     // Generate one brief per closer
     const anthropic = new Anthropic({ apiKey });
     const slackChannel = process.env.SLACK_USER_DM || process.env.SLACK_CHANNEL_PRE_CALL_BRIEFS || process.env.SLACK_CHANNEL_MARKETING;
@@ -320,6 +381,17 @@ export async function GET(req: NextRequest) {
 
     for (const [closerName, closerProspectList] of Object.entries(closerProspects)) {
       if (closerProspectList.length === 0) continue;
+
+      // Filter yesterday's calls for this closer
+      const closerLower = closerName.toLowerCase();
+      const closerCalls = yesterdayMeetings.filter((m) => {
+        if (m.title?.toLowerCase().includes(closerLower)) return true;
+        return m.calendar_invitees?.some((a) => {
+          const n = (a.name || "").toLowerCase();
+          const e = (a.email || "").toLowerCase();
+          return n.includes(closerLower) || e.includes(closerLower);
+        });
+      });
 
       // Build context for this closer's brief
       const contextParts: string[] = [
@@ -351,6 +423,27 @@ export async function GET(req: NextRequest) {
         }
 
         contextParts.push("");
+      }
+
+      // Add yesterday's call transcripts for coaching section
+      if (closerCalls.length > 0) {
+        contextParts.push("");
+        contextParts.push(`=== YESTERDAY'S CALL TRANSCRIPTS (${yesterdayStr}) ===`);
+        let charBudget = 15000;
+        for (const call of closerCalls) {
+          if (charBudget <= 0) break;
+          contextParts.push(`\n--- Call: ${call.title} ---`);
+          if (call.transcript && Array.isArray(call.transcript) && call.transcript.length > 0) {
+            const text = call.transcript
+              .map((seg) => `${seg.speaker || "Speaker"}: ${seg.text || ""}`)
+              .join("\n");
+            const truncated = text.length > charBudget ? text.substring(0, charBudget) + "...[truncated]" : text;
+            contextParts.push(truncated);
+            charBudget -= text.length;
+          } else {
+            contextParts.push("(No transcript available)");
+          }
+        }
       }
 
       try {
