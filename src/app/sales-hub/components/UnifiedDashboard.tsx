@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, Fragment, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import {
   Loader2,
   Users,
@@ -14,10 +14,10 @@ import {
   XCircle,
   DollarSign,
   Banknote,
+  BarChart3,
   Clock,
   AlertTriangle,
-  ArrowRight,
-  BarChart3,
+  ShoppingCart,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
@@ -40,6 +40,21 @@ interface UnifiedDashboardProps {
   filters: Filters;
 }
 
+interface ClientMetrics {
+  label: string;
+  callsBooked: number;
+  callsTaken: number;
+  showRate: number;
+  wins: number;
+  losses: number;
+  closeRate: number;
+  cashCollected: number;
+  revenue: number;
+  aov: number;
+  pcfus: number;
+  noShows: number;
+}
+
 /* ── Fetch helper ─────────────────────────────────────────────────── */
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -59,83 +74,69 @@ function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDash
   };
 }
 
-/* ── Sub-components ──────────────────────────────────────────────── */
+/* ── Compute metrics from rows ────────────────────────────────────── */
 
-function DashLabel({ icon, children, first }: { icon: ReactNode; children: ReactNode; first?: boolean }) {
+function computeMetrics(rows: SheetRow[], label: string): ClientMetrics {
+  const callsBooked = rows.length;
+  const callsTaken = rows.filter((r) => r.callTaken).length;
+  const noShows = rows.filter((r) => !r.callTaken).length;
+  const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
+
+  const wins = rows.filter((r) => r.outcome === "WIN").length;
+  const losses = rows.filter((r) => r.outcome === "LOST").length;
+  const pcfus = rows.filter((r) => r.outcome === "PCFU").length;
+  const denominator = wins + losses + pcfus;
+  const closeRate = denominator > 0 ? (wins / denominator) * 100 : 0;
+
+  const winRows = rows.filter((r) => r.outcome === "WIN");
+  const revenue = winRows.reduce((sum, r) => sum + r.revenue, 0);
+  const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
+  const aov = wins > 0 ? revenue / wins : 0;
+
+  return {
+    label, callsBooked, callsTaken, showRate, wins, losses,
+    closeRate, cashCollected, revenue, aov, pcfus, noShows,
+  };
+}
+
+/* ── KPI card renderer ────────────────────────────────────────────── */
+
+function renderKPICard(
+  icon: ReactNode,
+  label: string,
+  value: string | number,
+  loading: boolean,
+  error: string,
+  color?: string,
+) {
   return (
-    <div
-      style={{
-        fontSize: 11,
-        textTransform: "uppercase",
-        letterSpacing: "1px",
-        color: "var(--text-muted)",
-        fontWeight: 600,
-        margin: first ? "0 0 12px" : "28px 0 12px",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-      }}
-    >
-      {icon}
-      {children}
+    <div className="glass-static metric-card">
+      <div
+        className="metric-card-label"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        {icon}
+        {label}
+      </div>
+      {loading ? (
+        <div style={{ paddingTop: 4 }}>
+          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+        </div>
+      ) : error ? (
+        <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
+      ) : (
+        <div className="metric-card-value" style={color ? { color } : undefined}>
+          {value}
+        </div>
+      )}
     </div>
   );
 }
 
-function LoadingPulse() {
-  return (
-    <div style={{ padding: 12 }}>
-      <Loader2 size={18} className="spin" style={{ color: "var(--text-muted)" }} />
-    </div>
-  );
-}
+/* ── Rate color helper ────────────────────────────────────────────── */
 
-function ErrorMsg() {
-  return <div style={{ fontSize: 12, color: "var(--danger)" }}>Failed to load</div>;
-}
-
-/* ── Bottleneck detection ────────────────────────────────────────── */
-
-interface BottleneckResult {
-  stage: string;
-  dropPct: number;
-  message: string;
-  severity: "critical" | "warning" | "ok";
-}
-
-function detectBottleneck(metrics: {
-  callsBooked: number;
-  callsTaken: number;
-  wins: number;
-  losses: number;
-  noShows: number;
-  pcfus: number;
-  closeRate: number;
-  showRate: number;
-}): BottleneckResult | null {
-  if (metrics.callsBooked === 0) return null;
-
-  const showDrop = 100 - metrics.showRate;
-  const closeDrop = 100 - metrics.closeRate;
-
-  // Which is worse?
-  if (showDrop >= closeDrop && showDrop > 20) {
-    return {
-      stage: "Show Rate",
-      dropPct: showDrop,
-      message: `Losing ${Math.round(showDrop)}% of booked calls to no-shows (${metrics.noShows} no-shows out of ${metrics.callsBooked} booked)`,
-      severity: showDrop >= 40 ? "critical" : "warning",
-    };
-  }
-  if (closeDrop > showDrop && closeDrop > 30) {
-    return {
-      stage: "Close Rate",
-      dropPct: closeDrop,
-      message: `Converting only ${fmtPercent(metrics.closeRate, 0)} of calls taken — ${metrics.losses} losses vs ${metrics.wins} wins`,
-      severity: closeDrop >= 60 ? "critical" : "warning",
-    };
-  }
-  return null;
+function rateColor(rate: number): string {
+  return rate >= 70 ? "var(--success)" : rate >= 50 ? "var(--warning)" : "var(--danger)";
 }
 
 /* ── Component ────────────────────────────────────────────────────── */
@@ -212,8 +213,13 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   }, [filters.client, dateFrom, dateTo]);
 
   /* ── Trigger fetches on filter change ───────────────────────────── */
-  useEffect(() => { fetchManychat(); }, [fetchManychat]);
-  useEffect(() => { fetchSheet(); }, [fetchSheet]);
+  useEffect(() => {
+    fetchManychat();
+  }, [fetchManychat]);
+
+  useEffect(() => {
+    fetchSheet();
+  }, [fetchSheet]);
 
   /* ── Computed closer metrics ────────────────────────────────────── */
   const closerMetrics = useMemo(() => {
@@ -239,365 +245,258 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     const subscriptionsSold = sheet.data.subscriptionsSold;
 
     return {
-      callsBooked, callsTaken, showRate, wins, losses, closeRate,
-      cashCollected, aov, pcfus, noShows, revenue, subscriptionsSold,
+      callsBooked,
+      callsTaken,
+      showRate,
+      wins,
+      losses,
+      closeRate,
+      cashCollected,
+      aov,
+      pcfus,
+      noShows,
+      revenue,
+      subscriptionsSold,
     };
   }, [sheet.data]);
 
-  /* ── Bottleneck detection ───────────────────────────────────────── */
-  const bottleneck = useMemo(() => {
-    if (!closerMetrics) return null;
-    return detectBottleneck(closerMetrics);
-  }, [closerMetrics]);
+  /* ── Per-client metrics (when "All Clients") ────────────────────── */
+  const clientBreakdown = useMemo(() => {
+    if (!sheet.data || filters.client !== "all") return null;
+    const rows = sheet.data.rows;
 
-  /* ── Helpers ────────────────────────────────────────────────────── */
+    const tysonRows = rows.filter((r) => r.offer?.toLowerCase().includes("tyson"));
+    const keithRows = rows.filter((r) => r.offer?.toLowerCase().includes("keith"));
 
-  const rateColor = (rate: number) =>
-    rate >= 70 ? "var(--success)" : rate >= 50 ? "var(--warning)" : "var(--danger)";
+    return {
+      tyson: computeMetrics(tysonRows, "Tyson"),
+      keith: computeMetrics(keithRows, "Keith"),
+    };
+  }, [sheet.data, filters.client]);
 
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
+      {/* ── Per-Client Comparison (only when "All Clients") ─────────── */}
+      {filters.client === "all" && clientBreakdown && !sheet.loading && !sheet.error && (
+        <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Users size={12} />
+            Client Comparison
+          </div>
 
-      {/* ── BOTTLENECK ALERT ────────────────────────────────────────── */}
-      {bottleneck && (
-        <div style={{
-          padding: "14px 18px",
-          marginBottom: 20,
-          borderRadius: 10,
-          border: `1px solid ${bottleneck.severity === "critical" ? "rgba(248,113,113,0.4)" : "rgba(250,204,21,0.3)"}`,
-          background: bottleneck.severity === "critical" ? "rgba(248,113,113,0.06)" : "rgba(250,204,21,0.05)",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 12,
-        }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: "50%", marginTop: 5, flexShrink: 0,
-            background: bottleneck.severity === "critical" ? "var(--danger)" : "var(--warning)",
-            boxShadow: bottleneck.severity === "critical"
-              ? "0 0 8px rgba(248,113,113,0.5)"
-              : "0 0 8px rgba(250,204,21,0.4)",
-          }} />
-          <div>
-            <div style={{
-              fontSize: 12, fontWeight: 700,
-              color: bottleneck.severity === "critical" ? "var(--danger)" : "var(--warning)",
-              marginBottom: 3,
-            }}>
-              #1 Bottleneck: {bottleneck.stage}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
-              {bottleneck.message}
-            </div>
+          <div className="glass-static" style={{ overflow: "auto" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Cash</th>
+                  <th>Revenue</th>
+                  <th>AOV</th>
+                  <th>Close Rate</th>
+                  <th>Show Rate</th>
+                  <th>Booked</th>
+                  <th>Taken</th>
+                  <th>Wins</th>
+                  <th>Losses</th>
+                  <th>No Shows</th>
+                  <th>Pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[clientBreakdown.tyson, clientBreakdown.keith].map((c) => (
+                  <tr key={c.label}>
+                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                      {c.label}
+                    </td>
+                    <td style={{ color: "var(--success)", fontWeight: 600 }}>
+                      {fmtDollars(c.cashCollected)}
+                    </td>
+                    <td style={{ color: "var(--success)" }}>
+                      {fmtDollars(c.revenue)}
+                    </td>
+                    <td>{fmtDollars(c.aov)}</td>
+                    <td>
+                      <span style={{ color: rateColor(c.closeRate), fontWeight: 600 }}>
+                        {fmtPercent(c.closeRate)}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ color: rateColor(c.showRate), fontWeight: 600 }}>
+                        {fmtPercent(c.showRate)}
+                      </span>
+                    </td>
+                    <td>{fmtNumber(c.callsBooked)}</td>
+                    <td>{fmtNumber(c.callsTaken)}</td>
+                    <td style={{ color: "var(--success)" }}>{fmtNumber(c.wins)}</td>
+                    <td style={{ color: "var(--danger)" }}>{fmtNumber(c.losses)}</td>
+                    <td style={{ color: c.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
+                      {fmtNumber(c.noShows)}
+                    </td>
+                    <td style={{ color: "var(--warning)" }}>{fmtNumber(c.pcfus)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* ── Revenue Overview ──────────────────────────────────────── */}
-      <DashLabel icon={<DollarSign size={12} />} first>Revenue</DashLabel>
-      <div className="metric-grid metric-grid-2">
-        {/* Cash Collected */}
-        <div className="glass-static" style={{ padding: "24px 28px" }}>
-          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                <Banknote size={14} style={{ color: "var(--success)" }} />
-                <span style={{
-                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
-                  textTransform: "uppercase", letterSpacing: "0.3px",
-                }}>
-                  Cash Collected
-                </span>
-              </div>
-              <div style={{
-                fontSize: 36, fontWeight: 700, color: "var(--success)",
-                letterSpacing: "-1.5px", lineHeight: 1,
-              }}>
-                {closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—"}
-              </div>
-              <div style={{
-                marginTop: 14, display: "flex", gap: 20,
-                fontSize: 13, color: "var(--text-secondary)",
-              }}>
-                <span>
-                  from <strong style={{ color: "var(--text-primary)" }}>{closerMetrics?.wins ?? 0}</strong> wins
-                </span>
-                <span>
-                  AOV <strong style={{ color: "var(--text-primary)" }}>{closerMetrics ? fmtDollars(closerMetrics.aov) : "—"}</strong>
-                </span>
-              </div>
-            </>
+      {/* ── DM Metrics ────────────────────────────────────────────────── */}
+      <div className="section">
+        <h2 className="section-title">
+          <MessageCircle size={16} />
+          DM Metrics
+        </h2>
+        <div className="metric-grid metric-grid-4">
+          {renderKPICard(
+            <Users size={12} style={{ color: "var(--accent)" }} />,
+            "New Leads",
+            manychat.data ? fmtNumber(manychat.data.newLeads) : "—",
+            manychat.loading,
+            manychat.error,
           )}
-        </div>
-
-        {/* Total Revenue */}
-        <div className="glass-static" style={{ padding: "24px 28px" }}>
-          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                <DollarSign size={14} style={{ color: "var(--success)" }} />
-                <span style={{
-                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
-                  textTransform: "uppercase", letterSpacing: "0.3px",
-                }}>
-                  Total Revenue
-                </span>
-              </div>
-              <div style={{
-                fontSize: 36, fontWeight: 700, color: "var(--success)",
-                letterSpacing: "-1.5px", lineHeight: 1,
-              }}>
-                {closerMetrics ? fmtDollars(closerMetrics.revenue) : "—"}
-              </div>
-              <div style={{
-                marginTop: 14, display: "flex", gap: 20,
-                fontSize: 13, color: "var(--text-secondary)",
-              }}>
-                <span>
-                  Subs sold <strong style={{ color: "var(--text-primary)" }}>{closerMetrics?.subscriptionsSold ?? 0}</strong>
-                </span>
-              </div>
-            </>
+          {renderKPICard(
+            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
+            "Leads Engaged",
+            manychat.data ? fmtNumber(manychat.data.leadsEngaged) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <Link2 size={12} style={{ color: "var(--accent)" }} />,
+            "Call Links Sent",
+            manychat.data ? fmtNumber(manychat.data.callLinksSent) : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
+            "Sub Links Sent",
+            manychat.data ? fmtNumber(manychat.data.subLinksSent) : "—",
+            manychat.loading,
+            manychat.error,
           )}
         </div>
       </div>
 
-      {/* ── Conversion Rates ─────────────────────────────────────── */}
-      <DashLabel icon={<TrendingUp size={12} />}>Conversion</DashLabel>
-      <div className="metric-grid metric-grid-2">
-        {/* Close Rate */}
-        <div className="glass-static" style={{ padding: "20px 24px" }}>
-          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : closerMetrics && (
-            <>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                marginBottom: 14,
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
-                  textTransform: "uppercase", letterSpacing: "0.3px",
-                }}>
-                  <TrendingUp size={14} style={{ color: rateColor(closerMetrics.closeRate) }} />
-                  Close Rate
-                </div>
-                <div style={{
-                  fontSize: 28, fontWeight: 700,
-                  color: rateColor(closerMetrics.closeRate), letterSpacing: "-1px",
-                }}>
-                  {fmtPercent(closerMetrics.closeRate)}
-                </div>
-              </div>
-              {/* Progress bar */}
-              <div style={{
-                height: 6, background: "rgba(255,255,255,0.06)",
-                borderRadius: 3, overflow: "hidden", marginBottom: 14,
-              }}>
-                <div style={{
-                  height: "100%",
-                  width: `${Math.min(closerMetrics.closeRate, 100)}%`,
-                  background: rateColor(closerMetrics.closeRate),
-                  borderRadius: 3,
-                  transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
-                }} />
-              </div>
-              <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
-                <span><strong style={{ color: "var(--success)" }}>{closerMetrics.wins}</strong> wins</span>
-                <span><strong style={{ color: "var(--danger)" }}>{closerMetrics.losses}</strong> losses</span>
-                <span><strong style={{ color: "var(--warning)" }}>{closerMetrics.pcfus}</strong> pending</span>
-              </div>
-            </>
+      {/* ── Closer Metrics ────────────────────────────────────────────── */}
+      <div className="section">
+        <h2 className="section-title">
+          <PhoneCall size={16} />
+          Closer Metrics
+        </h2>
+        <div className="metric-grid metric-grid-4">
+          {renderKPICard(
+            <Banknote size={12} style={{ color: "var(--success)" }} />,
+            "Cash Collected",
+            closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <BarChart3 size={12} style={{ color: "var(--success)" }} />,
+            "AOV",
+            closerMetrics ? fmtDollars(closerMetrics.aov) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
+            "Close Rate",
+            closerMetrics ? fmtPercent(closerMetrics.closeRate) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <TrendingUp size={12} style={{ color: "var(--accent)" }} />,
+            "Show Rate",
+            closerMetrics ? fmtPercent(closerMetrics.showRate) : "—",
+            sheet.loading,
+            sheet.error,
           )}
         </div>
 
-        {/* Show Rate */}
-        <div className="glass-static" style={{ padding: "20px 24px" }}>
-          {sheet.loading ? <LoadingPulse /> : sheet.error ? <ErrorMsg /> : closerMetrics && (
-            <>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                marginBottom: 14,
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  fontSize: 12, color: "var(--text-muted)", fontWeight: 500,
-                  textTransform: "uppercase", letterSpacing: "0.3px",
-                }}>
-                  <PhoneCall size={14} style={{ color: rateColor(closerMetrics.showRate) }} />
-                  Show Rate
-                </div>
-                <div style={{
-                  fontSize: 28, fontWeight: 700,
-                  color: rateColor(closerMetrics.showRate), letterSpacing: "-1px",
-                }}>
-                  {fmtPercent(closerMetrics.showRate)}
-                </div>
-              </div>
-              <div style={{
-                height: 6, background: "rgba(255,255,255,0.06)",
-                borderRadius: 3, overflow: "hidden", marginBottom: 14,
-              }}>
-                <div style={{
-                  height: "100%",
-                  width: `${Math.min(closerMetrics.showRate, 100)}%`,
-                  background: rateColor(closerMetrics.showRate),
-                  borderRadius: 3,
-                  transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
-                }} />
-              </div>
-              <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
-                <span>
-                  <strong style={{ color: "var(--text-primary)" }}>{closerMetrics.callsTaken}</strong> / {closerMetrics.callsBooked} showed
-                </span>
-                <span>
-                  <strong style={{ color: "var(--danger)" }}>{closerMetrics.noShows}</strong> no-shows
-                </span>
-              </div>
-            </>
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
+            <Phone size={12} style={{ color: "var(--accent)" }} />,
+            "Calls Booked",
+            closerMetrics ? fmtNumber(closerMetrics.callsBooked) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
+            "Calls Taken",
+            closerMetrics ? fmtNumber(closerMetrics.callsTaken) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <Trophy size={12} style={{ color: "var(--success)" }} />,
+            "Wins",
+            closerMetrics ? fmtNumber(closerMetrics.wins) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
+          {renderKPICard(
+            <XCircle size={12} style={{ color: "var(--danger)" }} />,
+            "Losses",
+            closerMetrics ? fmtNumber(closerMetrics.losses) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--danger)",
           )}
         </div>
-      </div>
 
-      {/* ── Pipeline with Drop-off Indicators ────────────────────── */}
-      <DashLabel icon={<BarChart3 size={12} />}>Pipeline</DashLabel>
-      {sheet.loading ? (
-        <div className="glass-static" style={{ padding: 24, textAlign: "center" }}>
-          <LoadingPulse />
+        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+          {renderKPICard(
+            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
+            "No Shows",
+            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--danger)",
+          )}
+          {renderKPICard(
+            <Clock size={12} style={{ color: "var(--warning)" }} />,
+            "Pending Follow-Ups",
+            closerMetrics ? fmtNumber(closerMetrics.pcfus) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--warning)",
+          )}
+          {renderKPICard(
+            <ShoppingCart size={12} style={{ color: "var(--accent)" }} />,
+            "Subscriptions Sold",
+            closerMetrics ? fmtNumber(closerMetrics.subscriptionsSold) : "—",
+            sheet.loading,
+            sheet.error,
+          )}
+          {renderKPICard(
+            <DollarSign size={12} style={{ color: "var(--success)" }} />,
+            "Money",
+            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
+            sheet.loading,
+            sheet.error,
+            "var(--success)",
+          )}
         </div>
-      ) : sheet.error ? (
-        <div className="glass-static" style={{ padding: 24 }}><ErrorMsg /></div>
-      ) : closerMetrics && (() => {
-        const showDropPct = closerMetrics.callsBooked > 0
-          ? Math.round(((closerMetrics.callsBooked - closerMetrics.callsTaken) / closerMetrics.callsBooked) * 100)
-          : 0;
-        const closeDropPct = closerMetrics.callsTaken > 0
-          ? Math.round(((closerMetrics.callsTaken - closerMetrics.wins) / closerMetrics.callsTaken) * 100)
-          : 0;
-        const worstDrop = showDropPct >= closeDropPct ? "show" : "close";
-
-        return (
-          <div className="glass-static" style={{ padding: "20px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-              {/* Funnel stages with drop-off indicators */}
-              {[
-                { label: "Booked", value: closerMetrics.callsBooked, color: "var(--accent)", icon: <Phone size={13} />, dropAfter: showDropPct, dropKey: "show" as const },
-                { label: "Showed", value: closerMetrics.callsTaken, color: "var(--accent)", icon: <PhoneCall size={13} />, dropAfter: closeDropPct, dropKey: "close" as const },
-                { label: "Wins", value: closerMetrics.wins, color: "var(--success)", icon: <Trophy size={13} />, dropAfter: null, dropKey: null },
-              ].map((stage, i) => (
-                <Fragment key={stage.label}>
-                  {i > 0 && (
-                    <ArrowRight
-                      size={16}
-                      style={{ color: "var(--text-muted)", flexShrink: 0, opacity: 0.3, margin: "0 2px" }}
-                    />
-                  )}
-                  <div style={{
-                    flex: 1, textAlign: "center", padding: "16px 8px",
-                    borderRadius: 10, background: "rgba(255,255,255,0.025)",
-                    border: "1px solid var(--border-subtle)",
-                  }}>
-                    <div style={{ marginBottom: 6, color: stage.color, opacity: 0.7 }}>
-                      {stage.icon}
-                    </div>
-                    <div style={{
-                      fontSize: 24, fontWeight: 700, color: stage.color,
-                      letterSpacing: "-0.5px",
-                    }}>
-                      {fmtNumber(stage.value)}
-                    </div>
-                    <div style={{
-                      fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
-                      marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
-                    }}>
-                      {stage.label}
-                    </div>
-                  </div>
-
-                  {/* Drop-off indicator */}
-                  {stage.dropAfter !== null && stage.dropAfter > 0 && (
-                    <div style={{
-                      padding: "4px 7px", borderRadius: 6, margin: "0 2px",
-                      background: worstDrop === stage.dropKey ? "rgba(248,113,113,0.12)" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${worstDrop === stage.dropKey ? "rgba(248,113,113,0.3)" : "transparent"}`,
-                      flexShrink: 0,
-                    }}>
-                      <div style={{
-                        fontSize: 10, fontWeight: 700,
-                        color: worstDrop === stage.dropKey ? "var(--danger)" : "var(--text-muted)",
-                        whiteSpace: "nowrap",
-                      }}>
-                        -{stage.dropAfter}%
-                      </div>
-                    </div>
-                  )}
-                </Fragment>
-              ))}
-
-              {/* Separator */}
-              <div style={{
-                width: 1, height: 52, background: "var(--border-subtle)",
-                flexShrink: 0, margin: "0 8px",
-              }} />
-
-              {/* Outcome stages */}
-              {[
-                { label: "Losses", value: closerMetrics.losses, color: "var(--danger)", icon: <XCircle size={13} /> },
-                { label: "No Shows", value: closerMetrics.noShows, color: "var(--danger)", icon: <AlertTriangle size={13} /> },
-                { label: "Pending", value: closerMetrics.pcfus, color: "var(--warning)", icon: <Clock size={13} /> },
-              ].map((stage) => (
-                <div key={stage.label} style={{
-                  flex: 1, textAlign: "center", padding: "16px 8px",
-                  borderRadius: 10, background: "rgba(255,255,255,0.015)",
-                }}>
-                  <div style={{ marginBottom: 6, color: stage.color, opacity: 0.5 }}>
-                    {stage.icon}
-                  </div>
-                  <div style={{
-                    fontSize: 22, fontWeight: 700, color: stage.color,
-                    letterSpacing: "-0.5px",
-                  }}>
-                    {fmtNumber(stage.value)}
-                  </div>
-                  <div style={{
-                    fontSize: 10, color: "var(--text-muted)", fontWeight: 500,
-                    marginTop: 4, textTransform: "uppercase", letterSpacing: "0.5px",
-                  }}>
-                    {stage.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── DM Metrics ───────────────────────────────────────────── */}
-      <DashLabel icon={<MessageCircle size={12} />}>DM Performance</DashLabel>
-      <div className="metric-grid metric-grid-4">
-        {[
-          { icon: <Users size={12} style={{ color: "var(--accent)" }} />, label: "New Leads", value: manychat.data?.newLeads },
-          { icon: <MessageCircle size={12} style={{ color: "var(--accent)" }} />, label: "Engaged", value: manychat.data?.leadsEngaged },
-          { icon: <Link2 size={12} style={{ color: "var(--accent)" }} />, label: "Call Links", value: manychat.data?.callLinksSent },
-          { icon: <CreditCard size={12} style={{ color: "var(--accent)" }} />, label: "Sub Links", value: manychat.data?.subLinksSent },
-        ].map((m) => (
-          <div key={m.label} className="glass-static metric-card">
-            <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {m.icon}
-              {m.label}
-            </div>
-            {manychat.loading ? (
-              <div style={{ paddingTop: 4 }}>
-                <Loader2 size={16} className="spin" style={{ color: "var(--text-muted)" }} />
-              </div>
-            ) : manychat.error ? (
-              <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
-            ) : (
-              <div className="metric-card-value">
-                {m.value != null ? fmtNumber(m.value) : "—"}
-              </div>
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );
