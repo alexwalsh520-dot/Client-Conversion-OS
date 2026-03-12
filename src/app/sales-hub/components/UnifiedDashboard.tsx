@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
-import type { Filters, SheetRow, ManychatDashboard } from "../types";
+import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
