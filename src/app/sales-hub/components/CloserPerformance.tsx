@@ -201,6 +201,11 @@ export default function CloserPerformance({
     return result;
   }, [sheetData, closerStats]);
 
+  /* ── Leaderboard helpers (must be before early returns — Rules of Hooks) */
+  const ranked = useMemo(() => {
+    return [...closerStats].sort((a, b) => b.cash - a.cash);
+  }, [closerStats]);
+
   /* ── Loading state ──────────────────────────────────────────────── */
   if (loading) {
     return (
@@ -248,11 +253,6 @@ export default function CloserPerformance({
     );
   }
 
-  /* ── Leaderboard helpers ──────────────────────────────────────── */
-  const ranked = useMemo(() => {
-    return [...closerStats].sort((a, b) => b.cash - a.cash);
-  }, [closerStats]);
-
   const podiumColors = ["#c9a96e", "#a0a0a0", "#cd7f32"]; // gold, silver, bronze
   const podiumLabels = (rank: number, s: CloserStats) => {
     if (rank === 0) return { icon: <Crown size={16} />, tag: "Top Earner", tagColor: "#c9a96e" };
@@ -272,7 +272,8 @@ export default function CloserPerformance({
     { metric: "Calls", ...Object.fromEntries(ranked.map((s) => [s.name, Math.min(s.callsBooked * 5, 100)])) },
     { metric: "AOV", ...Object.fromEntries(ranked.map((s) => [s.name, Math.min(s.aov / 50, 100)])) },
     { metric: "Revenue", ...Object.fromEntries(ranked.map((s) => {
-      const maxRev = Math.max(...ranked.map((r) => r.revenue));
+      const revenues = ranked.map((r) => r.revenue);
+      const maxRev = revenues.length > 0 ? Math.max(...revenues) : 0;
       return [s.name, maxRev > 0 ? (s.revenue / maxRev) * 100 : 0];
     })) },
   ] : [];
