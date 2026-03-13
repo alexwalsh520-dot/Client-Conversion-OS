@@ -39,7 +39,7 @@ interface PeriodMetrics {
   aov: number;
   dailyCash: { date: string; amount: number }[];
   byClient: Record<string, ClientMetrics>;
-  byCloser: Record<string, { cash: number; wins: number; calls: number }>;
+  byCloser: Record<string, { cash: number; wins: number; losses: number; pcfus: number; calls: number }>;
 }
 
 interface ClientMetrics {
@@ -85,15 +85,15 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
   const denom = wins + losses + pcfus;
   const closeRate = denom > 0 ? (wins / denom) * 100 : 0;
 
-  const winRows = rows.filter((r) => r.outcome === "WIN");
-  const revenue = winRows.reduce((s, r) => s + r.revenue, 0);
-  const cashCollected = winRows.reduce((s, r) => s + r.cashCollected, 0);
+  // Sum cash & revenue from ALL rows (non-paying outcomes have $0 so they don't affect totals)
+  const revenue = rows.reduce((s, r) => s + r.revenue, 0);
+  const cashCollected = rows.reduce((s, r) => s + r.cashCollected, 0);
   const aov = wins > 0 ? revenue / wins : 0;
 
-  // Daily cash aggregation
+  // Daily cash aggregation — include any row with cash
   const dailyMap: Record<string, number> = {};
-  for (const r of winRows) {
-    if (r.date) {
+  for (const r of rows) {
+    if (r.date && r.cashCollected > 0) {
       dailyMap[r.date] = (dailyMap[r.date] || 0) + r.cashCollected;
     }
   }
@@ -126,16 +126,20 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
     };
   }
 
-  // By closer
-  const byCloser: Record<string, { cash: number; wins: number; calls: number }> = {};
+  // By closer — track wins, losses, pcfus for accurate close rate
+  const byCloser: Record<string, { cash: number; wins: number; losses: number; pcfus: number; calls: number }> = {};
   for (const r of rows) {
     const name = r.closer?.trim();
     if (!name) continue;
-    if (!byCloser[name]) byCloser[name] = { cash: 0, wins: 0, calls: 0 };
+    if (!byCloser[name]) byCloser[name] = { cash: 0, wins: 0, losses: 0, pcfus: 0, calls: 0 };
     byCloser[name].calls++;
     if (r.outcome === "WIN") {
       byCloser[name].wins++;
       byCloser[name].cash += r.cashCollected;
+    } else if (r.outcome === "LOST") {
+      byCloser[name].losses++;
+    } else if (r.outcome === "PCFU") {
+      byCloser[name].pcfus++;
     }
   }
 
@@ -1238,11 +1242,18 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                     }}
                   >
                     <span>
-                      <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> wins ·{" "}
-                      {stats.calls} calls ·{" "}
-                      <span style={{ color: rc(stats.calls > 0 ? (stats.wins / stats.calls) * 100 : 0) }}>
-                        {stats.calls > 0 ? fmtPercent((stats.wins / stats.calls) * 100, 0) : "0%"} close
-                      </span>
+                      <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> W ·{" "}
+                      <strong style={{ color: "var(--danger)" }}>{stats.losses}</strong> L ·{" "}
+                      {stats.pcfus > 0 && <><strong>{stats.pcfus}</strong> PCFU · </>}
+                      {(() => {
+                        const decided = stats.wins + stats.losses + stats.pcfus;
+                        const rate = decided > 0 ? (stats.wins / decided) * 100 : 0;
+                        return (
+                          <span style={{ color: rc(rate) }}>
+                            {fmtPercent(rate, 0)} close
+                          </span>
+                        );
+                      })()}
                     </span>
                   </div>
                 </div>

@@ -12,7 +12,7 @@ import {
   History,
   ChevronDown,
   Loader2,
-  FlaskConical,
+  Sparkles,
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
 import FilterBar, { getEffectiveDates } from "./components/FilterBar";
@@ -41,7 +41,6 @@ const SECTIONS = [
   { id: "reports", label: "Reports", icon: FileText },
   { id: "daily-briefs", label: "Briefs", icon: Calendar },
   { id: "report-history", label: "History", icon: History },
-  { id: "alex-testing", label: "Alex Testing", icon: FlaskConical },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -139,6 +138,142 @@ function CollapsibleSection({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Gold Shimmer Button                                                */
+/* ------------------------------------------------------------------ */
+
+function GoldShimmerButton({
+  active,
+  onClick,
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <>
+      <style>{`
+        @keyframes goldShimmer {
+          0% { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
+        @keyframes goldParticle1 {
+          0%, 100% { opacity: 0; transform: translate(0, 0) scale(0); }
+          20% { opacity: 1; transform: translate(-6px, -10px) scale(1); }
+          80% { opacity: 0.6; transform: translate(8px, -18px) scale(0.6); }
+        }
+        @keyframes goldParticle2 {
+          0%, 100% { opacity: 0; transform: translate(0, 0) scale(0); }
+          30% { opacity: 1; transform: translate(8px, -8px) scale(0.8); }
+          90% { opacity: 0.4; transform: translate(-4px, -20px) scale(0.3); }
+        }
+        @keyframes goldParticle3 {
+          0%, 100% { opacity: 0; transform: translate(0, 0) scale(0); }
+          15% { opacity: 0.8; transform: translate(4px, -12px) scale(1); }
+          85% { opacity: 0.2; transform: translate(-8px, -22px) scale(0.4); }
+        }
+        @keyframes goldPulse {
+          0%, 100% { box-shadow: 0 0 8px rgba(201,169,110,0.3), 0 0 16px rgba(201,169,110,0.1); }
+          50% { box-shadow: 0 0 12px rgba(201,169,110,0.5), 0 0 24px rgba(201,169,110,0.2), 0 0 40px rgba(201,169,110,0.08); }
+        }
+        .gold-btn {
+          position: relative;
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          border: 1px solid rgba(201,169,110,0.4);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(201,169,110,0.15) 0%,
+              rgba(180,140,70,0.25) 25%,
+              rgba(220,190,130,0.35) 50%,
+              rgba(180,140,70,0.25) 75%,
+              rgba(201,169,110,0.15) 100%
+            );
+          background-size: 200% 100%;
+          animation: goldShimmer 3s ease-in-out infinite, goldPulse 2.5s ease-in-out infinite;
+          transition: all 0.2s ease;
+          overflow: visible;
+        }
+        .gold-btn::before {
+          content: '';
+          position: absolute;
+          inset: -1px;
+          border-radius: 11px;
+          background: linear-gradient(
+            135deg,
+            rgba(201,169,110,0.6) 0%,
+            rgba(240,210,150,0.8) 40%,
+            rgba(201,169,110,0.6) 60%,
+            rgba(160,130,70,0.5) 100%
+          );
+          background-size: 200% 200%;
+          animation: goldShimmer 2s ease-in-out infinite;
+          z-index: -1;
+          mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          mask-composite: exclude;
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          padding: 1px;
+        }
+        .gold-btn:hover {
+          transform: scale(1.08);
+          border-color: rgba(201,169,110,0.7);
+          box-shadow: 0 0 16px rgba(201,169,110,0.5), 0 0 32px rgba(201,169,110,0.2) !important;
+        }
+        .gold-btn:active {
+          transform: scale(0.96);
+        }
+        .gold-btn.active {
+          border-color: rgba(201,169,110,0.8);
+          background:
+            linear-gradient(
+              135deg,
+              rgba(201,169,110,0.25) 0%,
+              rgba(180,140,70,0.4) 50%,
+              rgba(201,169,110,0.25) 100%
+            );
+        }
+        .gold-particle {
+          position: absolute;
+          width: 3px;
+          height: 3px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(240,210,150,0.9) 0%, rgba(201,169,110,0.4) 100%);
+          pointer-events: none;
+        }
+        .gold-particle:nth-child(1) { top: 4px; right: 2px; animation: goldParticle1 2.8s ease-in-out infinite; }
+        .gold-particle:nth-child(2) { bottom: 6px; left: 3px; animation: goldParticle2 3.2s ease-in-out infinite 0.5s; }
+        .gold-particle:nth-child(3) { top: 50%; right: -2px; animation: goldParticle3 2.4s ease-in-out infinite 1s; }
+        .gold-particle:nth-child(4) { top: 2px; left: 50%; width: 2px; height: 2px; animation: goldParticle1 3s ease-in-out infinite 1.5s; }
+        .gold-particle:nth-child(5) { bottom: 2px; right: 50%; width: 2px; height: 2px; animation: goldParticle2 2.6s ease-in-out infinite 0.8s; }
+      `}</style>
+      <button
+        className={`gold-btn ${active ? "active" : ""}`}
+        onClick={onClick}
+        title="Alex Testing Dashboard"
+      >
+        <span className="gold-particle" />
+        <span className="gold-particle" />
+        <span className="gold-particle" />
+        <span className="gold-particle" />
+        <span className="gold-particle" />
+        <Sparkles
+          size={18}
+          style={{
+            color: "#e8d5a8",
+            filter: "drop-shadow(0 0 4px rgba(201,169,110,0.6))",
+          }}
+        />
+      </button>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main page                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -150,6 +285,9 @@ export default function SalesHubPage() {
     dateFrom: "",
     dateTo: "",
   });
+
+  /* ---------- alex testing panel ---------- */
+  const [alexOpen, setAlexOpen] = useState(false);
 
   /* ---------- shared sheet data ---------- */
   const [sheetData, setSheetData] = useState<SheetRow[] | null>(null);
@@ -192,12 +330,50 @@ export default function SalesHubPage() {
   return (
     <div className="fade-up">
       {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">Sales Manager Hub</h1>
-        <p className="page-subtitle">
-          Unified intelligence dashboard &mdash; DM performance, closer analytics, AI
-          reviews, and lead intervention
-        </p>
+      <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <h1 className="page-title">Sales Manager Hub</h1>
+          <p className="page-subtitle">
+            Unified intelligence dashboard &mdash; DM performance, closer analytics, AI
+            reviews, and lead intervention
+          </p>
+        </div>
+        <GoldShimmerButton active={alexOpen} onClick={() => setAlexOpen((o) => !o)} />
+      </div>
+
+      {/* Alex Testing Dropdown — slides down from top */}
+      <div
+        style={{
+          maxHeight: alexOpen ? 3000 : 0,
+          overflow: "hidden",
+          opacity: alexOpen ? 1 : 0,
+          transition: "max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
+          marginBottom: alexOpen ? 16 : 0,
+        }}
+      >
+        <div
+          style={{
+            borderRadius: 12,
+            border: "1px solid rgba(201,169,110,0.2)",
+            background: "var(--bg-card)",
+            padding: "20px 18px",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          {/* Subtle gold top border glow */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 2,
+              background: "linear-gradient(90deg, transparent, rgba(201,169,110,0.6), transparent)",
+            }}
+          />
+          <AlexTesting filters={filters} />
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -368,15 +544,6 @@ export default function SalesHubPage() {
         icon={<History size={18} />}
       >
         <ReportHistory />
-      </CollapsibleSection>
-
-      {/* Section 10: Alex Testing */}
-      <CollapsibleSection
-        id="alex-testing"
-        title="Alex Testing"
-        icon={<FlaskConical size={18} />}
-      >
-        <AlexTesting filters={filters} />
       </CollapsibleSection>
     </div>
   );
