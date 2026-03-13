@@ -66,12 +66,48 @@ export async function GET() {
   const v2ApiKey = process.env.GHL_API_KEY;
   const locationId = process.env.GHL_LOCATION_ID;
 
-  if (v2ApiKey && locationId) {
+  if (v2ApiKey) {
     const v2Headers = {
       Authorization: `Bearer ${v2ApiKey}`,
       "Content-Type": "application/json",
       Version: "2021-04-15",
     };
+
+    results.v2_config = { locationId, keyPrefix: v2ApiKey.substring(0, 12) + "..." };
+
+    // Try to discover locations this token has access to
+    try {
+      const url = `${GHL_V2_BASE}/locations/search`;
+      const res = await fetch(url, { headers: v2Headers });
+      const text = await res.text();
+      results.v2_locations_search_status = res.status;
+      try { results.v2_locations_search = JSON.parse(text); } catch { results.v2_locations_search = text.substring(0, 1000); }
+    } catch (err) {
+      results.v2_locations_search_error = String(err);
+    }
+
+    // Try to get the location directly
+    try {
+      const url = `${GHL_V2_BASE}/locations/${locationId}`;
+      const res = await fetch(url, { headers: v2Headers });
+      const text = await res.text();
+      results.v2_location_direct_status = res.status;
+      try { results.v2_location_direct = JSON.parse(text); } catch { results.v2_location_direct = text.substring(0, 500); }
+    } catch (err) {
+      results.v2_location_direct_error = String(err);
+    }
+
+    // Try without version header (some endpoints need different versions)
+    try {
+      const altHeaders = { ...v2Headers, Version: "2021-07-28" };
+      const url = `${GHL_V2_BASE}/calendars/?locationId=${locationId}`;
+      const res = await fetch(url, { headers: altHeaders });
+      const text = await res.text();
+      results.v2_calendars_alt_version_status = res.status;
+      try { results.v2_calendars_alt_version = JSON.parse(text); } catch { results.v2_calendars_alt_version = text.substring(0, 500); }
+    } catch (err) {
+      results.v2_calendars_alt_version_error = String(err);
+    }
 
     // Try /calendars/events endpoint
     try {
@@ -128,7 +164,7 @@ export async function GET() {
       results.v2_users_error = String(err);
     }
   } else {
-    results.v2 = "GHL_API_KEY or GHL_LOCATION_ID not set";
+    results.v2 = "GHL_API_KEY not set";
   }
 
   return NextResponse.json(results, { status: 200 });
