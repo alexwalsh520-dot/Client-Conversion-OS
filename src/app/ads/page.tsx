@@ -373,7 +373,6 @@ function AdCanvas({
               border: "1.5px solid #b0b0b0",
               boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
               zIndex: 20,
-              cursor: pos.cursor,
               ...pos,
             }}
           />
