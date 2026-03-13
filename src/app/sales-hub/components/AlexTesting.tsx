@@ -146,6 +146,11 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
   };
 }
 
+function shortDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function delta(current: number, previous: number): { pct: string; up: boolean; flat: boolean } {
   if (previous === 0) return { pct: "N/A", up: true, flat: true };
   const change = ((current - previous) / previous) * 100;
@@ -162,7 +167,7 @@ function delta(current: number, previous: number): { pct: string; up: boolean; f
 function SparkArea({
   current,
   previous,
-  height = 160,
+  height = 180,
 }: {
   current: { date: string; amount: number }[];
   previous: { date: string; amount: number }[];
@@ -171,42 +176,64 @@ function SparkArea({
   const allValues = [...current.map((d) => d.amount), ...previous.map((d) => d.amount)];
   const maxVal = Math.max(...allValues, 1);
   const width = 400;
-  const pad = 8;
+  const leftPad = 45; // wider left margin for y-axis labels
+  const rightPad = 12;
+  const topPad = 16;
+  const bottomPad = 22; // space for x-axis date labels
 
-  const toPath = (data: { date: string; amount: number }[], close: boolean) => {
-    if (data.length === 0) return "";
-    const stepX = data.length > 1 ? (width - pad * 2) / (data.length - 1) : 0;
-    const points = data.map((d, i) => {
-      const x = pad + i * stepX;
-      const y = height - pad - ((d.amount / maxVal) * (height - pad * 2));
-      return `${x},${y}`;
-    });
+  const chartW = width - leftPad - rightPad;
+  const chartH = height - topPad - bottomPad;
 
-    let path = `M${points[0]}`;
-    // Smooth curve
-    for (let i = 1; i < points.length; i++) {
-      const [prevX, prevY] = points[i - 1].split(",").map(Number);
-      const [currX, currY] = points[i].split(",").map(Number);
-      const cpX = (prevX + currX) / 2;
-      path += ` C${cpX},${prevY} ${cpX},${currY} ${currX},${currY}`;
+  const toPoints = (data: { date: string; amount: number }[]) => {
+    if (data.length === 0) return [];
+    const stepX = data.length > 1 ? chartW / (data.length - 1) : 0;
+    return data.map((d, i) => ({
+      x: leftPad + i * stepX,
+      y: topPad + chartH - (d.amount / maxVal) * chartH,
+      amount: d.amount,
+      date: d.date,
+    }));
+  };
+
+  const toPath = (pts: { x: number; y: number }[], close: boolean) => {
+    if (pts.length === 0) return "";
+    let path = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const cpX = (pts[i - 1].x + pts[i].x) / 2;
+      path += ` C${cpX},${pts[i - 1].y} ${cpX},${pts[i].y} ${pts[i].x},${pts[i].y}`;
     }
-
     if (close) {
-      const lastX = pad + (data.length - 1) * stepX;
-      path += ` L${lastX},${height - pad} L${pad},${height - pad} Z`;
+      path += ` L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
     }
-
     return path;
   };
 
-  // Y-axis labels
-  const yLabels = [0, Math.round(maxVal * 0.5), Math.round(maxVal)];
+  const curPts = toPoints(current);
+  const prevPts = toPoints(previous);
+
+  // Y-axis: 3 levels
+  const yLevels = [0, Math.round(maxVal * 0.5), Math.round(maxVal)];
+
+  // X-axis: show first, middle, last date from current data
+  const xDates: { x: number; label: string }[] = [];
+  if (curPts.length > 0) {
+    const fmtShort = (d: string) => {
+      const dt = new Date(d + "T00:00:00");
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    };
+    xDates.push({ x: curPts[0].x, label: fmtShort(current[0].date) });
+    if (curPts.length > 2) {
+      const mid = Math.floor(curPts.length / 2);
+      xDates.push({ x: curPts[mid].x, label: fmtShort(current[mid].date) });
+    }
+    xDates.push({ x: curPts[curPts.length - 1].x, label: fmtShort(current[current.length - 1].date) });
+  }
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
       style={{ width: "100%", height: "100%" }}
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid meet"
     >
       <defs>
         <linearGradient id="currentGrad" x1="0" y1="0" x2="0" y2="1">
@@ -219,79 +246,103 @@ function SparkArea({
         </linearGradient>
       </defs>
 
-      {/* Grid lines */}
-      {yLabels.map((_, i) => {
-        const y = height - pad - ((i / 2) * (height - pad * 2));
+      {/* Grid lines + Y-axis labels */}
+      {yLevels.map((val, i) => {
+        const y = topPad + chartH - (i / 2) * chartH;
         return (
-          <line
-            key={i}
-            x1={pad}
-            y1={y}
-            x2={width - pad}
-            y2={y}
-            stroke="rgba(255,255,255,0.04)"
-            strokeDasharray="4,4"
-          />
+          <g key={i}>
+            <line
+              x1={leftPad}
+              y1={y}
+              x2={width - rightPad}
+              y2={y}
+              stroke="rgba(255,255,255,0.06)"
+              strokeDasharray="4,4"
+            />
+            <text
+              x={leftPad - 6}
+              y={y + 3}
+              fontSize="10"
+              fill="rgba(255,255,255,0.4)"
+              fontFamily="var(--font-sans)"
+              textAnchor="end"
+            >
+              ${val >= 1000 ? `${(val / 1000).toFixed(val >= 10000 ? 0 : 1)}k` : val}
+            </text>
+          </g>
         );
       })}
 
-      {/* Previous month area */}
-      {previous.length > 0 && (
+      {/* X-axis date labels */}
+      {xDates.map((d, i) => (
+        <text
+          key={i}
+          x={d.x}
+          y={height - 4}
+          fontSize="9"
+          fill="rgba(255,255,255,0.35)"
+          fontFamily="var(--font-sans)"
+          textAnchor="middle"
+        >
+          {d.label}
+        </text>
+      ))}
+
+      {/* Previous period area */}
+      {prevPts.length > 0 && (
         <>
-          <path d={toPath(previous, true)} fill="url(#prevGrad)" />
+          <path d={toPath(prevPts, true)} fill="url(#prevGrad)" />
           <path
-            d={toPath(previous, false)}
+            d={toPath(prevPts, false)}
             fill="none"
             stroke="var(--text-muted)"
             strokeWidth="1.5"
-            strokeOpacity="0.25"
+            strokeOpacity="0.3"
             strokeDasharray="4,3"
           />
         </>
       )}
 
-      {/* Current month area */}
-      {current.length > 0 && (
+      {/* Current period area */}
+      {curPts.length > 0 && (
         <>
-          <path d={toPath(current, true)} fill="url(#currentGrad)" />
+          <path d={toPath(curPts, true)} fill="url(#currentGrad)" />
           <path
-            d={toPath(current, false)}
+            d={toPath(curPts, false)}
             fill="none"
             stroke="var(--accent)"
             strokeWidth="2"
           />
-          {/* Dot on last point */}
-          {(() => {
-            const stepX = current.length > 1 ? (width - pad * 2) / (current.length - 1) : 0;
-            const last = current[current.length - 1];
-            const x = pad + (current.length - 1) * stepX;
-            const y = height - pad - ((last.amount / maxVal) * (height - pad * 2));
+          {/* Value labels on each data point */}
+          {curPts.map((pt, i) => {
+            // Only show labels if few points, or at key positions (first, last, max)
+            const maxIdx = curPts.reduce((best, p, idx) => (p.amount > curPts[best].amount ? idx : best), 0);
+            const showLabel = curPts.length <= 5 || i === 0 || i === curPts.length - 1 || i === maxIdx;
+            if (!showLabel) return null;
             return (
-              <>
-                <circle cx={x} cy={y} r="4" fill="var(--accent)" />
-                <circle cx={x} cy={y} r="7" fill="var(--accent)" opacity="0.2" />
-              </>
+              <g key={i}>
+                <circle cx={pt.x} cy={pt.y} r="3" fill="var(--accent)" />
+                <text
+                  x={pt.x}
+                  y={pt.y - 8}
+                  fontSize="9"
+                  fill="var(--accent)"
+                  fontFamily="var(--font-sans)"
+                  textAnchor="middle"
+                  fontWeight="600"
+                >
+                  ${pt.amount >= 1000 ? `${(pt.amount / 1000).toFixed(1)}k` : pt.amount}
+                </text>
+              </g>
             );
+          })}
+          {/* Highlighted dot on last point */}
+          {(() => {
+            const last = curPts[curPts.length - 1];
+            return <circle cx={last.x} cy={last.y} r="6" fill="var(--accent)" opacity="0.2" />;
           })()}
         </>
       )}
-
-      {/* Y-axis labels */}
-      {yLabels.map((val, i) => {
-        const y = height - pad - ((i / 2) * (height - pad * 2));
-        return (
-          <text
-            key={i}
-            x={pad + 2}
-            y={y - 4}
-            fontSize="9"
-            fill="rgba(255,255,255,0.25)"
-            fontFamily="var(--font-sans)"
-          >
-            ${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
-          </text>
-        );
-      })}
     </svg>
   );
 }
@@ -541,6 +592,37 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
   return (
     <div>
       {/* ═══════════════════════════════════════════════════════════════
+          Period Context Header
+          ═══════════════════════════════════════════════════════════════ */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 16px",
+          marginBottom: 16,
+          borderRadius: 8,
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid rgba(255,255,255,0.04)",
+          fontSize: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ color: "var(--text-muted)" }}>Comparing:</span>
+          <span style={{ color: "var(--accent)", fontWeight: 600 }}>
+            {shortDate(dateFrom)} – {shortDate(dateTo)}
+          </span>
+          <span style={{ color: "var(--text-muted)" }}>vs</span>
+          <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+            {shortDate(prev.from)} – {shortDate(prev.to)}
+          </span>
+        </div>
+        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+          All % changes compare these two periods
+        </span>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
           ROW 1: Hero KPIs (left) + Sparkline Chart (right)
           ═══════════════════════════════════════════════════════════════ */}
       <div
@@ -706,7 +788,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                 letterSpacing: "0.5px",
               }}
             >
-              Cash Trend
+              Daily Cash Collected
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 11 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -719,7 +801,9 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                     display: "inline-block",
                   }}
                 />
-                <span style={{ color: "var(--text-muted)" }}>Current</span>
+                <span style={{ color: "var(--text-muted)" }}>
+                  {shortDate(dateFrom)} – {shortDate(dateTo)}
+                </span>
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span
@@ -732,7 +816,9 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                     opacity: 0.4,
                   }}
                 />
-                <span style={{ color: "var(--text-muted)" }}>Last Period</span>
+                <span style={{ color: "var(--text-muted)" }}>
+                  {shortDate(prev.from)} – {shortDate(prev.to)}
+                </span>
               </span>
             </div>
           </div>
@@ -787,36 +873,61 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             size={140}
           />
 
-          <div style={{ marginTop: 20, width: "100%" }}>
-            {/* Current cash */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 0",
-                borderTop: "1px solid rgba(255,255,255,0.04)",
-              }}
-            >
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>This period</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--success)" }}>
-                {fmtDollars(current.cashCollected)}
-              </span>
-            </div>
-            {/* Previous cash */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 0",
-                borderTop: "1px solid rgba(255,255,255,0.04)",
-              }}
-            >
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Last period</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>
-                {fmtDollars(prev2.cashCollected)}
-              </span>
+          <div style={{ marginTop: 16, width: "100%" }}>
+            <DeltaBadge current={current.closeRate} previous={prev2.closeRate} />
+            <div style={{ marginTop: 12 }}>
+              {/* Wins / Losses / PCFU */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "7px 0",
+                  borderTop: "1px solid rgba(255,255,255,0.04)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>Wins</span>
+                <span style={{ fontWeight: 700, color: "var(--success)" }}>
+                  {current.wins}
+                  <span style={{ color: "var(--text-muted)", fontWeight: 400, marginLeft: 4, fontSize: 11 }}>
+                    (was {prev2.wins})
+                  </span>
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "7px 0",
+                  borderTop: "1px solid rgba(255,255,255,0.04)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>Losses</span>
+                <span style={{ fontWeight: 700, color: "var(--danger)" }}>
+                  {current.losses}
+                  <span style={{ color: "var(--text-muted)", fontWeight: 400, marginLeft: 4, fontSize: 11 }}>
+                    (was {prev2.losses})
+                  </span>
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "7px 0",
+                  borderTop: "1px solid rgba(255,255,255,0.04)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>Prev Close Rate</span>
+                <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {fmtPercent(prev2.closeRate, 0)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1008,6 +1119,9 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             }}
           >
             Closer Leaderboard
+            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 2, opacity: 0.6, textTransform: "none", letterSpacing: 0 }}>
+              Ranked by cash collected this period
+            </div>
           </div>
 
           {closerEntries.length === 0 ? (
@@ -1071,7 +1185,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                         />
                       )}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                       <span
                         style={{
                           fontSize: 13,
@@ -1080,9 +1194,14 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                         }}
                       >
                         {fmtDollars(stats.cash)}
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 4 }}>
+                          cash
+                        </span>
                       </span>
                       {prevCloser && (
-                        <DeltaBadge current={stats.cash} previous={prevCloser.cash} />
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          prev: {fmtDollars(prevCloser.cash)}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1111,12 +1230,20 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                   </div>
                   <div
                     style={{
+                      display: "flex",
+                      justifyContent: "space-between",
                       fontSize: 11,
                       color: "var(--text-muted)",
                       marginTop: 4,
                     }}
                   >
-                    {stats.wins} wins · {stats.calls} calls
+                    <span>
+                      <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> wins ·{" "}
+                      {stats.calls} calls ·{" "}
+                      <span style={{ color: rc(stats.calls > 0 ? (stats.wins / stats.calls) * 100 : 0) }}>
+                        {stats.calls > 0 ? fmtPercent((stats.wins / stats.calls) * 100, 0) : "0%"} close
+                      </span>
+                    </span>
                   </div>
                 </div>
               );
@@ -1137,11 +1264,11 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         }}
       >
         {[
-          { icon: <Target size={14} />, label: "AOV", value: fmtDollars(current.aov), prev: prev2.aov, cur: current.aov },
-          { icon: <PhoneCall size={14} />, label: "Show Rate", value: fmtPercent(current.showRate, 0), prev: prev2.showRate, cur: current.showRate },
-          { icon: <Trophy size={14} />, label: "Wins", value: fmtNumber(current.wins), prev: prev2.wins, cur: current.wins },
-          { icon: <Users size={14} />, label: "Calls Booked", value: fmtNumber(current.callsBooked), prev: prev2.callsBooked, cur: current.callsBooked },
-          { icon: <TrendingUp size={14} />, label: "Pending", value: fmtNumber(current.pcfus), prev: prev2.pcfus, cur: current.pcfus },
+          { icon: <Target size={14} />, label: "AOV", value: fmtDollars(current.aov), prevLabel: fmtDollars(prev2.aov), prev: prev2.aov, cur: current.aov },
+          { icon: <PhoneCall size={14} />, label: "Show Rate", value: fmtPercent(current.showRate, 0), prevLabel: fmtPercent(prev2.showRate, 0), prev: prev2.showRate, cur: current.showRate },
+          { icon: <Trophy size={14} />, label: "Wins", value: fmtNumber(current.wins), prevLabel: fmtNumber(prev2.wins), prev: prev2.wins, cur: current.wins },
+          { icon: <Users size={14} />, label: "Calls Booked", value: fmtNumber(current.callsBooked), prevLabel: fmtNumber(prev2.callsBooked), prev: prev2.callsBooked, cur: current.callsBooked },
+          { icon: <TrendingUp size={14} />, label: "Pending (PCFU)", value: fmtNumber(current.pcfus), prevLabel: fmtNumber(prev2.pcfus), prev: prev2.pcfus, cur: current.pcfus },
         ].map((stat) => (
           <div
             key={stat.label}
@@ -1176,6 +1303,9 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               {stat.label}
             </div>
             <DeltaBadge current={stat.cur} previous={stat.prev} />
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+              was {stat.prevLabel}
+            </div>
           </div>
         ))}
       </div>
