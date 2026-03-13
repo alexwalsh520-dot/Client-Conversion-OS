@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// GHL v1 API for calendar events
-const GHL_V1_BASE = "https://rest.gohighlevel.com/v1";
+// GHL v2 API for calendar events
+const GHL_V2_BASE = "https://services.leadconnectorhq.com";
 
-function getApiKey(): string {
-  const key = process.env.GHL_V1_API_KEY;
-  if (!key) throw new Error("GHL_V1_API_KEY not configured");
-  return key;
+function getHeaders(): Record<string, string> {
+  const apiKey = process.env.GHL_API_KEY;
+  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Version: "2021-04-15",
+  };
 }
 
-function getCalendarId(client: "tyson" | "keith"): string {
-  const id =
-    client === "tyson"
-      ? process.env.GHL_CALENDAR_ID_TYSON
-      : process.env.GHL_CALENDAR_ID_KEITH;
-  if (!id) throw new Error(`GHL_CALENDAR_ID_${client.toUpperCase()} not configured`);
+function getLocationId(): string {
+  const id = process.env.GHL_LOCATION_ID;
+  if (!id) throw new Error("GHL_LOCATION_ID not configured");
   return id;
 }
 
@@ -32,39 +33,56 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const calendarId = getCalendarId(client);
-    const apiKey = getApiKey();
+    const headers = getHeaders();
+    const locationId = getLocationId();
 
-    // GHL v1 expects epoch milliseconds for dates
-    const startDate = new Date(dateFrom).getTime();
-    const endDate = new Date(dateTo + "T23:59:59Z").getTime();
+    const startTime = `${dateFrom}T00:00:00Z`;
+    const endTime = `${dateTo}T23:59:59Z`;
 
-    const url = `${GHL_V1_BASE}/appointments/?calendarId=${calendarId}&startDate=${startDate}&endDate=${endDate}`;
+    // Get all calendars, then filter to the client's calendar
+    const calRes = await fetch(`${GHL_V2_BASE}/calendars/?locationId=${locationId}`, { headers });
+    if (!calRes.ok) {
+      const text = await calRes.text();
+      throw new Error(`GHL calendars list failed (${calRes.status}): ${text}`);
+    }
+    const calData = await calRes.json();
+    const calendars = calData.calendars || [];
 
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+    // Try to match calendar by client name, or fall back to old calendar IDs
+    const clientLower = client.toLowerCase();
+    const matchingCalendars = calendars.filter((c: { name: string; id: string }) => {
+      const nameLower = (c.name || "").toLowerCase();
+      if (clientLower === "tyson") return nameLower.includes("tyson") || nameLower.includes("ts") || c.id === process.env.GHL_CALENDAR_ID_TYSON;
+      if (clientLower === "keith") return nameLower.includes("keith") || nameLower.includes("kh") || c.id === process.env.GHL_CALENDAR_ID_KEITH;
+      return false;
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GHL calendar API failed (${res.status}): ${text}`);
+    // If no matching calendars found, use all calendars
+    const calToQuery = matchingCalendars.length > 0 ? matchingCalendars : calendars;
+
+    let bookedCount = 0;
+
+    for (const cal of calToQuery) {
+      try {
+        const url = `${GHL_V2_BASE}/calendars/events?locationId=${locationId}&calendarId=${cal.id}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
+        const res = await fetch(url, { headers });
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const events = data.events || data.data || data || [];
+        if (!Array.isArray(events)) continue;
+
+        // Count confirmed/booked appointments
+        bookedCount += events.filter(
+          (evt: { status?: string; appointmentStatus?: string }) => {
+            const status = (evt.status || evt.appointmentStatus || "").toLowerCase();
+            return status === "confirmed" || status === "booked" || status === "showed" || status === "new";
+          }
+        ).length;
+      } catch {
+        // skip failed calendars
+      }
     }
-
-    const data = await res.json();
-    const appointments = data.appointments || data.events || data || [];
-
-    // Count confirmed/booked appointments
-    const bookedCount = Array.isArray(appointments)
-      ? appointments.filter(
-          (apt: { status?: string; appointmentStatus?: string }) =>
-            apt.status === "confirmed" ||
-            apt.status === "booked" ||
-            apt.appointmentStatus === "confirmed" ||
-            apt.appointmentStatus === "booked"
-        ).length
-      : 0;
 
     return NextResponse.json({ callsBooked: bookedCount });
   } catch (err) {

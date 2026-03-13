@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// GHL v1 API for calendar events
-const GHL_V1_BASE = "https://rest.gohighlevel.com/v1";
+// GHL v2 API for calendar events
+const GHL_V2_BASE = "https://services.leadconnectorhq.com";
 
-function getApiKey(): string {
-  const key = process.env.GHL_V1_API_KEY;
-  if (!key) throw new Error("GHL_V1_API_KEY not configured");
-  return key;
+function getHeaders(): Record<string, string> {
+  const apiKey = process.env.GHL_API_KEY;
+  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Version: "2021-04-15",
+  };
 }
 
-function getCalendarIds(): string[] {
-  const ids: string[] = [];
-
-  const tysonId = process.env.GHL_CALENDAR_ID_TYSON;
-  if (tysonId) ids.push(tysonId);
-
-  const keithId = process.env.GHL_CALENDAR_ID_KEITH;
-  if (keithId) ids.push(keithId);
-
-  if (ids.length === 0) {
-    throw new Error("No GHL calendar IDs configured (GHL_CALENDAR_ID_TYSON / GHL_CALENDAR_ID_KEITH)");
-  }
-
-  return ids;
+function getLocationId(): string {
+  const id = process.env.GHL_LOCATION_ID;
+  if (!id) throw new Error("GHL_LOCATION_ID not configured");
+  return id;
 }
 
 interface GHLAppointment {
@@ -37,46 +31,50 @@ interface GHLAppointment {
 
 export async function GET(_req: NextRequest) {
   try {
-    const apiKey = getApiKey();
-    const calendarIds = getCalendarIds();
+    const headers = getHeaders();
+    const locationId = getLocationId();
 
     // Fetch upcoming appointments for the next 7 days
     const now = new Date();
     const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const startDate = now.getTime();
-    const endDate = sevenDaysOut.getTime();
+    const startTime = now.toISOString();
+    const endTime = sevenDaysOut.toISOString();
 
-    // Fetch from all calendars in parallel
+    // First get all calendars
+    const calRes = await fetch(`${GHL_V2_BASE}/calendars/?locationId=${locationId}`, { headers });
+    if (!calRes.ok) {
+      const text = await calRes.text();
+      throw new Error(`GHL calendars list failed (${calRes.status}): ${text}`);
+    }
+    const calData = await calRes.json();
+    const calendars = calData.calendars || [];
+
+    // Fetch events from all calendars in parallel
     const results = await Promise.all(
-      calendarIds.map(async (calendarId) => {
-        const url = `${GHL_V1_BASE}/appointments/?calendarId=${calendarId}&startDate=${startDate}&endDate=${endDate}`;
+      calendars.map(async (cal: { id: string; name: string }) => {
+        const url = `${GHL_V2_BASE}/calendars/events?locationId=${locationId}&calendarId=${cal.id}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
 
-        const res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        });
+        const res = await fetch(url, { headers });
 
         if (!res.ok) {
-          const text = await res.text();
-          console.error(`GHL upcoming appointments failed for calendar ${calendarId} (${res.status}): ${text}`);
+          console.error(`GHL upcoming events failed for calendar ${cal.name} (${res.status})`);
           return [];
         }
 
         const data = await res.json();
-        const appointments = data.appointments || data.events || data || [];
+        const events = data.events || data.data || data || [];
 
-        if (!Array.isArray(appointments)) return [];
+        if (!Array.isArray(events)) return [];
 
-        return appointments.map((apt: Record<string, unknown>) => ({
-          id: apt.id || apt._id || "",
-          contactId: apt.contactId || apt.contact_id || "",
-          calendarId: calendarId,
-          title: apt.title || apt.name || "",
-          startTime: apt.startTime || apt.start_time || apt.selectedTimezone || "",
-          endTime: apt.endTime || apt.end_time || "",
-          status: apt.status || apt.appointmentStatus || "",
+        return events.map((evt: Record<string, unknown>) => ({
+          id: evt.id || evt._id || "",
+          contactId: evt.contactId || evt.contact_id || "",
+          calendarId: cal.id,
+          title: evt.title || evt.name || "",
+          startTime: evt.startTime || evt.start_time || "",
+          endTime: evt.endTime || evt.end_time || "",
+          status: evt.status || evt.appointmentStatus || "",
         })) as GHLAppointment[];
       })
     );

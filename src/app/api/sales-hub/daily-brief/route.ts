@@ -6,8 +6,8 @@ import { listMeetings, FathomMeeting } from "@/lib/fathom";
 
 /* ── Config ─────────────────────────────────────────────────────── */
 
-const GHL_V1_BASE = "https://rest.gohighlevel.com/v1";
-const CLOSERS = ["Broz", "Will", "Austin"];
+const GHL_V2_BASE = "https://services.leadconnectorhq.com";
+const CLOSERS = ["Broz", "Will", "Jacob"];
 
 const TEAM_EMAILS = new Set([
   "matthew@clientconversion.io", "alex@clientconversion.io", "alexwalsh520@gmail.com",
@@ -100,24 +100,150 @@ Based on yesterday's sales calls, provide ultra-short coaching:
 
 Keep everything concise and actionable. The closer should be able to read this in 3-5 minutes before their first call.`;
 
-/* ── Helpers ───────────────────────────────────────────────────── */
+/* ── GHL V2 Helpers ──────────────────────────────────────────────── */
 
-function getGhlApiKey(): string {
-  const key = process.env.GHL_V1_API_KEY;
-  if (!key) throw new Error("GHL_V1_API_KEY not configured");
-  return key;
+function getGhlV2Headers(): Record<string, string> {
+  const apiKey = process.env.GHL_API_KEY;
+  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Version: "2021-04-15",
+  };
 }
 
-interface CalendarConfig { calendarId: string; client: string; }
-
-function getCalendars(): CalendarConfig[] {
-  const configs: CalendarConfig[] = [];
-  const tysonId = process.env.GHL_CALENDAR_ID_TYSON;
-  if (tysonId) configs.push({ calendarId: tysonId, client: "Tyson Sonnek" });
-  const keithId = process.env.GHL_CALENDAR_ID_KEITH;
-  if (keithId) configs.push({ calendarId: keithId, client: "Keith Holland" });
-  return configs;
+function getLocationId(): string {
+  const id = process.env.GHL_LOCATION_ID;
+  if (!id) throw new Error("GHL_LOCATION_ID not configured");
+  return id;
 }
+
+// Build a map of GHL userId → display name for closer matching
+interface GhlUser {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+async function fetchGhlUsers(): Promise<GhlUser[]> {
+  try {
+    const res = await fetch(`${GHL_V2_BASE}/users/?locationId=${getLocationId()}`, {
+      headers: getGhlV2Headers(),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data.users || !Array.isArray(data.users)) return [];
+    return data.users.map((u: Record<string, unknown>) => ({
+      id: String(u.id || ""),
+      name: String(u.name || ""),
+      firstName: String(u.firstName || ""),
+      lastName: String(u.lastName || ""),
+      email: String(u.email || ""),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// Fetch calendar events for today via V2 API
+interface GhlEvent {
+  id: string;
+  calendarId: string;
+  title: string;
+  contactId: string;
+  assignedUserId: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  appointmentStatus: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+async function fetchTodayEvents(todayStr: string): Promise<GhlEvent[]> {
+  const locationId = getLocationId();
+  const headers = getGhlV2Headers();
+  const startTime = `${todayStr}T00:00:00-05:00`;
+  const endTime = `${todayStr}T23:59:59-05:00`;
+
+  const allEvents: GhlEvent[] = [];
+
+  // First get all calendars
+  try {
+    const calRes = await fetch(`${GHL_V2_BASE}/calendars/?locationId=${locationId}`, { headers });
+    if (!calRes.ok) {
+      console.warn(`[daily-brief] Failed to list calendars: ${calRes.status}`);
+      // Fallback: try fetching events without calendarId
+      const url = `${GHL_V2_BASE}/calendars/events?locationId=${locationId}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const events = data.events || data.data || data || [];
+        if (Array.isArray(events)) return events;
+      }
+      return [];
+    }
+
+    const calData = await calRes.json();
+    const calendars = calData.calendars || [];
+
+    // Fetch events from each calendar
+    for (const cal of calendars) {
+      try {
+        const url = `${GHL_V2_BASE}/calendars/events?locationId=${locationId}&calendarId=${cal.id}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const events = data.events || data.data || data || [];
+          if (Array.isArray(events)) {
+            for (const evt of events) {
+              // Tag with calendar name for client identification
+              evt._calendarName = cal.name || "";
+              evt._calendarId = cal.id || "";
+              allEvents.push(evt);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[daily-brief] Calendar ${cal.name} fetch error:`, err);
+      }
+    }
+  } catch (err) {
+    console.warn("[daily-brief] Calendar list error:", err);
+  }
+
+  return allEvents;
+}
+
+// Fetch contact details via V2 API
+async function fetchContact(contactId: string): Promise<{
+  firstName: string; lastName: string; phone: string; email: string;
+  tags: string[]; source: string;
+} | null> {
+  if (!contactId) return null;
+  try {
+    const res = await fetch(`${GHL_V2_BASE}/contacts/${contactId}`, {
+      headers: getGhlV2Headers(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const contact = data.contact || data;
+    return {
+      firstName: String(contact.firstName || ""),
+      lastName: String(contact.lastName || ""),
+      phone: String(contact.phone || contact.phoneNumber || ""),
+      email: String(contact.email || contact.emailAddress || ""),
+      tags: Array.isArray(contact.tags) ? contact.tags.map(String) : [],
+      source: String(contact.source || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ── Other Helpers ───────────────────────────────────────────────── */
 
 async function findDMTranscriptByName(name: string): Promise<string | null> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -159,6 +285,45 @@ function isSalesCall(m: FathomMeeting): boolean {
   return invitees.some((a) => a.email && !TEAM_EMAILS.has(a.email.toLowerCase()));
 }
 
+// Match a GHL userId to a closer name using the user list
+function matchCloser(
+  assignedUserId: string,
+  calendarName: string,
+  title: string,
+  userMap: Map<string, GhlUser>
+): string {
+  // First try: match by assigned user ID
+  if (assignedUserId && userMap.has(assignedUserId)) {
+    const user = userMap.get(assignedUserId)!;
+    const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
+    const userName = user.name.toLowerCase();
+    for (const c of CLOSERS) {
+      const cl = c.toLowerCase();
+      if (fullName.includes(cl) || userName.includes(cl) || user.email.toLowerCase().includes(cl)) {
+        return c;
+      }
+    }
+    // Return user's first name if not in CLOSERS list
+    return user.firstName || user.name || "Unassigned";
+  }
+
+  // Second try: match by calendar name or event title
+  const combined = `${calendarName} ${title}`.toLowerCase();
+  for (const c of CLOSERS) {
+    if (combined.includes(c.toLowerCase())) return c;
+  }
+
+  return "Unassigned";
+}
+
+// Determine client (Tyson/Keith) from calendar name
+function identifyClient(calendarName: string): string {
+  const lower = calendarName.toLowerCase();
+  if (lower.includes("tyson") || lower.includes("ts")) return "Tyson Sonnek";
+  if (lower.includes("keith") || lower.includes("kh")) return "Keith Holland";
+  return calendarName || "Unknown Client";
+}
+
 /* ── POST handler — generate daily brief(s) on demand ──────────── */
 
 export async function POST(req: NextRequest) {
@@ -172,45 +337,38 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
 
-    const ghlApiKey = getGhlApiKey();
-    const calendars = getCalendars();
-    if (calendars.length === 0) return NextResponse.json({ error: "No GHL calendar IDs configured" }, { status: 500 });
-
     // Get today's date in EST
     const now = new Date();
     const estOffset = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
     const todayStr = estOffset.toISOString().split("T")[0];
-    const startOfDay = new Date(`${todayStr}T00:00:00-05:00`).getTime();
-    const endOfDay = new Date(`${todayStr}T23:59:59-05:00`).getTime();
 
-    // Fetch appointments
-    interface Appointment {
-      contactId?: string; contact_id?: string;
-      title?: string; startTime?: string; start_time?: string;
-      assignedUserId?: string; assigned_user_id?: string;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      [key: string]: any;
-    }
+    // Fetch GHL users for closer mapping and today's events in parallel
+    const [ghlUsers, todayEvents] = await Promise.all([
+      fetchGhlUsers(),
+      fetchTodayEvents(todayStr),
+    ]);
 
-    const allAppointments: { appointment: Appointment; client: string }[] = [];
-    for (const cal of calendars) {
-      try {
-        const url = `${GHL_V1_BASE}/appointments/?calendarId=${cal.calendarId}&startDate=${startOfDay}&endDate=${endOfDay}`;
-        const res = await fetch(url, { headers: { Authorization: `Bearer ${ghlApiKey}` } });
-        if (res.ok) {
-          const data = await res.json();
-          const appointments = data.appointments || data.events || data || [];
-          if (Array.isArray(appointments)) {
-            for (const apt of appointments) allAppointments.push({ appointment: apt, client: cal.client });
-          }
-        }
-      } catch (err) {
-        console.warn(`[daily-brief] Calendar fetch error for ${cal.client}:`, err);
-      }
-    }
+    const userMap = new Map<string, GhlUser>();
+    for (const u of ghlUsers) userMap.set(u.id, u);
 
-    if (allAppointments.length === 0) {
-      return NextResponse.json({ briefs: [], message: "No appointments today" });
+    console.log(`[daily-brief] Found ${todayEvents.length} events, ${ghlUsers.length} GHL users`);
+
+    // Filter out cancelled/no-show appointments, keep confirmed/booked
+    const activeEvents = todayEvents.filter((evt) => {
+      const status = (evt.status || evt.appointmentStatus || "").toLowerCase();
+      return !status.includes("cancelled") && !status.includes("canceled") && !status.includes("deleted");
+    });
+
+    if (activeEvents.length === 0) {
+      return NextResponse.json({
+        briefs: [],
+        message: "No appointments today",
+        debug: {
+          totalEventsBeforeFilter: todayEvents.length,
+          ghlUsersCount: ghlUsers.length,
+          date: todayStr,
+        },
+      });
     }
 
     // Build prospect data
@@ -221,50 +379,40 @@ export async function POST(req: NextRequest) {
     }
 
     const prospects: ProspectData[] = [];
-    for (const { appointment, client } of allAppointments) {
-      const contactId = String(appointment.contactId || appointment.contact_id || "");
-      let firstName = "", lastName = "", phone = "", email = "";
-      let tags: string[] = [], source = "";
+    for (const evt of activeEvents) {
+      const contactId = String(evt.contactId || evt.contact_id || "");
+      const contactData = await fetchContact(contactId);
 
-      if (contactId) {
-        try {
-          const contactRes = await fetch(`${GHL_V1_BASE}/contacts/${contactId}`, {
-            headers: { Authorization: `Bearer ${ghlApiKey}` },
-          });
-          if (contactRes.ok) {
-            const cData = await contactRes.json();
-            const contact = cData.contact || cData;
-            firstName = String(contact.firstName || "");
-            lastName = String(contact.lastName || "");
-            phone = String(contact.phone || contact.phoneNumber || "");
-            email = String(contact.email || contact.emailAddress || "");
-            tags = Array.isArray(contact.tags) ? contact.tags : [];
-            source = String(contact.source || "");
-          }
-        } catch { /* fallback to title */ }
-      }
+      const firstName = contactData?.firstName || "";
+      const lastName = contactData?.lastName || "";
+      const phone = contactData?.phone || "";
+      const email = contactData?.email || "";
+      const tags = contactData?.tags || [];
+      const source = contactData?.source || "";
 
-      const name = `${firstName} ${lastName}`.trim() || String(appointment.title || "Unknown Prospect");
-      const startTime = appointment.startTime || appointment.start_time || "";
+      const name = `${firstName} ${lastName}`.trim() || String(evt.title || "Unknown Prospect");
+      const startTime = evt.startTime || evt.start_time || "";
+      const assignedUserId = String(evt.assignedUserId || evt.assigned_user_id || "");
+      const calendarName = String(evt._calendarName || "");
+      const client = identifyClient(calendarName);
+      const closer = matchCloser(assignedUserId, calendarName, evt.title || "", userMap);
+
       const dmTranscript = await findDMTranscriptByName(name);
       const sendBlueMessages = await fetchSendBlueMessages(phone);
-      const closer = String(appointment.assignedUserId || appointment.assigned_user_id || appointment.title || "");
 
-      prospects.push({ name, firstName, lastName, phone, email, client, startTime, closer, dmTranscript, sendBlueMessages, tags, source });
+      prospects.push({
+        name, firstName, lastName, phone, email,
+        client, startTime, closer,
+        dmTranscript, sendBlueMessages, tags, source,
+      });
     }
 
     // Group by closer
     const closerProspects: Record<string, ProspectData[]> = {};
     for (const prospect of prospects) {
-      let assignedCloser = "Unassigned";
-      for (const c of CLOSERS) {
-        if (prospect.closer.toLowerCase().includes(c.toLowerCase()) || prospect.name.toLowerCase().includes(c.toLowerCase())) {
-          assignedCloser = c;
-          break;
-        }
-      }
-      if (!closerProspects[assignedCloser]) closerProspects[assignedCloser] = [];
-      closerProspects[assignedCloser].push(prospect);
+      const key = prospect.closer || "Unassigned";
+      if (!closerProspects[key]) closerProspects[key] = [];
+      closerProspects[key].push(prospect);
     }
 
     // Filter to requested closer if specified
@@ -400,7 +548,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       briefs,
       date: todayStr,
-      totalAppointments: allAppointments.length,
+      totalAppointments: activeEvents.length,
+      closerBreakdown: Object.fromEntries(
+        Object.entries(closerProspects).map(([k, v]) => [k, v.length])
+      ),
     });
   } catch (err) {
     console.error("[daily-brief] Error:", err);

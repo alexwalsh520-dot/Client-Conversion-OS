@@ -26,7 +26,7 @@ interface BriefResult {
 
 /* ── Constants ────────────────────────────────────────────────────── */
 
-const CLOSERS = ["Broz", "Will", "Austin"];
+const CLOSERS = ["Broz", "Will", "Jacob"];
 
 /* ── Component ────────────────────────────────────────────────────── */
 
