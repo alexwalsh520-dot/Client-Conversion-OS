@@ -166,6 +166,16 @@ function AdCanvas({
     origY: number;
   } | null>(null);
 
+  // Resize state
+  const [resizing, setResizing] = useState<{
+    blockId: string;
+    handle: "nw" | "ne" | "sw" | "se" | "e" | "w";
+    startX: number;
+    startY: number;
+    origFontSize: number;
+    origMaxWidth: number;
+  } | null>(null);
+
   const W = 1080;
   const H = 1920;
 
@@ -186,10 +196,25 @@ function AdCanvas({
     [onSelectBlock]
   );
 
+  // Resize handlers
+  const handleResizeDown = useCallback(
+    (e: React.MouseEvent, block: TextBlock, handle: "nw" | "ne" | "sw" | "se" | "e" | "w") => {
+      e.stopPropagation();
+      e.preventDefault();
+      setResizing({
+        blockId: block.id,
+        handle,
+        startX: e.clientX,
+        startY: e.clientY,
+        origFontSize: block.fontSize,
+        origMaxWidth: block.maxWidth,
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     if (!dragging) return;
-    const block = creative.textBlocks.find((b) => b.id === dragging.blockId);
-    if (!block) return;
 
     const handleMove = (e: MouseEvent) => {
       const dx = (e.clientX - dragging.startX) / scale;
@@ -222,6 +247,51 @@ function AdCanvas({
       window.removeEventListener("mouseup", handleUp);
     };
   }, [dragging, scale, creative.textBlocks, onUpdateBlock, onRecordEdit]);
+
+  // Resize effect
+  useEffect(() => {
+    if (!resizing) return;
+
+    const handleMove = (e: MouseEvent) => {
+      const dx = (e.clientX - resizing.startX) / scale;
+      const dy = (e.clientY - resizing.startY) / scale;
+      const h = resizing.handle;
+
+      if (h === "e" || h === "w") {
+        // Edge handles: change width only
+        const widthDelta = h === "e" ? dx : -dx;
+        const newWidth = Math.max(200, Math.min(1060, Math.round(resizing.origMaxWidth + widthDelta)));
+        onUpdateBlock(resizing.blockId, { maxWidth: newWidth });
+      } else {
+        // Corner handles: scale fontSize proportionally
+        // Diagonal distance gives uniform scale
+        const dist = (dx + -dy) / 2; // up-right = bigger
+        const scaleFactor = dist / 200;
+        const newSize = Math.max(14, Math.min(120, Math.round(resizing.origFontSize * (1 + scaleFactor))));
+        onUpdateBlock(resizing.blockId, { fontSize: newSize });
+      }
+    };
+
+    const handleUp = () => {
+      const afterBlock = creative.textBlocks.find((b) => b.id === resizing.blockId);
+      if (afterBlock) {
+        onRecordEdit(
+          resizing.blockId,
+          resizing.handle === "e" || resizing.handle === "w" ? "resize-width" : "resize-scale",
+          { fontSize: resizing.origFontSize, maxWidth: resizing.origMaxWidth },
+          { fontSize: afterBlock.fontSize, maxWidth: afterBlock.maxWidth }
+        );
+      }
+      setResizing(null);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [resizing, scale, creative.textBlocks, onUpdateBlock, onRecordEdit]);
 
   return (
     <div
@@ -283,6 +353,75 @@ function AdCanvas({
         const isSelected = block.id === selectedBlockId;
         const isCentered = block.align === "center";
 
+        // Figma-style corner handle: white circle with shadow
+        const cornerHandle = (pos: {
+          top?: number | string;
+          bottom?: number | string;
+          left?: number | string;
+          right?: number | string;
+          cursor: string;
+        }, handle: "nw" | "ne" | "sw" | "se"): React.ReactNode => (
+          <div
+            key={handle}
+            onMouseDown={(e) => handleResizeDown(e, block, handle)}
+            style={{
+              position: "absolute",
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              background: "#ffffff",
+              border: "1.5px solid #b0b0b0",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+              zIndex: 20,
+              cursor: pos.cursor,
+              ...pos,
+            }}
+          />
+        );
+
+        // Figma-style edge pill handle: white rounded rectangle with shadow
+        const edgeHandle = (side: "e" | "w"): React.ReactNode => (
+          <div
+            key={side}
+            onMouseDown={(e) => handleResizeDown(e, block, side)}
+            style={{
+              position: "absolute",
+              width: 8,
+              height: 32,
+              borderRadius: 4,
+              background: "#ffffff",
+              border: "1.5px solid #b0b0b0",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+              top: "50%",
+              transform: "translateY(-50%)",
+              zIndex: 20,
+              cursor: "ew-resize",
+              ...(side === "e" ? { right: -12 } : { left: -12 }),
+            }}
+          />
+        );
+
+        // Top/bottom edge pill handles
+        const edgeHandleTB = (side: "n" | "s"): React.ReactNode => (
+          <div
+            key={side}
+            style={{
+              position: "absolute",
+              width: 32,
+              height: 8,
+              borderRadius: 4,
+              background: "#ffffff",
+              border: "1.5px solid #b0b0b0",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 20,
+              pointerEvents: "none" as const,
+              ...(side === "n" ? { top: -12 } : { bottom: -12 }),
+            }}
+          />
+        );
+
         return (
           <div
             key={block.id}
@@ -292,8 +431,8 @@ function AdCanvas({
               top: block.y,
               transform: isCentered ? "translateX(-50%)" : undefined,
               cursor: dragging?.blockId === block.id ? "grabbing" : "grab",
-              outline: isSelected ? "3px solid #c9a96e" : "none",
-              outlineOffset: 4,
+              outline: isSelected ? "2px solid #7B61FF" : "none",
+              outlineOffset: 6,
               zIndex: isSelected ? 10 : 1,
               maxWidth: block.maxWidth,
               userSelect: "none",
@@ -301,36 +440,62 @@ function AdCanvas({
             onMouseDown={(e) => handleMouseDown(e, block)}
             onClick={(e) => e.stopPropagation()}
           >
-            {block.lines.map((line, li) => (
-              <div
-                key={li}
-                style={{
-                  display: "inline-block",
-                  marginBottom: block.lineGap,
-                  width:
-                    block.align === "center" ? "100%" : undefined,
-                  textAlign: block.align,
-                }}
-              >
-                <span
+            {/* Figma-style resize handles — visible when selected */}
+            {isSelected && !dragging && (
+              <>
+                {cornerHandle({ top: -9, left: -9, cursor: "nwse-resize" }, "nw")}
+                {cornerHandle({ top: -9, right: -9, cursor: "nesw-resize" }, "ne")}
+                {cornerHandle({ bottom: -9, left: -9, cursor: "nesw-resize" }, "sw")}
+                {cornerHandle({ bottom: -9, right: -9, cursor: "nwse-resize" }, "se")}
+                {edgeHandle("e")}
+                {edgeHandle("w")}
+                {edgeHandleTB("n")}
+                {edgeHandleTB("s")}
+              </>
+            )}
+            {block.lines.map((line, li) => {
+              // Empty lines = visual spacing, no background
+              if (!line.trim()) {
+                return (
+                  <div
+                    key={li}
+                    style={{
+                      height: Math.round(block.fontSize * 0.5 + block.lineGap),
+                    }}
+                  />
+                );
+              }
+              return (
+                <div
+                  key={li}
                   style={{
-                    display: "inline",
-                    backgroundColor: `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`,
-                    color: block.textColor,
-                    fontSize: block.fontSize,
-                    fontWeight: block.fontWeight,
-                    fontFamily: block.fontFamily,
-                    padding: `${block.paddingV}px ${block.paddingH}px`,
-                    borderRadius: block.borderRadius,
-                    lineHeight: 1.3,
-                    boxDecorationBreak: "clone" as const,
-                    WebkitBoxDecorationBreak: "clone" as const,
+                    display: "inline-block",
+                    marginBottom: block.lineGap,
+                    width:
+                      block.align === "center" ? "100%" : undefined,
+                    textAlign: block.align,
                   }}
                 >
-                  {line}
-                </span>
-              </div>
-            ))}
+                  <span
+                    style={{
+                      display: "inline",
+                      backgroundColor: `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`,
+                      color: block.textColor,
+                      fontSize: block.fontSize,
+                      fontWeight: block.fontWeight,
+                      fontFamily: block.fontFamily,
+                      padding: `${block.paddingV}px ${block.paddingH}px`,
+                      borderRadius: block.borderRadius,
+                      lineHeight: 1.3,
+                      boxDecorationBreak: "clone" as const,
+                      WebkitBoxDecorationBreak: "clone" as const,
+                    }}
+                  >
+                    {line}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -518,6 +683,24 @@ function TextEditorPanel({
         </div>
       </div>
 
+      {/* Max Width */}
+      <div>
+        <label style={labelStyle}>Max Width</label>
+        <input
+          type="range"
+          min={200}
+          max={1060}
+          value={block.maxWidth}
+          onChange={(e) =>
+            onUpdate({ maxWidth: parseInt(e.target.value) })
+          }
+          style={{ width: "100%", accentColor: "var(--accent)" }}
+        />
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          {block.maxWidth}px
+        </span>
+      </div>
+
       {/* Position */}
       <div style={{ display: "flex", gap: 8 }}>
         <div style={{ flex: 1 }}>
@@ -576,6 +759,9 @@ export default function AdsPage() {
   const [view, setView] = useState<"setup" | "editor">("setup");
   const [saving, setSaving] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [editHistory, setEditHistory] = useState<
+    { blockId: string; type: string; before: unknown; after: unknown; timestamp: number }[]
+  >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -612,52 +798,147 @@ export default function AdsPage() {
     []
   );
 
+  // Estimate rendered height of a text block (px)
+  const estimateBlockHeight = (block: TextBlock): number => {
+    const lineH = block.fontSize * 1.35;
+    const contentLines = block.lines.filter((l) => l.trim()).length;
+    const emptyLines = block.lines.filter((l) => !l.trim()).length;
+    return (
+      contentLines * (lineH + block.lineGap) +
+      emptyLines * (block.fontSize * 0.5) +
+      block.paddingV * 2
+    );
+  };
+
   // Generate creatives from photos + copy
   const handleGenerate = useCallback(() => {
     if (photos.length === 0) return;
 
-    // Parse copy text into text blocks
-    let blocks = [...defaultTextBlocks.map((b) => ({ ...b, id: uid() }))];
+    const W = 1080;
+    const H = 1920;
+    const MARGIN_TOP = 60;
+    const MARGIN_BOTTOM = 80;
+    const GAP = 40; // px between blocks
 
-    // If custom copy provided, try to use it
+    // Parse copy text into sections split by blank lines
+    let sections: string[][] = [];
     if (copyText.trim()) {
-      const lines = copyText
-        .split("\n")
-        .filter((l) => l.trim());
-      if (lines.length > 0) {
-        // Replace title with first 1-2 lines
-        blocks[0] = {
-          ...blocks[0],
-          id: uid(),
-          lines: lines.slice(0, 2),
-        };
-        // Replace bullets with next lines
-        if (lines.length > 2) {
-          blocks[1] = {
-            ...blocks[1],
-            id: uid(),
-            lines: lines.slice(2, 6),
-          };
+      let currentSection: string[] = [];
+      copyText.split("\n").forEach((line) => {
+        if (!line.trim() && currentSection.length > 0) {
+          sections.push(currentSection);
+          currentSection = [];
+        } else if (line.trim()) {
+          currentSection.push(line);
         }
-        // Callout and CTA from remaining lines
-        if (lines.length > 6) {
-          blocks[2] = {
-            ...blocks[2],
-            id: uid(),
-            lines: lines.slice(6, 8),
-          };
-        }
-        if (lines.length > 8) {
-          blocks[3] = {
-            ...blocks[3],
-            id: uid(),
-            lines: lines.slice(8, 10),
-          };
-        }
+      });
+      if (currentSection.length > 0) sections.push(currentSection);
+    }
+
+    // If no custom copy, use default sections
+    if (sections.length === 0) {
+      sections = [
+        ["*NEW* Free Winter", "Weight Loss Challenge"],
+        [
+          "- 6 weeks",
+          "- my workout plan to get absolutely diced",
+          "- dead simple diet plan (no counting macros)",
+          "- accountability group so you actually stick w/ it",
+        ],
+        ["Free. Not eventually free.", 'Not "free trial." Free free.'],
+        ["DM to join before I start", "charging for this."],
+      ];
+    }
+
+    // Build text blocks with smart sizing per section role
+    const makeBlock = (
+      lines: string[],
+      role: "title" | "body" | "callout" | "cta",
+    ): TextBlock => {
+      const isTitle = role === "title";
+      const isCta = role === "cta";
+      const isCallout = role === "callout";
+      return {
+        id: uid(),
+        lines,
+        x: W / 2, // will be centered
+        y: 0, // calculated below
+        fontSize: isTitle ? 52 : isCta ? 40 : isCallout ? 38 : 30,
+        fontFamily: "Inter, SF Pro Display, system-ui",
+        fontWeight: 700,
+        textColor: "#ffffff",
+        bgColor: "#000000",
+        bgOpacity: 0.9,
+        borderRadius: isTitle ? 14 : 10,
+        paddingH: isTitle ? 24 : 18,
+        paddingV: isTitle ? 14 : 10,
+        align: role === "body" ? "left" : "center",
+        lineGap: 6,
+        highlightWords: [],
+        maxWidth: 960,
+      };
+    };
+
+    // Assign roles: first = title, last = cta, second-to-last = callout, middle = body
+    const blocks: TextBlock[] = sections.map((lines, i) => {
+      if (i === 0) return makeBlock(lines, "title");
+      if (sections.length > 2 && i === sections.length - 1) return makeBlock(lines, "cta");
+      if (sections.length > 3 && i === sections.length - 2) return makeBlock(lines, "callout");
+      return makeBlock(lines, "body");
+    });
+
+    // ── Intelligent vertical layout ──
+    // Title group goes near top, CTA group goes near bottom,
+    // body blocks fill the middle — all non-overlapping.
+    const heights = blocks.map((b) => estimateBlockHeight(b));
+    const totalContentH = heights.reduce((s, h) => s + h, 0) + GAP * (blocks.length - 1);
+
+    if (blocks.length <= 2) {
+      // Simple: title top, cta bottom
+      blocks[0].y = MARGIN_TOP;
+      if (blocks.length === 2) blocks[1].y = H - MARGIN_BOTTOM - heights[1];
+    } else {
+      // Split: title at top, CTA at bottom, body blocks spaced in between
+      // Title zone: top
+      blocks[0].y = MARGIN_TOP;
+      // CTA zone: bottom
+      const lastIdx = blocks.length - 1;
+      blocks[lastIdx].y = H - MARGIN_BOTTOM - heights[lastIdx];
+
+      // Body + callout: distribute in remaining middle space
+      const middleTop = blocks[0].y + heights[0] + GAP;
+      const middleBottom = blocks[lastIdx].y - GAP;
+      const middleBlocks = blocks.slice(1, lastIdx);
+      const middleHeights = heights.slice(1, lastIdx);
+      const middleTotalH = middleHeights.reduce((s, h) => s + h, 0);
+      const middleGap =
+        middleBlocks.length > 1
+          ? Math.min(
+              GAP * 2,
+              (middleBottom - middleTop - middleTotalH) /
+                (middleBlocks.length - 1),
+            )
+          : 0;
+
+      // If there's only one middle block, center it vertically
+      if (middleBlocks.length === 1) {
+        middleBlocks[0].y = Math.round((middleTop + middleBottom - middleHeights[0]) / 2);
+      } else {
+        let curY = middleTop;
+        middleBlocks.forEach((b, mi) => {
+          b.y = Math.round(curY);
+          curY += middleHeights[mi] + middleGap;
+        });
       }
     }
 
-    const newCreatives: AdCreative[] = photos.map((url, i) => ({
+    // Body blocks: left-aligned at x=80, centered blocks at W/2
+    blocks.forEach((b) => {
+      if (b.align === "left") b.x = 80;
+      else b.x = W / 2;
+    });
+
+    const newCreatives: AdCreative[] = photos.map((url) => ({
       id: uid(),
       photoUrl: url,
       textBlocks: blocks.map((b) => ({ ...b, id: uid() })),
@@ -688,9 +969,15 @@ export default function AdsPage() {
     [currentIndex]
   );
 
-  // Record edit for learning
+  // Record edit for learning — fires for ALL edit types (move, resize, text change, style)
   const handleRecordEdit = useCallback(
     async (blockId: string, type: string, before: unknown, after: unknown) => {
+      // Store locally for this-session learning even without DB
+      setEditHistory((prev) => [
+        ...prev,
+        { blockId, type, before, after, timestamp: Date.now() },
+      ]);
+
       if (!currentCreative?.dbId) return;
       try {
         await fetch("/api/ads/save", {
@@ -1131,26 +1418,54 @@ export default function AdsPage() {
           padding: "0 8px 20px 0",
         }}
       >
-        {/* Action buttons */}
+        {/* ── Editing Tools ── */}
         <div
           style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-primary)",
+            borderRadius: 12,
+            padding: 12,
             display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
+            flexDirection: "column",
+            gap: 8,
           }}
         >
-          <button onClick={handleAddBlock} style={btnStyle}>
-            <Plus size={14} /> Add Text
-          </button>
-          <button onClick={handleExport} style={btnStyle}>
-            <Download size={14} /> Export
-          </button>
-          <button onClick={handleExportAll} style={btnStyle}>
-            <Download size={14} /> Export All
-          </button>
-          <button onClick={handleApplyToAll} style={btnStyle}>
-            <Sparkles size={14} /> Apply to All
-          </button>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Editing
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={handleAddBlock} style={{ ...btnStyle, flex: 1 }}>
+              <Plus size={14} /> Add Text Block
+            </button>
+            <button onClick={handleApplyToAll} style={{ ...btnStyle, flex: 1 }} title="Copy this ad's text layout to all other photos">
+              <Sparkles size={14} /> Copy Layout to All
+            </button>
+          </div>
+        </div>
+
+        {/* ── Export ── */}
+        <div
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-primary)",
+            borderRadius: 12,
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Export
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={handleExport} style={{ ...btnStyle, flex: 1 }}>
+              <Download size={14} /> Save This Ad
+            </button>
+            <button onClick={handleExportAll} style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#000", border: "1px solid var(--accent)" }}>
+              <Download size={14} /> Save All ({creatives.length})
+            </button>
+          </div>
         </div>
 
         {/* Selected block editor */}
@@ -1166,18 +1481,17 @@ export default function AdsPage() {
           <div
             className="glass-static"
             style={{
-              padding: 24,
-              textAlign: "center",
+              padding: 20,
               color: "var(--text-muted)",
               fontSize: 13,
+              lineHeight: 1.6,
             }}
           >
-            <GripVertical
-              size={24}
-              style={{ marginBottom: 8, opacity: 0.3 }}
-            />
-            <p>Click a text block to edit it</p>
-            <p>Drag to reposition</p>
+            <p style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>How to edit:</p>
+            <p>→ <strong>Click</strong> a text block to select it</p>
+            <p>→ <strong>Drag</strong> anywhere to reposition</p>
+            <p>→ <strong>Corner circles</strong> to scale size</p>
+            <p>→ <strong>Side pills</strong> to adjust width</p>
           </div>
         )}
 
