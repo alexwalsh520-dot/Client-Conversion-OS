@@ -134,7 +134,7 @@ function parseBool(val: string | undefined | null): boolean {
   );
 }
 
-function parseDate(val: string | undefined | null): string | null {
+function parseDate(val: string | undefined | null, fallbackYear?: number): string | null {
   if (!val) return null;
   const trimmed = val.trim();
   if (!trimmed) return null;
@@ -157,9 +157,37 @@ function parseDate(val: string | undefined | null): string | null {
       }
     }
 
-    // Handle standard date formats: "2/3/2026", "Feb 1, 2026", etc.
+    // Handle "M/D" format without year (e.g. "1/26", "12/31") — use fallbackYear if provided
+    // MUST check this BEFORE new Date() because new Date("1/26") returns year 2001 (wrong)
+    const mdMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (mdMatch) {
+      if (fallbackYear) {
+        const month = parseInt(mdMatch[1]);
+        const day = parseInt(mdMatch[2]);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          const d3 = new Date(fallbackYear, month - 1, day);
+          if (!isNaN(d3.getTime())) return d3.toISOString().split("T")[0];
+        }
+      }
+      // No fallback year and no 4-digit year — skip to avoid defaulting to 2001
+      return null;
+    }
+
+    // Handle "Mon DD" or "Month DD" format without year (e.g. "Jan 26", "January 26")
+    // — use fallbackYear if provided, otherwise skip
+    const monDayMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2})$/);
+    if (monDayMatch) {
+      if (fallbackYear) {
+        const d4 = new Date(`${monDayMatch[0]}, ${fallbackYear}`);
+        if (!isNaN(d4.getTime())) return d4.toISOString().split("T")[0];
+      }
+      return null;
+    }
+
+    // Handle standard date formats with full year: "2/3/2026", "Feb 1, 2026", "2026-01-26", etc.
+    // Only accept dates with year >= 2020 to guard against ambiguous parsing defaults
     const d = new Date(trimmed);
-    if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) {
       return d.toISOString().split("T")[0]; // YYYY-MM-DD
     }
 
@@ -174,7 +202,7 @@ function parseDate(val: string | undefined | null): string | null {
       if (!isNaN(d2.getTime())) return d2.toISOString().split("T")[0];
     }
 
-    // Handle "Day, Mon DD" format like "Thu, Jan 1" — no year, skip
+    // All other formats (e.g. "Thu, Jan 1" without year) — skip
     return null;
   } catch {
     return null;
@@ -460,24 +488,60 @@ export async function fetchAdsDaily(
   const sheets = getSheets();
   const results: AdsDailyRow[] = [];
 
-  // Fetch data from monthly tabs: Feb, Mar, Apr, ... and (Current) Jan
-  const monthTabs = [
-    "(Current) Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
+  // Month name → 0-indexed month number
+  const MONTH_MAP: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
 
-  for (const tab of monthTabs) {
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+
+  // Discover actual tab names from the spreadsheet.
+  // This is robust against sheets renaming "(Current) MMM" at different times
+  // (e.g. Tyson's sheet may say "(Current) Mar" while Keith's still says "(Current) Jan").
+  let actualTabs: string[] = [];
+  try {
+    const metaRes = await sheets.spreadsheets.get({
+      spreadsheetId: sheetId,
+      fields: "sheets.properties.title",
+    });
+    actualTabs = (metaRes.data.sheets || [])
+      .map((s) => s.properties?.title || "")
+      .filter(Boolean);
+  } catch (e) {
+    console.warn(`[sheets] ${source}: Could not fetch tab list, using default names:`, (e as Error).message?.substring(0, 80));
+    // Fall back to building tab list dynamically based on current month
+    actualTabs = MONTH_NAMES.map((name, idx) =>
+      idx === currentMonth ? `(Current) ${name}` : name
+    );
+  }
+
+  // Build a mapping: month index (0-11) → actual tab name in this specific sheet.
+  // Strips "(Current) " prefix when matching against MONTH_NAMES.
+  const monthTabMap = new Map<number, string>();
+  for (const tabTitle of actualTabs) {
+    const clean = tabTitle.replace(/^\(Current\)\s*/i, "").toLowerCase().substring(0, 3);
+    const monthIdx = MONTH_MAP[clean];
+    if (monthIdx !== undefined) {
+      monthTabMap.set(monthIdx, tabTitle);
+    }
+  }
+
+  // Process tabs in chronological order (Jan → Dec)
+  for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
+    const tab = monthTabMap.get(monthIdx);
+    if (!tab) continue; // This month's tab doesn't exist in this sheet
+
     try {
+      // Determine the year for this tab:
+      // If the tab's month is in the future relative to current month, it must be last year.
+      const tabYear = monthIdx > currentMonth ? currentYear - 1 : currentYear;
+
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
         range: `'${tab}'!A3:AA200`, // Row 3 onward (skip header + targets row)
@@ -485,7 +549,8 @@ export async function fetchAdsDaily(
 
       const rows = res.data.values || [];
       for (const row of rows) {
-        const dateStr = parseDate(row[0]);
+        // Pass tabYear as fallback so M/D dates (like "1/26") get the correct year
+        const dateStr = parseDate(row[0], tabYear);
         if (!dateStr) continue; // Skip non-date rows (blanks, "Totals", etc.)
 
         results.push({
@@ -516,7 +581,7 @@ export async function fetchAdsDaily(
         });
       }
     } catch (e) {
-      // Some monthly tabs might be empty (future months) — that's fine
+      // Some monthly tabs might be empty or inaccessible — that's fine
       console.log(`[sheets] Skipping ${source}/${tab}: ${(e as Error).message?.substring(0, 80)}`);
     }
   }
