@@ -15,6 +15,7 @@
     "apify-client": "^2.22.2",
     "dotenv": "^17.3.1",
     "googleapis": "^171.4.0",
+    "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
     "lightningcss": "^1.31.1",
     "lucide-react": "^0.575.0",
