@@ -12,6 +12,7 @@ import {
   History,
   ChevronDown,
   Loader2,
+  FlaskConical,
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
 import FilterBar, { getEffectiveDates } from "./components/FilterBar";
@@ -24,6 +25,7 @@ import LeadIntelligence from "./components/LeadIntelligence";
 import WeeklyReport from "./components/WeeklyReport";
 import DailyBriefs from "./components/DailyBriefs";
 import ReportHistory from "./components/ReportHistory";
+import AlexTesting from "./components/AlexTesting";
 
 /* ------------------------------------------------------------------ */
 /*  Section nav items                                                  */
@@ -39,6 +41,7 @@ const SECTIONS = [
   { id: "reports", label: "Reports", icon: FileText },
   { id: "daily-briefs", label: "Briefs", icon: Calendar },
   { id: "report-history", label: "History", icon: History },
+  { id: "alex-testing", label: "Alex Testing", icon: FlaskConical },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -365,6 +368,15 @@ export default function SalesHubPage() {
         icon={<History size={18} />}
       >
         <ReportHistory />
+      </CollapsibleSection>
+
+      {/* Section 10: Alex Testing */}
+      <CollapsibleSection
+        id="alex-testing"
+        title="Alex Testing"
+        icon={<FlaskConical size={18} />}
+      >
+        <AlexTesting filters={filters} />
       </CollapsibleSection>
     </div>
   );
