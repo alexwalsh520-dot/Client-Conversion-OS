@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   Loader2,
   TrendingUp,
@@ -23,6 +23,7 @@ import {
   Zap,
   Activity,
   Brain,
+  Calendar,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
@@ -48,7 +49,10 @@ interface PeriodMetrics {
   aov: number;
   dailyCash: { date: string; amount: number }[];
   byClient: Record<string, ClientMetrics>;
-  byCloser: Record<string, { cash: number; wins: number; losses: number; pcfus: number; calls: number }>;
+  byCloser: Record<
+    string,
+    { cash: number; wins: number; losses: number; pcfus: number; calls: number }
+  >;
 }
 
 interface ClientMetrics {
@@ -65,6 +69,14 @@ interface ClientMetrics {
   aov: number;
 }
 
+type AlexDatePreset =
+  | "page"
+  | "mtd"
+  | "last-month"
+  | "last-3"
+  | "all-time"
+  | "custom";
+
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -73,7 +85,14 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-function getPrevPeriod(dateFrom: string, dateTo: string): { from: string; to: string } {
+function fmtLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getPrevPeriod(
+  dateFrom: string,
+  dateTo: string,
+): { from: string; to: string } {
   const from = new Date(dateFrom + "T00:00:00");
   const to = new Date(dateTo + "T00:00:00");
   const diff = to.getTime() - from.getTime();
@@ -140,11 +159,15 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
     };
   }
 
-  const byCloser: Record<string, { cash: number; wins: number; losses: number; pcfus: number; calls: number }> = {};
+  const byCloser: Record<
+    string,
+    { cash: number; wins: number; losses: number; pcfus: number; calls: number }
+  > = {};
   for (const r of rows) {
     const name = r.closer?.trim();
     if (!name) continue;
-    if (!byCloser[name]) byCloser[name] = { cash: 0, wins: 0, losses: 0, pcfus: 0, calls: 0 };
+    if (!byCloser[name])
+      byCloser[name] = { cash: 0, wins: 0, losses: 0, pcfus: 0, calls: 0 };
     byCloser[name].calls++;
     if (r.outcome === "WIN") {
       byCloser[name].wins++;
@@ -157,9 +180,20 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
   }
 
   return {
-    cashCollected, revenue, wins, losses, pcfus, callsBooked,
-    callsTaken, noShows, closeRate, showRate, aov, dailyCash,
-    byClient, byCloser,
+    cashCollected,
+    revenue,
+    wins,
+    losses,
+    pcfus,
+    callsBooked,
+    callsTaken,
+    noShows,
+    closeRate,
+    showRate,
+    aov,
+    dailyCash,
+    byClient,
+    byCloser,
   };
 }
 
@@ -168,7 +202,10 @@ function shortDate(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function delta(current: number, previous: number): { pct: string; up: boolean; flat: boolean } {
+function delta(
+  current: number,
+  previous: number,
+): { pct: string; up: boolean; flat: boolean } {
   if (previous === 0) return { pct: "N/A", up: true, flat: true };
   const change = ((current - previous) / previous) * 100;
   if (Math.abs(change) < 0.5) return { pct: "0%", up: true, flat: true };
@@ -190,7 +227,10 @@ function SparkArea({
   previous: { date: string; amount: number }[];
   height?: number;
 }) {
-  const allValues = [...current.map((d) => d.amount), ...previous.map((d) => d.amount)];
+  const allValues = [
+    ...current.map((d) => d.amount),
+    ...previous.map((d) => d.amount),
+  ];
   const maxVal = Math.max(...allValues, 1);
   const width = 400;
   const leftPad = 45;
@@ -218,7 +258,9 @@ function SparkArea({
       const y = topPad + chartH - (d.amount / maxVal) * chartH;
       return { x, y };
     });
-    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+    const path = pts
+      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
+      .join(" ");
     return `${path} L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
   }
 
@@ -228,19 +270,42 @@ function SparkArea({
   }));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      style={{ width: "100%", height }}
+    >
       {yTicks.map((t) => (
         <g key={t.value}>
-          <line x1={leftPad} y1={t.y} x2={width - rightPad} y2={t.y} stroke="rgba(255,255,255,0.05)" />
-          <text x={leftPad - 6} y={t.y + 3} fill="var(--text-muted)" fontSize={9} textAnchor="end">
-            {t.value >= 1000 ? `$${(t.value / 1000).toFixed(1)}k` : `$${t.value.toFixed(0)}`}
+          <line
+            x1={leftPad}
+            y1={t.y}
+            x2={width - rightPad}
+            y2={t.y}
+            stroke="rgba(255,255,255,0.05)"
+          />
+          <text
+            x={leftPad - 6}
+            y={t.y + 3}
+            fill="var(--text-muted)"
+            fontSize={9}
+            textAnchor="end"
+          >
+            {t.value >= 1000
+              ? `$${(t.value / 1000).toFixed(1)}k`
+              : `$${t.value.toFixed(0)}`}
           </text>
         </g>
       ))}
       {previous.length > 0 && (
         <>
           <path d={makeArea(previous)} fill="rgba(255,255,255,0.03)" />
-          <polyline points={makePoints(previous)} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={1.5} strokeDasharray="4 4" />
+          <polyline
+            points={makePoints(previous)}
+            fill="none"
+            stroke="rgba(255,255,255,0.15)"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
         </>
       )}
       {current.length > 0 && (
@@ -248,19 +313,44 @@ function SparkArea({
           <defs>
             <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+              <stop
+                offset="100%"
+                stopColor="var(--accent)"
+                stopOpacity="0"
+              />
             </linearGradient>
           </defs>
           <path d={makeArea(current)} fill="url(#sparkGrad)" />
-          <polyline points={makePoints(current)} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          <polyline
+            points={makePoints(current)}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
           {current.map((d, i) => {
-            const x = leftPad + (i / Math.max(current.length - 1, 1)) * chartW;
+            const x =
+              leftPad + (i / Math.max(current.length - 1, 1)) * chartW;
             const y = topPad + chartH - (d.amount / maxVal) * chartH;
             return (
               <g key={d.date}>
-                <circle cx={x} cy={y} r={3} fill="var(--accent)" stroke="#0f0f12" strokeWidth={1.5} />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={3}
+                  fill="var(--accent)"
+                  stroke="#0f0f12"
+                  strokeWidth={1.5}
+                />
                 {(i === 0 || i === current.length - 1) && (
-                  <text x={x} y={topPad + chartH + 14} fill="var(--text-muted)" fontSize={9} textAnchor="middle">
+                  <text
+                    x={x}
+                    y={topPad + chartH + 14}
+                    fill="var(--text-muted)"
+                    fontSize={9}
+                    textAnchor="middle"
+                  >
                     {shortDate(d.date)}
                   </text>
                 )}
@@ -292,8 +382,21 @@ function DonutRing({
   if (total === 0) {
     return (
       <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>
-        <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
-        <text x="50" y="54" textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+        <circle
+          cx="50"
+          cy="50"
+          r="40"
+          fill="none"
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth="12"
+        />
+        <text
+          x="50"
+          y="54"
+          textAnchor="middle"
+          fill="var(--text-muted)"
+          fontSize="10"
+        >
           No data
         </text>
       </svg>
@@ -328,16 +431,32 @@ function DonutRing({
             strokeDashoffset={-offset}
             strokeLinecap="butt"
             transform="rotate(-90 50 50)"
-            style={{ transition: "stroke-dasharray 0.8s ease, stroke-dashoffset 0.8s ease" }}
+            style={{
+              transition:
+                "stroke-dasharray 0.8s ease, stroke-dashoffset 0.8s ease",
+            }}
           />
         );
         offset += dashLen;
         return el;
       })}
-      <text x="50" y="46" textAnchor="middle" fill="var(--text-primary)" fontSize="16" fontWeight="700">
+      <text
+        x="50"
+        y="46"
+        textAnchor="middle"
+        fill="var(--text-primary)"
+        fontSize="16"
+        fontWeight="700"
+      >
         {wins}
       </text>
-      <text x="50" y="58" textAnchor="middle" fill="var(--text-muted)" fontSize="8">
+      <text
+        x="50"
+        y="58"
+        textAnchor="middle"
+        fill="var(--text-muted)"
+        fontSize="8"
+      >
         WINS
       </text>
     </svg>
@@ -346,9 +465,19 @@ function DonutRing({
 
 /* ── Delta Badge ──────────────────────────────────────────────────── */
 
-function DeltaBadge({ current: cur, previous: prev }: { current: number; previous: number }) {
+function DeltaBadge({
+  current: cur,
+  previous: prev,
+}: {
+  current: number;
+  previous: number;
+}) {
   const d = delta(cur, prev);
-  const color = d.flat ? "var(--text-muted)" : d.up ? "var(--success)" : "var(--danger)";
+  const color = d.flat
+    ? "var(--text-muted)"
+    : d.up
+      ? "var(--success)"
+      : "var(--danger)";
   const Icon = d.flat ? Minus : d.up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
@@ -396,7 +525,9 @@ function HBar({
           marginBottom: 5,
         }}
       >
-        <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{label}</span>
+        <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+          {label}
+        </span>
         <span style={{ color, fontWeight: 600 }}>{sublabel}</span>
       </div>
       <div
@@ -431,7 +562,10 @@ const BENCHMARKS = {
 
 type HealthLevel = "weak" | "normal" | "strong" | "elite";
 
-function getHealth(metric: "showRate" | "closeRate" | "aov", value: number): HealthLevel {
+function getHealth(
+  metric: "showRate" | "closeRate" | "aov",
+  value: number,
+): HealthLevel {
   const b = BENCHMARKS[metric];
   if (value >= b.strong) return "elite";
   if (value >= b.normal) return "strong";
@@ -441,28 +575,40 @@ function getHealth(metric: "showRate" | "closeRate" | "aov", value: number): Hea
 
 function healthColor(h: HealthLevel): string {
   switch (h) {
-    case "elite": return "#7ec9a0";
-    case "strong": return "#7ec9a0";
-    case "normal": return "#e8c36a";
-    case "weak": return "#d98e8e";
+    case "elite":
+      return "#7ec9a0";
+    case "strong":
+      return "#7ec9a0";
+    case "normal":
+      return "#e8c36a";
+    case "weak":
+      return "#d98e8e";
   }
 }
 
 function healthGlow(h: HealthLevel): string {
   switch (h) {
-    case "elite": return "0 0 20px rgba(126,201,160,0.4)";
-    case "strong": return "0 0 15px rgba(126,201,160,0.25)";
-    case "normal": return "0 0 15px rgba(232,195,106,0.25)";
-    case "weak": return "0 0 20px rgba(217,142,142,0.4)";
+    case "elite":
+      return "0 0 20px rgba(126,201,160,0.4)";
+    case "strong":
+      return "0 0 15px rgba(126,201,160,0.25)";
+    case "normal":
+      return "0 0 15px rgba(232,195,106,0.25)";
+    case "weak":
+      return "0 0 20px rgba(217,142,142,0.4)";
   }
 }
 
 function healthLabel(h: HealthLevel): string {
   switch (h) {
-    case "elite": return "ELITE";
-    case "strong": return "STRONG";
-    case "normal": return "NORMAL";
-    case "weak": return "WEAK";
+    case "elite":
+      return "ELITE";
+    case "strong":
+      return "STRONG";
+    case "normal":
+      return "NORMAL";
+    case "weak":
+      return "WEAK";
   }
 }
 
@@ -476,7 +622,7 @@ function HealthIcon({ health }: { health: HealthLevel }) {
 
 /* ── CSS Keyframes (injected once) ──────────────────────────────── */
 
-const FUNNEL_KEYFRAMES = `
+const ALL_KEYFRAMES = `
 @keyframes funnelFillIn {
   from { width: 0%; opacity: 0; }
   to { opacity: 1; }
@@ -522,13 +668,17 @@ const FUNNEL_KEYFRAMES = `
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes cursorGlowPulse {
+  0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
+  50% { opacity: 0.8; transform: translate(-50%,-50%) scale(1.1); }
+}
 `;
 
 let keyframesInjected = false;
 function injectKeyframes() {
   if (typeof window === "undefined" || keyframesInjected) return;
   const style = document.createElement("style");
-  style.textContent = FUNNEL_KEYFRAMES;
+  style.textContent = ALL_KEYFRAMES;
   document.head.appendChild(style);
   keyframesInjected = true;
 }
@@ -552,27 +702,99 @@ function FunnelStep({
   delay: number;
   color?: string;
 }) {
-  const hc = health ? healthColor(health) : (color || "var(--accent)");
-  const glow = health ? healthGlow(health) : "0 0 15px rgba(201,169,110,0.2)";
+  const hc = health ? healthColor(health) : color || "var(--accent)";
+  const glow = health
+    ? healthGlow(health)
+    : "0 0 15px rgba(201,169,110,0.2)";
   return (
-    <div style={{ width: `${widthPct}%`, margin: "0 auto", transition: "width 0.6s ease" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 4px" }}>
+    <div
+      style={{
+        width: `${widthPct}%`,
+        margin: "0 auto",
+        transition: "width 0.6s ease",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+          padding: "0 4px",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {health && <HealthIcon health={health} />}
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{label}</span>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--text-secondary)",
+            }}
+          >
+            {label}
+          </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 18, fontWeight: 800, color: hc, letterSpacing: "-0.5px" }}>{formattedValue}</span>
+          <span
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: hc,
+              letterSpacing: "-0.5px",
+            }}
+          >
+            {formattedValue}
+          </span>
           {health && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: hc, background: `${hc}18`, padding: "2px 6px", borderRadius: 4, letterSpacing: "0.5px" }}>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: hc,
+                background: `${hc}18`,
+                padding: "2px 6px",
+                borderRadius: 4,
+                letterSpacing: "0.5px",
+              }}
+            >
               {healthLabel(health)}
             </span>
           )}
         </div>
       </div>
-      <div style={{ height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", overflow: "hidden", border: `1px solid ${hc}30`, boxShadow: glow, position: "relative" }}>
-        <div style={{ height: "100%", width: `${Math.min(value, 100)}%`, maxWidth: "100%", borderRadius: 7, background: `linear-gradient(90deg, ${hc}60, ${hc})`, animation: `funnelFillIn 1s ${delay}s ease both`, position: "relative" }}>
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)", animation: `funnelPulse 2.5s ${delay + 0.5}s ease-in-out infinite`, borderRadius: 7 }} />
+      <div
+        style={{
+          height: 36,
+          borderRadius: 8,
+          background: "rgba(255,255,255,0.03)",
+          overflow: "hidden",
+          border: `1px solid ${hc}30`,
+          boxShadow: glow,
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${Math.min(value, 100)}%`,
+            maxWidth: "100%",
+            borderRadius: 7,
+            background: `linear-gradient(90deg, ${hc}60, ${hc})`,
+            animation: `funnelFillIn 1s ${delay}s ease both`,
+            position: "relative",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)",
+              animation: `funnelPulse 2.5s ${delay + 0.5}s ease-in-out infinite`,
+              borderRadius: 7,
+            }}
+          />
         </div>
       </div>
     </div>
@@ -583,9 +805,35 @@ function FunnelStep({
 
 function FunnelConnector({ delay }: { delay: number }) {
   return (
-    <div style={{ display: "flex", justifyContent: "center", height: 28, position: "relative" }}>
-      <div style={{ width: 2, height: "100%", background: "linear-gradient(to bottom, rgba(201,169,110,0.3), rgba(201,169,110,0.08))", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", left: -1, animation: `funnelFlowDot 1.5s ${delay}s ease-in-out infinite` }} />
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        height: 28,
+        position: "relative",
+      }}
+    >
+      <div
+        style={{
+          width: 2,
+          height: "100%",
+          background:
+            "linear-gradient(to bottom, rgba(201,169,110,0.3), rgba(201,169,110,0.08))",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 4,
+            height: 4,
+            borderRadius: "50%",
+            background: "var(--accent)",
+            left: -1,
+            animation: `funnelFlowDot 1.5s ${delay}s ease-in-out infinite`,
+          }}
+        />
       </div>
     </div>
   );
@@ -593,30 +841,115 @@ function FunnelConnector({ delay }: { delay: number }) {
 
 /* ── VerticalFunnel ──────────────────────────────────────────────── */
 
-function VerticalFunnel({ metrics, label }: { metrics: ClientMetrics | PeriodMetrics; label?: string }) {
+function VerticalFunnel({
+  metrics,
+  label,
+}: {
+  metrics: ClientMetrics | PeriodMetrics;
+  label?: string;
+}) {
   const steps = [
-    { label: "DM Booking Rate", value: 0, formattedValue: "—", health: null as HealthLevel | null, widthPct: 100, barValue: 0 },
-    { label: "Show-Up Rate", value: metrics.showRate, formattedValue: fmtPercent(metrics.showRate, 1), health: getHealth("showRate", metrics.showRate), widthPct: 85, barValue: metrics.showRate },
-    { label: "Close Rate", value: metrics.closeRate, formattedValue: fmtPercent(metrics.closeRate, 1), health: getHealth("closeRate", metrics.closeRate), widthPct: 70, barValue: metrics.closeRate },
-    { label: "AOV", value: metrics.aov, formattedValue: fmtDollars(metrics.aov), health: getHealth("aov", metrics.aov), widthPct: 55, barValue: Math.min((metrics.aov / 8000) * 100, 100) },
+    {
+      label: "DM Booking Rate",
+      value: 0,
+      formattedValue: "\u2014",
+      health: null as HealthLevel | null,
+      widthPct: 100,
+      barValue: 0,
+    },
+    {
+      label: "Show-Up Rate",
+      value: metrics.showRate,
+      formattedValue: fmtPercent(metrics.showRate, 1),
+      health: getHealth("showRate", metrics.showRate),
+      widthPct: 85,
+      barValue: metrics.showRate,
+    },
+    {
+      label: "Close Rate",
+      value: metrics.closeRate,
+      formattedValue: fmtPercent(metrics.closeRate, 1),
+      health: getHealth("closeRate", metrics.closeRate),
+      widthPct: 70,
+      barValue: metrics.closeRate,
+    },
+    {
+      label: "AOV",
+      value: metrics.aov,
+      formattedValue: fmtDollars(metrics.aov),
+      health: getHealth("aov", metrics.aov),
+      widthPct: 55,
+      barValue: Math.min((metrics.aov / 8000) * 100, 100),
+    },
   ];
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
-        <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 12, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--text-secondary)",
+            marginBottom: 12,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+          }}
+        >
           {label}
         </div>
       )}
       {steps.map((step, i) => (
         <div key={step.label}>
-          <FunnelStep label={step.label} value={step.barValue} formattedValue={step.formattedValue} health={step.health} widthPct={step.widthPct} delay={i * 0.2} color={step.health === null ? "rgba(255,255,255,0.15)" : undefined} />
-          {i < steps.length - 1 && <FunnelConnector delay={i * 0.2 + 0.3} />}
+          <FunnelStep
+            label={step.label}
+            value={step.barValue}
+            formattedValue={step.formattedValue}
+            health={step.health}
+            widthPct={step.widthPct}
+            delay={i * 0.2}
+            color={
+              step.health === null ? "rgba(255,255,255,0.15)" : undefined
+            }
+          />
+          {i < steps.length - 1 && (
+            <FunnelConnector delay={i * 0.2 + 0.3} />
+          )}
         </div>
       ))}
-      <div style={{ marginTop: 16, textAlign: "center", padding: "10px 16px", background: "rgba(201,169,110,0.06)", border: "1px solid rgba(201,169,110,0.15)", borderRadius: 8 }}>
-        <span style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.5px" }}>REVENUE PER SHOW (RPS)</span>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)", marginTop: 4 }}>
+      <div
+        data-reactive="0.6"
+        style={{
+          marginTop: 16,
+          textAlign: "center",
+          padding: "10px 16px",
+          background: "rgba(201,169,110,0.06)",
+          border: "1px solid rgba(201,169,110,0.15)",
+          borderRadius: 8,
+          transition:
+            "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--text-muted)",
+            letterSpacing: "0.5px",
+          }}
+        >
+          REVENUE PER SHOW (RPS)
+        </span>
+        <div
+          data-reactive-text
+          style={{
+            fontSize: 22,
+            fontWeight: 800,
+            color: "var(--accent)",
+            marginTop: 4,
+            transition: "text-shadow 0.15s ease-out, transform 0.15s ease-out",
+          }}
+        >
           {fmtDollars((metrics.closeRate / 100) * metrics.aov)}
         </div>
       </div>
@@ -638,24 +971,60 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
     { key: "side-by-side", label: "Side by Side" },
   ];
 
-  const emptyClient: ClientMetrics = { cashCollected: 0, revenue: 0, wins: 0, losses: 0, pcfus: 0, callsBooked: 0, callsTaken: 0, noShows: 0, closeRate: 0, showRate: 0, aov: 0 };
+  const emptyClient: ClientMetrics = {
+    cashCollected: 0,
+    revenue: 0,
+    wins: 0,
+    losses: 0,
+    pcfus: 0,
+    callsBooked: 0,
+    callsTaken: 0,
+    noShows: 0,
+    closeRate: 0,
+    showRate: 0,
+    aov: 0,
+  };
   const keithM = metrics.byClient["Keith"] || emptyClient;
   const tysonM = metrics.byClient["Tyson"] || emptyClient;
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, justifyContent: "center", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          marginBottom: 20,
+          justifyContent: "center",
+          flexWrap: "wrap",
+        }}
+      >
         {viewButtons.map((btn) => (
           <button
             key={btn.key}
+            data-reactive="0.8"
             onClick={() => setView(btn.key)}
             style={{
-              padding: "6px 16px", fontSize: 12, fontWeight: 600, borderRadius: 6,
-              border: view === btn.key ? "1px solid var(--accent)" : "1px solid rgba(255,255,255,0.1)",
-              background: view === btn.key ? "rgba(201,169,110,0.15)" : "rgba(255,255,255,0.03)",
-              color: view === btn.key ? "var(--accent)" : "var(--text-muted)",
-              cursor: "pointer", transition: "all 0.2s ease",
-              boxShadow: view === btn.key ? "0 0 12px rgba(201,169,110,0.2)" : "none",
+              padding: "6px 16px",
+              fontSize: 12,
+              fontWeight: 600,
+              borderRadius: 6,
+              border:
+                view === btn.key
+                  ? "1px solid var(--accent)"
+                  : "1px solid rgba(255,255,255,0.1)",
+              background:
+                view === btn.key
+                  ? "rgba(201,169,110,0.15)"
+                  : "rgba(255,255,255,0.03)",
+              color:
+                view === btn.key ? "var(--accent)" : "var(--text-muted)",
+              cursor: "pointer",
+              transition:
+                "all 0.15s ease-out, transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
+              boxShadow:
+                view === btn.key
+                  ? "0 0 12px rgba(201,169,110,0.2)"
+                  : "none",
             }}
           >
             {btn.label}
@@ -663,11 +1032,26 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
         ))}
       </div>
       {view === "both" && <VerticalFunnel metrics={metrics} />}
-      {view === "keith" && <VerticalFunnel metrics={keithM} label="Keith Holland" />}
-      {view === "tyson" && <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />}
+      {view === "keith" && (
+        <VerticalFunnel metrics={keithM} label="Keith Holland" />
+      )}
+      {view === "tyson" && (
+        <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />
+      )}
       {view === "side-by-side" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-          <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 24,
+          }}
+        >
+          <div
+            style={{
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+              paddingRight: 16,
+            }}
+          >
             <VerticalFunnel metrics={keithM} label="Keith Holland" />
           </div>
           <div style={{ paddingLeft: 8 }}>
@@ -695,36 +1079,59 @@ function generateBottleneckAnalysis(m: PeriodMetrics): string {
   const rps = (m.closeRate / 100) * m.aov;
 
   const parts: string[] = [];
-  parts.push(`📊 Analysis based on ${m.callsBooked} booked calls — ${m.callsTaken} shows, ${m.wins} wins, ${m.losses} losses, ${m.pcfus} pending follow-ups.`);
+  parts.push(
+    `\u{1F4CA} Analysis based on ${m.callsBooked} booked calls \u2014 ${m.callsTaken} shows, ${m.wins} wins, ${m.losses} losses, ${m.pcfus} pending follow-ups.`,
+  );
 
   if (showH === "weak") {
-    parts.push(`\n🚨 PRIMARY BOTTLENECK: Show-Up Rate at ${m.showRate.toFixed(1)}% is critically low. ${m.noShows} no-shows detected. This is the highest-leverage fix — every additional show creates an opportunity. Focus on: confirmation sequences, same-day reminders, reducing time-to-call, and pre-call engagement. Target: 65%+.`);
+    parts.push(
+      `\n\u{1F6A8} PRIMARY BOTTLENECK: Show-Up Rate at ${m.showRate.toFixed(1)}% is critically low. ${m.noShows} no-shows detected. This is the highest-leverage fix \u2014 every additional show creates an opportunity. Focus on: confirmation sequences, same-day reminders, reducing time-to-call, and pre-call engagement. Target: 65%+.`,
+    );
   } else if (closeH === "weak") {
-    parts.push(`\n🚨 PRIMARY BOTTLENECK: Close Rate at ${m.closeRate.toFixed(1)}% needs attention. Shows are coming in but conversions are lacking. Review: objection handling, offer-market fit, closer skill gaps, and call quality. Target: 40%+.`);
+    parts.push(
+      `\n\u{1F6A8} PRIMARY BOTTLENECK: Close Rate at ${m.closeRate.toFixed(1)}% needs attention. Shows are coming in but conversions are lacking. Review: objection handling, offer-market fit, closer skill gaps, and call quality. Target: 40%+.`,
+    );
   } else if (aovH === "weak") {
-    parts.push(`\n🚨 PRIMARY BOTTLENECK: AOV at ${fmtDollars(m.aov)} is below benchmark. You're closing deals but leaving revenue on the table. Consider: premium tier positioning, payment plan restructuring, and value-stack improvements. Target: $4,000+.`);
+    parts.push(
+      `\n\u{1F6A8} PRIMARY BOTTLENECK: AOV at ${fmtDollars(m.aov)} is below benchmark. You're closing deals but leaving revenue on the table. Consider: premium tier positioning, payment plan restructuring, and value-stack improvements. Target: $4,000+.`,
+    );
   } else {
-    parts.push(`\n✅ All core metrics are at or above benchmark thresholds. Focus on maintaining consistency and incremental optimization.`);
+    parts.push(
+      `\n\u2705 All core metrics are at or above benchmark thresholds. Focus on maintaining consistency and incremental optimization.`,
+    );
   }
 
   if (showH !== "weak" && showH !== "elite") {
-    parts.push(`\n📌 Show Rate (${m.showRate.toFixed(1)}%) is ${healthLabel(showH).toLowerCase()}. Room to improve with tighter confirmation cadences.`);
+    parts.push(
+      `\n\u{1F4CC} Show Rate (${m.showRate.toFixed(1)}%) is ${healthLabel(showH).toLowerCase()}. Room to improve with tighter confirmation cadences.`,
+    );
   }
   if (closeH === "strong" || closeH === "elite") {
-    parts.push(`\n🏆 Close Rate at ${m.closeRate.toFixed(1)}% is ${healthLabel(closeH).toLowerCase()} — your closers are performing well.`);
+    parts.push(
+      `\n\u{1F3C6} Close Rate at ${m.closeRate.toFixed(1)}% is ${healthLabel(closeH).toLowerCase()} \u2014 your closers are performing well.`,
+    );
   }
 
-  parts.push(`\n💰 Revenue Per Show: ${fmtDollars(rps)}. This composite metric reflects the cash yield of every person who shows up.`);
+  parts.push(
+    `\n\u{1F4B0} Revenue Per Show: ${fmtDollars(rps)}. This composite metric reflects the cash yield of every person who shows up.`,
+  );
 
   const keith = m.byClient["Keith"];
   const tyson = m.byClient["Tyson"];
-  if (keith && tyson && keith.callsBooked > 2 && tyson.callsBooked > 2) {
+  if (
+    keith &&
+    tyson &&
+    keith.callsBooked > 2 &&
+    tyson.callsBooked > 2
+  ) {
     const kCR = keith.closeRate;
     const tCR = tyson.closeRate;
     if (Math.abs(kCR - tCR) > 10) {
       const higher = kCR > tCR ? "Keith" : "Tyson";
       const lower = kCR > tCR ? "Tyson" : "Keith";
-      parts.push(`\n📊 Offer gap: ${higher} close rate (${Math.max(kCR, tCR).toFixed(1)}%) outperforms ${lower} (${Math.min(kCR, tCR).toFixed(1)}%) by ${Math.abs(kCR - tCR).toFixed(1)}pp. Use Side-by-Side view to compare funnels.`);
+      parts.push(
+        `\n\u{1F4CA} Offer gap: ${higher} close rate (${Math.max(kCR, tCR).toFixed(1)}%) outperforms ${lower} (${Math.min(kCR, tCR).toFixed(1)}%) by ${Math.abs(kCR - tCR).toFixed(1)}pp. Use Side-by-Side view to compare funnels.`,
+      );
     }
   }
 
@@ -736,13 +1143,20 @@ function getAiResponse(userMsg: string, m: PeriodMetrics): string {
 
   if (msg.includes("show") && (msg.includes("rate") || msg.includes("up"))) {
     const h = getHealth("showRate", m.showRate);
-    return `Show-Up Rate is at ${m.showRate.toFixed(1)}% (${healthLabel(h)}). ${m.noShows} no-shows out of ${m.callsBooked} booked. ${h === "weak" ? "This is your biggest opportunity — improving show rate has the highest leverage on revenue." : "Solid performance here. Keep monitoring for consistency."}`;
+    return `Show-Up Rate is at ${m.showRate.toFixed(1)}% (${healthLabel(h)}). ${m.noShows} no-shows out of ${m.callsBooked} booked. ${h === "weak" ? "This is your biggest opportunity \u2014 improving show rate has the highest leverage on revenue." : "Solid performance here. Keep monitoring for consistency."}`;
   }
-  if (msg.includes("close") && (msg.includes("rate") || msg.includes("deal"))) {
+  if (
+    msg.includes("close") &&
+    (msg.includes("rate") || msg.includes("deal"))
+  ) {
     const h = getHealth("closeRate", m.closeRate);
     return `Close Rate stands at ${m.closeRate.toFixed(1)}% (${healthLabel(h)}). ${m.wins}W / ${m.losses}L / ${m.pcfus} PCFU. ${h === "weak" ? "Focus on objection handling and call quality review." : h === "elite" ? "Elite-level closing. Maintain this pace." : "Good performance. Dial in your follow-up system to convert those PCFUs."}`;
   }
-  if (msg.includes("aov") || msg.includes("average") || msg.includes("order value")) {
+  if (
+    msg.includes("aov") ||
+    msg.includes("average") ||
+    msg.includes("order value")
+  ) {
     const h = getHealth("aov", m.aov);
     return `AOV is ${fmtDollars(m.aov)} (${healthLabel(h)}). ${h === "weak" ? "Consider premium positioning and value-stack enhancements." : "AOV is healthy. Look at upsell opportunities for further gains."}`;
   }
@@ -750,7 +1164,11 @@ function getAiResponse(userMsg: string, m: PeriodMetrics): string {
     const rps = (m.closeRate / 100) * m.aov;
     return `RPS (Revenue Per Show) is ${fmtDollars(rps)}. This means every person who shows up on a call generates ${fmtDollars(rps)} in expected revenue. To increase RPS, improve either close rate or AOV.`;
   }
-  if (msg.includes("keith") || msg.includes("tyson") || msg.includes("offer")) {
+  if (
+    msg.includes("keith") ||
+    msg.includes("tyson") ||
+    msg.includes("offer")
+  ) {
     const k = m.byClient["Keith"];
     const t = m.byClient["Tyson"];
     if (k && t) {
@@ -758,7 +1176,12 @@ function getAiResponse(userMsg: string, m: PeriodMetrics): string {
     }
     return "Per-offer data is available in the funnel above. Toggle to Side-by-Side view for a detailed comparison.";
   }
-  if (msg.includes("bottleneck") || msg.includes("problem") || msg.includes("issue") || msg.includes("fix")) {
+  if (
+    msg.includes("bottleneck") ||
+    msg.includes("problem") ||
+    msg.includes("issue") ||
+    msg.includes("fix")
+  ) {
     return generateBottleneckAnalysis(m);
   }
 
@@ -778,7 +1201,14 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
       setThinking(true);
       const timer = setTimeout(() => {
         const analysis = generateBottleneckAnalysis(metrics);
-        setMessages([{ id: "init-" + Date.now(), role: "ai", text: analysis, timestamp: new Date() }]);
+        setMessages([
+          {
+            id: "init-" + Date.now(),
+            role: "ai",
+            text: analysis,
+            timestamp: new Date(),
+          },
+        ]);
         setThinking(false);
         setInitialized(true);
       }, 1200);
@@ -788,93 +1218,280 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
 
   const handleSend = () => {
     if (!input.trim()) return;
-    const userMsg: AIMessage = { id: "u-" + Date.now(), role: "user", text: input.trim(), timestamp: new Date() };
+    const userMsg: AIMessage = {
+      id: "u-" + Date.now(),
+      role: "user",
+      text: input.trim(),
+      timestamp: new Date(),
+    };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setThinking(true);
     setTimeout(() => {
       const reply = getAiResponse(userMsg.text, metrics);
-      setMessages((prev) => [...prev, { id: "ai-" + Date.now(), role: "ai", text: reply, timestamp: new Date() }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: "ai-" + Date.now(),
+          role: "ai",
+          text: reply,
+          timestamp: new Date(),
+        },
+      ]);
       setThinking(false);
     }, 800 + Math.random() * 600);
   };
 
   return (
-    <div style={{ position: "relative", borderRadius: 12, border: "1px solid rgba(201,169,110,0.2)", background: "rgba(201,169,110,0.03)", overflow: "hidden", animation: "inboxGlow 4s ease-in-out infinite" }}>
-      {/* Gold particles */}
+    <div
+      data-reactive="0.6"
+      style={{
+        position: "relative",
+        borderRadius: 12,
+        border: "1px solid rgba(201,169,110,0.2)",
+        background: "rgba(201,169,110,0.03)",
+        overflow: "hidden",
+        animation: "inboxGlow 4s ease-in-out infinite",
+        transition:
+          "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
+      }}
+    >
       {[1, 2, 3].map((i) => (
-        <div key={i} style={{ position: "absolute", width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", top: `${20 + i * 25}%`, right: `${5 + i * 8}%`, animation: `inboxParticle${i} ${2.5 + i * 0.5}s ease-in-out infinite`, pointerEvents: "none", zIndex: 1 }} />
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            width: 4,
+            height: 4,
+            borderRadius: "50%",
+            background: "var(--accent)",
+            top: `${20 + i * 25}%`,
+            right: `${5 + i * 8}%`,
+            animation: `inboxParticle${i} ${2.5 + i * 0.5}s ease-in-out infinite`,
+            pointerEvents: "none",
+            zIndex: 1,
+          }}
+        />
       ))}
-
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid rgba(201,169,110,0.12)", background: "rgba(201,169,110,0.04)" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "14px 18px",
+          borderBottom: "1px solid rgba(201,169,110,0.12)",
+          background: "rgba(201,169,110,0.04)",
+        }}
+      >
         <div style={{ position: "relative" }}>
-          <Brain size={20} style={{ color: "var(--accent)", animation: "aiPulse 2s ease-in-out infinite" }} />
-          <div style={{ position: "absolute", width: 7, height: 7, borderRadius: "50%", background: "#7ec9a0", bottom: -1, right: -1, border: "1.5px solid #0f0f12" }} />
+          <Brain
+            size={20}
+            style={{
+              color: "var(--accent)",
+              animation: "aiPulse 2s ease-in-out infinite",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "#7ec9a0",
+              bottom: -1,
+              right: -1,
+              border: "1.5px solid #0f0f12",
+            }}
+          />
         </div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.3px" }}>Bottleneck AI</div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Powered by GAS Protocol</div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--accent)",
+              letterSpacing: "0.3px",
+            }}
+          >
+            Bottleneck AI
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            Powered by GAS Protocol
+          </div>
         </div>
-        <Sparkles size={14} style={{ marginLeft: "auto", color: "var(--accent)", opacity: 0.5 }} />
+        <Sparkles
+          size={14}
+          style={{ marginLeft: "auto", color: "var(--accent)", opacity: 0.5 }}
+        />
       </div>
-
-      {/* Messages */}
-      <div style={{ padding: "16px 18px", maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        style={{
+          padding: "16px 18px",
+          maxHeight: 320,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
         {messages.map((msg) => (
-          <div key={msg.id} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", animation: "messageSlideIn 0.3s ease" }}>
-            <div style={{
-              maxWidth: "85%", padding: "10px 14px",
-              borderRadius: msg.role === "ai" ? "12px 12px 12px 4px" : "12px 12px 4px 12px",
-              background: msg.role === "ai" ? "rgba(201,169,110,0.08)" : "rgba(126,201,160,0.1)",
-              border: `1px solid ${msg.role === "ai" ? "rgba(201,169,110,0.15)" : "rgba(126,201,160,0.15)"}`,
-              fontSize: 12.5, lineHeight: 1.55, color: "var(--text-secondary)", whiteSpace: "pre-wrap",
-            }}>
+          <div
+            key={msg.id}
+            style={{
+              display: "flex",
+              justifyContent:
+                msg.role === "user" ? "flex-end" : "flex-start",
+              animation: "messageSlideIn 0.3s ease",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "85%",
+                padding: "10px 14px",
+                borderRadius:
+                  msg.role === "ai"
+                    ? "12px 12px 12px 4px"
+                    : "12px 12px 4px 12px",
+                background:
+                  msg.role === "ai"
+                    ? "rgba(201,169,110,0.08)"
+                    : "rgba(126,201,160,0.1)",
+                border: `1px solid ${msg.role === "ai" ? "rgba(201,169,110,0.15)" : "rgba(126,201,160,0.15)"}`,
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: "var(--text-secondary)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
               {msg.role === "ai" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    marginBottom: 6,
+                  }}
+                >
                   <Sparkles size={11} style={{ color: "var(--accent)" }} />
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.5px" }}>AI ANALYSIS</span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--accent)",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    AI ANALYSIS
+                  </span>
                 </div>
               )}
               {msg.text}
-              <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>
-                {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              <div
+                style={{
+                  fontSize: 9,
+                  color: "var(--text-muted)",
+                  marginTop: 6,
+                  textAlign: "right",
+                }}
+              >
+                {msg.timestamp.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </div>
             </div>
           </div>
         ))}
         {thinking && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 0" }}>
-            <Brain size={14} style={{ color: "var(--accent)", animation: "aiPulse 1.5s ease-in-out infinite" }} />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 0",
+            }}
+          >
+            <Brain
+              size={14}
+              style={{
+                color: "var(--accent)",
+                animation: "aiPulse 1.5s ease-in-out infinite",
+              }}
+            />
             <div style={{ display: "flex", gap: 4 }}>
               {[0, 1, 2].map((i) => (
-                <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: `thinkingDot 1.4s ${i * 0.2}s ease-in-out infinite` }} />
+                <div
+                  key={i}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                    animation: `thinkingDot 1.4s ${i * 0.2}s ease-in-out infinite`,
+                  }}
+                />
               ))}
             </div>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>analyzing...</span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontStyle: "italic",
+              }}
+            >
+              analyzing...
+            </span>
           </div>
         )}
       </div>
-
-      {/* Input */}
-      <div style={{ display: "flex", gap: 8, padding: "12px 18px", borderTop: "1px solid rgba(201,169,110,0.12)", background: "rgba(0,0,0,0.15)" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "12px 18px",
+          borderTop: "1px solid rgba(201,169,110,0.12)",
+          background: "rgba(0,0,0,0.15)",
+        }}
+      >
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Ask about show rate, close rate, bottlenecks..."
-          style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(201,169,110,0.15)", background: "rgba(255,255,255,0.03)", color: "var(--text-primary)", fontSize: 12, outline: "none" }}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid rgba(201,169,110,0.15)",
+            background: "rgba(255,255,255,0.03)",
+            color: "var(--text-primary)",
+            fontSize: 12,
+            outline: "none",
+          }}
         />
         <button
           onClick={handleSend}
           disabled={!input.trim() || thinking}
           style={{
-            padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(201,169,110,0.3)",
-            background: input.trim() && !thinking ? "rgba(201,169,110,0.15)" : "rgba(255,255,255,0.03)",
-            color: input.trim() && !thinking ? "var(--accent)" : "var(--text-muted)",
+            padding: "8px 14px",
+            borderRadius: 8,
+            border: "1px solid rgba(201,169,110,0.3)",
+            background:
+              input.trim() && !thinking
+                ? "rgba(201,169,110,0.15)"
+                : "rgba(255,255,255,0.03)",
+            color:
+              input.trim() && !thinking
+                ? "var(--accent)"
+                : "var(--text-muted)",
             cursor: input.trim() && !thinking ? "pointer" : "default",
-            transition: "all 0.2s ease", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600,
+            transition: "all 0.2s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 12,
+            fontWeight: 600,
           }}
         >
           <Send size={12} />
@@ -884,12 +1501,213 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
   );
 }
 
+/* ── Mouse Reactive System ──────────────────────────────────────── */
+
+function setupMouseTracking(
+  container: HTMLDivElement,
+  cursorGlow: HTMLDivElement | null,
+  clientX: number,
+  clientY: number,
+) {
+  const rect = container.getBoundingClientRect();
+  const relX = clientX - rect.left;
+  const relY = clientY - rect.top;
+
+  if (cursorGlow) {
+    cursorGlow.style.left = `${relX}px`;
+    cursorGlow.style.top = `${relY}px`;
+    cursorGlow.style.opacity = "1";
+  }
+
+  const reactives = container.querySelectorAll("[data-reactive]");
+  reactives.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxDist = 300;
+    const p = Math.max(0, 1 - dist / maxDist);
+    const intensity = parseFloat(
+      (el as HTMLElement).dataset.reactive || "1",
+    );
+    const pi = p * intensity;
+
+    const scale = 1 + pi * 0.04;
+    const rotX = ((dy / maxDist) * 4 * intensity).toFixed(2);
+    const rotY = ((-dx / maxDist) * 4 * intensity).toFixed(2);
+    const tx = ((dx / maxDist) * 3 * intensity).toFixed(1);
+    const ty = ((dy / maxDist) * 3 * intensity).toFixed(1);
+    const glowA = (pi * 0.45).toFixed(2);
+    const borderA = (0.06 + pi * 0.45).toFixed(2);
+
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.transform = `perspective(600px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale.toFixed(4)}) translate(${tx}px, ${ty}px)`;
+    htmlEl.style.boxShadow = `0 0 ${Math.round(pi * 30)}px rgba(201,169,110,${glowA}), inset 0 0 ${Math.round(pi * 10)}px rgba(201,169,110,${(pi * 0.06).toFixed(2)})`;
+    htmlEl.style.borderColor = `rgba(201,169,110,${borderA})`;
+  });
+
+  const texts = container.querySelectorAll("[data-reactive-text]");
+  texts.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = Math.sqrt(
+      (clientX - cx) ** 2 + (clientY - cy) ** 2,
+    );
+    const p = Math.max(0, 1 - dist / 200);
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.textShadow = `0 0 ${Math.round(p * 14)}px rgba(201,169,110,${(p * 0.7).toFixed(2)})`;
+    htmlEl.style.transform = `scale(${(1 + p * 0.025).toFixed(4)})`;
+  });
+
+  const icons = container.querySelectorAll("[data-reactive-icon]");
+  icons.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = Math.sqrt(
+      (clientX - cx) ** 2 + (clientY - cy) ** 2,
+    );
+    const p = Math.max(0, 1 - dist / 180);
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.filter = `drop-shadow(0 0 ${Math.round(p * 10)}px rgba(201,169,110,${(p * 0.8).toFixed(2)}))`;
+    htmlEl.style.transform = `scale(${(1 + p * 0.2).toFixed(3)}) rotate(${(p * 10).toFixed(1)}deg)`;
+  });
+
+  const bars = container.querySelectorAll("[data-reactive-bar]");
+  bars.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cy = r.top + r.height / 2;
+    const dist = Math.abs(clientY - cy);
+    const p = Math.max(0, 1 - dist / 150);
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.filter = `brightness(${(1 + p * 0.3).toFixed(2)})`;
+    htmlEl.style.boxShadow = `0 0 ${Math.round(p * 12)}px rgba(201,169,110,${(p * 0.3).toFixed(2)})`;
+  });
+
+  const seps = container.querySelectorAll("[data-reactive-sep]");
+  seps.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cy = r.top + r.height / 2;
+    const dist = Math.abs(clientY - cy);
+    const p = Math.max(0, 1 - dist / 200);
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.opacity = `${0.3 + p * 0.7}`;
+    htmlEl.style.height = `${1 + p * 2}px`;
+  });
+}
+
+function resetMouseTracking(container: HTMLDivElement) {
+  container
+    .querySelectorAll("[data-reactive]")
+    .forEach((el) => {
+      const h = el as HTMLElement;
+      h.style.transform = "";
+      h.style.boxShadow = "";
+      h.style.borderColor = "";
+    });
+  container
+    .querySelectorAll("[data-reactive-text]")
+    .forEach((el) => {
+      const h = el as HTMLElement;
+      h.style.textShadow = "";
+      h.style.transform = "";
+    });
+  container
+    .querySelectorAll("[data-reactive-icon]")
+    .forEach((el) => {
+      const h = el as HTMLElement;
+      h.style.filter = "";
+      h.style.transform = "";
+    });
+  container
+    .querySelectorAll("[data-reactive-bar]")
+    .forEach((el) => {
+      const h = el as HTMLElement;
+      h.style.filter = "";
+      h.style.boxShadow = "";
+    });
+  container
+    .querySelectorAll("[data-reactive-sep]")
+    .forEach((el) => {
+      const h = el as HTMLElement;
+      h.style.opacity = "";
+      h.style.height = "";
+    });
+}
+
+/* ── Reactive card style helper ─────────────────────────────────── */
+
+const RC: React.CSSProperties = {
+  transition:
+    "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
+};
+
+const RT: React.CSSProperties = {
+  transition:
+    "text-shadow 0.15s ease-out, transform 0.15s ease-out",
+};
+
+const RI: React.CSSProperties = {
+  transition: "filter 0.15s ease-out, transform 0.15s ease-out",
+  display: "inline-flex",
+};
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function AlexTesting({ filters }: AlexTestingProps) {
-  const { dateFrom, dateTo } = getEffectiveDates(filters);
-  const prev = useMemo(() => getPrevPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
+  /* ── Date override state ─────────────────────────────────── */
+  const [alexDatePreset, setAlexDatePreset] =
+    useState<AlexDatePreset>("page");
+  const [alexCustomFrom, setAlexCustomFrom] = useState("");
+  const [alexCustomTo, setAlexCustomTo] = useState("");
 
+  const alexDates = useMemo(() => {
+    const today = new Date();
+    switch (alexDatePreset) {
+      case "page":
+        return getEffectiveDates(filters);
+      case "mtd": {
+        const from = new Date(today.getFullYear(), today.getMonth(), 1);
+        return { dateFrom: fmtLocalDate(from), dateTo: fmtLocalDate(today) };
+      }
+      case "last-month": {
+        const from = new Date(
+          today.getFullYear(),
+          today.getMonth() - 1,
+          1,
+        );
+        const to = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { dateFrom: fmtLocalDate(from), dateTo: fmtLocalDate(to) };
+      }
+      case "last-3": {
+        const from = new Date(
+          today.getFullYear(),
+          today.getMonth() - 3,
+          1,
+        );
+        return { dateFrom: fmtLocalDate(from), dateTo: fmtLocalDate(today) };
+      }
+      case "all-time":
+        return { dateFrom: "2024-01-01", dateTo: fmtLocalDate(today) };
+      case "custom":
+        return {
+          dateFrom: alexCustomFrom || fmtLocalDate(today),
+          dateTo: alexCustomTo || fmtLocalDate(today),
+        };
+    }
+  }, [alexDatePreset, alexCustomFrom, alexCustomTo, filters]);
+
+  const dateFrom = alexDates.dateFrom;
+  const dateTo = alexDates.dateTo;
+  const prev = useMemo(
+    () => getPrevPeriod(dateFrom, dateTo),
+    [dateFrom, dateTo],
+  );
+
+  /* ── Data fetching ─────────────────────────────────────── */
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [current, setCurrent] = useState<PeriodMetrics | null>(null);
@@ -927,7 +1745,42 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
     fetchData();
   }, [fetchData]);
 
-  /* ── Loading ────────────────────────────────────────────────────── */
+  /* ── Mouse reactive refs ──────────────────────────────── */
+  const mouseContainerRef = useRef<HTMLDivElement>(null);
+  const cursorGlowRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const container = mouseContainerRef.current;
+        if (!container) return;
+        setupMouseTracking(
+          container,
+          cursorGlowRef.current,
+          e.clientX,
+          e.clientY,
+        );
+      });
+    },
+    [],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const glow = cursorGlowRef.current;
+    if (glow) glow.style.opacity = "0";
+    const container = mouseContainerRef.current;
+    if (container) resetMouseTracking(container);
+  }, []);
+
+  /* ── Inject keyframes on mount ────────────────────────── */
+  useEffect(() => {
+    injectKeyframes();
+  }, []);
+
+  /* ── Loading ────────────────────────────────────────────── */
   if (loading) {
     return (
       <div
@@ -967,34 +1820,163 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
   if (!current || !previous) return null;
 
   const prev2 = previous;
-
-  /* Color helper for rates */
   const rc = (v: number) =>
     v >= 50 ? "var(--success)" : v >= 30 ? "var(--warning)" : "var(--danger)";
 
-  /* ── Render ─────────────────────────────────────────────────────── */
+  const DATE_TABS: { key: AlexDatePreset; label: string }[] = [
+    { key: "page", label: "Page Filters" },
+    { key: "mtd", label: "This Month" },
+    { key: "last-month", label: "Last Month" },
+    { key: "last-3", label: "Last 3 Months" },
+    { key: "all-time", label: "All Time" },
+    { key: "custom", label: "Custom" },
+  ];
+
+  /* ── Render ─────────────────────────────────────────────── */
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* ═══════════════════════════════════════════════════════════════
-          ROW 1: Hero KPIs + Sparkline
-          ═══════════════════════════════════════════════════════════════ */}
+    <div
+      ref={mouseContainerRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ display: "flex", flexDirection: "column", gap: 16, position: "relative" }}
+    >
+      {/* Cursor glow */}
       <div
+        ref={cursorGlowRef}
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 14,
+          position: "absolute",
+          width: 300,
+          height: 300,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(201,169,110,0.1) 0%, rgba(201,169,110,0.03) 40%, transparent 70%)",
+          transform: "translate(-50%, -50%)",
+          pointerEvents: "none",
+          opacity: 0,
+          transition: "opacity 0.3s ease",
+          zIndex: 0,
+        }}
+      />
+
+      {/* ═══ Date Selection Bar ═══ */}
+      <div
+        data-reactive="0.5"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "10px 16px",
+          borderRadius: 10,
+          border: "1px solid rgba(201,169,110,0.12)",
+          background: "rgba(201,169,110,0.03)",
+          flexWrap: "wrap",
+          ...RC,
         }}
       >
+        <span data-reactive-icon style={RI}>
+          <Calendar size={14} style={{ color: "var(--accent)" }} />
+        </span>
+        {DATE_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            data-reactive="0.7"
+            onClick={() => setAlexDatePreset(tab.key)}
+            style={{
+              padding: "5px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              borderRadius: 6,
+              border:
+                alexDatePreset === tab.key
+                  ? "1px solid var(--accent)"
+                  : "1px solid rgba(255,255,255,0.06)",
+              background:
+                alexDatePreset === tab.key
+                  ? "rgba(201,169,110,0.18)"
+                  : "rgba(255,255,255,0.02)",
+              color:
+                alexDatePreset === tab.key
+                  ? "var(--accent)"
+                  : "var(--text-muted)",
+              cursor: "pointer",
+              ...RC,
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {alexDatePreset === "custom" && (
+          <>
+            <div
+              style={{
+                width: 1,
+                height: 20,
+                background: "rgba(201,169,110,0.15)",
+                flexShrink: 0,
+              }}
+            />
+            <input
+              type="date"
+              value={alexCustomFrom}
+              onChange={(e) => setAlexCustomFrom(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: "1px solid rgba(201,169,110,0.2)",
+                background: "rgba(255,255,255,0.03)",
+                color: "var(--text-primary)",
+                fontSize: 11,
+                outline: "none",
+              }}
+            />
+            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+              to
+            </span>
+            <input
+              type="date"
+              value={alexCustomTo}
+              onChange={(e) => setAlexCustomTo(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: "1px solid rgba(201,169,110,0.2)",
+                background: "rgba(255,255,255,0.03)",
+                color: "var(--text-primary)",
+                fontSize: 11,
+                outline: "none",
+              }}
+            />
+          </>
+        )}
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: 10,
+            color: "var(--text-muted)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {shortDate(dateFrom)} \u2013 {shortDate(dateTo)}
+        </span>
+      </div>
+
+      {/* ═══ ROW 1: Hero KPIs ═══ */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
         {/* Cash Collected */}
         <div
-          className="glass-static"
+          data-reactive="1"
           style={{
             padding: "20px 18px",
             position: "relative",
             overflow: "hidden",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
           }}
         >
           <div
+            data-reactive-bar
             style={{
               position: "absolute",
               top: 0,
@@ -1003,17 +1985,13 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               height: 3,
               background:
                 "linear-gradient(90deg, var(--accent), rgba(201,169,110,0.2))",
+              transition: "filter 0.15s ease-out",
             }}
           />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
-            <Banknote size={16} style={{ color: "var(--accent)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span data-reactive-icon style={RI}>
+              <Banknote size={16} style={{ color: "var(--accent)" }} />
+            </span>
             <span
               style={{
                 fontSize: 11,
@@ -1026,38 +2004,39 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             </span>
           </div>
           <div
+            data-reactive-text
             style={{
               fontSize: 28,
               fontWeight: 800,
               color: "var(--text-primary)",
               letterSpacing: "-1px",
               marginBottom: 6,
+              ...RT,
             }}
           >
             {fmtDollars(current.cashCollected)}
           </div>
           <DeltaBadge current={current.cashCollected} previous={prev2.cashCollected} />
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              marginTop: 6,
-            }}
-          >
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
             prev: {fmtDollars(prev2.cashCollected)}
           </div>
         </div>
 
         {/* Close Rate */}
         <div
-          className="glass-static"
+          data-reactive="1"
           style={{
             padding: "20px 18px",
             position: "relative",
             overflow: "hidden",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
           }}
         >
           <div
+            data-reactive-bar
             style={{
               position: "absolute",
               top: 0,
@@ -1065,17 +2044,13 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               right: 0,
               height: 3,
               background: `linear-gradient(90deg, ${rc(current.closeRate)}, ${rc(current.closeRate)}33)`,
+              transition: "filter 0.15s ease-out",
             }}
           />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
-            <Target size={16} style={{ color: rc(current.closeRate) }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span data-reactive-icon style={RI}>
+              <Target size={16} style={{ color: rc(current.closeRate) }} />
+            </span>
             <span
               style={{
                 fontSize: 11,
@@ -1088,38 +2063,39 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             </span>
           </div>
           <div
+            data-reactive-text
             style={{
               fontSize: 28,
               fontWeight: 800,
               color: rc(current.closeRate),
               letterSpacing: "-1px",
               marginBottom: 6,
+              ...RT,
             }}
           >
             {fmtPercent(current.closeRate, 1)}
           </div>
           <DeltaBadge current={current.closeRate} previous={prev2.closeRate} />
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              marginTop: 6,
-            }}
-          >
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
             {current.wins}W / {current.losses}L / {current.pcfus} PCFU
           </div>
         </div>
 
         {/* Revenue */}
         <div
-          className="glass-static"
+          data-reactive="1"
           style={{
             padding: "20px 18px",
             position: "relative",
             overflow: "hidden",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
           }}
         >
           <div
+            data-reactive-bar
             style={{
               position: "absolute",
               top: 0,
@@ -1128,17 +2104,13 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               height: 3,
               background:
                 "linear-gradient(90deg, var(--success), rgba(126,201,160,0.2))",
+              transition: "filter 0.15s ease-out",
             }}
           />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
-            <DollarSign size={16} style={{ color: "var(--success)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span data-reactive-icon style={RI}>
+              <DollarSign size={16} style={{ color: "var(--success)" }} />
+            </span>
             <span
               style={{
                 fontSize: 11,
@@ -1151,24 +2123,20 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             </span>
           </div>
           <div
+            data-reactive-text
             style={{
               fontSize: 28,
               fontWeight: 800,
               color: "var(--text-primary)",
               letterSpacing: "-1px",
               marginBottom: 6,
+              ...RT,
             }}
           >
             {fmtDollars(current.revenue)}
           </div>
           <DeltaBadge current={current.revenue} previous={prev2.revenue} />
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              marginTop: 6,
-            }}
-          >
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
             prev: {fmtDollars(prev2.revenue)}
           </div>
         </div>
@@ -1176,8 +2144,14 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
 
       {/* Daily Cash Sparkline */}
       <div
-        className="glass-static"
-        style={{ padding: "16px 14px" }}
+        data-reactive="0.8"
+        style={{
+          padding: "16px 14px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.02)",
+          ...RC,
+        }}
       >
         <div
           style={{
@@ -1201,34 +2175,50 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           }}
         >
           <span>
-            <span style={{ display: "inline-block", width: 8, height: 2, background: "var(--accent)", marginRight: 4, verticalAlign: "middle" }} />
+            <span
+              data-reactive-bar
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 2,
+                background: "var(--accent)",
+                marginRight: 4,
+                verticalAlign: "middle",
+                transition: "filter 0.15s ease-out",
+              }}
+            />
             Current
           </span>
           <span>
-            <span style={{ display: "inline-block", width: 8, height: 2, background: "rgba(255,255,255,0.15)", marginRight: 4, verticalAlign: "middle" }} />
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 2,
+                background: "rgba(255,255,255,0.15)",
+                marginRight: 4,
+                verticalAlign: "middle",
+              }}
+            />
             Previous
           </span>
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════
-          ROW 2: Donut + Client Breakdown + Closers
-          ═══════════════════════════════════════════════════════════════ */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 14,
-        }}
-      >
+      {/* ═══ ROW 2: Donut + Client + Closers ═══ */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
         {/* Donut */}
         <div
-          className="glass-static"
+          data-reactive="1"
           style={{
             padding: "18px 14px",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
           }}
         >
           <div
@@ -1263,12 +2253,35 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               { label: "Win", color: "var(--success)", v: current.wins },
               { label: "Lost", color: "var(--danger)", v: current.losses },
               { label: "PCFU", color: "var(--warning)", v: current.pcfus },
-              { label: "No-Show", color: "rgba(255,255,255,0.2)", v: current.noShows },
+              {
+                label: "No-Show",
+                color: "rgba(255,255,255,0.2)",
+                v: current.noShows,
+              },
             ].map((s) => (
-              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+              <div
+                key={s.label}
+                data-reactive-text
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  ...RT,
+                }}
+              >
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: s.color,
+                  }}
+                />
                 <span style={{ color: "var(--text-muted)" }}>
-                  {s.label}: <strong style={{ color: "var(--text-secondary)" }}>{s.v}</strong>
+                  {s.label}:{" "}
+                  <strong style={{ color: "var(--text-secondary)" }}>
+                    {s.v}
+                  </strong>
                 </span>
               </div>
             ))}
@@ -1276,7 +2289,16 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         </div>
 
         {/* Client Breakdown */}
-        <div className="glass-static" style={{ padding: "18px 14px" }}>
+        <div
+          data-reactive="1"
+          style={{
+            padding: "18px 14px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
+          }}
+        >
           <div
             style={{
               fontSize: 11,
@@ -1301,6 +2323,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                   }}
                 >
                   <span
+                    data-reactive-text
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
@@ -1308,15 +2331,18 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                         name === "Keith"
                           ? "var(--keith, #b8a4d9)"
                           : "var(--tyson, #82c5c5)",
+                      ...RT,
                     }}
                   >
                     {name}
                   </span>
                   <span
+                    data-reactive-text
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
                       color: "var(--success)",
+                      ...RT,
                     }}
                   >
                     {fmtDollars(stats.cashCollected)}
@@ -1337,7 +2363,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                       marginTop: 2,
                     }}
                   >
-                    prev: {fmtDollars(prevClient.cashCollected)} ·{" "}
+                    prev: {fmtDollars(prevClient.cashCollected)} \u00B7{" "}
                     {fmtPercent(prevClient.closeRate, 0)} close
                   </div>
                 )}
@@ -1347,7 +2373,16 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         </div>
 
         {/* Top Closers */}
-        <div className="glass-static" style={{ padding: "18px 14px" }}>
+        <div
+          data-reactive="1"
+          style={{
+            padding: "18px 14px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            ...RC,
+          }}
+        >
           <div
             style={{
               fontSize: 11,
@@ -1360,7 +2395,14 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             Top Closers
           </div>
           {Object.keys(current.byCloser).length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                textAlign: "center",
+                padding: 20,
+              }}
+            >
               No closer data
             </div>
           ) : (
@@ -1382,49 +2424,86 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                         marginBottom: 6,
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
                         <span
+                          data-reactive-text
                           style={{
                             fontSize: 13,
                             fontWeight: 700,
                             color: "var(--text-primary)",
+                            ...RT,
                           }}
                         >
                           {name}
                         </span>
                         {i === 0 && (
-                          <Trophy
-                            size={12}
-                            style={{ color: "var(--accent)", marginLeft: 2 }}
-                          />
+                          <span data-reactive-icon style={RI}>
+                            <Trophy
+                              size={12}
+                              style={{
+                                color: "var(--accent)",
+                                marginLeft: 2,
+                              }}
+                            />
+                          </span>
                         )}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-end",
+                          gap: 2,
+                        }}
+                      >
                         <span
+                          data-reactive-text
                           style={{
                             fontSize: 13,
                             fontWeight: 700,
                             color: "var(--success)",
+                            ...RT,
                           }}
                         >
                           {fmtDollars(stats.cash)}
-                          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 4 }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              fontWeight: 400,
+                              marginLeft: 4,
+                            }}
+                          >
                             cash
                           </span>
                         </span>
                         {prevCloser && (
-                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: "var(--text-muted)",
+                            }}
+                          >
                             prev: {fmtDollars(prevCloser.cash)}
                           </span>
                         )}
                       </div>
                     </div>
                     <div
+                      data-reactive-bar
                       style={{
                         height: 8,
                         borderRadius: 4,
                         background: "rgba(255,255,255,0.04)",
                         overflow: "hidden",
+                        transition:
+                          "filter 0.15s ease-out, box-shadow 0.15s ease-out",
                       }}
                     >
                       <div
@@ -1452,12 +2531,26 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                       }}
                     >
                       <span>
-                        <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> W ·{" "}
-                        <strong style={{ color: "var(--danger)" }}>{stats.losses}</strong> L ·{" "}
-                        {stats.pcfus > 0 && <><strong>{stats.pcfus}</strong> PCFU · </>}
+                        <strong style={{ color: "var(--success)" }}>
+                          {stats.wins}
+                        </strong>{" "}
+                        W \u00B7{" "}
+                        <strong style={{ color: "var(--danger)" }}>
+                          {stats.losses}
+                        </strong>{" "}
+                        L \u00B7{" "}
+                        {stats.pcfus > 0 && (
+                          <>
+                            <strong>{stats.pcfus}</strong> PCFU \u00B7{" "}
+                          </>
+                        )}
                         {(() => {
-                          const decided = stats.wins + stats.losses + stats.pcfus;
-                          const rate = decided > 0 ? (stats.wins / decided) * 100 : 0;
+                          const decided =
+                            stats.wins + stats.losses + stats.pcfus;
+                          const rate =
+                            decided > 0
+                              ? (stats.wins / decided) * 100
+                              : 0;
                           return (
                             <span style={{ color: rc(rate) }}>
                               {fmtPercent(rate, 0)} close
@@ -1473,9 +2566,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════
-          ROW 3: Quick Stats Bar
-          ═══════════════════════════════════════════════════════════════ */}
+      {/* ═══ ROW 3: Quick Stats ═══ */}
       <div
         style={{
           display: "grid",
@@ -1485,22 +2576,67 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         }}
       >
         {[
-          { icon: <Target size={14} />, label: "AOV", value: fmtDollars(current.aov), prevLabel: fmtDollars(prev2.aov), prev: prev2.aov, cur: current.aov },
-          { icon: <PhoneCall size={14} />, label: "Show Rate", value: fmtPercent(current.showRate, 0), prevLabel: fmtPercent(prev2.showRate, 0), prev: prev2.showRate, cur: current.showRate },
-          { icon: <Trophy size={14} />, label: "Wins", value: fmtNumber(current.wins), prevLabel: fmtNumber(prev2.wins), prev: prev2.wins, cur: current.wins },
-          { icon: <Users size={14} />, label: "Calls Booked", value: fmtNumber(current.callsBooked), prevLabel: fmtNumber(prev2.callsBooked), prev: prev2.callsBooked, cur: current.callsBooked },
-          { icon: <TrendingUp size={14} />, label: "Pending (PCFU)", value: fmtNumber(current.pcfus), prevLabel: fmtNumber(prev2.pcfus), prev: prev2.pcfus, cur: current.pcfus },
+          {
+            icon: <Target size={14} />,
+            label: "AOV",
+            value: fmtDollars(current.aov),
+            prevLabel: fmtDollars(prev2.aov),
+            prev: prev2.aov,
+            cur: current.aov,
+          },
+          {
+            icon: <PhoneCall size={14} />,
+            label: "Show Rate",
+            value: fmtPercent(current.showRate, 0),
+            prevLabel: fmtPercent(prev2.showRate, 0),
+            prev: prev2.showRate,
+            cur: current.showRate,
+          },
+          {
+            icon: <Trophy size={14} />,
+            label: "Wins",
+            value: fmtNumber(current.wins),
+            prevLabel: fmtNumber(prev2.wins),
+            prev: prev2.wins,
+            cur: current.wins,
+          },
+          {
+            icon: <Users size={14} />,
+            label: "Calls Booked",
+            value: fmtNumber(current.callsBooked),
+            prevLabel: fmtNumber(prev2.callsBooked),
+            prev: prev2.callsBooked,
+            cur: current.callsBooked,
+          },
+          {
+            icon: <TrendingUp size={14} />,
+            label: "Pending (PCFU)",
+            value: fmtNumber(current.pcfus),
+            prevLabel: fmtNumber(prev2.pcfus),
+            prev: prev2.pcfus,
+            cur: current.pcfus,
+          },
         ].map((stat) => (
           <div
             key={stat.label}
-            className="glass-static"
+            data-reactive="1"
             style={{
               padding: "16px 14px",
               textAlign: "center",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.02)",
+              ...RC,
             }}
           >
-            <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{stat.icon}</div>
             <div
+              data-reactive-icon
+              style={{ color: "var(--text-muted)", marginBottom: 8, ...RI, justifyContent: "center" }}
+            >
+              {stat.icon}
+            </div>
+            <div
+              data-reactive-text
               style={{
                 fontSize: 20,
                 fontWeight: 700,
@@ -1508,6 +2644,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                 letterSpacing: "-0.5px",
                 lineHeight: 1,
                 marginBottom: 6,
+                ...RT,
               }}
             >
               {stat.value}
@@ -1524,22 +2661,36 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               {stat.label}
             </div>
             <DeltaBadge current={stat.cur} previous={stat.prev} />
-            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--text-muted)",
+                marginTop: 4,
+              }}
+            >
               was {stat.prevLabel}
             </div>
           </div>
         ))}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════
-          ALEX TEST: Funnel + AI Bottleneck Inbox
-          ═══════════════════════════════════════════════════════════════ */}
-      <div style={{ marginTop: 20 }}>
+      {/* ═══ Separator ═══ */}
+      <div
+        data-reactive-sep
+        style={{
+          height: 1,
+          background:
+            "linear-gradient(to right, transparent, rgba(201,169,110,0.25), transparent)",
+          marginTop: 8,
+          transition: "opacity 0.15s ease-out, height 0.15s ease-out",
+        }}
+      />
+
+      {/* ═══ ALEX TEST: Funnel + AI ═══ */}
+      <div style={{ marginTop: 4 }}>
         <button
-          onClick={() => {
-            setAlexTestOpen(!alexTestOpen);
-            if (!alexTestOpen) injectKeyframes();
-          }}
+          data-reactive="0.8"
+          onClick={() => setAlexTestOpen(!alexTestOpen)}
           style={{
             width: "100%",
             display: "flex",
@@ -1548,55 +2699,184 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             padding: "14px 18px",
             borderRadius: alexTestOpen ? "10px 10px 0 0" : 10,
             border: "1px solid rgba(201,169,110,0.2)",
-            borderBottom: alexTestOpen ? "1px solid rgba(201,169,110,0.1)" : undefined,
+            borderBottom: alexTestOpen
+              ? "1px solid rgba(201,169,110,0.1)"
+              : undefined,
             background: "rgba(201,169,110,0.04)",
             cursor: "pointer",
-            transition: "all 0.3s ease",
+            ...RC,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 10 }}
+          >
             <div style={{ position: "relative" }}>
-              <Sparkles size={18} style={{ color: "var(--accent)", animation: alexTestOpen ? "aiPulse 2s ease-in-out infinite" : "none" }} />
-              {alexTestOpen && [1, 2, 3].map((i) => (
-                <div key={i} style={{ position: "absolute", width: 3, height: 3, borderRadius: "50%", background: "var(--accent)", top: `${-2 + i * 4}px`, left: `${18 + i * 3}px`, animation: `inboxParticle${i} ${2 + i * 0.4}s ease-in-out infinite`, pointerEvents: "none" }} />
-              ))}
+              <Sparkles
+                size={18}
+                style={{
+                  color: "var(--accent)",
+                  animation: alexTestOpen
+                    ? "aiPulse 2s ease-in-out infinite"
+                    : "none",
+                }}
+              />
+              {alexTestOpen &&
+                [1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    style={{
+                      position: "absolute",
+                      width: 3,
+                      height: 3,
+                      borderRadius: "50%",
+                      background: "var(--accent)",
+                      top: `${-2 + i * 4}px`,
+                      left: `${18 + i * 3}px`,
+                      animation: `inboxParticle${i} ${2 + i * 0.4}s ease-in-out infinite`,
+                      pointerEvents: "none",
+                    }}
+                  />
+                ))}
             </div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.3px" }}>Alex Test</span>
-            <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(201,169,110,0.08)", padding: "2px 8px", borderRadius: 4 }}>Funnel + AI</span>
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: "var(--accent)",
+                letterSpacing: "0.3px",
+              }}
+            >
+              Alex Test
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--text-muted)",
+                background: "rgba(201,169,110,0.08)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}
+            >
+              Funnel + AI
+            </span>
           </div>
-          <ChevronDown size={16} style={{ color: "var(--accent)", transform: alexTestOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.3s ease" }} />
+          <ChevronDown
+            size={16}
+            style={{
+              color: "var(--accent)",
+              transform: alexTestOpen
+                ? "rotate(180deg)"
+                : "rotate(0deg)",
+              transition: "transform 0.3s ease",
+            }}
+          />
         </button>
 
         <div
           style={{
             maxHeight: alexTestOpen ? 2000 : 0,
             overflow: "hidden",
-            transition: "max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition:
+              "max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
             borderRadius: "0 0 10px 10px",
-            border: alexTestOpen ? "1px solid rgba(201,169,110,0.15)" : "none",
+            border: alexTestOpen
+              ? "1px solid rgba(201,169,110,0.15)"
+              : "none",
             borderTop: "none",
             background: "rgba(0,0,0,0.1)",
           }}
         >
-          <div style={{ padding: "24px 20px", display: "flex", flexDirection: "column", gap: 28 }}>
-            {/* Vertical Funnel */}
+          <div
+            style={{
+              padding: "24px 20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 28,
+            }}
+          >
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <Activity size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.3px" }}>Sales Funnel</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 16,
+                }}
+              >
+                <span data-reactive-icon style={RI}>
+                  <Activity
+                    size={16}
+                    style={{ color: "var(--accent)" }}
+                  />
+                </span>
+                <span
+                  data-reactive-text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    letterSpacing: "0.3px",
+                    ...RT,
+                  }}
+                >
+                  Sales Funnel
+                </span>
               </div>
               <FunnelSection metrics={current} />
             </div>
 
-            {/* Divider */}
-            <div style={{ height: 1, background: "linear-gradient(to right, transparent, rgba(201,169,110,0.2), transparent)" }} />
+            <div
+              data-reactive-sep
+              style={{
+                height: 1,
+                background:
+                  "linear-gradient(to right, transparent, rgba(201,169,110,0.2), transparent)",
+                transition:
+                  "opacity 0.15s ease-out, height 0.15s ease-out",
+              }}
+            />
 
-            {/* AI Bottleneck Inbox */}
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <MessageCircle size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.3px" }}>Bottleneck Analysis</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent)", background: "rgba(201,169,110,0.1)", padding: "2px 6px", borderRadius: 4, letterSpacing: "0.5px", animation: "aiPulse 3s ease-in-out infinite" }}>AI</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 16,
+                }}
+              >
+                <span data-reactive-icon style={RI}>
+                  <MessageCircle
+                    size={16}
+                    style={{ color: "var(--accent)" }}
+                  />
+                </span>
+                <span
+                  data-reactive-text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    letterSpacing: "0.3px",
+                    ...RT,
+                  }}
+                >
+                  Bottleneck Analysis
+                </span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: "var(--accent)",
+                    background: "rgba(201,169,110,0.1)",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    letterSpacing: "0.5px",
+                    animation: "aiPulse 3s ease-in-out infinite",
+                  }}
+                >
+                  AI
+                </span>
               </div>
               <BottleneckInbox metrics={current} />
             </div>
