@@ -14,6 +14,15 @@ import {
   Trophy,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronDown,
+  Sparkles,
+  MessageCircle,
+  Send,
+  AlertTriangle,
+  CheckCircle2,
+  Zap,
+  Activity,
+  Brain,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
@@ -47,10 +56,13 @@ interface ClientMetrics {
   revenue: number;
   wins: number;
   losses: number;
+  pcfus: number;
   callsBooked: number;
   callsTaken: number;
+  noShows: number;
   closeRate: number;
   showRate: number;
+  aov: number;
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -65,7 +77,7 @@ function getPrevPeriod(dateFrom: string, dateTo: string): { from: string; to: st
   const from = new Date(dateFrom + "T00:00:00");
   const to = new Date(dateTo + "T00:00:00");
   const diff = to.getTime() - from.getTime();
-  const prevTo = new Date(from.getTime() - 86400000); // day before current start
+  const prevTo = new Date(from.getTime() - 86400000);
   const prevFrom = new Date(prevTo.getTime() - diff);
   return {
     from: prevFrom.toISOString().slice(0, 10),
@@ -85,12 +97,10 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
   const denom = wins + losses + pcfus;
   const closeRate = denom > 0 ? (wins / denom) * 100 : 0;
 
-  // Sum cash & revenue from ALL rows (non-paying outcomes have $0 so they don't affect totals)
   const revenue = rows.reduce((s, r) => s + r.revenue, 0);
   const cashCollected = rows.reduce((s, r) => s + r.cashCollected, 0);
   const aov = wins > 0 ? revenue / wins : 0;
 
-  // Daily cash aggregation — include any row with cash
   const dailyMap: Record<string, number> = {};
   for (const r of rows) {
     if (r.date && r.cashCollected > 0) {
@@ -101,7 +111,6 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
     .map(([date, amount]) => ({ date, amount }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // By client (offer)
   const byClient: Record<string, ClientMetrics> = {};
   for (const label of ["Tyson", "Keith"]) {
     const clientRows = rows.filter((r) =>
@@ -113,20 +122,24 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
     const l = clientRows.filter((r) => r.outcome === "LOST").length;
     const p = clientRows.filter((r) => r.outcome === "PCFU").length;
     const d = w + l + p;
-    const cWin = clientRows.filter((r) => r.outcome === "WIN");
+    const cRev = clientRows.reduce((s, r) => s + r.revenue, 0);
+    const cCash = clientRows.reduce((s, r) => s + r.cashCollected, 0);
+    const cNoShows = clientRows.filter((r) => !r.callTaken).length;
     byClient[label] = {
-      cashCollected: cWin.reduce((s, r) => s + r.cashCollected, 0),
-      revenue: cWin.reduce((s, r) => s + r.revenue, 0),
+      cashCollected: cCash,
+      revenue: cRev,
       wins: w,
       losses: l,
+      pcfus: p,
       callsBooked: cb,
       callsTaken: ct,
+      noShows: cNoShows,
       closeRate: d > 0 ? (w / d) * 100 : 0,
       showRate: cb > 0 ? (ct / cb) * 100 : 0,
+      aov: w > 0 ? cRev / w : 0,
     };
   }
 
-  // By closer — track wins, losses, pcfus for accurate close rate
   const byCloser: Record<string, { cash: number; wins: number; losses: number; pcfus: number; calls: number }> = {};
   for (const r of rows) {
     const name = r.closer?.trim();
@@ -180,292 +193,184 @@ function SparkArea({
   const allValues = [...current.map((d) => d.amount), ...previous.map((d) => d.amount)];
   const maxVal = Math.max(...allValues, 1);
   const width = 400;
-  const leftPad = 45; // wider left margin for y-axis labels
-  const rightPad = 12;
-  const topPad = 16;
-  const bottomPad = 22; // space for x-axis date labels
-
+  const leftPad = 45;
+  const rightPad = 10;
+  const topPad = 10;
+  const bottomPad = 25;
   const chartW = width - leftPad - rightPad;
   const chartH = height - topPad - bottomPad;
 
-  const toPoints = (data: { date: string; amount: number }[]) => {
-    if (data.length === 0) return [];
-    const stepX = data.length > 1 ? chartW / (data.length - 1) : 0;
-    return data.map((d, i) => ({
-      x: leftPad + i * stepX,
-      y: topPad + chartH - (d.amount / maxVal) * chartH,
-      amount: d.amount,
-      date: d.date,
-    }));
-  };
-
-  const toPath = (pts: { x: number; y: number }[], close: boolean) => {
-    if (pts.length === 0) return "";
-    let path = `M${pts[0].x},${pts[0].y}`;
-    for (let i = 1; i < pts.length; i++) {
-      const cpX = (pts[i - 1].x + pts[i].x) / 2;
-      path += ` C${cpX},${pts[i - 1].y} ${cpX},${pts[i].y} ${pts[i].x},${pts[i].y}`;
-    }
-    if (close) {
-      path += ` L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
-    }
-    return path;
-  };
-
-  const curPts = toPoints(current);
-  const prevPts = toPoints(previous);
-
-  // Y-axis: 3 levels
-  const yLevels = [0, Math.round(maxVal * 0.5), Math.round(maxVal)];
-
-  // X-axis: show first, middle, last date from current data
-  const xDates: { x: number; label: string }[] = [];
-  if (curPts.length > 0) {
-    const fmtShort = (d: string) => {
-      const dt = new Date(d + "T00:00:00");
-      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    };
-    xDates.push({ x: curPts[0].x, label: fmtShort(current[0].date) });
-    if (curPts.length > 2) {
-      const mid = Math.floor(curPts.length / 2);
-      xDates.push({ x: curPts[mid].x, label: fmtShort(current[mid].date) });
-    }
-    xDates.push({ x: curPts[curPts.length - 1].x, label: fmtShort(current[current.length - 1].date) });
+  function makePoints(data: { date: string; amount: number }[]): string {
+    if (data.length === 0) return "";
+    return data
+      .map((d, i) => {
+        const x = leftPad + (i / Math.max(data.length - 1, 1)) * chartW;
+        const y = topPad + chartH - (d.amount / maxVal) * chartH;
+        return `${x},${y}`;
+      })
+      .join(" ");
   }
 
+  function makeArea(data: { date: string; amount: number }[]): string {
+    if (data.length === 0) return "";
+    const pts = data.map((d, i) => {
+      const x = leftPad + (i / Math.max(data.length - 1, 1)) * chartW;
+      const y = topPad + chartH - (d.amount / maxVal) * chartH;
+      return { x, y };
+    });
+    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+    return `${path} L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
+  }
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((frac) => ({
+    value: maxVal * frac,
+    y: topPad + chartH - frac * chartH,
+  }));
+
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      style={{ width: "100%", height: "100%" }}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <defs>
-        <linearGradient id="currentGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id="prevGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--text-muted)" stopOpacity="0.1" />
-          <stop offset="100%" stopColor="var(--text-muted)" stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-
-      {/* Grid lines + Y-axis labels */}
-      {yLevels.map((val, i) => {
-        const y = topPad + chartH - (i / 2) * chartH;
-        return (
-          <g key={i}>
-            <line
-              x1={leftPad}
-              y1={y}
-              x2={width - rightPad}
-              y2={y}
-              stroke="rgba(255,255,255,0.06)"
-              strokeDasharray="4,4"
-            />
-            <text
-              x={leftPad - 6}
-              y={y + 3}
-              fontSize="10"
-              fill="rgba(255,255,255,0.4)"
-              fontFamily="var(--font-sans)"
-              textAnchor="end"
-            >
-              ${val >= 1000 ? `${(val / 1000).toFixed(val >= 10000 ? 0 : 1)}k` : val}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* X-axis date labels */}
-      {xDates.map((d, i) => (
-        <text
-          key={i}
-          x={d.x}
-          y={height - 4}
-          fontSize="9"
-          fill="rgba(255,255,255,0.35)"
-          fontFamily="var(--font-sans)"
-          textAnchor="middle"
-        >
-          {d.label}
-        </text>
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height }}>
+      {yTicks.map((t) => (
+        <g key={t.value}>
+          <line x1={leftPad} y1={t.y} x2={width - rightPad} y2={t.y} stroke="rgba(255,255,255,0.05)" />
+          <text x={leftPad - 6} y={t.y + 3} fill="var(--text-muted)" fontSize={9} textAnchor="end">
+            {t.value >= 1000 ? `$${(t.value / 1000).toFixed(1)}k` : `$${t.value.toFixed(0)}`}
+          </text>
+        </g>
       ))}
-
-      {/* Previous period area */}
-      {prevPts.length > 0 && (
+      {previous.length > 0 && (
         <>
-          <path d={toPath(prevPts, true)} fill="url(#prevGrad)" />
-          <path
-            d={toPath(prevPts, false)}
-            fill="none"
-            stroke="var(--text-muted)"
-            strokeWidth="1.5"
-            strokeOpacity="0.3"
-            strokeDasharray="4,3"
-          />
+          <path d={makeArea(previous)} fill="rgba(255,255,255,0.03)" />
+          <polyline points={makePoints(previous)} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={1.5} strokeDasharray="4 4" />
         </>
       )}
-
-      {/* Current period area */}
-      {curPts.length > 0 && (
+      {current.length > 0 && (
         <>
-          <path d={toPath(curPts, true)} fill="url(#currentGrad)" />
-          <path
-            d={toPath(curPts, false)}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth="2"
-          />
-          {/* Value labels on each data point */}
-          {curPts.map((pt, i) => {
-            // Only show labels if few points, or at key positions (first, last, max)
-            const maxIdx = curPts.reduce((best, p, idx) => (p.amount > curPts[best].amount ? idx : best), 0);
-            const showLabel = curPts.length <= 5 || i === 0 || i === curPts.length - 1 || i === maxIdx;
-            if (!showLabel) return null;
+          <defs>
+            <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path d={makeArea(current)} fill="url(#sparkGrad)" />
+          <polyline points={makePoints(current)} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          {current.map((d, i) => {
+            const x = leftPad + (i / Math.max(current.length - 1, 1)) * chartW;
+            const y = topPad + chartH - (d.amount / maxVal) * chartH;
             return (
-              <g key={i}>
-                <circle cx={pt.x} cy={pt.y} r="3" fill="var(--accent)" />
-                <text
-                  x={pt.x}
-                  y={pt.y - 8}
-                  fontSize="9"
-                  fill="var(--accent)"
-                  fontFamily="var(--font-sans)"
-                  textAnchor="middle"
-                  fontWeight="600"
-                >
-                  ${pt.amount >= 1000 ? `${(pt.amount / 1000).toFixed(1)}k` : pt.amount}
-                </text>
+              <g key={d.date}>
+                <circle cx={x} cy={y} r={3} fill="var(--accent)" stroke="#0f0f12" strokeWidth={1.5} />
+                {(i === 0 || i === current.length - 1) && (
+                  <text x={x} y={topPad + chartH + 14} fill="var(--text-muted)" fontSize={9} textAnchor="middle">
+                    {shortDate(d.date)}
+                  </text>
+                )}
               </g>
             );
           })}
-          {/* Highlighted dot on last point */}
-          {(() => {
-            const last = curPts[curPts.length - 1];
-            return <circle cx={last.x} cy={last.y} r="6" fill="var(--accent)" opacity="0.2" />;
-          })()}
         </>
       )}
     </svg>
   );
 }
 
-/* ── SVG Donut Ring ───────────────────────────────────────────────── */
+/* ── SVG Donut Ring ────────────────────────────────────────────────── */
 
 function DonutRing({
-  value,
-  label,
-  size = 140,
-  color = "var(--accent)",
+  wins,
+  losses,
+  pcfus,
+  noShows,
+  size = 160,
 }: {
-  value: number;
-  label: string;
+  wins: number;
+  losses: number;
+  pcfus: number;
+  noShows: number;
   size?: number;
-  color?: string;
 }) {
-  const radius = (size - 16) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (Math.min(value, 100) / 100) * circumference;
+  const total = wins + losses + pcfus + noShows;
+  if (total === 0) {
+    return (
+      <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>
+        <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
+        <text x="50" y="54" textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+          No data
+        </text>
+      </svg>
+    );
+  }
+  const segments = [
+    { value: wins, color: "var(--success)", label: "Wins" },
+    { value: losses, color: "var(--danger)", label: "Losses" },
+    { value: pcfus, color: "var(--warning)", label: "PCFU" },
+    { value: noShows, color: "rgba(255,255,255,0.1)", label: "No-Show" },
+  ];
+  const r = 40;
+  const circumference = 2 * Math.PI * r;
+  let offset = 0;
 
   return (
-    <div style={{ position: "relative", width: size, height: size }}>
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        {/* Background ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.04)"
-          strokeWidth="10"
-        />
-        {/* Value ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)" }}
-        />
-      </svg>
-      {/* Center text */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 28,
-            fontWeight: 700,
-            color,
-            letterSpacing: "-1px",
-            lineHeight: 1,
-          }}
-        >
-          {fmtPercent(value, 0)}
-        </span>
-        <span
-          style={{
-            fontSize: 10,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            marginTop: 4,
-          }}
-        >
-          {label}
-        </span>
-      </div>
-    </div>
+    <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>
+      {segments.map((seg) => {
+        const pct = seg.value / total;
+        const dashLen = pct * circumference;
+        const dashGap = circumference - dashLen;
+        const el = (
+          <circle
+            key={seg.label}
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth="12"
+            strokeDasharray={`${dashLen} ${dashGap}`}
+            strokeDashoffset={-offset}
+            strokeLinecap="butt"
+            transform="rotate(-90 50 50)"
+            style={{ transition: "stroke-dasharray 0.8s ease, stroke-dashoffset 0.8s ease" }}
+          />
+        );
+        offset += dashLen;
+        return el;
+      })}
+      <text x="50" y="46" textAnchor="middle" fill="var(--text-primary)" fontSize="16" fontWeight="700">
+        {wins}
+      </text>
+      <text x="50" y="58" textAnchor="middle" fill="var(--text-muted)" fontSize="8">
+        WINS
+      </text>
+    </svg>
   );
 }
 
 /* ── Delta Badge ──────────────────────────────────────────────────── */
 
-function DeltaBadge({ current, previous, invert }: { current: number; previous: number; invert?: boolean }) {
-  const d = delta(current, previous);
-  const isGood = invert ? !d.up : d.up;
-  const color = d.flat ? "var(--text-muted)" : isGood ? "var(--success)" : "var(--danger)";
-  const bg = d.flat
-    ? "rgba(255,255,255,0.04)"
-    : isGood
-      ? "rgba(126,201,160,0.1)"
-      : "rgba(217,142,142,0.1)";
+function DeltaBadge({ current: cur, previous: prev }: { current: number; previous: number }) {
+  const d = delta(cur, prev);
+  const color = d.flat ? "var(--text-muted)" : d.up ? "var(--success)" : "var(--danger)";
   const Icon = d.flat ? Minus : d.up ? ArrowUpRight : ArrowDownRight;
-
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: 3,
-        padding: "3px 8px",
-        borderRadius: 6,
         fontSize: 11,
         fontWeight: 600,
         color,
-        background: bg,
+        background: `${color}15`,
+        padding: "2px 8px",
+        borderRadius: 6,
       }}
     >
-      <Icon size={12} />
+      <Icon size={11} />
       {d.pct}
     </span>
   );
 }
 
-/* ── Horizontal Bar ───────────────────────────────────────────────── */
+/* ── HBar ─────────────────────────────────────────────────────────── */
 
 function HBar({
   value,
@@ -516,6 +421,469 @@ function HBar({
   );
 }
 
+/* ── Funnel & AI Bottleneck Analysis ──────────────────────────────── */
+
+const BENCHMARKS = {
+  showRate: { weak: 50, normal: 65, strong: 80 },
+  closeRate: { weak: 20, normal: 40, strong: 60 },
+  aov: { weak: 2000, normal: 4000, strong: 6000 },
+} as const;
+
+type HealthLevel = "weak" | "normal" | "strong" | "elite";
+
+function getHealth(metric: "showRate" | "closeRate" | "aov", value: number): HealthLevel {
+  const b = BENCHMARKS[metric];
+  if (value >= b.strong) return "elite";
+  if (value >= b.normal) return "strong";
+  if (value >= b.weak) return "normal";
+  return "weak";
+}
+
+function healthColor(h: HealthLevel): string {
+  switch (h) {
+    case "elite": return "#7ec9a0";
+    case "strong": return "#7ec9a0";
+    case "normal": return "#e8c36a";
+    case "weak": return "#d98e8e";
+  }
+}
+
+function healthGlow(h: HealthLevel): string {
+  switch (h) {
+    case "elite": return "0 0 20px rgba(126,201,160,0.4)";
+    case "strong": return "0 0 15px rgba(126,201,160,0.25)";
+    case "normal": return "0 0 15px rgba(232,195,106,0.25)";
+    case "weak": return "0 0 20px rgba(217,142,142,0.4)";
+  }
+}
+
+function healthLabel(h: HealthLevel): string {
+  switch (h) {
+    case "elite": return "ELITE";
+    case "strong": return "STRONG";
+    case "normal": return "NORMAL";
+    case "weak": return "WEAK";
+  }
+}
+
+function HealthIcon({ health }: { health: HealthLevel }) {
+  const color = healthColor(health);
+  if (health === "elite") return <Zap size={14} style={{ color }} />;
+  if (health === "strong") return <CheckCircle2 size={14} style={{ color }} />;
+  if (health === "normal") return <Activity size={14} style={{ color }} />;
+  return <AlertTriangle size={14} style={{ color }} />;
+}
+
+/* ── CSS Keyframes (injected once) ──────────────────────────────── */
+
+const FUNNEL_KEYFRAMES = `
+@keyframes funnelFillIn {
+  from { width: 0%; opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes funnelPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+@keyframes funnelFlowDot {
+  0% { top: 0%; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+@keyframes inboxGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(201,169,110,0.15); }
+  50% { box-shadow: 0 0 30px rgba(201,169,110,0.35); }
+}
+@keyframes aiPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+@keyframes inboxParticle1 {
+  0% { transform: translate(0,0) scale(1); opacity: 0.7; }
+  50% { transform: translate(12px,-18px) scale(1.3); opacity: 1; }
+  100% { transform: translate(24px,-6px) scale(0.5); opacity: 0; }
+}
+@keyframes inboxParticle2 {
+  0% { transform: translate(0,0) scale(1); opacity: 0.5; }
+  50% { transform: translate(-15px,-22px) scale(1.5); opacity: 0.9; }
+  100% { transform: translate(-8px,-40px) scale(0.3); opacity: 0; }
+}
+@keyframes inboxParticle3 {
+  0% { transform: translate(0,0) scale(0.8); opacity: 0.6; }
+  50% { transform: translate(20px,-12px) scale(1.2); opacity: 1; }
+  100% { transform: translate(10px,-30px) scale(0.4); opacity: 0; }
+}
+@keyframes thinkingDot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
+}
+@keyframes messageSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+`;
+
+let keyframesInjected = false;
+function injectKeyframes() {
+  if (typeof window === "undefined" || keyframesInjected) return;
+  const style = document.createElement("style");
+  style.textContent = FUNNEL_KEYFRAMES;
+  document.head.appendChild(style);
+  keyframesInjected = true;
+}
+
+/* ── FunnelStep ──────────────────────────────────────────────────── */
+
+function FunnelStep({
+  label,
+  value,
+  formattedValue,
+  health,
+  widthPct,
+  delay,
+  color,
+}: {
+  label: string;
+  value: number;
+  formattedValue: string;
+  health: HealthLevel | null;
+  widthPct: number;
+  delay: number;
+  color?: string;
+}) {
+  const hc = health ? healthColor(health) : (color || "var(--accent)");
+  const glow = health ? healthGlow(health) : "0 0 15px rgba(201,169,110,0.2)";
+  return (
+    <div style={{ width: `${widthPct}%`, margin: "0 auto", transition: "width 0.6s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 4px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {health && <HealthIcon health={health} />}
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{label}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: hc, letterSpacing: "-0.5px" }}>{formattedValue}</span>
+          {health && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: hc, background: `${hc}18`, padding: "2px 6px", borderRadius: 4, letterSpacing: "0.5px" }}>
+              {healthLabel(health)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div style={{ height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", overflow: "hidden", border: `1px solid ${hc}30`, boxShadow: glow, position: "relative" }}>
+        <div style={{ height: "100%", width: `${Math.min(value, 100)}%`, maxWidth: "100%", borderRadius: 7, background: `linear-gradient(90deg, ${hc}60, ${hc})`, animation: `funnelFillIn 1s ${delay}s ease both`, position: "relative" }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)", animation: `funnelPulse 2.5s ${delay + 0.5}s ease-in-out infinite`, borderRadius: 7 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── FunnelConnector ─────────────────────────────────────────────── */
+
+function FunnelConnector({ delay }: { delay: number }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", height: 28, position: "relative" }}>
+      <div style={{ width: 2, height: "100%", background: "linear-gradient(to bottom, rgba(201,169,110,0.3), rgba(201,169,110,0.08))", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", left: -1, animation: `funnelFlowDot 1.5s ${delay}s ease-in-out infinite` }} />
+      </div>
+    </div>
+  );
+}
+
+/* ── VerticalFunnel ──────────────────────────────────────────────── */
+
+function VerticalFunnel({ metrics, label }: { metrics: ClientMetrics | PeriodMetrics; label?: string }) {
+  const steps = [
+    { label: "DM Booking Rate", value: 0, formattedValue: "—", health: null as HealthLevel | null, widthPct: 100, barValue: 0 },
+    { label: "Show-Up Rate", value: metrics.showRate, formattedValue: fmtPercent(metrics.showRate, 1), health: getHealth("showRate", metrics.showRate), widthPct: 85, barValue: metrics.showRate },
+    { label: "Close Rate", value: metrics.closeRate, formattedValue: fmtPercent(metrics.closeRate, 1), health: getHealth("closeRate", metrics.closeRate), widthPct: 70, barValue: metrics.closeRate },
+    { label: "AOV", value: metrics.aov, formattedValue: fmtDollars(metrics.aov), health: getHealth("aov", metrics.aov), widthPct: 55, barValue: Math.min((metrics.aov / 8000) * 100, 100) },
+  ];
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && (
+        <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 12, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+          {label}
+        </div>
+      )}
+      {steps.map((step, i) => (
+        <div key={step.label}>
+          <FunnelStep label={step.label} value={step.barValue} formattedValue={step.formattedValue} health={step.health} widthPct={step.widthPct} delay={i * 0.2} color={step.health === null ? "rgba(255,255,255,0.15)" : undefined} />
+          {i < steps.length - 1 && <FunnelConnector delay={i * 0.2 + 0.3} />}
+        </div>
+      ))}
+      <div style={{ marginTop: 16, textAlign: "center", padding: "10px 16px", background: "rgba(201,169,110,0.06)", border: "1px solid rgba(201,169,110,0.15)", borderRadius: 8 }}>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.5px" }}>REVENUE PER SHOW (RPS)</span>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)", marginTop: 4 }}>
+          {fmtDollars((metrics.closeRate / 100) * metrics.aov)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── FunnelSection ───────────────────────────────────────────────── */
+
+type FunnelView = "both" | "keith" | "tyson" | "side-by-side";
+
+function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
+  const [view, setView] = useState<FunnelView>("both");
+
+  const viewButtons: { key: FunnelView; label: string }[] = [
+    { key: "both", label: "Both" },
+    { key: "keith", label: "Keith" },
+    { key: "tyson", label: "Tyson" },
+    { key: "side-by-side", label: "Side by Side" },
+  ];
+
+  const emptyClient: ClientMetrics = { cashCollected: 0, revenue: 0, wins: 0, losses: 0, pcfus: 0, callsBooked: 0, callsTaken: 0, noShows: 0, closeRate: 0, showRate: 0, aov: 0 };
+  const keithM = metrics.byClient["Keith"] || emptyClient;
+  const tysonM = metrics.byClient["Tyson"] || emptyClient;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, justifyContent: "center", flexWrap: "wrap" }}>
+        {viewButtons.map((btn) => (
+          <button
+            key={btn.key}
+            onClick={() => setView(btn.key)}
+            style={{
+              padding: "6px 16px", fontSize: 12, fontWeight: 600, borderRadius: 6,
+              border: view === btn.key ? "1px solid var(--accent)" : "1px solid rgba(255,255,255,0.1)",
+              background: view === btn.key ? "rgba(201,169,110,0.15)" : "rgba(255,255,255,0.03)",
+              color: view === btn.key ? "var(--accent)" : "var(--text-muted)",
+              cursor: "pointer", transition: "all 0.2s ease",
+              boxShadow: view === btn.key ? "0 0 12px rgba(201,169,110,0.2)" : "none",
+            }}
+          >
+            {btn.label}
+          </button>
+        ))}
+      </div>
+      {view === "both" && <VerticalFunnel metrics={metrics} />}
+      {view === "keith" && <VerticalFunnel metrics={keithM} label="Keith Holland" />}
+      {view === "tyson" && <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />}
+      {view === "side-by-side" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: 16 }}>
+            <VerticalFunnel metrics={keithM} label="Keith Holland" />
+          </div>
+          <div style={{ paddingLeft: 8 }}>
+            <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── AI Bottleneck Analysis Engine ───────────────────────────────── */
+
+interface AIMessage {
+  id: string;
+  role: "ai" | "user";
+  text: string;
+  timestamp: Date;
+}
+
+function generateBottleneckAnalysis(m: PeriodMetrics): string {
+  const showH = getHealth("showRate", m.showRate);
+  const closeH = getHealth("closeRate", m.closeRate);
+  const aovH = getHealth("aov", m.aov);
+  const rps = (m.closeRate / 100) * m.aov;
+
+  const parts: string[] = [];
+  parts.push(`📊 Analysis based on ${m.callsBooked} booked calls — ${m.callsTaken} shows, ${m.wins} wins, ${m.losses} losses, ${m.pcfus} pending follow-ups.`);
+
+  if (showH === "weak") {
+    parts.push(`\n🚨 PRIMARY BOTTLENECK: Show-Up Rate at ${m.showRate.toFixed(1)}% is critically low. ${m.noShows} no-shows detected. This is the highest-leverage fix — every additional show creates an opportunity. Focus on: confirmation sequences, same-day reminders, reducing time-to-call, and pre-call engagement. Target: 65%+.`);
+  } else if (closeH === "weak") {
+    parts.push(`\n🚨 PRIMARY BOTTLENECK: Close Rate at ${m.closeRate.toFixed(1)}% needs attention. Shows are coming in but conversions are lacking. Review: objection handling, offer-market fit, closer skill gaps, and call quality. Target: 40%+.`);
+  } else if (aovH === "weak") {
+    parts.push(`\n🚨 PRIMARY BOTTLENECK: AOV at ${fmtDollars(m.aov)} is below benchmark. You're closing deals but leaving revenue on the table. Consider: premium tier positioning, payment plan restructuring, and value-stack improvements. Target: $4,000+.`);
+  } else {
+    parts.push(`\n✅ All core metrics are at or above benchmark thresholds. Focus on maintaining consistency and incremental optimization.`);
+  }
+
+  if (showH !== "weak" && showH !== "elite") {
+    parts.push(`\n📌 Show Rate (${m.showRate.toFixed(1)}%) is ${healthLabel(showH).toLowerCase()}. Room to improve with tighter confirmation cadences.`);
+  }
+  if (closeH === "strong" || closeH === "elite") {
+    parts.push(`\n🏆 Close Rate at ${m.closeRate.toFixed(1)}% is ${healthLabel(closeH).toLowerCase()} — your closers are performing well.`);
+  }
+
+  parts.push(`\n💰 Revenue Per Show: ${fmtDollars(rps)}. This composite metric reflects the cash yield of every person who shows up.`);
+
+  const keith = m.byClient["Keith"];
+  const tyson = m.byClient["Tyson"];
+  if (keith && tyson && keith.callsBooked > 2 && tyson.callsBooked > 2) {
+    const kCR = keith.closeRate;
+    const tCR = tyson.closeRate;
+    if (Math.abs(kCR - tCR) > 10) {
+      const higher = kCR > tCR ? "Keith" : "Tyson";
+      const lower = kCR > tCR ? "Tyson" : "Keith";
+      parts.push(`\n📊 Offer gap: ${higher} close rate (${Math.max(kCR, tCR).toFixed(1)}%) outperforms ${lower} (${Math.min(kCR, tCR).toFixed(1)}%) by ${Math.abs(kCR - tCR).toFixed(1)}pp. Use Side-by-Side view to compare funnels.`);
+    }
+  }
+
+  return parts.join("");
+}
+
+function getAiResponse(userMsg: string, m: PeriodMetrics): string {
+  const msg = userMsg.toLowerCase();
+
+  if (msg.includes("show") && (msg.includes("rate") || msg.includes("up"))) {
+    const h = getHealth("showRate", m.showRate);
+    return `Show-Up Rate is at ${m.showRate.toFixed(1)}% (${healthLabel(h)}). ${m.noShows} no-shows out of ${m.callsBooked} booked. ${h === "weak" ? "This is your biggest opportunity — improving show rate has the highest leverage on revenue." : "Solid performance here. Keep monitoring for consistency."}`;
+  }
+  if (msg.includes("close") && (msg.includes("rate") || msg.includes("deal"))) {
+    const h = getHealth("closeRate", m.closeRate);
+    return `Close Rate stands at ${m.closeRate.toFixed(1)}% (${healthLabel(h)}). ${m.wins}W / ${m.losses}L / ${m.pcfus} PCFU. ${h === "weak" ? "Focus on objection handling and call quality review." : h === "elite" ? "Elite-level closing. Maintain this pace." : "Good performance. Dial in your follow-up system to convert those PCFUs."}`;
+  }
+  if (msg.includes("aov") || msg.includes("average") || msg.includes("order value")) {
+    const h = getHealth("aov", m.aov);
+    return `AOV is ${fmtDollars(m.aov)} (${healthLabel(h)}). ${h === "weak" ? "Consider premium positioning and value-stack enhancements." : "AOV is healthy. Look at upsell opportunities for further gains."}`;
+  }
+  if (msg.includes("rps") || msg.includes("revenue per show")) {
+    const rps = (m.closeRate / 100) * m.aov;
+    return `RPS (Revenue Per Show) is ${fmtDollars(rps)}. This means every person who shows up on a call generates ${fmtDollars(rps)} in expected revenue. To increase RPS, improve either close rate or AOV.`;
+  }
+  if (msg.includes("keith") || msg.includes("tyson") || msg.includes("offer")) {
+    const k = m.byClient["Keith"];
+    const t = m.byClient["Tyson"];
+    if (k && t) {
+      return `Keith: ${k.wins}W, ${fmtPercent(k.closeRate, 1)} close, ${fmtDollars(k.aov)} AOV. Tyson: ${t.wins}W, ${fmtPercent(t.closeRate, 1)} close, ${fmtDollars(t.aov)} AOV. Use the Side-by-Side toggle above to compare their full funnels.`;
+    }
+    return "Per-offer data is available in the funnel above. Toggle to Side-by-Side view for a detailed comparison.";
+  }
+  if (msg.includes("bottleneck") || msg.includes("problem") || msg.includes("issue") || msg.includes("fix")) {
+    return generateBottleneckAnalysis(m);
+  }
+
+  return `I can help analyze show rate, close rate, AOV, RPS, per-offer performance, or identify your main bottleneck. What would you like to dive into?`;
+}
+
+/* ── BottleneckInbox ─────────────────────────────────────────────── */
+
+function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
+  const [messages, setMessages] = useState<AIMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!initialized && metrics.callsBooked > 0) {
+      setThinking(true);
+      const timer = setTimeout(() => {
+        const analysis = generateBottleneckAnalysis(metrics);
+        setMessages([{ id: "init-" + Date.now(), role: "ai", text: analysis, timestamp: new Date() }]);
+        setThinking(false);
+        setInitialized(true);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [metrics, initialized]);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const userMsg: AIMessage = { id: "u-" + Date.now(), role: "user", text: input.trim(), timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+    setThinking(true);
+    setTimeout(() => {
+      const reply = getAiResponse(userMsg.text, metrics);
+      setMessages((prev) => [...prev, { id: "ai-" + Date.now(), role: "ai", text: reply, timestamp: new Date() }]);
+      setThinking(false);
+    }, 800 + Math.random() * 600);
+  };
+
+  return (
+    <div style={{ position: "relative", borderRadius: 12, border: "1px solid rgba(201,169,110,0.2)", background: "rgba(201,169,110,0.03)", overflow: "hidden", animation: "inboxGlow 4s ease-in-out infinite" }}>
+      {/* Gold particles */}
+      {[1, 2, 3].map((i) => (
+        <div key={i} style={{ position: "absolute", width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", top: `${20 + i * 25}%`, right: `${5 + i * 8}%`, animation: `inboxParticle${i} ${2.5 + i * 0.5}s ease-in-out infinite`, pointerEvents: "none", zIndex: 1 }} />
+      ))}
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid rgba(201,169,110,0.12)", background: "rgba(201,169,110,0.04)" }}>
+        <div style={{ position: "relative" }}>
+          <Brain size={20} style={{ color: "var(--accent)", animation: "aiPulse 2s ease-in-out infinite" }} />
+          <div style={{ position: "absolute", width: 7, height: 7, borderRadius: "50%", background: "#7ec9a0", bottom: -1, right: -1, border: "1.5px solid #0f0f12" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.3px" }}>Bottleneck AI</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Powered by GAS Protocol</div>
+        </div>
+        <Sparkles size={14} style={{ marginLeft: "auto", color: "var(--accent)", opacity: 0.5 }} />
+      </div>
+
+      {/* Messages */}
+      <div style={{ padding: "16px 18px", maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        {messages.map((msg) => (
+          <div key={msg.id} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", animation: "messageSlideIn 0.3s ease" }}>
+            <div style={{
+              maxWidth: "85%", padding: "10px 14px",
+              borderRadius: msg.role === "ai" ? "12px 12px 12px 4px" : "12px 12px 4px 12px",
+              background: msg.role === "ai" ? "rgba(201,169,110,0.08)" : "rgba(126,201,160,0.1)",
+              border: `1px solid ${msg.role === "ai" ? "rgba(201,169,110,0.15)" : "rgba(126,201,160,0.15)"}`,
+              fontSize: 12.5, lineHeight: 1.55, color: "var(--text-secondary)", whiteSpace: "pre-wrap",
+            }}>
+              {msg.role === "ai" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                  <Sparkles size={11} style={{ color: "var(--accent)" }} />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.5px" }}>AI ANALYSIS</span>
+                </div>
+              )}
+              {msg.text}
+              <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>
+                {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+          </div>
+        ))}
+        {thinking && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 0" }}>
+            <Brain size={14} style={{ color: "var(--accent)", animation: "aiPulse 1.5s ease-in-out infinite" }} />
+            <div style={{ display: "flex", gap: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: `thinkingDot 1.4s ${i * 0.2}s ease-in-out infinite` }} />
+              ))}
+            </div>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>analyzing...</span>
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div style={{ display: "flex", gap: 8, padding: "12px 18px", borderTop: "1px solid rgba(201,169,110,0.12)", background: "rgba(0,0,0,0.15)" }}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          placeholder="Ask about show rate, close rate, bottlenecks..."
+          style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(201,169,110,0.15)", background: "rgba(255,255,255,0.03)", color: "var(--text-primary)", fontSize: 12, outline: "none" }}
+        />
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || thinking}
+          style={{
+            padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(201,169,110,0.3)",
+            background: input.trim() && !thinking ? "rgba(201,169,110,0.15)" : "rgba(255,255,255,0.03)",
+            color: input.trim() && !thinking ? "var(--accent)" : "var(--text-muted)",
+            cursor: input.trim() && !thinking ? "pointer" : "default",
+            transition: "all 0.2s ease", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600,
+          }}
+        >
+          <Send size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function AlexTesting({ filters }: AlexTestingProps) {
@@ -526,6 +894,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
   const [error, setError] = useState("");
   const [current, setCurrent] = useState<PeriodMetrics | null>(null);
   const [previous, setPrevious] = useState<PeriodMetrics | null>(null);
+  const [alexTestOpen, setAlexTestOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -569,288 +938,294 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           padding: 60,
         }}
       >
-        <Loader2 size={24} className="spin" style={{ color: "var(--accent)" }} />
+        <Loader2
+          size={28}
+          style={{
+            color: "var(--accent)",
+            animation: "spin 1s linear infinite",
+          }}
+        />
       </div>
     );
   }
 
-  if (error || !current) {
+  if (error) {
     return (
-      <div style={{ padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13 }}>
-        {error || "No data available"}
-      </div>
-    );
-  }
-
-  const prev2 = previous || current; // fallback
-
-  // Closers sorted by cash
-  const closerEntries = Object.entries(current.byCloser)
-    .sort((a, b) => b[1].cash - a[1].cash);
-  const maxCloserCash = closerEntries.length > 0 ? closerEntries[0][1].cash : 1;
-
-  // Rate color
-  const rc = (rate: number) =>
-    rate >= 70 ? "var(--success)" : rate >= 50 ? "var(--warning)" : "var(--danger)";
-
-  return (
-    <div>
-      {/* ═══════════════════════════════════════════════════════════════
-          Period Context Header
-          ═══════════════════════════════════════════════════════════════ */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 16px",
-          marginBottom: 16,
-          borderRadius: 8,
-          background: "rgba(255,255,255,0.02)",
-          border: "1px solid rgba(255,255,255,0.04)",
-          fontSize: 12,
+          textAlign: "center",
+          padding: 40,
+          color: "var(--danger)",
+          fontSize: 14,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: "var(--text-muted)" }}>Comparing:</span>
-          <span style={{ color: "var(--accent)", fontWeight: 600 }}>
-            {shortDate(dateFrom)} – {shortDate(dateTo)}
-          </span>
-          <span style={{ color: "var(--text-muted)" }}>vs</span>
-          <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-            {shortDate(prev.from)} – {shortDate(prev.to)}
-          </span>
-        </div>
-        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-          All % changes compare these two periods
-        </span>
+        {error}
       </div>
+    );
+  }
 
+  if (!current || !previous) return null;
+
+  const prev2 = previous;
+
+  /* Color helper for rates */
+  const rc = (v: number) =>
+    v >= 50 ? "var(--success)" : v >= 30 ? "var(--warning)" : "var(--danger)";
+
+  /* ── Render ─────────────────────────────────────────────────────── */
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ═══════════════════════════════════════════════════════════════
-          ROW 1: Hero KPIs (left) + Sparkline Chart (right)
+          ROW 1: Hero KPIs + Sparkline
           ═══════════════════════════════════════════════════════════════ */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1.6fr",
-          gap: 16,
-          marginBottom: 16,
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 14,
         }}
       >
-        {/* LEFT — Stacked KPI cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Cash Collected */}
-          <div
-            className="glass-static"
-            style={{ padding: "22px 24px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: "rgba(126,201,160,0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Banknote size={16} style={{ color: "var(--success)" }} />
-              </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                Cash Collected
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span
-                style={{
-                  fontSize: 32,
-                  fontWeight: 700,
-                  color: "var(--success)",
-                  letterSpacing: "-1.5px",
-                  lineHeight: 1,
-                }}
-              >
-                {fmtDollars(current.cashCollected)}
-              </span>
-              <DeltaBadge current={current.cashCollected} previous={prev2.cashCollected} />
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                marginTop: 8,
-              }}
-            >
-              vs {fmtDollars(prev2.cashCollected)} last period
-            </div>
-          </div>
-
-          {/* Total Revenue */}
-          <div
-            className="glass-static"
-            style={{ padding: "22px 24px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: "rgba(201,169,110,0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <DollarSign size={16} style={{ color: "var(--accent)" }} />
-              </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                Total Revenue
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span
-                style={{
-                  fontSize: 32,
-                  fontWeight: 700,
-                  color: "var(--accent)",
-                  letterSpacing: "-1.5px",
-                  lineHeight: 1,
-                }}
-              >
-                {fmtDollars(current.revenue)}
-              </span>
-              <DeltaBadge current={current.revenue} previous={prev2.revenue} />
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                marginTop: 8,
-              }}
-            >
-              vs {fmtDollars(prev2.revenue)} last period
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT — Sparkline area chart */}
+        {/* Cash Collected */}
         <div
           className="glass-static"
           style={{
-            padding: "20px 24px",
-            display: "flex",
-            flexDirection: "column",
+            padding: "20px 18px",
+            position: "relative",
+            overflow: "hidden",
           }}
         >
           <div
             style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              background:
+                "linear-gradient(90deg, var(--accent), rgba(201,169,110,0.2))",
+            }}
+          />
+          <div
+            style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 16,
+              gap: 8,
+              marginBottom: 12,
             }}
           >
+            <Banknote size={16} style={{ color: "var(--accent)" }} />
             <span
               style={{
-                fontSize: 12,
+                fontSize: 11,
                 color: "var(--text-muted)",
-                fontWeight: 500,
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
               }}
             >
-              Daily Cash Collected
+              Cash Collected
             </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 11 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span
-                  style={{
-                    width: 16,
-                    height: 2,
-                    background: "var(--accent)",
-                    borderRadius: 1,
-                    display: "inline-block",
-                  }}
-                />
-                <span style={{ color: "var(--text-muted)" }}>
-                  {shortDate(dateFrom)} – {shortDate(dateTo)}
-                </span>
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span
-                  style={{
-                    width: 16,
-                    height: 2,
-                    background: "var(--text-muted)",
-                    borderRadius: 1,
-                    display: "inline-block",
-                    opacity: 0.4,
-                  }}
-                />
-                <span style={{ color: "var(--text-muted)" }}>
-                  {shortDate(prev.from)} – {shortDate(prev.to)}
-                </span>
-              </span>
-            </div>
           </div>
-          <div style={{ flex: 1, minHeight: 160 }}>
-            <SparkArea
-              current={current.dailyCash}
-              previous={prev2.dailyCash}
-              height={160}
-            />
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: "var(--text-primary)",
+              letterSpacing: "-1px",
+              marginBottom: 6,
+            }}
+          >
+            {fmtDollars(current.cashCollected)}
+          </div>
+          <DeltaBadge current={current.cashCollected} previous={prev2.cashCollected} />
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 6,
+            }}
+          >
+            prev: {fmtDollars(prev2.cashCollected)}
+          </div>
+        </div>
+
+        {/* Close Rate */}
+        <div
+          className="glass-static"
+          style={{
+            padding: "20px 18px",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              background: `linear-gradient(90deg, ${rc(current.closeRate)}, ${rc(current.closeRate)}33)`,
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <Target size={16} style={{ color: rc(current.closeRate) }} />
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+              }}
+            >
+              Close Rate
+            </span>
+          </div>
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: rc(current.closeRate),
+              letterSpacing: "-1px",
+              marginBottom: 6,
+            }}
+          >
+            {fmtPercent(current.closeRate, 1)}
+          </div>
+          <DeltaBadge current={current.closeRate} previous={prev2.closeRate} />
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 6,
+            }}
+          >
+            {current.wins}W / {current.losses}L / {current.pcfus} PCFU
+          </div>
+        </div>
+
+        {/* Revenue */}
+        <div
+          className="glass-static"
+          style={{
+            padding: "20px 18px",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              background:
+                "linear-gradient(90deg, var(--success), rgba(126,201,160,0.2))",
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <DollarSign size={16} style={{ color: "var(--success)" }} />
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+              }}
+            >
+              Revenue
+            </span>
+          </div>
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: "var(--text-primary)",
+              letterSpacing: "-1px",
+              marginBottom: 6,
+            }}
+          >
+            {fmtDollars(current.revenue)}
+          </div>
+          <DeltaBadge current={current.revenue} previous={prev2.revenue} />
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 6,
+            }}
+          >
+            prev: {fmtDollars(prev2.revenue)}
           </div>
         </div>
       </div>
 
+      {/* Daily Cash Sparkline */}
+      <div
+        className="glass-static"
+        style={{ padding: "16px 14px" }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            marginBottom: 10,
+          }}
+        >
+          Daily Cash Collected
+        </div>
+        <SparkArea current={current.dailyCash} previous={prev2.dailyCash} />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 6,
+            fontSize: 10,
+            color: "var(--text-muted)",
+          }}
+        >
+          <span>
+            <span style={{ display: "inline-block", width: 8, height: 2, background: "var(--accent)", marginRight: 4, verticalAlign: "middle" }} />
+            Current
+          </span>
+          <span>
+            <span style={{ display: "inline-block", width: 8, height: 2, background: "rgba(255,255,255,0.15)", marginRight: 4, verticalAlign: "middle" }} />
+            Previous
+          </span>
+        </div>
+      </div>
+
       {/* ═══════════════════════════════════════════════════════════════
-          ROW 2: Donut (left) + Client Breakdown (center) + Closers (right)
+          ROW 2: Donut + Client Breakdown + Closers
           ═══════════════════════════════════════════════════════════════ */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1.2fr 1fr",
-          gap: 16,
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 14,
         }}
       >
-        {/* LEFT — Close Rate Donut */}
+        {/* Donut */}
         <div
           className="glass-static"
           style={{
-            padding: "24px",
+            padding: "18px 14px",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -858,407 +1233,242 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         >
           <div
             style={{
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--text-muted)",
-              fontWeight: 500,
               textTransform: "uppercase",
               letterSpacing: "0.5px",
-              marginBottom: 20,
+              marginBottom: 10,
               alignSelf: "flex-start",
             }}
           >
-            Close Rate
+            Outcome Breakdown
           </div>
-
           <DonutRing
-            value={current.closeRate}
-            label="Close Rate"
-            color={rc(current.closeRate)}
-            size={140}
+            wins={current.wins}
+            losses={current.losses}
+            pcfus={current.pcfus}
+            noShows={current.noShows}
           />
-
-          <div style={{ marginTop: 16, width: "100%" }}>
-            <DeltaBadge current={current.closeRate} previous={prev2.closeRate} />
-            <div style={{ marginTop: 12 }}>
-              {/* Wins / Losses / PCFU */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "7px 0",
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                  fontSize: 12,
-                }}
-              >
-                <span style={{ color: "var(--text-muted)" }}>Wins</span>
-                <span style={{ fontWeight: 700, color: "var(--success)" }}>
-                  {current.wins}
-                  <span style={{ color: "var(--text-muted)", fontWeight: 400, marginLeft: 4, fontSize: 11 }}>
-                    (was {prev2.wins})
-                  </span>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              marginTop: 12,
+              fontSize: 10,
+              flexWrap: "wrap",
+              justifyContent: "center",
+            }}
+          >
+            {[
+              { label: "Win", color: "var(--success)", v: current.wins },
+              { label: "Lost", color: "var(--danger)", v: current.losses },
+              { label: "PCFU", color: "var(--warning)", v: current.pcfus },
+              { label: "No-Show", color: "rgba(255,255,255,0.2)", v: current.noShows },
+            ].map((s) => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+                <span style={{ color: "var(--text-muted)" }}>
+                  {s.label}: <strong style={{ color: "var(--text-secondary)" }}>{s.v}</strong>
                 </span>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "7px 0",
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                  fontSize: 12,
-                }}
-              >
-                <span style={{ color: "var(--text-muted)" }}>Losses</span>
-                <span style={{ fontWeight: 700, color: "var(--danger)" }}>
-                  {current.losses}
-                  <span style={{ color: "var(--text-muted)", fontWeight: 400, marginLeft: 4, fontSize: 11 }}>
-                    (was {prev2.losses})
-                  </span>
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "7px 0",
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                  fontSize: 12,
-                }}
-              >
-                <span style={{ color: "var(--text-muted)" }}>Prev Close Rate</span>
-                <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
-                  {fmtPercent(prev2.closeRate, 0)}
-                </span>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* CENTER — Client Breakdown */}
-        <div className="glass-static" style={{ padding: "24px" }}>
+        {/* Client Breakdown */}
+        <div className="glass-static" style={{ padding: "18px 14px" }}>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--text-muted)",
-              fontWeight: 500,
               textTransform: "uppercase",
               letterSpacing: "0.5px",
-              marginBottom: 20,
+              marginBottom: 14,
             }}
           >
-            Per-Client Performance
+            By Offer
           </div>
-
-          {Object.entries(current.byClient).map(([name, c]) => {
+          {Object.entries(current.byClient).map(([name, stats]) => {
             const prevClient = prev2.byClient[name];
-            const clientColor = name === "Tyson" ? "var(--tyson)" : "var(--keith)";
-            const clientBg = name === "Tyson" ? "rgba(130,197,197,0.08)" : "rgba(184,164,217,0.08)";
-
             return (
-              <div
-                key={name}
-                style={{
-                  padding: "14px 16px",
-                  borderRadius: 10,
-                  background: clientBg,
-                  marginBottom: 12,
-                }}
-              >
+              <div key={name} style={{ marginBottom: 14 }}>
                 <div
                   style={{
                     display: "flex",
-                    alignItems: "center",
                     justifyContent: "space-between",
-                    marginBottom: 12,
+                    alignItems: "center",
+                    marginBottom: 6,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: clientColor,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {name}
-                    </span>
-                  </div>
                   <span
                     style={{
-                      fontSize: 15,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color:
+                        name === "Keith"
+                          ? "var(--keith, #b8a4d9)"
+                          : "var(--tyson, #82c5c5)",
+                    }}
+                  >
+                    {name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 13,
                       fontWeight: 700,
                       color: "var(--success)",
                     }}
                   >
-                    {fmtDollars(c.cashCollected)}
+                    {fmtDollars(stats.cashCollected)}
                   </span>
                 </div>
-
-                {/* Close Rate bar */}
-                <div style={{ marginBottom: 8 }}>
+                <HBar
+                  value={stats.wins}
+                  max={Math.max(stats.wins + stats.losses, 1)}
+                  color={rc(stats.closeRate)}
+                  label={`${stats.wins}W / ${stats.losses}L`}
+                  sublabel={fmtPercent(stats.closeRate, 0) + " close"}
+                />
+                {prevClient && (
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 11,
-                      marginBottom: 4,
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      marginTop: 2,
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>Close Rate</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: rc(c.closeRate), fontWeight: 600 }}>
-                        {fmtPercent(c.closeRate, 0)}
-                      </span>
-                      {prevClient && (
-                        <DeltaBadge current={c.closeRate} previous={prevClient.closeRate} />
-                      )}
-                    </div>
+                    prev: {fmtDollars(prevClient.cashCollected)} ·{" "}
+                    {fmtPercent(prevClient.closeRate, 0)} close
                   </div>
-                  <div
-                    style={{
-                      height: 6,
-                      borderRadius: 3,
-                      background: "rgba(255,255,255,0.06)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${Math.min(c.closeRate, 100)}%`,
-                        borderRadius: 3,
-                        background: clientColor,
-                        transition: "width 0.8s ease",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Show Rate bar */}
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 11,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span style={{ color: "var(--text-muted)" }}>Show Rate</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: rc(c.showRate), fontWeight: 600 }}>
-                        {fmtPercent(c.showRate, 0)}
-                      </span>
-                      {prevClient && (
-                        <DeltaBadge current={c.showRate} previous={prevClient.showRate} />
-                      )}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      height: 6,
-                      borderRadius: 3,
-                      background: "rgba(255,255,255,0.06)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${Math.min(c.showRate, 100)}%`,
-                        borderRadius: 3,
-                        background: clientColor,
-                        opacity: 0.6,
-                        transition: "width 0.8s ease",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Mini stat row */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    marginTop: 10,
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  <span>
-                    <strong style={{ color: "var(--success)" }}>{c.wins}</strong> W
-                  </span>
-                  <span>
-                    <strong style={{ color: "var(--danger)" }}>{c.losses}</strong> L
-                  </span>
-                  <span>
-                    {c.callsTaken}/{c.callsBooked} calls
-                  </span>
-                </div>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* RIGHT — Closer Leaderboard */}
-        <div className="glass-static" style={{ padding: "24px" }}>
+        {/* Top Closers */}
+        <div className="glass-static" style={{ padding: "18px 14px" }}>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--text-muted)",
-              fontWeight: 500,
               textTransform: "uppercase",
               letterSpacing: "0.5px",
-              marginBottom: 20,
+              marginBottom: 14,
             }}
           >
-            Closer Leaderboard
-            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 2, opacity: 0.6, textTransform: "none", letterSpacing: 0 }}>
-              Ranked by cash collected this period
-            </div>
+            Top Closers
           </div>
-
-          {closerEntries.length === 0 ? (
+          {Object.keys(current.byCloser).length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>
               No closer data
             </div>
           ) : (
-            closerEntries.map(([name, stats], i) => {
-              const prevCloser = prev2.byCloser[name];
-              return (
-                <div key={name} style={{ marginBottom: 14 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: 6,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {/* Rank badge */}
-                      <span
+            Object.entries(current.byCloser)
+              .sort((a, b) => b[1].cash - a[1].cash)
+              .map(([name, stats], i) => {
+                const maxCloserCash = Math.max(
+                  ...Object.values(current.byCloser).map((c) => c.cash),
+                  1,
+                );
+                const prevCloser = prev2.byCloser[name];
+                return (
+                  <div key={name} style={{ marginBottom: 14 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {name}
+                        </span>
+                        {i === 0 && (
+                          <Trophy
+                            size={12}
+                            style={{ color: "var(--accent)", marginLeft: 2 }}
+                          />
+                        )}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--success)",
+                          }}
+                        >
+                          {fmtDollars(stats.cash)}
+                          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 4 }}>
+                            cash
+                          </span>
+                        </span>
+                        {prevCloser && (
+                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                            prev: {fmtDollars(prevCloser.cash)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        height: 8,
+                        borderRadius: 4,
+                        background: "rgba(255,255,255,0.04)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
                         style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: "50%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 11,
-                          fontWeight: 700,
+                          height: "100%",
+                          width: `${Math.min((stats.cash / maxCloserCash) * 100, 100)}%`,
+                          borderRadius: 4,
                           background:
-                            i === 0
-                              ? "rgba(201,169,110,0.2)"
-                              : i === 1
-                                ? "rgba(192,192,192,0.15)"
-                                : "rgba(205,127,50,0.12)",
-                          color:
                             i === 0
                               ? "var(--accent)"
                               : i === 1
-                                ? "#c0c0c0"
-                                : "#cd7f32",
+                                ? "rgba(192,192,192,0.5)"
+                                : "rgba(205,127,50,0.4)",
+                          transition: "width 0.8s ease",
                         }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "var(--text-primary)",
-                        }}
-                      >
-                        {name}
-                      </span>
-                      {i === 0 && (
-                        <Trophy
-                          size={12}
-                          style={{ color: "var(--accent)", marginLeft: 2 }}
-                        />
-                      )}
+                      />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "var(--success)",
-                        }}
-                      >
-                        {fmtDollars(stats.cash)}
-                        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 4 }}>
-                          cash
-                        </span>
-                      </span>
-                      {prevCloser && (
-                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                          prev: {fmtDollars(prevCloser.cash)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      height: 8,
-                      borderRadius: 4,
-                      background: "rgba(255,255,255,0.04)",
-                      overflow: "hidden",
-                    }}
-                  >
                     <div
                       style={{
-                        height: "100%",
-                        width: `${Math.min((stats.cash / maxCloserCash) * 100, 100)}%`,
-                        borderRadius: 4,
-                        background:
-                          i === 0
-                            ? "var(--accent)"
-                            : i === 1
-                              ? "rgba(192,192,192,0.5)"
-                              : "rgba(205,127,50,0.4)",
-                        transition: "width 0.8s ease",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 4,
                       }}
-                    />
+                    >
+                      <span>
+                        <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> W ·{" "}
+                        <strong style={{ color: "var(--danger)" }}>{stats.losses}</strong> L ·{" "}
+                        {stats.pcfus > 0 && <><strong>{stats.pcfus}</strong> PCFU · </>}
+                        {(() => {
+                          const decided = stats.wins + stats.losses + stats.pcfus;
+                          const rate = decided > 0 ? (stats.wins / decided) * 100 : 0;
+                          return (
+                            <span style={{ color: rc(rate) }}>
+                              {fmtPercent(rate, 0)} close
+                            </span>
+                          );
+                        })()}
+                      </span>
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      marginTop: 4,
-                    }}
-                  >
-                    <span>
-                      <strong style={{ color: "var(--success)" }}>{stats.wins}</strong> W ·{" "}
-                      <strong style={{ color: "var(--danger)" }}>{stats.losses}</strong> L ·{" "}
-                      {stats.pcfus > 0 && <><strong>{stats.pcfus}</strong> PCFU · </>}
-                      {(() => {
-                        const decided = stats.wins + stats.losses + stats.pcfus;
-                        const rate = decided > 0 ? (stats.wins / decided) * 100 : 0;
-                        return (
-                          <span style={{ color: rc(rate) }}>
-                            {fmtPercent(rate, 0)} close
-                          </span>
-                        );
-                      })()}
-                    </span>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })
           )}
         </div>
       </div>
@@ -1319,6 +1529,79 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          ALEX TEST: Funnel + AI Bottleneck Inbox
+          ═══════════════════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 20 }}>
+        <button
+          onClick={() => {
+            setAlexTestOpen(!alexTestOpen);
+            if (!alexTestOpen) injectKeyframes();
+          }}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 18px",
+            borderRadius: alexTestOpen ? "10px 10px 0 0" : 10,
+            border: "1px solid rgba(201,169,110,0.2)",
+            borderBottom: alexTestOpen ? "1px solid rgba(201,169,110,0.1)" : undefined,
+            background: "rgba(201,169,110,0.04)",
+            cursor: "pointer",
+            transition: "all 0.3s ease",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <Sparkles size={18} style={{ color: "var(--accent)", animation: alexTestOpen ? "aiPulse 2s ease-in-out infinite" : "none" }} />
+              {alexTestOpen && [1, 2, 3].map((i) => (
+                <div key={i} style={{ position: "absolute", width: 3, height: 3, borderRadius: "50%", background: "var(--accent)", top: `${-2 + i * 4}px`, left: `${18 + i * 3}px`, animation: `inboxParticle${i} ${2 + i * 0.4}s ease-in-out infinite`, pointerEvents: "none" }} />
+              ))}
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.3px" }}>Alex Test</span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(201,169,110,0.08)", padding: "2px 8px", borderRadius: 4 }}>Funnel + AI</span>
+          </div>
+          <ChevronDown size={16} style={{ color: "var(--accent)", transform: alexTestOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.3s ease" }} />
+        </button>
+
+        <div
+          style={{
+            maxHeight: alexTestOpen ? 2000 : 0,
+            overflow: "hidden",
+            transition: "max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+            borderRadius: "0 0 10px 10px",
+            border: alexTestOpen ? "1px solid rgba(201,169,110,0.15)" : "none",
+            borderTop: "none",
+            background: "rgba(0,0,0,0.1)",
+          }}
+        >
+          <div style={{ padding: "24px 20px", display: "flex", flexDirection: "column", gap: 28 }}>
+            {/* Vertical Funnel */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <Activity size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.3px" }}>Sales Funnel</span>
+              </div>
+              <FunnelSection metrics={current} />
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: "linear-gradient(to right, transparent, rgba(201,169,110,0.2), transparent)" }} />
+
+            {/* AI Bottleneck Inbox */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <MessageCircle size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.3px" }}>Bottleneck Analysis</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent)", background: "rgba(201,169,110,0.1)", padding: "2px 6px", borderRadius: 4, letterSpacing: "0.5px", animation: "aiPulse 3s ease-in-out infinite" }}>AI</span>
+              </div>
+              <BottleneckInbox metrics={current} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
