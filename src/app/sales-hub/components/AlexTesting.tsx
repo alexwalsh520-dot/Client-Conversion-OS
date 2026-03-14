@@ -216,52 +216,74 @@ function delta(
   };
 }
 
-/* ── SVG Sparkline Area Chart ─────────────────────────────────────── */
+/* ── Interactive Cash Chart ───────────────────────────────────────── */
 
-function SparkArea({
+function CashChart({
   current,
   previous,
-  height = 180,
 }: {
   current: { date: string; amount: number }[];
   previous: { date: string; amount: number }[];
-  height?: number;
 }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const height = 300;
+  const width = 520;
+  const leftPad = 52;
+  const rightPad = 16;
+  const topPad = 20;
+  const bottomPad = 32;
+  const chartW = width - leftPad - rightPad;
+  const chartH = height - topPad - bottomPad;
+
   const allValues = [
     ...current.map((d) => d.amount),
     ...previous.map((d) => d.amount),
   ];
   const maxVal = Math.max(...allValues, 1);
-  const width = 400;
-  const leftPad = 45;
-  const rightPad = 10;
-  const topPad = 10;
-  const bottomPad = 25;
-  const chartW = width - leftPad - rightPad;
-  const chartH = height - topPad - bottomPad;
 
-  function makePoints(data: { date: string; amount: number }[]): string {
-    if (data.length === 0) return "";
-    return data
-      .map((d, i) => {
-        const x = leftPad + (i / Math.max(data.length - 1, 1)) * chartW;
-        const y = topPad + chartH - (d.amount / maxVal) * chartH;
-        return `${x},${y}`;
-      })
-      .join(" ");
+  // Compute point positions for current data
+  const currentPts = useMemo(() => {
+    return current.map((d, i) => ({
+      x: leftPad + (i / Math.max(current.length - 1, 1)) * chartW,
+      y: topPad + chartH - (d.amount / maxVal) * chartH,
+      date: d.date,
+      amount: d.amount,
+    }));
+  }, [current, chartW, chartH, maxVal]);
+
+  const prevPts = useMemo(() => {
+    return previous.map((d, i) => ({
+      x: leftPad + (i / Math.max(previous.length - 1, 1)) * chartW,
+      y: topPad + chartH - (d.amount / maxVal) * chartH,
+    }));
+  }, [previous, chartW, chartH, maxVal]);
+
+  // Smooth cubic bezier spline path
+  function smoothPath(pts: { x: number; y: number }[]): string {
+    if (pts.length === 0) return "";
+    if (pts.length === 1) return `M${pts[0].x},${pts[0].y}`;
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(i - 1, 0)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(i + 2, pts.length - 1)];
+      const tension = 0.3;
+      const cp1x = p1.x + (p2.x - p0.x) * tension;
+      const cp1y = p1.y + (p2.y - p0.y) * tension;
+      const cp2x = p2.x - (p3.x - p1.x) * tension;
+      const cp2y = p2.y - (p3.y - p1.y) * tension;
+      d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return d;
   }
 
-  function makeArea(data: { date: string; amount: number }[]): string {
-    if (data.length === 0) return "";
-    const pts = data.map((d, i) => {
-      const x = leftPad + (i / Math.max(data.length - 1, 1)) * chartW;
-      const y = topPad + chartH - (d.amount / maxVal) * chartH;
-      return { x, y };
-    });
-    const path = pts
-      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
-      .join(" ");
-    return `${path} L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
+  function smoothArea(pts: { x: number; y: number }[]): string {
+    if (pts.length === 0) return "";
+    const line = smoothPath(pts);
+    return `${line} L${pts[pts.length - 1].x},${topPad + chartH} L${pts[0].x},${topPad + chartH} Z`;
   }
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((frac) => ({
@@ -269,97 +291,301 @@ function SparkArea({
     y: topPad + chartH - frac * chartH,
   }));
 
+  // Grid squares
+  const gridCols = 12;
+  const gridRows = 6;
+  const cellW = chartW / gridCols;
+  const cellH = chartH / gridRows;
+
+  // Handle mouse move to find nearest point
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (currentPts.length === 0) return;
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = width / rect.width;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      // Find nearest point
+      let nearest = 0;
+      let nearestDist = Infinity;
+      for (let i = 0; i < currentPts.length; i++) {
+        const dist = Math.abs(currentPts[i].x - mouseX);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = i;
+        }
+      }
+      setHoverIdx(nearest);
+    },
+    [currentPts],
+  );
+
+  const handleMouseLeave = useCallback(() => setHoverIdx(null), []);
+
+  // Gold particles at grid intersections (randomized subset)
+  const particles = useMemo(() => {
+    const pts: { x: number; y: number; delay: number; dur: number }[] = [];
+    for (let r = 0; r <= gridRows; r++) {
+      for (let c = 0; c <= gridCols; c++) {
+        // ~15% of intersections get a particle
+        if (Math.sin(r * 7.3 + c * 13.1) > 0.6) {
+          pts.push({
+            x: leftPad + c * cellW,
+            y: topPad + r * cellH,
+            delay: ((r * gridCols + c) * 0.4) % 6,
+            dur: 3 + ((r + c) % 3),
+          });
+        }
+      }
+    }
+    return pts;
+  }, [cellW, cellH]);
+
+  // X axis labels — show ~5 evenly spaced
+  const xLabels = useMemo(() => {
+    if (currentPts.length <= 1) return currentPts;
+    const step = Math.max(1, Math.floor((currentPts.length - 1) / 5));
+    const labels: typeof currentPts = [];
+    for (let i = 0; i < currentPts.length; i += step) labels.push(currentPts[i]);
+    if (labels[labels.length - 1] !== currentPts[currentPts.length - 1]) {
+      labels.push(currentPts[currentPts.length - 1]);
+    }
+    return labels;
+  }, [currentPts]);
+
+  const hoverPt = hoverIdx !== null ? currentPts[hoverIdx] : null;
+
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      style={{ width: "100%", height }}
-    >
-      {yTicks.map((t) => (
-        <g key={t.value}>
+    <div style={{ position: "relative" }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ width: "100%", height: 300, display: "block" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        <defs>
+          <linearGradient id="cashGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#c9a96e" stopOpacity="0.3" />
+            <stop offset="60%" stopColor="#c9a96e" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#c9a96e" stopOpacity="0" />
+          </linearGradient>
+          <radialGradient id="particleGlow">
+            <stop offset="0%" stopColor="#c9a96e" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#c9a96e" stopOpacity="0" />
+          </radialGradient>
+          <filter id="gridGlow">
+            <feGaussianBlur stdDeviation="1" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="lineGlow">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Glowing square grid */}
+        {Array.from({ length: gridRows + 1 }).map((_, r) => (
           <line
+            key={`gh${r}`}
             x1={leftPad}
-            y1={t.y}
-            x2={width - rightPad}
-            y2={t.y}
-            stroke="rgba(255,255,255,0.05)"
+            y1={topPad + r * cellH}
+            x2={leftPad + chartW}
+            y2={topPad + r * cellH}
+            stroke="rgba(201,169,110,0.06)"
+            strokeWidth={0.5}
           />
+        ))}
+        {Array.from({ length: gridCols + 1 }).map((_, c) => (
+          <line
+            key={`gv${c}`}
+            x1={leftPad + c * cellW}
+            y1={topPad}
+            x2={leftPad + c * cellW}
+            y2={topPad + chartH}
+            stroke="rgba(201,169,110,0.06)"
+            strokeWidth={0.5}
+          />
+        ))}
+
+        {/* Grid intersection glow dots */}
+        {particles.map((p, i) => (
+          <circle
+            key={`gp${i}`}
+            cx={p.x}
+            cy={p.y}
+            r={1.5}
+            fill="url(#particleGlow)"
+            style={{
+              animation: `gridParticlePulse ${p.dur}s ease-in-out ${p.delay}s infinite`,
+            }}
+          />
+        ))}
+
+        {/* Y axis labels */}
+        {yTicks.map((t) => (
           <text
-            x={leftPad - 6}
+            key={t.value}
+            x={leftPad - 8}
             y={t.y + 3}
-            fill="var(--text-muted)"
-            fontSize={9}
+            fill="rgba(255,255,255,0.3)"
+            fontSize={10}
             textAnchor="end"
+            fontFamily="monospace"
           >
             {t.value >= 1000
               ? `$${(t.value / 1000).toFixed(1)}k`
               : `$${t.value.toFixed(0)}`}
           </text>
-        </g>
-      ))}
-      {previous.length > 0 && (
-        <>
-          <path d={makeArea(previous)} fill="rgba(255,255,255,0.03)" />
-          <polyline
-            points={makePoints(previous)}
-            fill="none"
-            stroke="rgba(255,255,255,0.15)"
-            strokeWidth={1.5}
-            strokeDasharray="4 4"
+        ))}
+
+        {/* Previous period — dashed smooth line */}
+        {prevPts.length > 1 && (
+          <>
+            <path
+              d={smoothArea(prevPts)}
+              fill="rgba(255,255,255,0.02)"
+            />
+            <path
+              d={smoothPath(prevPts)}
+              fill="none"
+              stroke="rgba(255,255,255,0.12)"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+            />
+          </>
+        )}
+
+        {/* Current period — smooth glowing gold line */}
+        {currentPts.length > 1 && (
+          <>
+            <path d={smoothArea(currentPts)} fill="url(#cashGrad)" />
+            {/* Glow layer */}
+            <path
+              d={smoothPath(currentPts)}
+              fill="none"
+              stroke="#c9a96e"
+              strokeWidth={4}
+              strokeLinecap="round"
+              opacity={0.3}
+              filter="url(#lineGlow)"
+            />
+            {/* Main line */}
+            <path
+              d={smoothPath(currentPts)}
+              fill="none"
+              stroke="#c9a96e"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
+          </>
+        )}
+
+        {/* Data point dots */}
+        {currentPts.map((p, i) => (
+          <circle
+            key={`dp${i}`}
+            cx={p.x}
+            cy={p.y}
+            r={hoverIdx === i ? 6 : 3}
+            fill={hoverIdx === i ? "#c9a96e" : "#0f0f12"}
+            stroke="#c9a96e"
+            strokeWidth={hoverIdx === i ? 2.5 : 1.5}
+            style={{ transition: "r 0.15s ease, fill 0.15s ease, stroke-width 0.15s ease" }}
           />
-        </>
+        ))}
+
+        {/* Hover vertical line */}
+        {hoverPt && (
+          <>
+            <line
+              x1={hoverPt.x}
+              y1={topPad}
+              x2={hoverPt.x}
+              y2={topPad + chartH}
+              stroke="rgba(201,169,110,0.3)"
+              strokeWidth={1}
+              strokeDasharray="4 3"
+            />
+            {/* Glow dot at intersection */}
+            <circle
+              cx={hoverPt.x}
+              cy={hoverPt.y}
+              r={10}
+              fill="none"
+              stroke="rgba(201,169,110,0.2)"
+              strokeWidth={1}
+            />
+          </>
+        )}
+
+        {/* X axis labels */}
+        {xLabels.map((p) => (
+          <text
+            key={`xl${p.date}`}
+            x={p.x}
+            y={topPad + chartH + 18}
+            fill="rgba(255,255,255,0.3)"
+            fontSize={10}
+            textAnchor="middle"
+            fontFamily="monospace"
+          >
+            {shortDate(p.date)}
+          </text>
+        ))}
+      </svg>
+
+      {/* Floating tooltip */}
+      {hoverPt && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${(hoverPt.x / width) * 100}%`,
+            top: `${(hoverPt.y / height) * 100 - 16}%`,
+            transform: "translate(-50%, -100%)",
+            background: "rgba(15,15,18,0.95)",
+            border: "1px solid rgba(201,169,110,0.4)",
+            borderRadius: 8,
+            padding: "8px 12px",
+            pointerEvents: "none",
+            zIndex: 20,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.6), 0 0 15px rgba(201,169,110,0.15)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: "rgba(255,255,255,0.5)",
+              marginBottom: 2,
+            }}
+          >
+            {new Date(hoverPt.date + "T00:00:00").toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            })}
+          </div>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "#c9a96e",
+              letterSpacing: "-0.5px",
+            }}
+          >
+            {fmtDollars(hoverPt.amount)}
+          </div>
+        </div>
       )}
-      {current.length > 0 && (
-        <>
-          <defs>
-            <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
-              <stop
-                offset="100%"
-                stopColor="var(--accent)"
-                stopOpacity="0"
-              />
-            </linearGradient>
-          </defs>
-          <path d={makeArea(current)} fill="url(#sparkGrad)" />
-          <polyline
-            points={makePoints(current)}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {current.map((d, i) => {
-            const x =
-              leftPad + (i / Math.max(current.length - 1, 1)) * chartW;
-            const y = topPad + chartH - (d.amount / maxVal) * chartH;
-            return (
-              <g key={d.date}>
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={3}
-                  fill="var(--accent)"
-                  stroke="#0f0f12"
-                  strokeWidth={1.5}
-                />
-                {(i === 0 || i === current.length - 1) && (
-                  <text
-                    x={x}
-                    y={topPad + chartH + 14}
-                    fill="var(--text-muted)"
-                    fontSize={9}
-                    textAnchor="middle"
-                  >
-                    {shortDate(d.date)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </>
-      )}
-    </svg>
+    </div>
   );
 }
 
@@ -671,6 +897,14 @@ const ALL_KEYFRAMES = `
 @keyframes cursorGlowPulse {
   0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
   50% { opacity: 0.8; transform: translate(-50%,-50%) scale(1.1); }
+}
+@keyframes gridParticlePulse {
+  0%, 100% { opacity: 0; r: 1; }
+  15% { opacity: 0.8; r: 2.5; }
+  30% { opacity: 0.3; r: 1.5; }
+  50% { opacity: 0.9; r: 3; }
+  70% { opacity: 0.2; r: 1; }
+  85% { opacity: 0.6; r: 2; }
 }
 `;
 
@@ -2142,29 +2376,32 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         </div>
       </div>
 
-      {/* Daily Cash Sparkline */}
+      {/* Daily Cash Chart */}
       <div
         data-reactive="0.8"
         style={{
-          padding: "16px 14px",
+          padding: "20px 18px",
           borderRadius: 10,
           border: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(255,255,255,0.02)",
+          background: "rgba(10,10,14,0.6)",
           ...RC,
         }}
       >
         <div
+          data-reactive-text
           style={{
-            fontSize: 11,
+            fontSize: 13,
             color: "var(--text-muted)",
             textTransform: "uppercase",
             letterSpacing: "0.5px",
-            marginBottom: 10,
+            marginBottom: 12,
+            fontWeight: 600,
+            ...RT,
           }}
         >
           Daily Cash Collected
         </div>
-        <SparkArea current={current.dailyCash} previous={prev2.dailyCash} />
+        <CashChart current={current.dailyCash} previous={prev2.dailyCash} />
         <div
           style={{
             display: "flex",
