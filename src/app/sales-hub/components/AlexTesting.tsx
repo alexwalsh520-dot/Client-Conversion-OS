@@ -226,12 +226,13 @@ function CashChart({
   previous: { date: string; amount: number }[];
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [mouseXPct, setMouseXPct] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const height = 300;
-  const width = 520;
-  const leftPad = 52;
-  const rightPad = 16;
+  const width = 620;
+  const leftPad = 40;
+  const rightPad = 8;
   const topPad = 20;
   const bottomPad = 32;
   const chartW = width - leftPad - rightPad;
@@ -297,7 +298,7 @@ function CashChart({
   const cellW = chartW / gridCols;
   const cellH = chartH / gridRows;
 
-  // Handle mouse move to find nearest point
+  // Handle mouse move to find nearest point and track actual mouse X
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
       if (currentPts.length === 0) return;
@@ -306,7 +307,9 @@ function CashChart({
       const rect = svg.getBoundingClientRect();
       const scaleX = width / rect.width;
       const mouseX = (e.clientX - rect.left) * scaleX;
-      // Find nearest point
+      // Track mouse X as SVG coordinate for the vertical line
+      setMouseXPct(mouseX);
+      // Find nearest point for tooltip data
       let nearest = 0;
       let nearestDist = Infinity;
       for (let i = 0; i < currentPts.length; i++) {
@@ -321,7 +324,10 @@ function CashChart({
     [currentPts],
   );
 
-  const handleMouseLeave = useCallback(() => setHoverIdx(null), []);
+  const handleMouseLeave = useCallback(() => {
+    setHoverIdx(null);
+    setMouseXPct(null);
+  }, []);
 
   // Gold particles at grid intersections (randomized subset)
   const particles = useMemo(() => {
@@ -502,28 +508,28 @@ function CashChart({
           />
         ))}
 
-        {/* Hover vertical line */}
+        {/* Hover vertical line — follows actual mouse X position */}
+        {mouseXPct !== null && (
+          <line
+            x1={mouseXPct}
+            y1={topPad}
+            x2={mouseXPct}
+            y2={topPad + chartH}
+            stroke="rgba(201,169,110,0.25)"
+            strokeWidth={1}
+            strokeDasharray="4 3"
+          />
+        )}
+        {/* Glow ring at nearest data point */}
         {hoverPt && (
-          <>
-            <line
-              x1={hoverPt.x}
-              y1={topPad}
-              x2={hoverPt.x}
-              y2={topPad + chartH}
-              stroke="rgba(201,169,110,0.3)"
-              strokeWidth={1}
-              strokeDasharray="4 3"
-            />
-            {/* Glow dot at intersection */}
-            <circle
-              cx={hoverPt.x}
-              cy={hoverPt.y}
-              r={10}
-              fill="none"
-              stroke="rgba(201,169,110,0.2)"
-              strokeWidth={1}
-            />
-          </>
+          <circle
+            cx={hoverPt.x}
+            cy={hoverPt.y}
+            r={10}
+            fill="none"
+            stroke="rgba(201,169,110,0.2)"
+            strokeWidth={1}
+          />
         )}
 
         {/* X axis labels */}
@@ -542,12 +548,12 @@ function CashChart({
         ))}
       </svg>
 
-      {/* Floating tooltip */}
-      {hoverPt && (
+      {/* Floating tooltip — positioned at actual mouse X, above nearest data point */}
+      {hoverPt && mouseXPct !== null && (
         <div
           style={{
             position: "absolute",
-            left: `${(hoverPt.x / width) * 100}%`,
+            left: `${(mouseXPct / width) * 100}%`,
             top: `${(hoverPt.y / height) * 100 - 16}%`,
             transform: "translate(-50%, -100%)",
             background: "rgba(15,15,18,0.95)",
@@ -1754,6 +1760,21 @@ function setupMouseTracking(
   }
 
   const reactives = container.querySelectorAll("[data-reactive]");
+
+  // Find the closest card to apply full effect; others get subtle treatment
+  let closestEl: Element | null = null;
+  let closestDist = Infinity;
+  reactives.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = Math.sqrt((clientX - cx) ** 2 + (clientY - cy) ** 2);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestEl = el;
+    }
+  });
+
   reactives.forEach((el) => {
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width / 2;
@@ -1768,17 +1789,22 @@ function setupMouseTracking(
     );
     const pi = p * intensity;
 
-    const scale = 1 + pi * 0.04;
-    const rotX = ((dy / maxDist) * 4 * intensity).toFixed(2);
-    const rotY = ((-dx / maxDist) * 4 * intensity).toFixed(2);
-    const tx = ((dx / maxDist) * 3 * intensity).toFixed(1);
-    const ty = ((dy / maxDist) * 3 * intensity).toFixed(1);
-    const glowA = (pi * 0.45).toFixed(2);
-    const borderA = (0.06 + pi * 0.45).toFixed(2);
+    const isMain = el === closestEl;
+    // Main card: full effect. Others: 25% tilt/scale/translate, 40% glow
+    const tiltMul = isMain ? 1 : 0.25;
+    const glowMul = isMain ? 1 : 0.4;
+
+    const scale = 1 + pi * 0.04 * tiltMul;
+    const rotX = ((dy / maxDist) * 4 * intensity * tiltMul).toFixed(2);
+    const rotY = ((-dx / maxDist) * 4 * intensity * tiltMul).toFixed(2);
+    const tx = ((dx / maxDist) * 3 * intensity * tiltMul).toFixed(1);
+    const ty = ((dy / maxDist) * 3 * intensity * tiltMul).toFixed(1);
+    const glowA = (pi * 0.45 * glowMul).toFixed(2);
+    const borderA = (0.06 + pi * 0.45 * glowMul).toFixed(2);
 
     const htmlEl = el as HTMLElement;
     htmlEl.style.transform = `perspective(600px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale.toFixed(4)}) translate(${tx}px, ${ty}px)`;
-    htmlEl.style.boxShadow = `0 0 ${Math.round(pi * 30)}px rgba(201,169,110,${glowA}), inset 0 0 ${Math.round(pi * 10)}px rgba(201,169,110,${(pi * 0.06).toFixed(2)})`;
+    htmlEl.style.boxShadow = `0 0 ${Math.round(pi * 30 * glowMul)}px rgba(201,169,110,${glowA}), inset 0 0 ${Math.round(pi * 10 * glowMul)}px rgba(201,169,110,${(pi * 0.06 * glowMul).toFixed(2)})`;
     htmlEl.style.borderColor = `rgba(201,169,110,${borderA})`;
   });
 
@@ -1840,7 +1866,7 @@ function resetMouseTracking(container: HTMLDivElement) {
       const h = el as HTMLElement;
       h.style.transform = "";
       h.style.boxShadow = "";
-      h.style.borderColor = "";
+      h.style.borderColor = "rgba(255,255,255,0.06)";
     });
   container
     .querySelectorAll("[data-reactive-text]")
@@ -2380,10 +2406,11 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
       <div
         data-reactive="0.8"
         style={{
-          padding: "20px 18px",
+          padding: "16px 0 12px 0",
           borderRadius: 10,
           border: "1px solid rgba(255,255,255,0.06)",
           background: "rgba(10,10,14,0.6)",
+          overflow: "hidden",
           ...RC,
         }}
       >
@@ -2394,8 +2421,9 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             color: "var(--text-muted)",
             textTransform: "uppercase",
             letterSpacing: "0.5px",
-            marginBottom: 12,
+            marginBottom: 8,
             fontWeight: 600,
+            padding: "0 18px",
             ...RT,
           }}
         >
@@ -2409,6 +2437,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             marginTop: 6,
             fontSize: 10,
             color: "var(--text-muted)",
+            padding: "0 18px",
           }}
         >
           <span>
