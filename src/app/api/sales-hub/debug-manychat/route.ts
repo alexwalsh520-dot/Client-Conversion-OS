@@ -87,22 +87,56 @@ export async function GET() {
     break;
   }
 
-  // 3. Try page/getSubscribers to see total subscriber count
-  try {
-    const res = await fetch(`${MANYCHAT_BASE}/page/getSubscribers?limit=5`, { headers });
-    const text = await res.text();
-    results.page_subscribers_status = res.status;
+  // 3. Try additional approaches
+  const firstTag = tags.find((t: { name: string }) => t.name.toLowerCase() === "new_lead");
+  if (firstTag) {
+    // Try POST /subscriber/getSubscribers
     try {
-      const parsed = JSON.parse(text);
-      results.page_subscribers = {
-        status: parsed.status,
-        total: parsed.data?.subscribers?.length || parsed.data?.length || 0,
-      };
-    } catch {
-      results.page_subscribers_raw = text.substring(0, 300);
+      const res = await fetch(`${MANYCHAT_BASE}/subscriber/getSubscribers`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ has_tag_id: firstTag.id, limit: 5 }),
+      });
+      const text = await res.text();
+      results.post_getSubscribers_status = res.status;
+      try { results.post_getSubscribers = JSON.parse(text); } catch { results.post_getSubscribers_raw = text.substring(0, 300); }
+    } catch (err) {
+      results.post_getSubscribers_error = String(err);
     }
-  } catch (err) {
-    results.page_subscribers_error = String(err);
+
+    // Try /subscriber/getInfo
+    try {
+      const res = await fetch(`${MANYCHAT_BASE}/subscriber/getInfo?subscriber_id=1`, { headers });
+      results.getInfo_status = res.status;
+      const text = await res.text();
+      try { results.getInfo = JSON.parse(text); } catch { results.getInfo_raw = text.substring(0, 200); }
+    } catch (err) {
+      results.getInfo_error = String(err);
+    }
+
+    // Try /page/getFlows to confirm other page endpoints work
+    try {
+      const res = await fetch(`${MANYCHAT_BASE}/page/getFlows`, { headers });
+      results.getFlows_status = res.status;
+    } catch (err) {
+      results.getFlows_error = String(err);
+    }
+
+    // Try /page/getGrowthTools
+    try {
+      const res = await fetch(`${MANYCHAT_BASE}/page/getGrowthTools`, { headers });
+      results.getGrowthTools_status = res.status;
+    } catch (err) {
+      results.getGrowthTools_error = String(err);
+    }
+
+    // Try /page/getBotFields
+    try {
+      const res = await fetch(`${MANYCHAT_BASE}/page/getBotFields`, { headers });
+      results.getBotFields_status = res.status;
+    } catch (err) {
+      results.getBotFields_error = String(err);
+    }
   }
 
   return NextResponse.json(results);
