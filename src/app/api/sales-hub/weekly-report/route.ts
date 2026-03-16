@@ -141,6 +141,23 @@ Vary the styles and base on actual data patterns.
 ## Red Flags
 Anything concerning that needs immediate attention.
 
+## CMO Strategic Analysis
+
+You are now speaking as the CMO of Core Shift LLC. Based on everything you've seen in the data, transcripts, and performance metrics, provide your strategic input. Your analysis should be framed around solving ONE constraint at a time with two optimization goals:
+
+1. **Maximize ROAS** — get the highest possible return on every dollar spent on ads
+2. **Maximize Ad Spend** — once ROAS is strong, scale spend as aggressively as possible
+
+Think through:
+- What is the current bottleneck limiting ROAS? (creative fatigue, audience saturation, funnel leaks, offer mismatch, etc.)
+- What would you do THIS week to improve ROAS based on the data?
+- Where would you allocate additional budget and why?
+- What creative angles are working and which should be killed?
+- What's the single most impactful lever to pull right now?
+- What tests would you run in the next 7 days?
+
+Be direct and opinionated. Give your actual recommendation, not a list of options. Think like a CMO who owns the P&L and has skin in the game.
+
 Be specific, data-driven, and actionable. No fluff. Reference actual data points.`;
 
 /* ── Main handler ───────────────────────────────────────────────── */
