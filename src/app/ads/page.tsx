@@ -1379,11 +1379,13 @@ function DockStrip({
       style={{
         display: "flex",
         alignItems: "flex-end",
-        justifyContent: "center",
+        justifyContent: creatives.length > 15 ? "flex-start" : "center",
         gap: GAP,
         padding: "20px 16px 10px",
         minHeight: BASE_H + 30,
         width: "100%",
+        overflowX: creatives.length > 15 ? "auto" : "visible",
+        overflowY: "visible",
       }}
     >
       {creatives.map((c, i) => {
@@ -3687,6 +3689,7 @@ export default function AdsPage() {
         {/* Canvas Area — pinch-to-zoom target */}
         <div ref={canvasAreaRef} style={{
           flex: 1,
+          minWidth: 0,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
