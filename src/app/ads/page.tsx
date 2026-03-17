@@ -24,6 +24,12 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
+  Bot,
+  Send,
+  ArrowRight,
+  Copy,
+  RefreshCw,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -1739,6 +1745,12 @@ export default function AdsPage() {
   const [editHistory, setEditHistory] = useState<
     { blockId: string; type: string; before: unknown; after: unknown; timestamp: number }[]
   >([]);
+  const [aiCopyOpen, setAiCopyOpen] = useState(false);
+  const [aiMessages, setAiMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiStreaming, setAiStreaming] = useState(false);
+  const aiChatRef = useRef<HTMLDivElement>(null);
+  const aiInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -1757,6 +1769,87 @@ export default function AdsPage() {
 
   // Image edit mode
   const [imageEditMode, setImageEditMode] = useState(false);
+
+  // AI Copy — send message and stream response
+  const sendAiMessage = useCallback(async () => {
+    const text = aiInput.trim();
+    if (!text || aiStreaming) return;
+    setAiInput("");
+    const userMsg = { role: "user" as const, content: text };
+    const newMessages = [...aiMessages, userMsg];
+    setAiMessages(newMessages);
+    setAiStreaming(true);
+
+    // Add empty assistant message for streaming
+    const assistantMsg = { role: "assistant" as const, content: "" };
+    setAiMessages([...newMessages, assistantMsg]);
+
+    try {
+      const res = await fetch("/api/ads/ai-copy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages }),
+      });
+
+      if (!res.ok) throw new Error("AI request failed");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream");
+
+      const decoder = new TextDecoder();
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.text) {
+                fullText += parsed.text;
+                setAiMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: fullText };
+                  return updated;
+                });
+              }
+            } catch { /* skip malformed chunks */ }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("AI copy stream error:", err);
+      setAiMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: "assistant", content: "Sorry, something went wrong. Try again." };
+        return updated;
+      });
+    } finally {
+      setAiStreaming(false);
+    }
+  }, [aiInput, aiMessages, aiStreaming]);
+
+  // Extract formatted copy from the last AI message
+  const extractCopyFromAi = useCallback(() => {
+    const lastAssistant = [...aiMessages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return;
+    // Use the full content — the AI formats it correctly
+    setCopyText(lastAssistant.content.trim());
+    setAiCopyOpen(false);
+  }, [aiMessages]);
+
+  // Auto-scroll AI chat
+  useEffect(() => {
+    if (aiChatRef.current) {
+      aiChatRef.current.scrollTop = aiChatRef.current.scrollHeight;
+    }
+  }, [aiMessages]);
 
   const currentCreative = creatives[currentIndex];
   // Primary selected block (last one added to set) — used for sidebar editor
@@ -3068,38 +3161,267 @@ export default function AdsPage() {
 
             {/* Copy Input */}
             <div className="glass-static" style={{ padding: 24 }}>
-              <h2
-                className="section-title"
-                style={{ marginBottom: 16 }}
-              >
-                <FileText size={16} />
-                Ad Copy
-              </h2>
-              <p
-                style={{
-                  color: "var(--text-secondary)",
-                  fontSize: 13,
-                  marginBottom: 8,
-                }}
-              >
-                Paste your ad copy below. Blank lines separate text blocks within one ad.
-              </p>
-              <p
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: 12,
-                  marginBottom: 12,
-                  lineHeight: 1.5,
-                }}
-              >
-                <strong style={{ color: "#7C5CFC" }}>Multiple ads?</strong>{" "}
-                Use <code style={{ background: "var(--bg-secondary)", padding: "1px 5px", borderRadius: 4 }}>-----</code> between each ad to distribute different copy across your photos.
-              </p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <h2 className="section-title" style={{ marginBottom: 0 }}>
+                  <FileText size={16} />
+                  Ad Copy
+                </h2>
+                <button
+                  onClick={() => { setAiCopyOpen(!aiCopyOpen); setTimeout(() => aiInputRef.current?.focus(), 100); }}
+                  style={{
+                    background: aiCopyOpen ? "rgba(124,92,252,0.2)" : "linear-gradient(135deg, rgba(124,92,252,0.15), rgba(168,85,247,0.15))",
+                    border: aiCopyOpen ? "1px solid rgba(124,92,252,0.4)" : "1px solid rgba(124,92,252,0.25)",
+                    color: aiCopyOpen ? "#a78bfa" : "#c4b5fd",
+                    padding: "7px 14px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    transition: "all 0.2s",
+                    letterSpacing: 0.5,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(124,92,252,0.25)";
+                    e.currentTarget.style.borderColor = "rgba(124,92,252,0.5)";
+                    e.currentTarget.style.color = "#d4c4ff";
+                    e.currentTarget.style.boxShadow = "0 0 20px rgba(124,92,252,0.2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = aiCopyOpen ? "rgba(124,92,252,0.2)" : "linear-gradient(135deg, rgba(124,92,252,0.15), rgba(168,85,247,0.15))";
+                    e.currentTarget.style.borderColor = aiCopyOpen ? "rgba(124,92,252,0.4)" : "rgba(124,92,252,0.25)";
+                    e.currentTarget.style.color = aiCopyOpen ? "#a78bfa" : "#c4b5fd";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                >
+                  <Bot size={14} />
+                  AI COPY
+                </button>
+              </div>
+
+              {/* AI Copy Chat Panel */}
+              {aiCopyOpen && (
+                <div style={{
+                  background: "rgba(10,8,20,0.95)",
+                  border: "1px solid rgba(124,92,252,0.2)",
+                  borderRadius: 12,
+                  marginBottom: 14,
+                  overflow: "hidden",
+                  boxShadow: "0 4px 30px rgba(124,92,252,0.08), inset 0 1px 0 rgba(124,92,252,0.1)",
+                }}>
+                  {/* Chat header */}
+                  <div style={{
+                    padding: "10px 14px",
+                    borderBottom: "1px solid rgba(124,92,252,0.12)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    background: "rgba(124,92,252,0.05)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{
+                        width: 8, height: 8, borderRadius: "50%",
+                        background: aiStreaming ? "#22c55e" : "#7C5CFC",
+                        boxShadow: aiStreaming ? "0 0 8px rgba(34,197,94,0.6)" : "0 0 8px rgba(124,92,252,0.4)",
+                        animation: aiStreaming ? "pulse 1.5s ease-in-out infinite" : "none",
+                      }} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5 }}>
+                        {aiStreaming ? "Writing copy..." : "Forge Copywriter"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setAiCopyOpen(false)}
+                      style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", padding: 2 }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  {/* Chat messages */}
+                  <div
+                    ref={aiChatRef}
+                    style={{
+                      height: 320,
+                      overflowY: "auto",
+                      padding: "12px 14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {aiMessages.length === 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, opacity: 0.5 }}>
+                        <Bot size={28} style={{ color: "#7C5CFC" }} />
+                        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", textAlign: "center", lineHeight: 1.6, maxWidth: 280 }}>
+                          Tell me what ads to write.<br />
+                          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+                            e.g. &quot;Write 5 spring shredding challenge ads&quot;
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                    {aiMessages.map((msg, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+                        }}
+                      >
+                        <div style={{
+                          maxWidth: "92%",
+                          padding: "8px 12px",
+                          borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                          background: msg.role === "user"
+                            ? "rgba(124,92,252,0.2)"
+                            : "rgba(255,255,255,0.04)",
+                          border: msg.role === "user"
+                            ? "1px solid rgba(124,92,252,0.3)"
+                            : "1px solid rgba(255,255,255,0.06)",
+                          fontSize: 13,
+                          lineHeight: 1.6,
+                          color: "rgba(255,255,255,0.85)",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}>
+                          {msg.content || (aiStreaming && i === aiMessages.length - 1 ? "..." : "")}
+                        </div>
+                        {/* Use This Copy button on assistant messages */}
+                        {msg.role === "assistant" && msg.content && !aiStreaming && (
+                          <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                            <button
+                              onClick={extractCopyFromAi}
+                              style={{
+                                background: "rgba(34,197,94,0.12)",
+                                border: "1px solid rgba(34,197,94,0.25)",
+                                color: "#4ade80",
+                                padding: "4px 10px",
+                                borderRadius: 6,
+                                cursor: "pointer",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                transition: "all 0.15s",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(34,197,94,0.2)";
+                                e.currentTarget.style.boxShadow = "0 0 12px rgba(34,197,94,0.15)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "rgba(34,197,94,0.12)";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            >
+                              <ArrowRight size={11} /> Use This Copy
+                            </button>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(msg.content)}
+                              style={{
+                                background: "rgba(255,255,255,0.04)",
+                                border: "1px solid rgba(255,255,255,0.08)",
+                                color: "rgba(255,255,255,0.4)",
+                                padding: "4px 8px",
+                                borderRadius: 6,
+                                cursor: "pointer",
+                                fontSize: 11,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                transition: "all 0.15s",
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                            >
+                              <Copy size={10} /> Copy
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Chat input */}
+                  <div style={{
+                    padding: "10px 12px",
+                    borderTop: "1px solid rgba(124,92,252,0.12)",
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-end",
+                    background: "rgba(124,92,252,0.03)",
+                  }}>
+                    <textarea
+                      ref={aiInputRef}
+                      value={aiInput}
+                      onChange={(e) => setAiInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendAiMessage();
+                        }
+                      }}
+                      placeholder="Write 10 spring shredding challenge ads..."
+                      rows={1}
+                      style={{
+                        flex: 1,
+                        background: "rgba(16,14,28,0.8)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 8,
+                        color: "rgba(255,255,255,0.9)",
+                        padding: "8px 12px",
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        resize: "none",
+                        outline: "none",
+                        fontFamily: "inherit",
+                      }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(124,92,252,0.4)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+                    />
+                    <button
+                      onClick={sendAiMessage}
+                      disabled={!aiInput.trim() || aiStreaming}
+                      style={{
+                        background: aiInput.trim() && !aiStreaming ? "#7C5CFC" : "rgba(124,92,252,0.2)",
+                        border: "none",
+                        color: aiInput.trim() && !aiStreaming ? "#fff" : "rgba(255,255,255,0.3)",
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        cursor: aiInput.trim() && !aiStreaming ? "pointer" : "default",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.15s",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!aiCopyOpen && (
+                <>
+                  <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 8 }}>
+                    Paste your ad copy below. Blank lines separate text blocks within one ad.
+                  </p>
+                  <p style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                    <strong style={{ color: "#7C5CFC" }}>Multiple ads?</strong>{" "}
+                    Use <code style={{ background: "var(--bg-secondary)", padding: "1px 5px", borderRadius: 4 }}>-----</code> between each ad to distribute different copy across your photos.
+                  </p>
+                </>
+              )}
               <textarea
                 value={copyText}
                 onChange={(e) => setCopyText(e.target.value)}
                 placeholder={`*NEW* Free Winter\nWeight Loss Challenge\n\n- 6 weeks\n- my workout plan to get absolutely diced\n- dead simple diet plan (no counting macros)\n- accountability group so you actually stick w/ it\n\nFree. Not eventually free.\nNot "free trial." Free free.\n\nDM to join before I start\ncharging for this.`}
-                rows={14}
+                rows={aiCopyOpen ? 6 : 14}
                 style={{
                   ...inputStyle,
                   fontFamily: "var(--font-geist-mono)",
