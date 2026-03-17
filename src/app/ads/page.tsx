@@ -531,9 +531,11 @@ function AdCanvas({
         }
       }
 
-      // Apply snaps
-      const finalX = bestSnapX ? Math.round(bestSnapX.snappedX) : rawX;
-      const finalY = bestSnapY ? Math.round(bestSnapY.snappedY) : rawY;
+      // Apply snaps + CLAMP to keep block within canvas bounds
+      const clampedX = Math.max(-blockW * 0.3, Math.min(W - blockW * 0.3, bestSnapX ? bestSnapX.snappedX : rawX));
+      const clampedY = Math.max(-blockH * 0.3, Math.min(H - blockH * 0.3, bestSnapY ? bestSnapY.snappedY : rawY));
+      const finalX = Math.round(clampedX);
+      const finalY = Math.round(clampedY);
 
       // Set active guides (only those that are actually snapping)
       const guidesX = bestSnapX ? [bestSnapX.guideX] : [];
@@ -692,7 +694,9 @@ function AdCanvas({
           setImagePanning({ startX: e.clientX, startY: e.clientY });
         }
         // Start marquee selection on empty canvas (not on a block, not in image edit mode)
-        if (!imageEditMode && e.target === e.currentTarget) {
+        // Allow starting on the canvas div OR the background image
+        const clickedOnBlock = (e.target as HTMLElement).closest("[data-text-block]");
+        if (!imageEditMode && !clickedOnBlock) {
           const rect = canvasRef.current?.getBoundingClientRect();
           if (rect) {
             const x = (e.clientX - rect.left) / scale;
@@ -2593,10 +2597,13 @@ export default function AdsPage() {
           const bgW = textW + 2 * paddingH;
           const bgH = lh + 2 * paddingV; // visual bg includes padding
 
-          // Horizontal alignment
+          // Horizontal alignment — CLAMP so text never goes off-canvas
           let lineX = x;
           if (align === "center") lineX = x + (maxWidth - bgW) / 2;
           else if (align === "right") lineX = x + maxWidth - bgW;
+          // Clamp: ensure the background (and text) stays within 0..1080
+          if (lineX < 0) lineX = 0;
+          if (lineX + bgW > 1080) lineX = 1080 - bgW;
 
           // Draw background rounded rect — extends paddingV above and below text
           if (bgOpacity > 0) {
