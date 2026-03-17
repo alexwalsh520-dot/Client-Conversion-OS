@@ -2568,19 +2568,25 @@ export default function AdsPage() {
       }
     }
 
-    // ── 2. Text blocks (background rects + text) ──
+    // ── 2. Text blocks — TWO GLOBAL PASSES so no background ever covers any text ──
+    // Pre-compute layout for all blocks (wrapped lines, positions)
+    type RenderedLine = {
+      wLine: string; lineX: number; curY: number; textY: number;
+      bgW: number; bgH: number; lh: number;
+      block: typeof creative.textBlocks[0];
+    };
+    const allRenderedLines: RenderedLine[] = [];
+
     for (const block of creative.textBlocks) {
-      const { x, y, fontSize, fontWeight, fontFamily, bgColor, bgOpacity,
-              paddingH, paddingV, borderRadius, lineHeight: lhMult, lineGap,
-              maxWidth, align, lines, textColor, highlightWords } = block;
+      const { x, y, fontSize, fontWeight, fontFamily,
+              paddingH, paddingV, lineHeight: lhMult, lineGap,
+              maxWidth, align, lines } = block;
 
       ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
       ctx.textBaseline = "alphabetic";
       const lh = fontSize * (lhMult || 1.5);
       const availW = maxWidth - 2 * paddingH;
-      // curY tracks the top of the TEXT area (not the background)
-      // Background extends paddingV above and below curY's text area
-      let curY = y + paddingV; // offset so first bg starts at y
+      let curY = y + paddingV;
 
       for (const line of lines) {
         if (!line.trim()) {
@@ -2595,67 +2601,72 @@ export default function AdsPage() {
           const isLastWrappedLine = wi === wrapped.length - 1;
           const textW = ctx.measureText(wLine).width;
           const bgW = textW + 2 * paddingH;
-          const bgH = lh + 2 * paddingV; // visual bg includes padding
+          const bgH = lh + 2 * paddingV;
 
-          // Horizontal alignment — CLAMP so text never goes off-canvas
           let lineX = x;
           if (align === "center") lineX = x + (maxWidth - bgW) / 2;
           else if (align === "right") lineX = x + maxWidth - bgW;
-          // Clamp: ensure the background (and text) stays within 0..1080
           if (lineX < 0) lineX = 0;
           if (lineX + bgW > 1080) lineX = 1080 - bgW;
 
-          // Draw background rounded rect — extends paddingV above and below text
-          if (bgOpacity > 0) {
-            ctx.fillStyle = `rgba(${hexToRgb(bgColor)}, ${bgOpacity})`;
-            canvasRoundRect(ctx, lineX, curY - paddingV, bgW, bgH, borderRadius);
-            ctx.fill();
-          }
+          const textY = curY + lh * 0.72;
+          allRenderedLines.push({ wLine, lineX, curY, textY, bgW, bgH, lh, block });
 
-          // Draw text — handle per-word highlights if any
-          const textY = curY + lh * 0.72; // baseline within text area
-
-          if (highlightWords && highlightWords.length > 0) {
-            // Split into styled segments (same logic as renderStyledLine)
-            type Seg = { text: string; color?: string; bg?: string };
-            const segs: Seg[] = [];
-            let rem = wLine;
-            while (rem.length > 0) {
-              let earliest: { idx: number; len: number; hw: typeof highlightWords[0] } | null = null;
-              for (const hw of highlightWords) {
-                if (!hw.word) continue;
-                const idx = rem.toLowerCase().indexOf(hw.word.toLowerCase());
-                if (idx !== -1 && (!earliest || idx < earliest.idx)) {
-                  earliest = { idx, len: hw.word.length, hw };
-                }
-              }
-              if (!earliest) { segs.push({ text: rem }); break; }
-              if (earliest.idx > 0) segs.push({ text: rem.slice(0, earliest.idx) });
-              segs.push({ text: rem.slice(earliest.idx, earliest.idx + earliest.len), color: earliest.hw.textColor, bg: earliest.hw.bgColor });
-              rem = rem.slice(earliest.idx + earliest.len);
-            }
-
-            let segX = lineX + paddingH;
-            for (const seg of segs) {
-              const segW = ctx.measureText(seg.text).width;
-              if (seg.bg) {
-                ctx.fillStyle = seg.bg;
-                canvasRoundRect(ctx, segX - 2, curY + 2, segW + 4, lh - 4, Math.min(4, borderRadius));
-                ctx.fill();
-              }
-              ctx.fillStyle = seg.color || textColor;
-              ctx.fillText(seg.text, segX, textY);
-              segX += segW;
-            }
-          } else {
-            ctx.fillStyle = textColor;
-            ctx.fillText(wLine, lineX + paddingH, textY);
-          }
-
-          // Wrapped sub-lines within same line: advance by just lh (CSS lineHeight handles this)
-          // After the last wrapped sub-line: add lineGap (CSS marginBottom between line divs)
           curY += isLastWrappedLine ? lh + lineGap : lh;
         }
+      }
+    }
+
+    // PASS 1: Draw ALL backgrounds across ALL blocks
+    for (const rl of allRenderedLines) {
+      const { lineX, curY, bgW, bgH, block } = rl;
+      if (block.bgOpacity > 0) {
+        ctx.fillStyle = `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`;
+        canvasRoundRect(ctx, lineX, curY - block.paddingV, bgW, bgH, block.borderRadius);
+        ctx.fill();
+      }
+    }
+
+    // PASS 2: Draw ALL text across ALL blocks (always on top of all backgrounds)
+    for (const rl of allRenderedLines) {
+      const { wLine, lineX, curY, textY, lh, block } = rl;
+      ctx.font = `${block.fontWeight} ${block.fontSize}px ${block.fontFamily}`;
+      ctx.textBaseline = "alphabetic";
+
+      if (block.highlightWords && block.highlightWords.length > 0) {
+        type Seg = { text: string; color?: string; bg?: string };
+        const segs: Seg[] = [];
+        let rem = wLine;
+        while (rem.length > 0) {
+          let earliest: { idx: number; len: number; hw: typeof block.highlightWords[0] } | null = null;
+          for (const hw of block.highlightWords) {
+            if (!hw.word) continue;
+            const idx = rem.toLowerCase().indexOf(hw.word.toLowerCase());
+            if (idx !== -1 && (!earliest || idx < earliest.idx)) {
+              earliest = { idx, len: hw.word.length, hw };
+            }
+          }
+          if (!earliest) { segs.push({ text: rem }); break; }
+          if (earliest.idx > 0) segs.push({ text: rem.slice(0, earliest.idx) });
+          segs.push({ text: rem.slice(earliest.idx, earliest.idx + earliest.len), color: earliest.hw.textColor, bg: earliest.hw.bgColor });
+          rem = rem.slice(earliest.idx + earliest.len);
+        }
+
+        let segX = lineX + block.paddingH;
+        for (const seg of segs) {
+          const segW = ctx.measureText(seg.text).width;
+          if (seg.bg) {
+            ctx.fillStyle = seg.bg;
+            canvasRoundRect(ctx, segX - 2, curY + 2, segW + 4, lh - 4, Math.min(4, block.borderRadius));
+            ctx.fill();
+          }
+          ctx.fillStyle = seg.color || block.textColor;
+          ctx.fillText(seg.text, segX, textY);
+          segX += segW;
+        }
+      } else {
+        ctx.fillStyle = block.textColor;
+        ctx.fillText(wLine, lineX + block.paddingH, textY);
       }
     }
 
