@@ -1940,22 +1940,34 @@ export default function AdsPage() {
     []
   );
 
-  // Estimate rendered height of a text block (px) — accounts for text wrapping
+  // Estimate rendered height of a text block — uses Canvas measureText for pixel-accurate wrapping
   const estimateBlockHeight = (block: TextBlock): number => {
     const lineH = block.fontSize * (block.lineHeight || 1.5);
     const availW = (block.maxWidth || 960) - 2 * block.paddingH;
-    // Estimate chars per line based on font size (~0.55 of fontSize per char average)
-    const charW = block.fontSize * 0.55;
-    const charsPerLine = Math.max(1, Math.floor(availW / charW));
+
+    // Use canvas measureText for accurate width measurement
+    const mc = document.createElement("canvas").getContext("2d");
 
     let totalVisualLines = 0;
     let emptyLines = 0;
     for (const line of block.lines) {
-      if (!line.trim()) {
-        emptyLines++;
+      if (!line.trim()) { emptyLines++; continue; }
+
+      if (mc) {
+        mc.font = `${block.fontWeight} ${block.fontSize}px ${block.fontFamily}`;
+        const words = line.split(" ");
+        let cur = words[0] || "";
+        let vLines = 1;
+        for (let w = 1; w < words.length; w++) {
+          const test = cur + " " + words[w];
+          if (mc.measureText(test).width > availW) { vLines++; cur = words[w]; }
+          else { cur = test; }
+        }
+        totalVisualLines += vLines;
       } else {
-        // Estimate how many visual lines this text will wrap into
-        totalVisualLines += Math.max(1, Math.ceil(line.length / charsPerLine));
+        // Fallback if no canvas context
+        const charW = block.fontSize * 0.45;
+        totalVisualLines += Math.max(1, Math.ceil(line.length / Math.floor(availW / charW)));
       }
     }
 
