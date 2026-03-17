@@ -1059,12 +1059,13 @@ function AdCanvas({
                 {edgeHandleTB("s")}
               </>
             )}
+            {/* Two-pass rendering: backgrounds first, then text on top */}
+            {/* Pass 1: Backgrounds only (behind all text) */}
             {block.lines.map((line, li) => {
-              // Empty lines = visual spacing, no background
               if (!line.trim()) {
                 return (
                   <div
-                    key={li}
+                    key={`bg-${li}`}
                     style={{
                       height: Math.round(block.fontSize * 0.5 + block.lineGap),
                     }}
@@ -1073,17 +1074,17 @@ function AdCanvas({
               }
               return (
                 <div
-                  key={li}
+                  key={`bg-${li}`}
                   style={{
                     display: "inline-block",
-                    marginBottom: Math.max(block.lineGap, block.paddingV * 0.5),
+                    marginBottom: block.lineGap,
                   }}
                 >
                   <span
                     style={{
                       display: "inline",
                       backgroundColor: `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`,
-                      color: block.textColor,
+                      color: "transparent",
                       fontSize: block.fontSize,
                       fontWeight: block.fontWeight,
                       fontFamily: block.fontFamily,
@@ -1099,6 +1100,48 @@ function AdCanvas({
                 </div>
               );
             })}
+            {/* Pass 2: Text only (on top of backgrounds) */}
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+              {block.lines.map((line, li) => {
+                if (!line.trim()) {
+                  return (
+                    <div
+                      key={`txt-${li}`}
+                      style={{
+                        height: Math.round(block.fontSize * 0.5 + block.lineGap),
+                      }}
+                    />
+                  );
+                }
+                return (
+                  <div
+                    key={`txt-${li}`}
+                    style={{
+                      display: "inline-block",
+                      marginBottom: block.lineGap,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline",
+                        backgroundColor: "transparent",
+                        color: block.textColor,
+                        fontSize: block.fontSize,
+                        fontWeight: block.fontWeight,
+                        fontFamily: block.fontFamily,
+                        padding: `${block.paddingV}px ${block.paddingH}px`,
+                        borderRadius: block.borderRadius,
+                        lineHeight: block.lineHeight || 1.5,
+                        boxDecorationBreak: "clone" as const,
+                        WebkitBoxDecorationBreak: "clone" as const,
+                      }}
+                    >
+                      {renderStyledLine(line, block)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })}
@@ -1232,13 +1275,13 @@ function MiniCanvas({ creative }: { creative: AdCreative }) {
           }}
         >
           {block.lines.map((line, li) => {
-            if (!line.trim()) return <div key={li} style={{ height: Math.round(block.fontSize * 0.5 + block.lineGap) }} />;
+            if (!line.trim()) return <div key={`bg-${li}`} style={{ height: Math.round(block.fontSize * 0.5 + block.lineGap) }} />;
             return (
-              <div key={li} style={{ display: "inline-block", marginBottom: Math.max(block.lineGap, block.paddingV * 0.5) }}>
+              <div key={`bg-${li}`} style={{ display: "inline-block", marginBottom: block.lineGap }}>
                 <span style={{
                   display: "inline",
                   backgroundColor: `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`,
-                  color: block.textColor,
+                  color: "transparent",
                   fontSize: block.fontSize,
                   fontWeight: block.fontWeight,
                   fontFamily: block.fontFamily,
@@ -1251,6 +1294,28 @@ function MiniCanvas({ creative }: { creative: AdCreative }) {
               </div>
             );
           })}
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+            {block.lines.map((line, li) => {
+              if (!line.trim()) return <div key={`txt-${li}`} style={{ height: Math.round(block.fontSize * 0.5 + block.lineGap) }} />;
+              return (
+                <div key={`txt-${li}`} style={{ display: "inline-block", marginBottom: block.lineGap }}>
+                  <span style={{
+                    display: "inline",
+                    backgroundColor: "transparent",
+                    color: block.textColor,
+                    fontSize: block.fontSize,
+                    fontWeight: block.fontWeight,
+                    fontFamily: block.fontFamily,
+                    padding: `${block.paddingV}px ${block.paddingH}px`,
+                    borderRadius: block.borderRadius,
+                    lineHeight: block.lineHeight || 1.5,
+                    boxDecorationBreak: "clone" as const,
+                    WebkitBoxDecorationBreak: "clone" as const,
+                  }}>{renderStyledLine(line, block)}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
     </div>
@@ -1702,7 +1767,7 @@ export default function AdsPage() {
 
   // Push undo snapshot (call BEFORE every mutation)
   const pushUndo = useCallback(() => {
-    setUndoStack((s) => [...s.slice(-49), creatives]);
+    setUndoStack((s) => [...s.slice(-19), creatives]);
     setRedoStack([]);
   }, [creatives]);
 
@@ -2438,14 +2503,14 @@ export default function AdsPage() {
         for (const wLine of wrapped) {
           const textW = ctx.measureText(wLine).width;
           const bgW = textW + 2 * paddingH;
-          const bgH = lh;
+          const bgH = lh + 2 * paddingV;
 
           // Horizontal alignment
           let lineX = x;
           if (align === "center") lineX = x + (maxWidth - bgW) / 2;
           else if (align === "right") lineX = x + maxWidth - bgW;
 
-          // Draw background rounded rect
+          // Draw background rounded rect (extends paddingV above and below text)
           if (bgOpacity > 0) {
             ctx.fillStyle = `rgba(${hexToRgb(bgColor)}, ${bgOpacity})`;
             canvasRoundRect(ctx, lineX, curY, bgW, bgH, borderRadius);
@@ -2453,7 +2518,7 @@ export default function AdsPage() {
           }
 
           // Draw text — handle per-word highlights if any
-          const textY = curY + lh * 0.72; // baseline position (~72% of line-height)
+          const textY = curY + paddingV + lh * 0.72; // baseline within padded area
 
           if (highlightWords && highlightWords.length > 0) {
             // Split into styled segments (same logic as renderStyledLine)
@@ -2492,7 +2557,7 @@ export default function AdsPage() {
             ctx.fillText(wLine, lineX + paddingH, textY);
           }
 
-          curY += bgH + Math.max(lineGap, paddingV * 0.5);
+          curY += bgH + lineGap;
         }
       }
     }
