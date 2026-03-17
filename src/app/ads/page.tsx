@@ -3383,7 +3383,7 @@ export default function AdsPage() {
           backgroundImage: "radial-gradient(circle, rgba(124,92,252,0.03) 1px, transparent 1px)",
           backgroundSize: "24px 24px",
           position: "relative",
-          overflow: imageEditMode ? "visible" : "hidden",
+          overflow: "hidden",
         }}>
           {/* Canvas wrapper — uses visual dimensions so it doesn't push sidebar off screen */}
           {currentCreative && (
@@ -3429,7 +3429,7 @@ export default function AdsPage() {
           <DockStrip
             creatives={creatives}
             currentIndex={currentIndex}
-            onSelect={(i) => { setCurrentIndex(i); setSelectedBlockIds(new Set()); }}
+            onSelect={(i) => { setCurrentIndex(i); setSelectedBlockIds(new Set()); setImageEditMode(false); }}
           />
         </div>
 
