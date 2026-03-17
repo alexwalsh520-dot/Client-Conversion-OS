@@ -2502,7 +2502,9 @@ export default function AdsPage() {
 
         const wrapped = wrapText(ctx, line, availW);
 
-        for (const wLine of wrapped) {
+        for (let wi = 0; wi < wrapped.length; wi++) {
+          const wLine = wrapped[wi];
+          const isLastWrappedLine = wi === wrapped.length - 1;
           const textW = ctx.measureText(wLine).width;
           const bgW = textW + 2 * paddingH;
           const bgH = lh + 2 * paddingV; // visual bg includes padding
@@ -2513,7 +2515,6 @@ export default function AdsPage() {
           else if (align === "right") lineX = x + maxWidth - bgW;
 
           // Draw background rounded rect — extends paddingV above and below text
-          // This means adjacent backgrounds overlap when lineGap < 2*paddingV (matches CSS)
           if (bgOpacity > 0) {
             ctx.fillStyle = `rgba(${hexToRgb(bgColor)}, ${bgOpacity})`;
             canvasRoundRect(ctx, lineX, curY - paddingV, bgW, bgH, borderRadius);
@@ -2560,9 +2561,9 @@ export default function AdsPage() {
             ctx.fillText(wLine, lineX + paddingH, textY);
           }
 
-          // Advance by line-height + lineGap (matches CSS layout)
-          // When lineGap < 2*paddingV, backgrounds will visually overlap — matching the editor
-          curY += lh + lineGap;
+          // Wrapped sub-lines within same line: advance by just lh (CSS lineHeight handles this)
+          // After the last wrapped sub-line: add lineGap (CSS marginBottom between line divs)
+          curY += isLastWrappedLine ? lh + lineGap : lh;
         }
       }
     }
