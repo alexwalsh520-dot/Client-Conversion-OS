@@ -3379,9 +3379,15 @@ export default function AdsPage() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #13111d 0%, #1a1530 40%, #0f0d1a 100%)",
-          backgroundImage: "radial-gradient(circle, rgba(124,92,252,0.03) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
+          backgroundColor: "#18161f",
+          backgroundImage: `
+            linear-gradient(45deg, #1e1c27 25%, transparent 25%),
+            linear-gradient(-45deg, #1e1c27 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #1e1c27 75%),
+            linear-gradient(-45deg, transparent 75%, #1e1c27 75%)
+          `,
+          backgroundSize: "20px 20px",
+          backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
           position: "relative",
           overflow: "hidden",
         }}>
@@ -3395,6 +3401,8 @@ export default function AdsPage() {
                 flexShrink: 0,
                 position: "relative",
                 overflow: imageEditMode ? "visible" : "hidden",
+                boxShadow: "0 4px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
+                borderRadius: 4,
               }}
             >
               <AdCanvas
