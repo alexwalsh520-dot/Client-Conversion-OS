@@ -3379,15 +3379,12 @@ export default function AdsPage() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#18161f",
+          backgroundColor: "#08080e",
           backgroundImage: `
-            linear-gradient(45deg, #1e1c27 25%, transparent 25%),
-            linear-gradient(-45deg, #1e1c27 25%, transparent 25%),
-            linear-gradient(45deg, transparent 75%, #1e1c27 75%),
-            linear-gradient(-45deg, transparent 75%, #1e1c27 75%)
+            linear-gradient(rgba(60,60,220,0.13) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(60,60,220,0.13) 1px, transparent 1px)
           `,
-          backgroundSize: "20px 20px",
-          backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+          backgroundSize: "56px 56px",
           position: "relative",
           overflow: "hidden",
         }}>
