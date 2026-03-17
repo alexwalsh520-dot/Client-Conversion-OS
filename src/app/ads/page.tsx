@@ -1356,7 +1356,9 @@ function DockStrip({
   }, []);
 
   const totalW = creatives.length * BASE_W + (creatives.length - 1) * GAP;
-  const startX = (stripW - totalW) / 2;
+  const isScrollable = creatives.length > 15;
+  // When scrollable, items start at 0 (flex-start); when centered, offset from center
+  const startX = isScrollable ? 16 : (stripW - totalW) / 2;
 
   const getScale = (i: number) => {
     if (mouseX === null) return 1;
@@ -1372,8 +1374,11 @@ function DockStrip({
     <div
       ref={stripRef}
       onMouseMove={(e) => {
-        const rect = stripRef.current?.getBoundingClientRect();
-        if (rect) setMouseX(e.clientX - rect.left);
+        const el = stripRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        // Account for scroll offset so hover matches the actual item under cursor
+        setMouseX(e.clientX - rect.left + el.scrollLeft);
       }}
       onMouseLeave={() => setMouseX(null)}
       style={{
@@ -2079,47 +2084,27 @@ export default function AdsPage() {
     };
   }, []);
 
-  // Default vertical layout (fallback when AI is unavailable)
+  // Default vertical layout — simple top-to-bottom stacking, no overlaps ever
   const layoutBlocksDefault = useCallback((blocks: TextBlock[]) => {
     const W = 1080;
     const H = 1920;
     const MARGIN_TOP = 60;
-    const MARGIN_BOTTOM = 80;
-    const GAP = 40;
     const heights = blocks.map((b) => estimateBlockHeight(b));
+    const totalH = heights.reduce((s, h) => s + h, 0);
 
-    if (blocks.length <= 2) {
-      blocks[0].y = MARGIN_TOP;
-      if (blocks.length === 2) blocks[1].y = H - MARGIN_BOTTOM - heights[1];
-    } else {
-      blocks[0].y = MARGIN_TOP;
-      const lastIdx = blocks.length - 1;
-      blocks[lastIdx].y = H - MARGIN_BOTTOM - heights[lastIdx];
+    // Calculate gap to spread blocks evenly across the full canvas height
+    const availableSpace = H - MARGIN_TOP * 2 - totalH;
+    const gap = blocks.length > 1
+      ? Math.max(20, Math.min(80, availableSpace / (blocks.length - 1)))
+      : 0;
 
-      const middleTop = blocks[0].y + heights[0] + GAP;
-      const middleBottom = blocks[lastIdx].y - GAP;
-      const middleBlocks = blocks.slice(1, lastIdx);
-      const middleHeights = heights.slice(1, lastIdx);
-      const middleTotalH = middleHeights.reduce((s, h) => s + h, 0);
-      const middleGap =
-        middleBlocks.length > 1
-          ? Math.min(GAP * 2, (middleBottom - middleTop - middleTotalH) / (middleBlocks.length - 1))
-          : 0;
-
-      if (middleBlocks.length === 1) {
-        middleBlocks[0].y = Math.round((middleTop + middleBottom - middleHeights[0]) / 2);
-      } else {
-        let curY = middleTop;
-        middleBlocks.forEach((b, mi) => {
-          b.y = Math.round(curY);
-          curY += middleHeights[mi] + middleGap;
-        });
-      }
-    }
-
-    blocks.forEach((b) => {
-      if (b.align === "left") b.x = 80;
-      else b.x = (W - b.maxWidth) / 2;
+    // Stack from top, evenly spaced — use the FULL canvas, never cram
+    let curY = MARGIN_TOP;
+    blocks.forEach((b, i) => {
+      b.y = Math.round(curY);
+      b.x = 60;
+      b.maxWidth = 960;
+      curY += heights[i] + gap;
     });
 
     return blocks;
