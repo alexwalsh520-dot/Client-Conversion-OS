@@ -2490,7 +2490,9 @@ export default function AdsPage() {
       ctx.textBaseline = "alphabetic";
       const lh = fontSize * (lhMult || 1.5);
       const availW = maxWidth - 2 * paddingH;
-      let curY = y;
+      // curY tracks the top of the TEXT area (not the background)
+      // Background extends paddingV above and below curY's text area
+      let curY = y + paddingV; // offset so first bg starts at y
 
       for (const line of lines) {
         if (!line.trim()) {
@@ -2503,22 +2505,23 @@ export default function AdsPage() {
         for (const wLine of wrapped) {
           const textW = ctx.measureText(wLine).width;
           const bgW = textW + 2 * paddingH;
-          const bgH = lh + 2 * paddingV;
+          const bgH = lh + 2 * paddingV; // visual bg includes padding
 
           // Horizontal alignment
           let lineX = x;
           if (align === "center") lineX = x + (maxWidth - bgW) / 2;
           else if (align === "right") lineX = x + maxWidth - bgW;
 
-          // Draw background rounded rect (extends paddingV above and below text)
+          // Draw background rounded rect — extends paddingV above and below text
+          // This means adjacent backgrounds overlap when lineGap < 2*paddingV (matches CSS)
           if (bgOpacity > 0) {
             ctx.fillStyle = `rgba(${hexToRgb(bgColor)}, ${bgOpacity})`;
-            canvasRoundRect(ctx, lineX, curY, bgW, bgH, borderRadius);
+            canvasRoundRect(ctx, lineX, curY - paddingV, bgW, bgH, borderRadius);
             ctx.fill();
           }
 
           // Draw text — handle per-word highlights if any
-          const textY = curY + paddingV + lh * 0.72; // baseline within padded area
+          const textY = curY + lh * 0.72; // baseline within text area
 
           if (highlightWords && highlightWords.length > 0) {
             // Split into styled segments (same logic as renderStyledLine)
@@ -2545,7 +2548,7 @@ export default function AdsPage() {
               const segW = ctx.measureText(seg.text).width;
               if (seg.bg) {
                 ctx.fillStyle = seg.bg;
-                canvasRoundRect(ctx, segX - 2, curY + 2, segW + 4, lh - 4, 4);
+                canvasRoundRect(ctx, segX - 2, curY + 2, segW + 4, lh - 4, Math.min(4, borderRadius));
                 ctx.fill();
               }
               ctx.fillStyle = seg.color || textColor;
@@ -2557,7 +2560,9 @@ export default function AdsPage() {
             ctx.fillText(wLine, lineX + paddingH, textY);
           }
 
-          curY += bgH + lineGap;
+          // Advance by line-height + lineGap (matches CSS layout)
+          // When lineGap < 2*paddingV, backgrounds will visually overlap — matching the editor
+          curY += lh + lineGap;
         }
       }
     }
