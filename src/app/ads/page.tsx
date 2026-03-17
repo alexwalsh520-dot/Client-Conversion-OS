@@ -668,8 +668,11 @@ function AdCanvas({
         borderRadius: 12,
         background: "#1a1726",
       }}
-      onClick={(e) => {
-        if (!marquee) {
+      onClickCapture={(e) => {
+        // Only deselect when clicking empty canvas area (not text blocks)
+        // Text block mouseDown calls stopPropagation, but click may still bubble
+        const target = e.target as HTMLElement;
+        if (!marquee && !target.closest("[data-text-block]")) {
           onSelectBlock(null);
         }
       }}
@@ -956,6 +959,7 @@ function AdCanvas({
         return (
           <div
             key={block.id}
+            data-text-block="true"
             style={{
               position: "absolute",
               left: block.x,
