@@ -2283,33 +2283,16 @@ export default function AdsPage() {
         adGroups = [defaultSections];
       }
 
-      // Analyze all photos in parallel with individual error handling
-      setGenProgress(`Analyzing ${photos.length} photo${photos.length > 1 ? "s" : ""}...`);
-      const analyses = await Promise.allSettled(
-        photos.map(async (url, i) => {
-          setGenProgress(`Analyzing photo ${i + 1} of ${photos.length}...`);
-          return analyzePhoto(url);
-        })
-      );
-
       setGenProgress("Building layouts...");
 
-      // Build creatives with AI-guided or fallback layout
+      // Build creatives with clean vertical stacking — no API calls, instant, free
       const newCreatives: AdCreative[] = photos.map((url, photoIdx) => {
         const adIdx = adGroups.length === 1 ? 0 : photoIdx % adGroups.length;
         const sections = adGroups[adIdx];
         const blocks = buildBlocksForSections(sections);
 
-        // Get AI analysis result for this photo
-        const analysisResult = analyses[photoIdx];
-        const aiData = analysisResult?.status === "fulfilled" ? analysisResult.value : null;
-
-        // Use AI layout if available, otherwise fall back to default
-        if (aiData) {
-          layoutBlocksAI(blocks, aiData);
-        } else {
-          layoutBlocksDefault(blocks);
-        }
+        // Pure math layout — stack blocks vertically, no overlapping, no API needed
+        layoutBlocksDefault(blocks);
 
         return {
           id: uid(),
@@ -2330,34 +2313,29 @@ export default function AdsPage() {
       setGenerating(false);
       setGenProgress("");
     }
-  }, [photos, copyText, parseCopyIntoAds, analyzePhoto, buildBlocksForSections, layoutBlocksAI, layoutBlocksDefault]);
+  }, [photos, copyText, parseCopyIntoAds, buildBlocksForSections, layoutBlocksDefault]);
 
-  // Re-layout current creative with AI (re-analyze the current photo)
+  // Re-layout current creative — pure math, no API
   const handleRelayout = useCallback(async () => {
     if (!currentCreative) return;
     setRelayouting(true);
 
     try {
-      const analysis = await analyzePhoto(currentCreative.photoUrl);
-
-      if (analysis) {
-        pushUndo();
-        setCreatives((prev) =>
-          prev.map((c, i) => {
-            if (i !== currentIndex) return c;
-            // Rebuild blocks with current text but AI-positioned layout
-            const blocks = c.textBlocks.map((b) => ({ ...b }));
-            layoutBlocksAI(blocks, analysis);
-            return { ...c, textBlocks: blocks };
-          })
-        );
-      }
+      pushUndo();
+      setCreatives((prev) =>
+        prev.map((c, i) => {
+          if (i !== currentIndex) return c;
+          const blocks = c.textBlocks.map((b) => ({ ...b }));
+          layoutBlocksDefault(blocks);
+          return { ...c, textBlocks: blocks };
+        })
+      );
     } catch (err) {
       console.error("Re-layout failed:", err);
     } finally {
       setRelayouting(false);
     }
-  }, [currentCreative, currentIndex, analyzePhoto, layoutBlocksAI, pushUndo]);
+  }, [currentCreative, currentIndex, layoutBlocksDefault, pushUndo]);
 
   // Update a text block
   const handleUpdateBlock = useCallback(
