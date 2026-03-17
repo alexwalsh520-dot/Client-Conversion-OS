@@ -1940,13 +1940,27 @@ export default function AdsPage() {
     []
   );
 
-  // Estimate rendered height of a text block (px)
+  // Estimate rendered height of a text block (px) — accounts for text wrapping
   const estimateBlockHeight = (block: TextBlock): number => {
     const lineH = block.fontSize * (block.lineHeight || 1.5);
-    const contentLines = block.lines.filter((l) => l.trim()).length;
-    const emptyLines = block.lines.filter((l) => !l.trim()).length;
+    const availW = (block.maxWidth || 960) - 2 * block.paddingH;
+    // Estimate chars per line based on font size (~0.55 of fontSize per char average)
+    const charW = block.fontSize * 0.55;
+    const charsPerLine = Math.max(1, Math.floor(availW / charW));
+
+    let totalVisualLines = 0;
+    let emptyLines = 0;
+    for (const line of block.lines) {
+      if (!line.trim()) {
+        emptyLines++;
+      } else {
+        // Estimate how many visual lines this text will wrap into
+        totalVisualLines += Math.max(1, Math.ceil(line.length / charsPerLine));
+      }
+    }
+
     return (
-      contentLines * (lineH + block.lineGap) +
+      totalVisualLines * (lineH + block.lineGap) +
       emptyLines * (block.fontSize * 0.5) +
       block.paddingV * 2
     );
