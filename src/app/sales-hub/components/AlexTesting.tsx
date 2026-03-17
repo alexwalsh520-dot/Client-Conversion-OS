@@ -2629,7 +2629,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                       marginTop: 2,
                     }}
                   >
-                    prev: {fmtDollars(prevClient.cashCollected)} \u00B7{" "}
+                    prev: {fmtDollars(prevClient.cashCollected)} ·{" "}
                     {fmtPercent(prevClient.closeRate, 0)} close
                   </div>
                 )}
@@ -2800,14 +2800,14 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                         <strong style={{ color: "var(--success)" }}>
                           {stats.wins}
                         </strong>{" "}
-                        W \u00B7{" "}
+                        W ·{" "}
                         <strong style={{ color: "var(--danger)" }}>
                           {stats.losses}
                         </strong>{" "}
-                        L \u00B7{" "}
+                        L ·{" "}
                         {stats.pcfus > 0 && (
                           <>
-                            <strong>{stats.pcfus}</strong> PCFU \u00B7{" "}
+                            <strong>{stats.pcfus}</strong> PCFU ·{" "}
                           </>
                         )}
                         {(() => {

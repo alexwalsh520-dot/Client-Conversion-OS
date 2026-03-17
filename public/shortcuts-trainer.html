@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ad Studio Shortcuts Trainer</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#09090b;--card:#0f0f12;--card-hover:#141419;
+    --border:rgba(255,255,255,0.06);--border-hi:rgba(255,255,255,0.12);
+    --gold:#c9a96e;--gold-dim:rgba(201,169,110,0.15);--gold-glow:rgba(201,169,110,0.4);
+    --green:#34d399;--green-bg:rgba(52,211,153,0.12);
+    --red:#f87171;--red-bg:rgba(248,113,113,0.12);
+    --text:#e4e4e7;--text-dim:#71717a;--text-muted:#52525b;
+    --radius:12px;--radius-sm:8px;
+  }
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    overflow-x:hidden;
+  }
+  /* ── Header ── */
+  .header{
+    width:100%;max-width:900px;padding:40px 32px 0;text-align:center;
+  }
+  .header h1{
+    font-size:28px;font-weight:700;letter-spacing:-0.5px;
+    background:linear-gradient(135deg,var(--text) 0%,var(--gold) 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .header p{color:var(--text-dim);margin-top:6px;font-size:14px}
+
+  /* ── Mode Tabs ── */
+  .tabs{
+    display:flex;gap:4px;margin-top:28px;
+    background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius);padding:4px;width:fit-content;
+    margin-left:auto;margin-right:auto;
+  }
+  .tab{
+    padding:10px 28px;border-radius:var(--radius-sm);
+    font-size:14px;font-weight:600;cursor:pointer;
+    color:var(--text-dim);background:transparent;border:none;
+    transition:all .2s;position:relative;
+  }
+  .tab:hover{color:var(--text)}
+  .tab.active{background:var(--gold-dim);color:var(--gold)}
+
+  /* ── Main Area ── */
+  .main{
+    width:100%;max-width:900px;padding:28px 32px 40px;
+    flex:1;display:flex;flex-direction:column;
+  }
+
+  /* ── Progress Bar ── */
+  .progress-wrap{
+    width:100%;height:4px;background:var(--card);
+    border-radius:2px;margin-bottom:24px;overflow:hidden;
+  }
+  .progress-bar{
+    height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-glow));
+    border-radius:2px;transition:width .4s cubic-bezier(.4,0,.2,1);width:0%;
+  }
+
+  /* ── Stats Row ── */
+  .stats{
+    display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;
+  }
+  .stat{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:12px 20px;
+    min-width:120px;text-align:center;
+  }
+  .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:4px}
+  .stat-value{font-size:22px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  .stat-value.gold{color:var(--gold)}
+
+  /* ── Prompt Card ── */
+  .prompt-card{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius);padding:48px 32px;
+    text-align:center;position:relative;overflow:hidden;
+    transition:border-color .3s,box-shadow .3s;
+    min-height:200px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+  }
+  .prompt-card.correct{
+    border-color:var(--green);
+    box-shadow:0 0 40px rgba(52,211,153,0.15),inset 0 0 60px rgba(52,211,153,0.05);
+  }
+  .prompt-card.wrong{
+    border-color:var(--red);
+    box-shadow:0 0 40px rgba(248,113,113,0.15),inset 0 0 60px rgba(248,113,113,0.05);
+    animation:shake .4s ease-in-out;
+  }
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    20%{transform:translateX(-8px)}
+    40%{transform:translateX(8px)}
+    60%{transform:translateX(-5px)}
+    80%{transform:translateX(5px)}
+  }
+  .prompt-label{font-size:13px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px}
+  .prompt-action{font-size:32px;font-weight:700;line-height:1.3;margin-bottom:8px}
+  .prompt-hint{font-size:14px;color:var(--text-dim);margin-top:8px}
+  .prompt-shortcut{
+    display:inline-flex;gap:6px;align-items:center;margin-top:16px;
+  }
+
+  /* ── Key Badges ── */
+  .key{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:42px;height:42px;padding:0 14px;
+    background:#1a1a1f;border:1px solid var(--border-hi);
+    border-radius:8px;font-size:14px;font-weight:600;
+    color:var(--text);box-shadow:0 2px 0 #000;
+    transition:all .2s;font-family:inherit;
+  }
+  .key.highlight{
+    background:var(--gold-dim);border-color:var(--gold);color:var(--gold);
+    box-shadow:0 2px 0 rgba(201,169,110,0.3),0 0 20px var(--gold-dim);
+  }
+  .key.sm{min-width:32px;height:32px;padding:0 10px;font-size:12px}
+  .key-plus{color:var(--text-muted);font-size:16px;margin:0 2px}
+
+  /* ── Virtual Keyboard ── */
+  .keyboard-wrap{
+    margin-top:auto;padding-top:28px;
+  }
+  .keyboard{
+    display:flex;flex-direction:column;gap:5px;align-items:center;
+  }
+  .kb-row{display:flex;gap:5px;justify-content:center}
+  .kb-key{
+    width:46px;height:42px;
+    background:#111116;border:1px solid var(--border);
+    border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:500;color:var(--text-muted);
+    transition:all .25s;position:relative;
+  }
+  .kb-key.wide{width:70px}
+  .kb-key.wider{width:90px}
+  .kb-key.widest{width:130px}
+  .kb-key.space-bar{width:260px}
+  .kb-key.active{
+    background:var(--gold-dim);border-color:var(--gold);color:var(--gold);
+    box-shadow:0 0 16px var(--gold-dim);
+    transform:scale(1.08);z-index:2;
+  }
+  .kb-key.flash-correct{
+    background:var(--green-bg);border-color:var(--green);color:var(--green);
+    box-shadow:0 0 16px rgba(52,211,153,0.2);
+  }
+  .kb-key.flash-wrong{
+    background:var(--red-bg);border-color:var(--red);color:var(--red);
+    box-shadow:0 0 16px rgba(248,113,113,0.2);
+  }
+
+  /* ── Particle burst ── */
+  .particle-container{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999}
+  .particle{
+    position:absolute;width:6px;height:6px;border-radius:50%;
+    pointer-events:none;
+  }
+
+  /* ── Confetti ── */
+  .confetti-piece{
+    position:fixed;width:10px;height:10px;
+    pointer-events:none;z-index:1000;
+  }
+
+  /* ── Start / End Screens ── */
+  .screen{display:none;flex-direction:column;align-items:center;gap:16px;text-align:center;padding:40px 0}
+  .screen.visible{display:flex}
+  .screen h2{font-size:24px;font-weight:700}
+  .screen p{color:var(--text-dim);max-width:400px;line-height:1.6}
+  .btn{
+    padding:14px 36px;border-radius:var(--radius-sm);
+    font-size:15px;font-weight:600;cursor:pointer;border:none;
+    transition:all .2s;
+  }
+  .btn-gold{
+    background:linear-gradient(135deg,var(--gold),#b8944f);color:#09090b;
+  }
+  .btn-gold:hover{box-shadow:0 0 30px var(--gold-dim);transform:translateY(-1px)}
+  .btn-ghost{
+    background:transparent;color:var(--text-dim);border:1px solid var(--border);
+  }
+  .btn-ghost:hover{border-color:var(--border-hi);color:var(--text)}
+
+  /* ── Leaderboard ── */
+  .leaderboard{
+    width:100%;max-width:360px;margin-top:8px;
+  }
+  .lb-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:10px 16px;border-radius:var(--radius-sm);
+    background:var(--card);border:1px solid var(--border);
+    margin-bottom:4px;
+  }
+  .lb-rank{color:var(--gold);font-weight:700;width:30px}
+  .lb-time{font-variant-numeric:tabular-nums;font-weight:600}
+  .lb-date{color:var(--text-muted);font-size:12px}
+  .lb-row.new{border-color:var(--gold);background:var(--gold-dim)}
+
+  /* ── Learn mode shortcut list ── */
+  .shortcut-list{
+    display:grid;gap:6px;width:100%;max-width:600px;margin:0 auto;
+  }
+  .sc-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-radius:var(--radius-sm);
+    background:var(--card);border:1px solid var(--border);
+    transition:all .2s;
+  }
+  .sc-item.current{border-color:var(--gold);background:var(--gold-dim)}
+  .sc-item.done{opacity:0.4}
+  .sc-item .sc-action{font-weight:600;font-size:14px}
+  .sc-item .sc-keys{display:flex;gap:4px;align-items:center}
+
+  /* ── Accuracy ring ── */
+  .accuracy-ring{
+    width:100px;height:100px;position:relative;margin:8px auto;
+  }
+  .accuracy-ring svg{transform:rotate(-90deg)}
+  .accuracy-ring .ring-bg{stroke:var(--card);stroke-width:6;fill:none}
+  .accuracy-ring .ring-fg{stroke:var(--gold);stroke-width:6;fill:none;stroke-linecap:round;
+    transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)}
+  .accuracy-text{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    font-size:24px;font-weight:700;color:var(--gold);
+  }
+
+  /* ── Fade transitions ── */
+  .fade-in{animation:fadeIn .3s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* ── Streak fire ── */
+  .streak-fire{
+    display:inline-block;font-size:18px;margin-left:4px;
+    animation:fireGlow 1s ease-in-out infinite alternate;
+  }
+  @keyframes fireGlow{
+    from{filter:brightness(1)}to{filter:brightness(1.4)}
+  }
+
+  /* ── Combo text ── */
+  .combo-text{
+    position:absolute;top:20px;right:24px;
+    font-size:13px;font-weight:700;color:var(--gold);
+    opacity:0;transition:opacity .2s;
+  }
+  .combo-text.show{opacity:1;animation:comboPop .3s ease}
+  @keyframes comboPop{from{transform:scale(0.8)}to{transform:scale(1)}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Ad Studio Shortcuts Trainer</h1>
+  <p>Build muscle memory for every keyboard shortcut</p>
+  <div class="tabs">
+    <button class="tab active" data-mode="learn">Learn</button>
+    <button class="tab" data-mode="drill">Drill</button>
+    <button class="tab" data-mode="speed">Speed Run</button>
+  </div>
+</div>
+
+<div class="main" id="main">
+  <!-- Dynamic content injected here -->
+</div>
+
+<div class="particle-container" id="particles"></div>
+
+<script>
+// ── Shortcut Definitions ──
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+const META = isMac ? '⌘' : 'Ctrl';
+const SHORTCUTS = [
+  { id:'dup', action:'Duplicate selected block', keys:[{label:'D'}], match:e=>e.key==='d'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!e.shiftKey },
+  { id:'del', action:'Delete selected block', keys:[{label:'Delete'}], match:e=>e.key==='Delete'||e.key==='Backspace' },
+  { id:'nudge1', action:'Nudge block 1px', keys:[{label:'\u2191 / \u2193'}], match:e=>['ArrowUp','ArrowDown'].includes(e.key)&&!e.shiftKey&&!e.metaKey&&!e.ctrlKey, kbHighlight:['ArrowUp','ArrowDown'] },
+  { id:'nudge10', action:'Nudge block 10px', keys:[{label:'Shift'},{label:'\u2191 / \u2193'}], match:e=>['ArrowUp','ArrowDown'].includes(e.key)&&e.shiftKey&&!e.metaKey&&!e.ctrlKey, kbHighlight:['Shift','ArrowUp','ArrowDown'] },
+  { id:'esc', action:'Deselect / exit mode', keys:[{label:'Esc'}], match:e=>e.key==='Escape' },
+  { id:'text', action:'Add new text block', keys:[{label:'T'}], match:e=>e.key==='t'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!e.shiftKey },
+  { id:'tab', action:'Cycle through blocks', keys:[{label:'Tab'}], match:e=>e.key==='Tab' },
+  { id:'export', action:'Export current ad', keys:[{label:META},{label:'S'}], match:e=>e.key==='s'&&(e.metaKey||e.ctrlKey)&&!e.shiftKey },
+  { id:'exportAll', action:'Export all ads', keys:[{label:META},{label:'Shift'},{label:'S'}], match:e=>e.key==='s'&&(e.metaKey||e.ctrlKey)&&e.shiftKey },
+  { id:'copyStyle', action:'Copy style', keys:[{label:META},{label:'Alt'},{label:'C'}], match:e=>(e.key==='c'||e.code==='KeyC')&&(e.metaKey||e.ctrlKey)&&e.altKey },
+  { id:'pasteStyle', action:'Paste style', keys:[{label:META},{label:'Alt'},{label:'V'}], match:e=>(e.key==='v'||e.code==='KeyV')&&(e.metaKey||e.ctrlKey)&&e.altKey },
+  { id:'lock', action:'Toggle lock on block', keys:[{label:'L'}], match:e=>e.key==='l'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!e.shiftKey },
+  { id:'nav', action:'Navigate between creatives', keys:[{label:'\u2190 / \u2192'}], match:e=>(e.key==='ArrowLeft'||e.key==='ArrowRight')&&!e.shiftKey&&!e.metaKey&&!e.ctrlKey, kbHighlight:['ArrowLeft','ArrowRight'] },
+];
+
+// Keyboard layout for visual keyboard
+const KB_ROWS = [
+  [{l:'Esc',id:'Escape',w:'wide'},{l:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'',w:''},{l:'Delete',id:'Delete',w:'wider'}],
+  [{l:'Tab',id:'Tab',w:'wide'},{l:'Q'},{l:'W'},{l:'E'},{l:'R'},{l:'T',id:'t'},{l:'Y'},{l:'U'},{l:'I'},{l:'O'},{l:'P'}],
+  [{l:'',w:'wider'},{l:'A'},{l:'S',id:'s'},{l:'D',id:'d'},{l:'F'},{l:'G'},{l:'H'},{l:'J'},{l:'K'},{l:'L',id:'l'}],
+  [{l:'Shift',id:'Shift',w:'widest'},{l:'Z'},{l:'X'},{l:'C',id:'c'},{l:'V',id:'v'},{l:'B'},{l:'N'},{l:'M'}],
+  [{l:META,id:'Meta',w:'wide'},{l:'Alt',id:'Alt',w:'wide'},{l:'',id:'Space',cls:'space-bar'},{l:'Alt',id:'AltR',w:'wide'},{l:'\u2190',id:'ArrowLeft'},{l:'\u2193',id:'ArrowDown'},{l:'\u2191',id:'ArrowUp'},{l:'\u2192',id:'ArrowRight'}],
+];
+
+// ── State ──
+let mode = 'learn';
+let learnIndex = 0;
+let drillQueue = [];
+let drillIndex = 0;
+let drillCorrect = 0;
+let drillTotal = 0;
+let drillStreak = 0;
+let drillBestStreak = parseInt(localStorage.getItem('sc_bestStreak')||'0');
+let drillStartTime = 0;
+let speedQueue = [];
+let speedIndex = 0;
+let speedStartTime = 0;
+let activeHandler = null;
+let feedbackTimeout = null;
+
+const $main = document.getElementById('main');
+const $particles = document.getElementById('particles');
+
+// ── Tab Switching ──
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    mode = tab.dataset.mode;
+    startMode(mode);
+  });
+});
+
+function startMode(m){
+  clearHandler();
+  if(m==='learn') initLearn();
+  else if(m==='drill') initDrillStart();
+  else if(m==='speed') initSpeedStart();
+}
+
+function clearHandler(){
+  if(activeHandler) document.removeEventListener('keydown',activeHandler);
+  activeHandler=null;
+  if(feedbackTimeout) clearTimeout(feedbackTimeout);
+}
+
+// ── Render Helpers ──
+function renderKeys(keys,highlight=true){
+  return keys.map((k,i)=>{
+    const cls = highlight?'key highlight':'key';
+    const plus = i<keys.length-1?'<span class="key-plus">+</span>':'';
+    return `<span class="${cls}">${k.label}</span>${plus}`;
+  }).join('');
+}
+
+function renderKeysSm(keys){
+  return keys.map((k,i)=>{
+    const plus = i<keys.length-1?'<span class="key-plus">+</span>':'';
+    return `<span class="key sm">${k.label}</span>${plus}`;
+  }).join('');
+}
+
+function renderProgress(current,total){
+  const pct = total>0?(current/total*100):0;
+  return `<div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>`;
+}
+
+function renderKeyboard(highlightIds=[]){
+  let html='<div class="keyboard-wrap"><div class="keyboard">';
+  KB_ROWS.forEach(row=>{
+    html+='<div class="kb-row">';
+    row.forEach(k=>{
+      if(!k.l&&!k.id){html+='<div class="kb-key" style="visibility:hidden"></div>';return;}
+      const cls=['kb-key'];
+      if(k.w)cls.push(k.w);
+      if(k.cls)cls.push(k.cls);
+      const kid = k.id||k.l;
+      if(highlightIds.includes(kid))cls.push('active');
+      html+=`<div class="${cls.join(' ')}" data-kid="${kid}">${k.l}</div>`;
+    });
+    html+='</div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+
+function getKeyboardHighlights(sc){
+  if(sc.kbHighlight) return sc.kbHighlight;
+  const ids=[];
+  sc.keys.forEach(k=>{
+    const lab=k.label;
+    if(lab===META) ids.push('Meta');
+    else if(lab==='Shift') ids.push('Shift');
+    else if(lab==='Alt') ids.push('Alt');
+    else if(lab==='Esc') ids.push('Escape');
+    else if(lab==='Tab') ids.push('Tab');
+    else if(lab==='Delete') ids.push('Delete');
+    else if(lab==='S') ids.push('s');
+    else if(lab==='D') ids.push('d');
+    else if(lab==='T') ids.push('t');
+    else if(lab==='C') ids.push('c');
+    else if(lab==='V') ids.push('v');
+    else if(lab==='L') ids.push('l');
+  });
+  return ids;
+}
+
+// ── LEARN MODE ──
+function initLearn(){
+  learnIndex=0;
+  renderLearn();
+}
+
+function renderLearn(){
+  const sc=SHORTCUTS[learnIndex];
+  const highlights=getKeyboardHighlights(sc);
+  let listHtml='<div class="shortcut-list">';
+  SHORTCUTS.forEach((s,i)=>{
+    const cls=i<learnIndex?'sc-item done':i===learnIndex?'sc-item current':'sc-item';
+    listHtml+=`<div class="${cls}"><span class="sc-action">${s.action}</span><span class="sc-keys">${renderKeysSm(s.keys)}</span></div>`;
+  });
+  listHtml+='</div>';
+
+  $main.innerHTML=`
+    ${renderProgress(learnIndex,SHORTCUTS.length)}
+    <div class="prompt-card" id="promptCard">
+      <div class="prompt-label">Press this shortcut</div>
+      <div class="prompt-action">${sc.action}</div>
+      <div class="prompt-shortcut">${renderKeys(sc.keys)}</div>
+      <div class="prompt-hint">${learnIndex+1} of ${SHORTCUTS.length}</div>
+    </div>
+    ${renderKeyboard(highlights)}
+  `;
+
+  clearHandler();
+  activeHandler=function(e){
+    e.preventDefault();e.stopPropagation();
+    const card=document.getElementById('promptCard');
+    if(sc.match(e)){
+      card.classList.remove('wrong');
+      card.classList.add('correct');
+      flashKeyboard(getKeyboardHighlights(sc),'flash-correct');
+      burstParticles(window.innerWidth/2,card.getBoundingClientRect().top+100,'#34d399');
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>{
+        card.classList.remove('correct');
+        learnIndex++;
+        if(learnIndex>=SHORTCUTS.length){
+          renderLearnComplete();
+        } else {
+          renderLearn();
+        }
+      },400);
+    } else {
+      card.classList.remove('correct');
+      card.classList.add('wrong');
+      flashKeyboard([],'flash-wrong',true);
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>card.classList.remove('wrong'),400);
+    }
+  };
+  document.addEventListener('keydown',activeHandler);
+}
+
+function renderLearnComplete(){
+  clearHandler();
+  $main.innerHTML=`
+    ${renderProgress(SHORTCUTS.length,SHORTCUTS.length)}
+    <div class="screen visible fade-in">
+      <h2 style="color:var(--gold)">All Shortcuts Learned</h2>
+      <p>You've walked through all 13 shortcuts. Ready to test your recall?</p>
+      <div style="display:flex;gap:12px;margin-top:8px">
+        <button class="btn btn-gold" onclick="document.querySelector('[data-mode=drill]').click()">Start Drill</button>
+        <button class="btn btn-ghost" onclick="initLearn()">Review Again</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── DRILL MODE ──
+function initDrillStart(){
+  $main.innerHTML=`
+    <div class="screen visible fade-in">
+      <h2>Drill Mode</h2>
+      <p>Rapid-fire shortcut prompts. Press the correct key combo as fast as you can. 20 rounds, increasing speed.</p>
+      <div style="margin-top:4px">
+        <span style="color:var(--text-muted);font-size:13px">Best streak: </span>
+        <span style="color:var(--gold);font-weight:700">${drillBestStreak}</span>
+      </div>
+      <button class="btn btn-gold" onclick="startDrill()" style="margin-top:8px">Begin Drill</button>
+    </div>
+  `;
+  clearHandler();
+}
+
+function startDrill(){
+  drillQueue=[];
+  for(let i=0;i<20;i++) drillQueue.push(SHORTCUTS[Math.floor(Math.random()*SHORTCUTS.length)]);
+  // Avoid consecutive duplicates
+  for(let i=1;i<drillQueue.length;i++){
+    if(drillQueue[i].id===drillQueue[i-1].id){
+      let pool=SHORTCUTS.filter(s=>s.id!==drillQueue[i].id);
+      drillQueue[i]=pool[Math.floor(Math.random()*pool.length)];
+    }
+  }
+  drillIndex=0;drillCorrect=0;drillTotal=0;drillStreak=0;
+  drillStartTime=Date.now();
+  renderDrill();
+}
+
+function renderDrill(){
+  const sc=drillQueue[drillIndex];
+  const highlights=getKeyboardHighlights(sc);
+  const elapsed=((Date.now()-drillStartTime)/1000).toFixed(1);
+  const streakFire=drillStreak>=3?`<span class="streak-fire">${drillStreak>=7?'\uD83D\uDD25\uD83D\uDD25':'\uD83D\uDD25'}</span>`:'';
+  const comboLabel=drillStreak>=5?'ON FIRE':drillStreak>=3?'COMBO':'';
+
+  $main.innerHTML=`
+    ${renderProgress(drillIndex,drillQueue.length)}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Round</div><div class="stat-value">${drillIndex+1}/${drillQueue.length}</div></div>
+      <div class="stat"><div class="stat-label">Streak</div><div class="stat-value gold">${drillStreak}${streakFire}</div></div>
+      <div class="stat"><div class="stat-label">Best Streak</div><div class="stat-value">${Math.max(drillBestStreak,drillStreak)}</div></div>
+      <div class="stat"><div class="stat-label">Accuracy</div><div class="stat-value">${drillTotal>0?Math.round(drillCorrect/drillTotal*100):100}%</div></div>
+    </div>
+    <div class="prompt-card" id="promptCard">
+      <div class="combo-text ${comboLabel?'show':''}" id="comboText">${comboLabel}</div>
+      <div class="prompt-label">Press the shortcut for</div>
+      <div class="prompt-action">${sc.action}</div>
+    </div>
+    ${renderKeyboard([])}
+  `;
+
+  clearHandler();
+  activeHandler=function(e){
+    e.preventDefault();e.stopPropagation();
+    const card=document.getElementById('promptCard');
+    drillTotal++;
+    if(sc.match(e)){
+      drillCorrect++;drillStreak++;
+      if(drillStreak>drillBestStreak){
+        drillBestStreak=drillStreak;
+        localStorage.setItem('sc_bestStreak',drillBestStreak.toString());
+      }
+      card.classList.add('correct');
+      flashKeyboard(getKeyboardHighlights(sc),'flash-correct');
+      burstParticles(window.innerWidth/2,card.getBoundingClientRect().top+100,'#c9a96e');
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>{
+        drillIndex++;
+        if(drillIndex>=drillQueue.length) renderDrillComplete();
+        else renderDrill();
+      },Math.max(150,400-drillStreak*20));
+    } else {
+      drillStreak=0;
+      card.classList.add('wrong');
+      flashKeyboard([],'flash-wrong',true);
+      // Show the correct answer briefly
+      const hintDiv=document.createElement('div');
+      hintDiv.className='prompt-shortcut fade-in';
+      hintDiv.style.marginTop='16px';
+      hintDiv.innerHTML=renderKeys(sc.keys);
+      card.appendChild(hintDiv);
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>{
+        drillIndex++;
+        if(drillIndex>=drillQueue.length) renderDrillComplete();
+        else renderDrill();
+      },800);
+    }
+  };
+  document.addEventListener('keydown',activeHandler);
+}
+
+function renderDrillComplete(){
+  clearHandler();
+  const elapsed=((Date.now()-drillStartTime)/1000).toFixed(1);
+  const accuracy=drillTotal>0?Math.round(drillCorrect/drillTotal*100):0;
+  const circumference=2*Math.PI*42;
+  const offset=circumference-(accuracy/100)*circumference;
+
+  $main.innerHTML=`
+    ${renderProgress(drillQueue.length,drillQueue.length)}
+    <div class="screen visible fade-in">
+      <h2>Drill Complete</h2>
+      <div class="accuracy-ring">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle class="ring-bg" cx="50" cy="50" r="42"/>
+          <circle class="ring-fg" cx="50" cy="50" r="42" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+        </svg>
+        <div class="accuracy-text">${accuracy}%</div>
+      </div>
+      <div class="stats" style="justify-content:center">
+        <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${elapsed}s</div></div>
+        <div class="stat"><div class="stat-label">Best Streak</div><div class="stat-value gold">${drillBestStreak}</div></div>
+        <div class="stat"><div class="stat-label">Correct</div><div class="stat-value">${drillCorrect}/${drillTotal}</div></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:8px">
+        <button class="btn btn-gold" onclick="startDrill()">Drill Again</button>
+        <button class="btn btn-ghost" onclick="document.querySelector('[data-mode=speed]').click()">Try Speed Run</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── SPEED RUN MODE ──
+function initSpeedStart(){
+  const times=JSON.parse(localStorage.getItem('sc_speedTimes')||'[]');
+  let lbHtml='';
+  if(times.length>0){
+    lbHtml='<div class="leaderboard"><h3 style="margin-bottom:8px;font-size:14px;color:var(--text-muted)">Personal Best Times</h3>';
+    times.forEach((t,i)=>{
+      lbHtml+=`<div class="lb-row"><span class="lb-rank">#${i+1}</span><span class="lb-time">${t.time}s</span><span class="lb-date">${t.date}</span></div>`;
+    });
+    lbHtml+='</div>';
+  }
+
+  $main.innerHTML=`
+    <div class="screen visible fade-in">
+      <h2>Speed Run</h2>
+      <p>All 13 shortcuts in random order. How fast can you nail them all?</p>
+      ${lbHtml}
+      <button class="btn btn-gold" onclick="startSpeedRun()" style="margin-top:8px">Go!</button>
+    </div>
+  `;
+  clearHandler();
+}
+
+function startSpeedRun(){
+  speedQueue=shuffle([...SHORTCUTS]);
+  speedIndex=0;
+  speedStartTime=Date.now();
+  renderSpeed();
+}
+
+function renderSpeed(){
+  const sc=speedQueue[speedIndex];
+  const elapsed=((Date.now()-speedStartTime)/1000).toFixed(1);
+  const highlights=getKeyboardHighlights(sc);
+
+  $main.innerHTML=`
+    ${renderProgress(speedIndex,speedQueue.length)}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${speedQueue.length-speedIndex}</div></div>
+      <div class="stat"><div class="stat-label">Time</div><div class="stat-value gold" id="speedTimer">${elapsed}s</div></div>
+    </div>
+    <div class="prompt-card" id="promptCard">
+      <div class="prompt-label">Press the shortcut for</div>
+      <div class="prompt-action">${sc.action}</div>
+    </div>
+    ${renderKeyboard([])}
+  `;
+
+  // Update timer
+  const timerEl=()=>document.getElementById('speedTimer');
+  const timerInterval=setInterval(()=>{
+    const el=timerEl();
+    if(!el){clearInterval(timerInterval);return;}
+    el.textContent=((Date.now()-speedStartTime)/1000).toFixed(1)+'s';
+  },100);
+
+  clearHandler();
+  activeHandler=function(e){
+    e.preventDefault();e.stopPropagation();
+    const card=document.getElementById('promptCard');
+    if(sc.match(e)){
+      card.classList.add('correct');
+      flashKeyboard(getKeyboardHighlights(sc),'flash-correct');
+      burstParticles(window.innerWidth/2,card.getBoundingClientRect().top+100,'#c9a96e');
+      clearInterval(timerInterval);
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>{
+        speedIndex++;
+        if(speedIndex>=speedQueue.length) renderSpeedComplete();
+        else renderSpeed();
+      },250);
+    } else {
+      card.classList.add('wrong');
+      flashKeyboard([],'flash-wrong',true);
+      if(feedbackTimeout)clearTimeout(feedbackTimeout);
+      feedbackTimeout=setTimeout(()=>card.classList.remove('wrong'),300);
+    }
+  };
+  document.addEventListener('keydown',activeHandler);
+}
+
+function renderSpeedComplete(){
+  clearHandler();
+  const finalTime=((Date.now()-speedStartTime)/1000).toFixed(1);
+  let times=JSON.parse(localStorage.getItem('sc_speedTimes')||'[]');
+  const entry={time:finalTime,date:new Date().toLocaleDateString()};
+  times.push(entry);
+  times.sort((a,b)=>parseFloat(a.time)-parseFloat(b.time));
+  const isNewBest=times[0].time===finalTime&&times.length>1||times.length===1;
+  times=times.slice(0,5);
+  localStorage.setItem('sc_speedTimes',JSON.stringify(times));
+
+  if(isNewBest) launchConfetti();
+
+  let lbHtml='<div class="leaderboard">';
+  times.forEach((t,i)=>{
+    const isNew=t.time===finalTime&&t.date===entry.date;
+    lbHtml+=`<div class="lb-row${isNew?' new':''}"><span class="lb-rank">#${i+1}</span><span class="lb-time">${t.time}s</span><span class="lb-date">${t.date}</span></div>`;
+  });
+  lbHtml+='</div>';
+
+  $main.innerHTML=`
+    ${renderProgress(speedQueue.length,speedQueue.length)}
+    <div class="screen visible fade-in">
+      <h2>${isNewBest?'New Personal Best!':'Speed Run Complete'}</h2>
+      <div class="stat" style="margin:0 auto"><div class="stat-label">Final Time</div><div class="stat-value gold" style="font-size:36px">${finalTime}s</div></div>
+      ${lbHtml}
+      <div style="display:flex;gap:12px;margin-top:12px">
+        <button class="btn btn-gold" onclick="startSpeedRun()">Run Again</button>
+        <button class="btn btn-ghost" onclick="initSpeedStart()">Back</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── Visual Effects ──
+function burstParticles(x,y,color){
+  const count=12;
+  for(let i=0;i<count;i++){
+    const p=document.createElement('div');
+    p.className='particle';
+    p.style.left=x+'px';
+    p.style.top=y+'px';
+    p.style.background=color;
+    const angle=(Math.PI*2/count)*i+Math.random()*0.5;
+    const dist=60+Math.random()*60;
+    const dx=Math.cos(angle)*dist;
+    const dy=Math.sin(angle)*dist;
+    p.style.transition='all .6s cubic-bezier(.25,.46,.45,.94)';
+    p.style.opacity='1';
+    $particles.appendChild(p);
+    requestAnimationFrame(()=>{
+      p.style.transform=`translate(${dx}px,${dy}px) scale(0)`;
+      p.style.opacity='0';
+    });
+    setTimeout(()=>p.remove(),700);
+  }
+}
+
+function flashKeyboard(ids,cls,all=false){
+  document.querySelectorAll('.kb-key').forEach(el=>{
+    el.classList.remove('flash-correct','flash-wrong','active');
+    if(all||ids.includes(el.dataset.kid)){
+      el.classList.add(cls);
+      setTimeout(()=>el.classList.remove(cls),400);
+    }
+  });
+}
+
+function launchConfetti(){
+  const colors=['#c9a96e','#e4c97a','#34d399','#60a5fa','#f472b6','#fbbf24','#a78bfa'];
+  for(let i=0;i<80;i++){
+    const c=document.createElement('div');
+    c.className='confetti-piece';
+    const color=colors[Math.floor(Math.random()*colors.length)];
+    const size=6+Math.random()*8;
+    const isRect=Math.random()>0.5;
+    c.style.width=size+'px';
+    c.style.height=(isRect?size*2:size)+'px';
+    c.style.background=color;
+    c.style.borderRadius=isRect?'2px':'50%';
+    c.style.left=Math.random()*100+'vw';
+    c.style.top='-20px';
+    const drift=(Math.random()-0.5)*200;
+    const duration=1500+Math.random()*2000;
+    const rotation=Math.random()*720-360;
+    c.style.transition=`all ${duration}ms cubic-bezier(.25,.46,.45,.94)`;
+    c.style.opacity='1';
+    document.body.appendChild(c);
+    requestAnimationFrame(()=>{
+      c.style.transform=`translateX(${drift}px) translateY(${window.innerHeight+40}px) rotate(${rotation}deg)`;
+      c.style.opacity='0';
+    });
+    setTimeout(()=>c.remove(),duration+100);
+  }
+}
+
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+
+// ── Prevent defaults globally ──
+document.addEventListener('keydown',function(e){
+  // Prevent browser defaults for all our shortcut keys
+  if(e.key==='Tab'||e.key==='Escape') e.preventDefault();
+  if((e.metaKey||e.ctrlKey)&&(e.key==='s'||e.key==='S')) e.preventDefault();
+  if((e.metaKey||e.ctrlKey)&&e.altKey&&(e.key==='c'||e.key==='v'||e.key==='C'||e.key==='V'||e.code==='KeyC'||e.code==='KeyV')) e.preventDefault();
+},true);
+
+// ── Init ──
+initLearn();
+</script>
+</body>
+</html>

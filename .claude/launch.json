@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "/Users/matthew_conder/.local/node-v22.14.0-darwin-arm64/bin/npx",
-      "runtimeArgs": ["--yes", "next", "dev", "--port", "3000"],
+      "runtimeExecutable": "/tmp/ccos-dev.sh",
+      "runtimeArgs": [],
       "port": 3000
     }
   ]

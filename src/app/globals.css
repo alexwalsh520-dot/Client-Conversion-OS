@@ -105,6 +105,14 @@ body {
   z-index: 1;
 }
 
+/* Full-bleed override for Ad Studio editor */
+.main-content:has(.ad-studio-fullbleed) {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;
