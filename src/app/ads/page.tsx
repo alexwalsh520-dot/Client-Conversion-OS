@@ -261,29 +261,33 @@ function AdCanvas({
     const handleMove = (e: MouseEvent) => {
       const dx = (e.clientX - imagePanning.startX) / scale;
       const dy = (e.clientY - imagePanning.startY) / scale;
-      onImagePan(dx, dy);
       setImagePanning({ startX: e.clientX, startY: e.clientY });
 
-      // Show snap guides when image offset is near 0 (aligned with canvas center)
+      // Calculate new offset and snap to 0 when close
       const imgTransform = creative.imageTransform || { offsetX: 0, offsetY: 0 };
-      const newOffX = (imgTransform.offsetX || 0) + dx;
-      const newOffY = (imgTransform.offsetY || 0) + dy;
-      const IMG_SNAP = 8;
+      let newOffX = (imgTransform.offsetX || 0) + dx;
+      let newOffY = (imgTransform.offsetY || 0) + dy;
+      const SNAP_DIST = 12;
+
       const guidesX: number[] = [];
       const guidesY: number[] = [];
       let snapped = false;
 
-      // Snap when offset X is near 0 (image horizontally centered)
-      if (Math.abs(newOffX) < IMG_SNAP) {
+      // Snap X to 0
+      if (Math.abs(newOffX) < SNAP_DIST) {
+        newOffX = 0;
         guidesX.push(W / 2);
         snapped = true;
       }
-      // Snap when offset Y is near 0 (image vertically centered)
-      if (Math.abs(newOffY) < IMG_SNAP) {
+      // Snap Y to 0
+      if (Math.abs(newOffY) < SNAP_DIST) {
+        newOffY = 0;
         guidesY.push(H / 2);
         snapped = true;
       }
 
+      // Apply snapped offset directly instead of delta
+      onUpdateImage?.({ offsetX: newOffX, offsetY: newOffY });
       setImageGuides({ x: guidesX, y: guidesY, snapped });
     };
     const handleUp = () => {
@@ -762,20 +766,20 @@ function AdCanvas({
       {/* Image edit handles — visible when imageEditMode is on */}
       {imageEditMode && (
         <>
-          {/* Canvas boundary border — bright and visible during image editing */}
+          {/* Canvas boundary border — purple/pink glow, bright when snapped to 0,0 */}
           <div style={{
             position: "absolute",
             inset: 0,
             border: imageGuides.snapped
-              ? "3px solid rgba(201, 169, 110, 1)"
-              : "2px solid rgba(201, 169, 110, 0.6)",
+              ? "3px solid rgba(124, 92, 252, 1)"
+              : "2px solid rgba(124, 92, 252, 0.45)",
             borderRadius: 12,
             pointerEvents: "none",
             zIndex: 4,
             boxShadow: imageGuides.snapped
-              ? "inset 0 0 20px rgba(201, 169, 110, 0.15), 0 0 12px rgba(201, 169, 110, 0.3)"
+              ? "inset 0 0 30px rgba(124, 92, 252, 0.2), 0 0 20px rgba(124, 92, 252, 0.4), 0 0 40px rgba(124, 92, 252, 0.15)"
               : "none",
-            transition: "border 0.1s, box-shadow 0.15s",
+            transition: "border 0.15s, box-shadow 0.2s",
           }} />
           {/* Corner handles for scaling */}
           {([
@@ -3297,22 +3301,53 @@ export default function AdsPage() {
           `,
           backgroundSize: "56px 56px",
           position: "relative",
-          overflow: "hidden",
+          overflow: "clip",
         }}>
           {/* Canvas wrapper — uses visual dimensions so it doesn't push sidebar off screen */}
           {currentCreative && (
-            <div
-              id="ad-canvas-export"
-              style={{
-                width: canvasVisualW,
-                height: canvasVisualH,
-                flexShrink: 0,
-                position: "relative",
-                overflow: "hidden",
-                boxShadow: "0 4px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
-                borderRadius: 4,
-              }}
-            >
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              {/* Dimmed overflow image — shows full photo outside canvas bounds in edit mode */}
+              {imageEditMode && (() => {
+                const t = currentCreative.imageTransform;
+                const imgS = t?.scale || 1;
+                const imgR = t?.rotate || 0;
+                const imgOX = t?.offsetX || 0;
+                const imgOY = t?.offsetY || 0;
+                return (
+                  <img
+                    src={currentCreative.photoUrl}
+                    alt=""
+                    style={{
+                      position: "absolute",
+                      width: canvasVisualW,
+                      height: canvasVisualH,
+                      objectFit: "cover",
+                      top: 0,
+                      left: 0,
+                      transform: `scale(${imgS}) rotate(${imgR}deg) translate(${imgOX * scale}px, ${imgOY * scale}px)`,
+                      transformOrigin: "center center",
+                      opacity: 0.2,
+                      pointerEvents: "none",
+                      zIndex: 0,
+                    }}
+                    draggable={false}
+                  />
+                );
+              })()}
+              <div
+                id="ad-canvas-export"
+                style={{
+                  width: canvasVisualW,
+                  height: canvasVisualH,
+                  position: "relative",
+                  overflow: "hidden",
+                  boxShadow: imageEditMode
+                    ? "0 4px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(124,92,252,0.3)"
+                    : "0 4px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
+                  borderRadius: 4,
+                  zIndex: 1,
+                }}
+              >
               <AdCanvas
                 creative={currentCreative}
                 scale={scale}
@@ -3338,6 +3373,7 @@ export default function AdsPage() {
                 onImagePan={handleImagePan}
                 onUpdateImage={handleUpdateImage}
               />
+              </div>
             </div>
           )}
 
