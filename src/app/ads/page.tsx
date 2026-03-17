@@ -658,10 +658,10 @@ function AdCanvas({
         width: W,
         height: H,
         position: "relative",
-        overflow: imageEditMode ? "visible" : "hidden",
+        overflow: "hidden",
         transform: `scale(${scale})`,
         transformOrigin: "top left",
-        borderRadius: imageEditMode ? 0 : 12,
+        borderRadius: 12,
         background: "#1a1726",
       }}
       onClick={(e) => {
@@ -697,50 +697,7 @@ function AdCanvas({
         const imgOffX = t?.offsetX || 0;
         const imgOffY = t?.offsetY || 0;
 
-        // In edit mode with known dimensions, render at cover-fit size (overflows visible)
-        if (imageEditMode && naturalDims) {
-          const imgRatio = naturalDims.w / naturalDims.h;
-          const canvasRatio = W / H;
-          let coverW: number, coverH: number;
-          if (imgRatio > canvasRatio) {
-            coverH = H;
-            coverW = H * imgRatio;
-          } else {
-            coverW = W;
-            coverH = W / imgRatio;
-          }
-          const coverX = (W - coverW) / 2;
-          const coverY = (H - coverH) / 2;
-
-          return (
-            <img
-              src={creative.photoUrl}
-              alt="Ad background"
-              style={{
-                width: coverW,
-                height: coverH,
-                objectFit: "fill",
-                position: "absolute",
-                left: coverX,
-                top: coverY,
-                transform: `scale(${imgScale}) rotate(${imgRotate}deg) translate(${imgOffX}px, ${imgOffY}px)`,
-                transformOrigin: "center center",
-                opacity: 0.45,
-                zIndex: 0,
-              }}
-              draggable={false}
-              onMouseDown={(e) => {
-                if (onImagePan) {
-                  e.stopPropagation();
-                  setImagePanning({ startX: e.clientX, startY: e.clientY });
-                }
-              }}
-            />
-          );
-        }
-
-        // Normal mode — object-fit: cover for browser display
-        // (export uses prepareForCapture to swap to manual cover-fit dimensions)
+        // object-fit: cover for browser display — same in normal and edit modes
         return (
           <img
             src={creative.photoUrl}
@@ -774,52 +731,6 @@ function AdCanvas({
               onImageClick?.();
             }}
           />
-        );
-      })()}
-
-      {/* In-crop visible image (full brightness, clipped to canvas bounds) */}
-      {imageEditMode && naturalDims && (() => {
-        const t = creative.imageTransform;
-        const imgScale = t?.scale || 1;
-        const imgRotate = t?.rotate || 0;
-        const imgOffX = t?.offsetX || 0;
-        const imgOffY = t?.offsetY || 0;
-        const imgRatio = naturalDims.w / naturalDims.h;
-        const canvasRatio = W / H;
-        let coverW: number, coverH: number;
-        if (imgRatio > canvasRatio) {
-          coverH = H;
-          coverW = H * imgRatio;
-        } else {
-          coverW = W;
-          coverH = W / imgRatio;
-        }
-        const coverX = (W - coverW) / 2;
-        const coverY = (H - coverH) / 2;
-        return (
-          <div style={{
-            position: "absolute",
-            inset: 0,
-            overflow: "hidden",
-            zIndex: 1,
-            pointerEvents: "none",
-          }}>
-            <img
-              src={creative.photoUrl}
-              alt="Crop preview"
-              style={{
-                width: coverW,
-                height: coverH,
-                objectFit: "fill",
-                position: "absolute",
-                left: coverX,
-                top: coverY,
-                transform: `scale(${imgScale}) rotate(${imgRotate}deg) translate(${imgOffX}px, ${imgOffY}px)`,
-                transformOrigin: "center center",
-              }}
-              draggable={false}
-            />
-          </div>
         );
       })()}
 
@@ -3397,7 +3308,7 @@ export default function AdsPage() {
                 height: canvasVisualH,
                 flexShrink: 0,
                 position: "relative",
-                overflow: imageEditMode ? "visible" : "hidden",
+                overflow: "hidden",
                 boxShadow: "0 4px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)",
                 borderRadius: 4,
               }}
