@@ -12,6 +12,15 @@ import type {
   SetterStat,
   AdsDayEntry,
 } from "./mock-data";
+import type {
+  Client,
+  CoachMilestone,
+  ProgramPause,
+  CoachMeeting,
+  CoachEODReport,
+  EODClientCheckin,
+  FinanceRecord,
+} from "./types";
 
 // ---- Coaching Feedback ----
 
@@ -243,6 +252,209 @@ export async function getAdPerformance(): Promise<typeof mock.adPerformance> {
     };
   } catch {
     return mock.adPerformance;
+  }
+}
+
+// ---- Clients (master roster) ----
+
+export async function getClients(): Promise<Client[]> {
+  try {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error || !data?.length) throw error || new Error("No client data");
+
+    return data.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email || "",
+      coachName: row.coach_name || "",
+      program: row.program || "",
+      offer: row.offer || "",
+      startDate: row.start_date || "",
+      endDate: row.end_date || "",
+      status: row.status || "active",
+      paymentPlatform: row.payment_platform || "",
+      salesFathomLink: row.sales_fathom_link || "",
+      onboardingFathomLink: row.onboarding_fathom_link || "",
+      amountPaid: Number(row.amount_paid) || 0,
+      createdAt: row.created_at,
+    }));
+  } catch {
+    console.warn("[data] Clients: falling back to mock data");
+    return mock.mockClients;
+  }
+}
+
+// ---- Coach Milestones ----
+
+export async function getMilestones(): Promise<CoachMilestone[]> {
+  try {
+    const { data, error } = await supabase
+      .from("coach_milestones")
+      .select("*");
+
+    if (error || !data?.length) throw error || new Error("No milestone data");
+
+    return data.map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      clientName: row.client_name,
+      coachName: row.coach_name,
+      trustPilotPromptedDate: row.trust_pilot_prompted_date,
+      trustPilotCompleted: row.trust_pilot_completed || false,
+      trustPilotCompletionDate: row.trust_pilot_completion_date,
+      videoTestimonialPromptedDate: row.video_testimonial_prompted_date,
+      videoTestimonialCompleted: row.video_testimonial_completed || false,
+      videoTestimonialCompletionDate: row.video_testimonial_completion_date,
+      retentionPromptedDate: row.retention_prompted_date,
+      retentionCompleted: row.retention_completed || false,
+      retentionCompletionDate: row.retention_completion_date,
+      referralPromptedDate: row.referral_prompted_date,
+      referralCompleted: row.referral_completed || false,
+      referralCompletionDate: row.referral_completion_date,
+    }));
+  } catch {
+    console.warn("[data] Milestones: falling back to mock data");
+    return mock.mockMilestones;
+  }
+}
+
+// ---- Program Pauses ----
+
+export async function getPauses(): Promise<ProgramPause[]> {
+  try {
+    const { data, error } = await supabase
+      .from("program_pauses")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error || !data?.length) throw error || new Error("No pause data");
+
+    return data.map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      clientName: row.client_name,
+      coachName: row.coach_name || "",
+      pauseStartDate: row.pause_start_date || "",
+      pauseDays: row.pause_days || 0,
+      reason: row.reason || "",
+      approved: row.approved || false,
+      createdAt: row.created_at,
+    }));
+  } catch {
+    console.warn("[data] Pauses: falling back to mock data");
+    return mock.mockPauses;
+  }
+}
+
+// ---- Coach Meetings ----
+
+export async function getMeetings(): Promise<CoachMeeting[]> {
+  try {
+    const { data, error } = await supabase
+      .from("coach_meetings")
+      .select("*")
+      .order("meeting_date", { ascending: false });
+
+    if (error || !data?.length) throw error || new Error("No meeting data");
+
+    return data.map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      clientName: row.client_name,
+      coachName: row.coach_name,
+      meetingDate: row.meeting_date || "",
+      durationMinutes: row.duration_minutes || 0,
+      notes: row.notes || "",
+      createdAt: row.created_at,
+    }));
+  } catch {
+    console.warn("[data] Meetings: falling back to mock data");
+    return mock.mockMeetings;
+  }
+}
+
+// ---- EOD Reports ----
+
+export async function getEODReports(): Promise<CoachEODReport[]> {
+  try {
+    const { data: reports, error: e1 } = await supabase
+      .from("eod_reports")
+      .select("*")
+      .order("date", { ascending: false });
+
+    if (e1 || !reports?.length) throw e1 || new Error("No EOD data");
+
+    // Fetch all checkins for these reports
+    const reportIds = reports.map((r) => r.id);
+    const { data: checkins } = await supabase
+      .from("eod_client_checkins")
+      .select("*")
+      .in("eod_id", reportIds);
+
+    const checkinMap = new Map<number, EODClientCheckin[]>();
+    for (const c of checkins || []) {
+      const arr = checkinMap.get(c.eod_id) || [];
+      arr.push({
+        id: c.id,
+        eodId: c.eod_id,
+        clientName: c.client_name,
+        checkedIn: c.checked_in || false,
+        notes: c.notes || "",
+      });
+      checkinMap.set(c.eod_id, arr);
+    }
+
+    return reports.map((row) => ({
+      id: row.id,
+      submittedBy: row.submitted_by,
+      role: row.role as "coach" | "onboarding",
+      date: row.date,
+      activeClientCount: row.active_client_count || 0,
+      newClients: row.new_clients || 0,
+      accountsDeactivated: row.accounts_deactivated || 0,
+      communityEngagement: row.community_engagement || "",
+      summary: row.summary || "",
+      questionsForManagement: row.questions_for_management || "",
+      hoursLogged: Number(row.hours_logged) || 0,
+      feelingToday: row.feeling_today || "",
+      createdAt: row.created_at,
+      clientCheckins: checkinMap.get(row.id) || [],
+    }));
+  } catch {
+    console.warn("[data] EOD Reports: falling back to mock data");
+    return mock.mockEODReports;
+  }
+}
+
+// ---- Finances ----
+
+export async function getFinances(): Promise<FinanceRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from("finances")
+      .select("*");
+
+    if (error || !data?.length) throw error || new Error("No finance data");
+
+    return data.map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      clientName: row.client_name,
+      coachName: row.coach_name || "",
+      amountPaid: Number(row.amount_paid) || 0,
+      refundAmount: Number(row.refund_amount) || 0,
+      refundReason: row.refund_reason || "",
+      refundDate: row.refund_date,
+      retentionRevenue: Number(row.retention_revenue) || 0,
+      retentionDate: row.retention_date,
+    }));
+  } catch {
+    console.warn("[data] Finances: falling back to mock data");
+    return mock.mockFinances;
   }
 }
 
