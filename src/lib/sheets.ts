@@ -727,7 +727,7 @@ function parseMilestoneValue(val: string | undefined | null): { done: boolean; d
 const COACH_TABS: { tab: string; coach: string }[] = [
   { tab: "Waleed's LT Client Tracker", coach: "Waleed" },
   { tab: "Ignacio's Tracker", coach: "Ignacio" },
-  { tab: "Steph's Tracker", coach: "Steph" },
+  { tab: "Stef's Tracker", coach: "Stef" },
   { tab: "Farrukh's Tracker", coach: "Farrukh" },
   { tab: "Fatima's LT Clients", coach: "Fatima" },
 ];

@@ -1,6 +1,6 @@
 // Mock data for CCOS (Client Conversion OS)
 // Two influencer clients: Keith and Tyson
-// Coaches: Ignacio, Fatima, Waleed, Stephanie, Farooq
+// Coaches: Ignacio, Fatima, Waleed, Stef, Farrukh
 // Closers: Jacob Broz, Will
 // Onboarding: Nicole
 // Setters: 4 DM setters (2 per client)
@@ -1617,7 +1617,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Mark is really knowledgeable. He helped me fix my hip hinge and my deadlift feels so much better.",
     wins: "No more lower back pain during workouts.",
-    coachName: "Stephanie",
+    coachName: "Stef",
     date: "2026-02-05",
   },
   {
@@ -1633,7 +1633,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Josh pushes me hard but in a good way. I wish the app had better meal tracking integration.",
     wins: "First pull-up in 3 years!",
-    coachName: "Farooq",
+    coachName: "Farrukh",
     date: "2026-02-05",
   },
   {
@@ -1681,7 +1681,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Mark gave me a great deload week. I was feeling burnt out and now I feel refreshed.",
     wins: "Sleep improved after switching to evening workouts.",
-    coachName: "Stephanie",
+    coachName: "Stef",
     date: "2026-02-09",
   },
   {
@@ -1697,7 +1697,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Josh is amazing! He created a home workout plan since my gym closed for renovation. Didnt miss a beat.",
     wins: "Visible abs for the first time ever!",
-    coachName: "Farooq",
+    coachName: "Farrukh",
     date: "2026-02-10",
   },
   {
@@ -1761,7 +1761,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Mark immediately adjusted my program when I told him about the shoulder. Really responsive.",
     wins: "Lower body is still progressing. Squatted 225 for reps.",
-    coachName: "Stephanie",
+    coachName: "Stef",
     date: "2026-02-15",
   },
   {
@@ -1777,7 +1777,7 @@ export const coachingFeedback: CoachingFeedbackEntry[] = [
     feedback:
       "Josh made my nutrition plan way simpler. I was overcomplicating it. Now I actually stick to it.",
     wins: "Dropped a dress size and feel more confident.",
-    coachName: "Farooq",
+    coachName: "Farrukh",
     date: "2026-02-16",
   },
   {
@@ -2232,7 +2232,7 @@ export const coachPerformance: CoachPerformanceEntry[] = [
     source: "tyson",
   },
   {
-    name: "Stephanie",
+    name: "Stef",
     activeClients: 15,
     avgRating: 8.3,
     avgNPS: 8.3,
@@ -2240,7 +2240,7 @@ export const coachPerformance: CoachPerformanceEntry[] = [
     source: "tyson",
   },
   {
-    name: "Farooq",
+    name: "Farrukh",
     activeClients: 15,
     avgRating: 8.8,
     avgNPS: 8.8,
@@ -2470,8 +2470,8 @@ export const teamMembers: TeamMember[] = [
   { name: "Dana", role: "DM Setter", email: "dana@clientconversion.io", status: "active", source: "tyson" },
   { name: "Fatima", role: "Coach", email: "fatima@clientconversion.io", status: "active", source: "keith" },
   { name: "Waleed", role: "Coach", email: "waleed@clientconversion.io", status: "active", source: "tyson" },
-  { name: "Stephanie", role: "Coach", email: "stephanie@clientconversion.io", status: "active", source: "tyson" },
-  { name: "Farooq", role: "Coach", email: "farooq@clientconversion.io", status: "active", source: "keith" },
+  { name: "Stef", role: "Coach", email: "stef@clientconversion.io", status: "active", source: "tyson" },
+  { name: "Farrukh", role: "Coach", email: "farrukh@clientconversion.io", status: "active", source: "keith" },
 ];
 
 // ============================================================================
@@ -2598,15 +2598,15 @@ export const mockClients: Client[] = [
   { id: 1, name: "Marcus Rivera", email: "marcus.r@gmail.com", coachName: "Ignacio", program: "12-Week Transform", offer: "Keith Standard", startDate: "2026-01-06", endDate: "2026-03-30", status: "active", paymentPlatform: "Stripe", salesFathomLink: "https://fathom.video/share/example1", onboardingFathomLink: "https://fathom.video/share/ob-example1", salesPerson: "", comments: "", amountPaid: 1200 },
   { id: 2, name: "Jasmine Okafor", email: "jasmine.o@gmail.com", coachName: "Fatima", program: "12-Week Transform", offer: "Keith Premium", startDate: "2026-01-13", endDate: "2026-04-06", status: "active", paymentPlatform: "Stripe", salesFathomLink: "https://fathom.video/share/example2", onboardingFathomLink: "https://fathom.video/share/ob-example2", salesPerson: "", comments: "", amountPaid: 1800 },
   { id: 3, name: "Derek Lawson", email: "derek.l@gmail.com", coachName: "Waleed", program: "8-Week Kickstart", offer: "Tyson Standard", startDate: "2026-01-20", endDate: "2026-03-16", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 900 },
-  { id: 4, name: "Angela Chen", email: "angela.c@gmail.com", coachName: "Stephanie", program: "12-Week Transform", offer: "Tyson Premium", startDate: "2026-02-03", endDate: "2026-04-27", status: "active", paymentPlatform: "Stripe", salesFathomLink: "https://fathom.video/share/example4", onboardingFathomLink: "https://fathom.video/share/ob-example4", salesPerson: "", comments: "", amountPaid: 1500 },
-  { id: 5, name: "Rachel Foster", email: "rachel.f@gmail.com", coachName: "Farooq", program: "12-Week Transform", offer: "Keith Standard", startDate: "2025-12-15", endDate: "2026-03-09", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "https://fathom.video/share/ob-example5", salesPerson: "", comments: "", amountPaid: 1200 },
+  { id: 4, name: "Angela Chen", email: "angela.c@gmail.com", coachName: "Stef", program: "12-Week Transform", offer: "Tyson Premium", startDate: "2026-02-03", endDate: "2026-04-27", status: "active", paymentPlatform: "Stripe", salesFathomLink: "https://fathom.video/share/example4", onboardingFathomLink: "https://fathom.video/share/ob-example4", salesPerson: "", comments: "", amountPaid: 1500 },
+  { id: 5, name: "Rachel Foster", email: "rachel.f@gmail.com", coachName: "Farrukh", program: "12-Week Transform", offer: "Keith Standard", startDate: "2025-12-15", endDate: "2026-03-09", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "https://fathom.video/share/ob-example5", salesPerson: "", comments: "", amountPaid: 1200 },
   { id: 6, name: "Brandon Williams", email: "brandon.w@gmail.com", coachName: "Ignacio", program: "8-Week Kickstart", offer: "Keith Standard", startDate: "2026-02-10", endDate: "2026-04-06", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 900 },
   { id: 7, name: "Samantha Lee", email: "samantha.l@gmail.com", coachName: "Fatima", program: "12-Week Transform", offer: "Tyson Standard", startDate: "2026-01-06", endDate: "2026-03-30", status: "active", paymentPlatform: "Stripe", salesFathomLink: "https://fathom.video/share/example7", onboardingFathomLink: "https://fathom.video/share/ob-example7", salesPerson: "", comments: "", amountPaid: 1200 },
   { id: 8, name: "Michael Torres", email: "michael.t@gmail.com", coachName: "Waleed", program: "8-Week Kickstart", offer: "Tyson Standard", startDate: "2026-02-17", endDate: "2026-04-13", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 900 },
   { id: 9, name: "Nathan Price", email: "nathan.p@gmail.com", coachName: "Ignacio", program: "12-Week Transform", offer: "Keith Premium", startDate: "2026-02-24", endDate: "2026-05-18", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 1800 },
-  { id: 10, name: "Michael Blake", email: "michael.b@gmail.com", coachName: "Stephanie", program: "12-Week Transform", offer: "Tyson Standard", startDate: "2026-01-13", endDate: "2026-04-06", status: "refunded", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 1820 },
+  { id: 10, name: "Michael Blake", email: "michael.b@gmail.com", coachName: "Stef", program: "12-Week Transform", offer: "Tyson Standard", startDate: "2026-01-13", endDate: "2026-04-06", status: "refunded", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 1820 },
   { id: 11, name: "Jakob Padgett", email: "jakob.p@gmail.com", coachName: "Ignacio", program: "12-Week Transform", offer: "Keith Standard", startDate: "2026-03-16", endDate: "2026-06-08", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "https://fathom.video/share/jmxkzT_y-getpn7jrsFZuT5LA1kmNxsq", salesPerson: "", comments: "", amountPaid: 1200 },
-  { id: 12, name: "Ethan Escobedo", email: "ethan.e@gmail.com", coachName: "Farooq", program: "8-Week Kickstart", offer: "Keith Standard", startDate: "2026-03-16", endDate: "2026-05-11", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "https://fathom.video/share/UH95QNKddAKs7EGz7ZTDHK4LTdx7nve-", salesPerson: "", comments: "", amountPaid: 900 },
+  { id: 12, name: "Ethan Escobedo", email: "ethan.e@gmail.com", coachName: "Farrukh", program: "8-Week Kickstart", offer: "Keith Standard", startDate: "2026-03-16", endDate: "2026-05-11", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "https://fathom.video/share/UH95QNKddAKs7EGz7ZTDHK4LTdx7nve-", salesPerson: "", comments: "", amountPaid: 900 },
   { id: 13, name: "Hunter Olsen", email: "hunter.o@gmail.com", coachName: "Waleed", program: "12-Week Transform", offer: "Tyson Standard", startDate: "2026-02-10", endDate: "2026-05-04", status: "cancelled", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 1200 },
   { id: 14, name: "Matthew Ryan", email: "matthew.r@gmail.com", coachName: "Ignacio", program: "8-Week Kickstart", offer: "Keith Standard", startDate: "2026-03-03", endDate: "2026-04-28", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 900 },
   { id: 15, name: "Ryan Cooper", email: "ryan.c@gmail.com", coachName: "Ignacio", program: "12-Week Transform", offer: "Tyson Premium", startDate: "2026-03-10", endDate: "2026-06-01", status: "active", paymentPlatform: "Stripe", salesFathomLink: "", onboardingFathomLink: "", salesPerson: "", comments: "", amountPaid: 1500 },
@@ -2616,8 +2616,8 @@ export const mockMilestones: CoachMilestone[] = [
   { id: 1, clientId: 1, clientName: "Marcus Rivera", coachName: "Ignacio", trustPilotPromptedDate: "2026-01-20", trustPilotCompleted: true, trustPilotCompletionDate: "2026-01-22", videoTestimonialPromptedDate: "2026-03-23", videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: "2026-03-09", retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: "2026-03-23", referralCompleted: false, referralCompletionDate: null },
   { id: 2, clientId: 2, clientName: "Jasmine Okafor", coachName: "Fatima", trustPilotPromptedDate: "2026-01-27", trustPilotCompleted: true, trustPilotCompletionDate: "2026-01-28", videoTestimonialPromptedDate: null, videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: "2026-03-16", retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: null, referralCompleted: false, referralCompletionDate: null },
   { id: 3, clientId: 3, clientName: "Derek Lawson", coachName: "Waleed", trustPilotPromptedDate: "2026-02-03", trustPilotCompleted: false, trustPilotCompletionDate: null, videoTestimonialPromptedDate: null, videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: null, retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: null, referralCompleted: false, referralCompletionDate: null },
-  { id: 4, clientId: 4, clientName: "Angela Chen", coachName: "Stephanie", trustPilotPromptedDate: "2026-02-17", trustPilotCompleted: true, trustPilotCompletionDate: "2026-02-19", videoTestimonialPromptedDate: null, videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: null, retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: null, referralCompleted: false, referralCompletionDate: null },
-  { id: 5, clientId: 5, clientName: "Rachel Foster", coachName: "Farooq", trustPilotPromptedDate: "2025-12-29", trustPilotCompleted: true, trustPilotCompletionDate: "2025-12-30", videoTestimonialPromptedDate: "2026-03-02", videoTestimonialCompleted: true, videoTestimonialCompletionDate: "2026-03-04", retentionPromptedDate: "2026-02-16", retentionCompleted: true, retentionCompletionDate: "2026-02-20", referralPromptedDate: "2026-03-02", referralCompleted: false, referralCompletionDate: null },
+  { id: 4, clientId: 4, clientName: "Angela Chen", coachName: "Stef", trustPilotPromptedDate: "2026-02-17", trustPilotCompleted: true, trustPilotCompletionDate: "2026-02-19", videoTestimonialPromptedDate: null, videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: null, retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: null, referralCompleted: false, referralCompletionDate: null },
+  { id: 5, clientId: 5, clientName: "Rachel Foster", coachName: "Farrukh", trustPilotPromptedDate: "2025-12-29", trustPilotCompleted: true, trustPilotCompletionDate: "2025-12-30", videoTestimonialPromptedDate: "2026-03-02", videoTestimonialCompleted: true, videoTestimonialCompletionDate: "2026-03-04", retentionPromptedDate: "2026-02-16", retentionCompleted: true, retentionCompletionDate: "2026-02-20", referralPromptedDate: "2026-03-02", referralCompleted: false, referralCompletionDate: null },
   { id: 6, clientId: 7, clientName: "Samantha Lee", coachName: "Fatima", trustPilotPromptedDate: "2026-01-20", trustPilotCompleted: true, trustPilotCompletionDate: "2026-01-21", videoTestimonialPromptedDate: "2026-03-23", videoTestimonialCompleted: false, videoTestimonialCompletionDate: null, retentionPromptedDate: "2026-03-09", retentionCompleted: false, retentionCompletionDate: null, referralPromptedDate: null, referralCompleted: false, referralCompletionDate: null },
 ];
 
@@ -2629,8 +2629,8 @@ export const mockPauses: ProgramPause[] = [
 export const mockMeetings: CoachMeeting[] = [
   { id: 1, clientId: 1, clientName: "Marcus Rivera", coachName: "Ignacio", meetingDate: "2026-03-15", durationMinutes: 30, notes: "Reviewed squat form. Set new PR goal of 335lb by end of program. Client highly motivated." },
   { id: 2, clientId: 2, clientName: "Jasmine Okafor", coachName: "Fatima", meetingDate: "2026-03-14", durationMinutes: 25, notes: "Discussed Ramadan nutrition plan. Adjusted macros to maintain energy. Client very happy with progress." },
-  { id: 3, clientId: 4, clientName: "Angela Chen", coachName: "Stephanie", meetingDate: "2026-03-13", durationMinutes: 20, notes: "Fixed hip hinge form on deadlifts. Added mobility warm-up routine. Client feeling much better." },
-  { id: 4, clientId: 5, clientName: "Rachel Foster", coachName: "Farooq", meetingDate: "2026-03-12", durationMinutes: 35, notes: "Home workout plan review. Added resistance band exercises. Discussed retention — client interested in continuing." },
+  { id: 3, clientId: 4, clientName: "Angela Chen", coachName: "Stef", meetingDate: "2026-03-13", durationMinutes: 20, notes: "Fixed hip hinge form on deadlifts. Added mobility warm-up routine. Client feeling much better." },
+  { id: 4, clientId: 5, clientName: "Rachel Foster", coachName: "Farrukh", meetingDate: "2026-03-12", durationMinutes: 35, notes: "Home workout plan review. Added resistance band exercises. Discussed retention — client interested in continuing." },
   { id: 5, clientId: 7, clientName: "Samantha Lee", coachName: "Fatima", meetingDate: "2026-03-11", durationMinutes: 30, notes: "3-inch waist reduction celebration! Adjusted training split for next phase. Talked about referral program." },
   { id: 6, clientId: 6, clientName: "Brandon Williams", coachName: "Ignacio", meetingDate: "2026-03-10", durationMinutes: 20, notes: "Client has been quiet. Discussed commitment and set daily check-in routine. Will monitor closely." },
   { id: 7, clientId: 9, clientName: "Nathan Price", coachName: "Ignacio", meetingDate: "2026-03-16", durationMinutes: 25, notes: "Initial assessment call. Set up nutrition forms. Client eager to start." },
@@ -2683,11 +2683,11 @@ export const mockEODReports: CoachEODReport[] = [
 export const mockFinances: FinanceRecord[] = [
   { id: 1, clientId: 1, clientName: "Marcus Rivera", coachName: "Ignacio", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
   { id: 2, clientId: 2, clientName: "Jasmine Okafor", coachName: "Fatima", amountPaid: 1800, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
-  { id: 3, clientId: 5, clientName: "Rachel Foster", coachName: "Farooq", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 1200, retentionDate: "2026-02-20" },
-  { id: 4, clientId: 10, clientName: "Michael Blake", coachName: "Stephanie", amountPaid: 1820, refundAmount: 1820, refundReason: "Client requested full refund — not satisfied with results", refundDate: "2026-03-16", retentionRevenue: 0, retentionDate: null },
+  { id: 3, clientId: 5, clientName: "Rachel Foster", coachName: "Farrukh", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 1200, retentionDate: "2026-02-20" },
+  { id: 4, clientId: 10, clientName: "Michael Blake", coachName: "Stef", amountPaid: 1820, refundAmount: 1820, refundReason: "Client requested full refund — not satisfied with results", refundDate: "2026-03-16", retentionRevenue: 0, retentionDate: null },
   { id: 5, clientId: 13, clientName: "Hunter Olsen", coachName: "Waleed", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
-  { id: 6, clientId: 4, clientName: "Angela Chen", coachName: "Stephanie", amountPaid: 1500, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
+  { id: 6, clientId: 4, clientName: "Angela Chen", coachName: "Stef", amountPaid: 1500, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
   { id: 7, clientId: 7, clientName: "Samantha Lee", coachName: "Fatima", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
   { id: 8, clientId: 11, clientName: "Jakob Padgett", coachName: "Ignacio", amountPaid: 1200, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
-  { id: 9, clientId: 12, clientName: "Ethan Escobedo", coachName: "Farooq", amountPaid: 900, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
+  { id: 9, clientId: 12, clientName: "Ethan Escobedo", coachName: "Farrukh", amountPaid: 900, refundAmount: 0, refundReason: "", refundDate: null, retentionRevenue: 0, retentionDate: null },
 ];
