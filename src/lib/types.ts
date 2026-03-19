@@ -128,6 +128,8 @@ export interface CoachEODReport {
   questionsForManagement: string;
   hoursLogged: number;
   feelingToday: string;
+  videoTestimonialToday?: boolean;
+  videoTestimonialClient?: string;
   createdAt?: string;
   // Joined from eod_client_checkins
   clientCheckins?: EODClientCheckin[];

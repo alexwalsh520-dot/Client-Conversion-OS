@@ -23,40 +23,44 @@ interface Props {
   feedback: CoachingFeedbackEntry[];
 }
 
-export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports, coachPerformance, feedback }: Props) {
-  // Get unique coaches
+export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports }: Props) {
+  // Get unique coaches from clients
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
+
+  // Total active clients across ALL coaches
+  const totalActiveClients = clients.filter((c) => c.status === "active").length;
+  const totalCompletedClients = clients.filter((c) => c.status === "completed").length;
+  const totalClients = clients.length;
 
   // Build comparison data per coach
   const coachData = coaches.map((coachName) => {
-    const coachClients = clients.filter((c) => c.coachName === coachName && c.status === "active");
+    const coachClients = clients.filter((c) => c.coachName === coachName);
+    const activeClients = coachClients.filter((c) => c.status === "active");
+    const completedClients = coachClients.filter((c) => c.status === "completed");
     const coachMilestones = milestones.filter((m) => m.coachName === coachName);
     const coachMeetings = meetings.filter((m) => m.coachName === coachName);
     const coachEODs = eodReports.filter((r) => r.submittedBy === coachName && r.role === "coach");
-    const coachFeedback = feedback.filter((f) => f.coachName === coachName);
-    const perfEntry = coachPerformance.find((p) => p.name === coachName);
 
-    // Milestone completion rates
-    const totalMilestones = coachMilestones.length * 4; // 4 milestones per client
+    // Milestone completion rates (4 milestones per client)
+    const totalMilestoneSlots = coachMilestones.length * 4;
     const completedMilestones =
       coachMilestones.filter((m) => m.trustPilotCompleted).length +
       coachMilestones.filter((m) => m.videoTestimonialCompleted).length +
       coachMilestones.filter((m) => m.retentionCompleted).length +
       coachMilestones.filter((m) => m.referralCompleted).length;
 
-    const milestoneRate = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
+    const milestoneRate = totalMilestoneSlots > 0 ? Math.round((completedMilestones / totalMilestoneSlots) * 100) : 0;
 
-    // Average feedback rating
-    const avgRating = coachFeedback.length > 0
-      ? coachFeedback.reduce((s, f) => s + f.coachRating, 0) / coachFeedback.length
-      : perfEntry?.avgRating || 0;
+    // Completion rate: clients who completed / (completed + active)
+    const relevantClients = activeClients.length + completedClients.length;
+    const completionRate = relevantClients > 0 ? Math.round((completedClients.length / relevantClients) * 100) : 0;
 
     return {
       name: coachName,
-      activeClients: coachClients.length || perfEntry?.activeClients || 0,
-      avgRating: Number(avgRating.toFixed(1)),
-      avgNPS: perfEntry?.avgNPS || 0,
-      completionRate: perfEntry?.completionRate || 0,
+      totalClients: coachClients.length,
+      activeClients: activeClients.length,
+      completedClients: completedClients.length,
+      completionRate,
       milestoneRate,
       totalMeetings: coachMeetings.length,
       eodSubmissions: coachEODs.length,
@@ -75,11 +79,31 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
     name: c.name,
     "Milestone %": c.milestoneRate,
     "Completion %": c.completionRate,
-    "Avg Rating": c.avgRating * 10, // scale to %
+    "Active Clients": c.activeClients,
   }));
 
   return (
     <div>
+      {/* Top-level KPIs */}
+      <div className="metric-grid metric-grid-4" style={{ marginBottom: 16 }}>
+        <div className="glass-static metric-card">
+          <div className="metric-card-label">Total Active Clients</div>
+          <div className="metric-card-value" style={{ color: "var(--accent)" }}>{totalActiveClients}</div>
+        </div>
+        <div className="glass-static metric-card">
+          <div className="metric-card-label">Completed</div>
+          <div className="metric-card-value" style={{ color: "var(--success)" }}>{totalCompletedClients}</div>
+        </div>
+        <div className="glass-static metric-card">
+          <div className="metric-card-label">Total Clients</div>
+          <div className="metric-card-value">{totalClients}</div>
+        </div>
+        <div className="glass-static metric-card">
+          <div className="metric-card-label">Coaches</div>
+          <div className="metric-card-value">{coaches.length}</div>
+        </div>
+      </div>
+
       {/* Ranking */}
       <div className="section">
         <h2 className="section-title">
@@ -99,7 +123,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
               </div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                 <span>Active Clients: <strong>{coach.activeClients}</strong></span>
-                <span>Avg Rating: <strong>{coach.avgRating}/10</strong></span>
+                <span>Completed: <strong>{coach.completedClients}</strong></span>
                 <span>Meetings: <strong>{coach.totalMeetings}</strong></span>
                 <span>EOD Reports: <strong>{coach.eodSubmissions}</strong></span>
                 <span>TrustPilot: <strong>{coach.trustPilot}</strong></span>
@@ -135,7 +159,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
               <Legend />
               <Bar dataKey="Milestone %" fill="var(--accent)" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Completion %" fill="var(--success)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Avg Rating" fill="var(--tyson)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Active Clients" fill="var(--tyson)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -148,9 +172,8 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
             <thead>
               <tr>
                 <th>Coach</th>
-                <th>Active Clients</th>
-                <th>Avg Rating</th>
-                <th>NPS</th>
+                <th>Active</th>
+                <th>Completed</th>
                 <th>Completion %</th>
                 <th>Milestone %</th>
                 <th>TP</th>
@@ -161,11 +184,10 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
             </thead>
             <tbody>
               {ranked.map((coach) => (
-                <tr key={coach.name} className={coach.completionRate < 85 ? "row-flagged" : ""}>
+                <tr key={coach.name}>
                   <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{coach.name}</td>
                   <td>{coach.activeClients}</td>
-                  <td>{coach.avgRating}</td>
-                  <td>{coach.avgNPS.toFixed(1)}</td>
+                  <td>{coach.completedClients}</td>
                   <td>{coach.completionRate}%</td>
                   <td style={{ fontWeight: 600, color: coach.milestoneRate >= 50 ? "var(--success)" : "var(--warning)" }}>
                     {coach.milestoneRate}%

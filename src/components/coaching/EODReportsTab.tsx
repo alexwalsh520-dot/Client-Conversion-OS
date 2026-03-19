@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Plus, X, CheckCircle, XCircle } from "lucide-react";
+import { FileText, Plus, X, CheckCircle, XCircle, Video } from "lucide-react";
 import type { Client, CoachEODReport } from "@/lib/types";
 
 interface Props {
@@ -161,6 +161,42 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             <textarea className="input-field" rows={2} value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
           </div>
 
+          {/* Video Testimonial */}
+          {formData.role === "coach" && (
+            <div style={{ marginTop: 12, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={formData.videoTestimonialToday || false}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    videoTestimonialToday: e.target.checked,
+                    videoTestimonialClient: e.target.checked ? formData.videoTestimonialClient || "" : "",
+                  })}
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                <label className="field-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                  <Video size={14} /> Got a video testimonial today?
+                </label>
+              </div>
+              {formData.videoTestimonialToday && (
+                <div>
+                  <label className="field-label">Which client?</label>
+                  <select
+                    className="input-field"
+                    value={formData.videoTestimonialClient || ""}
+                    onChange={(e) => setFormData({ ...formData, videoTestimonialClient: e.target.value })}
+                  >
+                    <option value="">Select client...</option>
+                    {activeClients.filter((c) => c.coachName === formData.submittedBy).map((c) => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Client Checkins (for coaches) */}
           {formData.role === "coach" && (formData.clientCheckins?.length || 0) > 0 && (
             <div style={{ marginTop: 16 }}>
@@ -251,6 +287,15 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {report.videoTestimonialToday && report.videoTestimonialClient && (
+            <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <Video size={12} style={{ color: "var(--accent)" }} />
+              <span style={{ color: "var(--accent)", fontWeight: 600 }}>
+                Video testimonial from {report.videoTestimonialClient}
+              </span>
             </div>
           )}
 
