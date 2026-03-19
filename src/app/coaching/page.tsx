@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Users,
   UserPlus,
@@ -9,6 +9,7 @@ import {
   Target,
   FileText,
   DollarSign,
+  RefreshCw,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -62,6 +63,33 @@ export default function CoachingPage() {
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
   const { data: finances, refetch: refetchFinances } = useAsyncData(getFinances, mockFinances);
 
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      setSyncMsg("Synced successfully");
+      // Refresh all data
+      refetchClients();
+      refetchMilestones();
+      refetchPauses();
+      refetchMeetings();
+      refetchEOD();
+      refetchFinances();
+    } catch (err: unknown) {
+      setSyncMsg(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 4000);
+    }
+  }, [refetchClients, refetchMilestones, refetchPauses, refetchMeetings, refetchEOD, refetchFinances]);
+
   // API helper
   const apiCall = async (action: string, payload: unknown) => {
     const res = await fetch("/api/coaching", {
@@ -100,11 +128,41 @@ export default function CoachingPage() {
   return (
     <div className="fade-up">
       {/* Header */}
-      <div className="page-header">
-        <h1 className="page-title">Coaching Hub</h1>
-        <p className="page-subtitle">
-          Client management, coach performance, milestones, and daily operations
-        </p>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1 className="page-title">Coaching Hub</h1>
+          <p className="page-subtitle">
+            Client management, coach performance, milestones, and daily operations
+          </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {syncMsg && (
+            <span style={{ fontSize: 12, color: syncMsg.includes("success") ? "var(--success)" : "var(--danger)" }}>
+              {syncMsg}
+            </span>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              cursor: syncing ? "not-allowed" : "pointer",
+              fontSize: 13,
+              fontWeight: 500,
+              background: "var(--bg-glass)",
+              color: "var(--text-primary)",
+              opacity: syncing ? 0.6 : 1,
+            }}
+          >
+            <RefreshCw size={14} style={{ animation: syncing ? "spin 1s linear infinite" : "none" }} />
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigation */}
