@@ -67,13 +67,14 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
   const retComplete = milestones.filter((m) => m.retentionCompleted).length;
   const refComplete = milestones.filter((m) => m.referralCompleted).length;
 
-  const MilestoneCheck = ({ label, done, due, overdue, milestoneId, field }: {
+  const MilestoneCheck = ({ label, done, due, overdue, milestoneId, field, completionDate }: {
     label: string;
     done: boolean;
     due: boolean;
     overdue: boolean;
     milestoneId?: number;
     field: string;
+    completionDate?: string | null;
   }) => (
     <div
       style={{
@@ -100,8 +101,13 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
       }}>
         {label}
       </span>
+      {completionDate && (
+        <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
+          {completionDate}
+        </span>
+      )}
       {overdue && !done && <AlertTriangle size={11} style={{ color: "var(--danger)" }} />}
-      {done && <CheckCircle size={11} style={{ color: "var(--success)" }} />}
+      {done && !completionDate && <CheckCircle size={11} style={{ color: "var(--success)" }} />}
       {due && !done && !overdue && <Clock size={11} style={{ color: "var(--warning)" }} />}
     </div>
   );
@@ -170,10 +176,10 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <MilestoneCheck label="TrustPilot" done={milestone?.trustPilotCompleted || false} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" />
-            <MilestoneCheck label="Retention" done={milestone?.retentionCompleted || false} due={retDue} overdue={retOverdue} milestoneId={milestone?.id} field="retentionCompleted" />
-            <MilestoneCheck label="Video" done={milestone?.videoTestimonialCompleted || false} due={vidDue} overdue={vidOverdue} milestoneId={milestone?.id} field="videoTestimonialCompleted" />
-            <MilestoneCheck label="Referral" done={milestone?.referralCompleted || false} due={refDue} overdue={refOverdue} milestoneId={milestone?.id} field="referralCompleted" />
+            <MilestoneCheck label="TrustPilot" done={milestone?.trustPilotCompleted || false} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" completionDate={milestone?.trustPilotCompletionDate} />
+            <MilestoneCheck label="Retention" done={milestone?.retentionCompleted || false} due={retDue} overdue={retOverdue} milestoneId={milestone?.id} field="retentionCompleted" completionDate={milestone?.retentionCompletionDate} />
+            <MilestoneCheck label="Video" done={milestone?.videoTestimonialCompleted || false} due={vidDue} overdue={vidOverdue} milestoneId={milestone?.id} field="videoTestimonialCompleted" completionDate={milestone?.videoTestimonialCompletionDate} />
+            <MilestoneCheck label="Referral" done={milestone?.referralCompleted || false} due={refDue} overdue={refOverdue} milestoneId={milestone?.id} field="referralCompleted" completionDate={milestone?.referralCompletionDate} />
           </div>
         </div>
       ))}

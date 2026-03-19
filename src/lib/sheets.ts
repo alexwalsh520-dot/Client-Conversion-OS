@@ -624,11 +624,16 @@ export interface CoachTrackerRow {
   comments: string;
   is_active: boolean;
   coach_name: string;
-  // Milestone flags from coach tabs (columns J-M)
-  trust_pilot: boolean;
-  video_testimonial: boolean;
-  retention: boolean;
-  referral: boolean;
+  // Milestone data from coach tabs (columns J-M)
+  // Each is { done: boolean, date: string | null } where date is "MM/DD" format
+  trust_pilot_done: boolean;
+  trust_pilot_date: string | null;
+  video_testimonial_done: boolean;
+  video_testimonial_date: string | null;
+  retention_done: boolean;
+  retention_date: string | null;
+  referral_done: boolean;
+  referral_date: string | null;
   meetings: string;
   bonus_received: boolean;
   // Nicole-only fields
@@ -636,6 +641,81 @@ export interface CoachTrackerRow {
   sales_information: string;
   payment_platform: string;
   source_tab: string;
+}
+
+/**
+ * Parse a milestone cell value into { done, date }.
+ * The cell could contain: "yes", "no", "", a date like "Feb 2", "2/15",
+ * "02/03/2025", "2.15.26", etc.
+ * Returns done=true if truthy/date-like, and date in "MM/DD" format when parseable.
+ */
+function parseMilestoneValue(val: string | undefined | null): { done: boolean; date: string | null } {
+  if (!val) return { done: false, date: null };
+  const trimmed = val.trim();
+  if (!trimmed) return { done: false, date: null };
+
+  const lower = trimmed.toLowerCase();
+  // Explicit no
+  if (lower === "no" || lower === "n" || lower === "false" || lower === "0") {
+    return { done: false, date: null };
+  }
+  // Explicit yes with no date
+  if (lower === "yes" || lower === "y" || lower === "true" || lower === "1") {
+    return { done: true, date: null };
+  }
+
+  // Try to extract month/day from various date formats
+
+  // "M/D/YYYY" or "M/D/YY" or "M/D"
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?$/);
+  if (slashMatch) {
+    const mm = slashMatch[1].padStart(2, "0");
+    const dd = slashMatch[2].padStart(2, "0");
+    return { done: true, date: `${mm}/${dd}` };
+  }
+
+  // "M.D.YY" or "M.D.YYYY" or "M.D"
+  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})(?:\.\d{2,4})?$/);
+  if (dotMatch) {
+    const mm = dotMatch[1].padStart(2, "0");
+    const dd = dotMatch[2].padStart(2, "0");
+    return { done: true, date: `${mm}/${dd}` };
+  }
+
+  // "Mon D" or "Month D" (e.g. "Feb 2", "January 15")
+  const MONTH_ABBR: Record<string, string> = {
+    jan: "01", january: "01", feb: "02", february: "02", mar: "03", march: "03",
+    apr: "04", april: "04", may: "05", jun: "06", june: "06",
+    jul: "07", july: "07", aug: "08", august: "08", sep: "09", september: "09",
+    oct: "10", october: "10", nov: "11", november: "11", dec: "12", december: "12",
+  };
+  const monthMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,?\s*\d{2,4})?$/);
+  if (monthMatch) {
+    const mm = MONTH_ABBR[monthMatch[1].toLowerCase()];
+    if (mm) {
+      const dd = monthMatch[2].padStart(2, "0");
+      return { done: true, date: `${mm}/${dd}` };
+    }
+  }
+
+  // "D Mon" or "D Month" (e.g. "2 Feb", "15 January")
+  const dayMonthMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)(?:,?\s*\d{2,4})?$/);
+  if (dayMonthMatch) {
+    const mm = MONTH_ABBR[dayMonthMatch[2].toLowerCase()];
+    if (mm) {
+      const dd = dayMonthMatch[1].padStart(2, "0");
+      return { done: true, date: `${mm}/${dd}` };
+    }
+  }
+
+  // YYYY-MM-DD (ISO)
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return { done: true, date: `${isoMatch[2]}/${isoMatch[3]}` };
+  }
+
+  // If we get here and it's non-empty, treat as "done" with no parseable date
+  return { done: true, date: null };
 }
 
 /**
@@ -690,6 +770,11 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           activeRaw === "true" ||
           activeRaw === "1";
 
+        const tp = parseMilestoneValue(row[9]);
+        const vid = parseMilestoneValue(row[10]);
+        const ret = parseMilestoneValue(row[11]);
+        const ref = parseMilestoneValue(row[12]);
+
         results.push({
           client_name: clientName,
           sales_person: (row[2] || "").trim(),
@@ -700,10 +785,14 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           comments: (row[7] || "").trim(),
           is_active: isActive,
           coach_name: coach,
-          trust_pilot: parseBool(row[9]),
-          video_testimonial: parseBool(row[10]),
-          retention: parseBool(row[11]),
-          referral: parseBool(row[12]),
+          trust_pilot_done: tp.done,
+          trust_pilot_date: tp.date,
+          video_testimonial_done: vid.done,
+          video_testimonial_date: vid.date,
+          retention_done: ret.done,
+          retention_date: ret.date,
+          referral_done: ref.done,
+          referral_date: ref.date,
           meetings: (row[13] || "").trim(),
           bonus_received: parseBool(row[14]),
           // Not present in coach tabs
@@ -745,10 +834,14 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           is_active: true, // Nicole's tab is for active onboardings
           coach_name: (row[9] || "").trim(),
           // Nicole's tab doesn't have milestone columns
-          trust_pilot: false,
-          video_testimonial: false,
-          retention: false,
-          referral: false,
+          trust_pilot_done: false,
+          trust_pilot_date: null,
+          video_testimonial_done: false,
+          video_testimonial_date: null,
+          retention_done: false,
+          retention_date: null,
+          referral_done: false,
+          referral_date: null,
           meetings: "",
           bonus_received: false,
           // Nicole-specific fields

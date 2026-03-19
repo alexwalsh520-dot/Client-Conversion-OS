@@ -96,7 +96,8 @@ export async function POST(req: NextRequest) {
       // ---- Quick milestone checkbox toggle ----
       case "update_milestone_checkbox": {
         const { milestoneId, field, value } = payload;
-        const today = new Date().toISOString().split("T")[0];
+        const now = new Date();
+        const today = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
 
         // Build the update: set the boolean + auto-capture date
         const updateObj: Record<string, unknown> = { [field]: value };

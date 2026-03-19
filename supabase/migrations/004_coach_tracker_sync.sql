@@ -21,3 +21,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS clients_name_coach_uniq
 -- ============================================================
 CREATE UNIQUE INDEX IF NOT EXISTS milestones_client_coach_uniq
   ON coach_milestones (client_name, coach_name);
+
+-- ============================================================
+-- 4. Change milestone date columns from DATE to TEXT
+--    Coaches often write dates without year (e.g. "Feb 2" → "02/02")
+-- ============================================================
+ALTER TABLE coach_milestones
+  ALTER COLUMN trust_pilot_prompted_date TYPE TEXT USING trust_pilot_prompted_date::TEXT,
+  ALTER COLUMN trust_pilot_completion_date TYPE TEXT USING trust_pilot_completion_date::TEXT,
+  ALTER COLUMN video_testimonial_prompted_date TYPE TEXT USING video_testimonial_prompted_date::TEXT,
+  ALTER COLUMN video_testimonial_completion_date TYPE TEXT USING video_testimonial_completion_date::TEXT,
+  ALTER COLUMN retention_prompted_date TYPE TEXT USING retention_prompted_date::TEXT,
+  ALTER COLUMN retention_completion_date TYPE TEXT USING retention_completion_date::TEXT,
+  ALTER COLUMN referral_prompted_date TYPE TEXT USING referral_prompted_date::TEXT,
+  ALTER COLUMN referral_completion_date TYPE TEXT USING referral_completion_date::TEXT;

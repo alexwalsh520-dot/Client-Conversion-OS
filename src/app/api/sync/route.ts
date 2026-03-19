@@ -241,10 +241,14 @@ export async function POST(req: NextRequest) {
         .map((row) => ({
           client_name: row.client_name,
           coach_name: row.coach_name,
-          trust_pilot_completed: row.trust_pilot,
-          video_testimonial_completed: row.video_testimonial,
-          retention_completed: row.retention,
-          referral_completed: row.referral,
+          trust_pilot_completed: row.trust_pilot_done,
+          trust_pilot_completion_date: row.trust_pilot_date,
+          video_testimonial_completed: row.video_testimonial_done,
+          video_testimonial_completion_date: row.video_testimonial_date,
+          retention_completed: row.retention_done,
+          retention_completion_date: row.retention_date,
+          referral_completed: row.referral_done,
+          referral_completion_date: row.referral_date,
         }));
 
       // Deduplicate milestones by client_name+coach_name
