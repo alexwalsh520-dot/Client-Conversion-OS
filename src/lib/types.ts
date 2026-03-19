@@ -68,6 +68,8 @@ export interface Client {
   salesFathomLink: string;
   onboardingFathomLink: string;
   amountPaid: number;
+  salesPerson: string;
+  comments: string;
   createdAt?: string;
 }
 

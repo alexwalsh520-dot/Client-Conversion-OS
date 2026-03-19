@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
           sales_fathom_link: payload.salesFathomLink || null,
           onboarding_fathom_link: payload.onboardingFathomLink || null,
           amount_paid: payload.amountPaid || 0,
+          sales_person: payload.salesPerson || null,
+          comments: payload.comments || null,
         };
         if (payload.id) Object.assign(row, { id: payload.id });
 

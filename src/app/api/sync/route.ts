@@ -9,6 +9,7 @@ import {
   fetchOnboarding,
   fetchSalesData,
   fetchAdsDaily,
+  fetchCoachTrackers,
   SHEET_IDS,
 } from "@/lib/sheets";
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Fetch all sheets in parallel
-    const [coaching, onboarding, sales, tysonAds, keithAds] =
+    const [coaching, onboarding, sales, tysonAds, keithAds, coachTrackers] =
       await Promise.all([
         fetchCoachingFeedback().catch((e) => {
           console.error("[sync] Coaching fetch failed:", e);
@@ -63,6 +64,10 @@ export async function POST(req: NextRequest) {
         }),
         fetchAdsDaily(SHEET_IDS.keithAds, "keith").catch((e) => {
           console.error("[sync] Keith ads fetch failed:", e);
+          return [];
+        }),
+        fetchCoachTrackers().catch((e) => {
+          console.error("[sync] Coach trackers fetch failed:", e);
           return [];
         }),
       ]);
@@ -143,6 +148,124 @@ export async function POST(req: NextRequest) {
       } else {
         totalRows += allAds.length;
         sheetsSynced.push("ads_daily");
+      }
+    }
+
+    // Upsert coach tracker data into clients table
+    // Deduplicate by (client_name, coach_name) — coach tabs are authoritative,
+    // Nicole's tab fills in onboarding-specific fields
+    if (coachTrackers.length > 0) {
+      // Build a map keyed by "clientName|coachName"
+      // Coach tabs go first; Nicole's data merges on top for shared fields
+      const clientMap = new Map<
+        string,
+        {
+          name: string;
+          coach_name: string;
+          program: string;
+          offer: string;
+          start_date: string | null;
+          end_date: string | null;
+          status: string;
+          sales_person: string;
+          comments: string;
+          payment_platform: string;
+          onboarding_fathom_link: string;
+          sales_fathom_link: string;
+        }
+      >();
+
+      for (const row of coachTrackers) {
+        if (!row.client_name || !row.coach_name) continue;
+        const key = `${row.client_name}|${row.coach_name}`;
+        const existing = clientMap.get(key);
+
+        if (!existing) {
+          // First time seeing this client+coach combo
+          clientMap.set(key, {
+            name: row.client_name,
+            coach_name: row.coach_name,
+            program: row.program,
+            offer: row.offer,
+            start_date: row.start_date,
+            end_date: row.end_date,
+            status: row.is_active ? "active" : "completed",
+            sales_person: row.sales_person,
+            comments: row.comments,
+            payment_platform: row.payment_platform,
+            onboarding_fathom_link: row.onboarding_call_link,
+            sales_fathom_link: row.sales_information,
+          });
+        } else {
+          // Merge: prefer non-empty values (Nicole's tab fills gaps)
+          if (!existing.program && row.program) existing.program = row.program;
+          if (!existing.offer && row.offer) existing.offer = row.offer;
+          if (!existing.start_date && row.start_date)
+            existing.start_date = row.start_date;
+          if (!existing.end_date && row.end_date)
+            existing.end_date = row.end_date;
+          if (!existing.sales_person && row.sales_person)
+            existing.sales_person = row.sales_person;
+          if (!existing.comments && row.comments)
+            existing.comments = row.comments;
+          if (!existing.payment_platform && row.payment_platform)
+            existing.payment_platform = row.payment_platform;
+          if (!existing.onboarding_fathom_link && row.onboarding_call_link)
+            existing.onboarding_fathom_link = row.onboarding_call_link;
+          if (!existing.sales_fathom_link && row.sales_information)
+            existing.sales_fathom_link = row.sales_information;
+        }
+      }
+
+      const clientRows = Array.from(clientMap.values());
+      if (clientRows.length > 0) {
+        const { error } = await db
+          .from("clients")
+          .upsert(clientRows, { onConflict: "name,coach_name" });
+        if (error) {
+          errors.push(`clients (coach trackers): ${error.message}`);
+        } else {
+          totalRows += clientRows.length;
+          sheetsSynced.push("clients");
+        }
+      }
+
+      // Upsert milestones from coach tabs (only rows that have milestone data)
+      const milestoneRows = coachTrackers
+        .filter(
+          (row) =>
+            row.source_tab !== "Nicole's LT Client Tracker" &&
+            row.client_name &&
+            row.coach_name
+        )
+        .map((row) => ({
+          client_name: row.client_name,
+          coach_name: row.coach_name,
+          trust_pilot_completed: row.trust_pilot,
+          video_testimonial_completed: row.video_testimonial,
+          retention_completed: row.retention,
+          referral_completed: row.referral,
+        }));
+
+      // Deduplicate milestones by client_name+coach_name
+      const milestoneMap = new Map<string, (typeof milestoneRows)[0]>();
+      for (const m of milestoneRows) {
+        milestoneMap.set(`${m.client_name}|${m.coach_name}`, m);
+      }
+      const dedupedMilestones = Array.from(milestoneMap.values());
+
+      if (dedupedMilestones.length > 0) {
+        const { error } = await db
+          .from("coach_milestones")
+          .upsert(dedupedMilestones, {
+            onConflict: "client_name,coach_name",
+          });
+        if (error) {
+          errors.push(`coach_milestones (coach trackers): ${error.message}`);
+        } else {
+          totalRows += dedupedMilestones.length;
+          sheetsSynced.push("coach_milestones");
+        }
       }
     }
 

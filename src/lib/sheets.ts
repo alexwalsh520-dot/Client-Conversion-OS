@@ -608,5 +608,167 @@ export async function getSheetTabs(
   }));
 }
 
+// ---- Coach Tracker Tabs ----
+
+/**
+ * Row shape returned from coach tracker tabs.
+ * Merges data from both coach-specific tabs and Nicole's onboarding tab.
+ */
+export interface CoachTrackerRow {
+  client_name: string;
+  sales_person: string;
+  program: string;
+  offer: string;
+  start_date: string | null;
+  end_date: string | null;
+  comments: string;
+  is_active: boolean;
+  coach_name: string;
+  // Milestone flags from coach tabs (columns J-M)
+  trust_pilot: boolean;
+  video_testimonial: boolean;
+  retention: boolean;
+  referral: boolean;
+  meetings: string;
+  bonus_received: boolean;
+  // Nicole-only fields
+  onboarding_call_link: string;
+  sales_information: string;
+  payment_platform: string;
+  source_tab: string;
+}
+
+/**
+ * Coach tab definitions — maps tab name to the coach's first name.
+ * Columns A-O: Serial | Client Name | Sales | Program | Offer | Start Date |
+ * End Date | Comments | Active? | Trust Pilot | Video Testimonial | Retention |
+ * Referral | Meetings | Bonus Received?
+ */
+const COACH_TABS: { tab: string; coach: string }[] = [
+  { tab: "Waleed's LT Client Tracker", coach: "Waleed" },
+  { tab: "Ignacio's Tracker", coach: "Ignacio" },
+  { tab: "Steph's Tracker", coach: "Steph" },
+  { tab: "Farrukh's Tracker", coach: "Farrukh" },
+  { tab: "Fatima's LT Clients", coach: "Fatima" },
+];
+
+/**
+ * Nicole's onboarding tab — different column layout.
+ * Columns A-M: Priority? | Serial | Client Name | Sales | Program | Offer |
+ * Start Date (mm/dd/yy) | End Date | Onboarding Call Link | Coach |
+ * Sales Information | Comments | Payment platform
+ */
+const NICOLE_TAB = "Nicole's LT Client Tracker";
+
+/**
+ * Fetch all coach tracker data from the Coaching Clients Tracker spreadsheet.
+ * Reads 5 coach tabs + Nicole's onboarding tab and normalises into a flat array.
+ */
+export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
+  const sheets = getSheets();
+  const sheetId = SHEET_IDS.onboarding; // Same spreadsheet
+  const results: CoachTrackerRow[] = [];
+
+  // --- 1. Fetch all 5 coach tabs in parallel ---
+  const coachFetches = COACH_TABS.map(async ({ tab, coach }) => {
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `'${tab}'!A2:O500`, // Row 1 is headers, data starts row 2
+      });
+
+      const rows = res.data.values || [];
+      for (const row of rows) {
+        const clientName = (row[1] || "").trim();
+        if (!clientName) continue; // Skip empty rows
+
+        const activeRaw = (row[8] || "").trim().toLowerCase();
+        const isActive =
+          activeRaw === "yes" ||
+          activeRaw === "y" ||
+          activeRaw === "active" ||
+          activeRaw === "true" ||
+          activeRaw === "1";
+
+        results.push({
+          client_name: clientName,
+          sales_person: (row[2] || "").trim(),
+          program: (row[3] || "").trim(),
+          offer: (row[4] || "").trim(),
+          start_date: parseDate(row[5]),
+          end_date: parseDate(row[6]),
+          comments: (row[7] || "").trim(),
+          is_active: isActive,
+          coach_name: coach,
+          trust_pilot: parseBool(row[9]),
+          video_testimonial: parseBool(row[10]),
+          retention: parseBool(row[11]),
+          referral: parseBool(row[12]),
+          meetings: (row[13] || "").trim(),
+          bonus_received: parseBool(row[14]),
+          // Not present in coach tabs
+          onboarding_call_link: "",
+          sales_information: "",
+          payment_platform: "",
+          source_tab: tab,
+        });
+      }
+    } catch (e) {
+      console.warn(
+        `[sheets] Coach tracker "${tab}" skipped:`,
+        (e as Error).message?.substring(0, 80)
+      );
+    }
+  });
+
+  // --- 2. Fetch Nicole's tab ---
+  const nicoleFetch = (async () => {
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `'${NICOLE_TAB}'!A2:M500`, // Row 1 is headers
+      });
+
+      const rows = res.data.values || [];
+      for (const row of rows) {
+        const clientName = (row[2] || "").trim();
+        if (!clientName) continue;
+
+        results.push({
+          client_name: clientName,
+          sales_person: (row[3] || "").trim(),
+          program: (row[4] || "").trim(),
+          offer: (row[5] || "").trim(),
+          start_date: parseDate(row[6]),
+          end_date: parseDate(row[7]),
+          comments: (row[11] || "").trim(),
+          is_active: true, // Nicole's tab is for active onboardings
+          coach_name: (row[9] || "").trim(),
+          // Nicole's tab doesn't have milestone columns
+          trust_pilot: false,
+          video_testimonial: false,
+          retention: false,
+          referral: false,
+          meetings: "",
+          bonus_received: false,
+          // Nicole-specific fields
+          onboarding_call_link: (row[8] || "").trim(),
+          sales_information: (row[10] || "").trim(),
+          payment_platform: (row[12] || "").trim(),
+          source_tab: NICOLE_TAB,
+        });
+      }
+    } catch (e) {
+      console.warn(
+        `[sheets] Nicole's tracker skipped:`,
+        (e as Error).message?.substring(0, 80)
+      );
+    }
+  })();
+
+  await Promise.all([...coachFetches, nicoleFetch]);
+  return results;
+}
+
 // Export sheet IDs for reference
 export { SHEET_IDS };

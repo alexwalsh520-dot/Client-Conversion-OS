@@ -208,6 +208,10 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
               <input className="input-field" type="number" value={formData.amountPaid || ""} onChange={(e) => setFormData({ ...formData, amountPaid: Number(e.target.value) })} />
             </div>
             <div>
+              <label className="field-label">Sales Person / Closer</label>
+              <input className="input-field" value={formData.salesPerson || ""} onChange={(e) => setFormData({ ...formData, salesPerson: e.target.value })} />
+            </div>
+            <div>
               <label className="field-label">Payment Platform</label>
               <input className="input-field" value={formData.paymentPlatform || ""} onChange={(e) => setFormData({ ...formData, paymentPlatform: e.target.value })} />
             </div>
@@ -218,6 +222,10 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
             <div>
               <label className="field-label">Onboarding Fathom Link</label>
               <input className="input-field" value={formData.onboardingFathomLink || ""} onChange={(e) => setFormData({ ...formData, onboardingFathomLink: e.target.value })} />
+            </div>
+            <div style={{ gridColumn: "span 3" }}>
+              <label className="field-label">Comments</label>
+              <input className="input-field" value={formData.comments || ""} onChange={(e) => setFormData({ ...formData, comments: e.target.value })} />
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
@@ -239,7 +247,9 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
               <th>Start</th>
               <th>End</th>
               <th>Days Left</th>
+              <th>Closer</th>
               <th>Paid</th>
+              <th>Comments</th>
               <th>Links</th>
               <th></th>
             </tr>
@@ -277,7 +287,9 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
                       </span>
                     )}
                   </td>
+                  <td style={{ fontSize: 12 }}>{client.salesPerson}</td>
                   <td>${client.amountPaid.toLocaleString()}</td>
+                  <td style={{ fontSize: 12, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={client.comments}>{client.comments}</td>
                   <td style={{ display: "flex", gap: 6 }}>
                     {client.salesFathomLink && (
                       <a href={client.salesFathomLink} target="_blank" rel="noopener noreferrer" title="Sales Recording" style={{ color: "var(--accent)" }}>

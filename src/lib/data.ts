@@ -280,6 +280,8 @@ export async function getClients(): Promise<Client[]> {
       salesFathomLink: row.sales_fathom_link || "",
       onboardingFathomLink: row.onboarding_fathom_link || "",
       amountPaid: Number(row.amount_paid) || 0,
+      salesPerson: row.sales_person || "",
+      comments: row.comments || "",
       createdAt: row.created_at,
     }));
   } catch {
