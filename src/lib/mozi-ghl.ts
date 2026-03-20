@@ -1,9 +1,8 @@
-const BASE_URL = "https://services.leadconnectorhq.com";
+const BASE_URL = "https://rest.gohighlevel.com/v1";
 
 const GHL_HEADERS: HeadersInit = {
   "Content-Type": "application/json",
-  Authorization: `Bearer ${process.env.GHL_API_KEY}`,
-  Version: "2021-07-28",
+  Authorization: `Bearer ${process.env.GHL_V1_API_KEY}`,
 };
 
 interface GHLContact {
