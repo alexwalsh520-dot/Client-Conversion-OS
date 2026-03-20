@@ -1,32 +1,37 @@
-// GoHighLevel API helper functions (V1 API)
-// Uses GHL_V1_API_KEY which has location access baked into the JWT
+// GoHighLevel API helper functions
+// All calls go through server-side API routes to keep secrets secure
 
-const GHL_BASE = "https://rest.gohighlevel.com/v1";
+const GHL_BASE = "https://services.leadconnectorhq.com";
 
 function getHeaders() {
-  const apiKey = process.env.GHL_V1_API_KEY;
-  if (!apiKey) throw new Error("GHL_V1_API_KEY not configured");
+  const apiKey = process.env.GHL_API_KEY;
+  if (!apiKey) throw new Error("GHL_API_KEY not configured");
   return {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
+    Version: "2021-07-28",
   };
+}
+
+function getLocationId() {
+  const id = process.env.GHL_LOCATION_ID;
+  if (!id) throw new Error("GHL_LOCATION_ID not configured");
+  return id;
 }
 
 // ── Contact operations ─────────────────────────────────────────
 
 export async function searchDuplicateContact(email: string) {
+  const locationId = getLocationId();
   const res = await fetch(
-    `${GHL_BASE}/contacts/lookup?email=${encodeURIComponent(email)}`,
+    `${GHL_BASE}/contacts/search/duplicate?email=${encodeURIComponent(email)}&locationId=${locationId}`,
     { headers: getHeaders() }
   );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GHL search duplicate failed (${res.status}): ${text}`);
   }
-  const data = await res.json();
-  // V1 lookup returns { contacts: [...] }, normalize to { contact: first_match }
-  const contacts = data.contacts || [];
-  return { contact: contacts.length > 0 ? contacts[0] : null };
+  return res.json();
 }
 
 export async function createContact(data: {
@@ -34,10 +39,12 @@ export async function createContact(data: {
   lastName?: string;
   email: string;
 }) {
+  const locationId = getLocationId();
   const res = await fetch(`${GHL_BASE}/contacts/`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
+      locationId,
       firstName: data.firstName,
       lastName: data.lastName || "",
       email: data.email,
@@ -55,7 +62,7 @@ export async function addContactNote(
   contactId: string,
   body: string
 ) {
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes/`, {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({ body }),
@@ -79,7 +86,7 @@ export async function getContact(contactId: string) {
 }
 
 export async function getContactNotes(contactId: string) {
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes/`, {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes`, {
     headers: getHeaders(),
   });
   if (!res.ok) {
@@ -92,9 +99,11 @@ export async function getContactNotes(contactId: string) {
 // ── Pipeline operations ────────────────────────────────────────
 
 export async function getPipelines() {
-  const res = await fetch(`${GHL_BASE}/pipelines/`, {
-    headers: getHeaders(),
-  });
+  const locationId = getLocationId();
+  const res = await fetch(
+    `${GHL_BASE}/opportunities/pipelines?locationId=${locationId}`,
+    { headers: getHeaders() }
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GHL get pipelines failed (${res.status}): ${text}`);
@@ -108,13 +117,16 @@ export async function createOpportunity(data: {
   contactId: string;
   name: string;
 }) {
-  const res = await fetch(`${GHL_BASE}/pipelines/${data.pipelineId}/opportunities/`, {
+  const locationId = getLocationId();
+  const res = await fetch(`${GHL_BASE}/opportunities/`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
+      pipelineId: data.pipelineId,
       pipelineStageId: data.pipelineStageId,
+      locationId,
       contactId: data.contactId,
-      title: data.name,
+      name: data.name,
       status: "open",
       source: "Dashboard Import",
     }),
@@ -130,8 +142,9 @@ export async function searchOpportunities(
   pipelineId: string,
   stageId: string
 ) {
+  const locationId = getLocationId();
   const res = await fetch(
-    `${GHL_BASE}/pipelines/${pipelineId}/opportunities?stageId=${stageId}&limit=100`,
+    `${GHL_BASE}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&pipeline_stage_id=${stageId}&limit=100`,
     { headers: getHeaders() }
   );
   if (!res.ok) {
@@ -193,6 +206,7 @@ export async function getPipelineStageCounts() {
   for (const [name, stageId] of Object.entries(pipeline.stages)) {
     try {
       const data = await searchOpportunities(pipeline.pipelineId, stageId);
+      // Use meta.total for accurate count (searchOpportunities only returns up to 100)
       const count = data.meta?.total ?? (data.opportunities || []).length;
       stageCounts.push({ name, count, id: stageId });
     } catch {
