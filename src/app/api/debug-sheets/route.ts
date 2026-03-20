@@ -14,8 +14,8 @@ const SHEET_IDS: Record<string, string> = {
 };
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
+  const email = process.env.COACHING_GOOGLE_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.COACHING_GOOGLE_KEY || process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !key) {
     throw new Error(`Missing env: email=${!!email}, key=${!!key}`);
   }

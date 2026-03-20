@@ -94,11 +94,12 @@ export interface AdsDailyRow {
 // ---- Auth ----
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
+  // Use dedicated coaching env vars, fall back to shared ones
+  const email = process.env.COACHING_GOOGLE_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.COACHING_GOOGLE_KEY || process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !key) {
     throw new Error(
-      "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY"
+      "Missing COACHING_GOOGLE_EMAIL/COACHING_GOOGLE_KEY or GOOGLE_SERVICE_ACCOUNT_EMAIL/GOOGLE_PRIVATE_KEY"
     );
   }
   return new google.auth.GoogleAuth({
