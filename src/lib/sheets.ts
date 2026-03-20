@@ -136,8 +136,11 @@ function parseBool(val: string | undefined | null): boolean {
 
 function parseDate(val: string | undefined | null, fallbackYear?: number): string | null {
   if (!val) return null;
-  const trimmed = val.trim();
+  let trimmed = val.trim();
   if (!trimmed) return null;
+
+  // Strip ordinal suffixes: "10th October" → "10 October", "1st December" → "1 December"
+  trimmed = trimmed.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
 
   try {
     // Handle DD/MM/YYYY HH:MM:SS format (Google Forms timestamp)
@@ -180,6 +183,17 @@ function parseDate(val: string | undefined | null, fallbackYear?: number): strin
       if (fallbackYear) {
         const d4 = new Date(`${monDayMatch[0]}, ${fallbackYear}`);
         if (!isNaN(d4.getTime())) return d4.toISOString().split("T")[0];
+      }
+      return null;
+    }
+
+    // Handle "DD Month" or "DD Month YYYY" format (e.g. "10 October", "15 September 2025")
+    const dayMonMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{4}))?$/);
+    if (dayMonMatch) {
+      const year = dayMonMatch[3] ? parseInt(dayMonMatch[3]) : fallbackYear;
+      if (year) {
+        const d5 = new Date(`${dayMonMatch[2]} ${dayMonMatch[1]}, ${year}`);
+        if (!isNaN(d5.getTime())) return d5.toISOString().split("T")[0];
       }
       return null;
     }
@@ -754,15 +768,48 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
     try {
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
-        range: `'${tab}'!A2:O500`, // Row 1 is headers, data starts row 2
+        range: `'${tab}'!A1:O500`, // Read from row 1 to auto-detect header row
       });
 
       const rows = res.data.values || [];
-      for (const row of rows) {
-        const clientName = (row[1] || "").trim();
+
+      // Auto-detect header row by searching for "Client Name" in first 5 rows
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        const hasClientName = rows[i]?.some(
+          (cell: string) => typeof cell === "string" && cell.trim().toLowerCase() === "client name"
+        );
+        if (hasClientName) {
+          headerIdx = i;
+          break;
+        }
+      }
+      if (headerIdx === -1) {
+        console.warn(`[sheets] Coach tracker "${tab}": could not find header row, skipping`);
+        return;
+      }
+
+      // Build column index map from header row
+      const headerRow = rows[headerIdx];
+      const colMap: Record<string, number> = {};
+      for (let c = 0; c < headerRow.length; c++) {
+        const h = (headerRow[c] || "").trim().toLowerCase();
+        if (h) colMap[h] = c;
+      }
+
+      // Helper to look up column by header name (case-insensitive)
+      const col = (name: string): number => colMap[name.toLowerCase()] ?? -1;
+
+      const dataRows = rows.slice(headerIdx + 1);
+      const clientNameCol = col("client name");
+      if (clientNameCol === -1) return;
+
+      for (const row of dataRows) {
+        const clientName = (row[clientNameCol] || "").trim();
         if (!clientName) continue; // Skip empty rows
 
-        const activeRaw = (row[8] || "").trim().toLowerCase();
+        const activeCol = col("active?");
+        const activeRaw = activeCol >= 0 ? (row[activeCol] || "").trim().toLowerCase() : "";
         const isActive =
           activeRaw === "yes" ||
           activeRaw === "y" ||
@@ -770,19 +817,33 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           activeRaw === "true" ||
           activeRaw === "1";
 
-        const tp = parseMilestoneValue(row[9]);
-        const vid = parseMilestoneValue(row[10]);
-        const ret = parseMilestoneValue(row[11]);
-        const ref = parseMilestoneValue(row[12]);
+        const tpCol = col("trust pilot");
+        const vidCol = col("video testimonial");
+        const retCol = col("retention");
+        const refCol = col("referral");
+
+        const tp = parseMilestoneValue(tpCol >= 0 ? row[tpCol] : undefined);
+        const vid = parseMilestoneValue(vidCol >= 0 ? row[vidCol] : undefined);
+        const ret = parseMilestoneValue(retCol >= 0 ? row[retCol] : undefined);
+        const ref = parseMilestoneValue(refCol >= 0 ? row[refCol] : undefined);
+
+        const salesCol = col("sales");
+        const programCol = col("program");
+        const offerCol = col("offer");
+        const startCol = col("start date");
+        const endCol = col("end date");
+        const commentsCol = col("comments");
+        const meetingsCol = col("meetings");
+        const bonusCol = col("bonus received?");
 
         results.push({
           client_name: clientName,
-          sales_person: (row[2] || "").trim(),
-          program: (row[3] || "").trim(),
-          offer: (row[4] || "").trim(),
-          start_date: parseDate(row[5]),
-          end_date: parseDate(row[6]),
-          comments: (row[7] || "").trim(),
+          sales_person: salesCol >= 0 ? (row[salesCol] || "").trim() : "",
+          program: programCol >= 0 ? (row[programCol] || "").trim() : "",
+          offer: offerCol >= 0 ? (row[offerCol] || "").trim() : "",
+          start_date: startCol >= 0 ? parseDate(row[startCol]) : null,
+          end_date: endCol >= 0 ? parseDate(row[endCol]) : null,
+          comments: commentsCol >= 0 ? (row[commentsCol] || "").trim() : "",
           is_active: isActive,
           coach_name: coach,
           trust_pilot_done: tp.done,
@@ -793,8 +854,8 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           retention_date: ret.date,
           referral_done: ref.done,
           referral_date: ref.date,
-          meetings: (row[13] || "").trim(),
-          bonus_received: parseBool(row[14]),
+          meetings: meetingsCol >= 0 ? (row[meetingsCol] || "").trim() : "",
+          bonus_received: bonusCol >= 0 ? parseBool(row[bonusCol]) : false,
           // Not present in coach tabs
           onboarding_call_link: "",
           sales_information: "",
@@ -815,24 +876,67 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
     try {
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
-        range: `'${NICOLE_TAB}'!A2:M500`, // Row 1 is headers
+        range: `'${NICOLE_TAB}'!A1:M500`, // Read from row 1 to auto-detect header row
       });
 
       const rows = res.data.values || [];
-      for (const row of rows) {
-        const clientName = (row[2] || "").trim();
+
+      // Auto-detect header row by searching for "Client Name" in first 5 rows
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        const hasClientName = rows[i]?.some(
+          (cell: string) => typeof cell === "string" && cell.trim().toLowerCase() === "client name"
+        );
+        if (hasClientName) {
+          headerIdx = i;
+          break;
+        }
+      }
+      if (headerIdx === -1) {
+        console.warn(`[sheets] Nicole's tracker: could not find header row, skipping`);
+        return;
+      }
+
+      // Build column index map from header row
+      const headerRow = rows[headerIdx];
+      const colMap: Record<string, number> = {};
+      for (let c = 0; c < headerRow.length; c++) {
+        const h = (headerRow[c] || "").trim().toLowerCase();
+        if (h) colMap[h] = c;
+      }
+
+      const col = (name: string): number => colMap[name.toLowerCase()] ?? -1;
+
+      const dataRows = rows.slice(headerIdx + 1);
+      const clientNameCol = col("client name");
+      if (clientNameCol === -1) return;
+
+      const salesCol = col("sales");
+      const programCol = col("program");
+      const offerCol = col("offer");
+      // Try multiple possible header names for start date
+      const startCol = col("start date") >= 0 ? col("start date") : col("start date (mm/dd/yy)");
+      const endCol = col("end date");
+      const commentsCol = col("comments");
+      const coachCol = col("coach");
+      const onboardingCol = col("onboarding call link");
+      const salesInfoCol = col("sales information");
+      const paymentCol = col("payment platform");
+
+      for (const row of dataRows) {
+        const clientName = (row[clientNameCol] || "").trim();
         if (!clientName) continue;
 
         results.push({
           client_name: clientName,
-          sales_person: (row[3] || "").trim(),
-          program: (row[4] || "").trim(),
-          offer: (row[5] || "").trim(),
-          start_date: parseDate(row[6]),
-          end_date: parseDate(row[7]),
-          comments: (row[11] || "").trim(),
+          sales_person: salesCol >= 0 ? (row[salesCol] || "").trim() : "",
+          program: programCol >= 0 ? (row[programCol] || "").trim() : "",
+          offer: offerCol >= 0 ? (row[offerCol] || "").trim() : "",
+          start_date: startCol >= 0 ? parseDate(row[startCol]) : null,
+          end_date: endCol >= 0 ? parseDate(row[endCol]) : null,
+          comments: commentsCol >= 0 ? (row[commentsCol] || "").trim() : "",
           is_active: true, // Nicole's tab is for active onboardings
-          coach_name: (row[9] || "").trim(),
+          coach_name: coachCol >= 0 ? (row[coachCol] || "").trim() : "",
           // Nicole's tab doesn't have milestone columns
           trust_pilot_done: false,
           trust_pilot_date: null,
@@ -845,9 +949,9 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           meetings: "",
           bonus_received: false,
           // Nicole-specific fields
-          onboarding_call_link: (row[8] || "").trim(),
-          sales_information: (row[10] || "").trim(),
-          payment_platform: (row[12] || "").trim(),
+          onboarding_call_link: onboardingCol >= 0 ? (row[onboardingCol] || "").trim() : "",
+          sales_information: salesInfoCol >= 0 ? (row[salesInfoCol] || "").trim() : "",
+          payment_platform: paymentCol >= 0 ? (row[paymentCol] || "").trim() : "",
           source_tab: NICOLE_TAB,
         });
       }
