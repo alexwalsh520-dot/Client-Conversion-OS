@@ -188,7 +188,7 @@ export default function OutreachRunsPage() {
         body: JSON.stringify({ leads: parsedLeads }),
       });
       importData = await res.json();
-      if (!res.ok) throw new Error(importData.toString() || "Import failed");
+      if (!res.ok) throw new Error(importData.error || "Import failed");
     } catch (e: unknown) {
       setRunError(e instanceof Error ? e.message : "Import to GHL failed");
       setRunStatus("error");
