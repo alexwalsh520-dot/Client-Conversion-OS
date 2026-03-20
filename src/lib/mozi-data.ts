@@ -60,12 +60,12 @@ export async function getDashboardData(): Promise<EngineResult & { byInfluencer:
       ltgp: data.ltgp,
       capacityPct: data.capacity_pct,
       runwayMonths: Number(data.runway_months),
-      requiredRatio: 3,
-      safeBudget: 0,
-      headroom: 0,
-      currentAdSpend: 0,
-      cashOnHand: data.cash_on_hand,
-      monthlyBurn: 0,
+      requiredRatio: data.required_ratio ?? 3,
+      safeBudget: data.safe_budget ?? 0,
+      headroom: data.headroom ?? 0,
+      currentAdSpend: data.current_ad_spend ?? 0,
+      cashOnHand: data.cash_on_hand ?? 0,
+      monthlyBurn: data.monthly_burn ?? 0,
       byInfluencer: data.by_influencer || {},
     };
   } catch {

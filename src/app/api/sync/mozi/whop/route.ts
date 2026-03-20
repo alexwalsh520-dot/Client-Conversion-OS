@@ -34,20 +34,10 @@ export async function POST(request: Request) {
       const payments = await getAllWhopPayments(apiKey);
 
       for (const payment of payments) {
-        // Whop amounts: use final_amount if available, otherwise amount
-        // Convert to cents if the value appears to be in dollars (has decimals)
-        let rawAmount =
+        // Whop API returns amounts in cents (integer)
+        // Use final_amount (after discounts/prorations) if available, else amount
+        const rawAmount =
           (payment.final_amount as number) ?? (payment.amount as number) ?? 0;
-
-        // If amount looks like dollars (not cents), convert
-        if (typeof rawAmount === "number" && rawAmount > 0 && rawAmount < 1000) {
-          // Heuristic: Whop may return dollars — if so, convert to cents
-          // Values under 1000 that have decimal precision are likely dollars
-          const str = String(rawAmount);
-          if (str.includes(".")) {
-            rawAmount = Math.round(rawAmount * 100);
-          }
-        }
 
         const row = {
           whop_id: payment.id,

@@ -36,10 +36,8 @@ export function DashboardShell({ data }: { data: DashboardData }) {
   const g3Pass = g3Pct < 90;
   const g3Warn = g3Pct >= 80 && g3Pct < 90;
 
-  // Capacity display
-  // Reverse-engineer total from percentage (mock: 142/160)
-  const totalMax = 160;
-  const totalCurrent = Math.round((capacityPct / 100) * totalMax);
+  // Capacity display — show percentage only (coach roster drives real numbers)
+  const capacityLabel = `${capacityPct}%`;
 
   return (
     <div className="max-w-[720px] mx-auto px-6 pb-20" style={{ paddingTop: 24 }}>
@@ -104,27 +102,27 @@ export function DashboardShell({ data }: { data: DashboardData }) {
         <NumberTile
           label="30-Day GP"
           value={fmt(gp30)}
-          sub="per new client"
+          sub="per client"
           color="var(--green)"
-          tooltip={`Revenue ($${Math.round(gp30 / 100 + 444)}) - coaching ($218) - software ($24) - fees ($55) - refunds ($102) - chargebacks ($47)`}
+          tooltip={`Revenue per client minus direct costs (coaching, software, fees)`}
         />
         <NumberTile
           label="CAC"
           value={fmt(cac)}
-          sub="cost to get a client"
-          tooltip={`Ad spend (${fmt(currentAdSpend)}) / new clients (23)`}
+          sub="cost to acquire"
+          tooltip={`Ad spend (${fmt(currentAdSpend)}) / paying clients`}
         />
         <NumberTile
           label="LTGP"
           value={fmt(ltgp)}
           sub="lifetime profit"
           color="var(--gold)"
-          tooltip={`Monthly GP ($229) / churn (8.2%). Actual historical: ${fmt(ltgp)}`}
+          tooltip={`GP per month × avg client lifespan`}
         />
         <NumberTile
           label="Capacity"
-          value={`${totalCurrent}/${totalMax}`}
-          sub={`${capacityPct}% full`}
+          value={capacityLabel}
+          sub="coach slots filled"
         />
       </div>
 
@@ -158,7 +156,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
           gateNum={3}
           rule="Coaches have room"
           value={`${capacityPct}%`}
-          versus={`${totalCurrent} of ${totalMax} slots`}
+          versus={`${capacityPct}% of coach slots`}
           verdict={g3Pass ? (g3Warn ? 'warn' : 'pass') : 'fail'}
           verdictLabel={g3Pass ? (g3Warn ? 'Getting Full' : 'Pass') : 'Full'}
         />

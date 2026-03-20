@@ -49,6 +49,8 @@ interface CostSettings {
   payment_fee_pct?: number;         // e.g. 3.5
   refund_rate_pct?: number;         // e.g. 5
   chargeback_rate_pct?: number;     // e.g. 1
+  monthly_churn_pct?: number;       // e.g. 8 (monthly churn rate for LTGP calc)
+  avg_program_months?: number;      // e.g. 3 (average client lifespan in months)
 }
 
 interface TargetSettings {
@@ -118,17 +120,26 @@ export function computeKPIs(
   const recentRevenue = revenueData.filter(
     (r) => new Date(r.created_at) >= thirtyDaysAgo,
   );
-  const totalRevenue30 = recentRevenue.reduce((sum, r) => sum + r.amount, 0);
 
-  // Count unique new clients (distinct customer emails) in last 30 days
+  // Subtract refund amounts from revenue (don't double-count with refund_rate_pct)
+  const totalRevenue30 = recentRevenue.reduce((sum, r) => {
+    const chargeAmount = r.amount ?? 0;
+    if (r.refunded && r.refund_amount) {
+      return sum + (chargeAmount - r.refund_amount);
+    }
+    return sum + chargeAmount;
+  }, 0);
+
+  // Count unique paying clients (distinct customer emails) in last 30 days
+  // This counts all payers, not just "new" — used for per-client averages
   const uniqueEmails = new Set(
     recentRevenue
       .map((r) => r.customer_email?.toLowerCase())
       .filter(Boolean),
   );
-  const newClients30 = Math.max(uniqueEmails.size, 1); // avoid /0
+  const payingClients30 = Math.max(uniqueEmails.size, 1); // avoid /0
 
-  const revenuePerClient = Math.round(totalRevenue30 / newClients30);
+  const revenuePerClient = Math.round(totalRevenue30 / payingClients30);
 
   // ── Direct costs per client ─────────────────────────────────────
   const costs = settings.costs || {};
@@ -139,7 +150,6 @@ export function computeKPIs(
     (costs.onboarding_per_client ?? 0) / 12,
   );
   const paymentFeePct = costs.payment_fee_pct ?? 0;
-  const refundRatePct = costs.refund_rate_pct ?? 0;
   const chargebackRatePct = costs.chargeback_rate_pct ?? 0;
 
   const directCosts =
@@ -148,24 +158,39 @@ export function computeKPIs(
     nutrition +
     onboardingAmortized;
 
-  const percentageDrag = paymentFeePct + refundRatePct + chargebackRatePct;
-  const percentageDeduction = Math.round(
-    revenuePerClient * (percentageDrag / 100),
+  // Don't double-deduct refunds — we already subtracted actual refund_amounts above
+  // Only deduct payment fees and chargebacks as percentage estimates
+  const percentageDragAdjusted = paymentFeePct + chargebackRatePct;
+  const percentageDeductionAdjusted = Math.round(
+    revenuePerClient * (percentageDragAdjusted / 100),
   );
 
-  const gp30 = revenuePerClient - directCosts - percentageDeduction;
+  const gp30 = revenuePerClient - directCosts - percentageDeductionAdjusted;
 
   // ── CAC ─────────────────────────────────────────────────────────
   const recentAdSpend = adSpendData.filter(
     (a) => new Date(a.date) >= thirtyDaysAgo,
   );
   const totalAdSpend30 = recentAdSpend.reduce((sum, a) => sum + a.spend, 0);
-  const cac = Math.round(totalAdSpend30 / newClients30);
+  const cac = Math.round(totalAdSpend30 / payingClients30);
 
   // ── LTGP ────────────────────────────────────────────────────────
-  // Churn approximation: if no churn data, default 10%
-  const churnPct = refundRatePct > 0 ? refundRatePct : 10;
-  const ltgp = churnPct > 0 ? Math.round(gp30 / (churnPct / 100)) : gp30 * 12;
+  // Use explicit churn setting, or avg_program_months, or default 3 months
+  // For coaching: avg_program_months is more intuitive than churn %
+  const avgProgramMonths = costs.avg_program_months ?? 0;
+  const monthlyChurnPct = costs.monthly_churn_pct ?? 0;
+
+  let ltgp: number;
+  if (avgProgramMonths > 0) {
+    // Simple: LTGP = GP per month × average months client stays
+    ltgp = Math.round(gp30 * avgProgramMonths);
+  } else if (monthlyChurnPct > 0) {
+    // Perpetuity model: LTGP = monthly GP / monthly churn rate
+    ltgp = Math.round(gp30 / (monthlyChurnPct / 100));
+  } else {
+    // Default: assume 3-month average client lifespan for coaching
+    ltgp = Math.round(gp30 * 3);
+  }
 
   // ── Capacity ────────────────────────────────────────────────────
   const coaches = coachData.length > 0 ? coachData : settings.coaches || [];
