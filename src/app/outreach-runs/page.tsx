@@ -178,6 +178,7 @@ export default function OutreachRunsPage() {
       already_existed: number;
       total: number;
       colddms_usernames: string[];
+      error?: string;
     };
 
     // Step 1: Import to GHL
