@@ -275,6 +275,8 @@ export async function getClients(): Promise<Client[]> {
       offer: row.offer || "",
       startDate: row.start_date || "",
       endDate: row.end_date || "",
+      onboardingDate: row.onboarding_date || null,
+      onboardingStatus: row.onboarding_status || null,
       status: row.status || "active",
       paymentPlatform: row.payment_platform || "",
       salesFathomLink: row.sales_fathom_link || "",
@@ -406,6 +408,7 @@ export async function getEODReports(): Promise<CoachEODReport[]> {
         clientName: c.client_name,
         checkedIn: c.checked_in || false,
         notes: c.notes || "",
+        onboardingStatus: c.onboarding_status || undefined,
       });
       checkinMap.set(c.eod_id, arr);
     }

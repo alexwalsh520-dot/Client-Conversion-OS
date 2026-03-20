@@ -143,5 +143,14 @@ CREATE POLICY "Allow public read" ON finances FOR SELECT USING (true);
 -- Service role key bypasses RLS for writes (no write policies needed for anon)
 
 -- ============================================================
+-- Migration: Add onboarding_date and onboarding_status to clients
+-- ============================================================
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_date DATE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_status TEXT; -- 'scheduled', 'onboarded', 'no_show', 'rescheduled'
+
+-- Migration: Add onboarding_status to eod_client_checkins (for Nicole's onboarding EODs)
+ALTER TABLE eod_client_checkins ADD COLUMN IF NOT EXISTS onboarding_status TEXT; -- 'onboarded', 'no_show', 'rescheduled'
+
+-- ============================================================
 -- Done! Coaching tables are ready.
 -- ============================================================

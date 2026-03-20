@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { FileText, Plus, X, CheckCircle, XCircle, Video } from "lucide-react";
-import type { Client, CoachEODReport } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { FileText, Plus, X, CheckCircle, XCircle, Video, Calendar, UserCheck, UserX, Clock } from "lucide-react";
+import type { Client, CoachEODReport, EODClientCheckin } from "@/lib/types";
+
+interface CalendarEvent {
+  id: string;
+  summary: string;
+  start: string;
+  end: string;
+  clientName: string;
+  status: string;
+}
 
 interface Props {
   reports: CoachEODReport[];
@@ -13,6 +22,9 @@ interface Props {
 export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<CoachEODReport>>({
     role: "coach",
     date: new Date().toISOString().split("T")[0],
@@ -36,11 +48,49 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     }));
   };
 
+  // Fetch Nicole's calendar events when role is "onboarding" and date changes
+  useEffect(() => {
+    if (formData.role !== "onboarding" || !formData.date || !showForm) {
+      setCalendarEvents([]);
+      return;
+    }
+
+    const fetchCalendar = async () => {
+      setCalendarLoading(true);
+      setCalendarError(null);
+      try {
+        const res = await fetch(`/api/coaching/calendar?date=${formData.date}`);
+        if (!res.ok) throw new Error("Failed to fetch calendar");
+        const data = await res.json();
+        setCalendarEvents(data.events || []);
+
+        // Auto-populate onboarding checkins from calendar events
+        const checkins: EODClientCheckin[] = (data.events || []).map((evt: CalendarEvent) => ({
+          eodId: 0,
+          clientName: evt.clientName,
+          checkedIn: false,
+          notes: "",
+          onboardingStatus: "onboarded" as const,
+        }));
+        setFormData((prev) => ({ ...prev, clientCheckins: checkins }));
+      } catch (err) {
+        console.error("Calendar fetch error:", err);
+        setCalendarError("Could not load calendar events. You can add clients manually.");
+        setFormData((prev) => ({ ...prev, clientCheckins: [] }));
+      } finally {
+        setCalendarLoading(false);
+      }
+    };
+
+    fetchCalendar();
+  }, [formData.role, formData.date, showForm]);
+
   const handleSubmit = async () => {
     if (!formData.submittedBy || !formData.date) return;
     await onSubmit(formData);
     setShowForm(false);
     setFormData({ role: "coach", date: new Date().toISOString().split("T")[0], clientCheckins: [] });
+    setCalendarEvents([]);
   };
 
   const toggleCheckin = (idx: number) => {
@@ -53,6 +103,76 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     const checkins = [...(formData.clientCheckins || [])];
     checkins[idx] = { ...checkins[idx], notes };
     setFormData({ ...formData, clientCheckins: checkins });
+  };
+
+  const updateOnboardingStatus = (idx: number, status: "onboarded" | "no_show" | "rescheduled") => {
+    const checkins = [...(formData.clientCheckins || [])];
+    checkins[idx] = {
+      ...checkins[idx],
+      onboardingStatus: status,
+      checkedIn: status === "onboarded",
+    };
+    setFormData({ ...formData, clientCheckins: checkins });
+  };
+
+  const addManualOnboardingClient = () => {
+    const checkins = [...(formData.clientCheckins || [])];
+    checkins.push({
+      eodId: 0,
+      clientName: "",
+      checkedIn: false,
+      notes: "",
+      onboardingStatus: "onboarded" as const,
+    });
+    setFormData({ ...formData, clientCheckins: checkins });
+  };
+
+  const removeCheckin = (idx: number) => {
+    const checkins = [...(formData.clientCheckins || [])];
+    checkins.splice(idx, 1);
+    setFormData({ ...formData, clientCheckins: checkins });
+  };
+
+  const updateCheckinName = (idx: number, name: string) => {
+    const checkins = [...(formData.clientCheckins || [])];
+    checkins[idx] = { ...checkins[idx], clientName: name };
+    setFormData({ ...formData, clientCheckins: checkins });
+  };
+
+  const onboardingStatusColor = (status?: string) => {
+    switch (status) {
+      case "onboarded": return "var(--success)";
+      case "no_show": return "var(--danger)";
+      case "rescheduled": return "var(--warning)";
+      default: return "var(--text-muted)";
+    }
+  };
+
+  const onboardingStatusBg = (status?: string) => {
+    switch (status) {
+      case "onboarded": return "rgba(126, 201, 160, 0.15)";
+      case "no_show": return "rgba(217, 142, 142, 0.15)";
+      case "rescheduled": return "rgba(201, 169, 110, 0.15)";
+      default: return "var(--bg-glass)";
+    }
+  };
+
+  const onboardingStatusIcon = (status?: string) => {
+    switch (status) {
+      case "onboarded": return <UserCheck size={14} />;
+      case "no_show": return <UserX size={14} />;
+      case "rescheduled": return <Clock size={14} />;
+      default: return null;
+    }
+  };
+
+  const onboardingStatusLabel = (status?: string) => {
+    switch (status) {
+      case "onboarded": return "Onboarded";
+      case "no_show": return "No-Show";
+      case "rescheduled": return "Rescheduled";
+      default: return status || "";
+    }
   };
 
   return (
@@ -96,7 +216,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         <div className="glass-static" style={{ padding: 20, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h3 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600 }}>Submit EOD Report</h3>
-            <button onClick={() => setShowForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+            <button onClick={() => { setShowForm(false); setCalendarEvents([]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
               <X size={16} />
             </button>
           </div>
@@ -109,13 +229,16 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                 setFormData({
                   ...formData,
                   submittedBy: name,
-                  clientCheckins: formData.role === "coach" ? initCheckins(name) : [],
+                  clientCheckins: formData.role === "coach" ? initCheckins(name) : (formData.clientCheckins || []),
                 });
               }} />
             </div>
             <div>
               <label className="field-label">Role *</label>
-              <select className="input-field" value={formData.role || "coach"} onChange={(e) => setFormData({ ...formData, role: e.target.value as "coach" | "onboarding" })}>
+              <select className="input-field" value={formData.role || "coach"} onChange={(e) => {
+                const role = e.target.value as "coach" | "onboarding";
+                setFormData({ ...formData, role, clientCheckins: [] });
+              }}>
                 <option value="coach">Coach</option>
                 <option value="onboarding">Onboarding</option>
               </select>
@@ -226,9 +349,132 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </div>
           )}
 
+          {/* Onboarding Checkins (for Nicole) */}
+          {formData.role === "onboarding" && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <label className="field-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Calendar size={14} /> Today&apos;s Onboarding Clients
+                </label>
+                <button
+                  className="btn-secondary"
+                  onClick={addManualOnboardingClient}
+                  style={{ fontSize: 12, padding: "4px 10px" }}
+                >
+                  <Plus size={12} /> Add Client
+                </button>
+              </div>
+
+              {calendarLoading && (
+                <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                  Loading calendar events...
+                </div>
+              )}
+
+              {calendarError && (
+                <div style={{ padding: 10, marginBottom: 8, fontSize: 12, color: "var(--warning)", background: "rgba(201, 169, 110, 0.1)", borderRadius: 6 }}>
+                  {calendarError}
+                </div>
+              )}
+
+              {!calendarLoading && (formData.clientCheckins?.length || 0) === 0 && (
+                <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13, background: "var(--bg-glass)", borderRadius: 8 }}>
+                  {calendarEvents.length === 0
+                    ? "No onboarding events found on the calendar for this date. Add clients manually."
+                    : "No clients to display."}
+                </div>
+              )}
+
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {formData.clientCheckins?.map((checkin, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: "10px 12px",
+                      background: onboardingStatusBg(checkin.onboardingStatus),
+                      borderRadius: 8,
+                      border: `1px solid ${onboardingStatusColor(checkin.onboardingStatus)}22`,
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                      {/* Client name - editable for manually added, read-only for calendar */}
+                      {calendarEvents.some((e) => e.clientName === checkin.clientName) ? (
+                        <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, flex: 1 }}>
+                          {checkin.clientName}
+                        </span>
+                      ) : (
+                        <input
+                          className="input-field"
+                          placeholder="Client name..."
+                          value={checkin.clientName}
+                          onChange={(e) => updateCheckinName(idx, e.target.value)}
+                          style={{ flex: 1, fontSize: 13, padding: "4px 8px", fontWeight: 600 }}
+                        />
+                      )}
+                      <button
+                        onClick={() => removeCheckin(idx)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }}
+                        title="Remove"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    {/* Onboarding status buttons */}
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                      {(["onboarded", "no_show", "rescheduled"] as const).map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => updateOnboardingStatus(idx, status)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            border: checkin.onboardingStatus === status
+                              ? `2px solid ${onboardingStatusColor(status)}`
+                              : "1px solid rgba(255,255,255,0.1)",
+                            background: checkin.onboardingStatus === status
+                              ? onboardingStatusBg(status)
+                              : "transparent",
+                            color: checkin.onboardingStatus === status
+                              ? onboardingStatusColor(status)
+                              : "var(--text-muted)",
+                          }}
+                        >
+                          {onboardingStatusIcon(status)}
+                          {onboardingStatusLabel(status)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Notes */}
+                    <input
+                      className="input-field"
+                      placeholder={
+                        checkin.onboardingStatus === "rescheduled"
+                          ? "Reason for reschedule / new date..."
+                          : checkin.onboardingStatus === "no_show"
+                          ? "Any follow-up notes..."
+                          : "Notes..."
+                      }
+                      value={checkin.notes}
+                      onChange={(e) => updateCheckinNote(idx, e.target.value)}
+                      style={{ fontSize: 12, padding: "4px 8px", width: "100%" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <button className="btn-primary" onClick={handleSubmit}>Submit Report</button>
-            <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+            <button className="btn-secondary" onClick={() => { setShowForm(false); setCalendarEvents([]); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -266,26 +512,44 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </div>
           )}
 
-          {/* Client checkins */}
+          {/* Client checkins - show differently for onboarding vs coach */}
           {report.clientCheckins && report.clientCheckins.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>CLIENT CHECK-INS</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>
+                {report.role === "onboarding" ? "ONBOARDING STATUS" : "CLIENT CHECK-INS"}
+              </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {report.clientCheckins.map((c, i) => (
-                  <span key={i} style={{
-                    fontSize: 11,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    background: c.checkedIn ? "rgba(126, 201, 160, 0.1)" : "rgba(217, 142, 142, 0.1)",
-                    color: c.checkedIn ? "var(--success)" : "var(--danger)",
-                  }}>
-                    {c.checkedIn ? <CheckCircle size={10} /> : <XCircle size={10} />}
-                    {c.clientName}
-                  </span>
-                ))}
+                {report.clientCheckins.map((c, i) => {
+                  const status = c.onboardingStatus;
+                  const isOnboarding = report.role === "onboarding" && status;
+                  return (
+                    <span key={i} style={{
+                      fontSize: 11,
+                      padding: "3px 8px",
+                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      background: isOnboarding
+                        ? onboardingStatusBg(status)
+                        : c.checkedIn ? "rgba(126, 201, 160, 0.1)" : "rgba(217, 142, 142, 0.1)",
+                      color: isOnboarding
+                        ? onboardingStatusColor(status)
+                        : c.checkedIn ? "var(--success)" : "var(--danger)",
+                    }}>
+                      {isOnboarding
+                        ? onboardingStatusIcon(status)
+                        : c.checkedIn ? <CheckCircle size={10} /> : <XCircle size={10} />
+                      }
+                      {c.clientName}
+                      {isOnboarding && (
+                        <span style={{ fontSize: 10, opacity: 0.8, marginLeft: 2 }}>
+                          ({onboardingStatusLabel(status)})
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}

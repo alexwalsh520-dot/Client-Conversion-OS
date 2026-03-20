@@ -63,6 +63,8 @@ export interface Client {
   offer: string;
   startDate: string;
   endDate: string;
+  onboardingDate: string | null; // Actual onboarding date (from Nicole's EOD confirmation)
+  onboardingStatus: 'scheduled' | 'onboarded' | 'no_show' | 'rescheduled' | null;
   status: 'active' | 'paused' | 'completed' | 'cancelled' | 'refunded';
   paymentPlatform: string;
   salesFathomLink: string;
@@ -141,6 +143,8 @@ export interface EODClientCheckin {
   clientName: string;
   checkedIn: boolean;
   notes: string;
+  // Nicole-specific: onboarding outcome for scheduled clients
+  onboardingStatus?: 'onboarded' | 'no_show' | 'rescheduled';
 }
 
 export interface FinanceRecord {

@@ -234,11 +234,12 @@ export async function POST(req: NextRequest) {
 
         // Insert client checkins if provided
         if (payload.clientCheckins?.length > 0) {
-          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string }) => ({
+          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string }) => ({
             eod_id: report.id,
             client_name: c.clientName,
             checked_in: c.checkedIn || false,
             notes: c.notes || "",
+            onboarding_status: c.onboardingStatus || null,
           }));
 
           const { error: e2 } = await db
@@ -246,6 +247,29 @@ export async function POST(req: NextRequest) {
             .insert(checkinRows);
 
           if (e2) throw e2;
+
+          // For onboarding EODs: update client records with onboarding date/status
+          if (payload.role === "onboarding") {
+            for (const c of payload.clientCheckins as { clientName: string; onboardingStatus?: string }[]) {
+              if (!c.clientName || !c.onboardingStatus) continue;
+
+              const updateData: Record<string, unknown> = {
+                onboarding_status: c.onboardingStatus,
+              };
+
+              // Only set onboarding_date when actually onboarded
+              if (c.onboardingStatus === "onboarded") {
+                updateData.onboarding_date = payload.date;
+              }
+
+              // Update clients matching this name (could match multiple if same name, different coach)
+              await db
+                .from("clients")
+                .update(updateData)
+                .eq("name", c.clientName)
+                .is("onboarding_date", null); // Only update if not already onboarded
+            }
+          }
         }
 
         return NextResponse.json({ success: true, data: report });
