@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/weekly-report",
       "schedule": "0 10 * * 1"
+    },
+    {
+      "path": "/api/cron/mozi-sync",
+      "schedule": "30 6 * * *"
     }
   ]
 }
