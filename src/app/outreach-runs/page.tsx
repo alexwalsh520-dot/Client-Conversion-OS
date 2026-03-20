@@ -230,6 +230,9 @@ export default function OutreachRunsPage() {
         id: generateRunId(),
         timestamp: new Date().toISOString(),
         leads_imported: combined.leads_imported,
+        new_contacts: combined.new_contacts,
+        already_existed: combined.already_existed,
+        failed_import: combined.failed_import,
         smartlead_added: combined.smartlead_added,
         dms_queued: combined.dms_queued,
         errors: combined.failed_import + combined.errors.length,
@@ -541,9 +544,28 @@ export default function OutreachRunsPage() {
                         {expandedRun === run.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         {new Date(run.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </div>
-                      {expandedRun === run.id && run.error_details.length > 0 && (
-                        <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "var(--danger-soft)", fontSize: 11, color: "var(--danger)" }}>
-                          {run.error_details.map((err, i) => <div key={i}>{err}</div>)}
+                      {expandedRun === run.id && (
+                        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ padding: "8px 12px", borderRadius: 6, background: "var(--success-soft)", fontSize: 12, color: "var(--success)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                              <CheckCircle size={12} />
+                              {fmtNumber(run.leads_imported)} leads imported to GHL — {fmtNumber(run.new_contacts || 0)} new, {fmtNumber(run.already_existed || 0)} existing
+                              {(run.failed_import || 0) > 0 && `, ${fmtNumber(run.failed_import || 0)} failed`}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                              <CheckCircle size={12} />
+                              {fmtNumber(run.smartlead_added)} leads added to Smartlead email campaign
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <CheckCircle size={12} />
+                              {fmtNumber(run.dms_queued)} Instagram usernames ready for ColdDMs
+                            </div>
+                          </div>
+                          {run.error_details.length > 0 && (
+                            <div style={{ padding: "8px 12px", borderRadius: 6, background: "var(--danger-soft)", fontSize: 11, color: "var(--danger)" }}>
+                              {run.error_details.map((err, i) => <div key={i}>{err}</div>)}
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>
