@@ -6,6 +6,9 @@ export interface OutreachRun {
   id: string;
   timestamp: string;
   leads_imported: number;
+  new_contacts: number;
+  already_existed: number;
+  failed_import: number;
   smartlead_added: number;
   dms_queued: number;
   errors: number;

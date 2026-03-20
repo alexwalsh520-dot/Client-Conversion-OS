@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   Home,
+  Crown,
   TrendingUp,
   Users,
   UserPlus,
@@ -20,10 +21,12 @@ import {
   ChevronRight,
   LogOut,
   BarChart3,
+  DollarSign,
 } from "lucide-react";
 
 const mainNav = [
   { href: "/", label: "Home", icon: Home },
+  { href: "/mozi-metrics", label: "Mozi Metrics", icon: Crown },
   { href: "/sales", label: "Sales", icon: TrendingUp },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus },
@@ -35,6 +38,7 @@ const toolsNav = [
   { href: "/leads", label: "Lead Gen", icon: Crosshair },
   { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
+  { href: "/media-buyer", label: "Media Buyer", icon: DollarSign },
   { href: "/intelligence", label: "Intelligence", icon: Brain },
   { href: "/log", label: "Change Log", icon: GitCommit },
   { href: "/settings", label: "Settings", icon: Settings },

@@ -40,6 +40,29 @@
 
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 64px;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     MOZI METRICS — CSS variables used by mozi components
+     ═══════════════════════════════════════════════════════════════════ */
+  --bg: #07070a;
+  --surface: rgba(14,14,18,0.92);
+  --border: rgba(255,255,255,0.06);
+  --text: #f2f2f4;
+  --text-2: rgba(242,242,244,0.7);
+  --text-3: rgba(242,242,244,0.38);
+  --gold: #c9a96e;
+  --gold-bg: rgba(201,169,110,0.08);
+  --green: #5fdb8e;
+  --green-bg: rgba(95,219,142,0.06);
+  --green-b: rgba(95,219,142,0.18);
+  --red: #f07068;
+  --red-bg: rgba(240,112,104,0.06);
+  --red-b: rgba(240,112,104,0.18);
+  --amber: #f0c350;
+  --amber-bg: rgba(240,195,80,0.06);
+  --amber-b: rgba(240,195,80,0.18);
+  --r: 16px;
+  --rs: 12px;
 }
 
 @theme inline {

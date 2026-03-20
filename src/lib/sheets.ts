@@ -94,11 +94,12 @@ export interface AdsDailyRow {
 // ---- Auth ----
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
+  // Use dedicated coaching env vars, fall back to shared ones
+  const email = process.env.COACHING_GOOGLE_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.COACHING_GOOGLE_KEY || process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !key) {
     throw new Error(
-      "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY"
+      "Missing COACHING_GOOGLE_EMAIL/COACHING_GOOGLE_KEY or GOOGLE_SERVICE_ACCOUNT_EMAIL/GOOGLE_PRIVATE_KEY"
     );
   }
   return new google.auth.GoogleAuth({
@@ -143,21 +144,29 @@ function parseDate(val: string | undefined | null, fallbackYear?: number): strin
   trimmed = trimmed.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
 
   try {
-    // Handle DD/MM/YYYY HH:MM:SS format (Google Forms timestamp)
-    // e.g. "21/11/2025 12:49:50"
-    const ddmmMatch = trimmed.match(
-      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/
+    // Handle M/D/YYYY or D/M/YYYY format (with optional HH:MM:SS timestamp)
+    // e.g. "03/16/2026", "21/11/2025 12:49:50"
+    const slashDateMatch = trimmed.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s|$)/
     );
-    if (ddmmMatch) {
-      const day = parseInt(ddmmMatch[1]);
-      const month = parseInt(ddmmMatch[2]);
-      const year = parseInt(ddmmMatch[3]);
-      // If day > 12, it's definitely DD/MM/YYYY
-      // If both ≤ 12, prefer DD/MM since Google Forms uses this format
-      if (day > 12 || day <= 12) {
-        const d = new Date(year, month - 1, day);
-        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+    if (slashDateMatch) {
+      let a = parseInt(slashDateMatch[1]);
+      let b = parseInt(slashDateMatch[2]);
+      let year = parseInt(slashDateMatch[3]);
+      if (year < 100) year += 2000; // Handle 2-digit years like "26" → 2026
+      let month: number, day: number;
+      if (b > 12) {
+        // Second number > 12 → must be MM/DD/YYYY (US format)
+        month = a; day = b;
+      } else if (a > 12) {
+        // First number > 12 → must be DD/MM/YYYY
+        month = b; day = a;
+      } else {
+        // Both ≤ 12 → prefer MM/DD (US format, used by coach trackers)
+        month = a; day = b;
       }
+      const d = new Date(year, month - 1, day);
+      if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) return d.toISOString().split("T")[0];
     }
 
     // Handle "M/D" format without year (e.g. "1/26", "12/31") — use fallbackYear if provided
