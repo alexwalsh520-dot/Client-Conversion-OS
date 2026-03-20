@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     ] = await Promise.all([
       supabase
         .from('mozi_stripe_charges')
-        .select('amount, created_at, customer_email, refunded, refund_amount, influencer')
+        .select('amount, created_at, customer_id, customer_email, refunded, refund_amount, influencer')
         .gte('created_at', thirtyDaysAgo),
       supabase
         .from('mozi_whop_payments')
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
       ...(stripeCharges ?? []).map((c) => ({
         amount: c.amount,
         created_at: c.created_at,
+        customer_id: c.customer_id,
         customer_email: c.customer_email,
         refunded: c.refunded,
         refund_amount: c.refund_amount,
@@ -115,6 +116,7 @@ export async function POST(req: NextRequest) {
           .map((c) => ({
             amount: c.amount,
             created_at: c.created_at,
+            customer_id: c.customer_id,
             customer_email: c.customer_email,
             refunded: c.refunded,
             refund_amount: c.refund_amount,

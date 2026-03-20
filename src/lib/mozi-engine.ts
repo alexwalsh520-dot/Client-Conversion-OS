@@ -82,7 +82,8 @@ const REQUIRED_RATIOS: Record<string, number> = {
 interface RevenueRow {
   amount: number;           // cents
   created_at: string;
-  customer_email?: string;
+  customer_id?: string;     // Stripe customer ID (primary identifier)
+  customer_email?: string;  // fallback identifier
   refunded?: boolean;
   refund_amount?: number;
 }
@@ -130,14 +131,14 @@ export function computeKPIs(
     return sum + chargeAmount;
   }, 0);
 
-  // Count unique paying clients (distinct customer emails) in last 30 days
-  // This counts all payers, not just "new" — used for per-client averages
-  const uniqueEmails = new Set(
+  // Count unique paying clients in last 30 days
+  // Use customer_id (Stripe cus_xxx) as primary identifier, fall back to email
+  const uniqueClients = new Set(
     recentRevenue
-      .map((r) => r.customer_email?.toLowerCase())
+      .map((r) => r.customer_id ?? r.customer_email?.toLowerCase())
       .filter(Boolean),
   );
-  const payingClients30 = Math.max(uniqueEmails.size, 1); // avoid /0
+  const payingClients30 = Math.max(uniqueClients.size, 1); // avoid /0
 
   const revenuePerClient = Math.round(totalRevenue30 / payingClients30);
 
