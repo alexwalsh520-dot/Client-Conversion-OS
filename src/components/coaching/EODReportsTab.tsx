@@ -74,8 +74,8 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       setCalendarError(null);
       try {
         const res = await fetch(`/api/coaching/calendar?date=${formData.date}`);
-        if (!res.ok) throw new Error("Failed to fetch calendar");
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to fetch calendar");
         setCalendarEvents(data.events || []);
 
         // Auto-populate onboarding checkins from calendar events
@@ -89,7 +89,8 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         setFormData((prev) => ({ ...prev, clientCheckins: checkins }));
       } catch (err) {
         console.error("Calendar fetch error:", err);
-        setCalendarError("Could not load calendar events. You can add clients manually.");
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        setCalendarError(`Calendar error: ${msg}. You can add clients manually.`);
         setFormData((prev) => ({ ...prev, clientCheckins: [] }));
       } finally {
         setCalendarLoading(false);

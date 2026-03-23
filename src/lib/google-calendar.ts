@@ -135,8 +135,9 @@ export async function fetchNicoleCalendarEvents(
         status: evt.status || "confirmed",
       }));
   } catch (err) {
-    console.error("[google-calendar] Failed to fetch events:", err);
-    return [];
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[google-calendar] Failed to fetch events:", msg, err);
+    throw new Error(`Calendar fetch failed: ${msg}`);
   }
 }
 
@@ -181,7 +182,9 @@ export async function fetchNicoleCalendarRange(
         status: evt.status || "confirmed",
       }));
   } catch (err) {
-    console.error("[google-calendar] Range fetch failed:", err);
+    // Range fetch is non-critical (onboarding tab), so just log and return empty
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[google-calendar] Range fetch failed:", msg);
     return [];
   }
 }
