@@ -162,8 +162,19 @@ function parseDate(val: string | undefined | null, fallbackYear?: number): strin
         // First number > 12 → must be DD/MM/YYYY
         month = b; day = a;
       } else {
-        // Both ≤ 12 → prefer MM/DD (US format, used by coach trackers)
-        month = a; day = b;
+        // Both ≤ 12 → ambiguous. Default to MM/DD (US format) but sanity-check:
+        // If MM/DD would put the date > 6 months in the future and DD/MM gives
+        // a recent date, prefer DD/MM (likely day-first entry).
+        const now = new Date();
+        const mmdd = new Date(year, a - 1, b);
+        const ddmm = new Date(year, b - 1, a);
+        const sixMonths = 180 * 24 * 60 * 60 * 1000;
+        if (mmdd.getTime() - now.getTime() > sixMonths && ddmm.getTime() <= now.getTime()) {
+          // MM/DD is far future but DD/MM is recent — likely day-first entry
+          month = b; day = a;
+        } else {
+          month = a; day = b;
+        }
       }
       const d = new Date(year, month - 1, day);
       if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) return d.toISOString().split("T")[0];
