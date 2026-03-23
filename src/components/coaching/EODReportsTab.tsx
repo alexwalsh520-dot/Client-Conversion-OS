@@ -31,6 +31,20 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     clientCheckins: [],
   });
 
+  // Sync form role with filter — when user filters to "onboarding" and opens form,
+  // default to onboarding role and pre-fill Nicole's name
+  const openForm = () => {
+    const defaultRole = roleFilter === "onboarding" ? "onboarding" : roleFilter === "coach" ? "coach" : "coach";
+    const isOnboarding = defaultRole === "onboarding";
+    setFormData({
+      role: defaultRole as "coach" | "onboarding",
+      date: new Date().toISOString().split("T")[0],
+      clientCheckins: [],
+      submittedBy: isOnboarding ? "Nicole" : "",
+    });
+    setShowForm(true);
+  };
+
   const activeClients = clients.filter((c) => c.status === "active");
 
   const filtered = roleFilter === "all"
@@ -206,7 +220,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           <option value="coach">Coach</option>
           <option value="onboarding">Onboarding</option>
         </select>
-        <button className="btn-primary" onClick={() => setShowForm(true)}>
+        <button className="btn-primary" onClick={openForm}>
           <Plus size={14} /> Submit EOD Report
         </button>
       </div>
@@ -237,7 +251,12 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
               <label className="field-label">Role *</label>
               <select className="input-field" value={formData.role || "coach"} onChange={(e) => {
                 const role = e.target.value as "coach" | "onboarding";
-                setFormData({ ...formData, role, clientCheckins: [] });
+                setFormData({
+                  ...formData,
+                  role,
+                  clientCheckins: [],
+                  submittedBy: role === "onboarding" ? "Nicole" : (formData.submittedBy === "Nicole" ? "" : formData.submittedBy),
+                });
               }}>
                 <option value="coach">Coach</option>
                 <option value="onboarding">Onboarding</option>
