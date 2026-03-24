@@ -13,12 +13,16 @@
  * - Bot Token Scopes: chat:write, app_mentions:read, im:read, im:write, im:history
  * - Event Subscriptions: app_mention, message.im
  * - Request URL: https://client-conversion-os.vercel.app/api/slack/agent
+ *
+ * IMPORTANT: Uses next/server after() to keep the serverless function alive
+ * after returning 200 to Slack. Without this, Vercel kills the function
+ * before the async agent work completes.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { runSalesAgent } from "@/lib/sales-agent";
 
-// âââ Slack API Helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// --- Slack API Helpers ---
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
@@ -95,7 +99,7 @@ async function removeReaction(channel: string, timestamp: string, emoji: string)
   });
 }
 
-// âââ Conversation History Store (in-memory, per channel) âââââââââââââââââââââ
+// --- Conversation History Store (in-memory, per channel) ---
 // For production, consider storing in Supabase instead
 
 const conversationCache = new Map<string, Array<{ role: string; content: string; timestamp: number }>>();
@@ -122,7 +126,7 @@ function addToHistory(channelId: string, role: string, content: string) {
   }
 }
 
-// âââ Event Processing ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// --- Event Processing ---
 
 // Track processed events to prevent duplicates (Slack retries)
 const processedEvents = new Set<string>();
@@ -145,11 +149,13 @@ async function handleMessage(event: {
   // Clean up old events after 5 minutes
   setTimeout(() => processedEvents.delete(eventKey), 5 * 60 * 1000);
 
-  // Strip the bot mention from the text (e.g., "<@U12345> what's our show rate?" â "what's our show rate?")
+  // Strip the bot mention from the text
   const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, "").trim();
   if (!cleanText) return;
 
   const replyThreadTs = event.thread_ts || event.ts;
+
+  console.log(`[Sales Brain] Processing message from ${event.user}: "${cleanText.slice(0, 100)}"`);
 
   try {
     // Add thinking reaction
@@ -160,7 +166,9 @@ async function handleMessage(event: {
     addToHistory(event.channel, "user", cleanText);
 
     // Run the agent
+    console.log("[Sales Brain] Calling runSalesAgent...");
     const response = await runSalesAgent(cleanText, history);
+    console.log(`[Sales Brain] Got response (${response.length} chars)`);
 
     // Save response to history
     addToHistory(event.channel, "assistant", response);
@@ -177,12 +185,13 @@ async function handleMessage(event: {
         await postSlackMessage(event.channel, chunk, replyThreadTs);
       }
     }
+    console.log("[Sales Brain] Response posted to Slack successfully");
   } catch (err) {
-    console.error("Error processing Slack message:", err);
-    await removeReaction(event.channel, event.ts, "brain");
+    console.error("[Sales Brain] Error processing message:", err);
+    await removeReaction(event.channel, event.ts, "brain").catch(() => {});
     await postSlackMessage(
       event.channel,
-      "â ï¸ Hit an error processing that. Check the server logs. Error: " +
+      "Warning: Hit an error processing that. Error: " +
         (err instanceof Error ? err.message : "Unknown"),
       replyThreadTs
     );
@@ -210,7 +219,7 @@ function splitMessage(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-// âââ Route Handlers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// --- Route Handlers ---
 
 export async function POST(req: NextRequest) {
   try {
@@ -227,20 +236,20 @@ export async function POST(req: NextRequest) {
 
       // Handle app_mention (someone @mentioned the bot)
       if (event.type === "app_mention") {
-        // Process async â respond to Slack immediately to avoid timeout
-        handleMessage(event).catch(console.error);
+        // Use after() to keep serverless function alive after responding to Slack
+        after(handleMessage(event));
         return NextResponse.json({ ok: true });
       }
 
       // Handle direct messages
       if (event.type === "message" && event.channel_type === "im") {
-        handleMessage(event).catch(console.error);
+        after(handleMessage(event));
         return NextResponse.json({ ok: true });
       }
 
       // Handle messages in the dedicated sales-brain channel
       if (event.type === "message" && event.channel === SALES_BRAIN_CHANNEL && !event.bot_id) {
-        handleMessage(event).catch(console.error);
+        after(handleMessage(event));
         return NextResponse.json({ ok: true });
       }
     }
@@ -248,12 +257,10 @@ export async function POST(req: NextRequest) {
     // 3. Handle slash commands (/sales-brain)
     if (body.command) {
       const text = body.text || "Give me a quick status update on today's numbers.";
-      const channelId = body.channel_id;
       const responseUrl = body.response_url;
 
-      // Acknowledge immediately (Slack requires response within 3 seconds)
-      // Then process async and post the result
-      (async () => {
+      // Use after() for slash commands too
+      after((async () => {
         try {
           const response = await runSalesAgent(text);
           await fetch(responseUrl, {
@@ -265,27 +272,27 @@ export async function POST(req: NextRequest) {
             })
           });
         } catch (err) {
-          console.error("Slash command error:", err);
+          console.error("[Sales Brain] Slash command error:", err);
           await fetch(responseUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               response_type: "ephemeral",
-              text: "â ï¸ Error processing your request. Check server logs."
+              text: "Warning: Error processing your request. Check server logs."
             })
           });
         }
-      })();
+      })());
 
       return NextResponse.json({
         response_type: "ephemeral",
-        text: "ð§  Analyzing... give me a moment."
+        text: "Analyzing... give me a moment."
       });
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Slack webhook error:", err);
+    console.error("[Sales Brain] Webhook error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
