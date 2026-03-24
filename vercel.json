@@ -20,6 +20,14 @@
     {
       "path": "/api/cron/mozi-sync",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/sales-agent-review",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/sales-alerts",
+      "schedule": "0 */2 * * *"
     }
   ]
 }
