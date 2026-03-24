@@ -163,6 +163,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         onboardingProgram: undefined,
         onboardingOffer: undefined,
         onboardingSalesPerson: undefined,
+        onboardingEmail: undefined,
         onboardingFathomLink: undefined,
         onboardingPaymentComments: undefined,
       } : {}),
@@ -213,7 +214,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
   };
 
   // For Nicole: add a calendar client to onboarding checkins
-  const addCalendarClientToCheckins = (clientName: string) => {
+  const addCalendarClientToCheckins = (clientName: string, clientEmail?: string) => {
     const checkins = formData.clientCheckins || [];
     // Don't add duplicates
     if (checkins.some((c) => c.clientName === clientName)) return;
@@ -222,7 +223,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       newClientNames: [...(formData.newClientNames || []), clientName],
       clientCheckins: [
         ...checkins,
-        { eodId: 0, clientName, checkedIn: false, notes: "", onboardingStatus: "onboarded" as const },
+        { eodId: 0, clientName, checkedIn: false, notes: "", onboardingStatus: "onboarded" as const, onboardingEmail: clientEmail || "" },
       ],
     });
   };
@@ -472,7 +473,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                         return (
                           <button
                             key={evt.id}
-                            onClick={() => !alreadyAdded && addCalendarClientToCheckins(evt.clientName)}
+                            onClick={() => !alreadyAdded && addCalendarClientToCheckins(evt.clientName, evt.clientEmail)}
                             disabled={alreadyAdded}
                             style={{
                               display: "flex",
@@ -672,7 +673,20 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                               </div>
                             </div>
 
-                            {/* Row 3: Fathom Link */}
+                            {/* Row 3: Client Email */}
+                            <div style={{ marginBottom: 8 }}>
+                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Client Email</label>
+                              <input
+                                className="input-field"
+                                type="email"
+                                placeholder="client@email.com"
+                                value={checkin.onboardingEmail || ""}
+                                onChange={(e) => updateOnboardingDetail(idx, "onboardingEmail", e.target.value)}
+                                style={{ fontSize: 12, padding: "6px 8px", width: "100%" }}
+                              />
+                            </div>
+
+                            {/* Row 4: Fathom Link */}
                             <div style={{ marginBottom: 8 }}>
                               <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4, alignItems: "center", gap: 4 }}>
                                 <Link size={10} style={{ display: "inline", marginRight: 4 }} />Fathom Recording Link

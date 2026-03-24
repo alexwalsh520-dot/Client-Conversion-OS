@@ -287,7 +287,7 @@ export async function POST(req: NextRequest) {
                   sales_person: c.onboardingSalesPerson || null,
                   comments: c.onboardingPaymentComments || null,
                   amount_paid: 0,
-                  email: null,
+                  email: c.onboardingEmail || null,
                   payment_platform: null,
                   sales_fathom_link: null,
                 };

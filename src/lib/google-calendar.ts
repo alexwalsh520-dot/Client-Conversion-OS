@@ -10,6 +10,7 @@ export interface CalendarEvent {
   start: string; // ISO datetime
   end: string; // ISO datetime
   clientName: string; // Extracted client name
+  clientEmail: string; // First non-organizer attendee email (from Google Calendar)
   status: string; // confirmed, tentative, cancelled
 }
 
@@ -80,6 +81,16 @@ const INTERNAL_PATTERNS = [
   /pending task/i,
 ];
 
+/**
+ * Extract client email from event attendees.
+ * Returns the first attendee email that isn't the calendar organizer.
+ */
+function extractClientEmail(evt: { attendees?: { email?: string | null; organizer?: boolean | null; self?: boolean | null }[] }): string {
+  if (!evt.attendees) return "";
+  const attendee = evt.attendees.find((a) => !a.organizer && !a.self && a.email);
+  return attendee?.email || "";
+}
+
 function isOnboardingEvent(summary: string): boolean {
   if (!summary) return false;
   return !INTERNAL_PATTERNS.some((p) => p.test(summary));
@@ -132,6 +143,7 @@ export async function fetchNicoleCalendarEvents(
         start: evt.start?.dateTime || evt.start?.date || "",
         end: evt.end?.dateTime || evt.end?.date || "",
         clientName: extractClientName(evt.summary || ""),
+        clientEmail: extractClientEmail(evt),
         status: evt.status || "confirmed",
       }));
   } catch (err) {
@@ -179,6 +191,7 @@ export async function fetchNicoleCalendarRange(
         start: evt.start?.dateTime || evt.start?.date || "",
         end: evt.end?.dateTime || evt.end?.date || "",
         clientName: extractClientName(evt.summary || ""),
+        clientEmail: extractClientEmail(evt),
         status: evt.status || "confirmed",
       }));
   } catch (err) {
