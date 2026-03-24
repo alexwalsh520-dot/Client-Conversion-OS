@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
 
         // Insert client checkins if provided
         if (payload.clientCheckins?.length > 0) {
-          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string; onboardingCoach?: string; onboardingProgram?: string; onboardingOffer?: string; onboardingStartDate?: string; onboardingEndDate?: string; onboardingSalesPerson?: string; onboardingFathomLink?: string; onboardingPaymentComments?: string }) => ({
+          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string; onboardingCoach?: string; onboardingProgram?: string; onboardingOffer?: string; onboardingStartDate?: string; onboardingEndDate?: string; onboardingSalesPerson?: string; onboardingEmail?: string; onboardingFathomLink?: string; onboardingPaymentComments?: string }) => ({
             eod_id: report.id,
             client_name: c.clientName,
             checked_in: c.checkedIn || false,
@@ -263,6 +263,7 @@ export async function POST(req: NextRequest) {
               onboardingProgram?: string;
               onboardingOffer?: string;
               onboardingSalesPerson?: string;
+              onboardingEmail?: string;
               onboardingFathomLink?: string;
               onboardingPaymentComments?: string;
             }[]) {
