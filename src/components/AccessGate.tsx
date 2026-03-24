@@ -8,16 +8,16 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const { data: session, status } = useSession();
   const pathname = usePathname();
 
-  // Still loading session
-  if (status === "loading") return null;
-
-  // Not authenticated — the login page handles redirect
-  if (!session?.user) return null;
-
-  // Public pages (no restriction)
+  // Public pages (no restriction) — check BEFORE auth
   if (pathname === "/login" || pathname === "/review") {
     return <>{children}</>;
   }
+
+  // Still loading session
+  if (status === "loading") return null;
+
+  // Not authenticated — redirect to login
+  if (!session?.user) return null;
 
   const isAdmin = session.user.role === "admin";
   const allowedTabs = session.user.allowedTabs;
