@@ -34,41 +34,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     jwt: async ({ token, profile }) => {
-      if (profile?.email) {
-        const email = profile.email.toLowerCase();
-        const ALL_TABS = ["/","/mozi-metrics","/sales","/coaching","/onboarding","/ads","/outreach","/leads","/outreach-runs","/sales-hub","/media-buyer","/intelligence","/log","/settings"];
+      // Use profile.email on first sign-in, token.email on subsequent requests
+      const email = (profile?.email ?? token?.email ?? "").toString().toLowerCase();
+      if (!email) return token;
 
-        // Check app_users table first
-        try {
-          const sb = getServiceSupabase();
-          const { data } = await sb
-            .from("app_users")
-            .select("role, allowed_tabs")
-            .eq("email", email)
-            .eq("is_active", true)
-            .single();
+      const ALL_TABS = ["/","/mozi-metrics","/sales","/coaching","/onboarding","/ads","/outreach","/leads","/outreach-runs","/sales-hub","/media-buyer","/intelligence","/log","/settings"];
 
-          if (data) {
-            token.role = data.role;
-            token.allowedTabs = data.allowed_tabs;
-            return token;
-          }
-        } catch {
-          // Supabase unreachable — fall through
+      // Check app_users table first
+      try {
+        const sb = getServiceSupabase();
+        const { data } = await sb
+          .from("app_users")
+          .select("role, allowed_tabs")
+          .eq("email", email)
+          .eq("is_active", true)
+          .single();
+
+        if (data) {
+          token.role = data.role;
+          token.allowedTabs = data.allowed_tabs;
+          return token;
         }
+      } catch {
+        // Supabase unreachable — use cached values if available, else fall through
+        if (token.role && token.allowedTabs) return token;
+      }
 
-        // Fallback: ALLOWED_EMAILS users get admin + all tabs
-        const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
-          .split(",")
-          .map((e) => e.trim().toLowerCase())
-          .filter(Boolean);
-        if (allowedEmails.includes(email)) {
-          token.role = "admin";
-          token.allowedTabs = ALL_TABS;
-        } else {
-          token.role = "client";
-          token.allowedTabs = ["/"];
-        }
+      // Fallback: ALLOWED_EMAILS users get admin + all tabs
+      const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+      if (allowedEmails.includes(email)) {
+        token.role = "admin";
+        token.allowedTabs = ALL_TABS;
+      } else {
+        token.role = "client";
+        token.allowedTabs = ["/"];
       }
       return token;
     },
