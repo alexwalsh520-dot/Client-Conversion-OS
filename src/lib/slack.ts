@@ -1,6 +1,9 @@
 // Slack API client for the Sales Manager Hub
 // Posts messages and rich block-kit messages to Slack channels
 // Uses fetch() directly — no @slack/web-api dependency needed
+//
+// CSO (Chief Sales Officer) wrappers route all reports, briefs, and
+// reviews to the #a-sales-manager channel with a consistent identity.
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -229,4 +232,60 @@ export async function uploadFileToSlack(
     console.error("[slack] uploadFileToSlack error:", err);
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// CSO (Sales Manager) Wrappers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the Sales Manager channel ID.
+ * Falls back through available channel env vars.
+ */
+export function getSalesManagerChannel(): string {
+  return (
+    process.env.SLACK_CHANNEL_SALES_MANAGER ||
+    process.env.SALES_BRAIN_CHANNEL_ID ||
+    process.env.SLACK_USER_DM ||
+    process.env.SLACK_CHANNEL_MARKETING ||
+    ""
+  );
+}
+
+/**
+ * Post a message as the CSO to the #a-sales-manager channel.
+ */
+export async function postAsCso(
+  text: string,
+  options?: { threadTs?: string }
+): Promise<boolean> {
+  const channel = getSalesManagerChannel();
+  if (!channel) {
+    console.error("[slack] No sales-manager channel configured");
+    return false;
+  }
+
+  const result = await slackPost("chat.postMessage", {
+    channel,
+    text,
+    ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
+    username: "Sales Brain",
+    icon_emoji: ":brain:",
+  });
+
+  return result.ok;
+}
+
+/**
+ * Upload a file (PDF etc.) as the CSO to the #a-sales-manager channel.
+ */
+export async function uploadFileAsCso(
+  fileBuffer: Buffer,
+  filename: string,
+  title: string,
+  initialComment?: string
+): Promise<boolean> {
+  const channel = getSalesManagerChannel();
+  if (!channel) return false;
+  return uploadFileToSlack(channel, fileBuffer, filename, title, initialComment);
 }

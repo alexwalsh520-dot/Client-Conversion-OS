@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { postToSlack } from "@/lib/slack";
+import { postAsCso } from "@/lib/slack";
 
 /**
  * POST /api/sales-hub/send-review-slack
- * Sends a review (call or DM) to the user's Slack DM.
+ * Sends a review (call or DM) to the #a-sales-manager channel.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,15 +19,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "review is required" }, { status: 400 });
     }
 
-    // Send to user's DM — use SLACK_USER_DM env var, fall back to SLACK_CHANNEL_MARKETING
-    const channelId =
-      process.env.SLACK_USER_DM ||
-      process.env.SLACK_CHANNEL_MARKETING;
-
-    if (!channelId) {
-      return NextResponse.json({ error: "No Slack channel configured" }, { status: 500 });
-    }
-
     const name = closerName || setterName || "Unknown";
     const prefix =
       type === "call"
@@ -40,7 +31,7 @@ export async function POST(req: NextRequest) {
         ? review.substring(0, 3500) + "\n\n_...truncated. Full review available as download._"
         : review;
 
-    const sent = await postToSlack(channelId, `${prefix}\n\n${truncated}`);
+    const sent = await postAsCso(`${prefix}\n\n${truncated}`);
 
     return NextResponse.json({ sent });
   } catch (err) {

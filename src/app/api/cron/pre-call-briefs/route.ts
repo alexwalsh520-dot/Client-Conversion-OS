@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { postToSlack } from "@/lib/slack";
+import { getSalesManagerChannel, postAsCso } from "@/lib/slack";
 
 // GHL v1 API
 const GHL_V1_BASE = "https://rest.gohighlevel.com/v1";
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
     }
 
     const anthropic = new Anthropic({ apiKey });
-    const slackChannel = process.env.SLACK_CHANNEL_PRE_CALL_BRIEFS || process.env.SLACK_CHANNEL_MARKETING;
+    const slackChannel = getSalesManagerChannel();
     let generated = 0;
 
     for (const appointment of allAppointments) {
@@ -183,7 +183,7 @@ export async function GET(req: NextRequest) {
 
         // Send to Slack if configured
         if (slackChannel) {
-          await postToSlack(slackChannel, brief);
+          await postAsCso(brief);
         }
 
         generated++;

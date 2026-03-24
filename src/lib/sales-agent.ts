@@ -84,7 +84,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     input_schema: {
       type: "object",
       properties: {
-        closer: { type: "string", description: "Closer name (Broz, Will, Austin) or 'all' for everyone" },
+        closer: { type: "string", description: "Closer name (Broz, Will, Jacob) or 'all' for everyone" },
         dateFrom: { type: "string", description: "Start date YYYY-MM-DD" },
         dateTo: { type: "string", description: "End date YYYY-MM-DD" }
       },
@@ -415,9 +415,9 @@ Client Conversion OS manages sales for fitness coaching businesses. Currently tw
 - **Keith Holland** â Lower volume, lower close rate (35.7%), worse show rate (48.5%)
 
 ## THE TEAM
-**Closers:** Broz, Will, Austin
+**Closers:** Broz, Will, Jacob
 - Will: Highest cash ($14.8K), 50% close rate, but worst show rate (49%)
-- Austin: Highest AOV ($1,882.50), 63.6% show rate (best)
+- Jacob: Highest AOV ($1,882.50), 63.6% show rate (best)
 - Broz: Most calls taken, 38.1% close rate (needs work), decent show rate (57.8%)
 
 **Setters:** Amara (Tyson), Kelechi (Tyson), Gideon (Keith), Debbie (Keith)
@@ -565,7 +565,7 @@ export async function autoReviewNewCalls(): Promise<string[]> {
   const today = new Date().toISOString().split("T")[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
 
-  const closers = ["Broz", "Will", "Austin"];
+  const closers = ["Broz", "Will", "Jacob"];
   const reviews: string[] = [];
 
   for (const closer of closers) {

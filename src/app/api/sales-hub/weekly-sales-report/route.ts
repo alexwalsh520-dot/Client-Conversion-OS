@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchSheetData } from "@/lib/google-sheets";
-import { postToSlack } from "@/lib/slack";
-import { uploadFileToSlack } from "@/lib/slack";
+import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { listMeetings, FathomMeeting } from "@/lib/fathom";
 
@@ -282,14 +281,13 @@ export async function POST(req: NextRequest) {
     // Send to Slack
     let slackSent = false;
     const shouldSendSlack = sendToSlack !== false;
-    const slackChannel = process.env.SLACK_USER_DM || process.env.SLACK_CHANNEL_MARKETING;
+    const slackChannel = getSalesManagerChannel();
 
     if (shouldSendSlack && slackChannel) {
       try {
         if (pdfBase64) {
           const pdfBuffer = Buffer.from(pdfBase64, "base64");
-          slackSent = await uploadFileToSlack(
-            slackChannel,
+          slackSent = await uploadFileAsCso(
             pdfBuffer,
             `weekly-sales-report-${dateFrom}-to-${dateTo}.pdf`,
             `Weekly Sales Report (${dateFrom} to ${dateTo})`,
@@ -298,7 +296,7 @@ export async function POST(req: NextRequest) {
         }
         if (!slackSent) {
           const truncated = report.length > 3500 ? report.substring(0, 3500) + "\n\n_...truncated_" : report;
-          slackSent = await postToSlack(slackChannel, `*Weekly Sales Report (${dateFrom} to ${dateTo})*\n\n${truncated}`);
+          slackSent = await postAsCso(`*Weekly Sales Report (${dateFrom} to ${dateTo})*\n\n${truncated}`);
         }
       } catch (slackErr) {
         console.error("Weekly sales report: Slack error:", slackErr);

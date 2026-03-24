@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { postToSlack } from "@/lib/slack";
-import { uploadFileToSlack } from "@/lib/slack";
+import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { listMeetings, FathomMeeting } from "@/lib/fathom";
 
@@ -376,7 +375,7 @@ export async function GET(req: NextRequest) {
 
     // Generate one brief per closer
     const anthropic = new Anthropic({ apiKey });
-    const slackChannel = process.env.SLACK_USER_DM || process.env.SLACK_CHANNEL_PRE_CALL_BRIEFS || process.env.SLACK_CHANNEL_MARKETING;
+    const slackChannel = getSalesManagerChannel();
     let generated = 0;
 
     for (const [closerName, closerProspectList] of Object.entries(closerProspects)) {
@@ -470,8 +469,7 @@ export async function GET(req: NextRequest) {
 
           // Upload PDF to Slack
           if (slackChannel) {
-            await uploadFileToSlack(
-              slackChannel,
+            await uploadFileAsCso(
               pdfBuffer,
               `daily-brief-${closerName.toLowerCase()}-${todayStr}.pdf`,
               `Daily Brief — ${closerName} (${todayStr})`,
@@ -485,7 +483,7 @@ export async function GET(req: NextRequest) {
             const truncated = brief.length > 3500
               ? brief.substring(0, 3500) + "\n\n_...truncated_"
               : brief;
-            await postToSlack(slackChannel, `*Daily Brief — ${closerName}*\n\n${truncated}`);
+            await postAsCso(`*Daily Brief — ${closerName}*\n\n${truncated}`);
           }
         }
 

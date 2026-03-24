@@ -3,8 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { getMetrics } from "@/lib/manychat";
 import { countSubscriptionSales } from "@/lib/stripe-client";
-import { postToSlack } from "@/lib/slack";
-import { uploadFileToSlack } from "@/lib/slack";
+import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 
 /* ── Fathom transcript fetcher (server-side) ────────────────────── */
@@ -372,15 +371,14 @@ export async function POST(req: NextRequest) {
     // Send to Slack
     let slackSent = false;
     const shouldSendSlack = sendToSlack !== false;
-    const slackChannel = process.env.SLACK_USER_DM || process.env.SLACK_CHANNEL_MARKETING;
+    const slackChannel = getSalesManagerChannel();
 
     if (shouldSendSlack && slackChannel) {
       try {
         // Try uploading PDF first
         if (pdfBase64) {
           const pdfBuffer = Buffer.from(pdfBase64, "base64");
-          slackSent = await uploadFileToSlack(
-            slackChannel,
+          slackSent = await uploadFileAsCso(
             pdfBuffer,
             `weekly-report-${dateFrom}-to-${dateTo}.pdf`,
             `Weekly Marketing Report (${dateFrom} to ${dateTo})`,
@@ -393,8 +391,7 @@ export async function POST(req: NextRequest) {
           const truncated = report.length > 3500
             ? report.substring(0, 3500) + "\n\n_...truncated. Full report available as PDF download._"
             : report;
-          slackSent = await postToSlack(
-            slackChannel,
+          slackSent = await postAsCso(
             `*Weekly Marketing Report (${dateFrom} to ${dateTo})*\n\n${truncated}`
           );
         }
