@@ -12,7 +12,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!profile?.email) return false;
       const email = profile.email.toLowerCase();
 
-      // Check if user exists and is active in app_users table
+      // Check ALLOWED_EMAILS env var first (always works, no DB dependency)
+      const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+      if (allowedEmails.includes(email)) return true;
+
+      // Then check app_users table
       try {
         const sb = getServiceSupabase();
         const { data } = await sb
@@ -23,31 +30,42 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         return data?.is_active === true;
       } catch {
-        // Fallback to env var if Supabase is unreachable
-        const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
-          .split(",")
-          .map((e) => e.trim().toLowerCase())
-          .filter(Boolean);
-        return allowedEmails.includes(email);
+        return false;
       }
     },
     jwt: async ({ token, profile }) => {
       if (profile?.email) {
-        // On sign-in, fetch role and allowed tabs
+        const email = profile.email.toLowerCase();
+        const ALL_TABS = ["/","/mozi-metrics","/sales","/coaching","/onboarding","/ads","/outreach","/leads","/outreach-runs","/sales-hub","/media-buyer","/intelligence","/log","/settings"];
+
+        // Check app_users table first
         try {
           const sb = getServiceSupabase();
           const { data } = await sb
             .from("app_users")
             .select("role, allowed_tabs")
-            .eq("email", profile.email.toLowerCase())
+            .eq("email", email)
             .eq("is_active", true)
             .single();
 
           if (data) {
             token.role = data.role;
             token.allowedTabs = data.allowed_tabs;
+            return token;
           }
         } catch {
+          // Supabase unreachable — fall through
+        }
+
+        // Fallback: ALLOWED_EMAILS users get admin + all tabs
+        const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
+          .split(",")
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean);
+        if (allowedEmails.includes(email)) {
+          token.role = "admin";
+          token.allowedTabs = ALL_TABS;
+        } else {
           token.role = "client";
           token.allowedTabs = ["/"];
         }
