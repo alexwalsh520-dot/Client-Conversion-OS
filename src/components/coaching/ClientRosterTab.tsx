@@ -1,22 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Plus, ExternalLink, Search, X } from "lucide-react";
+import { Users, Plus, ExternalLink, Search, X, Trash2 } from "lucide-react";
 import type { Client, ProgramPause } from "@/lib/types";
 
 interface Props {
   clients: Client[];
   pauses: ProgramPause[];
   onSave: (client: Partial<Client>) => Promise<void>;
+  onDelete: (clientId: number) => Promise<void>;
 }
 
-export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
+export default function ClientRosterTab({ clients, pauses, onSave, onDelete }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [coachFilter, setCoachFilter] = useState<string>("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<Client>>({});
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
 
@@ -51,6 +53,16 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
     setShowAddForm(false);
     setEditingId(null);
     setFormData({});
+    setConfirmingDelete(false);
+  };
+
+  const handleDelete = async () => {
+    if (!editingId) return;
+    await onDelete(editingId);
+    setShowAddForm(false);
+    setEditingId(null);
+    setFormData({});
+    setConfirmingDelete(false);
   };
 
   const startEdit = (client: Client) => {
@@ -228,9 +240,49 @@ export default function ClientRosterTab({ clients, pauses, onSave }: Props) {
               <input className="input-field" value={formData.comments || ""} onChange={(e) => setFormData({ ...formData, comments: e.target.value })} />
             </div>
           </div>
-          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-            <button className="btn-primary" onClick={handleSave}>Save</button>
-            <button className="btn-secondary" onClick={() => { setShowAddForm(false); setEditingId(null); setFormData({}); }}>Cancel</button>
+          <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn-primary" onClick={handleSave}>Save</button>
+              <button className="btn-secondary" onClick={() => { setShowAddForm(false); setEditingId(null); setFormData({}); setConfirmingDelete(false); }}>Cancel</button>
+            </div>
+            {editingId && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {confirmingDelete ? (
+                  <>
+                    <span style={{ color: "var(--danger)", fontSize: 13 }}>Are you sure?</span>
+                    <button
+                      onClick={handleDelete}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "6px 14px", borderRadius: 6, border: "none",
+                        background: "var(--danger)", color: "#fff",
+                        cursor: "pointer", fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      Yes, Delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmingDelete(false)}
+                      className="btn-secondary"
+                    >
+                      No
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setConfirmingDelete(true)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      padding: "6px 14px", borderRadius: 6,
+                      border: "1px solid var(--danger)", background: "none",
+                      color: "var(--danger)", cursor: "pointer", fontSize: 13,
+                    }}
+                  >
+                    <Trash2 size={13} /> Delete Client
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 type Action =
   | "upsert_client"
+  | "delete_client"
   | "upsert_milestone"
   | "upsert_pause"
   | "upsert_meeting"
@@ -60,6 +61,22 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
         return NextResponse.json({ success: true, data });
+      }
+
+      // ---- Delete Client ----
+      case "delete_client": {
+        const { id } = payload;
+        if (!id) {
+          return NextResponse.json({ error: "Missing client id" }, { status: 400 });
+        }
+
+        const { error } = await db
+          .from("clients")
+          .delete()
+          .eq("id", id);
+
+        if (error) throw error;
+        return NextResponse.json({ success: true });
       }
 
       // ---- Milestones ----
