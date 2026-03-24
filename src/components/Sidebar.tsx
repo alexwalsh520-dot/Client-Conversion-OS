@@ -54,7 +54,8 @@ export default function Sidebar() {
   const [clientFilter, setClientFilter] = useState<ClientFilter>("both");
 
   const isAdmin = session?.user?.role === "admin";
-  const allowedTabs = session?.user?.allowedTabs ?? ["/"];
+  const allowedTabs = session?.user?.allowedTabs;
+  const hasPermissions = !!session?.user?.role && !!allowedTabs;
 
   // Persist collapsed state in localStorage
   useEffect(() => {
@@ -121,12 +122,12 @@ export default function Sidebar() {
         {/* Navigation */}
         <nav className="sidebar-nav">
           {!collapsed && <div className="sidebar-section-label">Main</div>}
-          {mainNav.filter(item => isAdmin || allowedTabs.includes(item.href)).map(renderLink)}
+          {mainNav.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
 
           <div className="sidebar-divider" />
 
           {!collapsed && <div className="sidebar-section-label">Tools</div>}
-          {toolsNav.filter(item => isAdmin || allowedTabs.includes(item.href)).map(renderLink)}
+          {toolsNav.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
         </nav>
 
         {/* Bottom section */}

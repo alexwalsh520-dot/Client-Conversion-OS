@@ -20,19 +20,23 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   }
 
   const isAdmin = session.user.role === "admin";
-  const allowedTabs = session.user.allowedTabs ?? ["/"];
+  const allowedTabs = session.user.allowedTabs;
+
+  // If session doesn't have the new fields yet (old JWT), allow everything
+  // User needs to sign out and back in to get proper permissions
+  if (!session.user.role || !allowedTabs) return <>{children}</>;
 
   // Admins always have access
   if (isAdmin) return <>{children}</>;
+
+  // Settings is always accessible (shows limited view for non-admins)
+  if (pathname === "/settings") return <>{children}</>;
 
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {
     if (tab === "/") return pathname === "/";
     return pathname === tab || pathname.startsWith(tab + "/");
   });
-
-  // Settings is always accessible (shows limited view for non-admins)
-  if (pathname === "/settings") return <>{children}</>;
 
   if (!hasAccess) {
     return (
