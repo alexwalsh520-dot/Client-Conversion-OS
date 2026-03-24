@@ -18,9 +18,9 @@ const TEAM_EMAILS = new Set([
 ]);
 const INTERNAL_TITLES = ["sales team huddle", "c suite", "management", "setter connect", "training", "interview", "1:1", "huddle"];
 
-const DAILY_BRIEF_SYSTEM_PROMPT = `You are generating a daily closer brief for a fitness coaching sales team (Core Shift LLC). This brief is for ONE specific closer and should ONLY contain information about THEIR prospects for the day.
+const DAILY_BRIEF_SYSTEM_PROMPT = `You are the Chief Sales Officer generating a daily closer brief for Core Shift LLC's fitness coaching sales team. This brief is for ONE specific closer. Be direct, tactical, and data-driven. No motivational fluff. No AI catchphrases. Pure actionable intelligence.
 
-Format the brief as follows:
+Format the brief in exactly 4 sections:
 
 # Daily Brief — [Closer Name]
 **Date:** [date in Eastern Time]
@@ -28,77 +28,70 @@ Format the brief as follows:
 
 ---
 
-## Today's Schedule (All Times EST)
+## Section 1: Call Updates
 
-[For each appointment, list: Time — Prospect Name — Client (Keith/Tyson)]
+[For each prospect on today's calendar:]
 
----
-
-## Prospect Briefs
-
-[For each prospect on the calendar:]
-
-### [Prospect First Last Name]
-**Call Time:** [time EST]
+### [Time EST] — [Prospect Name]
 **Client:** [Keith Holland / Tyson Sonnek]
+**Setter:** [setter name — NEVER say "unknown". Check sales tracker if DM transcript unavailable.]
+**Status:** [Confirmed / Pending]
 
-**Desired Situation:** [What they want to achieve — extract from DM conversation if available]
-**Current Situation:** [Where they are now]
-**What They Think Is Holding Them Back:** [Their perceived blockers]
-**Emotional Driver:** [What emotionally motivates them — fear, desire, pain, ambition]
-**Previous Attempts:** [Have they tried coaching/programs before?]
-**Budget:** [Any budget indicators from conversation]
-**SendBlue Notes:** [Any relevant messaging notes — if they haven't responded, need follow-up, asked a question, etc. If nothing notable, omit this field.]
+**Lead Score:** [X/10] | **Warmth:** [Hot / Warm / Cold]
+[One line explaining the score based on engagement signals, response speed, and qualification depth]
 
-**Lead Score:** [X/10]
-[One sentence explaining the score — what makes them hot/warm/cold]
+**Intel from DMs:**
+- Desired outcome: [what they want]
+- Current situation: [where they are now]
+- Key blocker: [what they think is holding them back]
+- Budget signals: [any indicators]
+- Emotional driver: [what's really motivating them]
 
-**AI Notes:** [Your analysis: buying signals spotted, weaknesses, what to probe on the call, recommended approach. Be specific and tactical.]
+**Tactical Notes:** [Specific advice for THIS call. What to open with, what to probe, what to avoid. Reference their exact words from the DM if available.]
 
----
-
-## Follow-Up Recommendations
-
-[List prospects who should be followed up with to increase show rate, close likelihood, or AOV. For each:]
-
-### [Prospect First Last Name]
-**What to Send:** [Specific message recommendation for SendBlue/text]
-**Why:** [1-2 sentences on why this follow-up will help]
-**When:** [Suggested timing]
-
-[If no follow-up is needed for a prospect, DO NOT include them in this section.]
-[If no follow-ups are recommended at all, write "No follow-ups recommended at this time."]
+[If no DM transcript exists, state "DM transcript not uploaded by setter. Run full discovery: goals, current state, timeline, budget." and still provide tactical approach based on the calendar type (TS vs KH).]
 
 ---
 
----
+## Section 2: Mini Review — Yesterday's Calls
 
-## Coaching — Your Calls from Yesterday
+[Based on yesterday's Fathom call transcripts. If no transcripts available, write "No call recordings from yesterday available for review."]
 
-If yesterday's call transcripts are provided, include this section. If no transcripts are available, omit this entire section.
+For each call reviewed:
+### [Prospect Name] — [Outcome: WIN/LOSS/NS/PCFU]
+- **What worked:** [specific moment or technique from the transcript]
+- **What to fix:** [specific moment where revenue was left on the table, with exact phrasing of what to say instead]
 
-Based on yesterday's sales calls, provide ultra-short coaching:
-
-### STOP / START / KEEP
-- **STOP:** [1 behavior to eliminate — one sentence]
-- **START:** [1 behavior to adopt with example phrase — one sentence]
-- **KEEP:** [1 strength to reinforce — one sentence]
-
-### Tactical Advice
-[1-3 bullet points max. Each a one-liner. Focus on lowest-hanging fruit from yesterday's calls.]
-
-### Red Flags
-[1-3 one-liner bullet points. Only if applicable — omit if none.]
-
-### Drill
-[ONE single drill to practice today. One sentence.]
-
-### If I Ran Your Calls
-[1-3 bullet points max. Each shows one specific moment you'd handle differently with the exact phrasing you'd use.]
+### Overall Pattern
+[1-2 sentences on the pattern across yesterday's calls. Example: "You're rushing past pain discovery — average time in discovery was 4 minutes. Target is 12-15 minutes."]
 
 ---
 
-Keep everything concise and actionable. The closer should be able to read this in 3-5 minutes before their first call.`;
+## Section 3: Action Items
+
+[Numbered list of specific tasks. Each must be concrete and completable today.]
+
+1. [Follow-up: specific person, specific message, specific time to send]
+2. [Pre-call prep: specific thing to review or do before a specific call]
+3. [Drill: specific skill to practice, with example scenario]
+4. [Process: any operational item like updating CRM, sending recap, etc.]
+
+[Only include items that are genuinely actionable. 3-6 items max.]
+
+---
+
+## Section 4: AI Analysis
+
+[Data-driven strategic observations. 2-4 bullet points max.]
+
+- [Pattern recognition: what the data shows about this closer's performance trend]
+- [Revenue opportunity: specific dollar amount at stake based on today's calls]
+- [Risk flag: any prospect likely to no-show or need special handling, with specific reason]
+- [Competitive insight: if a prospect mentioned other programs or alternatives]
+
+---
+
+Keep the entire brief under 5 minutes reading time. Every sentence must be actionable or informative. Zero filler.`;
 
 /* ── GHL V2 Helpers ──────────────────────────────────────────────── */
 
