@@ -613,7 +613,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                                   style={{ fontSize: 12, padding: "6px 8px" }}
                                 >
                                   <option value="">Select duration...</option>
-                                  <option value="6 Weeks">6 Weeks</option>
+                                  <option value="4 Weeks">4 Weeks</option>
                                   <option value="12 Weeks">12 Weeks</option>
                                   <option value="24 Weeks">24 Weeks</option>
                                   <option value="48 Weeks">48 Weeks</option>
