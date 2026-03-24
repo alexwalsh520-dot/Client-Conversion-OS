@@ -10,6 +10,7 @@ interface CalendarEvent {
   start: string;
   end: string;
   clientName: string;
+  clientEmail: string;
   status: string;
 }
 
