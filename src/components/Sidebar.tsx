@@ -171,7 +171,7 @@ export default function Sidebar() {
 
           {/* User */}
           {session?.user && (
-            <button className="sidebar-user" onClick={() => signOut()}>
+            <button className="sidebar-user" onClick={() => signOut({ callbackUrl: "/login" })}>
               {session.user.image ? (
                 <img
                   src={session.user.image}

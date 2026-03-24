@@ -1,14 +1,23 @@
 "use client";
 
+import { useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
 
 export default function AccessGate({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
 
-  // Public pages (no restriction) — check BEFORE auth
+  // Redirect to login when not authenticated (must be before conditional returns for hooks rules)
+  useEffect(() => {
+    if (status === "unauthenticated" && pathname !== "/login" && pathname !== "/review") {
+      router.push("/login");
+    }
+  }, [status, pathname, router]);
+
+  // Public pages (no restriction)
   if (pathname === "/login" || pathname === "/review") {
     return <>{children}</>;
   }
@@ -16,7 +25,7 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // Still loading session
   if (status === "loading") return null;
 
-  // Not authenticated — redirect to login
+  // Not authenticated — show nothing while redirect happens
   if (!session?.user) return null;
 
   const isAdmin = session.user.role === "admin";
