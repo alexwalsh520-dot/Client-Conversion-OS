@@ -146,7 +146,16 @@ export interface EODClientCheckin {
   checkedIn: boolean;
   notes: string;
   // Nicole-specific: onboarding outcome for scheduled clients
-  onboardingStatus?: 'onboarded' | 'no_show' | 'rescheduled';
+  onboardingStatus?: 'onboarded' | 'no_show' | 'rescheduled' | 'internal_meeting';
+  // Onboarding details (populated when status is 'onboarded')
+  onboardingCoach?: string;
+  onboardingStartDate?: string;
+  onboardingEndDate?: string;
+  onboardingProgram?: string; // '6 Weeks' | '12 Weeks' | '24 Weeks' | '48 Weeks'
+  onboardingOffer?: string; // 'Tyson' | 'Keith' | etc.
+  onboardingSalesPerson?: string;
+  onboardingFathomLink?: string;
+  onboardingPaymentComments?: string;
 }
 
 export interface FinanceRecord {
