@@ -232,33 +232,36 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
   try {
     switch (toolName) {
       case "get_sales_dashboard": {
-        const params = new URLSearchParams({
+        const paramsObj: Record<string, string> = {
           dateFrom: input.dateFrom as string,
           dateTo: input.dateTo as string,
-          ...(input.client && { client: input.client as string })
-        });
+        };
+        if (input.client) paramsObj.client = input.client as string;
+        const params = new URLSearchParams(paramsObj);
         const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}`);
         const data = await res.json();
         return JSON.stringify(data);
       }
 
       case "get_closer_performance": {
-        const params = new URLSearchParams({
+        const closerParams: Record<string, string> = {
           dateFrom: input.dateFrom as string,
           dateTo: input.dateTo as string,
-          ...(input.closer && input.closer !== "all" && { closer: input.closer as string })
-        });
+        };
+        if (input.closer && input.closer !== "all") closerParams.closer = input.closer as string;
+        const params = new URLSearchParams(closerParams);
         const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=closers`);
         const data = await res.json();
         return JSON.stringify(data);
       }
 
       case "get_setter_performance": {
-        const params = new URLSearchParams({
+        const setterParams: Record<string, string> = {
           dateFrom: input.dateFrom as string,
           dateTo: input.dateTo as string,
-          ...(input.setter && input.setter !== "all" && { setter: input.setter as string })
-        });
+        };
+        if (input.setter && input.setter !== "all") setterParams.setter = input.setter as string;
+        const params = new URLSearchParams(setterParams);
         const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=setters`);
         const data = await res.json();
         return JSON.stringify(data);
@@ -282,12 +285,13 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
       }
 
       case "get_call_transcripts": {
-        const params = new URLSearchParams({
+        const callParams: Record<string, string> = {
           closer: input.closer as string,
           includeTranscript: String(input.includeTranscript ?? true),
-          ...(input.dateFrom && { dateFrom: input.dateFrom as string }),
-          ...(input.dateTo && { dateTo: input.dateTo as string })
-        });
+        };
+        if (input.dateFrom) callParams.dateFrom = input.dateFrom as string;
+        if (input.dateTo) callParams.dateTo = input.dateTo as string;
+        const params = new URLSearchParams(callParams);
         const res = await fetch(`${baseUrl}/api/sales-hub/fathom-calls?${params}`);
         const data = await res.json();
         const limited = Array.isArray(data) ? data.slice(0, (input.limit as number) || 5) : data;
@@ -321,11 +325,12 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
       }
 
       case "get_revenue_breakdown": {
-        const params = new URLSearchParams({
+        const revParams: Record<string, string> = {
           dateFrom: input.dateFrom as string,
           dateTo: input.dateTo as string,
-          ...(input.groupBy && { groupBy: input.groupBy as string })
-        });
+        };
+        if (input.groupBy) revParams.groupBy = input.groupBy as string;
+        const params = new URLSearchParams(revParams);
         const res = await fetch(`${baseUrl}/api/sales-hub/stripe-sales?${params}`);
         const data = await res.json();
         return JSON.stringify(data);
@@ -360,11 +365,12 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
       }
 
       case "get_bottleneck_analysis": {
-        const params = new URLSearchParams({
+        const paramsObj: Record<string, string> = {
           dateFrom: input.dateFrom as string,
           dateTo: input.dateTo as string,
-          ...(input.client && { client: input.client as string })
-        });
+        };
+        if (input.client) paramsObj.client = input.client as string;
+        const params = new URLSearchParams(paramsObj);
         const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=bottleneck`);
         const data = await res.json();
         return JSON.stringify(data);
