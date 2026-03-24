@@ -123,6 +123,8 @@ export default function CoachingPage() {
   const handleSubmitEOD = async (report: Partial<CoachEODReport>) => {
     await apiCall("submit_eod", report);
     refetchEOD();
+    // Refetch clients so newly onboarded clients appear in the roster immediately
+    refetchClients();
   };
 
   return (

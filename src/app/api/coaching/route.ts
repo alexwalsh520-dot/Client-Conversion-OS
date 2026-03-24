@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
 
         // Insert client checkins if provided
         if (payload.clientCheckins?.length > 0) {
-          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string }) => ({
+          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string; onboardingCoach?: string; onboardingProgram?: string; onboardingOffer?: string; onboardingStartDate?: string; onboardingEndDate?: string; onboardingSalesPerson?: string; onboardingFathomLink?: string; onboardingPaymentComments?: string }) => ({
             eod_id: report.id,
             client_name: c.clientName,
             checked_in: c.checkedIn || false,
@@ -252,26 +252,59 @@ export async function POST(req: NextRequest) {
 
           if (e2) throw e2;
 
-          // For onboarding EODs: update client records with onboarding date/status
+          // For onboarding EODs: create new clients when onboarded, update existing if applicable
           if (payload.role === "onboarding") {
-            for (const c of payload.clientCheckins as { clientName: string; onboardingStatus?: string }[]) {
+            for (const c of payload.clientCheckins as {
+              clientName: string;
+              onboardingStatus?: string;
+              onboardingCoach?: string;
+              onboardingStartDate?: string;
+              onboardingEndDate?: string;
+              onboardingProgram?: string;
+              onboardingOffer?: string;
+              onboardingSalesPerson?: string;
+              onboardingFathomLink?: string;
+              onboardingPaymentComments?: string;
+            }[]) {
               if (!c.clientName || !c.onboardingStatus) continue;
 
-              const updateData: Record<string, unknown> = {
-                onboarding_status: c.onboardingStatus,
-              };
+              // Skip internal meetings — no client record needed
+              if (c.onboardingStatus === "internal_meeting") continue;
 
-              // Only set onboarding_date when actually onboarded
               if (c.onboardingStatus === "onboarded") {
-                updateData.onboarding_date = payload.date;
-              }
+                // Create a new client entry in the clients table
+                const newClient = {
+                  name: c.clientName,
+                  coach_name: c.onboardingCoach || null,
+                  program: c.onboardingProgram || null,
+                  offer: c.onboardingOffer || null,
+                  start_date: c.onboardingStartDate || null,
+                  end_date: c.onboardingEndDate || null,
+                  status: "active",
+                  onboarding_date: payload.date,
+                  onboarding_status: "onboarded",
+                  onboarding_fathom_link: c.onboardingFathomLink || null,
+                  sales_person: c.onboardingSalesPerson || null,
+                  comments: c.onboardingPaymentComments || null,
+                  amount_paid: 0,
+                  email: null,
+                  payment_platform: null,
+                  sales_fathom_link: null,
+                };
 
-              // Update clients matching this name (could match multiple if same name, different coach)
-              await db
-                .from("clients")
-                .update(updateData)
-                .eq("name", c.clientName)
-                .is("onboarding_date", null); // Only update if not already onboarded
+                await db.from("clients").insert(newClient);
+              } else {
+                // For no_show / rescheduled: update existing client records if any
+                const updateData: Record<string, unknown> = {
+                  onboarding_status: c.onboardingStatus,
+                };
+
+                await db
+                  .from("clients")
+                  .update(updateData)
+                  .eq("name", c.clientName)
+                  .is("onboarding_date", null);
+              }
             }
           }
         }
