@@ -15,7 +15,7 @@ export default function LoginPage() {
       }}
     >
       <div
-        className="glass glow-accent fade-up"
+        className="glass glow-accent"
         style={{
           padding: 48,
           maxWidth: 400,
