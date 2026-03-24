@@ -154,6 +154,7 @@ export interface EODClientCheckin {
   onboardingProgram?: string; // '6 Weeks' | '12 Weeks' | '24 Weeks' | '48 Weeks'
   onboardingOffer?: string; // 'Tyson' | 'Keith' | etc.
   onboardingSalesPerson?: string;
+  onboardingEmail?: string;
   onboardingFathomLink?: string;
   onboardingPaymentComments?: string;
 }
