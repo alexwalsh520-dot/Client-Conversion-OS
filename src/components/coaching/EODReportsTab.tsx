@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { FileText, Plus, X, CheckCircle, XCircle, Video, Calendar, UserCheck, UserX, Clock } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { FileText, Plus, X, CheckCircle, XCircle, Video, Calendar, UserCheck, UserX, Clock, ChevronDown } from "lucide-react";
 import type { Client, CoachEODReport, EODClientCheckin } from "@/lib/types";
 
 interface CalendarEvent {
@@ -29,10 +29,41 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     role: "coach",
     date: new Date().toISOString().split("T")[0],
     clientCheckins: [],
+    newClientNames: [],
+    deactivatedClientNames: [],
   });
 
-  // Sync form role with filter — when user filters to "onboarding" and opens form,
-  // default to onboarding role and pre-fill Nicole's name
+  const activeClients = clients.filter((c) => c.status === "active");
+
+  // Get unique coach names from active clients
+  const coachNames = useMemo(() => {
+    const names = new Set(activeClients.map((c) => c.coachName).filter(Boolean));
+    return Array.from(names).sort();
+  }, [activeClients]);
+
+  // Clients for the selected coach
+  const coachActiveClients = useMemo(() => {
+    if (!formData.submittedBy) return [];
+    return activeClients.filter((c) => c.coachName === formData.submittedBy);
+  }, [activeClients, formData.submittedBy]);
+
+  // Auto-calculated active client count for coaches
+  const autoActiveCount = coachActiveClients.length;
+
+  // Recently onboarded clients assigned to this coach (for "New Clients" dropdown)
+  // These are clients onboarded in last 7 days that are assigned to this coach
+  const recentlyOnboardedForCoach = useMemo(() => {
+    if (!formData.submittedBy || formData.role !== "coach") return [];
+    const now = new Date();
+    return activeClients.filter((c) => {
+      if (c.coachName !== formData.submittedBy) return false;
+      if (!c.onboardingDate) return false;
+      const diff = Math.ceil((now.getTime() - new Date(c.onboardingDate).getTime()) / (1000 * 60 * 60 * 24));
+      return diff >= 0 && diff <= 7;
+    });
+  }, [activeClients, formData.submittedBy, formData.role]);
+
+  // Sync form role with filter
   const openForm = () => {
     const defaultRole = roleFilter === "onboarding" ? "onboarding" : roleFilter === "coach" ? "coach" : "coach";
     const isOnboarding = defaultRole === "onboarding";
@@ -40,18 +71,18 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       role: defaultRole as "coach" | "onboarding",
       date: new Date().toISOString().split("T")[0],
       clientCheckins: [],
+      newClientNames: [],
+      deactivatedClientNames: [],
       submittedBy: isOnboarding ? "Nicole" : "",
     });
     setShowForm(true);
   };
 
-  const activeClients = clients.filter((c) => c.status === "active");
-
   const filtered = roleFilter === "all"
     ? reports
     : reports.filter((r) => r.role === roleFilter);
 
-  // When role changes, pre-populate client checkins for coaches
+  // When coach name changes, pre-populate client checkins
   const initCheckins = (coachName: string) => {
     const coachClients = activeClients.filter((c) => c.coachName === coachName);
     return coachClients.map((c) => ({
@@ -77,21 +108,10 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to fetch calendar");
         setCalendarEvents(data.events || []);
-
-        // Auto-populate onboarding checkins from calendar events
-        const checkins: EODClientCheckin[] = (data.events || []).map((evt: CalendarEvent) => ({
-          eodId: 0,
-          clientName: evt.clientName,
-          checkedIn: false,
-          notes: "",
-          onboardingStatus: "onboarded" as const,
-        }));
-        setFormData((prev) => ({ ...prev, clientCheckins: checkins }));
       } catch (err) {
         console.error("Calendar fetch error:", err);
         const msg = err instanceof Error ? err.message : "Unknown error";
         setCalendarError(`Calendar error: ${msg}. You can add clients manually.`);
-        setFormData((prev) => ({ ...prev, clientCheckins: [] }));
       } finally {
         setCalendarLoading(false);
       }
@@ -102,9 +122,18 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
 
   const handleSubmit = async () => {
     if (!formData.submittedBy || !formData.date) return;
-    await onSubmit(formData);
+
+    // Auto-set active client count for coaches
+    const submitData = {
+      ...formData,
+      activeClientCount: formData.role === "coach" ? autoActiveCount : 0,
+      newClients: (formData.newClientNames || []).length,
+      accountsDeactivated: (formData.deactivatedClientNames || []).length,
+    };
+
+    await onSubmit(submitData);
     setShowForm(false);
-    setFormData({ role: "coach", date: new Date().toISOString().split("T")[0], clientCheckins: [] });
+    setFormData({ role: "coach", date: new Date().toISOString().split("T")[0], clientCheckins: [], newClientNames: [], deactivatedClientNames: [] });
     setCalendarEvents([]);
   };
 
@@ -130,28 +159,43 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     setFormData({ ...formData, clientCheckins: checkins });
   };
 
-  const addManualOnboardingClient = () => {
-    const checkins = [...(formData.clientCheckins || [])];
-    checkins.push({
-      eodId: 0,
-      clientName: "",
-      checkedIn: false,
-      notes: "",
-      onboardingStatus: "onboarded" as const,
-    });
-    setFormData({ ...formData, clientCheckins: checkins });
-  };
-
   const removeCheckin = (idx: number) => {
     const checkins = [...(formData.clientCheckins || [])];
     checkins.splice(idx, 1);
     setFormData({ ...formData, clientCheckins: checkins });
   };
 
-  const updateCheckinName = (idx: number, name: string) => {
+  // Toggle a client in a multi-select name array
+  const toggleNameInList = (field: "newClientNames" | "deactivatedClientNames", name: string) => {
+    const current = formData[field] || [];
+    const updated = current.includes(name)
+      ? current.filter((n) => n !== name)
+      : [...current, name];
+    setFormData({ ...formData, [field]: updated });
+  };
+
+  // For Nicole: add a calendar client to onboarding checkins
+  const addCalendarClientToCheckins = (clientName: string) => {
+    const checkins = formData.clientCheckins || [];
+    // Don't add duplicates
+    if (checkins.some((c) => c.clientName === clientName)) return;
+    setFormData({
+      ...formData,
+      newClientNames: [...(formData.newClientNames || []), clientName],
+      clientCheckins: [
+        ...checkins,
+        { eodId: 0, clientName, checkedIn: false, notes: "", onboardingStatus: "onboarded" as const },
+      ],
+    });
+  };
+
+  // For Nicole: remove from checkins and names
+  const removeOnboardingClient = (idx: number) => {
     const checkins = [...(formData.clientCheckins || [])];
-    checkins[idx] = { ...checkins[idx], clientName: name };
-    setFormData({ ...formData, clientCheckins: checkins });
+    const removedName = checkins[idx]?.clientName;
+    checkins.splice(idx, 1);
+    const names = (formData.newClientNames || []).filter((n) => n !== removedName);
+    setFormData({ ...formData, clientCheckins: checkins, newClientNames: names });
   };
 
   const onboardingStatusColor = (status?: string) => {
@@ -190,6 +234,8 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     }
   };
 
+  // ============ RENDER ============
+
   return (
     <div>
       {/* KPIs */}
@@ -226,7 +272,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         </button>
       </div>
 
-      {/* Submit Form */}
+      {/* ======================== SUBMIT FORM ======================== */}
       {showForm && (
         <div className="glass-static" style={{ padding: 20, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -236,17 +282,33 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </button>
           </div>
 
+          {/* Row 1: Name, Role, Date */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <div>
               <label className="field-label">Your Name *</label>
-              <input className="input-field" value={formData.submittedBy || ""} onChange={(e) => {
-                const name = e.target.value;
-                setFormData({
-                  ...formData,
-                  submittedBy: name,
-                  clientCheckins: formData.role === "coach" ? initCheckins(name) : (formData.clientCheckins || []),
-                });
-              }} />
+              {formData.role === "onboarding" ? (
+                <input className="input-field" value="Nicole" readOnly style={{ opacity: 0.7 }} />
+              ) : (
+                <select
+                  className="input-field"
+                  value={formData.submittedBy || ""}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setFormData({
+                      ...formData,
+                      submittedBy: name,
+                      clientCheckins: name ? initCheckins(name) : [],
+                      newClientNames: [],
+                      deactivatedClientNames: [],
+                    });
+                  }}
+                >
+                  <option value="">Select coach...</option>
+                  {coachNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="field-label">Role *</label>
@@ -256,6 +318,8 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                   ...formData,
                   role,
                   clientCheckins: [],
+                  newClientNames: [],
+                  deactivatedClientNames: [],
                   submittedBy: role === "onboarding" ? "Nicole" : (formData.submittedBy === "Nicole" ? "" : formData.submittedBy),
                 });
               }}>
@@ -267,28 +331,237 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
               <label className="field-label">Date *</label>
               <input className="input-field" type="date" value={formData.date || ""} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
-            <div>
-              <label className="field-label">Active Client Count</label>
-              <input className="input-field" type="number" value={formData.activeClientCount || ""} onChange={(e) => setFormData({ ...formData, activeClientCount: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="field-label">New Clients</label>
-              <input className="input-field" type="number" value={formData.newClients || ""} onChange={(e) => setFormData({ ...formData, newClients: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="field-label">Accounts Deactivated</label>
-              <input className="input-field" type="number" value={formData.accountsDeactivated || ""} onChange={(e) => setFormData({ ...formData, accountsDeactivated: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="field-label">Hours Logged</label>
-              <input className="input-field" type="number" step="0.5" value={formData.hoursLogged || ""} onChange={(e) => setFormData({ ...formData, hoursLogged: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="field-label">How are you feeling today?</label>
-              <input className="input-field" value={formData.feelingToday || ""} onChange={(e) => setFormData({ ...formData, feelingToday: e.target.value })} />
-            </div>
           </div>
 
+          {/* ==================== COACH-SPECIFIC FIELDS ==================== */}
+          {formData.role === "coach" && formData.submittedBy && (
+            <>
+              {/* Row 2: Active Count (auto), New Clients (dropdown), Deactivated (dropdown) */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label className="field-label">Active Client Count</label>
+                  <div className="input-field" style={{ display: "flex", alignItems: "center", opacity: 0.7, cursor: "default" }}>
+                    {autoActiveCount}
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>(auto)</span>
+                  </div>
+                </div>
+
+                {/* New Clients Multi-Select */}
+                <div>
+                  <label className="field-label">New Clients Assigned</label>
+                  <MultiSelectDropdown
+                    options={recentlyOnboardedForCoach.map((c) => c.name)}
+                    selected={formData.newClientNames || []}
+                    onToggle={(name) => toggleNameInList("newClientNames", name)}
+                    placeholder={recentlyOnboardedForCoach.length === 0 ? "No recent onboardings" : "Select new clients..."}
+                    emptyText="No recently onboarded clients for this coach"
+                  />
+                </div>
+
+                {/* Accounts Deactivated Multi-Select */}
+                <div>
+                  <label className="field-label">Accounts Deactivated</label>
+                  <MultiSelectDropdown
+                    options={coachActiveClients.map((c) => c.name)}
+                    selected={formData.deactivatedClientNames || []}
+                    onToggle={(name) => toggleNameInList("deactivatedClientNames", name)}
+                    placeholder="Select clients..."
+                    emptyText="No active clients"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Hours, Feeling */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label className="field-label">Hours Logged</label>
+                  <input className="input-field" type="number" step="0.5" value={formData.hoursLogged || ""} onChange={(e) => setFormData({ ...formData, hoursLogged: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="field-label">How are you feeling today?</label>
+                  <input className="input-field" value={formData.feelingToday || ""} onChange={(e) => setFormData({ ...formData, feelingToday: e.target.value })} />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ==================== ONBOARDING (NICOLE) SPECIFIC FIELDS ==================== */}
+          {formData.role === "onboarding" && (
+            <>
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <label className="field-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Calendar size={14} /> Today&apos;s Onboarding Clients
+                  </label>
+                </div>
+
+                {calendarLoading && (
+                  <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                    Loading calendar events...
+                  </div>
+                )}
+
+                {calendarError && (
+                  <div style={{ padding: 10, marginBottom: 8, fontSize: 12, color: "var(--warning)", background: "rgba(201, 169, 110, 0.1)", borderRadius: 6 }}>
+                    {calendarError}
+                  </div>
+                )}
+
+                {/* Calendar client dropdown */}
+                {!calendarLoading && calendarEvents.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {calendarEvents.map((evt) => {
+                        const alreadyAdded = (formData.clientCheckins || []).some(
+                          (c) => c.clientName === evt.clientName
+                        );
+                        return (
+                          <button
+                            key={evt.id}
+                            onClick={() => !alreadyAdded && addCalendarClientToCheckins(evt.clientName)}
+                            disabled={alreadyAdded}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "8px 14px",
+                              borderRadius: 8,
+                              fontSize: 13,
+                              fontWeight: 500,
+                              cursor: alreadyAdded ? "default" : "pointer",
+                              border: alreadyAdded
+                                ? "1px solid var(--success)"
+                                : "1px solid var(--accent)",
+                              background: alreadyAdded
+                                ? "rgba(126, 201, 160, 0.15)"
+                                : "rgba(201, 169, 110, 0.1)",
+                              color: alreadyAdded ? "var(--success)" : "var(--accent)",
+                              opacity: alreadyAdded ? 0.7 : 1,
+                            }}
+                          >
+                            {alreadyAdded ? <CheckCircle size={14} /> : <Plus size={14} />}
+                            {evt.clientName}
+                            {evt.start && (
+                              <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>
+                                {(() => {
+                                  try {
+                                    return new Date(evt.start).toLocaleTimeString("en-US", {
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      timeZone: "America/New_York",
+                                    });
+                                  } catch {
+                                    return "";
+                                  }
+                                })()}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {!calendarLoading && calendarEvents.length === 0 && !calendarError && (
+                  <div style={{ padding: 12, textAlign: "center", color: "var(--text-muted)", fontSize: 13, background: "var(--bg-glass)", borderRadius: 8, marginBottom: 12 }}>
+                    No onboarding events found on the calendar for this date.
+                  </div>
+                )}
+
+                {/* Added onboarding clients with status controls */}
+                {(formData.clientCheckins || []).length > 0 && (
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    {formData.clientCheckins?.map((checkin, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: "10px 12px",
+                          background: onboardingStatusBg(checkin.onboardingStatus),
+                          borderRadius: 8,
+                          border: `1px solid ${onboardingStatusColor(checkin.onboardingStatus)}22`,
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, flex: 1 }}>
+                            {checkin.clientName}
+                          </span>
+                          <button
+                            onClick={() => removeOnboardingClient(idx)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }}
+                            title="Remove"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        {/* Onboarding status buttons */}
+                        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                          {(["onboarded", "no_show", "rescheduled"] as const).map((status) => (
+                            <button
+                              key={status}
+                              onClick={() => updateOnboardingStatus(idx, status)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "4px 10px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                border: checkin.onboardingStatus === status
+                                  ? `2px solid ${onboardingStatusColor(status)}`
+                                  : "1px solid rgba(255,255,255,0.1)",
+                                background: checkin.onboardingStatus === status
+                                  ? onboardingStatusBg(status)
+                                  : "transparent",
+                                color: checkin.onboardingStatus === status
+                                  ? onboardingStatusColor(status)
+                                  : "var(--text-muted)",
+                              }}
+                            >
+                              {onboardingStatusIcon(status)}
+                              {onboardingStatusLabel(status)}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Notes */}
+                        <input
+                          className="input-field"
+                          placeholder={
+                            checkin.onboardingStatus === "rescheduled"
+                              ? "Reason for reschedule / new date..."
+                              : checkin.onboardingStatus === "no_show"
+                              ? "Any follow-up notes..."
+                              : "Notes..."
+                          }
+                          value={checkin.notes}
+                          onChange={(e) => updateCheckinNote(idx, e.target.value)}
+                          style={{ fontSize: 12, padding: "4px 8px", width: "100%" }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Nicole's other fields */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label className="field-label">Hours Logged</label>
+                  <input className="input-field" type="number" step="0.5" value={formData.hoursLogged || ""} onChange={(e) => setFormData({ ...formData, hoursLogged: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="field-label">How are you feeling today?</label>
+                  <input className="input-field" value={formData.feelingToday || ""} onChange={(e) => setFormData({ ...formData, feelingToday: e.target.value })} />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ==================== SHARED FIELDS ==================== */}
           <div style={{ marginTop: 12 }}>
             <label className="field-label">Community Engagement</label>
             <textarea className="input-field" rows={2} value={formData.communityEngagement || ""} onChange={(e) => setFormData({ ...formData, communityEngagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
@@ -304,7 +577,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             <textarea className="input-field" rows={2} value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
           </div>
 
-          {/* Video Testimonial */}
+          {/* Video Testimonial (coaches only) */}
           {formData.role === "coach" && (
             <div style={{ marginTop: 12, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -331,7 +604,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                     onChange={(e) => setFormData({ ...formData, videoTestimonialClient: e.target.value })}
                   >
                     <option value="">Select client...</option>
-                    {activeClients.filter((c) => c.coachName === formData.submittedBy).map((c) => (
+                    {coachActiveClients.map((c) => (
                       <option key={c.name} value={c.name}>{c.name}</option>
                     ))}
                   </select>
@@ -343,7 +616,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           {/* Client Checkins (for coaches) */}
           {formData.role === "coach" && (formData.clientCheckins?.length || 0) > 0 && (
             <div style={{ marginTop: 16 }}>
-              <label className="field-label">Client Check-ins</label>
+              <label className="field-label">Client Check-ins ({formData.clientCheckins?.length} clients)</label>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                 {formData.clientCheckins?.map((checkin, idx) => (
                   <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 10px", background: "var(--bg-glass)", borderRadius: 6 }}>
@@ -369,129 +642,6 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </div>
           )}
 
-          {/* Onboarding Checkins (for Nicole) */}
-          {formData.role === "onboarding" && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <label className="field-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Calendar size={14} /> Today&apos;s Onboarding Clients
-                </label>
-                <button
-                  className="btn-secondary"
-                  onClick={addManualOnboardingClient}
-                  style={{ fontSize: 12, padding: "4px 10px" }}
-                >
-                  <Plus size={12} /> Add Client
-                </button>
-              </div>
-
-              {calendarLoading && (
-                <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                  Loading calendar events...
-                </div>
-              )}
-
-              {calendarError && (
-                <div style={{ padding: 10, marginBottom: 8, fontSize: 12, color: "var(--warning)", background: "rgba(201, 169, 110, 0.1)", borderRadius: 6 }}>
-                  {calendarError}
-                </div>
-              )}
-
-              {!calendarLoading && (formData.clientCheckins?.length || 0) === 0 && (
-                <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13, background: "var(--bg-glass)", borderRadius: 8 }}>
-                  {calendarEvents.length === 0
-                    ? "No onboarding events found on the calendar for this date. Add clients manually."
-                    : "No clients to display."}
-                </div>
-              )}
-
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                {formData.clientCheckins?.map((checkin, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: "10px 12px",
-                      background: onboardingStatusBg(checkin.onboardingStatus),
-                      borderRadius: 8,
-                      border: `1px solid ${onboardingStatusColor(checkin.onboardingStatus)}22`,
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                      {/* Client name - editable for manually added, read-only for calendar */}
-                      {calendarEvents.some((e) => e.clientName === checkin.clientName) ? (
-                        <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, flex: 1 }}>
-                          {checkin.clientName}
-                        </span>
-                      ) : (
-                        <input
-                          className="input-field"
-                          placeholder="Client name..."
-                          value={checkin.clientName}
-                          onChange={(e) => updateCheckinName(idx, e.target.value)}
-                          style={{ flex: 1, fontSize: 13, padding: "4px 8px", fontWeight: 600 }}
-                        />
-                      )}
-                      <button
-                        onClick={() => removeCheckin(idx)}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }}
-                        title="Remove"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-
-                    {/* Onboarding status buttons */}
-                    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                      {(["onboarded", "no_show", "rescheduled"] as const).map((status) => (
-                        <button
-                          key={status}
-                          onClick={() => updateOnboardingStatus(idx, status)}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "4px 10px",
-                            borderRadius: 6,
-                            fontSize: 12,
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            border: checkin.onboardingStatus === status
-                              ? `2px solid ${onboardingStatusColor(status)}`
-                              : "1px solid rgba(255,255,255,0.1)",
-                            background: checkin.onboardingStatus === status
-                              ? onboardingStatusBg(status)
-                              : "transparent",
-                            color: checkin.onboardingStatus === status
-                              ? onboardingStatusColor(status)
-                              : "var(--text-muted)",
-                          }}
-                        >
-                          {onboardingStatusIcon(status)}
-                          {onboardingStatusLabel(status)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Notes */}
-                    <input
-                      className="input-field"
-                      placeholder={
-                        checkin.onboardingStatus === "rescheduled"
-                          ? "Reason for reschedule / new date..."
-                          : checkin.onboardingStatus === "no_show"
-                          ? "Any follow-up notes..."
-                          : "Notes..."
-                      }
-                      value={checkin.notes}
-                      onChange={(e) => updateCheckinNote(idx, e.target.value)}
-                      style={{ fontSize: 12, padding: "4px 8px", width: "100%" }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <button className="btn-primary" onClick={handleSubmit}>Submit Report</button>
             <button className="btn-secondary" onClick={() => { setShowForm(false); setCalendarEvents([]); }}>Cancel</button>
@@ -499,7 +649,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
         </div>
       )}
 
-      {/* Report History */}
+      {/* ======================== REPORT HISTORY ======================== */}
       {filtered.map((report) => (
         <div key={report.id} className="glass-static" style={{ padding: 16, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -520,9 +670,21 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           </div>
 
           <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)", marginBottom: 8, flexWrap: "wrap" }}>
-            <span>Active: <strong>{report.activeClientCount}</strong></span>
-            {report.newClients > 0 && <span>New: <strong style={{ color: "var(--success)" }}>{report.newClients}</strong></span>}
-            {report.accountsDeactivated > 0 && <span>Deactivated: <strong style={{ color: "var(--danger)" }}>{report.accountsDeactivated}</strong></span>}
+            {report.role === "coach" && <span>Active: <strong>{report.activeClientCount}</strong></span>}
+            {(report.newClientNames?.length > 0 || report.newClients > 0) && (
+              <span>
+                New: <strong style={{ color: "var(--success)" }}>
+                  {report.newClientNames?.length > 0 ? report.newClientNames.join(", ") : report.newClients}
+                </strong>
+              </span>
+            )}
+            {(report.deactivatedClientNames?.length > 0 || report.accountsDeactivated > 0) && (
+              <span>
+                Deactivated: <strong style={{ color: "var(--danger)" }}>
+                  {report.deactivatedClientNames?.length > 0 ? report.deactivatedClientNames.join(", ") : report.accountsDeactivated}
+                </strong>
+              </span>
+            )}
             <span>Hours: <strong>{report.hoursLogged}h</strong></span>
           </div>
 
@@ -532,7 +694,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </div>
           )}
 
-          {/* Client checkins - show differently for onboarding vs coach */}
+          {/* Client checkins */}
           {report.clientCheckins && report.clientCheckins.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>
@@ -590,6 +752,138 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ============ Multi-Select Dropdown Component ============
+
+function MultiSelectDropdown({
+  options,
+  selected,
+  onToggle,
+  placeholder,
+  emptyText,
+}: {
+  options: string[];
+  selected: string[];
+  onToggle: (name: string) => void;
+  placeholder: string;
+  emptyText: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <div
+        className="input-field"
+        onClick={() => options.length > 0 && setOpen(!open)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: options.length > 0 ? "pointer" : "default",
+          minHeight: 38,
+          flexWrap: "wrap",
+          gap: 4,
+        }}
+      >
+        {selected.length === 0 ? (
+          <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{placeholder}</span>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {selected.map((name) => (
+              <span
+                key={name}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: "rgba(201, 169, 110, 0.2)",
+                  color: "var(--accent)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                {name}
+                <X
+                  size={10}
+                  style={{ cursor: "pointer" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle(name);
+                  }}
+                />
+              </span>
+            ))}
+          </div>
+        )}
+        <ChevronDown size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+      </div>
+
+      {open && (
+        <>
+          {/* Backdrop to close dropdown */}
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 998 }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              zIndex: 999,
+              background: "var(--bg-secondary, #1a1a1a)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              marginTop: 4,
+              maxHeight: 200,
+              overflowY: "auto",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            {options.length === 0 ? (
+              <div style={{ padding: 12, fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+                {emptyText}
+              </div>
+            ) : (
+              options.map((name) => (
+                <div
+                  key={name}
+                  onClick={() => onToggle(name)}
+                  style={{
+                    padding: "8px 12px",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    color: selected.includes(name) ? "var(--accent)" : "var(--text-primary)",
+                    background: selected.includes(name) ? "rgba(201, 169, 110, 0.1)" : "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.target as HTMLElement).style.background = "rgba(201, 169, 110, 0.15)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.target as HTMLElement).style.background = selected.includes(name) ? "rgba(201, 169, 110, 0.1)" : "transparent";
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(name)}
+                    readOnly
+                    style={{ accentColor: "var(--accent)", pointerEvents: "none" }}
+                  />
+                  {name}
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

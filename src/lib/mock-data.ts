@@ -2640,7 +2640,7 @@ export const mockMeetings: CoachMeeting[] = [
 export const mockEODReports: CoachEODReport[] = [
   {
     id: 1, submittedBy: "Stef Hughes", role: "coach", date: "2026-03-16",
-    activeClientCount: 8, newClients: 1, accountsDeactivated: 0,
+    activeClientCount: 8, newClients: 1, newClientNames: ["Jakob Padgett"], accountsDeactivated: 0, deactivatedClientNames: [],
     communityEngagement: "Reading through community groups and reacting to posts on Everfit and Slack. Commented on Nicole's post on Everfit forum.",
     summary: "Sent messages to all clients; Matthew and Ryan have been quiet, but sent them each a message. Sent introduction message to Jakob. Waiting for Jakob to respond. Nathan needs to fill out nutrition forms (reminded him). Marcus came back, said he will give a TP review.",
     questionsForManagement: "Nothing today",
@@ -2658,7 +2658,7 @@ export const mockEODReports: CoachEODReport[] = [
   },
   {
     id: 2, submittedBy: "Nicole", role: "onboarding", date: "2026-03-16",
-    activeClientCount: 0, newClients: 2, accountsDeactivated: 0,
+    activeClientCount: 0, newClients: 2, newClientNames: ["Jakob Padgett", "Ethan Escobedo"], accountsDeactivated: 0, deactivatedClientNames: [],
     communityEngagement: "",
     summary: "Onboarded Jakob Padgett and Ethan Escobedo. Michael Blake refunded ($1820). Hunter Olsen cancelled. Updated refunds/cancellation tracker, sales info added to client tracker, nutrition info copied, GHL conversations checked, Skool summary done.",
     questionsForManagement: "",
@@ -2666,7 +2666,7 @@ export const mockEODReports: CoachEODReport[] = [
   },
   {
     id: 3, submittedBy: "Ignacio", role: "coach", date: "2026-03-16",
-    activeClientCount: 18, newClients: 0, accountsDeactivated: 0,
+    activeClientCount: 18, newClients: 0, newClientNames: [], accountsDeactivated: 0, deactivatedClientNames: [],
     communityEngagement: "Posted workout tip in Everfit community. Replied to 5 client posts.",
     summary: "All clients checked in. Marcus hit a PR this week — great progress. Brandon W still needs monitoring. Team standup went well.",
     questionsForManagement: "Can we discuss Waleed's client load at next meeting?",

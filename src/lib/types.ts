@@ -124,7 +124,9 @@ export interface CoachEODReport {
   date: string;
   activeClientCount: number;
   newClients: number;
+  newClientNames: string[]; // Names of new clients (dropdown selections)
   accountsDeactivated: number;
+  deactivatedClientNames: string[]; // Names of deactivated clients (dropdown selections)
   communityEngagement: string;
   summary: string;
   questionsForManagement: string;

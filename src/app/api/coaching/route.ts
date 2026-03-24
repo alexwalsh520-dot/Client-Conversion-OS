@@ -210,13 +210,17 @@ export async function POST(req: NextRequest) {
       // ---- EOD Reports ----
       case "submit_eod": {
         // Insert the main report
+        const newClientNames = payload.newClientNames || [];
+        const deactivatedClientNames = payload.deactivatedClientNames || [];
         const reportRow = {
           submitted_by: payload.submittedBy,
           role: payload.role,
           date: payload.date,
           active_client_count: payload.activeClientCount || 0,
-          new_clients: payload.newClients || 0,
-          accounts_deactivated: payload.accountsDeactivated || 0,
+          new_clients: newClientNames.length || payload.newClients || 0,
+          new_client_names: JSON.stringify(newClientNames),
+          accounts_deactivated: deactivatedClientNames.length || payload.accountsDeactivated || 0,
+          deactivated_client_names: JSON.stringify(deactivatedClientNames),
           community_engagement: payload.communityEngagement || "",
           summary: payload.summary || "",
           questions_for_management: payload.questionsForManagement || "",
