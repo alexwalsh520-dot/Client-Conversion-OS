@@ -170,9 +170,30 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     setFormData({ ...formData, clientCheckins: checkins });
   };
 
+  const calcEndDate = (startDate: string, program: string): string => {
+    if (!startDate || !program) return "";
+    const weeksMatch = program.match(/(\d+)/);
+    if (!weeksMatch) return "";
+    const weeks = parseInt(weeksMatch[1], 10);
+    const start = new Date(startDate);
+    start.setDate(start.getDate() + weeks * 7);
+    return start.toISOString().split("T")[0];
+  };
+
   const updateOnboardingDetail = (idx: number, field: string, value: string) => {
     const checkins = [...(formData.clientCheckins || [])];
     checkins[idx] = { ...checkins[idx], [field]: value };
+
+    // Auto-calculate end date when start date or program duration changes
+    if (field === "onboardingStartDate" || field === "onboardingProgram") {
+      const startDate = field === "onboardingStartDate" ? value : checkins[idx].onboardingStartDate || "";
+      const program = field === "onboardingProgram" ? value : checkins[idx].onboardingProgram || "";
+      const endDate = calcEndDate(startDate, program);
+      if (endDate) {
+        checkins[idx] = { ...checkins[idx], [field]: value, onboardingEndDate: endDate };
+      }
+    }
+
     setFormData({ ...formData, clientCheckins: checkins });
   };
 
