@@ -8,6 +8,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import { fetchSheetData } from "@/lib/google-sheets";
+import { listMeetings } from "@/lib/fathom";
+import { getMessages as getSendBlueMessages } from "@/lib/sendblue";
 
 // âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -225,59 +228,82 @@ export const AGENT_TOOLS: AgentTool[] = [
 // âââ Tool Execution ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async function executeTool(toolName: string, input: Record<string, unknown>): Promise<string> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
-
   try {
     switch (toolName) {
-      case "get_sales_dashboard": {
-        const paramsObj: Record<string, string> = {
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string,
-        };
-        if (input.client) paramsObj.client = input.client as string;
-        const params = new URLSearchParams(paramsObj);
-        const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}`);
-        const data = await res.json();
-        return JSON.stringify(data);
-      }
+      case "get_sales_dashboard":
+      case "get_closer_performance":
+      case "get_setter_performance":
+      case "get_no_show_analysis":
+      case "get_bottleneck_analysis": {
+        // All use Google Sheets data directly — no HTTP calls
+        const rows = await fetchSheetData(
+          input.dateFrom as string,
+          input.dateTo as string
+        );
 
-      case "get_closer_performance": {
-        const closerParams: Record<string, string> = {
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string,
-        };
-        if (input.closer && input.closer !== "all") closerParams.closer = input.closer as string;
-        const params = new URLSearchParams(closerParams);
-        const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=closers`);
-        const data = await res.json();
-        return JSON.stringify(data);
-      }
+        // Filter by client if specified
+        let filtered = rows;
+        if (input.client && input.client !== "both") {
+          const clientName = input.client === "tyson" ? "Tyson Sonnek" : "Keith Holland";
+          filtered = rows.filter(r => r.offer === clientName);
+        }
 
-      case "get_setter_performance": {
-        const setterParams: Record<string, string> = {
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string,
+        // Filter by closer if specified
+        if (input.closer && input.closer !== "all") {
+          filtered = filtered.filter(r =>
+            (r.closer || "").toLowerCase().includes((input.closer as string).toLowerCase())
+          );
+        }
+
+        // Filter by setter if specified
+        if (input.setter && input.setter !== "all") {
+          filtered = filtered.filter(r =>
+            (r.setter || "").toLowerCase().includes((input.setter as string).toLowerCase())
+          );
+        }
+
+        // Compute aggregate metrics
+        const taken = filtered.filter(r => r.callTaken);
+        const wins = filtered.filter(r => r.outcome === "WIN");
+        const losses = filtered.filter(r => r.outcome === "LOST");
+        const noShows = filtered.filter(r => r.outcome === "NS/RS" || r.outcome === "NS");
+        const pcfu = filtered.filter(r => r.outcome === "PCFU");
+        const cash = filtered.reduce((sum, r) => sum + (r.cashCollected || 0), 0);
+        const revenue = filtered.reduce((sum, r) => sum + (r.revenue || 0), 0);
+
+        const result = {
+          totalRows: filtered.length,
+          callsTaken: taken.length,
+          wins: wins.length,
+          losses: losses.length,
+          noShows: noShows.length,
+          pcfu: pcfu.length,
+          cashCollected: cash,
+          revenue,
+          closeRate: taken.length > 0 ? Math.round((wins.length / taken.length) * 1000) / 10 : 0,
+          showRate: filtered.length > 0 ? Math.round((taken.length / filtered.length) * 1000) / 10 : 0,
+          aov: wins.length > 0 ? Math.round(cash / wins.length) : 0,
+          rows: filtered.map(r => ({
+            date: r.date, name: r.name, closer: r.closer, setter: r.setter,
+            outcome: r.outcome, cashCollected: r.cashCollected, revenue: r.revenue,
+            offer: r.offer, objection: r.objection, callNotes: r.callNotes,
+            callLength: r.callLength, callTaken: r.callTaken
+          }))
         };
-        if (input.setter && input.setter !== "all") setterParams.setter = input.setter as string;
-        const params = new URLSearchParams(setterParams);
-        const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=setters`);
-        const data = await res.json();
-        return JSON.stringify(data);
+        return JSON.stringify(result);
       }
 
       case "get_dm_transcripts": {
         const supabase = getSupabase();
-        const query = supabase
+        let query = supabase
           .from("dm_transcripts")
           .select("*")
           .ilike("setter_name", `%${input.setter}%`)
-          .order("created_at", { ascending: false })
+          .order("submitted_at", { ascending: false })
           .limit((input.limit as number) || 10);
 
-        if (input.dateFrom) query.gte("created_at", input.dateFrom);
-        if (input.dateTo) query.lte("created_at", input.dateTo);
+        if (input.dateFrom) query = query.gte("submitted_at", `${input.dateFrom}T00:00:00Z`);
+        if (input.dateTo) query = query.lte("submitted_at", `${input.dateTo}T23:59:59Z`);
 
         const { data, error } = await query;
         if (error) return JSON.stringify({ error: error.message });
@@ -285,20 +311,61 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
       }
 
       case "get_call_transcripts": {
-        const callParams: Record<string, string> = {
-          closer: input.closer as string,
-          includeTranscript: String(input.includeTranscript ?? true),
+        // Use Fathom lib directly — no HTTP
+        const opts: { createdAfter?: string; createdBefore?: string; includeTranscript?: boolean } = {
+          includeTranscript: input.includeTranscript !== false,
         };
-        if (input.dateFrom) callParams.dateFrom = input.dateFrom as string;
-        if (input.dateTo) callParams.dateTo = input.dateTo as string;
-        const params = new URLSearchParams(callParams);
-        const res = await fetch(`${baseUrl}/api/sales-hub/fathom-calls?${params}`);
-        const data = await res.json();
-        const limited = Array.isArray(data) ? data.slice(0, (input.limit as number) || 5) : data;
+        if (input.dateFrom) opts.createdAfter = `${input.dateFrom}T00:00:00Z`;
+        if (input.dateTo) opts.createdBefore = `${input.dateTo}T23:59:59Z`;
+
+        const meetings = await listMeetings(opts);
+
+        // Filter to sales calls (exclude internal meetings)
+        const TEAM_EMAILS = new Set([
+          "matthew@clientconversion.io", "alex@clientconversion.io", "alexwalsh520@gmail.com",
+          "brozee2019@gmail.com", "will@start2finishcoaching.com", "williamluke.buckley21@gmail.com",
+          "austinrichard6@gmail.com", "tysonnek29@gmail.com", "keithholland35@gmail.com",
+        ]);
+        const INTERNAL_TITLES = ["huddle", "training", "1:1", "management", "c suite", "setter connect", "interview"];
+
+        const salesCalls = meetings.filter(m => {
+          const title = (m.title || "").toLowerCase();
+          if (INTERNAL_TITLES.some(t => title.includes(t))) return false;
+          const hasExternal = m.calendar_invitees?.some(
+            (a: { email?: string; is_external?: boolean }) => a.is_external || !TEAM_EMAILS.has(a.email || "")
+          );
+          return hasExternal;
+        });
+
+        // Filter by closer if specified
+        let filtered = salesCalls;
+        if (input.closer) {
+          const closerLower = (input.closer as string).toLowerCase();
+          filtered = salesCalls.filter(m => {
+            if (m.title?.toLowerCase().includes(closerLower)) return true;
+            return m.calendar_invitees?.some(
+              (a: { name?: string; email?: string }) =>
+                (a.name || "").toLowerCase().includes(closerLower) ||
+                (a.email || "").toLowerCase().includes(closerLower)
+            );
+          });
+        }
+
+        const limited = filtered.slice(0, (input.limit as number) || 5);
         return JSON.stringify(limited);
       }
 
       case "get_sendblue_messages": {
+        // Try SendBlue API directly
+        if (input.phoneNumber) {
+          try {
+            const messages = await getSendBlueMessages(input.phoneNumber as string);
+            return JSON.stringify(messages);
+          } catch {
+            return JSON.stringify({ error: "SendBlue not configured or phone number invalid" });
+          }
+        }
+        // Fall back to Supabase for lead name search
         const supabase = getSupabase();
         let query = supabase
           .from("sendblue_messages")
@@ -306,7 +373,6 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
           .order("created_at", { ascending: false })
           .limit((input.limit as number) || 20);
 
-        if (input.phoneNumber) query = query.eq("phone_number", input.phoneNumber);
         if (input.leadName) query = query.ilike("lead_name", `%${input.leadName}%`);
 
         const { data, error } = await query;
@@ -314,66 +380,63 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
         return JSON.stringify(data);
       }
 
-      case "get_no_show_analysis": {
-        const params = new URLSearchParams({
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string
-        });
-        const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=no-shows`);
-        const data = await res.json();
-        return JSON.stringify(data);
-      }
-
       case "get_revenue_breakdown": {
-        const revParams: Record<string, string> = {
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string,
-        };
-        if (input.groupBy) revParams.groupBy = input.groupBy as string;
-        const params = new URLSearchParams(revParams);
-        const res = await fetch(`${baseUrl}/api/sales-hub/stripe-sales?${params}`);
-        const data = await res.json();
-        return JSON.stringify(data);
+        // Use Google Sheets directly
+        const rows = await fetchSheetData(
+          input.dateFrom as string,
+          input.dateTo as string
+        );
+        const wins = rows.filter(r => r.outcome === "WIN");
+        const byCloser: Record<string, { cash: number; count: number; revenue: number }> = {};
+        const byOffer: Record<string, { cash: number; count: number; revenue: number }> = {};
+
+        for (const r of wins) {
+          const closer = r.closer || "Unknown";
+          const offer = r.offer || "Unknown";
+          if (!byCloser[closer]) byCloser[closer] = { cash: 0, count: 0, revenue: 0 };
+          byCloser[closer].cash += r.cashCollected || 0;
+          byCloser[closer].count += 1;
+          byCloser[closer].revenue += r.revenue || 0;
+          if (!byOffer[offer]) byOffer[offer] = { cash: 0, count: 0, revenue: 0 };
+          byOffer[offer].cash += r.cashCollected || 0;
+          byOffer[offer].count += 1;
+          byOffer[offer].revenue += r.revenue || 0;
+        }
+
+        return JSON.stringify({ byCloser, byOffer, totalCash: wins.reduce((s, r) => s + (r.cashCollected || 0), 0) });
       }
 
       case "review_dm_transcript": {
-        const res = await fetch(`${baseUrl}/api/sales-hub/review-transcript`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcriptId: input.transcriptId,
-            setter: input.setter,
-            type: "dm"
-          })
+        // Fetch transcript from Supabase and review with Claude inline
+        const supabase = getSupabase();
+        const { data: transcript } = await supabase
+          .from("dm_transcripts")
+          .select("*")
+          .eq("id", input.transcriptId)
+          .single();
+
+        if (!transcript) return JSON.stringify({ error: "Transcript not found" });
+        return JSON.stringify({
+          id: transcript.id,
+          setter: transcript.setter_name,
+          client: transcript.client,
+          transcript: transcript.transcript?.substring(0, 3000),
+          note: "Transcript loaded. Analyze it in your response."
         });
-        const data = await res.json();
-        return JSON.stringify(data);
       }
 
       case "review_call_transcript": {
-        const res = await fetch(`${baseUrl}/api/sales-hub/review-transcript`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            callId: input.callId,
-            closer: input.closer,
-            type: "call"
-          })
+        // Fetch from Fathom directly
+        const meetings = await listMeetings({
+          includeTranscript: true,
+          createdAfter: new Date(Date.now() - 30 * 86400000).toISOString(),
         });
-        const data = await res.json();
-        return JSON.stringify(data);
-      }
-
-      case "get_bottleneck_analysis": {
-        const paramsObj: Record<string, string> = {
-          dateFrom: input.dateFrom as string,
-          dateTo: input.dateTo as string,
-        };
-        if (input.client) paramsObj.client = input.client as string;
-        const params = new URLSearchParams(paramsObj);
-        const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?${params}&view=bottleneck`);
-        const data = await res.json();
-        return JSON.stringify(data);
+        const call = meetings.find(m =>
+          m.url?.includes(input.callId as string) ||
+          m.recording_id?.toString() === input.callId
+        );
+        if (!call) return JSON.stringify({ error: "Call not found in Fathom" });
+        return JSON.stringify(call);
       }
 
       case "get_report_history": {
@@ -385,7 +448,7 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
           .limit((input.limit as number) || 10);
 
         if (input.type && input.type !== "all") {
-          query = query.eq("report_type", input.type);
+          query = query.eq("type", input.type);
         }
 
         const { data, error } = await query;
