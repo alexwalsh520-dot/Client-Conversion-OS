@@ -110,6 +110,11 @@ export default function CoachingPage() {
     refetchClients();
   };
 
+  const handleDeleteClient = async (clientId: number) => {
+    await apiCall("delete_client", { id: clientId });
+    refetchClients();
+  };
+
   const handleSaveMeeting = async (meeting: Partial<CoachMeeting>) => {
     await apiCall("upsert_meeting", meeting);
     refetchMeetings();
@@ -204,7 +209,7 @@ export default function CoachingPage() {
       {/* Tab Content */}
       <div className="section">
         {activeTab === "roster" && (
-          <ClientRosterTab clients={clients} pauses={pauses} onSave={handleSaveClient} />
+          <ClientRosterTab clients={clients} pauses={pauses} onSave={handleSaveClient} onDelete={handleDeleteClient} />
         )}
         {activeTab === "onboarding" && (
           <OnboardingTab clients={clients} />
