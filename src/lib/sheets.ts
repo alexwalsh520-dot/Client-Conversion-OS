@@ -693,63 +693,96 @@ function parseMilestoneValue(val: string | undefined | null): { done: boolean; d
   if (lower === "no" || lower === "n" || lower === "false" || lower === "0") {
     return { done: false, date: null };
   }
+  // Status words that mean NOT completed yet
+  if (lower === "requested" || lower === "offered" || lower === "pending" || lower === "scheduled") {
+    return { done: false, date: null };
+  }
   // Explicit yes with no date
   if (lower === "yes" || lower === "y" || lower === "true" || lower === "1") {
     return { done: true, date: null };
   }
 
-  // Try to extract month/day from various date formats
+  // Helper: check if a parsed date is in the past (completed) vs future (scheduled)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function dateResult(month: number, day: number, year?: number): { done: boolean; date: string | null } {
+    const mm = String(month).padStart(2, "0");
+    const dd = String(day).padStart(2, "0");
+    const dateStr = `${mm}/${dd}`;
+
+    // If we have a full year, compare against today
+    if (year !== undefined) {
+      // Normalise 2-digit years
+      const fullYear = year < 100 ? 2000 + year : year;
+      const parsed = new Date(fullYear, month - 1, day);
+      if (parsed > today) {
+        // Future date = scheduled, not completed
+        return { done: false, date: dateStr };
+      }
+    }
+    // Past date or no year = treat as completed
+    return { done: true, date: dateStr };
+  }
+
+  // Strip trailing question marks (e.g. "03/23/2026??")
+  const cleaned = trimmed.replace(/\?+$/, "").trim();
 
   // "M/D/YYYY" or "M/D/YY" or "M/D"
-  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?$/);
+  const slashMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
   if (slashMatch) {
-    const mm = slashMatch[1].padStart(2, "0");
-    const dd = slashMatch[2].padStart(2, "0");
-    return { done: true, date: `${mm}/${dd}` };
+    const m = parseInt(slashMatch[1], 10);
+    const d = parseInt(slashMatch[2], 10);
+    const y = slashMatch[3] ? parseInt(slashMatch[3], 10) : undefined;
+    return dateResult(m, d, y);
   }
 
   // "M.D.YY" or "M.D.YYYY" or "M.D"
-  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})(?:\.\d{2,4})?$/);
+  const dotMatch = cleaned.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/);
   if (dotMatch) {
-    const mm = dotMatch[1].padStart(2, "0");
-    const dd = dotMatch[2].padStart(2, "0");
-    return { done: true, date: `${mm}/${dd}` };
+    const m = parseInt(dotMatch[1], 10);
+    const d = parseInt(dotMatch[2], 10);
+    const y = dotMatch[3] ? parseInt(dotMatch[3], 10) : undefined;
+    return dateResult(m, d, y);
   }
 
   // "Mon D" or "Month D" (e.g. "Feb 2", "January 15")
-  const MONTH_ABBR: Record<string, string> = {
-    jan: "01", january: "01", feb: "02", february: "02", mar: "03", march: "03",
-    apr: "04", april: "04", may: "05", jun: "06", june: "06",
-    jul: "07", july: "07", aug: "08", august: "08", sep: "09", september: "09",
-    oct: "10", october: "10", nov: "11", november: "11", dec: "12", december: "12",
+  const MONTH_ABBR: Record<string, number> = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+    apr: 4, april: 4, may: 5, jun: 6, june: 6,
+    jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9,
+    oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
   };
-  const monthMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,?\s*\d{2,4})?$/);
+  const monthMatch = cleaned.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,?\s*(\d{2,4}))?$/);
   if (monthMatch) {
-    const mm = MONTH_ABBR[monthMatch[1].toLowerCase()];
-    if (mm) {
-      const dd = monthMatch[2].padStart(2, "0");
-      return { done: true, date: `${mm}/${dd}` };
+    const m = MONTH_ABBR[monthMatch[1].toLowerCase()];
+    if (m) {
+      const d = parseInt(monthMatch[2], 10);
+      const y = monthMatch[3] ? parseInt(monthMatch[3], 10) : undefined;
+      return dateResult(m, d, y);
     }
   }
 
   // "D Mon" or "D Month" (e.g. "2 Feb", "15 January")
-  const dayMonthMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)(?:,?\s*\d{2,4})?$/);
+  const dayMonthMatch = cleaned.match(/^(\d{1,2})\s+([A-Za-z]+)(?:,?\s*(\d{2,4}))?$/);
   if (dayMonthMatch) {
-    const mm = MONTH_ABBR[dayMonthMatch[2].toLowerCase()];
-    if (mm) {
-      const dd = dayMonthMatch[1].padStart(2, "0");
-      return { done: true, date: `${mm}/${dd}` };
+    const m = MONTH_ABBR[dayMonthMatch[2].toLowerCase()];
+    if (m) {
+      const d = parseInt(dayMonthMatch[1], 10);
+      const y = dayMonthMatch[3] ? parseInt(dayMonthMatch[3], 10) : undefined;
+      return dateResult(m, d, y);
     }
   }
 
   // YYYY-MM-DD (ISO)
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
-    return { done: true, date: `${isoMatch[2]}/${isoMatch[3]}` };
+    return dateResult(parseInt(isoMatch[2], 10), parseInt(isoMatch[3], 10), parseInt(isoMatch[1], 10));
   }
 
-  // If we get here and it's non-empty, treat as "done" with no parseable date
-  return { done: true, date: null };
+  // If we get here and it's non-empty, treat as unknown — NOT done
+  // (avoids false positives from random text like notes or partial entries)
+  return { done: false, date: null };
 }
 
 /**
@@ -765,6 +798,14 @@ const COACH_TABS: { tab: string; coach: string }[] = [
   { tab: "Farrukh's Tracker", coach: "Farrukh" },
   { tab: "Fatima's LT Clients", coach: "Fatima" },
 ];
+
+/**
+ * Normalise coach names so that variations (e.g. "Stephanie" in Nicole's tab)
+ * map to the canonical short name used in the coach tabs.
+ */
+const COACH_NAME_ALIASES: Record<string, string> = {
+  stephanie: "Stef",
+};
 
 /**
  * Nicole's onboarding tab — different column layout.
@@ -956,7 +997,10 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           end_date: endCol >= 0 ? parseDate(row[endCol]) : null,
           comments: commentsCol >= 0 ? (row[commentsCol] || "").trim() : "",
           is_active: true, // Nicole's tab is for active onboardings
-          coach_name: coachCol >= 0 ? (row[coachCol] || "").trim() : "",
+          coach_name: (() => {
+            const raw = coachCol >= 0 ? (row[coachCol] || "").trim() : "";
+            return COACH_NAME_ALIASES[raw.toLowerCase()] || raw;
+          })(),
           // Nicole's tab doesn't have milestone columns
           trust_pilot_done: false,
           trust_pilot_date: null,
