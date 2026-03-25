@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       // Refunds sheet: "Flagship C&Rs" tab, columns A-H, skip header row 1
       sheets.spreadsheets.values.get({
         spreadsheetId: REFUNDS_SHEET_ID,
-        range: "'Flagship C&Rs'!A2:H500",
+        range: "A2:H500",
       }).catch((err) => {
         console.error("Refunds sheet fetch error:", err.message);
         return null;
