@@ -107,7 +107,7 @@ function getAuth() {
       client_email: email,
       private_key: key.replace(/\\n/g, "\n"),
     },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 }
 
@@ -1034,6 +1034,142 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
 
   await Promise.all([...coachFetches, nicoleFetch]);
   return results;
+}
+
+// ---- Write-back: Append new client to Google Sheets ----
+
+/** Reverse lookup: coach name → tab name */
+const COACH_TO_TAB: Record<string, string> = Object.fromEntries(
+  COACH_TABS.map(({ tab, coach }) => [coach, tab])
+);
+
+interface NewClientSheet {
+  clientName: string;
+  coachName: string;
+  salesPerson?: string;
+  program?: string;
+  offer?: string;
+  startDate?: string; // YYYY-MM-DD or MM/DD/YYYY
+  endDate?: string;
+  comments?: string;
+  email?: string;
+  onboardingFathomLink?: string;
+  paymentPlatform?: string;
+}
+
+/** Format a YYYY-MM-DD date to MM/DD/YYYY for the sheet */
+function toSheetDate(d: string | undefined | null): string {
+  if (!d) return "";
+  // Already MM/DD/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(d)) return d;
+  // YYYY-MM-DD
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[2]}/${m[3]}/${m[1]}`;
+  return d;
+}
+
+/**
+ * Append a new client row to:
+ *  1. The coach's tracker tab (columns A-O)
+ *  2. Nicole's LT Client Tracker tab (columns A-M)
+ *
+ * Finds the next empty row by looking at the Client Name column.
+ * Non-fatal: logs warnings but never throws.
+ */
+export async function appendClientToSheets(client: NewClientSheet): Promise<void> {
+  const coachTab = COACH_TO_TAB[client.coachName];
+  if (!coachTab) {
+    console.warn(`[sheets-write] Unknown coach "${client.coachName}", skipping sheet write`);
+    return;
+  }
+
+  const sheets = getSheets();
+  const sheetId = SHEET_IDS.onboarding;
+  const startDate = toSheetDate(client.startDate);
+  const endDate = toSheetDate(client.endDate);
+
+  // 1. Append to coach's tracker tab
+  // Columns: A(serial) | B(Client Name) | C(Sales) | D(Program) | E(Offer) |
+  //          F(Start Date) | G(End Date) | H(Comments) | I(Active?)
+  try {
+    // Read existing Client Name column to find next serial number
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `'${coachTab}'!A1:B500`,
+    });
+    const rows = existing.data.values || [];
+    // Find the last row with data to determine next serial
+    let lastSerial = 0;
+    for (const row of rows) {
+      const num = parseInt(row[0], 10);
+      if (!isNaN(num) && num > lastSerial) lastSerial = num;
+    }
+
+    const coachRow = [
+      String(lastSerial + 1), // A: Serial
+      client.clientName,       // B: Client Name
+      client.salesPerson || "", // C: Sales
+      client.program || "",    // D: Program
+      client.offer || "",      // E: Offer
+      startDate,               // F: Start Date
+      endDate,                 // G: End Date
+      client.comments || "",   // H: Comments
+      "Yes",                   // I: Active?
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: `'${coachTab}'!A:I`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [coachRow] },
+    });
+    console.log(`[sheets-write] Appended "${client.clientName}" to "${coachTab}"`);
+  } catch (e) {
+    console.warn(`[sheets-write] Failed to write to coach tab "${coachTab}":`, (e as Error).message?.substring(0, 120));
+  }
+
+  // 2. Append to Nicole's LT Client Tracker tab
+  // Columns: A(Priority?) | B(Serial) | C(Client Name) | D(Sales) | E(Program) |
+  //          F(Offer) | G(Start Date) | H(End Date) | I(Onboarding Call Link) |
+  //          J(Coach) | K(Sales Information) | L(Comments) | M(Payment Platform)
+  try {
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `'${NICOLE_TAB}'!A1:B500`,
+    });
+    const rows = existing.data.values || [];
+    let lastSerial = 0;
+    for (const row of rows) {
+      const num = parseInt(row[1], 10); // Serial is column B for Nicole's tab
+      if (!isNaN(num) && num > lastSerial) lastSerial = num;
+    }
+
+    const nicoleRow = [
+      "",                            // A: Priority?
+      String(lastSerial + 1),        // B: Serial
+      client.clientName,             // C: Client Name
+      client.salesPerson || "",      // D: Sales
+      client.program || "",          // E: Program
+      client.offer || "",            // F: Offer
+      startDate,                     // G: Start Date
+      endDate,                       // H: End Date
+      client.onboardingFathomLink || "", // I: Onboarding Call Link
+      client.coachName,              // J: Coach
+      "",                            // K: Sales Information
+      client.comments || "",         // L: Comments
+      client.paymentPlatform || "",  // M: Payment Platform
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: `'${NICOLE_TAB}'!A:M`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [nicoleRow] },
+    });
+    console.log(`[sheets-write] Appended "${client.clientName}" to Nicole's tab`);
+  } catch (e) {
+    console.warn(`[sheets-write] Failed to write to Nicole's tab:`, (e as Error).message?.substring(0, 120));
+  }
 }
 
 // Export sheet IDs for reference
