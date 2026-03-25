@@ -980,20 +980,19 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
           const isToday = dateStr === todayStr;
           const isPast = new Date(dateStr) < new Date(todayStr);
           const isFuture = new Date(dateStr) > new Date(todayStr);
-          const isWeekend = new Date(dateStr).getDay() === 0 || new Date(dateStr).getDay() === 6;
-          const allSubmitted = !isFuture && !isWeekend && coachNames.length > 0 && missing.length === 0;
-          const hasMissing = !isFuture && !isWeekend && (isPast || isToday) && missing.length > 0 && coachNames.length > 0;
+          const allSubmitted = !isFuture && coachNames.length > 0 && missing.length === 0;
+          const hasMissing = !isFuture && (isPast || isToday) && missing.length > 0 && coachNames.length > 0;
           const isSelected = selectedDay === dateStr;
 
           return (
             <div
               key={dateStr}
-              onClick={() => !isFuture && !isWeekend && setSelectedDay(isSelected ? null : dateStr)}
+              onClick={() => !isFuture && setSelectedDay(isSelected ? null : dateStr)}
               style={{
                 padding: "6px 2px",
                 borderRadius: 6,
                 textAlign: "center",
-                cursor: isFuture || isWeekend ? "default" : "pointer",
+                cursor: isFuture ? "default" : "pointer",
                 background: isSelected
                   ? "rgba(201, 169, 110, 0.2)"
                   : allSubmitted
@@ -1006,13 +1005,13 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
                   : isSelected
                   ? "1px solid var(--accent)"
                   : "1px solid transparent",
-                opacity: isFuture ? 0.3 : isWeekend ? 0.4 : 1,
+                opacity: isFuture ? 0.3 : 1,
               }}
             >
               <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent)" : "var(--text-primary)" }}>
                 {day}
               </div>
-              {!isFuture && !isWeekend && coachNames.length > 0 && (
+              {!isFuture && coachNames.length > 0 && (
                 <div style={{ fontSize: 9, marginTop: 2 }}>
                   {allSubmitted ? (
                     <span style={{ color: "var(--success)" }}>{submitted.size}/{coachNames.length}</span>
