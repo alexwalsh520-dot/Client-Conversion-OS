@@ -898,14 +898,14 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       ))}
 
       {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
-      <EODSubmissionCalendar reports={reports} coachNames={coachNames} />
+      <EODSubmissionCalendar reports={reports} eodTeam={[...coachNames, "Nicole"]} />
     </div>
   );
 }
 
 // ============ EOD Submission Calendar Component ============
 
-function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODReport[]; coachNames: string[] }) {
+function EODSubmissionCalendar({ reports, eodTeam }: { reports: CoachEODReport[]; eodTeam: string[] }) {
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -919,15 +919,13 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
 
-  // Build a map: date -> set of coach names who submitted
+  // Build a map: date -> set of team member names who submitted
   const submissionMap = useMemo(() => {
     const map: Record<string, Set<string>> = {};
-    reports
-      .filter((r) => r.role === "coach")
-      .forEach((r) => {
-        if (!map[r.date]) map[r.date] = new Set();
-        map[r.date].add(r.submittedBy);
-      });
+    reports.forEach((r) => {
+      if (!map[r.date]) map[r.date] = new Set();
+      map[r.date].add(r.submittedBy);
+    });
     return map;
   }, [reports]);
 
@@ -976,12 +974,12 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
 
           const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const submitted = submissionMap[dateStr] || new Set();
-          const missing = coachNames.filter((name) => !submitted.has(name));
+          const missing = eodTeam.filter((name) => !submitted.has(name));
           const isToday = dateStr === todayStr;
           const isPast = new Date(dateStr) < new Date(todayStr);
           const isFuture = new Date(dateStr) > new Date(todayStr);
-          const allSubmitted = !isFuture && coachNames.length > 0 && missing.length === 0;
-          const hasMissing = !isFuture && (isPast || isToday) && missing.length > 0 && coachNames.length > 0;
+          const allSubmitted = !isFuture && eodTeam.length > 0 && missing.length === 0;
+          const hasMissing = !isFuture && (isPast || isToday) && missing.length > 0 && eodTeam.length > 0;
           const isSelected = selectedDay === dateStr;
 
           return (
@@ -1011,12 +1009,12 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
               <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent)" : "var(--text-primary)" }}>
                 {day}
               </div>
-              {!isFuture && coachNames.length > 0 && (
+              {!isFuture && eodTeam.length > 0 && (
                 <div style={{ fontSize: 9, marginTop: 2 }}>
                   {allSubmitted ? (
-                    <span style={{ color: "var(--success)" }}>{submitted.size}/{coachNames.length}</span>
+                    <span style={{ color: "var(--success)" }}>{submitted.size}/{eodTeam.length}</span>
                   ) : hasMissing ? (
-                    <span style={{ color: "var(--danger)" }}>{submitted.size}/{coachNames.length}</span>
+                    <span style={{ color: "var(--danger)" }}>{submitted.size}/{eodTeam.length}</span>
                   ) : null}
                 </div>
               )}
@@ -1072,7 +1070,7 @@ function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODRepor
           {/* Missing coaches */}
           {(() => {
             const submitted = submissionMap[selectedDay] || new Set();
-            const missing = coachNames.filter((name) => !submitted.has(name));
+            const missing = eodTeam.filter((name) => !submitted.has(name));
             if (missing.length === 0) return null;
             return (
               <div>
