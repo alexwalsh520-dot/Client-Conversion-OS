@@ -243,7 +243,8 @@ export default function ClientRosterTab({ clients, pauses, milestones, onSave, o
           </div>
           {/* Milestone Info (only when editing existing client) */}
           {editingId && (() => {
-            const ms = milestones.find((m) => m.clientId === editingId);
+            const editingClient = clients.find((c) => c.id === editingId);
+            const ms = milestones.find((m) => m.clientName === editingClient?.name || (m.clientId && m.clientId === editingId));
             if (!ms) return null;
             const items = [
               { label: "TrustPilot", done: ms.trustPilotCompleted, attempted: !!ms.trustPilotPromptedDate, date: ms.trustPilotCompletionDate },

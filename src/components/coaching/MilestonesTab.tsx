@@ -45,7 +45,7 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
   const activeClients = clients.filter((c) => c.status === "active" && c.coachName === activeCoach);
 
   const clientMilestoneData = activeClients.map((client) => {
-    const milestone = milestones.find((m) => m.clientId === client.id);
+    const milestone = milestones.find((m) => m.clientName === client.name || (m.clientId && m.clientId === client.id));
     const startDate = new Date(client.startDate);
     const endDate = new Date(client.endDate);
     const daysSinceStart = Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
