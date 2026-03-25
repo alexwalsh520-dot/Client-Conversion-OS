@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, X, CheckCircle, XCircle, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, Link, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Plus, X, CheckCircle, XCircle, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, Link, ChevronLeft, ChevronRight, AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import type { Client, CoachEODReport, EODClientCheckin } from "@/lib/types";
 
 interface CalendarEvent {
@@ -18,10 +18,14 @@ interface Props {
   reports: CoachEODReport[];
   clients: Client[];
   onSubmit: (report: Partial<CoachEODReport>) => Promise<void>;
+  onUpdate: (report: Partial<CoachEODReport>) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
 }
 
-export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
+export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, onDelete }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [editingReport, setEditingReport] = useState<CoachEODReport | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -68,6 +72,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
   const openForm = () => {
     const defaultRole = roleFilter === "onboarding" ? "onboarding" : roleFilter === "coach" ? "coach" : "coach";
     const isOnboarding = defaultRole === "onboarding";
+    setEditingReport(null);
     setFormData({
       role: defaultRole as "coach" | "onboarding",
       date: new Date().toISOString().split("T")[0],
@@ -77,6 +82,31 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       submittedBy: isOnboarding ? "Nicole" : "",
     });
     setShowForm(true);
+  };
+
+  const openEditForm = (report: CoachEODReport) => {
+    setEditingReport(report);
+    setFormData({
+      id: report.id,
+      submittedBy: report.submittedBy,
+      role: report.role,
+      date: report.date,
+      activeClientCount: report.activeClientCount,
+      newClientNames: report.newClientNames || [],
+      deactivatedClientNames: report.deactivatedClientNames || [],
+      communityEngagement: report.communityEngagement,
+      summary: report.summary,
+      questionsForManagement: report.questionsForManagement,
+      hoursLogged: report.hoursLogged,
+      feelingToday: report.feelingToday,
+      clientCheckins: report.clientCheckins || [],
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    await onDelete(id);
+    setDeletingId(null);
   };
 
   const filtered = roleFilter === "all"
@@ -142,8 +172,13 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       accountsDeactivated: (formData.deactivatedClientNames || []).length,
     };
 
-    await onSubmit(submitData);
+    if (editingReport) {
+      await onUpdate(submitData);
+    } else {
+      await onSubmit(submitData);
+    }
     setShowForm(false);
+    setEditingReport(null);
     setFormData({ role: "coach", date: new Date().toISOString().split("T")[0], clientCheckins: [], newClientNames: [], deactivatedClientNames: [] });
     setCalendarEvents([]);
   };
@@ -342,7 +377,7 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
       {showForm && (
         <div className="glass-static" style={{ padding: 20, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h3 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600 }}>Submit EOD Report</h3>
+            <h3 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600 }}>{editingReport ? "Edit EOD Report" : "Submit EOD Report"}</h3>
             <button onClick={() => { setShowForm(false); setCalendarEvents([]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
               <X size={16} />
             </button>
@@ -796,8 +831,8 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           )}
 
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-            <button className="btn-primary" onClick={handleSubmit}>Submit Report</button>
-            <button className="btn-secondary" onClick={() => { setShowForm(false); setCalendarEvents([]); }}>Cancel</button>
+            <button className="btn-primary" onClick={handleSubmit}>{editingReport ? "Save Changes" : "Submit Report"}</button>
+            <button className="btn-secondary" onClick={() => { setShowForm(false); setEditingReport(null); setCalendarEvents([]); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -819,7 +854,47 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
                 {report.role}
               </span>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => openEditForm(report)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4, display: "flex", alignItems: "center" }}
+                title="Edit report"
+              >
+                <Pencil size={14} />
+              </button>
+              {deletingId === report.id ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button
+                    onClick={() => handleDelete(report.id!)}
+                    style={{ background: "rgba(217, 142, 142, 0.15)", border: "none", cursor: "pointer", color: "var(--danger)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => setDeletingId(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "2px 6px", fontSize: 11 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDeletingId(report.id!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4, display: "flex", alignItems: "center" }}
+                  title="Delete report"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{report.date}</span>
+            {report.createdAt && (
+              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                Submitted {new Date(report.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+              </span>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)", marginBottom: 8, flexWrap: "wrap" }}>

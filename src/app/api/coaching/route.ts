@@ -13,6 +13,8 @@ type Action =
   | "upsert_pause"
   | "upsert_meeting"
   | "submit_eod"
+  | "update_eod"
+  | "delete_eod"
   | "upsert_finance"
   | "update_milestone_checkbox";
 
@@ -396,6 +398,72 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ success: true, data: report });
+      }
+
+      // ---- Update EOD Report ----
+      case "update_eod": {
+        if (!payload.id) throw new Error("Report ID required");
+
+        const updateRow = {
+          submitted_by: payload.submittedBy,
+          role: payload.role,
+          date: payload.date,
+          active_client_count: payload.activeClientCount || 0,
+          new_clients: (payload.newClientNames || []).length || payload.newClients || 0,
+          new_client_names: JSON.stringify(payload.newClientNames || []),
+          accounts_deactivated: (payload.deactivatedClientNames || []).length || payload.accountsDeactivated || 0,
+          deactivated_client_names: JSON.stringify(payload.deactivatedClientNames || []),
+          community_engagement: payload.communityEngagement || "",
+          summary: payload.summary || "",
+          questions_for_management: payload.questionsForManagement || "",
+          hours_logged: payload.hoursLogged || 0,
+          feeling_today: payload.feelingToday || "",
+        };
+
+        const { data: updatedReport, error: ue1 } = await db
+          .from("eod_reports")
+          .update(updateRow)
+          .eq("id", payload.id)
+          .select()
+          .single();
+
+        if (ue1) throw ue1;
+
+        // Delete old checkins and re-insert
+        await db.from("eod_client_checkins").delete().eq("eod_id", payload.id);
+
+        if (payload.clientCheckins?.length > 0) {
+          const checkinRows = payload.clientCheckins.map((c: { clientName: string; checkedIn: boolean; notes: string; onboardingStatus?: string }) => ({
+            eod_id: payload.id,
+            client_name: c.clientName,
+            checked_in: c.checkedIn || false,
+            notes: c.notes || "",
+            onboarding_status: c.onboardingStatus || null,
+          }));
+
+          const { error: ue2 } = await db
+            .from("eod_client_checkins")
+            .insert(checkinRows);
+
+          if (ue2) throw ue2;
+        }
+
+        return NextResponse.json({ success: true, data: updatedReport });
+      }
+
+      // ---- Delete EOD Report ----
+      case "delete_eod": {
+        if (!payload.id) throw new Error("Report ID required");
+
+        // Checkins cascade-delete via FK
+        const { error: de1 } = await db
+          .from("eod_reports")
+          .delete()
+          .eq("id", payload.id);
+
+        if (de1) throw de1;
+
+        return NextResponse.json({ success: true });
       }
 
       // ---- Finances ----
