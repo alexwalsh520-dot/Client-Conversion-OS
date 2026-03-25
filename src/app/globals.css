@@ -1227,3 +1227,341 @@ textarea.input-field {
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE — Hidden on desktop, only active on screens ≤ 768px
+   Does NOT affect desktop layout at all.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Mobile hamburger button — hidden on desktop */
+.mobile-menu-btn {
+  display: none;
+}
+
+/* Mobile overlay — hidden on desktop */
+.mobile-overlay {
+  display: none;
+}
+
+/* Mobile close button inside sidebar — hidden on desktop */
+.mobile-close-btn {
+  display: none;
+}
+
+/* Desktop/mobile view toggle — hidden on desktop */
+.mobile-view-toggle {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Skip all mobile styles when user chose desktop view */
+  html.force-desktop .mobile-menu-btn,
+  html.force-desktop .mobile-overlay,
+  html.force-desktop .mobile-close-btn,
+  html.force-desktop .mobile-view-toggle {
+    /* Keep the view toggle visible so they can switch back */
+  }
+
+  html.force-desktop .sidebar-spacer,
+  html.force-desktop .sidebar,
+  html.force-desktop .main-content,
+  html.force-desktop .metric-grid-4,
+  html.force-desktop .metric-grid-3,
+  html.force-desktop .metric-grid-2,
+  html.force-desktop .data-table,
+  html.force-desktop .section-title,
+  html.force-desktop .metric-card-value {
+    /* No overrides — keep desktop styles */
+  }
+
+  /* ── Hamburger menu button ── */
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.force-desktop .mobile-menu-btn {
+    display: none;
+  }
+
+  /* ── Overlay behind drawer ── */
+  .mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+
+  html.force-desktop .mobile-overlay {
+    display: none;
+  }
+
+  /* ── Close button inside drawer ── */
+  .mobile-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 51;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.force-desktop .mobile-close-btn {
+    display: none;
+  }
+
+  /* ── Sidebar: off-screen by default, slide in when open ── */
+  .sidebar {
+    transform: translateX(-100%);
+    width: 280px !important;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar.sidebar-mobile-open {
+    transform: translateX(0);
+  }
+
+  html.force-desktop .sidebar {
+    transform: none;
+  }
+
+  /* Hide spacer on mobile — no need to push content */
+  .sidebar-spacer {
+    display: none;
+  }
+
+  html.force-desktop .sidebar-spacer {
+    display: block;
+  }
+
+  /* Collapse toggle not needed on mobile */
+  .desktop-only {
+    display: none;
+  }
+
+  html.force-desktop .desktop-only {
+    display: flex;
+  }
+
+  /* ── Desktop/Mobile view toggle ── */
+  .mobile-view-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-glass);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-view-toggle:active {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* ── Main content adjustments ── */
+  .main-content {
+    padding: 60px 16px 24px;
+    max-width: 100%;
+  }
+
+  html.force-desktop .main-content {
+    padding: 32px 40px;
+    max-width: 1100px;
+  }
+
+  /* ── Metric grids: stack to 2 columns ── */
+  .metric-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+
+  .metric-grid-3 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+
+  .metric-grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+  }
+
+  html.force-desktop .metric-grid-4 {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 16px;
+  }
+
+  html.force-desktop .metric-grid-3 {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 16px;
+  }
+
+  html.force-desktop .metric-grid-2 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 16px;
+  }
+
+  /* ── Metric cards: smaller on mobile ── */
+  .metric-card {
+    padding: 14px;
+  }
+
+  .metric-card-value {
+    font-size: 20px;
+  }
+
+  html.force-desktop .metric-card {
+    padding: 20px;
+  }
+
+  html.force-desktop .metric-card-value {
+    font-size: 28px;
+  }
+
+  /* ── Tables: horizontal scroll ── */
+  .glass-static {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    min-width: 600px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  html.force-desktop .data-table {
+    min-width: auto;
+  }
+
+  html.force-desktop .data-table th,
+  html.force-desktop .data-table td {
+    padding: 10px 16px;
+    font-size: 13px;
+    white-space: normal;
+  }
+
+  /* ── Section titles: smaller ── */
+  .section-title {
+    font-size: 12px;
+  }
+
+  html.force-desktop .section-title {
+    font-size: 14px;
+  }
+
+  /* ── Page titles ── */
+  h1 {
+    font-size: 22px !important;
+  }
+
+  html.force-desktop h1 {
+    font-size: unset !important;
+  }
+
+  /* ── Form inputs: larger tap targets ── */
+  .input-field,
+  select.input-field {
+    min-height: 42px;
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  html.force-desktop .input-field,
+  html.force-desktop select.input-field {
+    min-height: auto;
+    font-size: inherit !important;
+  }
+
+  /* ── Buttons: larger tap targets ── */
+  .btn-primary,
+  .btn-secondary {
+    min-height: 42px;
+    padding: 10px 20px;
+  }
+
+  html.force-desktop .btn-primary,
+  html.force-desktop .btn-secondary {
+    min-height: auto;
+    padding: revert;
+  }
+
+  /* ── Context tabs (coaching sub-tabs): scrollable ── */
+  .context-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    gap: 4px;
+    padding-bottom: 4px;
+  }
+
+  .context-tabs > * {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  html.force-desktop .context-tabs {
+    overflow-x: visible;
+    flex-wrap: wrap !important;
+  }
+
+  html.force-desktop .context-tabs > * {
+    flex-shrink: 1;
+    font-size: inherit;
+    padding: revert;
+  }
+
+  /* ── Glass cards: reduce padding ── */
+  .glass-static {
+    padding: 12px;
+  }
+
+  html.force-desktop .glass-static {
+    padding: revert;
+  }
+
+  /* ── Coaching 3-col grids → stacked ── */
+  div[style*="gridTemplateColumns: \"1fr 1fr 1fr\""],
+  div[style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Hide AskClaude button on mobile to save space ── */
+  /* (It floats in bottom-right and can overlap content) */
+}

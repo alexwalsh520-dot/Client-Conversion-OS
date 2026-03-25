@@ -22,6 +22,9 @@ import {
   LogOut,
   BarChart3,
   DollarSign,
+  Menu,
+  X,
+  Monitor,
 } from "lucide-react";
 
 const mainNav = [
@@ -52,6 +55,8 @@ export default function Sidebar() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [clientFilter, setClientFilter] = useState<ClientFilter>("both");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [forceDesktop, setForceDesktop] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
@@ -63,7 +68,25 @@ export default function Sidebar() {
     if (stored !== null) {
       setCollapsed(stored === "true");
     }
+    const storedDesktop = localStorage.getItem("force-desktop-view");
+    if (storedDesktop === "true") {
+      setForceDesktop(true);
+    }
   }, []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Apply/remove force-desktop class on html element
+  useEffect(() => {
+    if (forceDesktop) {
+      document.documentElement.classList.add("force-desktop");
+    } else {
+      document.documentElement.classList.remove("force-desktop");
+    }
+  }, [forceDesktop]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -73,12 +96,19 @@ export default function Sidebar() {
     });
   };
 
+  const toggleForceDesktop = () => {
+    setForceDesktop((prev) => {
+      const next = !prev;
+      localStorage.setItem("force-desktop-view", String(next));
+      return next;
+    });
+  };
+
   // Don't render on login or public pages
   if (pathname === "/login" || pathname === "/review") return null;
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
-    // Exact match or match with sub-path (e.g. /outreach matches /outreach but not /outreach-runs)
     return pathname === href || pathname.startsWith(href + "/");
   };
 
@@ -91,6 +121,7 @@ export default function Sidebar() {
         key={item.href}
         href={item.href}
         className={`sidebar-link ${active ? "sidebar-link-active" : ""}`}
+        onClick={() => setMobileOpen(false)}
       >
         <span className="sidebar-link-icon">
           <Icon size={18} />
@@ -103,10 +134,36 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Spacer to push main content */}
-      <div className={collapsed ? "sidebar-spacer-collapsed" : "sidebar-spacer-expanded"} />
+      {/* Mobile hamburger button */}
+      <button
+        className="mobile-menu-btn"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+      >
+        <Menu size={22} />
+      </button>
 
-      <aside className={`sidebar ${collapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="mobile-overlay"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Spacer to push main content (desktop only) */}
+      <div className={`sidebar-spacer ${collapsed ? "sidebar-spacer-collapsed" : "sidebar-spacer-expanded"}`} />
+
+      <aside className={`sidebar ${collapsed ? "sidebar-collapsed" : "sidebar-expanded"} ${mobileOpen ? "sidebar-mobile-open" : ""}`}>
+        {/* Mobile close button */}
+        <button
+          className="mobile-close-btn"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Close menu"
+        >
+          <X size={20} />
+        </button>
+
         {/* Logo */}
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon">
@@ -169,6 +226,16 @@ export default function Sidebar() {
             </button>
           )}
 
+          {/* Desktop/Mobile view toggle (mobile only) */}
+          <button
+            className="mobile-view-toggle"
+            onClick={toggleForceDesktop}
+            title={forceDesktop ? "Switch to mobile view" : "Switch to desktop view"}
+          >
+            <Monitor size={14} />
+            <span>{forceDesktop ? "Mobile View" : "Desktop View"}</span>
+          </button>
+
           {/* User */}
           {session?.user && (
             <button className="sidebar-user" onClick={() => signOut({ callbackUrl: "/login" })}>
@@ -203,8 +270,8 @@ export default function Sidebar() {
             </button>
           )}
 
-          {/* Collapse toggle */}
-          <button className="sidebar-toggle-btn" onClick={toggleCollapsed}>
+          {/* Collapse toggle (desktop only) */}
+          <button className="sidebar-toggle-btn desktop-only" onClick={toggleCollapsed}>
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
         </div>
