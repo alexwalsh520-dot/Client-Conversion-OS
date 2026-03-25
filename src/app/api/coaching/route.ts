@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
-import { appendClientToSheets } from "@/lib/sheets";
+import { appendClientToSheets, updateMilestoneInSheet } from "@/lib/sheets";
 
 type Action =
   | "upsert_client"
@@ -131,16 +131,14 @@ export async function POST(req: NextRequest) {
 
       // ---- Quick milestone checkbox toggle ----
       case "update_milestone_checkbox": {
-        const { milestoneId, field, value } = payload;
+        // status: "completed" (tick), "failed" (cross), "pending" (reset)
+        const { milestoneId, field, status } = payload;
+        // Backwards compat: if `value` boolean is passed instead of status
+        const resolvedStatus = status || (payload.value === true ? "completed" : payload.value === false ? "pending" : "pending");
+
         const now = new Date();
         const today = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
 
-        // Build the update: set the boolean + auto-capture date
-        const updateObj: Record<string, unknown> = { [field]: value };
-        const dateField = field.replace("Completed", "CompletionDate")
-          .replace(/([A-Z])/g, "_$1").toLowerCase()
-          .replace(/^_/, "");
-        // Map camelCase field to snake_case date column
         const dateColumn = field === "trustPilotCompleted" ? "trust_pilot_completion_date"
           : field === "videoTestimonialCompleted" ? "video_testimonial_completion_date"
           : field === "retentionCompleted" ? "retention_completion_date"
@@ -157,16 +155,16 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Invalid field" }, { status: 400 });
         }
 
-        const update: Record<string, unknown> = {
-          [boolColumn]: value,
-          [dateColumn]: value ? today : null,
-        };
-
-        // Also set prompted date if not already set
         const promptedColumn = dateColumn.replace("completion_date", "prompted_date");
-        if (value) {
-          update[promptedColumn] = today; // ensure prompted is set
-        }
+
+        // completed = tick: completed=true, prompted_date=today, completion_date=today
+        // failed = cross: completed=false, prompted_date=today, completion_date=null
+        // pending = reset: completed=false, prompted_date=null, completion_date=null
+        const update: Record<string, unknown> = {
+          [boolColumn]: resolvedStatus === "completed",
+          [dateColumn]: resolvedStatus === "completed" ? today : null,
+          [promptedColumn]: resolvedStatus === "pending" ? null : today,
+        };
 
         const { data, error } = await db
           .from("coach_milestones")
@@ -176,6 +174,17 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (error) throw error;
+
+        // Write to Google Sheets (1=done, 0=failed, clear for pending)
+        if (data && resolvedStatus !== "pending") {
+          updateMilestoneInSheet(
+            data.coach_name,
+            data.client_name,
+            field,
+            resolvedStatus === "completed" ? 1 : 0,
+          ).catch(() => {});
+        }
+
         return NextResponse.json({ success: true, data });
       }
 
