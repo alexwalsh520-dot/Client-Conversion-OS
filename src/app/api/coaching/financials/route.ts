@@ -51,20 +51,21 @@ export async function GET(request: Request) {
 
     // Fetch both sheets in parallel
     const [refundsRes, retentionRes] = await Promise.all([
-      // Refunds sheet: columns A-H, skip header row 1
+      // Refunds sheet: "Flagship C&Rs" tab, columns A-H, skip header row 1
       sheets.spreadsheets.values.get({
         spreadsheetId: REFUNDS_SHEET_ID,
-        range: "A2:H500",
+        range: "'Flagship C&Rs'!A2:H500",
       }).catch((err) => {
         console.error("Refunds sheet fetch error:", err.message);
         return null;
       }),
 
       // Sales Tracker: Retention payments in columns AQ-AX on the monthly tab
-      // AQ=Call#, AR=Date, AS=Name, AT=Payment Total, AU=Coach, AV=New?, AW=Offer, AX=Months Sold
+      // Row 4 has headers (Date, Name, Payment Total, Coach, New?, Offer, Months Sold)
+      // Data starts at row 5
       sheets.spreadsheets.values.get({
         spreadsheetId: SALES_TRACKER_ID,
-        range: `'${monthTab}'!AQ4:AX100`,
+        range: `'${monthTab}'!AQ5:AX100`,
       }).catch((err) => {
         console.error("Retention sheet fetch error:", err.message);
         return null;
