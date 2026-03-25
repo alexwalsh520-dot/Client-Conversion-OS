@@ -17,7 +17,6 @@ import {
   mockClients,
   mockMilestones,
   mockPauses,
-  mockMeetings,
   mockEODReports,
   mockFinances,
 } from "@/lib/mock-data";
@@ -59,7 +58,7 @@ export default function CoachingPage() {
   const { data: clients, refetch: refetchClients } = useAsyncData(getClients, mockClients);
   const { data: milestones, refetch: refetchMilestones } = useAsyncData(getMilestones, mockMilestones);
   const { data: pauses, refetch: refetchPauses } = useAsyncData(getPauses, mockPauses);
-  const { data: meetings, refetch: refetchMeetings } = useAsyncData(getMeetings, mockMeetings);
+  const { data: meetings, refetch: refetchMeetings } = useAsyncData(getMeetings, []);
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
   const { data: finances, refetch: refetchFinances } = useAsyncData(getFinances, mockFinances);
 
