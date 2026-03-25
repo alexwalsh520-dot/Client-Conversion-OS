@@ -119,8 +119,29 @@ export default function CoachingPage() {
     refetchMeetings();
   };
 
-  const handleToggleMilestone = async (milestoneId: number, field: string, status: "completed" | "failed" | "pending") => {
-    await apiCall("update_milestone_checkbox", { milestoneId, field, status });
+  const handleToggleMilestone = async (
+    milestoneId: number | null,
+    field: string,
+    status: "completed" | "failed" | "pending",
+    client?: { id: number; name: string; coachName: string },
+  ) => {
+    let id = milestoneId;
+    // If no milestone row exists yet, create one first
+    if (!id && client) {
+      const result = await apiCall("upsert_milestone", {
+        clientId: client.id,
+        clientName: client.name,
+        coachName: client.coachName,
+      });
+      id = result?.data?.id;
+      if (!id) {
+        await refetchMilestones();
+        return; // Row created, user can click again
+      }
+    }
+    if (id) {
+      await apiCall("update_milestone_checkbox", { milestoneId: id, field, status });
+    }
     refetchMilestones();
   };
 
