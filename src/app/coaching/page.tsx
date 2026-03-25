@@ -18,7 +18,6 @@ import {
   mockMilestones,
   mockPauses,
   mockEODReports,
-  mockFinances,
 } from "@/lib/mock-data";
 import {
   getCoachingFeedback,
@@ -27,7 +26,6 @@ import {
   getPauses,
   getMeetings,
   getEODReports,
-  getFinances,
 } from "@/lib/data";
 import { useAsyncData } from "@/lib/use-data";
 import type { CoachingTab, Client, CoachMeeting, CoachEODReport } from "@/lib/types";
@@ -60,8 +58,6 @@ export default function CoachingPage() {
   const { data: pauses, refetch: refetchPauses } = useAsyncData(getPauses, mockPauses);
   const { data: meetings, refetch: refetchMeetings } = useAsyncData(getMeetings, []);
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
-  const { data: finances, refetch: refetchFinances } = useAsyncData(getFinances, mockFinances);
-
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -80,14 +76,13 @@ export default function CoachingPage() {
       refetchPauses();
       refetchMeetings();
       refetchEOD();
-      refetchFinances();
     } catch (err: unknown) {
       setSyncMsg(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setSyncing(false);
       setTimeout(() => setSyncMsg(null), 4000);
     }
-  }, [refetchClients, refetchMilestones, refetchPauses, refetchMeetings, refetchEOD, refetchFinances]);
+  }, [refetchClients, refetchMilestones, refetchPauses, refetchMeetings, refetchEOD]);
 
   // API helper
   const apiCall = async (action: string, payload: unknown) => {
@@ -254,7 +249,7 @@ export default function CoachingPage() {
           <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} />
         )}
         {activeTab === "financials" && (
-          <FinancialsTab finances={finances} clients={clients} />
+          <FinancialsTab />
         )}
       </div>
     </div>
