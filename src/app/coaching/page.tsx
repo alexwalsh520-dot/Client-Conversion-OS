@@ -119,8 +119,8 @@ export default function CoachingPage() {
     refetchMeetings();
   };
 
-  const handleToggleMilestone = async (milestoneId: number, field: string, value: boolean) => {
-    await apiCall("update_milestone_checkbox", { milestoneId, field, value });
+  const handleToggleMilestone = async (milestoneId: number, field: string, status: "completed" | "failed" | "pending") => {
+    await apiCall("update_milestone_checkbox", { milestoneId, field, status });
     refetchMilestones();
   };
 
@@ -208,7 +208,7 @@ export default function CoachingPage() {
       {/* Tab Content */}
       <div className="section">
         {activeTab === "roster" && (
-          <ClientRosterTab clients={clients} pauses={pauses} onSave={handleSaveClient} onDelete={handleDeleteClient} />
+          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} onSave={handleSaveClient} onDelete={handleDeleteClient} />
         )}
         {activeTab === "onboarding" && (
           <OnboardingTab clients={clients} />

@@ -1172,5 +1172,67 @@ export async function appendClientToSheets(client: NewClientSheet): Promise<void
   }
 }
 
+// ---- Write-back: Update milestone cell in Google Sheets ----
+
+/** Milestone field → column letter in coach tracker tabs (J, K, L, M) */
+const MILESTONE_COL: Record<string, string> = {
+  trustPilotCompleted: "J",
+  videoTestimonialCompleted: "K",
+  retentionCompleted: "L",
+  referralCompleted: "M",
+};
+
+/**
+ * Update a milestone cell in the coach's Google Sheet tracker tab.
+ * Finds the client row by name, then writes 1 (done) or 0 (attempted/failed) to the milestone column.
+ * Non-fatal: logs warnings but never throws.
+ */
+export async function updateMilestoneInSheet(
+  coachName: string,
+  clientName: string,
+  field: string,
+  value: number, // 1 = done, 0 = attempted/failed
+): Promise<void> {
+  const coachTab = COACH_TO_TAB[coachName];
+  const colLetter = MILESTONE_COL[field];
+  if (!coachTab || !colLetter) {
+    console.warn(`[sheets-write] Cannot write milestone: unknown coach "${coachName}" or field "${field}"`);
+    return;
+  }
+
+  const sheets = getSheets();
+  const sheetId = SHEET_IDS.onboarding;
+
+  try {
+    // Read client names (column B) to find the row
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `'${coachTab}'!B1:B500`,
+    });
+    const rows = res.data.values || [];
+    let targetRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if ((rows[i][0] || "").trim().toLowerCase() === clientName.trim().toLowerCase()) {
+        targetRow = i + 1; // 1-indexed
+        break;
+      }
+    }
+    if (targetRow === -1) {
+      console.warn(`[sheets-write] Client "${clientName}" not found in "${coachTab}"`);
+      return;
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `'${coachTab}'!${colLetter}${targetRow}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[String(value)]] },
+    });
+    console.log(`[sheets-write] Updated milestone ${field}=${value} for "${clientName}" in "${coachTab}" row ${targetRow}`);
+  } catch (e) {
+    console.warn(`[sheets-write] Failed to update milestone in "${coachTab}":`, (e as Error).message?.substring(0, 120));
+  }
+}
+
 // Export sheet IDs for reference
 export { SHEET_IDS };

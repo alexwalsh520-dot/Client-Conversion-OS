@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Plus, ExternalLink, Search, X, Trash2 } from "lucide-react";
-import type { Client, ProgramPause } from "@/lib/types";
+import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock } from "lucide-react";
+import type { Client, ProgramPause, CoachMilestone } from "@/lib/types";
 
 interface Props {
   clients: Client[];
   pauses: ProgramPause[];
+  milestones: CoachMilestone[];
   onSave: (client: Partial<Client>) => Promise<void>;
   onDelete: (clientId: number) => Promise<void>;
 }
 
-export default function ClientRosterTab({ clients, pauses, onSave, onDelete }: Props) {
+export default function ClientRosterTab({ clients, pauses, milestones, onSave, onDelete }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [coachFilter, setCoachFilter] = useState<string>("all");
@@ -240,6 +241,42 @@ export default function ClientRosterTab({ clients, pauses, onSave, onDelete }: P
               <input className="input-field" value={formData.comments || ""} onChange={(e) => setFormData({ ...formData, comments: e.target.value })} />
             </div>
           </div>
+          {/* Milestone Info (only when editing existing client) */}
+          {editingId && (() => {
+            const ms = milestones.find((m) => m.clientId === editingId);
+            if (!ms) return null;
+            const items = [
+              { label: "TrustPilot", done: ms.trustPilotCompleted, attempted: !!ms.trustPilotPromptedDate, date: ms.trustPilotCompletionDate },
+              { label: "Video Testimonial", done: ms.videoTestimonialCompleted, attempted: !!ms.videoTestimonialPromptedDate, date: ms.videoTestimonialCompletionDate },
+              { label: "Extension", done: ms.retentionCompleted, attempted: !!ms.retentionPromptedDate, date: ms.retentionCompletionDate },
+              { label: "Referral", done: ms.referralCompleted, attempted: !!ms.referralPromptedDate, date: ms.referralCompletionDate },
+            ];
+            return (
+              <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+                <label className="field-label" style={{ marginBottom: 8, display: "block" }}>Milestones</label>
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  {items.map((item) => (
+                    <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                      {item.done ? (
+                        <CheckCircle size={14} style={{ color: "var(--success)" }} />
+                      ) : item.attempted ? (
+                        <XCircle size={14} style={{ color: "var(--danger)" }} />
+                      ) : (
+                        <Clock size={14} style={{ color: "var(--text-muted)" }} />
+                      )}
+                      <span style={{ color: item.done ? "var(--success)" : item.attempted ? "var(--danger)" : "var(--text-muted)" }}>
+                        {item.label}
+                      </span>
+                      {item.done && item.date && (
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({item.date})</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "space-between" }}>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn-primary" onClick={handleSave}>Save</button>
