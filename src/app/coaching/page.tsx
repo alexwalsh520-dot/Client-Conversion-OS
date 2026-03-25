@@ -147,6 +147,16 @@ export default function CoachingPage() {
     refetchClients();
   };
 
+  const handleUpdateEOD = async (report: Partial<CoachEODReport>) => {
+    await apiCall("update_eod", report);
+    refetchEOD();
+  };
+
+  const handleDeleteEOD = async (id: number) => {
+    await apiCall("delete_eod", { id });
+    refetchEOD();
+  };
+
   return (
     <div className="fade-up">
       {/* Header */}
@@ -246,7 +256,7 @@ export default function CoachingPage() {
           <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} />
         )}
         {activeTab === "eod" && (
-          <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} />
+          <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} onUpdate={handleUpdateEOD} onDelete={handleDeleteEOD} />
         )}
         {activeTab === "financials" && (
           <FinancialsTab />
