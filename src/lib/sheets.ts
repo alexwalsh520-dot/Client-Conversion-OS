@@ -807,6 +807,9 @@ const COACH_NAME_ALIASES: Record<string, string> = {
   stephanie: "Stef",
 };
 
+/** Only these coaches are active — Nicole's tab entries for other coaches are ignored. */
+const ACTIVE_COACHES = new Set(COACH_TABS.map(({ coach }) => coach));
+
 /**
  * Nicole's onboarding tab — different column layout.
  * Columns A-M: Priority? | Serial | Client Name | Sales | Program | Offer |
@@ -988,6 +991,11 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
         const clientName = (row[clientNameCol] || "").trim();
         if (!clientName) continue;
 
+        // Resolve coach name and skip clients assigned to inactive/unknown coaches
+        const rawCoach = coachCol >= 0 ? (row[coachCol] || "").trim() : "";
+        const resolvedCoach = COACH_NAME_ALIASES[rawCoach.toLowerCase()] || rawCoach;
+        if (!resolvedCoach || !ACTIVE_COACHES.has(resolvedCoach)) continue;
+
         results.push({
           client_name: clientName,
           sales_person: salesCol >= 0 ? (row[salesCol] || "").trim() : "",
@@ -997,10 +1005,7 @@ export async function fetchCoachTrackers(): Promise<CoachTrackerRow[]> {
           end_date: endCol >= 0 ? parseDate(row[endCol]) : null,
           comments: commentsCol >= 0 ? (row[commentsCol] || "").trim() : "",
           is_active: true, // Nicole's tab is for active onboardings
-          coach_name: (() => {
-            const raw = coachCol >= 0 ? (row[coachCol] || "").trim() : "";
-            return COACH_NAME_ALIASES[raw.toLowerCase()] || raw;
-          })(),
+          coach_name: resolvedCoach,
           // Nicole's tab doesn't have milestone columns
           trust_pilot_done: false,
           trust_pilot_date: null,
