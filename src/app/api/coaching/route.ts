@@ -100,13 +100,25 @@ export async function POST(req: NextRequest) {
 
       // ---- Milestones ----
       case "upsert_milestone": {
-        // Check if a row already exists for this client
-        if (!payload.id && payload.clientId) {
-          const { data: existing } = await db
-            .from("coach_milestones")
-            .select("id")
-            .eq("client_id", payload.clientId)
-            .maybeSingle();
+        // Check if a row already exists for this client (by name or id)
+        if (!payload.id && (payload.clientId || payload.clientName)) {
+          let existing = null;
+          if (payload.clientName) {
+            const res = await db
+              .from("coach_milestones")
+              .select("id")
+              .eq("client_name", payload.clientName)
+              .maybeSingle();
+            existing = res.data;
+          }
+          if (!existing && payload.clientId) {
+            const res = await db
+              .from("coach_milestones")
+              .select("id")
+              .eq("client_id", payload.clientId)
+              .maybeSingle();
+            existing = res.data;
+          }
           if (existing) {
             return NextResponse.json({ success: true, data: existing });
           }
