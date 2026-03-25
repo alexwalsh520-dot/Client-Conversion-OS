@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
+import { appendClientToSheets } from "@/lib/sheets";
 
 type Action =
   | "upsert_client"
@@ -60,6 +61,24 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (error) throw error;
+
+        // Write new clients to Google Sheets (skip updates to existing clients)
+        if (!payload.id && payload.coachName) {
+          appendClientToSheets({
+            clientName: payload.name,
+            coachName: payload.coachName,
+            salesPerson: payload.salesPerson,
+            program: payload.program,
+            offer: payload.offer,
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            comments: payload.comments,
+            email: payload.email,
+            paymentPlatform: payload.paymentPlatform,
+            onboardingFathomLink: payload.onboardingFathomLink,
+          }).catch(() => {}); // fire-and-forget, don't block response
+        }
+
         return NextResponse.json({ success: true, data });
       }
 
@@ -311,6 +330,22 @@ export async function POST(req: NextRequest) {
                 };
 
                 await db.from("clients").insert(newClient);
+
+                // Write to Google Sheets
+                if (c.onboardingCoach) {
+                  appendClientToSheets({
+                    clientName: c.clientName,
+                    coachName: c.onboardingCoach,
+                    salesPerson: c.onboardingSalesPerson,
+                    program: c.onboardingProgram,
+                    offer: c.onboardingOffer,
+                    startDate: c.onboardingStartDate,
+                    endDate: c.onboardingEndDate,
+                    comments: c.onboardingPaymentComments,
+                    email: c.onboardingEmail,
+                    onboardingFathomLink: c.onboardingFathomLink,
+                  }).catch(() => {}); // fire-and-forget
+                }
               } else {
                 // For no_show / rescheduled: update existing client records if any
                 const updateData: Record<string, unknown> = {
