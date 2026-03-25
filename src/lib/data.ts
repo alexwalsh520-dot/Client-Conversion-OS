@@ -376,8 +376,8 @@ export async function getMeetings(): Promise<CoachMeeting[]> {
       createdAt: row.created_at,
     }));
   } catch {
-    console.warn("[data] Meetings: falling back to mock data");
-    return mock.mockMeetings;
+    console.warn("[data] Meetings: no data found");
+    return [];
   }
 }
 
