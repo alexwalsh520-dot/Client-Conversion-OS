@@ -214,6 +214,11 @@ export async function POST(req: NextRequest) {
             existing.onboarding_fathom_link = row.onboarding_call_link;
           if (!existing.sales_fathom_link && row.sales_information)
             existing.sales_fathom_link = row.sales_information;
+          // Coach tabs have the real Active? column — always let them override
+          // status set by Nicole's tab (which hardcodes is_active: true)
+          if (row.source_tab !== "Nicole's LT Client Tracker") {
+            existing.status = row.is_active ? "active" : "completed";
+          }
         }
       }
 
