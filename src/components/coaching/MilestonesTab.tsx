@@ -9,7 +9,7 @@ type MilestoneStatus = "completed" | "failed" | "pending";
 interface Props {
   clients: Client[];
   milestones: CoachMilestone[];
-  onToggle: (milestoneId: number, field: string, status: MilestoneStatus) => Promise<void>;
+  onToggle: (milestoneId: number | null, field: string, status: MilestoneStatus, client?: { id: number; name: string; coachName: string }) => Promise<void>;
 }
 
 /** Determine milestone status from DB fields:
@@ -160,7 +160,7 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
   }, [milestones, commMonth, commYear]);
 
   // ----- Milestone Button Component -----
-  const MilestoneButton = ({ label, status, due, overdue, milestoneId, field, completionDate, dueDate }: {
+  const MilestoneButton = ({ label, status, due, overdue, milestoneId, field, completionDate, dueDate, client }: {
     label: string;
     status: MilestoneStatus;
     due: boolean;
@@ -169,12 +169,12 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
     field: string;
     completionDate?: string | null;
     dueDate: Date;
+    client: Client;
   }) => {
     const handleClick = (newStatus: MilestoneStatus) => {
-      if (!milestoneId) return;
       // If clicking same status, reset to pending
       const targetStatus = status === newStatus ? "pending" : newStatus;
-      onToggle(milestoneId, field, targetStatus);
+      onToggle(milestoneId || null, field, targetStatus, { id: client.id!, name: client.name, coachName: client.coachName });
     };
 
     return (
@@ -211,15 +211,13 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
         {/* Tick button */}
         <button
           onClick={() => handleClick("completed")}
-          disabled={!milestoneId}
           title="Achieved"
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
-            width: 24, height: 24, borderRadius: 6, border: "none", cursor: milestoneId ? "pointer" : "default",
+            width: 24, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
             background: status === "completed" ? "var(--success)" : "var(--bg-glass)",
             color: status === "completed" ? "#fff" : "var(--text-muted)",
             transition: "all 0.15s ease",
-            opacity: milestoneId ? 1 : 0.4,
           }}
         >
           <CheckCircle size={14} />
@@ -228,15 +226,13 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
         {/* Cross button */}
         <button
           onClick={() => handleClick("failed")}
-          disabled={!milestoneId}
           title="Attempted — not achieved"
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
-            width: 24, height: 24, borderRadius: 6, border: "none", cursor: milestoneId ? "pointer" : "default",
+            width: 24, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
             background: status === "failed" ? "var(--danger)" : "var(--bg-glass)",
             color: status === "failed" ? "#fff" : "var(--text-muted)",
             transition: "all 0.15s ease",
-            opacity: milestoneId ? 1 : 0.4,
           }}
         >
           <XCircle size={14} />
@@ -364,10 +360,10 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <MilestoneButton label="TrustPilot" status={tpStatus} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" completionDate={milestone?.trustPilotCompletionDate} dueDate={tpDueDate} />
-            <MilestoneButton label="Video" status={vidStatus} due={vidDue} overdue={vidOverdue} milestoneId={milestone?.id} field="videoTestimonialCompleted" completionDate={milestone?.videoTestimonialCompletionDate} dueDate={vidDueDate} />
-            <MilestoneButton label="Extension" status={retStatus} due={retDue} overdue={retOverdue} milestoneId={milestone?.id} field="retentionCompleted" completionDate={milestone?.retentionCompletionDate} dueDate={retDueDate} />
-            <MilestoneButton label="Referral" status={refStatus} due={refDue} overdue={refOverdue} milestoneId={milestone?.id} field="referralCompleted" completionDate={milestone?.referralCompletionDate} dueDate={refDueDate} />
+            <MilestoneButton label="TrustPilot" status={tpStatus} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" completionDate={milestone?.trustPilotCompletionDate} dueDate={tpDueDate} client={client} />
+            <MilestoneButton label="Video" status={vidStatus} due={vidDue} overdue={vidOverdue} milestoneId={milestone?.id} field="videoTestimonialCompleted" completionDate={milestone?.videoTestimonialCompletionDate} dueDate={vidDueDate} client={client} />
+            <MilestoneButton label="Extension" status={retStatus} due={retDue} overdue={retOverdue} milestoneId={milestone?.id} field="retentionCompleted" completionDate={milestone?.retentionCompletionDate} dueDate={retDueDate} client={client} />
+            <MilestoneButton label="Referral" status={refStatus} due={refDue} overdue={refOverdue} milestoneId={milestone?.id} field="referralCompleted" completionDate={milestone?.referralCompletionDate} dueDate={refDueDate} client={client} />
           </div>
         </div>
       ))}
