@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { FileText, Plus, X, CheckCircle, XCircle, Video, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, Link } from "lucide-react";
+import { Plus, X, CheckCircle, XCircle, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, Link, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import type { Client, CoachEODReport, EODClientCheckin } from "@/lib/types";
 
 interface CalendarEvent {
@@ -84,8 +84,18 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
     : reports.filter((r) => r.role === roleFilter);
 
   // When coach name changes, pre-populate client checkins
+  // Sorted by days remaining descending (most days remaining at top)
   const initCheckins = (coachName: string) => {
-    const coachClients = activeClients.filter((c) => c.coachName === coachName);
+    const now = new Date();
+    const coachClients = activeClients
+      .filter((c) => c.coachName === coachName)
+      .sort((a, b) => {
+        const endA = a.endDate ? new Date(a.endDate).getTime() : 0;
+        const endB = b.endDate ? new Date(b.endDate).getTime() : 0;
+        const daysA = endA ? Math.ceil((endA - now.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        const daysB = endB ? Math.ceil((endB - now.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        return daysB - daysA; // Most days remaining first
+      });
     return coachClients.map((c) => ({
       eodId: 0,
       clientName: c.name,
@@ -392,26 +402,14 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           {/* ==================== COACH-SPECIFIC FIELDS ==================== */}
           {formData.role === "coach" && formData.submittedBy && (
             <>
-              {/* Row 2: Active Count (auto), New Clients (dropdown), Deactivated (dropdown) */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
+              {/* Row 2: Active Count (auto), Deactivated (dropdown) */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                 <div>
                   <label className="field-label">Active Client Count</label>
                   <div className="input-field" style={{ display: "flex", alignItems: "center", opacity: 0.7, cursor: "default" }}>
                     {autoActiveCount}
                     <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>(auto)</span>
                   </div>
-                </div>
-
-                {/* New Clients Multi-Select */}
-                <div>
-                  <label className="field-label">New Clients Assigned</label>
-                  <MultiSelectDropdown
-                    options={recentlyOnboardedForCoach.map((c) => c.name)}
-                    selected={formData.newClientNames || []}
-                    onToggle={(name) => toggleNameInList("newClientNames", name)}
-                    placeholder={recentlyOnboardedForCoach.length === 0 ? "No recent onboardings" : "Select new clients..."}
-                    emptyText="No recently onboarded clients for this coach"
-                  />
                 </div>
 
                 {/* Accounts Deactivated Multi-Select */}
@@ -768,42 +766,6 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             <textarea className="input-field" rows={2} value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
           </div>
 
-          {/* Video Testimonial (coaches only) */}
-          {formData.role === "coach" && (
-            <div style={{ marginTop: 12, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={formData.videoTestimonialToday || false}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    videoTestimonialToday: e.target.checked,
-                    videoTestimonialClient: e.target.checked ? formData.videoTestimonialClient || "" : "",
-                  })}
-                  style={{ accentColor: "var(--accent)" }}
-                />
-                <label className="field-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
-                  <Video size={14} /> Got a video testimonial today?
-                </label>
-              </div>
-              {formData.videoTestimonialToday && (
-                <div>
-                  <label className="field-label">Which client?</label>
-                  <select
-                    className="input-field"
-                    value={formData.videoTestimonialClient || ""}
-                    onChange={(e) => setFormData({ ...formData, videoTestimonialClient: e.target.value })}
-                  >
-                    <option value="">Select client...</option>
-                    {coachActiveClients.map((c) => (
-                      <option key={c.name} value={c.name}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Client Checkins (for coaches) */}
           {formData.role === "coach" && (formData.clientCheckins?.length || 0) > 0 && (
             <div style={{ marginTop: 16 }}>
@@ -927,15 +889,6 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
             </div>
           )}
 
-          {report.videoTestimonialToday && report.videoTestimonialClient && (
-            <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-              <Video size={12} style={{ color: "var(--accent)" }} />
-              <span style={{ color: "var(--accent)", fontWeight: 600 }}>
-                Video testimonial from {report.videoTestimonialClient}
-              </span>
-            </div>
-          )}
-
           {report.feelingToday && (
             <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
               Feeling: {report.feelingToday}
@@ -943,6 +896,210 @@ export default function EODReportsTab({ reports, clients, onSubmit }: Props) {
           )}
         </div>
       ))}
+
+      {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
+      <EODSubmissionCalendar reports={reports} coachNames={coachNames} />
+    </div>
+  );
+}
+
+// ============ EOD Submission Calendar Component ============
+
+function EODSubmissionCalendar({ reports, coachNames }: { reports: CoachEODReport[]; coachNames: string[] }) {
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+
+  // Build a map: date -> set of coach names who submitted
+  const submissionMap = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    reports
+      .filter((r) => r.role === "coach")
+      .forEach((r) => {
+        if (!map[r.date]) map[r.date] = new Set();
+        map[r.date].add(r.submittedBy);
+      });
+    return map;
+  }, [reports]);
+
+  const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+
+  const monthLabel = currentMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  // Generate calendar days
+  const days: (number | null)[] = [];
+  for (let i = 0; i < firstDayOfWeek; i++) days.push(null);
+  for (let d = 1; d <= daysInMonth; d++) days.push(d);
+
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  return (
+    <div className="glass-static" style={{ padding: 20, marginTop: 24 }}>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+        <Calendar size={16} /> EOD Submission Tracker
+      </h3>
+
+      {/* Month navigation */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+          <ChevronLeft size={18} />
+        </button>
+        <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{monthLabel}</span>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center", marginBottom: 4 }}>
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+          <div key={d} style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", padding: "4px 0", textTransform: "uppercase" }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {days.map((day, i) => {
+          if (day === null) return <div key={`empty-${i}`} />;
+
+          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const submitted = submissionMap[dateStr] || new Set();
+          const missing = coachNames.filter((name) => !submitted.has(name));
+          const isToday = dateStr === todayStr;
+          const isPast = new Date(dateStr) < new Date(todayStr);
+          const isFuture = new Date(dateStr) > new Date(todayStr);
+          const allSubmitted = !isFuture && coachNames.length > 0 && missing.length === 0;
+          const hasMissing = !isFuture && (isPast || isToday) && missing.length > 0 && coachNames.length > 0;
+          const isSelected = selectedDay === dateStr;
+
+          return (
+            <div
+              key={dateStr}
+              onClick={() => !isFuture && setSelectedDay(isSelected ? null : dateStr)}
+              style={{
+                padding: "6px 2px",
+                borderRadius: 6,
+                textAlign: "center",
+                cursor: isFuture ? "default" : "pointer",
+                background: isSelected
+                  ? "rgba(201, 169, 110, 0.2)"
+                  : allSubmitted
+                  ? "rgba(126, 201, 160, 0.1)"
+                  : hasMissing
+                  ? "rgba(217, 142, 142, 0.1)"
+                  : "transparent",
+                border: isToday
+                  ? "2px solid var(--accent)"
+                  : isSelected
+                  ? "1px solid var(--accent)"
+                  : "1px solid transparent",
+                opacity: isFuture ? 0.3 : 1,
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent)" : "var(--text-primary)" }}>
+                {day}
+              </div>
+              {!isFuture && coachNames.length > 0 && (
+                <div style={{ fontSize: 9, marginTop: 2 }}>
+                  {allSubmitted ? (
+                    <span style={{ color: "var(--success)" }}>{submitted.size}/{coachNames.length}</span>
+                  ) : hasMissing ? (
+                    <span style={{ color: "var(--danger)" }}>{submitted.size}/{coachNames.length}</span>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 11, color: "var(--text-muted)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(126, 201, 160, 0.3)" }} />
+          All submitted
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(217, 142, 142, 0.3)" }} />
+          Missing reports
+        </div>
+      </div>
+
+      {/* Selected day detail */}
+      {selectedDay && (
+        <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+            {new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+          </div>
+
+          {/* Submitted coaches */}
+          {(submissionMap[selectedDay]?.size || 0) > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--success)", marginBottom: 4, textTransform: "uppercase" }}>
+                Submitted ({submissionMap[selectedDay].size})
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {Array.from(submissionMap[selectedDay]).map((name) => (
+                  <span key={name} style={{
+                    fontSize: 12,
+                    padding: "3px 10px",
+                    borderRadius: 4,
+                    background: "rgba(126, 201, 160, 0.15)",
+                    color: "var(--success)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}>
+                    <CheckCircle size={10} /> {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Missing coaches */}
+          {(() => {
+            const submitted = submissionMap[selectedDay] || new Set();
+            const missing = coachNames.filter((name) => !submitted.has(name));
+            if (missing.length === 0) return null;
+            return (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--danger)", marginBottom: 4, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 4 }}>
+                  <AlertTriangle size={10} /> Missing ({missing.length})
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {missing.map((name) => (
+                    <span key={name} style={{
+                      fontSize: 12,
+                      padding: "3px 10px",
+                      borderRadius: 4,
+                      background: "rgba(217, 142, 142, 0.15)",
+                      color: "var(--danger)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}>
+                      <XCircle size={10} /> {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
