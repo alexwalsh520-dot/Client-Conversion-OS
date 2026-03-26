@@ -15,9 +15,10 @@ interface CalendarEvent {
 
 interface Props {
   clients: Client[];
+  onClientClick?: (clientName: string) => void;
 }
 
-export default function OnboardingTab({ clients }: Props) {
+export default function OnboardingTab({ clients, onClientClick }: Props) {
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
@@ -169,7 +170,7 @@ export default function OnboardingTab({ clients }: Props) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {client.onboardingStatus === "no_show" ? <UserX size={14} style={{ color: "var(--danger)" }} /> : <RefreshCw size={14} style={{ color: "var(--warning)" }} />}
-                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{client.name}</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, cursor: onClientClick ? "pointer" : "default" }} onClick={() => onClientClick?.(client.name)}>{client.name}</span>
                   <span style={{
                     fontSize: 11, padding: "2px 6px", borderRadius: 4,
                     background: client.onboardingStatus === "no_show" ? "rgba(217, 142, 142, 0.2)" : "rgba(201, 169, 110, 0.2)",
@@ -252,7 +253,7 @@ export default function OnboardingTab({ clients }: Props) {
             <div key={client.id || client.name} className="glass-static" style={{ padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>{client.name}</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15, cursor: onClientClick ? "pointer" : "default" }} onClick={() => onClientClick?.(client.name)}>{client.name}</span>
                   <span style={{ color: "var(--text-muted)", fontSize: 12, marginLeft: 10 }}>{client.email}</span>
                 </div>
                 <span style={{ color: "var(--warning)", fontWeight: 600, fontSize: 13 }}>
@@ -313,7 +314,7 @@ export default function OnboardingTab({ clients }: Props) {
                   const onboardedDate = client.onboardingDate || client.startDate;
                   return (
                     <tr key={client.id || client.name}>
-                      <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{client.name}</td>
+                      <td style={{ fontWeight: 600, color: "var(--text-primary)", cursor: onClientClick ? "pointer" : "default" }} onClick={() => onClientClick?.(client.name)}>{client.name}</td>
                       <td style={{ fontSize: 12 }}>{client.email}</td>
                       <td>{client.coachName}</td>
                       <td>{client.program}</td>

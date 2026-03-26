@@ -20,9 +20,10 @@ interface Props {
   onSubmit: (report: Partial<CoachEODReport>) => Promise<void>;
   onUpdate: (report: Partial<CoachEODReport>) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onClientClick?: (clientName: string) => void;
 }
 
-export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, onDelete }: Props) {
+export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, onDelete, onClientClick }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingReport, setEditingReport] = useState<CoachEODReport | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -951,7 +952,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                         ? onboardingStatusIcon(status)
                         : c.checkedIn ? <CheckCircle size={10} /> : <XCircle size={10} />
                       }
-                      {c.clientName}
+                      <span style={{ cursor: onClientClick ? "pointer" : "default", textDecoration: onClientClick ? "none" : "none" }} onClick={(e) => { if (onClientClick) { e.stopPropagation(); onClientClick(c.clientName); } }}>{c.clientName}</span>
                       {isOnboarding && (
                         <span style={{ fontSize: 10, opacity: 0.8, marginLeft: 2 }}>
                           ({onboardingStatusLabel(status)})

@@ -51,6 +51,13 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
 
 export default function CoachingPage() {
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
+  const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
+
+  // Navigate to a client's detail view from any tab
+  const navigateToClient = (clientName: string) => {
+    setSelectedClientName(clientName);
+    setActiveTab("roster");
+  };
 
   // Load all data with fallbacks
   const { data: feedback } = useAsyncData(getCoachingFeedback, mockFeedback);
@@ -239,10 +246,10 @@ export default function CoachingPage() {
       {/* Tab Content */}
       <div className="section">
         {activeTab === "roster" && (
-          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} onSave={handleSaveClient} onDelete={handleDeleteClient} />
+          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} onSave={handleSaveClient} onDelete={handleDeleteClient} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
         )}
         {activeTab === "onboarding" && (
-          <OnboardingTab clients={clients} />
+          <OnboardingTab clients={clients} onClientClick={navigateToClient} />
         )}
         {activeTab === "performance" && (
           <CoachPerformanceTab
@@ -258,10 +265,10 @@ export default function CoachingPage() {
           <MeetingsTab meetings={meetings} clients={clients} onSave={handleSaveMeeting} />
         )}
         {activeTab === "milestones" && (
-          <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} recentActivity={milestoneActivity} />
+          <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} recentActivity={milestoneActivity} onClientClick={navigateToClient} />
         )}
         {activeTab === "eod" && (
-          <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} onUpdate={handleUpdateEOD} onDelete={handleDeleteEOD} />
+          <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} onUpdate={handleUpdateEOD} onDelete={handleDeleteEOD} onClientClick={navigateToClient} />
         )}
         {activeTab === "financials" && (
           <FinancialsTab />

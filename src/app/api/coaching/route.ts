@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     switch (action) {
       // ---- Clients ----
       case "upsert_client": {
-        const row = {
+        const row: Record<string, unknown> = {
           name: payload.name,
           email: payload.email || null,
           coach_name: payload.coachName || null,
@@ -54,7 +54,48 @@ export async function POST(req: NextRequest) {
           sales_person: payload.salesPerson || null,
           comments: payload.comments || null,
         };
+        // Set onboarding_date for new clients so they appear in Recently Onboarded
+        if (!payload.id) {
+          row.onboarding_date = payload.onboardingDate || new Date().toISOString().split("T")[0];
+          row.onboarding_status = "onboarded";
+        }
         if (payload.id) Object.assign(row, { id: payload.id });
+
+        // Dedup: if a client with the same name already exists and this is a new add,
+        // merge into the existing record instead of creating a duplicate
+        if (!payload.id && payload.name) {
+          const { data: existing } = await db
+            .from("clients")
+            .select("*")
+            .eq("name", payload.name)
+            .limit(1)
+            .maybeSingle();
+
+          if (existing) {
+            // Merge: keep values from whichever has more info, prefer the new submission
+            const merged: Record<string, unknown> = { id: existing.id };
+            const fields = ["email", "coach_name", "program", "offer", "start_date", "end_date", "status",
+              "payment_platform", "sales_fathom_link", "onboarding_fathom_link", "sales_person", "comments",
+              "onboarding_date", "onboarding_status"];
+            for (const f of fields) {
+              const newVal = row[f];
+              const oldVal = existing[f];
+              merged[f] = (newVal !== null && newVal !== undefined && newVal !== "" && newVal !== 0) ? newVal : oldVal;
+            }
+            merged.name = payload.name;
+            merged.amount_paid = (payload.amountPaid && payload.amountPaid > 0) ? payload.amountPaid : (existing.amount_paid || 0);
+
+            const { data: mergedData, error: mergeErr } = await db
+              .from("clients")
+              .update(merged)
+              .eq("id", existing.id)
+              .select()
+              .single();
+
+            if (mergeErr) throw mergeErr;
+            return NextResponse.json({ success: true, data: mergedData });
+          }
+        }
 
         const { data, error } = await db
           .from("clients")
