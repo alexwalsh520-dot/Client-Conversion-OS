@@ -1,18 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock } from "lucide-react";
-import type { Client, ProgramPause, CoachMilestone } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target } from "lucide-react";
+import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
+
+interface ClientNote {
+  date: string;
+  coachName: string;
+  notes: string;
+  checkedIn: boolean;
+}
 
 interface Props {
   clients: Client[];
   pauses: ProgramPause[];
   milestones: CoachMilestone[];
+  meetings: CoachMeeting[];
+  eodReports: CoachEODReport[];
   onSave: (client: Partial<Client>) => Promise<void>;
   onDelete: (clientId: number) => Promise<void>;
+  selectedClientName?: string | null;
+  onClearSelection?: () => void;
 }
 
-export default function ClientRosterTab({ clients, pauses, milestones, onSave, onDelete }: Props) {
+export default function ClientRosterTab({ clients, pauses, milestones, meetings, eodReports, onSave, onDelete, selectedClientName, onClearSelection }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [coachFilter, setCoachFilter] = useState<string>("all");
@@ -20,6 +31,35 @@ export default function ClientRosterTab({ clients, pauses, milestones, onSave, o
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<Client>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+
+  // Auto-open client detail when navigated from another tab
+  useEffect(() => {
+    if (selectedClientName) {
+      const client = clients.find((c) => c.name === selectedClientName);
+      if (client) {
+        startEdit(client);
+        // Fetch notes for this client
+        fetchClientNotes(client.name);
+      }
+      onClearSelection?.();
+    }
+  }, [selectedClientName, clients]);
+
+  // Fetch notes when editing a client
+  const fetchClientNotes = async (name: string) => {
+    setNotesLoading(true);
+    try {
+      const res = await fetch(`/api/coaching/client-notes?name=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      setClientNotes(data.notes || []);
+    } catch {
+      setClientNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
 
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
 
@@ -70,6 +110,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, onSave, o
     setEditingId(client.id || null);
     setFormData({ ...client });
     setShowAddForm(false);
+    fetchClientNotes(client.name);
   };
 
   const startAdd = () => {
@@ -278,6 +319,63 @@ export default function ClientRosterTab({ clients, pauses, milestones, onSave, o
             );
           })()}
 
+          {/* Meetings Section (only when editing) */}
+          {editingId && (() => {
+            const editingClient = clients.find((c) => c.id === editingId);
+            const clientMeetings = meetings.filter(
+              (m) => m.clientName === editingClient?.name
+            );
+
+            return (
+              <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+                <label className="field-label" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Calendar size={13} /> Meetings
+                </label>
+                {clientMeetings.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No meetings logged</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {clientMeetings.slice(0, 10).map((m) => (
+                      <div key={m.id} style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-primary)" }}>
+                        <span style={{ color: "var(--text-muted)", minWidth: 80 }}>{m.meetingDate}</span>
+                        <span style={{ color: "var(--accent)", fontWeight: 500 }}>{m.coachName}</span>
+                        <span style={{ color: "var(--text-secondary)" }}>{m.durationMinutes}min</span>
+                        {m.notes && <span style={{ color: "var(--text-muted)", fontSize: 11, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.notes}>{m.notes}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Coach Notes from EOD Reports (only when editing) */}
+          {editingId && (
+            <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+              <label className="field-label" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <MessageSquare size={13} /> Coach Notes
+              </label>
+              {notesLoading ? (
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading notes...</div>
+              ) : clientNotes.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No coach notes from EOD reports</div>
+              ) : (
+                <div style={{ display: "grid", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+                  {clientNotes.map((note, i) => (
+                    <div key={i} style={{ fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-primary)" }}>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
+                        <span style={{ color: "var(--text-muted)", minWidth: 80 }}>{note.date}</span>
+                        <span style={{ color: "var(--accent)", fontWeight: 500 }}>{note.coachName}</span>
+                        {note.checkedIn && <CheckCircle size={12} style={{ color: "var(--success)" }} />}
+                      </div>
+                      <div style={{ color: "var(--text-secondary)", paddingLeft: 4 }}>{note.notes}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "space-between" }}>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn-primary" onClick={handleSave}>Save</button>
@@ -350,7 +448,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, onSave, o
               const days = client.status === "active" ? daysRemaining(effectiveEnd) : null;
               return (
                 <tr key={client.id || client.name}>
-                  <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{client.name}</td>
+                  <td style={{ fontWeight: 600, color: "var(--text-primary)", cursor: "pointer" }} onClick={() => startEdit(client)}>{client.name}</td>
                   <td>{client.coachName}</td>
                   <td>{client.program}</td>
                   <td>

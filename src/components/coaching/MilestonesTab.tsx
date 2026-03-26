@@ -12,6 +12,7 @@ interface Props {
   milestones: CoachMilestone[];
   onToggle: (milestoneId: number | null, field: string, status: MilestoneStatus, client?: { id: number; name: string; coachName: string }) => Promise<void>;
   recentActivity?: MilestoneActivity[];
+  onClientClick?: (clientName: string) => void;
 }
 
 /** Determine milestone status from DB fields:
@@ -25,7 +26,7 @@ function getStatus(completed: boolean | undefined, promptedDate: string | null |
   return "pending";
 }
 
-export default function MilestonesTab({ clients, milestones, onToggle, recentActivity = [] }: Props) {
+export default function MilestonesTab({ clients, milestones, onToggle, recentActivity = [], onClientClick }: Props) {
   const today = new Date();
   const [selectedCoach, setSelectedCoach] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -337,7 +338,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div>
-              <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{client.name}</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, cursor: onClientClick ? "pointer" : "default" }} onClick={() => onClientClick?.(client.name)}>{client.name}</span>
               <span style={{ color: "var(--text-muted)", fontSize: 12, marginLeft: 8 }}>
                 {completedCount}/4 milestones
               </span>
