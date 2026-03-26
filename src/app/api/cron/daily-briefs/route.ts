@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
+import { fetchSheetData as fetchSheetRows, type SheetRow } from "@/lib/google-sheets";
+import { fetchSubscriptionsSold } from "@/lib/google-sheets";
 
 /* ── Config ─────────────────────────────────────────────────────── */
 
@@ -136,21 +138,14 @@ Rules:
 - NEVER blame leads in closer briefs. Lead quality issues go to CEO recap ONLY.
 - Team names: Will Rincan, Jacob Broz, Austin Richard. Setters: Amara, Kelechi (Tyson), Gideon, Debbie (Keith).`;
 
-/* ── Data Fetching ──────────────────────────────────────────────── */
-
-interface SheetRow {
-  callNumber: string; date: string; name: string; callTaken: boolean;
-  callLength: string; recorded: boolean; outcome: string; closer: string;
-  objection: string; programLength: string; revenue: number;
-  cashCollected: number; method: string; setter: string; callNotes: string;
-  recordingLink: string; offer: string;
-}
+/* ── Data Fetching (direct library call, no HTTP) ───────────────── */
 
 async function fetchSheetData(dateFrom: string, dateTo: string): Promise<{ rows: SheetRow[]; subscriptionsSold: number }> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || `https://${process.env.VERCEL_URL || "client-conversion-os.vercel.app"}`;
-  const res = await fetch(`${baseUrl}/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`);
-  if (!res.ok) throw new Error(`Sheet data fetch failed: ${res.status}`);
-  return res.json();
+  const [rows, subscriptionsSold] = await Promise.all([
+    fetchSheetRows(dateFrom, dateTo),
+    fetchSubscriptionsSold(dateFrom, dateTo).catch(() => 0),
+  ]);
+  return { rows, subscriptionsSold };
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
