@@ -326,6 +326,44 @@ export async function getMilestones(): Promise<CoachMilestone[]> {
   }
 }
 
+// ---- Milestone Activity Log ----
+
+export interface MilestoneActivity {
+  id: number;
+  milestoneId: number;
+  clientName: string;
+  coachName: string;
+  field: string;
+  newStatus: string;
+  changedBy: string;
+  createdAt: string;
+}
+
+export async function getMilestoneActivity(): Promise<MilestoneActivity[]> {
+  try {
+    const { data, error } = await supabase
+      .from("milestone_activity_log")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error || !data?.length) return [];
+
+    return data.map((row) => ({
+      id: row.id,
+      milestoneId: row.milestone_id,
+      clientName: row.client_name,
+      coachName: row.coach_name || "",
+      field: row.field,
+      newStatus: row.new_status,
+      changedBy: row.changed_by || "",
+      createdAt: row.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ---- Program Pauses ----
 
 export async function getPauses(): Promise<ProgramPause[]> {

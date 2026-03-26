@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign, RotateCcw } from "lucide-react";
 import type { Client, CoachMilestone } from "@/lib/types";
+import type { MilestoneActivity } from "@/lib/data";
 
 type MilestoneStatus = "completed" | "failed" | "pending";
 
@@ -10,6 +11,7 @@ interface Props {
   clients: Client[];
   milestones: CoachMilestone[];
   onToggle: (milestoneId: number | null, field: string, status: MilestoneStatus, client?: { id: number; name: string; coachName: string }) => Promise<void>;
+  recentActivity?: MilestoneActivity[];
 }
 
 /** Determine milestone status from DB fields:
@@ -23,7 +25,7 @@ function getStatus(completed: boolean | undefined, promptedDate: string | null |
   return "pending";
 }
 
-export default function MilestonesTab({ clients, milestones, onToggle }: Props) {
+export default function MilestonesTab({ clients, milestones, onToggle, recentActivity = [] }: Props) {
   const today = new Date();
   const [selectedCoach, setSelectedCoach] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -452,6 +454,87 @@ export default function MilestonesTab({ clients, milestones, onToggle }: Props) 
           ))}
         </div>
       </div>
+
+      {/* ======================== RECENT MILESTONE ACTIVITY ======================== */}
+      {recentActivity.length > 0 && (
+        <div className="glass-static" style={{ padding: 16, marginTop: 20 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            <RotateCcw size={14} /> Recent Milestone Changes
+          </h3>
+          <div style={{ display: "grid", gap: 6 }}>
+            {recentActivity.map((activity) => {
+              const statusColor = activity.newStatus === "completed" ? "var(--success)"
+                : activity.newStatus === "failed" ? "var(--danger)" : "var(--text-muted)";
+              const statusLabel = activity.newStatus === "completed" ? "Completed"
+                : activity.newStatus === "failed" ? "Attempted" : "Reset";
+              const StatusIcon = activity.newStatus === "completed" ? CheckCircle
+                : activity.newStatus === "failed" ? XCircle : RotateCcw;
+
+              // Map field back to the onToggle field name
+              const fieldMap: Record<string, string> = {
+                "TrustPilot": "trustPilotCompleted",
+                "Video Testimonial": "videoTestimonialCompleted",
+                "Extension": "retentionCompleted",
+                "Referral": "referralCompleted",
+              };
+              const toggleField = fieldMap[activity.field];
+
+              // Find milestone ID for undo
+              const milestone = milestones.find(
+                (m) => m.clientName === activity.clientName && m.coachName === activity.coachName
+              );
+
+              return (
+                <div
+                  key={activity.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    background: "var(--bg-glass)",
+                    borderRadius: 6,
+                    fontSize: 13,
+                  }}
+                >
+                  <StatusIcon size={14} style={{ color: statusColor, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{activity.clientName}</span>
+                    <span style={{ color: "var(--text-muted)", margin: "0 6px" }}>—</span>
+                    <span style={{ color: statusColor, fontWeight: 500 }}>{activity.field}: {statusLabel}</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 8 }}>
+                      by {activity.changedBy}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {new Date(activity.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+                  </span>
+                  {/* Undo button: resets milestone back to pending */}
+                  {milestone?.id && toggleField && (
+                    <button
+                      onClick={() => onToggle(milestone.id!, toggleField, "pending")}
+                      title="Undo this change"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid var(--border-primary)",
+                        borderRadius: 4,
+                        padding: "3px 8px",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
