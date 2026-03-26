@@ -23,6 +23,7 @@ import {
   getCoachingFeedback,
   getClients,
   getMilestones,
+  getMilestoneActivity,
   getPauses,
   getMeetings,
   getEODReports,
@@ -58,6 +59,7 @@ export default function CoachingPage() {
   const { data: pauses, refetch: refetchPauses } = useAsyncData(getPauses, mockPauses);
   const { data: meetings, refetch: refetchMeetings } = useAsyncData(getMeetings, []);
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
+  const { data: milestoneActivity, refetch: refetchMilestoneActivity } = useAsyncData(getMilestoneActivity, []);
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export default function CoachingPage() {
       await apiCall("update_milestone_checkbox", { milestoneId: id, field, status });
     }
     refetchMilestones();
+    refetchMilestoneActivity();
   };
 
   const handleSubmitEOD = async (report: Partial<CoachEODReport>) => {
@@ -150,11 +153,13 @@ export default function CoachingPage() {
   const handleUpdateEOD = async (report: Partial<CoachEODReport>) => {
     await apiCall("update_eod", report);
     refetchEOD();
+    refetchClients(); // Deactivation changes affect client roster
   };
 
   const handleDeleteEOD = async (id: number) => {
     await apiCall("delete_eod", { id });
     refetchEOD();
+    refetchClients(); // Deleted report reactivates deactivated clients
   };
 
   return (
@@ -253,7 +258,7 @@ export default function CoachingPage() {
           <MeetingsTab meetings={meetings} clients={clients} onSave={handleSaveMeeting} />
         )}
         {activeTab === "milestones" && (
-          <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} />
+          <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} recentActivity={milestoneActivity} />
         )}
         {activeTab === "eod" && (
           <EODReportsTab reports={eodReports} clients={clients} onSubmit={handleSubmitEOD} onUpdate={handleUpdateEOD} onDelete={handleDeleteEOD} />

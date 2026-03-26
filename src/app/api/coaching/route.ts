@@ -211,6 +211,25 @@ export async function POST(req: NextRequest) {
           ).catch(() => {});
         }
 
+        // Log milestone change for activity feed
+        if (data) {
+          const fieldLabel = field === "trustPilotCompleted" ? "TrustPilot"
+            : field === "videoTestimonialCompleted" ? "Video Testimonial"
+            : field === "retentionCompleted" ? "Extension"
+            : field === "referralCompleted" ? "Referral" : field;
+
+          try {
+            await db.from("milestone_activity_log").insert({
+              milestone_id: milestoneId,
+              client_name: data.client_name,
+              coach_name: data.coach_name,
+              field: fieldLabel,
+              new_status: resolvedStatus,
+              changed_by: session?.user?.name || session?.user?.email || "unknown",
+            });
+          } catch { /* Don't fail the main operation */ }
+        }
+
         return NextResponse.json({ success: true, data });
       }
 
@@ -306,6 +325,14 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (e1) throw e1;
+
+        // Deactivate clients marked in this EOD
+        if (deactivatedClientNames.length > 0) {
+          await db
+            .from("clients")
+            .update({ status: "cancelled" })
+            .in("name", deactivatedClientNames);
+        }
 
         // Insert client checkins if provided
         if (payload.clientCheckins?.length > 0) {
@@ -404,6 +431,28 @@ export async function POST(req: NextRequest) {
       case "update_eod": {
         if (!payload.id) throw new Error("Report ID required");
 
+        // Fetch old report to compare deactivated names
+        const { data: oldReport } = await db
+          .from("eod_reports")
+          .select("deactivated_client_names")
+          .eq("id", payload.id)
+          .single();
+
+        const oldDeactivated: string[] = (() => { try { return JSON.parse(oldReport?.deactivated_client_names || "[]"); } catch { return []; } })();
+        const newDeactivated: string[] = payload.deactivatedClientNames || [];
+
+        // Clients removed from deactivation list → reactivate
+        const toReactivate = oldDeactivated.filter((n: string) => !newDeactivated.includes(n));
+        // Clients newly added to deactivation list → deactivate
+        const toDeactivate = newDeactivated.filter((n: string) => !oldDeactivated.includes(n));
+
+        if (toReactivate.length > 0) {
+          await db.from("clients").update({ status: "active" }).in("name", toReactivate);
+        }
+        if (toDeactivate.length > 0) {
+          await db.from("clients").update({ status: "cancelled" }).in("name", toDeactivate);
+        }
+
         const updateRow = {
           submitted_by: payload.submittedBy,
           role: payload.role,
@@ -411,8 +460,8 @@ export async function POST(req: NextRequest) {
           active_client_count: payload.activeClientCount || 0,
           new_clients: (payload.newClientNames || []).length || payload.newClients || 0,
           new_client_names: JSON.stringify(payload.newClientNames || []),
-          accounts_deactivated: (payload.deactivatedClientNames || []).length || payload.accountsDeactivated || 0,
-          deactivated_client_names: JSON.stringify(payload.deactivatedClientNames || []),
+          accounts_deactivated: newDeactivated.length || payload.accountsDeactivated || 0,
+          deactivated_client_names: JSON.stringify(newDeactivated),
           community_engagement: payload.communityEngagement || "",
           summary: payload.summary || "",
           questions_for_management: payload.questionsForManagement || "",
@@ -454,6 +503,18 @@ export async function POST(req: NextRequest) {
       // ---- Delete EOD Report ----
       case "delete_eod": {
         if (!payload.id) throw new Error("Report ID required");
+
+        // Fetch report to reactivate any deactivated clients
+        const { data: delReport } = await db
+          .from("eod_reports")
+          .select("deactivated_client_names")
+          .eq("id", payload.id)
+          .single();
+
+        const delDeactivated: string[] = (() => { try { return JSON.parse(delReport?.deactivated_client_names || "[]"); } catch { return []; } })();
+        if (delDeactivated.length > 0) {
+          await db.from("clients").update({ status: "active" }).in("name", delDeactivated);
+        }
 
         // Checkins cascade-delete via FK
         const { error: de1 } = await db
