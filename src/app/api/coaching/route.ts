@@ -391,76 +391,21 @@ export async function POST(req: NextRequest) {
 
           if (e2) throw e2;
 
-          // For onboarding EODs: create new clients when onboarded, update existing if applicable
+          // For onboarding EODs: update no_show/rescheduled status on existing clients
           if (payload.role === "onboarding") {
             for (const c of payload.clientCheckins as {
               clientName: string;
               onboardingStatus?: string;
-              onboardingCoach?: string;
-              onboardingStartDate?: string;
-              onboardingEndDate?: string;
-              onboardingProgram?: string;
-              onboardingOffer?: string;
-              onboardingSalesPerson?: string;
-              onboardingEmail?: string;
-              onboardingFathomLink?: string;
-              onboardingPaymentComments?: string;
             }[]) {
               if (!c.clientName || !c.onboardingStatus) continue;
+              if (c.onboardingStatus === "internal_meeting" || c.onboardingStatus === "onboarded") continue;
 
-              // Skip internal meetings — no client record needed
-              if (c.onboardingStatus === "internal_meeting") continue;
-
-              if (c.onboardingStatus === "onboarded") {
-                // Create a new client entry in the clients table
-                const newClient = {
-                  name: c.clientName,
-                  coach_name: c.onboardingCoach || null,
-                  program: c.onboardingProgram || null,
-                  offer: c.onboardingOffer || null,
-                  start_date: c.onboardingStartDate || null,
-                  end_date: c.onboardingEndDate || null,
-                  status: "active",
-                  onboarding_date: payload.date,
-                  onboarding_status: "onboarded",
-                  onboarding_fathom_link: c.onboardingFathomLink || null,
-                  sales_person: c.onboardingSalesPerson || null,
-                  comments: c.onboardingPaymentComments || null,
-                  amount_paid: 0,
-                  email: c.onboardingEmail || null,
-                  payment_platform: null,
-                  sales_fathom_link: null,
-                };
-
-                await db.from("clients").insert(newClient);
-
-                // Write to Google Sheets
-                if (c.onboardingCoach) {
-                  appendClientToSheets({
-                    clientName: c.clientName,
-                    coachName: c.onboardingCoach,
-                    salesPerson: c.onboardingSalesPerson,
-                    program: c.onboardingProgram,
-                    offer: c.onboardingOffer,
-                    startDate: c.onboardingStartDate,
-                    endDate: c.onboardingEndDate,
-                    comments: c.onboardingPaymentComments,
-                    email: c.onboardingEmail,
-                    onboardingFathomLink: c.onboardingFathomLink,
-                  }).catch(() => {}); // fire-and-forget
-                }
-              } else {
-                // For no_show / rescheduled: update existing client records if any
-                const updateData: Record<string, unknown> = {
-                  onboarding_status: c.onboardingStatus,
-                };
-
-                await db
-                  .from("clients")
-                  .update(updateData)
-                  .eq("name", c.clientName)
-                  .is("onboarding_date", null);
-              }
+              // For no_show / rescheduled: update existing client records if any
+              await db
+                .from("clients")
+                .update({ onboarding_status: c.onboardingStatus })
+                .eq("name", c.clientName)
+                .is("onboarding_date", null);
             }
           }
         }

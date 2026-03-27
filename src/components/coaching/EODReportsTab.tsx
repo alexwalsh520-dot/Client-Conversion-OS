@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, X, CheckCircle, XCircle, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, Link, ChevronLeft, ChevronRight, AlertTriangle, Pencil, Trash2 } from "lucide-react";
+import { Plus, X, CheckCircle, XCircle, Calendar, UserCheck, UserX, Clock, ChevronDown, Building2, ChevronLeft, ChevronRight, AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import type { Client, CoachEODReport, EODClientCheckin } from "@/lib/types";
 
 interface CalendarEvent {
@@ -316,7 +316,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
 
   const onboardingStatusLabel = (status?: string) => {
     switch (status) {
-      case "onboarded": return "Onboarded";
+      case "onboarded": return "Done";
       case "no_show": return "No-Show";
       case "rescheduled": return "Rescheduled";
       case "internal_meeting": return "Internal Meeting";
@@ -616,139 +616,6 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                             </button>
                           ))}
                         </div>
-
-                        {/* Expanded onboarding fields when "Onboarded" is selected */}
-                        {checkin.onboardingStatus === "onboarded" && (
-                          <div style={{ marginBottom: 8, padding: 12, background: "rgba(126, 201, 160, 0.08)", borderRadius: 8, border: "1px solid rgba(126, 201, 160, 0.15)" }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--success)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                              New Client Details
-                            </div>
-
-                            {/* Row 1: Coach, Program Duration, Offer */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Assigned Coach *</label>
-                                <select
-                                  className="input-field"
-                                  value={checkin.onboardingCoach || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingCoach", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                >
-                                  <option value="">Select coach...</option>
-                                  {availableCoaches.map((name) => (
-                                    <option key={name} value={name}>{name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Program Duration *</label>
-                                <select
-                                  className="input-field"
-                                  value={checkin.onboardingProgram || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingProgram", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                >
-                                  <option value="">Select duration...</option>
-                                  <option value="4 Weeks">4 Weeks</option>
-                                  <option value="12 Weeks">12 Weeks</option>
-                                  <option value="24 Weeks">24 Weeks</option>
-                                  <option value="48 Weeks">48 Weeks</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Offer *</label>
-                                <select
-                                  className="input-field"
-                                  value={checkin.onboardingOffer || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingOffer", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                >
-                                  <option value="">Select offer...</option>
-                                  <option value="Tyson">Tyson</option>
-                                  <option value="Keith">Keith</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Row 2: Start Date, End Date, Salesperson */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Program Start Date *</label>
-                                <input
-                                  className="input-field"
-                                  type="date"
-                                  value={checkin.onboardingStartDate || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingStartDate", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                />
-                              </div>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Program End Date *</label>
-                                <input
-                                  className="input-field"
-                                  type="date"
-                                  value={checkin.onboardingEndDate || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingEndDate", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                />
-                              </div>
-                              <div>
-                                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Salesperson (Closer) *</label>
-                                <select
-                                  className="input-field"
-                                  value={checkin.onboardingSalesPerson || ""}
-                                  onChange={(e) => updateOnboardingDetail(idx, "onboardingSalesPerson", e.target.value)}
-                                  style={{ fontSize: 12, padding: "6px 8px" }}
-                                >
-                                  <option value="">Select closer...</option>
-                                  {availableSalesPeople.map((name) => (
-                                    <option key={name} value={name}>{name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Row 3: Client Email */}
-                            <div style={{ marginBottom: 8 }}>
-                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Client Email</label>
-                              <input
-                                className="input-field"
-                                type="email"
-                                placeholder="client@email.com"
-                                value={checkin.onboardingEmail || ""}
-                                onChange={(e) => updateOnboardingDetail(idx, "onboardingEmail", e.target.value)}
-                                style={{ fontSize: 12, padding: "6px 8px", width: "100%" }}
-                              />
-                            </div>
-
-                            {/* Row 4: Fathom Link */}
-                            <div style={{ marginBottom: 8 }}>
-                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4, alignItems: "center", gap: 4 }}>
-                                <Link size={10} style={{ display: "inline", marginRight: 4 }} />Fathom Recording Link
-                              </label>
-                              <input
-                                className="input-field"
-                                type="url"
-                                placeholder="https://fathom.video/..."
-                                value={checkin.onboardingFathomLink || ""}
-                                onChange={(e) => updateOnboardingDetail(idx, "onboardingFathomLink", e.target.value)}
-                                style={{ fontSize: 12, padding: "6px 8px", width: "100%" }}
-                              />
-                            </div>
-
-                            {/* Row 4: Payment Comments */}
-                            <div>
-                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Payment Comments *</label>
-                              <input
-                                className="input-field"
-                                placeholder="e.g. Paid $1,200 via Stripe, 3 installments..."
-                                value={checkin.onboardingPaymentComments || ""}
-                                onChange={(e) => updateOnboardingDetail(idx, "onboardingPaymentComments", e.target.value)}
-                                style={{ fontSize: 12, padding: "6px 8px", width: "100%" }}
-                              />
-                            </div>
-                          </div>
-                        )}
 
                         {/* Notes */}
                         <input
