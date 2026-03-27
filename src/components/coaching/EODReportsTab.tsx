@@ -438,26 +438,14 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
           {/* ==================== COACH-SPECIFIC FIELDS ==================== */}
           {formData.role === "coach" && formData.submittedBy && (
             <>
-              {/* Row 2: Active Count (auto), Deactivated (dropdown) */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              {/* Row 2: Active Count (auto) */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginTop: 12 }}>
                 <div>
                   <label className="field-label">Active Client Count</label>
                   <div className="input-field" style={{ display: "flex", alignItems: "center", opacity: 0.7, cursor: "default" }}>
                     {autoActiveCount}
                     <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>(auto)</span>
                   </div>
-                </div>
-
-                {/* Accounts Deactivated Multi-Select */}
-                <div>
-                  <label className="field-label">Accounts Deactivated</label>
-                  <MultiSelectDropdown
-                    options={coachActiveClients.map((c) => c.name)}
-                    selected={formData.deactivatedClientNames || []}
-                    onToggle={(name) => toggleNameInList("deactivatedClientNames", name)}
-                    placeholder="Select clients..."
-                    emptyText="No active clients"
-                  />
                 </div>
               </div>
 
