@@ -841,14 +841,14 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
       ))}
 
       {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
-      <EODSubmissionCalendar reports={reports} eodTeam={[...coachNames, "Nicole"]} />
+      <EODSubmissionCalendar reports={reports} eodTeam={[...coachNames, "Nicole"]} onClientClick={onClientClick} />
     </div>
   );
 }
 
 // ============ EOD Submission Calendar Component ============
 
-function EODSubmissionCalendar({ reports, eodTeam }: { reports: CoachEODReport[]; eodTeam: string[] }) {
+function EODSubmissionCalendar({ reports, eodTeam, onClientClick }: { reports: CoachEODReport[]; eodTeam: string[]; onClientClick?: (name: string) => void }) {
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1034,6 +1034,82 @@ function EODSubmissionCalendar({ reports, eodTeam }: { reports: CoachEODReport[]
                     }}>
                       <XCircle size={10} /> {name}
                     </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Full reports for this day */}
+          {(() => {
+            const dayReports = reports.filter((r) => r.date === selectedDay);
+            if (dayReports.length === 0) return null;
+            return (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase" }}>
+                  Reports ({dayReports.length})
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {dayReports.map((report) => (
+                    <div key={report.id} style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border-primary)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div>
+                          <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>{report.submittedBy}</span>
+                          <span style={{
+                            fontSize: 10, marginLeft: 6, padding: "1px 5px", borderRadius: 3,
+                            background: report.role === "coach" ? "rgba(201, 169, 110, 0.2)" : "rgba(126, 201, 160, 0.2)",
+                            color: report.role === "coach" ? "var(--accent)" : "var(--success)",
+                          }}>{report.role}</span>
+                        </div>
+                        {report.createdAt && (
+                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                            {new Date(report.createdAt).toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4, flexWrap: "wrap" }}>
+                        {report.role === "coach" && <span>Active: <strong>{report.activeClientCount}</strong></span>}
+                        {(report.deactivatedClientNames?.length > 0) && (
+                          <span>Deactivated: <strong style={{ color: "var(--danger)" }}>{report.deactivatedClientNames.join(", ")}</strong></span>
+                        )}
+                        <span>Hours: <strong>{report.hoursLogged}h</strong></span>
+                      </div>
+
+                      {report.summary && (
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 4 }}>{report.summary}</div>
+                      )}
+
+                      {report.communityEngagement && (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
+                          <strong>Community:</strong> {report.communityEngagement}
+                        </div>
+                      )}
+
+                      {report.questionsForManagement && (
+                        <div style={{ fontSize: 11, color: "var(--warning)", marginBottom: 4 }}>
+                          <strong>Questions:</strong> {report.questionsForManagement}
+                        </div>
+                      )}
+
+                      {/* Client check-ins */}
+                      {report.clientCheckins && report.clientCheckins.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {report.clientCheckins.map((c, i) => (
+                              <span key={i} style={{
+                                fontSize: 10, padding: "2px 6px", borderRadius: 3,
+                                background: c.checkedIn ? "rgba(126, 201, 160, 0.1)" : "rgba(217, 142, 142, 0.1)",
+                                color: c.checkedIn ? "var(--success)" : "var(--danger)",
+                                cursor: onClientClick ? "pointer" : "default",
+                              }} onClick={() => onClientClick?.(c.clientName)}>
+                                {c.checkedIn ? "✓" : "✗"} {c.clientName}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
