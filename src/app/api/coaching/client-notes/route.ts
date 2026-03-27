@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { auth } from "@/auth";
 
 export async function GET(request: Request) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
 
     const db = getServiceSupabase();
 
-    // Get all check-in notes for this client with the EOD report date and coach
+    // Get EOD check-in notes
     const { data: checkins, error } = await db
       .from("eod_client_checkins")
       .select("notes, checked_in, eod_id")
@@ -20,34 +21,87 @@ export async function GET(request: Request) {
       .neq("notes", "");
 
     if (error) throw error;
-    if (!checkins?.length) return NextResponse.json({ notes: [] });
 
     // Fetch the associated EOD reports for dates and coach names
-    const eodIds = [...new Set(checkins.map((c) => c.eod_id))];
-    const { data: reports } = await db
-      .from("eod_reports")
-      .select("id, date, submitted_by")
-      .in("id", eodIds);
+    const eodIds = [...new Set((checkins || []).map((c) => c.eod_id))];
+    let reportMap = new Map<number, { date: string; coachName: string }>();
+    if (eodIds.length > 0) {
+      const { data: reports } = await db
+        .from("eod_reports")
+        .select("id, date, submitted_by")
+        .in("id", eodIds);
 
-    const reportMap = new Map(
-      (reports || []).map((r) => [r.id, { date: r.date, coachName: r.submitted_by }])
-    );
+      reportMap = new Map(
+        (reports || []).map((r) => [r.id, { date: r.date, coachName: r.submitted_by }])
+      );
+    }
 
-    const notes = checkins
-      .map((c) => {
-        const report = reportMap.get(c.eod_id);
-        return {
-          date: report?.date || "",
-          coachName: report?.coachName || "",
-          notes: c.notes,
-          checkedIn: c.checked_in,
-        };
-      })
-      .sort((a, b) => b.date.localeCompare(a.date));
+    const eodNotes = (checkins || []).map((c) => {
+      const report = reportMap.get(c.eod_id);
+      return {
+        date: report?.date || "",
+        coachName: report?.coachName || "",
+        notes: c.notes,
+        checkedIn: c.checked_in,
+        source: "eod" as const,
+      };
+    });
 
-    return NextResponse.json({ notes });
+    // Get manual coach notes
+    const { data: manualNotes } = await db
+      .from("client_notes")
+      .select("*")
+      .eq("client_name", clientName)
+      .order("created_at", { ascending: false });
+
+    const manual = (manualNotes || []).map((n) => ({
+      date: n.created_at ? new Date(n.created_at).toISOString().split("T")[0] : "",
+      coachName: n.coach_name,
+      notes: n.note,
+      checkedIn: false,
+      source: "manual" as const,
+    }));
+
+    // Merge and sort by date descending
+    const allNotes = [...eodNotes, ...manual].sort((a, b) => b.date.localeCompare(a.date));
+
+    return NextResponse.json({ notes: allNotes });
   } catch (err) {
     console.error("Client notes error:", err);
     return NextResponse.json({ error: "Failed to fetch notes" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { clientName, note } = body;
+
+    if (!clientName || !note) {
+      return NextResponse.json({ error: "clientName and note required" }, { status: 400 });
+    }
+
+    const db = getServiceSupabase();
+    const { data, error } = await db
+      .from("client_notes")
+      .insert({
+        client_name: clientName,
+        coach_name: session.user.name || session.user.email || "Unknown",
+        note,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true, data });
+  } catch (err) {
+    console.error("Add note error:", err);
+    return NextResponse.json({ error: "Failed to add note" }, { status: 500 });
   }
 }

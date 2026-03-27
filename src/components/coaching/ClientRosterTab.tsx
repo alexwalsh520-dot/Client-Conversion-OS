@@ -33,6 +33,8 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
+  const [newNote, setNewNote] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
 
   // Auto-open client detail when navigated from another tab
   useEffect(() => {
@@ -58,6 +60,24 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
       setClientNotes([]);
     } finally {
       setNotesLoading(false);
+    }
+  };
+
+  const addNote = async (clientName: string) => {
+    if (!newNote.trim()) return;
+    setAddingNote(true);
+    try {
+      await fetch("/api/coaching/client-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientName, note: newNote.trim() }),
+      });
+      setNewNote("");
+      fetchClientNotes(clientName);
+    } catch {
+      // silently fail
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -349,32 +369,56 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             );
           })()}
 
-          {/* Coach Notes from EOD Reports (only when editing) */}
-          {editingId && (
-            <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
-              <label className="field-label" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                <MessageSquare size={13} /> Coach Notes
-              </label>
-              {notesLoading ? (
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading notes...</div>
-              ) : clientNotes.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No coach notes from EOD reports</div>
-              ) : (
-                <div style={{ display: "grid", gap: 6, maxHeight: 300, overflowY: "auto" }}>
-                  {clientNotes.map((note, i) => (
-                    <div key={i} style={{ fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-primary)" }}>
-                      <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
-                        <span style={{ color: "var(--text-muted)", minWidth: 80 }}>{note.date}</span>
-                        <span style={{ color: "var(--accent)", fontWeight: 500 }}>{note.coachName}</span>
-                        {note.checkedIn && <CheckCircle size={12} style={{ color: "var(--success)" }} />}
-                      </div>
-                      <div style={{ color: "var(--text-secondary)", paddingLeft: 4 }}>{note.notes}</div>
-                    </div>
-                  ))}
+          {/* Coach Notes (only when editing) */}
+          {editingId && (() => {
+            const editingClient = clients.find((c) => c.id === editingId);
+            return (
+              <div style={{ marginTop: 16, padding: 12, background: "var(--bg-glass)", borderRadius: 8 }}>
+                <label className="field-label" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <MessageSquare size={13} /> Coach Notes
+                </label>
+
+                {/* Add new note */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input
+                    className="input-field"
+                    placeholder="Add a note about this client..."
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && editingClient) addNote(editingClient.name); }}
+                    style={{ flex: 1, fontSize: 13 }}
+                  />
+                  <button
+                    className="btn-primary"
+                    onClick={() => editingClient && addNote(editingClient.name)}
+                    disabled={addingNote || !newNote.trim()}
+                    style={{ padding: "8px 16px", fontSize: 12, opacity: addingNote || !newNote.trim() ? 0.5 : 1 }}
+                  >
+                    {addingNote ? "..." : "Add"}
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
+
+                {notesLoading ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading notes...</div>
+                ) : clientNotes.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No coach notes yet</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+                    {clientNotes.map((note, i) => (
+                      <div key={i} style={{ fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-primary)" }}>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
+                          <span style={{ color: "var(--text-muted)", minWidth: 80 }}>{note.date}</span>
+                          <span style={{ color: "var(--accent)", fontWeight: 500 }}>{note.coachName}</span>
+                          {note.checkedIn && <CheckCircle size={12} style={{ color: "var(--success)" }} />}
+                        </div>
+                        <div style={{ color: "var(--text-secondary)", paddingLeft: 4 }}>{note.notes}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "space-between" }}>
             <div style={{ display: "flex", gap: 8 }}>
