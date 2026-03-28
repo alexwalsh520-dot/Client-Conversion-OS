@@ -303,9 +303,12 @@ export async function GET(req: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey });
 
-  // Dates in ET
+  // Dates in ET — allow ?date=YYYY-MM-DD override for manual triggers
+  const overrideDate = req.nextUrl.searchParams.get("date");
   const now = new Date();
-  const etNow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const etNow = overrideDate
+    ? new Date(overrideDate + "T12:00:00")
+    : new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
   const todayStr = etNow.toISOString().split("T")[0];
   const yesterday = new Date(etNow); yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split("T")[0];
