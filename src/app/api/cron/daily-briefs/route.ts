@@ -17,9 +17,9 @@ const SETTERS = ["AMARA", "KELECHI", "KELCHI", "DEBBIE", "GIDEON"];
 
 /* ── System Prompts ─────────────────────────────────────────────── */
 
-const CLOSER_BRIEF_PROMPT = `You are the Chief Sales Officer generating a daily closer brief for Core Shift LLC's fitness coaching sales team. This brief is for ONE specific closer. Be direct, tactical, data-driven. No motivational fluff. No AI catchphrases. NEVER blame leads — closers own every outcome.
+const CLOSER_BRIEF_PROMPT = `You are the Chief Sales Officer generating a daily closer brief for Core Shift LLC's fitness coaching sales team. This brief gives the closer real AMMO going into their calls — extracted directly from the DM conversations and call transcripts. No generic AI analysis. No "warmth levels." Pull specific things the prospect SAID and turn them into tactical advantages.
 
-Format EXACTLY as follows (do not deviate):
+Format EXACTLY as follows:
 
 # DAILY BRIEF — [CLOSER NAME]
 **[Day of week], [Full Date] | [X] Scheduled Calls**
@@ -32,43 +32,65 @@ Format EXACTLY as follows (do not deviate):
 For each prospect:
 
 ### [Prospect Name]
-**Client:** [Keith Holland / Tyson Sonnek] | **Setter:** [name] | **Status:** Confirmed
-**Lead Score:** [X/10] | **Warmth:** [Hot/Warm/Cold-Warm/Cold]
+**Client:** [Keith Holland / Tyson Sonnek] | **Setter:** [name]
+**Lead Score:** [X/10]
 
-[2-4 sentences of tactical notes. Reference setter patterns, client-specific close rates, and specific advice for THIS call. If no DM transcript, tell them to text the setter NOW with exact questions to ask. Include what to open with and what to probe.]
+**What They Told Us:**
+[Pull DIRECTLY from the DM transcript. What is their situation? What do they want? What have they tried? What's their timeline? What did they say about budget? Quote their actual words when possible — "I've been struggling with X for Y months" etc. This is the most important part of the brief. Give the closer everything the prospect shared so they walk in knowing the person.]
+
+**Key Signals:**
+[Buying signals or red flags extracted from the DM. Did they respond fast? Did they ask about pricing? Did they mention a partner/spouse? Did they seem hesitant about anything specific? Did they mention competing programs?]
+
+**How to Run This Call:**
+[Specific tactical advice for THIS prospect based on what they said in the DMs. What to open with (reference something specific they said). What pain to dig into. What objection is likely coming and how to preempt it. What close to use.]
+
+[If NO DM transcript exists: State "No DM transcript uploaded by [setter name]. Text [setter] NOW: 'What's [prospect]'s situation? Goals, current state, budget signals, and what got them excited about the call?'" Then give general tactical advice based on the client type.]
 
 ---
 
 ## SECTION 2: MINI REVIEW — YESTERDAY'S CALLS
 
-[For each call from yesterday:]
+[For each call from yesterday, pull from Fathom transcript if available:]
 
 ### [Name] — [OUTCOME]
-[Set by [setter] ([client]). [X]-minute call. What happened, what worked, what to do differently. Be specific.]
+**Set by [setter] | [client] | [X] min**
 
-**Overall Pattern:** [1-2 sentences on the pattern]
+[If Fathom transcript available: Identify 1 specific moment that worked well (with what was said), and 1 specific moment where money was left on the table (with what should have been said instead). Use actual quotes from the transcript.]
+
+[If no transcript: Use the sales tracker data — outcome, objection, call length. Note what follow-up is needed.]
+
+**Overall Pattern:** [1-2 sentences on what yesterday's calls reveal about this closer's current approach]
 
 ---
 
 ## SECTION 3: ACTION ITEMS
 
-[Numbered list, 4-7 items. Each must be specific and completable today. Include who to text, what to say, when to do it.]
+[Numbered list, 4-7 items. Every item must be hyper-specific:]
+- WHO to contact (name)
+- WHAT to say (exact message)
+- WHEN to do it (specific time)
+- WHY it matters (revenue impact)
 
 ---
 
 ## SECTION 4: AI ANALYSIS
 
-[3-4 bullet points. Revenue at stake, patterns, risk flags, key focus for today. Include specific dollar amounts.]
+[3-4 bullet points with specific dollar amounts:]
+- Revenue at stake today based on number of calls and current AOV
+- Risk flags for specific prospects (based on DM signals, not generic)
+- Pattern from recent calls that needs attention
+- One specific skill focus for today based on transcript review
 
 ---
 
 Rules:
-- NEVER blame leads or lead quality. The closer owns every outcome.
-- Every sentence must be actionable or informative. Zero filler.
-- If DM transcript missing, tell them to text the setter with exact questions.
-- Use sales tracker data for setter names — NEVER say "setter unknown".
-- Score leads based on setter track record, client type, and engagement signals.
-- Keep under 5 minutes reading time.`;
+- NEVER blame leads. The closer owns every outcome.
+- NEVER use generic phrases like "warm lead" or "cold lead" without evidence.
+- ALWAYS reference what the prospect actually said when DM transcripts exist.
+- Quote prospects directly from DMs — this is what makes the brief valuable.
+- If the DM shows they mentioned budget concerns, tell the closer exactly how to handle it.
+- If the DM shows they're excited about something specific, tell the closer to open with that.
+- Zero filler. Every sentence gives the closer an edge.`;
 
 const CEO_RECAP_PROMPT = `You are the Chief Sales Officer writing a daily sales recap to the CEO. Be direct, confident, data-driven. No suggestions — give DIRECTIVES. You are telling the CEO what IS happening and what they NEED to do.
 
@@ -171,6 +193,99 @@ function getSetterMTD(allRows: SheetRow[], setter: string) {
     sr: sr.length > 0 ? (st.length / sr.length * 100).toFixed(1) : "0" };
 }
 
+/* ── DM Transcript Lookup ───────────────────────────────────────── */
+
+async function findDMTranscript(prospectName: string, setterName: string, client: string): Promise<string | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  const headers = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+
+  // Strategy 1: Search by prospect last name in transcript
+  const nameParts = prospectName.trim().split(/\s+/);
+  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0];
+  const firstName = nameParts[0];
+
+  for (const searchTerm of [lastName, firstName, prospectName]) {
+    if (!searchTerm || searchTerm.length < 3) continue;
+    try {
+      const encoded = encodeURIComponent(searchTerm.toLowerCase());
+      const url = `${supabaseUrl}/rest/v1/dm_transcripts?transcript=ilike.*${encoded}*&order=submitted_at.desc&limit=2`;
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((t: { setter_name: string; transcript: string; submitted_at: string; client: string }) =>
+            `[Setter: ${t.setter_name} | Client: ${t.client} | Date: ${t.submitted_at.substring(0, 10)}]\n${t.transcript}`
+          ).join("\n\n---\n\n");
+        }
+      }
+    } catch { /* continue */ }
+  }
+
+  // Strategy 2: Get the setter's most recent transcripts for this client
+  // The prospect's conversation is likely in the setter's recent uploads
+  if (setterName) {
+    try {
+      const setterLower = setterName.toLowerCase();
+      const clientLower = client.toLowerCase().includes("keith") ? "keith" : "tyson";
+      const url = `${supabaseUrl}/rest/v1/dm_transcripts?setter_name=ilike.*${setterLower}*&client=eq.${clientLower}&order=submitted_at.desc&limit=5`;
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          // Check each transcript for the prospect's name
+          for (const t of data) {
+            const text = (t.transcript || "").toLowerCase();
+            if (text.includes(firstName.toLowerCase()) || text.includes(lastName.toLowerCase())) {
+              return `[Setter: ${t.setter_name} | Client: ${t.client} | Date: ${t.submitted_at.substring(0, 10)}]\n${t.transcript}`;
+            }
+          }
+        }
+      }
+    } catch { /* continue */ }
+  }
+
+  return null;
+}
+
+/* ── Fathom Call Transcripts ───────────────────────────────────── */
+
+async function fetchFathomTranscripts(closerName: string, closerAliases: string[]): Promise<string> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || `https://${process.env.VERCEL_URL || "client-conversion-os.vercel.app"}`;
+    const res = await fetch(`${baseUrl}/api/sales-hub/fathom-calls`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    const meetings = data.meetings || [];
+
+    // Filter for this closer's recent calls (last 7 days)
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const closerCalls = meetings.filter((m: { title?: string; created_at?: string; calendar_invitees?: { name?: string; email?: string }[] }) => {
+      const created = new Date(m.created_at || "");
+      if (created < weekAgo) return false;
+      const title = (m.title || "").toLowerCase();
+      const invitees = m.calendar_invitees || [];
+      return closerAliases.some(a => title.includes(a.toLowerCase())) ||
+        invitees.some(i => closerAliases.some(a =>
+          (i.name || "").toLowerCase().includes(a.toLowerCase()) ||
+          (i.email || "").toLowerCase().includes(a.toLowerCase())
+        ));
+    });
+
+    if (closerCalls.length === 0) return "";
+
+    return closerCalls.slice(0, 3).map((c: { title?: string; created_at?: string; url?: string }) =>
+      `Call: ${c.title} | Date: ${(c.created_at || "").substring(0, 10)} | Recording: ${c.url || "N/A"}`
+    ).join("\n");
+  } catch {
+    return "";
+  }
+}
+
 /* ── Main Handler ───────────────────────────────────────────────── */
 
 export async function GET(req: NextRequest) {
@@ -229,24 +344,44 @@ export async function GET(req: NextRequest) {
     const yesterdayCalls = yesterdayRows.filter((r) => closer.alias.some((a) => (r.closer || "").toUpperCase() === a));
     const mtd = getCloserMTD(allRows, closer.alias);
 
+    // Fetch DM transcripts for each prospect on today's schedule
+    const prospectDetails: string[] = [];
+    for (let i = 0; i < todayCalls.length; i++) {
+      const r = todayCalls[i];
+      const dmTranscript = await findDMTranscript(r.name, r.setter || "", r.offer || "");
+      prospectDetails.push(`--- PROSPECT ${i + 1}: ${r.name} ---
+Client: ${r.offer || "Unknown"}
+Setter: ${r.setter || "Unknown"}
+
+${dmTranscript
+  ? `DM TRANSCRIPT (this is the actual conversation between the setter and prospect):\n${dmTranscript.substring(0, 3000)}`
+  : `NO DM TRANSCRIPT FOUND — setter ${r.setter || "unknown"} has not uploaded the conversation for this prospect.`}
+`);
+    }
+
+    // Fetch Fathom call data for this closer
+    const fathomCalls = await fetchFathomTranscripts(closer.name, [...closer.alias, closer.name.split(" ")[0]]);
+
     const context = `Closer: ${closer.name}
 Date: ${todayStr}
 MTD: $${mtd.cash.toLocaleString()} cash | ${mtd.cr}% CR | ${mtd.sr}% SR | ${mtd.wins} wins / ${mtd.taken} taken / ${mtd.booked} booked
 
-TODAY'S CALLS (${todayCalls.length}):
-${todayCalls.length === 0 ? "No calls scheduled." : todayCalls.map((r, i) => `${i + 1}. ${r.name} | Client: ${r.offer || "?"} | Setter: ${r.setter || "?"}`).join("\n")}
+=== TODAY'S PROSPECTS (${todayCalls.length}) ===
 
-YESTERDAY'S CALLS (${yesterdayCalls.length}):
+${prospectDetails.join("\n")}
+
+=== YESTERDAY'S CALLS (${yesterdayCalls.length}) ===
 ${yesterdayCalls.length === 0 ? "No calls yesterday." : yesterdayCalls.map((r) => `${r.name}: ${r.outcome || "No outcome"} | Setter: ${r.setter || "?"} | Client: ${r.offer || "?"} | Taken: ${r.callTaken} | Length: ${r.callLength || "?"} min | Objection: ${r.objection || "none"} | Cash: $${r.cashCollected || 0} | Recording: ${r.recordingLink || "N/A"}`).join("\n")}
 
-TEAM MTD: ${mtdSummary}
+=== RECENT FATHOM CALLS FOR ${closer.name.toUpperCase()} ===
+${fathomCalls || "No recent Fathom recordings found."}
 
-SETTER STATS:
-${SETTERS.map((s) => { const d = getSetterMTD(allRows, s); return `${s} (${d.clients.join("/")}): ${d.booked} booked | ${d.taken} taken | ${d.wins} wins | ${d.noShows} NS | ${d.sr}% SR`; }).join("\n")}`;
+=== TEAM MTD ===
+${mtdSummary}`;
 
     try {
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514", max_tokens: 4000,
+        model: "claude-sonnet-4-20250514", max_tokens: 5000,
         system: CLOSER_BRIEF_PROMPT,
         messages: [{ role: "user", content: `Generate the daily brief for ${closer.name}:\n\n${context}` }],
       });
