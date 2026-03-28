@@ -829,7 +829,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
       ))}
 
       {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
-      <EODSubmissionCalendar reports={reports} eodTeam={[...coachNames, "Nicole"]} onClientClick={onClientClick} />
+      <EODSubmissionCalendar reports={reports} eodTeam={["Farrukh", "Fatima", "Ignacio", "Stef", "Waleed", "Nicole"]} onClientClick={onClientClick} />
     </div>
   );
 }
