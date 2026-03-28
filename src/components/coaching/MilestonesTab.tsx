@@ -536,6 +536,150 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
           </div>
         </div>
       )}
+
+      {/* ======================== UPCOMING RETENTIONS TABLE ======================== */}
+      <UpcomingRetentions clients={clients} milestones={milestones} coaches={coaches} onClientClick={onClientClick} />
+    </div>
+  );
+}
+
+// ============ Upcoming Retentions Component ============
+
+function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
+  clients: Client[];
+  milestones: CoachMilestone[];
+  coaches: string[];
+  onClientClick?: (name: string) => void;
+}) {
+  const [coachFilter, setCoachFilter] = useState<string>("all");
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  // Calculate Monday-to-Monday week range
+  const getWeekRange = (offset: number) => {
+    const now = new Date();
+    const day = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+    monday.setHours(0, 0, 0, 0);
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+    return { start: monday, end: nextMonday };
+  };
+
+  const { start: weekStart, end: weekEnd } = getWeekRange(weekOffset);
+
+  const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const weekLabel = `${formatDate(weekStart)} — ${formatDate(new Date(weekEnd.getTime() - 86400000))}`;
+
+  // Find all active clients with retention due in this week
+  const activeClients = clients.filter((c) => c.status === "active" && c.endDate);
+  const retentionData = activeClients
+    .map((client) => {
+      const endDate = new Date(client.endDate);
+      const retDueDate = new Date(endDate.getTime() - 14 * 86400000);
+      const milestone = milestones.find((m) => m.clientName === client.name || (m.clientId && m.clientId === client.id));
+      const status = milestone?.retentionCompleted ? "completed"
+        : milestone?.retentionPromptedDate ? "attempted" : "pending";
+
+      return { client, retDueDate, endDate, status, milestone };
+    })
+    .filter((d) => d.retDueDate >= weekStart && d.retDueDate < weekEnd)
+    .filter((d) => coachFilter === "all" || d.client.coachName === coachFilter)
+    .sort((a, b) => a.retDueDate.getTime() - b.retDueDate.getTime());
+
+  return (
+    <div className="glass-static" style={{ padding: 16, marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+          <Clock size={14} /> Upcoming Retentions
+        </h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select
+            className="input-field"
+            value={coachFilter}
+            onChange={(e) => setCoachFilter(e.target.value)}
+            style={{ width: "auto", fontSize: 12, padding: "4px 8px" }}
+          >
+            <option value="all">All Coaches</option>
+            {coaches.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setWeekOffset((w) => w - 1)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+          >
+            <ChevronDown size={16} style={{ transform: "rotate(90deg)" }} />
+          </button>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", minWidth: 140, textAlign: "center" }}>
+            {weekLabel}
+          </span>
+          <button
+            onClick={() => setWeekOffset((w) => w + 1)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+          >
+            <ChevronDown size={16} style={{ transform: "rotate(-90deg)" }} />
+          </button>
+        </div>
+      </div>
+
+      {retentionData.length === 0 ? (
+        <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+          No retention milestones due this week.
+        </div>
+      ) : (
+        <div style={{ overflow: "auto" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Coach</th>
+                <th>Retention Due</th>
+                <th>Program Ends</th>
+                <th>Days Left</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {retentionData.map((d) => {
+                const daysLeft = Math.ceil((d.endDate.getTime() - Date.now()) / 86400000);
+                return (
+                  <tr key={d.client.id || d.client.name}>
+                    <td
+                      style={{ fontWeight: 600, color: "var(--text-primary)", cursor: onClientClick ? "pointer" : "default" }}
+                      onClick={() => onClientClick?.(d.client.name)}
+                    >
+                      {d.client.name}
+                    </td>
+                    <td>{d.client.coachName}</td>
+                    <td style={{ fontSize: 12 }}>{d.retDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+                    <td style={{ fontSize: 12 }}>{d.client.endDate}</td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: daysLeft <= 7 ? "var(--danger)" : daysLeft <= 21 ? "var(--warning)" : "var(--success)" }}>
+                        {daysLeft}d
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        fontSize: 11, padding: "2px 8px", borderRadius: 4,
+                        background: d.status === "completed" ? "rgba(126, 201, 160, 0.15)"
+                          : d.status === "attempted" ? "rgba(217, 142, 142, 0.15)"
+                          : "rgba(201, 169, 110, 0.15)",
+                        color: d.status === "completed" ? "var(--success)"
+                          : d.status === "attempted" ? "var(--danger)"
+                          : "var(--accent)",
+                        fontWeight: 600, textTransform: "uppercase",
+                      }}>
+                        {d.status === "completed" ? "Done" : d.status === "attempted" ? "Attempted" : "Pending"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
