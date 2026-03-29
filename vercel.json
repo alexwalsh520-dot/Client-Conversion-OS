@@ -6,7 +6,11 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/daily-briefs",
+      "path": "/api/cron/daily-briefs?type=closer",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/daily-briefs?type=ceo",
       "schedule": "0 10 * * *"
     }
   ]

@@ -303,6 +303,11 @@ export async function GET(req: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey });
 
+  // Type param: "closer" (11 PM cron, briefs for TOMORROW), "ceo" (5 AM cron), or both
+  const briefType = req.nextUrl.searchParams.get("type") || "all"; // "closer" | "ceo" | "all"
+  const generateCloserBriefs = briefType === "closer" || briefType === "all";
+  const generateCeoRecap = briefType === "ceo" || briefType === "all";
+
   // Dates in ET — allow ?date=YYYY-MM-DD override for manual triggers
   const overrideDate = req.nextUrl.searchParams.get("date");
   const now = new Date();
@@ -312,17 +317,41 @@ export async function GET(req: NextRequest) {
   const todayStr = etNow.toISOString().split("T")[0];
   const yesterday = new Date(etNow); yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const tomorrow = new Date(etNow); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
   const monthStart = todayStr.substring(0, 8) + "01";
 
-  // Fetch sales tracker data
+  // For closer briefs at 11 PM: show TOMORROW's calls
+  // For CEO recap at 5 AM: show TODAY's data with YESTERDAY's results
+  const briefDate = briefType === "closer" ? tomorrowStr : todayStr;
+
+  // Fetch sales tracker data — include tomorrow for closer briefs
+  const fetchEnd = briefType === "closer" ? tomorrowStr : todayStr;
   let sheetData: { rows: SheetRow[]; subscriptionsSold: number };
   try {
-    sheetData = await fetchSheetData(monthStart, todayStr);
+    sheetData = await fetchSheetData(monthStart, fetchEnd);
   } catch (err) {
     return NextResponse.json({ error: `Sheet data error: ${err}` }, { status: 500 });
   }
 
+  // Also try to get appointments from GHL webhook table (Supabase)
+  let ghlAppointments: { contact_name: string; closer_name: string; client: string; start_time: string; status: string; contact_phone: string }[] = [];
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && supabaseKey) {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/ghl_appointments?start_time=gte.${briefDate}T00:00:00&start_time=lt.${briefDate}T23:59:59&status=neq.cancelled&order=start_time`,
+        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+      );
+      if (res.ok) {
+        ghlAppointments = await res.json();
+      }
+    }
+  } catch { /* GHL webhook table may not exist yet — fall back to sheet data */ }
+
   const allRows = sheetData.rows;
+  const briefDateRows = allRows.filter((r) => r.date === briefDate);
   const todayRows = allRows.filter((r) => r.date === todayStr);
   const yesterdayRows = allRows.filter((r) => r.date === yesterdayStr);
 
@@ -342,8 +371,38 @@ export async function GET(req: NextRequest) {
   const results: { type: string; closer?: string; success: boolean; error?: string }[] = [];
 
   // ─── CLOSER BRIEFS ───
+  if (generateCloserBriefs) {
   for (const closer of CLOSERS) {
-    const todayCalls = todayRows.filter((r) => closer.alias.some((a) => (r.closer || "").toUpperCase() === a));
+    // Use briefDateRows (tomorrow for 11 PM cron, today for manual)
+    const scheduledCalls = briefDateRows.filter((r) => closer.alias.some((a) => (r.closer || "").toUpperCase() === a));
+
+    // Merge GHL webhook appointments if available (more up-to-date with reschedules)
+    const ghlCloserAppts = ghlAppointments.filter((a) =>
+      a.closer_name && closer.alias.some((al) => a.closer_name.toUpperCase().includes(al))
+    );
+
+    // If GHL has more appointments than the sheet, use GHL data to supplement
+    const todayCalls = scheduledCalls.length > 0 ? scheduledCalls :
+      ghlCloserAppts.map((a) => ({
+        name: a.contact_name || "Unknown",
+        closer: closer.sheetKey,
+        setter: "",
+        outcome: "",
+        callTaken: false,
+        callLength: "",
+        offer: a.client === "tyson" ? "Tyson Sonnek" : a.client === "keith" ? "Keith Holland" : "",
+        objection: "",
+        cashCollected: 0,
+        revenue: 0,
+        callNotes: "",
+        recordingLink: "",
+        date: briefDate,
+        callNumber: "",
+        recorded: false,
+        programLength: "",
+        method: "",
+      } as SheetRow));
+
     const yesterdayCalls = yesterdayRows.filter((r) => closer.alias.some((a) => (r.closer || "").toUpperCase() === a));
     const mtd = getCloserMTD(allRows, closer.alias);
 
@@ -366,7 +425,7 @@ ${dmTranscript
     const fathomCalls = await fetchFathomTranscripts(closer.name, [...closer.alias, closer.name.split(" ")[0]]);
 
     const context = `Closer: ${closer.name}
-Date: ${todayStr}
+Date: ${briefDate}
 MTD: $${mtd.cash.toLocaleString()} cash | ${mtd.cr}% CR | ${mtd.sr}% SR | ${mtd.wins} wins / ${mtd.taken} taken / ${mtd.booked} booked
 
 === TODAY'S PROSPECTS (${todayCalls.length}) ===
@@ -389,18 +448,20 @@ ${mtdSummary}`;
         messages: [{ role: "user", content: `Generate the daily brief for ${closer.name}:\n\n${context}` }],
       });
       const brief = msg.content.filter((b) => b.type === "text").map((b) => b.type === "text" ? b.text : "").join("\n");
-      const pdf = generatePDF(`Daily Brief — ${closer.name} (${todayStr})`, brief);
-      await uploadFileAsCso(pdf, `brief-${closer.sheetKey.toLowerCase()}-${todayStr}.pdf`,
-        `Daily Brief — ${closer.name} (${todayStr})`,
-        `📋 *DAILY BRIEF — ${closer.name.toUpperCase()}*\n${todayCalls.length} calls | MTD: $${mtd.cash.toLocaleString()} | ${mtd.cr}% CR | ${mtd.sr}% SR`);
+      const pdf = generatePDF(`Daily Brief — ${closer.name} (${briefDate})`, brief);
+      await uploadFileAsCso(pdf, `brief-${closer.sheetKey.toLowerCase()}-${briefDate}.pdf`,
+        `Daily Brief — ${closer.name} (${briefDate})`,
+        `📋 *DAILY BRIEF — ${closer.name.toUpperCase()}* (for ${briefDate})\n${todayCalls.length} calls | MTD: $${mtd.cash.toLocaleString()} | ${mtd.cr}% CR | ${mtd.sr}% SR`);
       results.push({ type: "closer_brief", closer: closer.name, success: true });
     } catch (err) {
       console.error(`[cron/daily-briefs] ${closer.name} error:`, err);
       results.push({ type: "closer_brief", closer: closer.name, success: false, error: String(err) });
     }
   }
+  } // end generateCloserBriefs
 
   // ─── CEO RECAP ───
+  if (generateCeoRecap) {
   try {
     const ceoContext = `MTD (${monthStart} to ${todayStr}):
 ${mtdSummary}
@@ -435,6 +496,7 @@ ${["Tyson", "Keith"].map((cl) => { const cr = allRows.filter((r) => (r.offer || 
     console.error("[cron/daily-briefs] CEO recap error:", err);
     results.push({ type: "ceo_recap", success: false, error: String(err) });
   }
+  } // end generateCeoRecap
 
-  return NextResponse.json({ success: true, date: todayStr, results, total: results.filter((r) => r.success).length });
+  return NextResponse.json({ success: true, date: todayStr, briefDate, briefType, results, total: results.filter((r) => r.success).length });
 }
