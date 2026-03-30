@@ -65,7 +65,7 @@ export interface Client {
   endDate: string;
   onboardingDate: string | null; // Actual onboarding date (from Nicole's EOD confirmation)
   onboardingStatus: 'scheduled' | 'onboarded' | 'no_show' | 'rescheduled' | null;
-  status: 'active' | 'paused' | 'completed' | 'cancelled' | 'refunded';
+  status: 'active' | 'paused' | 'completed' | 'cancelled' | 'refunded' | 'retained';
   paymentPlatform: string;
   salesFathomLink: string;
   onboardingFathomLink: string;

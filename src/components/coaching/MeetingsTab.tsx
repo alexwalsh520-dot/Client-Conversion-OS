@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Plus, X } from "lucide-react";
+import { Calendar, Plus, X, Trash2 } from "lucide-react";
 import type { Client, CoachMeeting } from "@/lib/types";
 
 interface Props {
   meetings: CoachMeeting[];
   clients: Client[];
   onSave: (meeting: Partial<CoachMeeting>) => Promise<void>;
+  onDelete?: (meetingId: number) => Promise<void>;
 }
 
-export default function MeetingsTab({ meetings, clients, onSave }: Props) {
+export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [coachFilter, setCoachFilter] = useState<string>("all");
   const [formData, setFormData] = useState<Partial<CoachMeeting>>({});
@@ -154,7 +155,14 @@ export default function MeetingsTab({ meetings, clients, onSave }: Props) {
                   <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{meeting.clientName}</span>
                   <span style={{ color: "var(--text-muted)", fontSize: 12, marginLeft: 8 }}>w/ {meeting.coachName}</span>
                 </div>
-                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{meeting.durationMinutes}min</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{meeting.durationMinutes}min</span>
+                  {meeting.id && onDelete && (
+                    <button onClick={() => onDelete(meeting.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }} title="Delete meeting">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
               {meeting.notes && (
                 <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.5 }}>

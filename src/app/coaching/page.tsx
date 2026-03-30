@@ -123,6 +123,11 @@ export default function CoachingPage() {
     refetchMeetings();
   };
 
+  const handleDeleteMeeting = async (meetingId: number) => {
+    await apiCall("delete_meeting", { id: meetingId });
+    refetchMeetings();
+  };
+
   const handleToggleMilestone = async (
     milestoneId: number | null,
     field: string,
@@ -246,7 +251,7 @@ export default function CoachingPage() {
       {/* Tab Content */}
       <div className="section">
         {activeTab === "roster" && (
-          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} onSave={handleSaveClient} onDelete={handleDeleteClient} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
+          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} onSave={handleSaveClient} onDelete={handleDeleteClient} onDeleteMeeting={handleDeleteMeeting} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
         )}
         {activeTab === "onboarding" && (
           <OnboardingTab clients={clients} onClientClick={navigateToClient} />
@@ -262,7 +267,7 @@ export default function CoachingPage() {
           />
         )}
         {activeTab === "meetings" && (
-          <MeetingsTab meetings={meetings} clients={clients} onSave={handleSaveMeeting} />
+          <MeetingsTab meetings={meetings} clients={clients} onSave={handleSaveMeeting} onDelete={handleDeleteMeeting} />
         )}
         {activeTab === "milestones" && (
           <MilestonesTab clients={clients} milestones={milestones} onToggle={handleToggleMilestone} recentActivity={milestoneActivity} onClientClick={navigateToClient} />

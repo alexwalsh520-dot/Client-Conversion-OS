@@ -232,6 +232,26 @@ export async function POST(req: NextRequest) {
 
       const clientRows = Array.from(clientMap.values());
       if (clientRows.length > 0) {
+        // Preserve manually-set statuses (cancelled, refunded, retained)
+        // Don't let sync overwrite these with "active" or "completed"
+        const manualStatuses = ["cancelled", "refunded", "retained"];
+        const { data: existingClients } = await db
+          .from("clients")
+          .select("name, coach_name, status")
+          .in("name", clientRows.map((r) => r.name));
+
+        const existingStatusMap = new Map(
+          (existingClients || []).map((c) => [`${c.name}|${c.coach_name}`, c.status])
+        );
+
+        for (const row of clientRows) {
+          const key = `${row.name}|${row.coach_name}`;
+          const currentStatus = existingStatusMap.get(key);
+          if (currentStatus && manualStatuses.includes(currentStatus)) {
+            row.status = currentStatus; // Keep the manual status
+          }
+        }
+
         const { error } = await db
           .from("clients")
           .upsert(clientRows, { onConflict: "name,coach_name" });
