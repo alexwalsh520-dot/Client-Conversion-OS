@@ -30,6 +30,12 @@ export async function POST(req: NextRequest) {
 
   const db = getServiceSupabase();
 
+  // Normalize coach name variants (Stefanie/Stephanie → Stef)
+  const normalizeCoachName = (name: string): string => {
+    if (/^stefanie$/i.test(name.trim()) || /^stephanie$/i.test(name.trim())) return "Stef";
+    return name.trim();
+  };
+
   // Create sync log entry
   const { data: logEntry, error: logError } = await db
     .from("sync_log")
@@ -80,6 +86,7 @@ export async function POST(req: NextRequest) {
     if (coaching.length > 0) {
       const dedupMap = new Map<string, (typeof coaching)[0]>();
       for (const row of coaching) {
+        row.coach_name = normalizeCoachName(row.coach_name);
         const key = `${row.client_name}|${row.date}|${row.coach_name}`;
         dedupMap.set(key, row); // Last one wins (latest timestamp)
       }
@@ -177,6 +184,7 @@ export async function POST(req: NextRequest) {
 
       for (const row of coachTrackers) {
         if (!row.client_name || !row.coach_name) continue;
+        row.coach_name = normalizeCoachName(row.coach_name);
         const key = `${row.client_name}|${row.coach_name}`;
         const existing = clientMap.get(key);
 

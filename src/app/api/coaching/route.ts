@@ -34,6 +34,18 @@ export async function POST(req: NextRequest) {
 
   const db = getServiceSupabase();
 
+  // Normalize coach name variants
+  const normalizeCoachName = (name: string | null | undefined): string | null => {
+    if (!name) return null;
+    const trimmed = name.trim();
+    if (/^stefanie$/i.test(trimmed) || /^stephanie$/i.test(trimmed)) return "Stef";
+    return trimmed;
+  };
+
+  // Apply normalization to payload coach fields
+  if (payload.coachName) payload.coachName = normalizeCoachName(payload.coachName);
+  if (payload.submittedBy) payload.submittedBy = normalizeCoachName(payload.submittedBy) || payload.submittedBy;
+
   try {
     switch (action) {
       // ---- Clients ----
