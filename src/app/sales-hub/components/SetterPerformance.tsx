@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Loader2, MessageSquare } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, ManychatMetrics, ManychatDashboard } from "../types";
@@ -15,10 +15,27 @@ interface SetterPerformanceProps {
 interface SetterRow {
   name: string;
   client: string;
+  // Manychat metrics
   newLeads: number;
   leadsEngaged: number;
   callLinksSent: number;
   subLinksSent: number;
+  // Sales tracker metrics
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  noShows: number;
+  cashCollected: number;
+  subsSold: number;
+}
+
+interface SheetRow {
+  setter: string;
+  callTaken: boolean;
+  outcome: string;
+  cashCollected: number;
+  offer: string;
+  method: string;
 }
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
@@ -26,6 +43,13 @@ interface SetterRow {
 const CLIENT_SETTERS: Record<string, string[]> = {
   tyson: ["Amara", "Kelechi"],
   keith: ["Gideon", "Debbie"],
+};
+
+const SETTER_SHEET_KEYS: Record<string, string[]> = {
+  Amara: ["AMARA"],
+  Kelechi: ["KELCHI", "KELECHI"],
+  Gideon: ["GIDEON"],
+  Debbie: ["DEBBIE"],
 };
 
 function getRelevantSetters(client: string): { name: string; client: string }[] {
@@ -46,12 +70,6 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-/* ── Rate color helper ────────────────────────────────────────────── */
-
-function rateColor(rate: number): string {
-  return rate >= 50 ? "var(--success)" : rate >= 30 ? "var(--warning)" : "var(--danger)";
-}
-
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function SetterPerformance({ filters }: SetterPerformanceProps) {
@@ -60,28 +78,37 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [metricsMap, setMetricsMap] = useState<Record<string, ManychatMetrics>>({});
+  const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
 
   /* ── Fetch data ─────────────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
+      // Fetch Manychat metrics and sheet data in parallel
+      const sheetPromise = fetchJSON<{ rows: SheetRow[] }>(
+        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`
+      ).catch(() => ({ rows: [] }));
+
+      let manychatPromise: Promise<Record<string, ManychatMetrics>>;
       if (filters.client === "all") {
-        const [tyson, keith] = await Promise.all([
+        manychatPromise = Promise.all([
           fetchJSON<ManychatMetrics>(
             `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
           fetchJSON<ManychatMetrics>(
             `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
-        ]);
-        setMetricsMap({ tyson, keith });
+        ]).then(([tyson, keith]) => ({ tyson, keith }));
       } else {
-        const data = await fetchJSON<ManychatMetrics>(
+        manychatPromise = fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-        );
-        setMetricsMap({ [filters.client]: data });
+        ).then((data) => ({ [filters.client]: data }));
       }
+
+      const [manychatData, sheetData] = await Promise.all([manychatPromise, sheetPromise]);
+      setMetricsMap(manychatData);
+      setSheetRows(sheetData.rows || []);
       setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -98,39 +125,44 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     const relevant = getRelevantSetters(filters.client);
 
     return relevant.map(({ name, client }) => {
+      // Manychat metrics
       const metrics = metricsMap[client];
-      if (!metrics || !metrics.setters) {
-        return { name, client, newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+      let mc: ManychatDashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+      if (metrics?.setters) {
+        mc = metrics.setters[name] ||
+          metrics.setters[name.toLowerCase()] ||
+          Object.entries(metrics.setters).find(
+            ([k]) => k.toLowerCase() === name.toLowerCase(),
+          )?.[1] || mc;
       }
 
-      const setterData: ManychatDashboard | undefined =
-        metrics.setters[name] ||
-        metrics.setters[name.toLowerCase()] ||
-        Object.entries(metrics.setters).find(
-          ([k]) => k.toLowerCase() === name.toLowerCase(),
-        )?.[1];
-
-      if (!setterData) {
-        return { name, client, newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
-      }
+      // Sales tracker metrics
+      const keys = SETTER_SHEET_KEYS[name] || [name.toUpperCase()];
+      const setterSheetRows = sheetRows.filter((r) =>
+        keys.some((k) => (r.setter || "").toUpperCase().includes(k))
+      );
+      const callsBooked = setterSheetRows.length;
+      const callsTaken = setterSheetRows.filter((r) => r.callTaken).length;
+      const wins = setterSheetRows.filter((r) => r.outcome === "WIN").length;
+      const noShows = setterSheetRows.filter((r) => ["NS/RS", "NS"].includes(r.outcome)).length;
+      const cashCollected = setterSheetRows.reduce((s, r) => s + (r.cashCollected || 0), 0);
+      const subsSold = setterSheetRows.filter((r) =>
+        (r.method || "").toLowerCase().includes("sub") ||
+        (r.outcome === "WIN" && (r.offer || "").toLowerCase().includes("sub"))
+      ).length;
 
       return {
-        name,
-        client,
-        newLeads: setterData.newLeads,
-        leadsEngaged: setterData.leadsEngaged,
-        callLinksSent: setterData.callLinksSent,
-        subLinksSent: setterData.subLinksSent,
+        name, client,
+        newLeads: mc.newLeads,
+        leadsEngaged: mc.leadsEngaged,
+        callLinksSent: mc.callLinksSent,
+        subLinksSent: mc.subLinksSent,
+        callsBooked, callsTaken, wins, noShows, cashCollected, subsSold,
       };
     });
-  }, [filters.client, metricsMap]);
+  }, [filters.client, metricsMap, sheetRows]);
 
-  /* ── Client color helper ────────────────────────────────────────── */
-  function clientColor(client: string): string {
-    return client === "keith" ? "var(--keith)" : "var(--tyson)";
-  }
-
-  /* ── Loading state ──────────────────────────────────────────────── */
+  /* ── Loading / Error / Empty states ────────────────────────────── */
   if (loading) {
     return (
       <div className="glass-static" style={{
@@ -141,7 +173,6 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     );
   }
 
-  /* ── Error state ────────────────────────────────────────────────── */
   if (error) {
     return (
       <div className="glass-static" style={{
@@ -152,7 +183,6 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     );
   }
 
-  /* ── Empty state ────────────────────────────────────────────────── */
   if (setterRows.length === 0) {
     return (
       <div className="glass-static" style={{
@@ -165,30 +195,24 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(2, 1fr)",
-      gap: 16,
-    }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
       {setterRows.map((s) => {
-        const engagement = s.newLeads > 0 ? (s.leadsEngaged / s.newLeads) * 100 : 0;
-        const engColor = rateColor(engagement);
-        const cc = clientColor(s.client);
+        const engagementRate = s.newLeads > 0 ? (s.leadsEngaged / s.newLeads) * 100 : 0;
+        const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
+        const showRate = s.callsBooked > 0 ? (s.callsTaken / s.callsBooked) * 100 : 0;
+        const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
+        const cc = s.client === "keith" ? "var(--keith)" : "var(--tyson)";
 
         return (
-          <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "22px 24px" }}>
+          <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
             {/* Header */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              marginBottom: 18,
+              marginBottom: 14,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: "50%", background: cc,
-                }} />
-                <span style={{
-                  fontSize: 16, fontWeight: 700, color: "var(--text-primary)",
-                }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: cc }} />
+                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
                   {s.name}
                 </span>
               </div>
@@ -200,58 +224,101 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               </span>
             </div>
 
-            {/* Metrics 2x2 grid */}
+            {/* DM Metrics Row */}
             <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr",
-              gap: "12px 20px", marginBottom: 16,
+              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+              gap: "8px", marginBottom: 12,
             }}>
               {[
-                { label: "New Leads", value: s.newLeads },
-                { label: "Engaged", value: s.leadsEngaged },
-                { label: "Call Links", value: s.callLinksSent },
-                { label: "Sub Links", value: s.subLinksSent },
+                { label: "New Leads", value: fmtNumber(s.newLeads) },
+                { label: "Engaged", value: fmtNumber(s.leadsEngaged) },
+                { label: "Call Links", value: fmtNumber(s.callLinksSent) },
+                { label: "Sub Links", value: fmtNumber(s.subLinksSent) },
               ].map((m) => (
                 <div key={m.label}>
-                  <div style={{
-                    fontSize: 22, fontWeight: 700, color: "var(--text-primary)",
-                    letterSpacing: "-0.5px",
-                  }}>
-                    {fmtNumber(m.value)}
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
+                    {m.value}
                   </div>
-                  <div style={{
-                    fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginTop: 2,
-                  }}>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
                     {m.label}
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Engagement rate bar */}
-            <div style={{ padding: "12px 0 0", borderTop: "1px solid var(--border-subtle)" }}>
-              <div style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                marginBottom: 6,
-              }}>
-                <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-                  Engagement
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: engColor }}>
-                  {fmtPercent(engagement)}
-                </span>
+            {/* Sales Metrics Row */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+              gap: "8px", marginBottom: 12,
+              padding: "10px 0", borderTop: "1px solid var(--border-subtle)",
+            }}>
+              {[
+                { label: "Calls Booked", value: fmtNumber(s.callsBooked) },
+                { label: "Calls Taken", value: fmtNumber(s.callsTaken) },
+                { label: "Wins", value: fmtNumber(s.wins) },
+                { label: "No Shows", value: fmtNumber(s.noShows), danger: s.noShows > 3 },
+              ].map((m) => (
+                <div key={m.label}>
+                  <div style={{
+                    fontSize: 18, fontWeight: 700,
+                    color: m.danger ? "var(--danger)" : "var(--text-primary)",
+                  }}>
+                    {m.value}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+                    {m.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Cash + Subs Row */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1fr 1fr",
+              gap: "8px", marginBottom: 12,
+            }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>
+                  ${s.cashCollected.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+                  Cash Collected
+                </div>
               </div>
-              <div style={{
-                height: 5, background: "rgba(255,255,255,0.06)",
-                borderRadius: 3, overflow: "hidden",
-              }}>
-                <div style={{
-                  height: "100%",
-                  width: `${Math.min(engagement, 100)}%`,
-                  background: engColor,
-                  borderRadius: 3,
-                  transition: "width 0.8s ease",
-                }} />
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
+                  {fmtNumber(s.subsSold)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+                  Subs Sold
+                </div>
               </div>
+            </div>
+
+            {/* Rates Row */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+              gap: "8px", padding: "10px 0 0",
+              borderTop: "1px solid var(--border-subtle)",
+            }}>
+              {[
+                { label: "Engagement", value: engagementRate, target: 50 },
+                { label: "Booking Rate", value: bookingRate, target: 15 },
+                { label: "Show Rate", value: showRate, target: 65 },
+                { label: "Close Rate", value: closeRate, target: 40 },
+              ].map((m) => (
+                <div key={m.label}>
+                  <div style={{
+                    fontSize: 16, fontWeight: 700,
+                    color: m.value >= m.target ? "var(--success)" : m.value >= m.target * 0.7 ? "var(--warning)" : "var(--danger)",
+                  }}>
+                    {m.value > 0 ? fmtPercent(m.value) : "—"}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+                    {m.label}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         );
