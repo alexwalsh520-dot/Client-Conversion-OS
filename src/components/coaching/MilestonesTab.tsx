@@ -571,21 +571,20 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
   const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const weekLabel = `${formatDate(weekStart)} — ${formatDate(new Date(weekEnd.getTime() - 86400000))}`;
 
-  // Find all active clients with retention due in this week
+  // Find all active clients whose end date falls within this Monday-to-Monday week
   const activeClients = clients.filter((c) => c.status === "active" && c.endDate);
   const retentionData = activeClients
     .map((client) => {
       const endDate = new Date(client.endDate);
-      const retDueDate = new Date(endDate.getTime() - 14 * 86400000);
       const milestone = milestones.find((m) => m.clientName === client.name || (m.clientId && m.clientId === client.id));
       const status = milestone?.retentionCompleted ? "completed"
         : milestone?.retentionPromptedDate ? "attempted" : "pending";
 
-      return { client, retDueDate, endDate, status, milestone };
+      return { client, endDate, status, milestone };
     })
-    .filter((d) => d.retDueDate >= weekStart && d.retDueDate < weekEnd)
+    .filter((d) => d.endDate >= weekStart && d.endDate < weekEnd)
     .filter((d) => coachFilter === "all" || d.client.coachName === coachFilter)
-    .sort((a, b) => a.retDueDate.getTime() - b.retDueDate.getTime());
+    .sort((a, b) => a.endDate.getTime() - b.endDate.getTime());
 
   return (
     <div className="glass-static" style={{ padding: 16, marginTop: 20 }}>
@@ -625,7 +624,7 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
 
       {retentionData.length === 0 ? (
         <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-          No retention milestones due this week.
+          No clients ending this week.
         </div>
       ) : (
         <div style={{ overflow: "auto" }}>
@@ -634,10 +633,9 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
               <tr>
                 <th>Client</th>
                 <th>Coach</th>
-                <th>Retention Due</th>
                 <th>Program Ends</th>
                 <th>Days Left</th>
-                <th>Status</th>
+                <th>Retention Status</th>
               </tr>
             </thead>
             <tbody>
@@ -652,8 +650,7 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
                       {d.client.name}
                     </td>
                     <td>{d.client.coachName}</td>
-                    <td style={{ fontSize: 12 }}>{d.retDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
-                    <td style={{ fontSize: 12 }}>{d.client.endDate}</td>
+                    <td style={{ fontSize: 12 }}>{d.endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
                     <td>
                       <span style={{ fontWeight: 600, color: daysLeft <= 7 ? "var(--danger)" : daysLeft <= 21 ? "var(--warning)" : "var(--success)" }}>
                         {daysLeft}d

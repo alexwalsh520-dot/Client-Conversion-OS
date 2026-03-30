@@ -12,6 +12,7 @@ type Action =
   | "upsert_milestone"
   | "upsert_pause"
   | "upsert_meeting"
+  | "delete_meeting"
   | "submit_eod"
   | "update_eod"
   | "delete_eod"
@@ -348,6 +349,13 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
         return NextResponse.json({ success: true, data });
+      }
+
+      case "delete_meeting": {
+        if (!payload.id) throw new Error("Meeting ID required");
+        const { error: dmErr } = await db.from("coach_meetings").delete().eq("id", payload.id);
+        if (dmErr) throw dmErr;
+        return NextResponse.json({ success: true });
       }
 
       // ---- EOD Reports ----

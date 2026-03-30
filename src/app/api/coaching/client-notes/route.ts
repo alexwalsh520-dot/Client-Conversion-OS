@@ -55,6 +55,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     const manual = (manualNotes || []).map((n) => ({
+      id: n.id,
       date: n.created_at ? new Date(n.created_at).toISOString().split("T")[0] : "",
       coachName: n.coach_name,
       notes: n.note,
@@ -103,5 +104,47 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error("Add note error:", err);
     return NextResponse.json({ error: "Failed to add note" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    const db = getServiceSupabase();
+    const { error } = await db.from("client_notes").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Delete note error:", err);
+    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { id, note } = body;
+    if (!id || !note) return NextResponse.json({ error: "id and note required" }, { status: 400 });
+
+    const db = getServiceSupabase();
+    const { error } = await db.from("client_notes").update({ note }).eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Update note error:", err);
+    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
   }
 }

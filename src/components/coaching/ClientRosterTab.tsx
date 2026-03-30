@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target } from "lucide-react";
+import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil } from "lucide-react";
 import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
 
 interface ClientNote {
+  id?: number;
   date: string;
   coachName: string;
   notes: string;
   checkedIn: boolean;
+  source?: "eod" | "manual";
 }
 
 interface Props {
@@ -19,11 +21,12 @@ interface Props {
   eodReports: CoachEODReport[];
   onSave: (client: Partial<Client>) => Promise<void>;
   onDelete: (clientId: number) => Promise<void>;
+  onDeleteMeeting?: (meetingId: number) => Promise<void>;
   selectedClientName?: string | null;
   onClearSelection?: () => void;
 }
 
-export default function ClientRosterTab({ clients, pauses, milestones, meetings, eodReports, onSave, onDelete, selectedClientName, onClearSelection }: Props) {
+export default function ClientRosterTab({ clients, pauses, milestones, meetings, eodReports, onSave, onDelete, onDeleteMeeting, selectedClientName, onClearSelection }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [coachFilter, setCoachFilter] = useState<string>("all");
@@ -35,6 +38,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
   const [notesLoading, setNotesLoading] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [retainedDuration, setRetainedDuration] = useState<string>("");
 
   // Auto-open client detail when navigated from another tab
   useEffect(() => {
@@ -79,6 +83,20 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
     } finally {
       setAddingNote(false);
     }
+  };
+
+  const deleteNote = async (noteId: number, clientName: string) => {
+    await fetch(`/api/coaching/client-notes?id=${noteId}`, { method: "DELETE" });
+    fetchClientNotes(clientName);
+  };
+
+  const editNote = async (noteId: number, newText: string, clientName: string) => {
+    await fetch("/api/coaching/client-notes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: noteId, note: newText }),
+    });
+    fetchClientNotes(clientName);
   };
 
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
@@ -142,7 +160,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
   const statusColor = (status: string) => {
     switch (status) {
       case "active": return "var(--success)";
-      case "paused": return "var(--warning)";
+      case "retained": return "var(--success)";
       case "completed": return "var(--accent)";
       case "cancelled": return "var(--danger)";
       case "refunded": return "var(--danger)";
@@ -180,7 +198,6 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
         >
           <option value="all">All Statuses</option>
           <option value="active">Active</option>
-          <option value="paused">Paused</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
           <option value="refunded">Refunded</option>
@@ -214,9 +231,9 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
           </div>
         </div>
         <div className="glass-static metric-card">
-          <div className="metric-card-label">Paused</div>
-          <div className="metric-card-value" style={{ color: "var(--warning)" }}>
-            {clients.filter((c) => c.status === "paused").length}
+          <div className="metric-card-label">Completed</div>
+          <div className="metric-card-value" style={{ color: "var(--accent)" }}>
+            {clients.filter((c) => c.status === "completed").length}
           </div>
         </div>
         <div className="glass-static metric-card">
@@ -261,13 +278,53 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             </div>
             <div>
               <label className="field-label">Status</label>
-              <select className="input-field" value={formData.status || "active"} onChange={(e) => setFormData({ ...formData, status: e.target.value as Client["status"] })}>
+              <select className="input-field" value={formData.status || "active"} onChange={(e) => {
+                const newStatus = e.target.value as Client["status"];
+                setFormData({ ...formData, status: newStatus });
+                if (newStatus !== "retained") setRetainedDuration("");
+              }}>
                 <option value="active">Active</option>
-                <option value="paused">Paused</option>
+                <option value="retained">Retained</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="refunded">Refunded</option>
               </select>
+              {formData.status === "retained" && (
+                <select
+                  className="input-field"
+                  value={retainedDuration}
+                  onChange={(e) => {
+                    const weeks = parseInt(e.target.value, 10);
+                    setRetainedDuration(e.target.value);
+                    if (weeks && formData.endDate) {
+                      const oldEnd = formData.endDate;
+                      const newEnd = new Date(formData.endDate);
+                      newEnd.setDate(newEnd.getDate() + weeks * 7);
+                      const newEndStr = newEnd.toISOString().split("T")[0];
+                      setFormData({ ...formData, status: "active", endDate: newEndStr });
+                      // Auto-add retention note
+                      const today = new Date().toISOString().split("T")[0];
+                      if (formData.name) {
+                        fetch("/api/coaching/client-notes", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            clientName: formData.name,
+                            note: `Retained on ${today} for ${weeks} weeks. End date changed from ${oldEnd} to ${newEndStr}.`,
+                          }),
+                        }).then(() => {
+                          if (formData.name) fetchClientNotes(formData.name);
+                        }).catch(() => {});
+                      }
+                    }
+                  }}
+                  style={{ marginTop: 6 }}
+                >
+                  <option value="">Select extension duration...</option>
+                  <option value="4">4 Weeks</option>
+                  <option value="12">12 Weeks</option>
+                </select>
+              )}
             </div>
             <div>
               <label className="field-label">Start Date</label>
@@ -361,6 +418,11 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                         <span style={{ color: "var(--accent)", fontWeight: 500 }}>{m.coachName}</span>
                         <span style={{ color: "var(--text-secondary)" }}>{m.durationMinutes}min</span>
                         {m.notes && <span style={{ color: "var(--text-muted)", fontSize: 11, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.notes}>{m.notes}</span>}
+                        {m.id && onDeleteMeeting && (
+                          <button onClick={() => onDeleteMeeting(m.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }} title="Delete meeting">
+                            <Trash2 size={11} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -406,10 +468,27 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                   <div style={{ display: "grid", gap: 6, maxHeight: 300, overflowY: "auto" }}>
                     {clientNotes.map((note, i) => (
                       <div key={i} style={{ fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-primary)" }}>
-                        <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 2, alignItems: "center" }}>
                           <span style={{ color: "var(--text-muted)", minWidth: 80 }}>{note.date}</span>
                           <span style={{ color: "var(--accent)", fontWeight: 500 }}>{note.coachName}</span>
                           {note.checkedIn && <CheckCircle size={12} style={{ color: "var(--success)" }} />}
+                          {note.source === "manual" && note.id && editingClient && (
+                            <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                              <button
+                                onClick={() => {
+                                  const updated = prompt("Edit note:", note.notes);
+                                  if (updated && updated !== note.notes) editNote(note.id!, updated, editingClient.name);
+                                }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }}
+                                title="Edit"
+                              ><Pencil size={11} /></button>
+                              <button
+                                onClick={() => deleteNote(note.id!, editingClient.name)}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2 }}
+                                title="Delete"
+                              ><Trash2 size={11} /></button>
+                            </span>
+                          )}
                         </div>
                         <div style={{ color: "var(--text-secondary)", paddingLeft: 4 }}>{note.notes}</div>
                       </div>
