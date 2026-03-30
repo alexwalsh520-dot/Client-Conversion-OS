@@ -390,6 +390,35 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             manychat.error,
           )}
         </div>
+        <div className="metric-grid metric-grid-3" style={{ marginTop: 12 }}>
+          {renderKPICard(
+            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
+            "Engagement Rate",
+            manychat.data && manychat.data.newLeads > 0
+              ? `${((manychat.data.leadsEngaged / manychat.data.newLeads) * 100).toFixed(1)}%`
+              : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
+            "Booking Rate",
+            manychat.data && manychat.data.newLeads > 0
+              ? `${((manychat.data.callLinksSent / manychat.data.newLeads) * 100).toFixed(1)}%`
+              : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+          {renderKPICard(
+            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
+            "Subscription Rate",
+            manychat.data && manychat.data.leadsEngaged > 0
+              ? `${((manychat.data.subLinksSent / manychat.data.leadsEngaged) * 100).toFixed(1)}%`
+              : "—",
+            manychat.loading,
+            manychat.error,
+          )}
+        </div>
       </div>
 
       {/* ── Closer Metrics ────────────────────────────────────────────── */}
