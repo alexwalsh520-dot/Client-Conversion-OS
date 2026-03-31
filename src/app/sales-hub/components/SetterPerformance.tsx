@@ -26,6 +26,7 @@ interface SetterRow {
   wins: number;
   noShows: number;
   cashCollected: number;
+  revenue: number;
   subsSold: number;
 }
 
@@ -34,8 +35,10 @@ interface SheetRow {
   callTaken: boolean;
   outcome: string;
   cashCollected: number;
+  revenue: number;
   offer: string;
   method: string;
+  programLength: string;
 }
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
@@ -146,9 +149,11 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       const wins = setterSheetRows.filter((r) => r.outcome === "WIN").length;
       const noShows = setterSheetRows.filter((r) => ["NS/RS", "NS"].includes(r.outcome)).length;
       const cashCollected = setterSheetRows.reduce((s, r) => s + (r.cashCollected || 0), 0);
+      const revenue = setterSheetRows.reduce((s, r) => s + (r.revenue || 0), 0);
+      // Subscriptions: wins from this setter that are subscription-length programs (3 months)
+      // or any win that isn't a one-time PIF — this is the best proxy from the data
       const subsSold = setterSheetRows.filter((r) =>
-        (r.method || "").toLowerCase().includes("sub") ||
-        (r.outcome === "WIN" && (r.offer || "").toLowerCase().includes("sub"))
+        r.outcome === "WIN" && r.programLength === "3"
       ).length;
 
       return {
@@ -157,7 +162,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         leadsEngaged: mc.leadsEngaged,
         callLinksSent: mc.callLinksSent,
         subLinksSent: mc.subLinksSent,
-        callsBooked, callsTaken, wins, noShows, cashCollected, subsSold,
+        callsBooked, callsTaken, wins, noShows, cashCollected, revenue, subsSold,
       };
     });
   }, [filters.client, metricsMap, sheetRows]);
@@ -272,9 +277,9 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               ))}
             </div>
 
-            {/* Cash + Subs Row */}
+            {/* Revenue Row */}
             <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr",
+              display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
               gap: "8px", marginBottom: 12,
             }}>
               <div>
@@ -287,6 +292,14 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               </div>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
+                  ${s.revenue.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+                  Revenue
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>
                   {fmtNumber(s.subsSold)}
                 </div>
                 <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
