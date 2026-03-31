@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -22,6 +22,10 @@ import {
   ChevronUp,
   Brain,
   Loader2,
+  Calendar,
+  DollarSign,
+  CreditCard,
+  RefreshCw,
 } from "lucide-react";
 import { CLIENTS } from "@/lib/mock-data";
 import { generateBriefing } from "@/lib/intelligence-engine";
@@ -36,9 +40,14 @@ function offerToClientKey(offer: string): string | null {
   return null;
 }
 
+function formatDateInput(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 interface ClientRevenue {
   thisMonth: number;
   lastMonth: number;
+  subscriptions?: number;
 }
 
 interface MonthlyChartEntry {
@@ -51,12 +60,22 @@ export default function HomePage() {
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [clientRevenue, setClientRevenue] = useState<Record<string, ClientRevenue>>({});
-  const [totalThisMonth, setTotalThisMonth] = useState(0);
+  const [totalCashCollected, setTotalCashCollected] = useState(0);
+  const [totalSubscriptions, setTotalSubscriptions] = useState(0);
+  const [totalRetention, setTotalRetention] = useState(0);
   const [totalLastMonth, setTotalLastMonth] = useState(0);
   const [monthlyData, setMonthlyData] = useState<MonthlyChartEntry[]>([]);
 
+  // Date range state
+  const now = useMemo(() => new Date(), []);
+  const mtdStart = useMemo(() => formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1)), [now]);
+  const todayStr = useMemo(() => formatDateInput(now), [now]);
+
+  const [dateFrom, setDateFrom] = useState(mtdStart);
+  const [dateTo, setDateTo] = useState(todayStr);
+  const [isMTD, setIsMTD] = useState(true);
+
   const userName = session?.user?.name?.split(" ")[0] || "there";
-  const now = new Date();
   const greeting =
     now.getHours() < 12
       ? "Good morning"
@@ -72,15 +91,27 @@ export default function HomePage() {
 
   const briefing = generateBriefing();
 
+  const handleMTD = () => {
+    setDateFrom(mtdStart);
+    setDateTo(todayStr);
+    setIsMTD(true);
+  };
+
+  const handleDateFromChange = (val: string) => {
+    setDateFrom(val);
+    setIsMTD(val === mtdStart && dateTo === todayStr);
+  };
+
+  const handleDateToChange = (val: string) => {
+    setDateTo(val);
+    setIsMTD(dateFrom === mtdStart && val === todayStr);
+  };
+
   const fetchRevenue = useCallback(async () => {
     try {
       setLoading(true);
 
-      // This month range
-      const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-      // Last month range
+      // Last month range (for comparison)
       const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
       const lastMonthStart = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
@@ -90,34 +121,48 @@ export default function HomePage() {
       const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
       const chartStart = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
 
-      const [thisMonthRes, lastMonthRes, chartRes] = await Promise.all([
-        fetch(`/api/sales-hub/sheet-data?dateFrom=${thisMonthStart}&dateTo=${today}`),
+      // Determine which month index to use for retention (based on dateFrom)
+      const fromDate = new Date(dateFrom + "T00:00:00");
+      const retentionMonthIndex = fromDate.getMonth();
+
+      const [thisMonthRes, lastMonthRes, chartRes, retentionRes] = await Promise.all([
+        fetch(`/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`),
         fetch(`/api/sales-hub/sheet-data?dateFrom=${lastMonthStart}&dateTo=${lastMonthEndStr}`),
-        fetch(`/api/sales-hub/sheet-data?dateFrom=${chartStart}&dateTo=${today}`),
+        fetch(`/api/sales-hub/sheet-data?dateFrom=${chartStart}&dateTo=${todayStr}`),
+        fetch(`/api/coaching/financials?month=${retentionMonthIndex}`),
       ]);
 
       const thisMonthData = await thisMonthRes.json();
       const lastMonthData = await lastMonthRes.json();
       const chartData = await chartRes.json();
+      const retentionData = await retentionRes.json();
 
       const thisMonthRows = thisMonthData.rows || [];
       const lastMonthRows = lastMonthData.rows || [];
       const chartRows = chartData.rows || [];
+      const subscriptionsSold = thisMonthData.subscriptionsSold || 0;
 
-      // Calculate per-client cash collected for this month
+      // Sum retention payments
+      const retentions = retentionData.retentions || [];
+      let retentionTotal = 0;
+      for (const r of retentions) {
+        retentionTotal += r.paymentTotal || 0;
+      }
+
+      // Calculate per-client cash collected for selected range
       const clientKeys = Object.keys(CLIENTS);
       const perClient: Record<string, ClientRevenue> = {};
       for (const key of clientKeys) {
-        perClient[key] = { thisMonth: 0, lastMonth: 0 };
+        perClient[key] = { thisMonth: 0, lastMonth: 0, subscriptions: 0 };
       }
 
-      let totalThis = 0;
+      let totalCash = 0;
       let totalLast = 0;
 
       for (const row of thisMonthRows) {
         const cash = row.cashCollected || 0;
         const clientKey = offerToClientKey(row.offer || "");
-        totalThis += cash;
+        totalCash += cash;
         if (clientKey && perClient[clientKey]) {
           perClient[clientKey].thisMonth += cash;
         }
@@ -133,7 +178,9 @@ export default function HomePage() {
       }
 
       setClientRevenue(perClient);
-      setTotalThisMonth(totalThis);
+      setTotalCashCollected(totalCash);
+      setTotalSubscriptions(subscriptionsSold);
+      setTotalRetention(retentionTotal);
       setTotalLastMonth(totalLast);
 
       // Build monthly chart data
@@ -141,7 +188,6 @@ export default function HomePage() {
       for (const row of chartRows) {
         const cash = row.cashCollected || 0;
         if (cash === 0) continue;
-        // Extract YYYY-MM from date
         const monthKey = (row.date || "").substring(0, 7);
         if (!monthKey) continue;
         if (!monthMap[monthKey]) {
@@ -175,16 +221,17 @@ export default function HomePage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     fetchRevenue();
   }, [fetchRevenue]);
 
+  const totalRevenue = totalCashCollected + totalSubscriptions + totalRetention;
   const growthPercent = totalLastMonth > 0
-    ? (((totalThisMonth - totalLastMonth) / totalLastMonth) * 100).toFixed(1)
+    ? (((totalCashCollected - totalLastMonth) / totalLastMonth) * 100).toFixed(1)
     : "0.0";
-  const isGrowthPositive = totalThisMonth >= totalLastMonth;
+  const isGrowthPositive = totalCashCollected >= totalLastMonth;
 
   return (
     <div className="fade-up">
@@ -194,6 +241,86 @@ export default function HomePage() {
           {greeting}, <span className="gradient-text">{userName}</span>
         </h1>
         <p className="page-subtitle">{dateStr}</p>
+      </div>
+
+      {/* Date Range Selector */}
+      <div className="section" style={{ marginBottom: 8 }}>
+        <div
+          className="glass-static"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 16px",
+            flexWrap: "wrap",
+          }}
+        >
+          <Calendar size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+
+          <button
+            onClick={handleMTD}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              border: isMTD ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
+              background: isMTD ? "var(--accent)" : "var(--bg-glass)",
+              color: isMTD ? "#fff" : "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: "inherit",
+              transition: "all 0.15s ease",
+            }}
+          >
+            Month to Date
+          </button>
+
+          <div
+            style={{
+              width: 1,
+              height: 20,
+              background: "var(--border-primary)",
+              flexShrink: 0,
+            }}
+          />
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 13, color: "var(--text-muted)" }}>From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => handleDateFromChange(e.target.value)}
+              style={{
+                padding: "5px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--border-primary)",
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                fontFamily: "inherit",
+                outline: "none",
+                colorScheme: "dark",
+              }}
+            />
+            <label style={{ fontSize: 13, color: "var(--text-muted)" }}>To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => handleDateToChange(e.target.value)}
+              style={{
+                padding: "5px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--border-primary)",
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                fontFamily: "inherit",
+                outline: "none",
+                colorScheme: "dark",
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Revenue Strip */}
@@ -210,18 +337,47 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            {/* Total Revenue Card */}
             <div className="glass-static metric-card" style={{ marginBottom: 12 }}>
-              <div className="metric-card-label">Total Client Revenue (Cash Collected)</div>
+              <div className="metric-card-label">Total Revenue</div>
               <div className="metric-card-value" style={{ fontSize: 32 }}>
-                {fmtDollars(totalThisMonth)}
+                {fmtDollars(totalRevenue)}
               </div>
               <div className={`metric-card-trend ${isGrowthPositive ? "metric-card-trend-up" : "metric-card-trend-down"}`}>
-                {isGrowthPositive ? "+" : ""}{growthPercent}% vs last month
+                {isGrowthPositive ? "+" : ""}{growthPercent}% cash collected vs last month
               </div>
             </div>
+
+            {/* Three Revenue Breakdown Cards */}
+            <div className="metric-grid metric-grid-3" style={{ marginBottom: 12 }}>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <DollarSign size={14} style={{ color: "var(--success)" }} />
+                  Cash Collected
+                </div>
+                <div className="metric-card-value">{fmtDollars(totalCashCollected)}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <CreditCard size={14} style={{ color: "var(--accent)" }} />
+                  New Subscriptions
+                </div>
+                <div className="metric-card-value">{totalSubscriptions}</div>
+              </div>
+              <div className="glass-static metric-card">
+                <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <RefreshCw size={14} style={{ color: "var(--warning)" }} />
+                  Retention Revenue
+                </div>
+                <div className="metric-card-value">{fmtDollars(totalRetention)}</div>
+              </div>
+            </div>
+
+            {/* Per-Client Cards */}
             <div className="metric-grid metric-grid-3">
               {Object.entries(CLIENTS).map(([key, client]) => {
                 const rev = clientRevenue[key]?.thisMonth ?? 0;
+                const subs = clientRevenue[key]?.subscriptions;
                 return (
                   <div key={key} className="glass-static metric-card">
                     <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -229,6 +385,11 @@ export default function HomePage() {
                       {client.name}
                     </div>
                     <div className="metric-card-value">{fmtDollars(rev)}</div>
+                    {subs !== undefined && subs > 0 && (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                        {subs} subscription{subs !== 1 ? "s" : ""}
+                      </div>
+                    )}
                   </div>
                 );
               })}
