@@ -72,7 +72,7 @@ export default function HomePage() {
             +{revenueData.total.growthPercent}% vs last month
           </div>
         </div>
-        <div className="metric-grid metric-grid-4">
+        <div className="metric-grid metric-grid-3">
           {Object.entries(CLIENTS).map(([key, client]) => {
             const rev = key === "tyson"
               ? revenueData.tyson.combined.thisMonth

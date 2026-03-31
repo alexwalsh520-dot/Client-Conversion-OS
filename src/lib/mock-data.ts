@@ -1,5 +1,5 @@
 // Mock data for CCOS (Client Conversion OS)
-// Two influencer clients: Keith and Tyson
+// Three clients: Keith, Tyson, Zoe & Emily
 // Coaches: Ignacio, Fatima, Waleed, Stef, Farrukh
 // Closers: Jacob Broz, Will
 // Onboarding: Nicole
@@ -12,8 +12,7 @@
 export const CLIENTS = {
   keith: { name: "Keith", fullName: "Keith Holland", color: "#8b5cf6", stripeAccounts: 1 },
   tyson: { name: "Tyson", fullName: "Tyson Sonnek", color: "#06b6d4", stripeAccounts: 2 },
-  zoe: { name: "Zoe", fullName: "Zoe", color: "#f59e0b", stripeAccounts: 1 },
-  emily: { name: "Emily", fullName: "Emily", color: "#ec4899", stripeAccounts: 1 },
+  zoeEmily: { name: "Zoe & Emily", fullName: "Zoe and Emily", color: "#f59e0b", stripeAccounts: 1 },
 } as const;
 
 export const revenueData = {
@@ -39,16 +38,7 @@ export const revenueData = {
       avgRevenuePerUser: 793,
     },
   },
-  zoe: {
-    thisMonth: 0,
-    lastMonth: 0,
-    mrr: 0,
-    totalCustomers: 0,
-    activeSubscriptions: 0,
-    churnRate: 0,
-    avgRevenuePerUser: 0,
-  },
-  emily: {
+  zoeEmily: {
     thisMonth: 0,
     lastMonth: 0,
     mrr: 0,
@@ -2277,18 +2267,17 @@ export interface RevenueByMonthEntry {
   month: string;
   keith: number;
   tyson: number;
-  zoe: number;
-  emily: number;
+  zoeEmily: number;
   total: number;
 }
 
 export const revenueByMonth: RevenueByMonthEntry[] = [
-  { month: "2025-09", keith: 8200, tyson: 5100, zoe: 0, emily: 0, total: 13300 },
-  { month: "2025-10", keith: 12400, tyson: 8900, zoe: 0, emily: 0, total: 21300 },
-  { month: "2025-11", keith: 16800, tyson: 12200, zoe: 0, emily: 0, total: 29000 },
-  { month: "2025-12", keith: 19500, tyson: 15800, zoe: 0, emily: 0, total: 35300 },
-  { month: "2026-01", keith: 28600, tyson: 23991, zoe: 0, emily: 0, total: 52591 },
-  { month: "2026-02", keith: 38200, tyson: 31700, zoe: 0, emily: 0, total: 69900 },
+  { month: "2025-09", keith: 8200, tyson: 5100, zoeEmily: 0, total: 13300 },
+  { month: "2025-10", keith: 12400, tyson: 8900, zoeEmily: 0, total: 21300 },
+  { month: "2025-11", keith: 16800, tyson: 12200, zoeEmily: 0, total: 29000 },
+  { month: "2025-12", keith: 19500, tyson: 15800, zoeEmily: 0, total: 35300 },
+  { month: "2026-01", keith: 28600, tyson: 23991, zoeEmily: 0, total: 52591 },
+  { month: "2026-02", keith: 38200, tyson: 31700, zoeEmily: 0, total: 69900 },
 ];
 
 // ============================================================================
