@@ -195,9 +195,10 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   const fetchSheet = useCallback(async () => {
     setSheet({ data: null, loading: true, error: "" });
     try {
+      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", zoeEmily: "Zoe and Emily" };
       const clientParam =
-        filters.client !== "all"
-          ? `&client=${filters.client === "tyson" ? "Tyson Sonnek" : "Keith Holland"}`
+        filters.client !== "all" && clientNames[filters.client]
+          ? `&client=${encodeURIComponent(clientNames[filters.client])}`
           : "";
       const res = await fetchJSON<SheetApiResponse>(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`,

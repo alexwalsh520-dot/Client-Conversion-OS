@@ -27,8 +27,9 @@ export async function GET(req: NextRequest) {
       const clientLower = client.toLowerCase();
       rows = rows.filter((row) => {
         const offerLower = row.offer.toLowerCase();
-        if (clientLower === "tyson") return offerLower.includes("tyson");
-        if (clientLower === "keith") return offerLower.includes("keith");
+        if (clientLower === "tyson" || clientLower === "tyson sonnek") return offerLower.includes("tyson");
+        if (clientLower === "keith" || clientLower === "keith holland") return offerLower.includes("keith");
+        if (clientLower === "zoe and emily" || clientLower === "zoeemily") return offerLower.includes("zoe") || offerLower.includes("emily");
         return offerLower.includes(clientLower);
       });
     }

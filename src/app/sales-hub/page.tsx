@@ -299,9 +299,14 @@ export default function SalesHubPage() {
     setSheetLoading(true);
     setSheetError("");
     try {
+      const clientNames: Record<string, string> = {
+        tyson: "Tyson Sonnek",
+        keith: "Keith Holland",
+        zoeEmily: "Zoe and Emily",
+      };
       const clientParam =
-        filters.client !== "all"
-          ? `&client=${filters.client === "tyson" ? "Tyson Sonnek" : "Keith Holland"}`
+        filters.client !== "all" && clientNames[filters.client]
+          ? `&client=${encodeURIComponent(clientNames[filters.client])}`
           : "";
       const res = await fetch(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`
