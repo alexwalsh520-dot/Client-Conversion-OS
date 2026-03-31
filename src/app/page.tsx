@@ -22,7 +22,7 @@ import {
   ChevronUp,
   Brain,
 } from "lucide-react";
-import { revenueData, revenueByMonth } from "@/lib/mock-data";
+import { revenueData, revenueByMonth, CLIENTS } from "@/lib/mock-data";
 import { generateBriefing } from "@/lib/intelligence-engine";
 import { fmtDollars } from "@/lib/formatters";
 
@@ -63,34 +63,38 @@ export default function HomePage() {
           <TrendingUp size={16} />
           Revenue Overview
         </h2>
-        <div className="metric-grid metric-grid-3">
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total Revenue</div>
-            <div className="metric-card-value">
-              {fmtDollars(revenueData.total.thisMonth)}
-            </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              +{revenueData.total.growthPercent}% vs last month
-            </div>
+        <div className="glass-static metric-card" style={{ marginBottom: 12 }}>
+          <div className="metric-card-label">Total Client Revenue</div>
+          <div className="metric-card-value" style={{ fontSize: 32 }}>
+            {fmtDollars(revenueData.total.thisMonth)}
           </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Keith</div>
-            <div className="metric-card-value">
-              {fmtDollars(revenueData.keith.thisMonth)}
-            </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              {revenueData.keith.activeSubscriptions} active subs
-            </div>
+          <div className="metric-card-trend metric-card-trend-up">
+            +{revenueData.total.growthPercent}% vs last month
           </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Tyson</div>
-            <div className="metric-card-value">
-              {fmtDollars(revenueData.tyson.combined.thisMonth)}
-            </div>
-            <div className="metric-card-trend metric-card-trend-up">
-              {revenueData.tyson.combined.activeSubscriptions} active subs
-            </div>
-          </div>
+        </div>
+        <div className="metric-grid metric-grid-4">
+          {Object.entries(CLIENTS).map(([key, client]) => {
+            const rev = key === "tyson"
+              ? revenueData.tyson.combined.thisMonth
+              : (revenueData as Record<string, { thisMonth?: number }>)[key]?.thisMonth ?? 0;
+            const subs = key === "tyson"
+              ? revenueData.tyson.combined.activeSubscriptions
+              : (revenueData as Record<string, { activeSubscriptions?: number }>)[key]?.activeSubscriptions ?? 0;
+            return (
+              <div key={key} className="glass-static metric-card">
+                <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: client.color, display: "inline-block" }} />
+                  {client.name}
+                </div>
+                <div className="metric-card-value">{fmtDollars(rev)}</div>
+                {subs > 0 && (
+                  <div className="metric-card-trend metric-card-trend-up">
+                    {subs} active subs
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -112,22 +116,17 @@ export default function HomePage() {
                   color: "var(--text-primary)",
                 }}
               />
-              <Area
-                type="monotone"
-                dataKey="keith"
-                stackId="1"
-                stroke="var(--keith)"
-                fill="var(--keith-soft)"
-                name="Keith"
-              />
-              <Area
-                type="monotone"
-                dataKey="tyson"
-                stackId="1"
-                stroke="var(--tyson)"
-                fill="var(--tyson-soft)"
-                name="Tyson"
-              />
+              {Object.entries(CLIENTS).map(([key, client]) => (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stackId="1"
+                  stroke={client.color}
+                  fill={client.color + "30"}
+                  name={client.name}
+                />
+              ))}
             </AreaChart>
           </ResponsiveContainer>
         </div>

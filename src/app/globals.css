@@ -318,41 +318,30 @@ body {
 }
 
 /* Client filter in sidebar */
-.client-filter {
+.sidebar-add-btn {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
   border-radius: 8px;
-  background: var(--bg-glass);
-}
-
-.client-filter-btn {
-  flex: 1;
-  padding: 5px 8px;
-  border-radius: 6px;
-  border: none;
-  font-size: 11px;
+  border: 1px solid var(--border-primary);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   background: transparent;
   color: var(--text-muted);
-  white-space: nowrap;
 }
 
-.client-filter-btn:hover {
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.client-filter-btn:active {
-  transform: scale(0.95);
-}
-
-.client-filter-btn-active {
+.sidebar-add-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--text-primary);
-  box-shadow: 0 0 8px rgba(201, 169, 110, 0.08);
+}
+
+.sidebar-add-btn:active {
+  transform: scale(0.97);
 }
 
 /* Sidebar tooltip (collapsed mode) */
