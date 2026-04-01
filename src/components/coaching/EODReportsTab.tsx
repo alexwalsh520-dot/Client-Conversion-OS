@@ -28,6 +28,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
   const [editingReport, setEditingReport] = useState<CoachEODReport | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split("T")[0]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -71,16 +72,15 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
 
   // Sync form role with filter
   const openForm = () => {
-    const defaultRole = roleFilter === "onboarding" ? "onboarding" : roleFilter === "coach" ? "coach" : "coach";
-    const isOnboarding = defaultRole === "onboarding";
+    const defaultRole = roleFilter === "onboarding" ? "onboarding" : roleFilter === "nutrition" ? "nutrition" : roleFilter === "coach" ? "coach" : "coach";
     setEditingReport(null);
     setFormData({
-      role: defaultRole as "coach" | "onboarding",
+      role: defaultRole as "coach" | "onboarding" | "nutrition",
       date: new Date().toISOString().split("T")[0],
       clientCheckins: [],
       newClientNames: [],
       deactivatedClientNames: [],
-      submittedBy: isOnboarding ? "Nicole" : "",
+      submittedBy: defaultRole === "onboarding" ? "Nicole" : defaultRole === "nutrition" ? "Daman" : "",
     });
     setShowForm(true);
   };
@@ -110,9 +110,9 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
     setDeletingId(null);
   };
 
-  const filtered = roleFilter === "all"
-    ? reports
-    : reports.filter((r) => r.role === roleFilter);
+  const filtered = reports
+    .filter((r) => r.date === dateFilter)
+    .filter((r) => roleFilter === "all" || r.role === roleFilter);
 
   // When coach name changes, pre-populate client checkins
   // Sorted by days remaining descending (most days remaining at top)
@@ -355,19 +355,25 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
           <div className="metric-card-value">{reports.filter((r) => r.role === "onboarding").length}</div>
         </div>
         <div className="glass-static metric-card">
-          <div className="metric-card-label">Today</div>
-          <div className="metric-card-value">
-            {reports.filter((r) => r.date === new Date().toISOString().split("T")[0]).length}
-          </div>
+          <div className="metric-card-label">Nutrition Reports</div>
+          <div className="metric-card-value">{reports.filter((r) => r.role === "nutrition").length}</div>
         </div>
       </div>
 
       {/* Controls */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="date"
+          className="input-field"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          style={{ width: "auto" }}
+        />
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="input-field" style={{ width: "auto" }}>
           <option value="all">All Roles</option>
           <option value="coach">Coach</option>
           <option value="onboarding">Onboarding</option>
+          <option value="nutrition">Nutrition</option>
         </select>
         <button className="btn-primary" onClick={openForm}>
           <Plus size={14} /> Submit EOD Report
@@ -390,6 +396,8 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
               <label className="field-label">Your Name *</label>
               {formData.role === "onboarding" ? (
                 <input className="input-field" value="Nicole" readOnly style={{ opacity: 0.7 }} />
+              ) : formData.role === "nutrition" ? (
+                <input className="input-field" value="Daman" readOnly style={{ opacity: 0.7 }} />
               ) : (
                 <select
                   className="input-field"
@@ -415,18 +423,19 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
             <div>
               <label className="field-label">Role *</label>
               <select className="input-field" value={formData.role || "coach"} onChange={(e) => {
-                const role = e.target.value as "coach" | "onboarding";
+                const role = e.target.value as "coach" | "onboarding" | "nutrition";
                 setFormData({
                   ...formData,
                   role,
                   clientCheckins: [],
                   newClientNames: [],
                   deactivatedClientNames: [],
-                  submittedBy: role === "onboarding" ? "Nicole" : (formData.submittedBy === "Nicole" ? "" : formData.submittedBy),
+                  submittedBy: role === "onboarding" ? "Nicole" : role === "nutrition" ? "Daman" : (formData.submittedBy === "Nicole" || formData.submittedBy === "Daman" ? "" : formData.submittedBy),
                 });
               }}>
                 <option value="coach">Coach</option>
                 <option value="onboarding">Onboarding</option>
+                <option value="nutrition">Nutrition</option>
               </select>
             </div>
             <div>
@@ -641,21 +650,59 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
             </>
           )}
 
-          {/* ==================== SHARED FIELDS ==================== */}
-          <div style={{ marginTop: 12 }}>
-            <label className="field-label">Community Engagement</label>
-            <textarea className="input-field" rows={2} value={formData.communityEngagement || ""} onChange={(e) => setFormData({ ...formData, communityEngagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
-          </div>
+          {/* ==================== NUTRITION COACH SPECIFIC FIELDS ==================== */}
+          {formData.role === "nutrition" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label className="field-label">Meal Plans Created</label>
+                  <input className="input-field" placeholder="e.g. 3 new plans, or NA" value={formData.communityEngagement || ""} onChange={(e) => setFormData({ ...formData, communityEngagement: e.target.value })} />
+                </div>
+                <div>
+                  <label className="field-label">Meetings Held</label>
+                  <input className="input-field" placeholder="e.g. Keithshawn Bailey (Did not turn up)" value={formData.feelingToday || ""} onChange={(e) => setFormData({ ...formData, feelingToday: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label className="field-label">Hours Logged</label>
+                  <input className="input-field" type="number" step="0.5" value={formData.hoursLogged || ""} onChange={(e) => setFormData({ ...formData, hoursLogged: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="field-label">How are you feeling today?</label>
+                  <input className="input-field" value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} />
+                </div>
+              </div>
+            </>
+          )}
 
-          <div style={{ marginTop: 12 }}>
-            <label className="field-label">Summary</label>
-            <textarea className="input-field" rows={3} value={formData.summary || ""} onChange={(e) => setFormData({ ...formData, summary: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
-          </div>
+          {/* ==================== SHARED FIELDS (coach & onboarding only) ==================== */}
+          {formData.role !== "nutrition" && (
+            <>
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">Community Engagement</label>
+                <textarea className="input-field" rows={2} value={formData.communityEngagement || ""} onChange={(e) => setFormData({ ...formData, communityEngagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
+              </div>
 
-          <div style={{ marginTop: 12 }}>
-            <label className="field-label">Questions for Management</label>
-            <textarea className="input-field" rows={2} value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
-          </div>
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">Summary</label>
+                <textarea className="input-field" rows={3} value={formData.summary || ""} onChange={(e) => setFormData({ ...formData, summary: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">Questions for Management</label>
+                <textarea className="input-field" rows={2} value={formData.questionsForManagement || ""} onChange={(e) => setFormData({ ...formData, questionsForManagement: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
+              </div>
+            </>
+          )}
+
+          {/* Nutrition coach summary */}
+          {formData.role === "nutrition" && (
+            <div style={{ marginTop: 12 }}>
+              <label className="field-label">Summary / Notes</label>
+              <textarea className="input-field" rows={3} value={formData.summary || ""} onChange={(e) => setFormData({ ...formData, summary: e.target.value })} style={{ resize: "vertical", width: "100%" }} />
+            </div>
+          )}
 
           {/* Client Checkins (for coaches) */}
           {formData.role === "coach" && (formData.clientCheckins?.length || 0) > 0 && (
@@ -704,8 +751,8 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                 marginLeft: 8,
                 padding: "2px 6px",
                 borderRadius: 4,
-                background: report.role === "coach" ? "rgba(201, 169, 110, 0.2)" : "rgba(126, 201, 160, 0.2)",
-                color: report.role === "coach" ? "var(--accent)" : "var(--success)",
+                background: report.role === "coach" ? "rgba(201, 169, 110, 0.2)" : report.role === "nutrition" ? "rgba(184, 164, 217, 0.2)" : "rgba(126, 201, 160, 0.2)",
+                color: report.role === "coach" ? "var(--accent)" : report.role === "nutrition" ? "var(--keith)" : "var(--success)",
               }}>
                 {report.role}
               </span>
@@ -829,7 +876,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
       ))}
 
       {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
-      <EODSubmissionCalendar reports={reports} eodTeam={["Farrukh", "Fatima", "Ignacio", "Stef", "Waleed", "Nicole"]} onClientClick={onClientClick} />
+      <EODSubmissionCalendar reports={reports} eodTeam={["Farrukh", "Fatima", "Ignacio", "Stef", "Waleed", "Nicole", "Daman"]} onClientClick={onClientClick} />
     </div>
   );
 }
