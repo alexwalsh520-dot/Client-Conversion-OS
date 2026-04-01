@@ -33,6 +33,19 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+/* ──────────────────────── FONT OPTIONS ──────────────────────── */
+const FONT_OPTIONS = [
+  { label: "Inter", value: "Inter, SF Pro Display, system-ui" },
+  { label: "Source Serif Pro", value: "'Source Serif Pro', Georgia, serif" },
+  { label: "Montserrat", value: "'Montserrat', Arial, sans-serif" },
+  { label: "Playfair Display", value: "'Playfair Display', Georgia, serif" },
+  { label: "Oswald", value: "'Oswald', Arial Narrow, sans-serif" },
+  { label: "Bebas Neue", value: "'Bebas Neue', Impact, sans-serif" },
+];
+
+const GOOGLE_FONTS_URL =
+  "https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@400;600;700;900&family=Montserrat:wght@400;600;700;800;900&family=Playfair+Display:wght@400;600;700;800;900&family=Oswald:wght@400;500;600;700&family=Bebas+Neue&display=swap";
+
 /* ──────────────────────── TYPES ──────────────────────── */
 interface TextBlock {
   id: string;
@@ -1605,6 +1618,31 @@ function TextEditorPanel({
       {/* Separator */}
       <div style={{ height: 1, background: "rgba(255,255,255,0.04)", margin: "2px 0" }} />
 
+      {/* Font family */}
+      <Row label="Font">
+        <select
+          value={block.fontFamily}
+          onChange={(e) => onUpdate({ fontFamily: e.target.value })}
+          style={{
+            flex: 1,
+            background: "rgba(16,14,28,0.7)",
+            color: "rgba(255,255,255,0.8)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 4,
+            padding: "3px 4px",
+            fontSize: 10,
+            cursor: "pointer",
+            fontFamily: block.fontFamily,
+          }}
+        >
+          {FONT_OPTIONS.map((f) => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+
       {/* Font size + Border radius */}
       <Row label="Size">
         <input type="range" min={16} max={80} value={block.fontSize} onChange={(e) => onUpdate({ fontSize: parseInt(e.target.value) })} style={sliderStyle} />
@@ -1781,6 +1819,19 @@ export default function AdsPage() {
 
   // Image edit mode
   const [imageEditMode, setImageEditMode] = useState(false);
+
+  // Font preset for generation
+  const [fontPreset, setFontPreset] = useState(FONT_OPTIONS[0].value);
+
+  // Load Google Fonts
+  useEffect(() => {
+    if (!document.querySelector(`link[href*="fonts.googleapis.com/css2"]`)) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = GOOGLE_FONTS_URL;
+      document.head.appendChild(link);
+    }
+  }, []);
 
   // AI Copy — send message and stream response
   const sendAiMessage = useCallback(async () => {
@@ -2100,7 +2151,7 @@ export default function AdsPage() {
       x: role === "body" ? 60 : (W - 960) / 2,
       y: 0,
       fontSize: isTitle ? 72 : isCta ? 56 : isCallout ? 52 : 44,
-      fontFamily: "Inter, SF Pro Display, system-ui",
+      fontFamily: fontPreset,
       fontWeight: 700,
       textColor: isLight ? "#000000" : "#ffffff",
       bgColor: isLight ? "#ffffff" : "#000000",
@@ -2114,7 +2165,7 @@ export default function AdsPage() {
       highlightWords: [],
       maxWidth: 960,
     };
-  }, [colorPreset]);
+  }, [colorPreset, fontPreset]);
 
   // Default vertical layout — simple top-to-bottom stacking, no overlaps ever
   const layoutBlocksDefault = useCallback((blocks: TextBlock[]) => {
@@ -2416,7 +2467,7 @@ export default function AdsPage() {
       x: 90,
       y: baseY > 1600 ? 200 : baseY,
       fontSize: 52,
-      fontFamily: "Inter, SF Pro Display, system-ui",
+      fontFamily: fontPreset,
       fontWeight: 700,
       textColor: isLight ? "#000000" : "#ffffff",
       bgColor: isLight ? "#ffffff" : "#000000",
@@ -2438,7 +2489,7 @@ export default function AdsPage() {
       )
     );
     setSelectedBlockIds(new Set([newBlock.id]));
-  }, [currentIndex, currentCreative, pushUndo, colorPreset]);
+  }, [currentIndex, currentCreative, pushUndo, colorPreset, fontPreset]);
 
   // Delete text block
   const handleDeleteBlock = useCallback(
@@ -3487,6 +3538,34 @@ export default function AdsPage() {
             <span style={{ display: "inline-block", width: 22, height: 22, borderRadius: 6, background: "#fff", border: "2px solid #ccc" }} />
             <span style={{ color: colorPreset === "light" ? "#fff" : "var(--text-secondary)" }}>Black on White</span>
           </button>
+        </div>
+
+        {/* Font preset */}
+        <div className="section" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>Font</span>
+          <select
+            value={fontPreset}
+            onChange={(e) => setFontPreset(e.target.value)}
+            style={{
+              background: "var(--bg-secondary)",
+              color: "var(--text-primary)",
+              border: "2px solid var(--border-primary)",
+              padding: "10px 16px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: fontPreset,
+              minWidth: 200,
+            }}
+          >
+            {FONT_OPTIONS.map((f) => (
+              <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: 24, fontFamily: fontPreset, color: "var(--text-secondary)" }}>Aa</span>
         </div>
 
         {/* Generate button */}
