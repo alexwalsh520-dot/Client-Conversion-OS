@@ -120,7 +120,7 @@ export interface CoachMeeting {
 export interface CoachEODReport {
   id?: number;
   submittedBy: string;
-  role: 'coach' | 'onboarding';
+  role: 'coach' | 'onboarding' | 'nutrition';
   date: string;
   activeClientCount: number;
   newClients: number;
