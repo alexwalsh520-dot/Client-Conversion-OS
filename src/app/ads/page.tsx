@@ -1756,6 +1756,7 @@ export default function AdsPage() {
   const [editHistory, setEditHistory] = useState<
     { blockId: string; type: string; before: unknown; after: unknown; timestamp: number }[]
   >([]);
+  const [colorPreset, setColorPreset] = useState<"dark" | "light">("dark");
   const [aiCopyOpen, setAiCopyOpen] = useState(false);
   const [aiMessages, setAiMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [aiInput, setAiInput] = useState("");
@@ -2092,6 +2093,7 @@ export default function AdsPage() {
     const isTitle = role === "title";
     const isCta = role === "cta";
     const isCallout = role === "callout";
+    const isLight = colorPreset === "light";
     return {
       id: uid(),
       lines,
@@ -2100,8 +2102,8 @@ export default function AdsPage() {
       fontSize: isTitle ? 72 : isCta ? 56 : isCallout ? 52 : 44,
       fontFamily: "Inter, SF Pro Display, system-ui",
       fontWeight: 700,
-      textColor: "#ffffff",
-      bgColor: "#000000",
+      textColor: isLight ? "#000000" : "#ffffff",
+      bgColor: isLight ? "#ffffff" : "#000000",
       bgOpacity: 1,
       borderRadius: isTitle ? 18 : isCta ? 16 : 14,
       paddingH: isTitle ? 32 : isCta ? 28 : 24,
@@ -2112,7 +2114,7 @@ export default function AdsPage() {
       highlightWords: [],
       maxWidth: 960,
     };
-  }, []);
+  }, [colorPreset]);
 
   // Default vertical layout — simple top-to-bottom stacking, no overlaps ever
   const layoutBlocksDefault = useCallback((blocks: TextBlock[]) => {
@@ -2407,6 +2409,7 @@ export default function AdsPage() {
     const existingCount = currentCreative?.textBlocks.length || 0;
     const offsetY = existingCount * 120; // stagger each new block 120px down
     const baseY = 200 + offsetY;
+    const isLight = colorPreset === "light";
     const newBlock: TextBlock = {
       id: uid(),
       lines: ["New text here"],
@@ -2415,8 +2418,8 @@ export default function AdsPage() {
       fontSize: 52,
       fontFamily: "Inter, SF Pro Display, system-ui",
       fontWeight: 700,
-      textColor: "#ffffff",
-      bgColor: "#000000",
+      textColor: isLight ? "#000000" : "#ffffff",
+      bgColor: isLight ? "#ffffff" : "#000000",
       bgOpacity: 1,
       borderRadius: 16,
       paddingH: 28,
@@ -2435,7 +2438,7 @@ export default function AdsPage() {
       )
     );
     setSelectedBlockIds(new Set([newBlock.id]));
-  }, [currentIndex, currentCreative, pushUndo]);
+  }, [currentIndex, currentCreative, pushUndo, colorPreset]);
 
   // Delete text block
   const handleDeleteBlock = useCallback(
@@ -3440,6 +3443,50 @@ export default function AdsPage() {
               />
             </div>
           </div>
+        </div>
+
+        {/* Color preset */}
+        <div className="section" style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 8 }}>
+          <button
+            onClick={() => setColorPreset("dark")}
+            style={{
+              background: colorPreset === "dark" ? "#7C5CFC" : "var(--bg-secondary)",
+              color: colorPreset === "dark" ? "#fff" : "var(--text-secondary)",
+              border: colorPreset === "dark" ? "2px solid #7C5CFC" : "2px solid var(--border-primary)",
+              padding: "10px 20px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              transition: "all 0.2s",
+            }}
+          >
+            <span style={{ display: "inline-block", width: 22, height: 22, borderRadius: 6, background: "#000", border: "2px solid #333" }} />
+            <span style={{ color: colorPreset === "dark" ? "#fff" : "var(--text-secondary)" }}>White on Black</span>
+          </button>
+          <button
+            onClick={() => setColorPreset("light")}
+            style={{
+              background: colorPreset === "light" ? "#7C5CFC" : "var(--bg-secondary)",
+              color: colorPreset === "light" ? "#fff" : "var(--text-secondary)",
+              border: colorPreset === "light" ? "2px solid #7C5CFC" : "2px solid var(--border-primary)",
+              padding: "10px 20px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              transition: "all 0.2s",
+            }}
+          >
+            <span style={{ display: "inline-block", width: 22, height: 22, borderRadius: 6, background: "#fff", border: "2px solid #ccc" }} />
+            <span style={{ color: colorPreset === "light" ? "#fff" : "var(--text-secondary)" }}>Black on White</span>
+          </button>
         </div>
 
         {/* Generate button */}
