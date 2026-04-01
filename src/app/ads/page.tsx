@@ -35,7 +35,7 @@ import { supabase } from "@/lib/supabase";
 
 /* ──────────────────────── FONT OPTIONS ──────────────────────── */
 const FONT_OPTIONS = [
-  { label: "Inter", value: "Inter, SF Pro Display, system-ui" },
+  { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
   { label: "Source Serif Pro", value: "'Source Serif Pro', Georgia, serif" },
   { label: "Montserrat", value: "'Montserrat', Arial, sans-serif" },
   { label: "Playfair Display", value: "'Playfair Display', Georgia, serif" },
