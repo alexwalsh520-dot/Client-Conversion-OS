@@ -308,22 +308,28 @@ export async function GET(req: NextRequest) {
   const generateCloserBriefs = briefType === "closer" || briefType === "all";
   const generateCeoRecap = briefType === "ceo" || briefType === "all";
 
-  // Dates in ET — allow ?date=YYYY-MM-DD override for manual triggers
+  // Dates in ET — use timezone-safe formatting
   const overrideDate = req.nextUrl.searchParams.get("date");
   const now = new Date();
-  const etNow = overrideDate
-    ? new Date(overrideDate + "T12:00:00")
-    : new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const todayStr = etNow.toISOString().split("T")[0];
-  const yesterday = new Date(etNow); yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
-  const tomorrow = new Date(etNow); tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+  function toETDateStr(date: Date): string {
+    return date.toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD format
+  }
+
+  const todayStr = overrideDate || toETDateStr(now);
+
+  // Calculate yesterday and tomorrow from todayStr (not Date math which can drift)
+  const todayParts = todayStr.split("-").map(Number);
+  const todayDate = new Date(todayParts[0], todayParts[1] - 1, todayParts[2], 12);
+  const yesterdayDate = new Date(todayDate); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const tomorrowDate = new Date(todayDate); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const yesterdayStr = yesterdayDate.toISOString().split("T")[0];
+  const tomorrowStr = tomorrowDate.toISOString().split("T")[0];
   const monthStart = todayStr.substring(0, 8) + "01";
 
-  // For closer briefs at 11 PM: show TOMORROW's calls
-  // For CEO recap at 5 AM: show TODAY's data with YESTERDAY's results
-  const briefDate = briefType === "closer" ? tomorrowStr : todayStr;
+  // Closer briefs are ALWAYS for tomorrow (the next day's calls)
+  // CEO recap is always for today (yesterday's results + today's metrics)
+  const briefDate = generateCeoRecap && !generateCloserBriefs ? todayStr : tomorrowStr;
 
   // Fetch sales tracker data — include tomorrow for closer briefs
   const fetchEnd = briefType === "closer" ? tomorrowStr : todayStr;
