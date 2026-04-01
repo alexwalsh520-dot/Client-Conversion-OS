@@ -2145,6 +2145,7 @@ export default function AdsPage() {
     const isCta = role === "cta";
     const isCallout = role === "callout";
     const isLight = colorPreset === "light";
+    const isSerif = fontPreset.includes("Source Serif");
     return {
       id: uid(),
       lines,
@@ -2152,7 +2153,7 @@ export default function AdsPage() {
       y: 0,
       fontSize: isTitle ? 72 : isCta ? 56 : isCallout ? 52 : 44,
       fontFamily: fontPreset,
-      fontWeight: 700,
+      fontWeight: isSerif ? 400 : 700,
       textColor: isLight ? "#000000" : "#ffffff",
       bgColor: isLight ? "#ffffff" : "#000000",
       bgOpacity: 1,
@@ -2461,6 +2462,7 @@ export default function AdsPage() {
     const offsetY = existingCount * 120; // stagger each new block 120px down
     const baseY = 200 + offsetY;
     const isLight = colorPreset === "light";
+    const isSerif = fontPreset.includes("Source Serif");
     const newBlock: TextBlock = {
       id: uid(),
       lines: ["New text here"],
@@ -2468,7 +2470,7 @@ export default function AdsPage() {
       y: baseY > 1600 ? 200 : baseY,
       fontSize: 52,
       fontFamily: fontPreset,
-      fontWeight: 700,
+      fontWeight: isSerif ? 400 : 700,
       textColor: isLight ? "#000000" : "#ffffff",
       bgColor: isLight ? "#ffffff" : "#000000",
       bgOpacity: 1,
