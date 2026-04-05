@@ -35,12 +35,14 @@ interface SlackApiResponse {
 
 /**
  * Internal wrapper for Slack Web API calls.
+ * Pass an explicit token to override the default SLACK_BOT_TOKEN.
  */
 async function slackPost(
   method: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  tokenOverride?: string
 ): Promise<SlackApiResponse> {
-  const token = getBotToken();
+  const token = tokenOverride || getBotToken();
   if (!token) {
     return { ok: false, error: "SLACK_BOT_TOKEN not configured" };
   }
@@ -237,6 +239,55 @@ export async function uploadFileToSlack(
 // ---------------------------------------------------------------------------
 // CSO (Sales Manager) Wrappers
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve the Coaching / EOD Report Status channel ID.
+ */
+export function getCoachingChannel(): string {
+  return process.env.SLACK_CHANNEL_COACHING || "";
+}
+
+/**
+ * Get the dedicated coaching bot token (separate from the Sales Manager bot).
+ */
+function getCoachingBotToken(): string | null {
+  const token = process.env.SLACK_BOT_TOKEN_COACHING;
+  if (!token) {
+    console.warn("[slack] SLACK_BOT_TOKEN_COACHING not set");
+    return null;
+  }
+  return token;
+}
+
+/**
+ * Post a rich message to the coaching channel using the dedicated coaching bot.
+ */
+export async function postToCoachingChannel(
+  blocks: unknown[]
+): Promise<boolean> {
+  const channel = getCoachingChannel();
+  const token = getCoachingBotToken();
+  if (!channel || !token) {
+    console.error("[slack] Coaching channel or token not configured");
+    return false;
+  }
+
+  if (!blocks || blocks.length === 0) return false;
+
+  const result = await slackPost(
+    "chat.postMessage",
+    {
+      channel,
+      text: "Coaching Bot notification",
+      blocks,
+      username: "CCOS Coaching Bot",
+      icon_emoji: ":clipboard:",
+    },
+    token
+  );
+
+  return result.ok;
+}
 
 /**
  * Resolve the Sales Manager channel ID.

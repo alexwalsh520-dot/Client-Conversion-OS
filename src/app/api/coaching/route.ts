@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { appendClientToSheets, updateMilestoneInSheet } from "@/lib/sheets";
+import { postToCoachingChannel } from "@/lib/slack";
 
 type Action =
   | "upsert_client"
@@ -428,6 +429,50 @@ export async function POST(req: NextRequest) {
                 .is("onboarding_date", null);
             }
           }
+        }
+
+        // Fire-and-forget Slack notification
+        {
+          const emoji = payload.role === "onboarding" ? ":clipboard:" : ":white_check_mark:";
+          const feeling = payload.feelingToday ? `  |  Feeling: ${payload.feelingToday}` : "";
+          postToCoachingChannel([
+            {
+              type: "header",
+              text: { type: "plain_text", text: `${emoji} EOD Report Submitted` },
+            },
+            {
+              type: "section",
+              fields: [
+                { type: "mrkdwn", text: `*Submitted by:*\n${payload.submittedBy}` },
+                { type: "mrkdwn", text: `*Role:*\n${payload.role}` },
+                { type: "mrkdwn", text: `*Date:*\n${payload.date}` },
+                { type: "mrkdwn", text: `*Hours Logged:*\n${payload.hoursLogged || 0}h${feeling}` },
+              ],
+            },
+            ...(payload.summary
+              ? [
+                  { type: "divider" },
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*Summary:*\n${payload.summary.substring(0, 500)}`,
+                    },
+                  },
+                ]
+              : []),
+            ...(payload.questionsForManagement
+              ? [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*Questions for Management:*\n${payload.questionsForManagement.substring(0, 500)}`,
+                    },
+                  },
+                ]
+              : []),
+          ]).catch((err) => console.error("[coaching] Slack EOD notification failed:", err));
         }
 
         return NextResponse.json({ success: true, data: report });
