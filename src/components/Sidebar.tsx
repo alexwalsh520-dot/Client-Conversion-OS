@@ -6,38 +6,23 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   Home,
-  Crown,
-  TrendingUp,
   Users,
-  UserPlus,
   Megaphone,
-  Send,
-  Crosshair,
-  Rocket,
-  Brain,
-  GitCommit,
   Settings,
   ChevronLeft,
   ChevronRight,
   LogOut,
   BarChart3,
-  DollarSign,
   Menu,
   X,
   Monitor,
-  Plus,
 } from "lucide-react";
 
-const mainNav = [
+const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/ads", label: "Ads", icon: Megaphone },
-];
-
-const toolsNav = [
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
-  { href: "/log", label: "Log", icon: GitCommit },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export default function Sidebar() {
@@ -47,9 +32,6 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [forceDesktop, setForceDesktop] = useState(false);
-  const [showAddClient, setShowAddClient] = useState(false);
-  const [showAddMember, setShowAddMember] = useState(false);
-
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
@@ -170,47 +152,13 @@ export default function Sidebar() {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          {!collapsed && <div className="sidebar-section-label">Main</div>}
-          {mainNav.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
-
-          <div className="sidebar-divider" />
-
-          {!collapsed && <div className="sidebar-section-label">Tools</div>}
-          {toolsNav.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
+          {navItems.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
         </nav>
 
         {/* Bottom section */}
         <div className="sidebar-bottom">
-          {/* Add Client / Add Team Member */}
-          {!collapsed ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <button
-                className="sidebar-add-btn"
-                onClick={() => setShowAddClient(true)}
-              >
-                <Plus size={14} />
-                <span>Add Client</span>
-              </button>
-              <button
-                className="sidebar-add-btn"
-                onClick={() => setShowAddMember(true)}
-              >
-                <Plus size={14} />
-                <span>Add Team Member</span>
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <button
-                className="sidebar-toggle-btn"
-                title="Add Client"
-                onClick={() => setShowAddClient(true)}
-                style={{ fontSize: 14, color: "var(--text-muted)" }}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          )}
+          {/* Settings */}
+          {renderLink({ href: "/settings", label: "Settings", icon: Settings })}
 
           {/* Desktop/Mobile view toggle (mobile only) */}
           <button
@@ -263,15 +211,6 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Add Client Modal */}
-      {showAddClient && (
-        <AddClientModal onClose={() => setShowAddClient(false)} />
-      )}
-
-      {/* Add Team Member Modal */}
-      {showAddMember && (
-        <AddMemberModal onClose={() => setShowAddMember(false)} />
-      )}
     </>
   );
 }
