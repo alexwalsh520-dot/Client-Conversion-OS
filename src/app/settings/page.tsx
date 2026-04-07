@@ -20,6 +20,8 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
+  UserPlus,
+  Briefcase,
 } from "lucide-react";
 
 interface AppUser {
@@ -82,6 +84,15 @@ export default function SettingsPage() {
   const [editTabs, setEditTabs] = useState<string[]>([]);
   const [editRole, setEditRole] = useState<"admin" | "client">("client");
   const [editName, setEditName] = useState("");
+
+  // Add Client / Team Member modals
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [clientName, setClientName] = useState("");
+  const [clientStep, setClientStep] = useState(1);
+  const [memberName, setMemberName] = useState("");
+  const [memberRole, setMemberRole] = useState<"setter" | "closer">("setter");
+  const [memberStep, setMemberStep] = useState(1);
 
   // Fetch last sync on mount
   useEffect(() => {
@@ -816,6 +827,198 @@ export default function SettingsPage() {
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
               Role: {session?.user?.role || "client"} · {session?.user?.allowedTabs?.length || 0} tabs accessible
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding: Add Client / Team Member */}
+      {isAdmin && (
+        <div className="section">
+          <h2 className="section-title" style={{ margin: 0, marginBottom: 16 }}>
+            <UserPlus size={16} />
+            Onboarding
+          </h2>
+          <div className="metric-grid metric-grid-2">
+            <div className="glass-static" style={{ padding: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div className="action-card-icon" style={{ background: "var(--accent-soft)" }}>
+                  <Briefcase size={18} style={{ color: "var(--accent)" }} />
+                </div>
+                <div className="action-card-title">Add Client</div>
+              </div>
+              <div className="action-card-desc" style={{ marginBottom: 16 }}>
+                Set up a new coaching client with all required data source connections.
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => { setShowAddClient(true); setClientStep(1); setClientName(""); }}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "8px 16px" }}
+              >
+                <Plus size={14} />
+                Add Client
+              </button>
+            </div>
+            <div className="glass-static" style={{ padding: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div className="action-card-icon" style={{ background: "var(--accent-soft)" }}>
+                  <Users size={18} style={{ color: "var(--accent)" }} />
+                </div>
+                <div className="action-card-title">Add Team Member</div>
+              </div>
+              <div className="action-card-desc" style={{ marginBottom: 16 }}>
+                Add a setter or closer and connect their data sources for tracking.
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => { setShowAddMember(true); setMemberStep(1); setMemberName(""); }}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "8px 16px" }}
+              >
+                <Plus size={14} />
+                Add Team Member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Client Modal */}
+      {showAddClient && (
+        <div className="modal-overlay" onClick={() => setShowAddClient(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Add New Client</h3>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Step {clientStep} of 2</span>
+            </div>
+            {clientStep === 1 && (
+              <>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  Enter the client&apos;s name. This will appear across all tabs.
+                </p>
+                <input
+                  autoFocus
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  placeholder="Client name"
+                  className="form-input"
+                  style={{ width: "100%", marginBottom: 16 }}
+                  onKeyDown={(e) => e.key === "Enter" && clientName.trim() && setClientStep(2)}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button className="btn-secondary" onClick={() => setShowAddClient(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={() => clientName.trim() && setClientStep(2)} disabled={!clientName.trim()}>Next</button>
+                </div>
+              </>
+            )}
+            {clientStep === 2 && (
+              <>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  To pull accurate metrics for <strong style={{ color: "var(--text-primary)" }}>{clientName}</strong>, connect these data sources:
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                  {[
+                    { name: "Sales Tracker (Google Sheet)", desc: "Add a column in the 'Offer' field matching the client name so revenue and call data can be attributed." },
+                    { name: "GHL Sub-Account", desc: "Create or link a GHL sub-account with calendar and contact scopes for call tracking." },
+                    { name: "GHL Calendar", desc: "Set up a booking calendar so calls booked, show rates, and no-shows are tracked." },
+                    { name: "ManyChat", desc: "Configure ManyChat flows with tags matching the client name for lead and DM metrics." },
+                    { name: "Ad Platform", desc: "Connect the ad account (Meta, Google, etc.) so ad spend, CPL, and ROAS data flows in." },
+                  ].map((item) => (
+                    <div key={item.name} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-primary)", borderRadius: 8 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--warning)", marginTop: 6, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{item.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 16 }}>
+                  The client will appear in all views once added. Metrics populate as data flows in from each source.
+                </p>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <button className="btn-secondary" onClick={() => setClientStep(1)}>&larr; Back</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-secondary" onClick={() => setShowAddClient(false)}>Cancel</button>
+                    <button className="btn-primary" onClick={() => setShowAddClient(false)}>Add Client</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Team Member Modal */}
+      {showAddMember && (
+        <div className="modal-overlay" onClick={() => setShowAddMember(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Add Team Member</h3>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Step {memberStep} of 2</span>
+            </div>
+            {memberStep === 1 && (
+              <>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  Enter the team member&apos;s name and role. They&apos;ll appear across all client views.
+                </p>
+                <input
+                  autoFocus
+                  value={memberName}
+                  onChange={(e) => setMemberName(e.target.value)}
+                  placeholder="Name"
+                  className="form-input"
+                  style={{ width: "100%", marginBottom: 12 }}
+                />
+                <select
+                  value={memberRole}
+                  onChange={(e) => setMemberRole(e.target.value as "setter" | "closer")}
+                  className="form-input"
+                  style={{ width: "100%", marginBottom: 16 }}
+                >
+                  <option value="setter">Setter</option>
+                  <option value="closer">Closer</option>
+                </select>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button className="btn-secondary" onClick={() => setShowAddMember(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={() => memberName.trim() && setMemberStep(2)} disabled={!memberName.trim()}>Next</button>
+                </div>
+              </>
+            )}
+            {memberStep === 2 && (
+              <>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  After adding, set up the following for <strong style={{ color: "var(--text-primary)" }}>{memberName}</strong> ({memberRole}):
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                  {(memberRole === "setter" ? [
+                    { name: "Sales Tracker Column", desc: "Add the setter's name to the 'Setter' column in the Google Sheet." },
+                    { name: "GHL User Account", desc: "Create a GHL user so calls and leads can be attributed." },
+                    { name: "ManyChat Assignment", desc: "Set up lead routing and assignment rules in ManyChat." },
+                  ] : [
+                    { name: "Sales Tracker Column", desc: "Add the closer's name to the 'Closer' column in the Google Sheet." },
+                    { name: "GHL Calendar", desc: "Create a booking calendar in GHL for this closer." },
+                    { name: "GHL User Account", desc: "Create a GHL user so calls and outcomes are tracked." },
+                  ]).map((item) => (
+                    <div key={item.name} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-primary)", borderRadius: 8 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--warning)", marginTop: 6, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{item.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 16 }}>
+                  The team member will show up in all views once added. Metrics populate as data flows in.
+                </p>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <button className="btn-secondary" onClick={() => setMemberStep(1)}>&larr; Back</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-secondary" onClick={() => setShowAddMember(false)}>Cancel</button>
+                    <button className="btn-primary" onClick={() => setShowAddMember(false)}>Add Member</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
