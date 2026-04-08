@@ -172,4 +172,16 @@ export interface FinanceRecord {
   retentionDate: string | null;
 }
 
-export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials';
+export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses';
+
+export interface Expense {
+  id?: number;
+  month: string;        // 'YYYY-MM'
+  name: string;
+  role: string;
+  base: number;
+  commissions: number;
+  platform: string;
+  comments: string;
+  createdAt?: string;
+}

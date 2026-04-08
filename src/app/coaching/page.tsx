@@ -10,6 +10,7 @@ import {
   FileText,
   DollarSign,
   RefreshCw,
+  Receipt,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -27,9 +28,10 @@ import {
   getPauses,
   getMeetings,
   getEODReports,
+  getExpenses,
 } from "@/lib/data";
 import { useAsyncData } from "@/lib/use-data";
-import type { CoachingTab, Client, CoachMeeting, CoachEODReport } from "@/lib/types";
+import type { CoachingTab, Client, CoachMeeting, CoachEODReport, Expense } from "@/lib/types";
 
 import ClientRosterTab from "@/components/coaching/ClientRosterTab";
 import OnboardingTab from "@/components/coaching/OnboardingTab";
@@ -38,6 +40,7 @@ import MeetingsTab from "@/components/coaching/MeetingsTab";
 import MilestonesTab from "@/components/coaching/MilestonesTab";
 import EODReportsTab from "@/components/coaching/EODReportsTab";
 import FinancialsTab from "@/components/coaching/FinancialsTab";
+import ExpensesTab from "@/components/coaching/ExpensesTab";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "roster", label: "Client Roster", icon: <Users size={14} /> },
@@ -47,6 +50,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "milestones", label: "Milestones", icon: <Target size={14} /> },
   { key: "eod", label: "EOD Reports", icon: <FileText size={14} /> },
   { key: "financials", label: "Financials", icon: <DollarSign size={14} /> },
+  { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
 ];
 
 export default function CoachingPage() {
@@ -67,6 +71,7 @@ export default function CoachingPage() {
   const { data: meetings, refetch: refetchMeetings } = useAsyncData(getMeetings, []);
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
   const { data: milestoneActivity, refetch: refetchMilestoneActivity } = useAsyncData(getMilestoneActivity, []);
+  const { data: expenses, refetch: refetchExpenses } = useAsyncData(getExpenses, []);
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -174,6 +179,16 @@ export default function CoachingPage() {
     refetchClients(); // Deleted report reactivates deactivated clients
   };
 
+  const handleSaveExpense = async (expense: Partial<Expense>) => {
+    await apiCall("upsert_expense", expense);
+    refetchExpenses();
+  };
+
+  const handleDeleteExpense = async (id: number) => {
+    await apiCall("delete_expense", { id });
+    refetchExpenses();
+  };
+
   return (
     <div className="fade-up">
       {/* Header */}
@@ -277,6 +292,9 @@ export default function CoachingPage() {
         )}
         {activeTab === "financials" && (
           <FinancialsTab />
+        )}
+        {activeTab === "expenses" && (
+          <ExpensesTab expenses={expenses} clients={clients} onSaveExpense={handleSaveExpense} onDeleteExpense={handleDeleteExpense} />
         )}
       </div>
     </div>

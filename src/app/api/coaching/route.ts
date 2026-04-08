@@ -18,7 +18,9 @@ type Action =
   | "update_eod"
   | "delete_eod"
   | "upsert_finance"
-  | "update_milestone_checkbox";
+  | "update_milestone_checkbox"
+  | "upsert_expense"
+  | "delete_expense";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -601,6 +603,44 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
         return NextResponse.json({ success: true, data });
+      }
+
+      // ---- Expenses ----
+      case "upsert_expense": {
+        const row = {
+          month: payload.month,
+          name: payload.name,
+          role: payload.role || "",
+          base: payload.base || 0,
+          commissions: payload.commissions || 0,
+          platform: payload.platform || "",
+          comments: payload.comments || "",
+        };
+        if (payload.id) Object.assign(row, { id: payload.id });
+
+        const { data, error } = await db
+          .from("expenses")
+          .upsert(row, { onConflict: "id" })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return NextResponse.json({ success: true, data });
+      }
+
+      case "delete_expense": {
+        const { id } = payload;
+        if (!id) {
+          return NextResponse.json({ error: "Missing expense id" }, { status: 400 });
+        }
+
+        const { error } = await db
+          .from("expenses")
+          .delete()
+          .eq("id", id);
+
+        if (error) throw error;
+        return NextResponse.json({ success: true });
       }
 
       default:

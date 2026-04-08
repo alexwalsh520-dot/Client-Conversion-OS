@@ -20,6 +20,7 @@ import type {
   CoachEODReport,
   EODClientCheckin,
   FinanceRecord,
+  Expense,
 } from "./types";
 
 // ---- Coaching Feedback ----
@@ -500,6 +501,34 @@ export async function getFinances(): Promise<FinanceRecord[]> {
   } catch {
     console.warn("[data] Finances: falling back to mock data");
     return mock.mockFinances;
+  }
+}
+
+// ---- Expenses ----
+
+export async function getExpenses(): Promise<Expense[]> {
+  try {
+    const { data, error } = await supabase
+      .from("expenses")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error || !data?.length) return [];
+
+    return data.map((row) => ({
+      id: row.id,
+      month: row.month || "",
+      name: row.name || "",
+      role: row.role || "",
+      base: Number(row.base) || 0,
+      commissions: Number(row.commissions) || 0,
+      platform: row.platform || "",
+      comments: row.comments || "",
+      createdAt: row.created_at,
+    }));
+  } catch {
+    console.warn("[data] Expenses: returning empty array");
+    return [];
   }
 }
 
