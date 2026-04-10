@@ -69,11 +69,11 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
   const showDenominator = callsTaken + noShowRows.length;
   const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
-  const wins = closerRows.filter((r) => r.outcome === "WIN").length;
-  const losses = Math.max(callsTaken - wins, 0);
+  const winRows = takenRows.filter((r) => r.outcome === "WIN");
+  const wins = winRows.length;
+  const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
   const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
-  const winRows = closerRows.filter((r) => r.outcome === "WIN");
   const cash = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
   const aov = wins > 0 ? cash / wins : 0;
 

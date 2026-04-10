@@ -73,17 +73,18 @@ function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDash
 
 function computeMetrics(rows: SheetRow[], label: string): ClientMetrics {
   const callsBooked = rows.length;
-  const callsTaken = rows.filter((r) => r.callTakenStatus === "yes").length;
+  const takenRows = rows.filter((r) => r.callTakenStatus === "yes");
+  const callsTaken = takenRows.length;
   const noShows = rows.filter((r) => r.callTakenStatus === "no").length;
   const pending = rows.filter((r) => r.callTakenStatus === "pending").length;
   const showDenominator = callsTaken + noShows;
   const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
-  const wins = rows.filter((r) => r.outcome === "WIN").length;
-  const losses = Math.max(callsTaken - wins, 0);
+  const winRows = takenRows.filter((r) => r.outcome === "WIN");
+  const wins = winRows.length;
+  const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
   const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
-  const winRows = rows.filter((r) => r.outcome === "WIN");
   const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
   const aov = wins > 0 ? cashCollected / wins : 0;
 
@@ -227,17 +228,18 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     const rows = sheet.data.rows;
 
     const callsBooked = rows.length;
-    const callsTaken = rows.filter((r) => r.callTakenStatus === "yes").length;
+    const takenRows = rows.filter((r) => r.callTakenStatus === "yes");
+    const callsTaken = takenRows.length;
     const noShows = rows.filter((r) => r.callTakenStatus === "no").length;
     const pending = rows.filter((r) => r.callTakenStatus === "pending").length;
     const showDenominator = callsTaken + noShows;
     const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
-    const wins = rows.filter((r) => r.outcome === "WIN").length;
-    const losses = Math.max(callsTaken - wins, 0);
+    const winRows = takenRows.filter((r) => r.outcome === "WIN");
+    const wins = winRows.length;
+    const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
     const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
-    const winRows = rows.filter((r) => r.outcome === "WIN");
     const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
     const aov = wins > 0 ? cashCollected / wins : 0;
 
