@@ -337,7 +337,7 @@ export default function SalesHubPage() {
       {/* Page Header */}
       <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div>
-          <h1 className="page-title">Sales Manager Hub</h1>
+          <h1 className="page-title">Sales Hub</h1>
           <p className="page-subtitle">
             Unified intelligence dashboard &mdash; DM performance, closer analytics, AI
             reviews, and lead intervention

@@ -225,7 +225,7 @@ export default function CallReview({ filters }: CallReviewProps) {
     <div className="section">
       <h2 className="section-title">
         <Phone size={16} />
-        Call Transcript Review
+        Call Reviews
       </h2>
 
       {/* Loading counts */}

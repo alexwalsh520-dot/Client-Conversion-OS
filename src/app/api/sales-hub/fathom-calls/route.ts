@@ -33,7 +33,14 @@ const INTERNAL_TITLE_PATTERNS = [
   "interview",
   "1:1",
   "huddle",
+  "onboarding",
 ];
+
+const CLOSER_ALIASES: Record<string, string[]> = {
+  broz: ["broz", "jacob", "jacob broz"],
+  will: ["will", "will rincan", "will buckley", "william", "william buckley"],
+  austin: ["austin", "austin richard"],
+};
 
 /**
  * A sales call must have at least one attendee who is NOT a known team member.
@@ -83,20 +90,24 @@ export async function GET(req: NextRequest) {
     // Optionally filter by closer name (checks title and calendar_invitees name/email)
     if (closer) {
       const closerLower = closer.toLowerCase();
+      const aliases = CLOSER_ALIASES[closerLower] || [closerLower];
       meetings = meetings.filter((meeting) => {
-        // Check if closer name appears in meeting title
-        if (meeting.title?.toLowerCase().includes(closerLower)) return true;
+        const titleLower = (meeting.title || meeting.meeting_title || "").toLowerCase();
+        const recordedByName = (meeting.recorded_by?.name || "").toLowerCase();
+        const recordedByEmail = (meeting.recorded_by?.email || "").toLowerCase();
 
-        // Check calendar invitees — match name or email prefix
-        if (
-          meeting.calendar_invitees?.some((a) => {
-            const nameLower = (a.name || "").toLowerCase();
-            const emailLower = (a.email || "").toLowerCase();
-            return nameLower.includes(closerLower) || emailLower.includes(closerLower);
-          })
-        ) {
+        const matchesAlias = (value: string) =>
+          aliases.some((alias) => value.includes(alias));
+
+        if (matchesAlias(titleLower) || matchesAlias(recordedByName) || matchesAlias(recordedByEmail)) {
           return true;
         }
+
+        if (meeting.calendar_invitees?.some((a) => {
+          const nameLower = (a.name || "").toLowerCase();
+          const emailLower = (a.email || "").toLowerCase();
+          return matchesAlias(nameLower) || matchesAlias(emailLower);
+        })) return true;
 
         return false;
       });
