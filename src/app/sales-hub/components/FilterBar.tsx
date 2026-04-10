@@ -6,25 +6,29 @@ import type { Filters, Client, DatePreset } from "../types";
 
 /* ── Date helpers ─────────────────────────────────────────────────── */
 
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function getToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalDate(new Date());
 }
 
 function getMonthStart(): string {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  return formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
 function getLast7(): string {
   const d = new Date();
   d.setDate(d.getDate() - 7);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 function getLast30(): string {
   const d = new Date();
   d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 export function getEffectiveDates(filters: Filters): {
@@ -38,8 +42,12 @@ export function getEffectiveDates(filters: Filters): {
       return { dateFrom: getLast7(), dateTo: getToday() };
     case "last30":
       return { dateFrom: getLast30(), dateTo: getToday() };
-    case "custom":
-      return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
+    case "custom": {
+      const fallback = getToday();
+      const dateFrom = filters.dateFrom || filters.dateTo || fallback;
+      const dateTo = filters.dateTo || filters.dateFrom || fallback;
+      return { dateFrom, dateTo };
+    }
   }
 }
 
@@ -67,6 +75,17 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
 
   const handlePresetChange = useCallback(
     (preset: DatePreset) => {
+      if (preset === "custom") {
+        const current = getEffectiveDates(filters);
+        onChange({
+          ...filters,
+          datePreset: preset,
+          dateFrom: filters.dateFrom || current.dateFrom,
+          dateTo: filters.dateTo || current.dateTo,
+        });
+        return;
+      }
+
       onChange({ ...filters, datePreset: preset });
     },
     [filters, onChange],

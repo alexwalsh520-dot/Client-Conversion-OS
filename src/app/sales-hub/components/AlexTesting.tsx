@@ -95,6 +95,10 @@ function getPrevPeriod(
 ): { from: string; to: string } {
   const from = new Date(dateFrom + "T00:00:00");
   const to = new Date(dateTo + "T00:00:00");
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    const today = fmtLocalDate(new Date());
+    return { from: today, to: today };
+  }
   const diff = to.getTime() - from.getTime();
   const prevTo = new Date(from.getTime() - 86400000);
   const prevFrom = new Date(prevTo.getTime() - diff);
