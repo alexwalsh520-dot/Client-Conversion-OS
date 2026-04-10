@@ -22,11 +22,9 @@ interface CloserStats {
   wins: number;
   losses: number;
   closeRate: number;
-  revenue: number;
   cash: number;
   aov: number;
   avgCallLength: string;
-  pcfus: number;
   topObjection: string;
 }
 
@@ -65,20 +63,19 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
   );
 
   const callsBooked = closerRows.length;
-  const takenRows = closerRows.filter((r) => r.callTaken);
+  const takenRows = closerRows.filter((r) => r.callTakenStatus === "yes");
+  const noShowRows = closerRows.filter((r) => r.callTakenStatus === "no");
   const callsTaken = takenRows.length;
-  const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
+  const showDenominator = callsTaken + noShowRows.length;
+  const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
   const wins = closerRows.filter((r) => r.outcome === "WIN").length;
-  const losses = closerRows.filter((r) => r.outcome === "LOST").length;
-  const pcfus = closerRows.filter((r) => r.outcome === "PCFU").length;
-  const denominator = wins + losses + pcfus;
-  const closeRate = denominator > 0 ? (wins / denominator) * 100 : 0;
+  const losses = Math.max(callsTaken - wins, 0);
+  const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
   const winRows = closerRows.filter((r) => r.outcome === "WIN");
-  const revenue = winRows.reduce((sum, r) => sum + r.revenue, 0);
   const cash = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
-  const aov = wins > 0 ? revenue / wins : 0;
+  const aov = wins > 0 ? cash / wins : 0;
 
   // Average call length from taken calls
   const callLengths = takenRows
@@ -91,9 +88,13 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
 
   // Top objection
   const objCounts: Record<string, number> = {};
-  for (const r of closerRows) {
+  for (const r of takenRows) {
     const obj = r.objection?.trim();
-    if (obj) objCounts[obj] = (objCounts[obj] || 0) + 1;
+    if (!obj) continue;
+    const normalized = obj.toLowerCase();
+    if (normalized === "none" || normalized === "n/a" || normalized === "na") continue;
+    const label = obj.charAt(0).toUpperCase() + obj.slice(1);
+    objCounts[label] = (objCounts[label] || 0) + 1;
   }
   const topObjection =
     Object.keys(objCounts).length > 0
@@ -108,11 +109,9 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
     wins,
     losses,
     closeRate,
-    revenue,
     cash,
     aov,
     avgCallLength: formatSeconds(avgCallSeconds),
-    pcfus,
     topObjection,
   };
 }
@@ -125,12 +124,13 @@ function getSetterQuality(
     (r) => r.closer?.trim().toLowerCase() === closerName.toLowerCase(),
   );
 
-  const setterMap: Record<string, { booked: number; taken: number }> = {};
+  const setterMap: Record<string, { booked: number; taken: number; noShows: number }> = {};
   for (const r of closerRows) {
     const setter = r.setter?.trim() || "Unknown";
-    if (!setterMap[setter]) setterMap[setter] = { booked: 0, taken: 0 };
+    if (!setterMap[setter]) setterMap[setter] = { booked: 0, taken: 0, noShows: 0 };
     setterMap[setter].booked++;
-    if (r.callTaken) setterMap[setter].taken++;
+    if (r.callTakenStatus === "yes") setterMap[setter].taken++;
+    if (r.callTakenStatus === "no") setterMap[setter].noShows++;
   }
 
   return Object.entries(setterMap)
@@ -138,7 +138,10 @@ function getSetterQuality(
       setter,
       booked: stats.booked,
       taken: stats.taken,
-      showRate: stats.booked > 0 ? (stats.taken / stats.booked) * 100 : 0,
+      showRate:
+        stats.taken + stats.noShows > 0
+          ? (stats.taken / (stats.taken + stats.noShows)) * 100
+          : 0,
     }))
     .sort((a, b) => b.booked - a.booked);
 }

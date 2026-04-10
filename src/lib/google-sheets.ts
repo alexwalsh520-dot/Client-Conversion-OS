@@ -184,6 +184,29 @@ function normalizeCell(val: string | undefined): string {
   return (val || "").trim();
 }
 
+function normalizeSetterName(val: string | undefined): string {
+  const normalized = normalizeCell(val).toUpperCase();
+  if (!normalized) return "";
+
+  const canonical: Record<string, string> = {
+    AMARA: "Amara",
+    KELCHI: "Kelechi",
+    KELECHI: "Kelechi",
+    GIDEON: "Gideon",
+    DEBBIE: "Debbie",
+    NAOMI: "Naomi",
+    OTHER: "Other",
+  };
+
+  if (canonical[normalized]) return canonical[normalized];
+
+  return normalized
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function getOfferForRow(row: (string | undefined)[], tab?: string): string {
   if (tab === "JANUARY") return "Tyson Sonnek";
   return normalizeCell(row[16]);
@@ -243,7 +266,7 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
 
   const isJanuary = tab === "JANUARY";
   const callTakenStatus = parseCallTakenStatus(row[3]);
-  const setter = isJanuary ? normalizeCell(row[12]) : normalizeCell(row[13]);
+  const setter = normalizeSetterName(isJanuary ? row[12] : row[13]);
   const offer = getOfferForRow(row, tab);
 
   return {
