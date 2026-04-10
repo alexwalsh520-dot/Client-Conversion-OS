@@ -353,14 +353,18 @@ export default function CloserPerformance({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${Math.min(closerStats.length, 3)}, 1fr)`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
             gap: 16,
           }}
         >
           {closerStats.map((closer) => {
             const rows = setterQualityData[closer.name] || [];
             return (
-              <div key={closer.name} className="glass-static" style={{ overflow: "hidden" }}>
+              <div
+                key={closer.name}
+                className="glass-static"
+                style={{ overflowX: "auto", overflowY: "hidden" }}
+              >
                 <div
                   style={{
                     padding: "12px 16px 8px",
@@ -372,14 +376,24 @@ export default function CloserPerformance({
                 >
                   {closer.name}
                 </div>
-                <table className="data-table">
+                <table
+                  className="data-table"
+                  style={{ width: "100%", minWidth: 0, tableLayout: "fixed" }}
+                >
+                  <colgroup>
+                    <col style={{ width: "28%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "22%" }} />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th>Setter</th>
-                      <th>Booked</th>
-                      <th>Taken</th>
-                      <th>Upcoming</th>
-                      <th>Show Rate</th>
+                      <th style={{ padding: "10px 12px" }}>Setter</th>
+                      <th style={{ padding: "10px 8px" }}>Booked</th>
+                      <th style={{ padding: "10px 8px" }}>Taken</th>
+                      <th style={{ padding: "10px 8px" }}>Upcoming</th>
+                      <th style={{ padding: "10px 8px" }}>Show Rate</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -395,13 +409,13 @@ export default function CloserPerformance({
                     ) : (
                       rows.map((sq) => (
                         <tr key={sq.setter}>
-                          <td style={{ fontWeight: 500, color: "var(--text-primary)" }}>
+                          <td style={{ padding: "12px", fontWeight: 500, color: "var(--text-primary)" }}>
                             {sq.setter}
                           </td>
-                          <td>{fmtNumber(sq.booked)}</td>
-                          <td>{fmtNumber(sq.taken)}</td>
-                          <td>{fmtNumber(sq.upcoming)}</td>
-                          <td>{fmtPercent(sq.showRate)}</td>
+                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.booked)}</td>
+                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.taken)}</td>
+                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.upcoming)}</td>
+                          <td style={{ padding: "12px 8px" }}>{fmtPercent(sq.showRate)}</td>
                         </tr>
                       ))
                     )}
