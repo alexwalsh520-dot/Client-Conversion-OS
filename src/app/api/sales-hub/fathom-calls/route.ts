@@ -33,7 +33,6 @@ const INTERNAL_TITLE_PATTERNS = [
   "interview",
   "1:1",
   "huddle",
-  "onboarding",
 ];
 
 const CLOSER_ALIASES: Record<string, string[]> = {
