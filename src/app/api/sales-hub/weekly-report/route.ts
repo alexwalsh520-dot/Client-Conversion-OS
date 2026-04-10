@@ -191,8 +191,8 @@ export async function POST(req: NextRequest) {
       dmTranscripts,
     ] = await Promise.all([
       fetchSheetData(dateFrom, dateTo).catch(() => []),
-      getMetrics("tyson", dateFrom, dateTo).catch(() => null),
-      getMetrics("keith", dateFrom, dateTo).catch(() => null),
+      getMetrics("tyson_sonnek", dateFrom, dateTo).catch(() => null),
+      getMetrics("keith_holland", dateFrom, dateTo).catch(() => null),
       countSubscriptionSales("tyson", dateFrom, dateTo).catch(() => 0),
       countSubscriptionSales("keith", dateFrom, dateTo).catch(() => 0),
       fetchFathomTranscripts(dateFrom, dateTo),
