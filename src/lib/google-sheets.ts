@@ -11,6 +11,7 @@ export interface SheetRow {
   date: string;
   name: string;
   callTaken: boolean;
+  callTakenStatus: "yes" | "no" | "pending";
   callLength: string;
   recorded: boolean;
   outcome: string; // WIN, LOST, NS-RS, PCFU, NOT A FIT
@@ -97,6 +98,7 @@ export function getMonthTab(date: Date): string {
  * Handles formats like:
  *   - "3/5/2026" (M/D/YYYY)
  *   - "03/05/2026" (MM/DD/YYYY)
+ *   - "3.5.26" (M.D.YY)
  *   - "March 5, 2026"
  *   - "2026-03-05" (ISO)
  */
@@ -111,6 +113,21 @@ function parseDateString(val: string | undefined | null): string | null {
     const month = parseInt(slashMatch[1], 10);
     const day = parseInt(slashMatch[2], 10);
     let year = parseInt(slashMatch[3], 10);
+    if (year < 100) year += 2000;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(year, month - 1, day);
+      if (!isNaN(d.getTime())) {
+        return formatDateISO(d);
+      }
+    }
+  }
+
+  // Try M.D.YY or M.D.YYYY format used in January
+  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (dotMatch) {
+    const month = parseInt(dotMatch[1], 10);
+    const day = parseInt(dotMatch[2], 10);
+    let year = parseInt(dotMatch[3], 10);
     if (year < 100) year += 2000;
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       const d = new Date(year, month - 1, day);
@@ -155,20 +172,32 @@ function parseBoolField(val: string | undefined | null): boolean {
   return lower === "yes" || lower === "y" || lower === "true" || lower === "1";
 }
 
+function parseCallTakenStatus(val: string | undefined | null): "yes" | "no" | "pending" {
+  if (!val || !val.trim()) return "pending";
+  const lower = val.trim().toLowerCase();
+  if (lower === "yes" || lower === "y" || lower === "true" || lower === "1") return "yes";
+  if (lower === "no" || lower === "n" || lower === "false" || lower === "0") return "no";
+  return "pending";
+}
+
+function normalizeCell(val: string | undefined): string {
+  return (val || "").trim();
+}
+
 // ---------------------------------------------------------------------------
 // API Fetching
 // ---------------------------------------------------------------------------
 
 /**
  * Fetch raw values from a single monthly tab via Google Sheets API v4.
- * Range: A9:Q200 (row 9 = headers, rows 10+ = data).
+ * Range: A8:Q200 (row 8 = headers, rows 9+ = data).
  */
 async function fetchTabValues(
   tab: string
 ): Promise<(string | undefined)[][]> {
   const sheetId = getSheetId();
   const apiKey = getApiKey();
-  const range = encodeURIComponent(`${tab}!A9:Q200`);
+  const range = encodeURIComponent(`${tab}!A8:Q200`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
   const response = await fetch(url);
@@ -190,7 +219,7 @@ async function fetchTabValues(
   const json = await response.json();
   const rows: (string | undefined)[][] = json.values || [];
 
-  // First row is headers (row 9), data starts from index 1 (row 10)
+  // First row is headers (row 8), data starts from index 1 (row 9)
   if (rows.length <= 1) return [];
   return rows.slice(1); // skip header row
 }
@@ -202,29 +231,35 @@ async function fetchTabValues(
  *   K=10 Revenue, L=11 Cash Collected, M=12 Method, N=13 Setter,
  *   O=14 Call Notes, P=15 Call Recording Link, Q=16 Offer
  */
-function parseRow(row: (string | undefined)[]): SheetRow | null {
+function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
   const dateStr = parseDateString(row[1]);
   // Skip rows without a parseable date — they're likely blank or summary rows
   if (!dateStr) return null;
 
+  const isJanuary = tab === "JANUARY";
+  const callTakenStatus = parseCallTakenStatus(row[3]);
+  const setter = isJanuary ? normalizeCell(row[12]) : normalizeCell(row[13]);
+  const offer = isJanuary ? "" : normalizeCell(row[16]);
+
   return {
-    callNumber: (row[0] || "").trim(),
+    callNumber: normalizeCell(row[0]),
     date: dateStr,
-    name: (row[2] || "").trim(),
-    callTaken: parseBoolField(row[3]),
-    callLength: (row[4] || "").trim(),
+    name: normalizeCell(row[2]),
+    callTaken: callTakenStatus === "yes",
+    callTakenStatus,
+    callLength: normalizeCell(row[4]),
     recorded: parseBoolField(row[5]),
-    outcome: (row[6] || "").trim().toUpperCase(),
-    closer: (row[7] || "").trim().toUpperCase(),
-    objection: (row[8] || "").trim(),
-    programLength: (row[9] || "").trim(),
-    revenue: parseRevenue(row[10] || ""),
-    cashCollected: parseRevenue(row[11] || ""),
-    method: (row[12] || "").trim().toUpperCase(),
-    setter: (row[13] || "").trim(),
-    callNotes: (row[14] || "").trim(),
-    recordingLink: (row[15] || "").trim(),
-    offer: (row[16] || "").trim(),
+    outcome: normalizeCell(row[6]).toUpperCase(),
+    closer: normalizeCell(row[7]).toUpperCase(),
+    objection: normalizeCell(row[8]),
+    programLength: normalizeCell(row[9]),
+    revenue: parseRevenue(row[isJanuary ? 9 : 10] || ""),
+    cashCollected: parseRevenue(row[isJanuary ? 10 : 11] || ""),
+    method: normalizeCell(row[isJanuary ? 11 : 12]).toUpperCase(),
+    setter,
+    callNotes: normalizeCell(row[isJanuary ? 13 : 14]),
+    recordingLink: normalizeCell(row[isJanuary ? 14 : 15]),
+    offer,
   };
 }
 
@@ -288,9 +323,11 @@ export async function fetchSheetData(
   const fromISO = dateFrom; // YYYY-MM-DD
   const toISO = dateTo;
 
-  for (const rawRows of tabResults) {
+  for (let i = 0; i < tabResults.length; i++) {
+    const rawRows = tabResults[i];
+    const tab = tabEntries[i];
     for (const raw of rawRows) {
-      const parsed = parseRow(raw);
+      const parsed = parseRow(raw, tab);
       if (!parsed) continue;
 
       // Filter by date range (string comparison works for YYYY-MM-DD)

@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
       fetchSheetData(dateFrom, dateTo),
       fetchSubscriptionsSold(dateFrom, dateTo),
     ]);
+    const unattributedRows = allRows.filter((row) => !row.offer.trim()).length;
 
     let rows: SheetRow[] = allRows;
 
@@ -27,18 +28,27 @@ export async function GET(req: NextRequest) {
       const clientLower = client.toLowerCase();
       rows = rows.filter((row) => {
         const offerLower = row.offer.toLowerCase();
-        if (clientLower === "tyson" || clientLower === "tyson sonnek") return offerLower.includes("tyson");
+        if (clientLower === "tyson" || clientLower === "tyson sonnek" || clientLower === "sonic") {
+          return offerLower.includes("tyson") || offerLower.includes("sonic");
+        }
         if (clientLower === "keith" || clientLower === "keith holland") return offerLower.includes("keith");
-        if (clientLower === "zoe and emily" || clientLower === "zoeemily") return offerLower.includes("zoe") || offerLower.includes("emily");
+        if (clientLower === "zoe and emily" || clientLower === "zoeemily") {
+          return offerLower.includes("zoe") || offerLower.includes("emily");
+        }
         return offerLower.includes(clientLower);
       });
     }
 
-    return NextResponse.json({ rows, subscriptionsSold });
+    return NextResponse.json({ rows, subscriptionsSold, unattributedRows });
   } catch (err) {
     console.error("Sheet data error:", err);
     return NextResponse.json(
-      { rows: [], error: err instanceof Error ? err.message : "Failed to fetch sheet data" },
+      {
+        rows: [],
+        subscriptionsSold: 0,
+        unattributedRows: 0,
+        error: err instanceof Error ? err.message : "Failed to fetch sheet data",
+      },
       { status: 500 }
     );
   }

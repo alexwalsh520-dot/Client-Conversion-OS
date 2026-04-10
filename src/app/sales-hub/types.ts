@@ -13,6 +13,7 @@ export interface SheetRow {
   date: string;
   name: string;
   callTaken: boolean;
+  callTakenStatus: "yes" | "no" | "pending";
   callLength: string;
   recorded: boolean;
   outcome: string;

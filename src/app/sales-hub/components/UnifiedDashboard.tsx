@@ -12,12 +12,8 @@ import {
   TrendingUp,
   Trophy,
   XCircle,
-  DollarSign,
   Banknote,
   BarChart3,
-  Clock,
-  AlertTriangle,
-  ShoppingCart,
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
@@ -28,6 +24,7 @@ import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../t
 interface SheetApiResponse {
   rows: SheetRow[];
   subscriptionsSold: number;
+  unattributedRows: number;
 }
 
 interface DataState<T> {
@@ -44,15 +41,13 @@ interface ClientMetrics {
   label: string;
   callsBooked: number;
   callsTaken: number;
+  pending: number;
   showRate: number;
   wins: number;
   losses: number;
   closeRate: number;
   cashCollected: number;
-  revenue: number;
   aov: number;
-  pcfus: number;
-  noShows: number;
 }
 
 /* ── Fetch helper ─────────────────────────────────────────────────── */
@@ -78,24 +73,23 @@ function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDash
 
 function computeMetrics(rows: SheetRow[], label: string): ClientMetrics {
   const callsBooked = rows.length;
-  const callsTaken = rows.filter((r) => r.callTaken).length;
-  const noShows = rows.filter((r) => !r.callTaken).length;
-  const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
+  const callsTaken = rows.filter((r) => r.callTakenStatus === "yes").length;
+  const noShows = rows.filter((r) => r.callTakenStatus === "no").length;
+  const pending = rows.filter((r) => r.callTakenStatus === "pending").length;
+  const showDenominator = callsTaken + noShows;
+  const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
   const wins = rows.filter((r) => r.outcome === "WIN").length;
-  const losses = rows.filter((r) => r.outcome === "LOST").length;
-  const pcfus = rows.filter((r) => r.outcome === "PCFU").length;
-  const denominator = wins + losses + pcfus;
-  const closeRate = denominator > 0 ? (wins / denominator) * 100 : 0;
+  const losses = Math.max(callsTaken - wins, 0);
+  const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
   const winRows = rows.filter((r) => r.outcome === "WIN");
-  const revenue = winRows.reduce((sum, r) => sum + r.revenue, 0);
   const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
-  const aov = wins > 0 ? revenue / wins : 0;
+  const aov = wins > 0 ? cashCollected / wins : 0;
 
   return {
     label, callsBooked, callsTaken, showRate, wins, losses,
-    closeRate, cashCollected, revenue, aov, pcfus, noShows,
+    closeRate, cashCollected, aov, pending,
   };
 }
 
@@ -151,8 +145,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     error: "",
   });
 
-  /* -- Sheet state (includes subscriptionsSold from Q3) -- */
-  const [sheet, setSheet] = useState<DataState<{ rows: SheetRow[]; subscriptionsSold: number }>>({
+  const [sheet, setSheet] = useState<DataState<SheetApiResponse>>({
     data: null,
     loading: true,
     error: "",
@@ -173,6 +166,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         ]);
         setManychat({
           data: sumDashboards(tyson.dashboard, keith.dashboard),
+          loading: false,
+          error: "",
+        });
+      } else if (filters.client === "zoeEmily") {
+        setManychat({
+          data: { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 },
           loading: false,
           error: "",
         });
@@ -203,7 +202,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       const res = await fetchJSON<SheetApiResponse>(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`,
       );
-      setSheet({ data: { rows: res.rows, subscriptionsSold: res.subscriptionsSold }, loading: false, error: "" });
+      setSheet({ data: res, loading: false, error: "" });
     } catch (err) {
       setSheet({
         data: null,
@@ -228,22 +227,19 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     const rows = sheet.data.rows;
 
     const callsBooked = rows.length;
-    const callsTaken = rows.filter((r) => r.callTaken).length;
-    const noShows = rows.filter((r) => !r.callTaken).length;
-    const showRate = callsBooked > 0 ? (callsTaken / callsBooked) * 100 : 0;
+    const callsTaken = rows.filter((r) => r.callTakenStatus === "yes").length;
+    const noShows = rows.filter((r) => r.callTakenStatus === "no").length;
+    const pending = rows.filter((r) => r.callTakenStatus === "pending").length;
+    const showDenominator = callsTaken + noShows;
+    const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
     const wins = rows.filter((r) => r.outcome === "WIN").length;
-    const losses = rows.filter((r) => r.outcome === "LOST").length;
-    const pcfus = rows.filter((r) => r.outcome === "PCFU").length;
-    const denominator = wins + losses + pcfus;
-    const closeRate = denominator > 0 ? (wins / denominator) * 100 : 0;
+    const losses = Math.max(callsTaken - wins, 0);
+    const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
     const winRows = rows.filter((r) => r.outcome === "WIN");
-    const revenue = winRows.reduce((sum, r) => sum + r.revenue, 0);
     const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
-    const aov = wins > 0 ? revenue / wins : 0;
-
-    const subscriptionsSold = sheet.data.subscriptionsSold;
+    const aov = wins > 0 ? cashCollected / wins : 0;
 
     return {
       callsBooked,
@@ -254,10 +250,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       closeRate,
       cashCollected,
       aov,
-      pcfus,
       noShows,
-      revenue,
-      subscriptionsSold,
+      pending,
     };
   }, [sheet.data]);
 
@@ -266,12 +260,20 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     if (!sheet.data || filters.client !== "all") return null;
     const rows = sheet.data.rows;
 
-    const tysonRows = rows.filter((r) => r.offer?.toLowerCase().includes("tyson"));
+    const tysonRows = rows.filter((r) => {
+      const offer = r.offer?.toLowerCase() || "";
+      return offer.includes("tyson") || offer.includes("sonic");
+    });
     const keithRows = rows.filter((r) => r.offer?.toLowerCase().includes("keith"));
+    const zoeEmilyRows = rows.filter((r) => {
+      const offer = r.offer?.toLowerCase() || "";
+      return offer.includes("zoe") || offer.includes("emily");
+    });
 
     return {
-      tyson: computeMetrics(tysonRows, "Tyson"),
-      keith: computeMetrics(keithRows, "Keith"),
+      tyson: computeMetrics(tysonRows, "Tyson Sonnek"),
+      keith: computeMetrics(keithRows, "Keith Holland"),
+      zoeEmily: computeMetrics(zoeEmilyRows, "Zoe and Emily"),
     };
   }, [sheet.data, filters.client]);
 
@@ -303,8 +305,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
               <thead>
                 <tr>
                   <th>Client</th>
-                  <th>Cash</th>
-                  <th>Revenue</th>
+                  <th>Cash on Calls</th>
                   <th>AOV</th>
                   <th>Close Rate</th>
                   <th>Show Rate</th>
@@ -312,21 +313,17 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                   <th>Taken</th>
                   <th>Wins</th>
                   <th>Losses</th>
-                  <th>No Shows</th>
                   <th>Pending</th>
                 </tr>
               </thead>
               <tbody>
-                {[clientBreakdown.tyson, clientBreakdown.keith].map((c) => (
+                {[clientBreakdown.tyson, clientBreakdown.keith, clientBreakdown.zoeEmily].map((c) => (
                   <tr key={c.label}>
                     <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                       {c.label}
                     </td>
                     <td style={{ color: "var(--success)", fontWeight: 600 }}>
                       {fmtDollars(c.cashCollected)}
-                    </td>
-                    <td style={{ color: "var(--success)" }}>
-                      {fmtDollars(c.revenue)}
                     </td>
                     <td>{fmtDollars(c.aov)}</td>
                     <td>
@@ -343,15 +340,25 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                     <td>{fmtNumber(c.callsTaken)}</td>
                     <td style={{ color: "var(--success)" }}>{fmtNumber(c.wins)}</td>
                     <td style={{ color: "var(--danger)" }}>{fmtNumber(c.losses)}</td>
-                    <td style={{ color: c.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
-                      {fmtNumber(c.noShows)}
+                    <td style={{ color: c.pending > 0 ? "var(--warning)" : "var(--text-secondary)" }}>
+                      {fmtNumber(c.pending)}
                     </td>
-                    <td style={{ color: "var(--warning)" }}>{fmtNumber(c.pcfus)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {sheet.data?.unattributedRows ? (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "var(--warning)",
+              }}
+            >
+              {fmtNumber(sheet.data.unattributedRows)} calls in this range do not have a client offer on the source sheet and are excluded from the per-client comparison.
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -428,10 +435,23 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           <PhoneCall size={16} />
           Closer Metrics
         </h2>
+        {sheet.data?.unattributedRows ? (
+          <div
+            className="glass-static"
+            style={{
+              marginBottom: 12,
+              padding: "10px 12px",
+              fontSize: 12,
+              color: "var(--warning)",
+            }}
+          >
+            {fmtNumber(sheet.data.unattributedRows)} calls in this date range are missing a client offer on the source sheet. Overall totals include them, but client-level splits only include attributed rows.
+          </div>
+        ) : null}
         <div className="metric-grid metric-grid-4">
           {renderKPICard(
             <Banknote size={12} style={{ color: "var(--success)" }} />,
-            "Cash Collected",
+            "Cash on Calls",
             closerMetrics ? fmtDollars(closerMetrics.cashCollected) : "—",
             sheet.loading,
             sheet.error,
@@ -491,40 +511,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             sheet.loading,
             sheet.error,
             "var(--danger)",
-          )}
-        </div>
-
-        <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-          {renderKPICard(
-            <AlertTriangle size={12} style={{ color: "var(--danger)" }} />,
-            "No Shows",
-            closerMetrics ? fmtNumber(closerMetrics.noShows) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--danger)",
-          )}
-          {renderKPICard(
-            <Clock size={12} style={{ color: "var(--warning)" }} />,
-            "Pending Follow-Ups",
-            closerMetrics ? fmtNumber(closerMetrics.pcfus) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--warning)",
-          )}
-          {renderKPICard(
-            <ShoppingCart size={12} style={{ color: "var(--accent)" }} />,
-            "Subscriptions Sold",
-            closerMetrics ? fmtNumber(closerMetrics.subscriptionsSold) : "—",
-            sheet.loading,
-            sheet.error,
-          )}
-          {renderKPICard(
-            <DollarSign size={12} style={{ color: "var(--success)" }} />,
-            "Money",
-            closerMetrics ? fmtDollars(closerMetrics.revenue) : "—",
-            sheet.loading,
-            sheet.error,
-            "var(--success)",
           )}
         </div>
       </div>
