@@ -184,6 +184,11 @@ function normalizeCell(val: string | undefined): string {
   return (val || "").trim();
 }
 
+function getOfferForRow(row: (string | undefined)[], tab?: string): string {
+  if (tab === "JANUARY") return "Tyson Sonnek";
+  return normalizeCell(row[16]);
+}
+
 // ---------------------------------------------------------------------------
 // API Fetching
 // ---------------------------------------------------------------------------
@@ -239,7 +244,7 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
   const isJanuary = tab === "JANUARY";
   const callTakenStatus = parseCallTakenStatus(row[3]);
   const setter = isJanuary ? normalizeCell(row[12]) : normalizeCell(row[13]);
-  const offer = isJanuary ? "" : normalizeCell(row[16]);
+  const offer = getOfferForRow(row, tab);
 
   return {
     callNumber: normalizeCell(row[0]),
