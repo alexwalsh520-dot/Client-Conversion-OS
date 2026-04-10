@@ -14,21 +14,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "dateFrom and dateTo required" }, { status: 400 });
   }
 
-  if (client === "zoeEmily") {
-    return NextResponse.json({
-      dashboard: {
-        newLeads: 0,
-        leadsEngaged: 0,
-        callLinksSent: 0,
-        subLinksSent: 0,
-      },
-      setters: {},
-      tagsDetected: false,
-    });
-  }
-
   try {
-    const metrics = await getMetrics(client, dateFrom, dateTo);
+    const clientKey =
+      client === "tyson"
+        ? "tyson_sonnek"
+        : client === "keith"
+          ? "keith_holland"
+          : "zoe_and_emily";
+    const metrics = await getMetrics(clientKey, dateFrom, dateTo);
     return NextResponse.json(metrics);
   } catch (err) {
     console.error("Manychat metrics error:", err);

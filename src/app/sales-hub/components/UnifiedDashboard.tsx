@@ -157,22 +157,19 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     setManychat({ data: null, loading: true, error: "" });
     try {
       if (filters.client === "all") {
-        const [tyson, keith] = await Promise.all([
+        const [tyson, keith, zoeEmily] = await Promise.all([
           fetchJSON<ManychatMetrics>(
             `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
           fetchJSON<ManychatMetrics>(
             `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
+          fetchJSON<ManychatMetrics>(
+            `/api/sales-hub/manychat-metrics?client=zoeEmily&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
         ]);
         setManychat({
-          data: sumDashboards(tyson.dashboard, keith.dashboard),
-          loading: false,
-          error: "",
-        });
-      } else if (filters.client === "zoeEmily") {
-        setManychat({
-          data: { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 },
+          data: sumDashboards(sumDashboards(tyson.dashboard, keith.dashboard), zoeEmily.dashboard),
           loading: false,
           error: "",
         });

@@ -44,8 +44,9 @@ interface SheetRow {
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
 const CLIENT_SETTERS: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi"],
-  keith: ["Gideon", "Debbie"],
+  tyson: ["Amara"],
+  keith: ["Gideon"],
+  zoeEmily: ["Kelechi", "Debbie"],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -60,6 +61,7 @@ function getRelevantSetters(client: string): { name: string; client: string }[] 
     return [
       ...CLIENT_SETTERS.tyson.map((n) => ({ name: n, client: "tyson" })),
       ...CLIENT_SETTERS.keith.map((n) => ({ name: n, client: "keith" })),
+      ...CLIENT_SETTERS.zoeEmily.map((n) => ({ name: n, client: "zoeEmily" })),
     ];
   }
   return (CLIENT_SETTERS[client] || []).map((n) => ({ name: n, client }));
@@ -102,7 +104,10 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
           fetchJSON<ManychatMetrics>(
             `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
-        ]).then(([tyson, keith]) => ({ tyson, keith }));
+          fetchJSON<ManychatMetrics>(
+            `/api/sales-hub/manychat-metrics?client=zoeEmily&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          ),
+        ]).then(([tyson, keith, zoeEmily]) => ({ tyson, keith, zoeEmily }));
       } else {
         manychatPromise = fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
@@ -206,7 +211,12 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
         const showRate = s.callsBooked > 0 ? (s.callsTaken / s.callsBooked) * 100 : 0;
         const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
-        const cc = s.client === "keith" ? "var(--keith)" : "var(--tyson)";
+        const cc =
+          s.client === "keith"
+            ? "var(--keith)"
+            : s.client === "zoeEmily"
+              ? "var(--accent)"
+              : "var(--tyson)";
 
         return (
           <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>

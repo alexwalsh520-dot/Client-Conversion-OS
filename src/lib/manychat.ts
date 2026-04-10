@@ -5,7 +5,7 @@
 
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson" | "keith";
+type Client = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -29,8 +29,9 @@ export interface ManychatMetrics {
 }
 
 const CLIENT_SETTERS: Record<Client, string[]> = {
-  tyson: ["amara", "kelechi"],
-  keith: ["gideon", "debbie"],
+  tyson_sonnek: ["amara"],
+  keith_holland: ["gideon"],
+  zoe_and_emily: ["kelechi", "debbie"],
 };
 
 // ── Main metrics function ─────────────────────────────────────────
@@ -97,9 +98,11 @@ export async function getMetrics(
 export async function getTags(client: Client): Promise<{ id: number; name: string }[]> {
   const MANYCHAT_BASE = "https://api.manychat.com/fb";
   const key =
-    client === "tyson"
+    client === "tyson_sonnek"
       ? process.env.MANYCHAT_API_KEY_TYSON
-      : process.env.MANYCHAT_API_KEY_KEITH;
+      : client === "keith_holland"
+        ? process.env.MANYCHAT_API_KEY_KEITH
+        : process.env.MANYCHAT_API_KEY_ZOE_EMILY;
   if (!key) return [];
 
   try {
