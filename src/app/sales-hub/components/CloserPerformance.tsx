@@ -32,6 +32,7 @@ interface SetterQualityRow {
   setter: string;
   booked: number;
   taken: number;
+  upcoming: number;
   showRate: number;
 }
 
@@ -124,12 +125,13 @@ function getSetterQuality(
     (r) => r.closer?.trim().toLowerCase() === closerName.toLowerCase(),
   );
 
-  const setterMap: Record<string, { booked: number; taken: number; noShows: number }> = {};
+  const setterMap: Record<string, { booked: number; taken: number; upcoming: number; noShows: number }> = {};
   for (const r of closerRows) {
     const setter = r.setter?.trim() || "Unknown";
-    if (!setterMap[setter]) setterMap[setter] = { booked: 0, taken: 0, noShows: 0 };
+    if (!setterMap[setter]) setterMap[setter] = { booked: 0, taken: 0, upcoming: 0, noShows: 0 };
     setterMap[setter].booked++;
     if (r.callTakenStatus === "yes") setterMap[setter].taken++;
+    if (r.callTakenStatus === "pending") setterMap[setter].upcoming++;
     if (r.callTakenStatus === "no") setterMap[setter].noShows++;
   }
 
@@ -138,6 +140,7 @@ function getSetterQuality(
       setter,
       booked: stats.booked,
       taken: stats.taken,
+      upcoming: stats.upcoming,
       showRate:
         stats.taken + stats.noShows > 0
           ? (stats.taken / (stats.taken + stats.noShows)) * 100
@@ -375,6 +378,7 @@ export default function CloserPerformance({
                       <th>Setter</th>
                       <th>Booked</th>
                       <th>Taken</th>
+                      <th>Upcoming</th>
                       <th>Show Rate</th>
                     </tr>
                   </thead>
@@ -382,7 +386,7 @@ export default function CloserPerformance({
                     {rows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={5}
                           style={{ textAlign: "center", color: "var(--text-muted)" }}
                         >
                           No data
@@ -396,6 +400,7 @@ export default function CloserPerformance({
                           </td>
                           <td>{fmtNumber(sq.booked)}</td>
                           <td>{fmtNumber(sq.taken)}</td>
+                          <td>{fmtNumber(sq.upcoming)}</td>
                           <td>{fmtPercent(sq.showRate)}</td>
                         </tr>
                       ))
