@@ -2,10 +2,19 @@
 // All calls go through server-side API routes to keep secrets secure
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
+const DEFAULT_OUTREACH_PIPELINE_NAME = "AI Outreach";
+
+function normalizeLabel(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
+}
 
 function getHeaders() {
-  const apiKey = process.env.GHL_API_KEY;
-  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  const apiKey = process.env.OUTREACH_GHL_API_KEY || process.env.GHL_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OUTREACH_GHL_API_KEY or GHL_API_KEY not configured"
+    );
+  }
   return {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
@@ -14,9 +23,21 @@ function getHeaders() {
 }
 
 function getLocationId() {
-  const id = process.env.GHL_LOCATION_ID;
-  if (!id) throw new Error("GHL_LOCATION_ID not configured");
+  const id =
+    process.env.OUTREACH_GHL_LOCATION_ID || process.env.GHL_LOCATION_ID;
+  if (!id) {
+    throw new Error(
+      "OUTREACH_GHL_LOCATION_ID or GHL_LOCATION_ID not configured"
+    );
+  }
   return id;
+}
+
+function getPipelineName() {
+  return (
+    process.env.OUTREACH_GHL_PIPELINE_NAME?.trim() ||
+    DEFAULT_OUTREACH_PIPELINE_NAME
+  );
 }
 
 // ── Contact operations ─────────────────────────────────────────
@@ -37,7 +58,7 @@ export async function searchDuplicateContact(email: string) {
 export async function createContact(data: {
   firstName: string;
   lastName?: string;
-  email: string;
+  email?: string;
 }) {
   const locationId = getLocationId();
   const res = await fetch(`${GHL_BASE}/contacts/`, {
@@ -47,7 +68,7 @@ export async function createContact(data: {
       locationId,
       firstName: data.firstName,
       lastName: data.lastName || "",
-      email: data.email,
+      ...(data.email ? { email: data.email } : {}),
       source: "Dashboard Import",
     }),
   });
@@ -139,12 +160,23 @@ export async function createOpportunity(data: {
 }
 
 export async function searchOpportunities(
-  pipelineId: string,
-  stageId: string
+  filters: {
+    pipelineId?: string;
+    stageId?: string;
+    contactId?: string;
+    limit?: number;
+  } = {}
 ) {
   const locationId = getLocationId();
+  const query = new URLSearchParams({
+    location_id: locationId,
+    limit: String(filters.limit || 100),
+  });
+  if (filters.pipelineId) query.set("pipeline_id", filters.pipelineId);
+  if (filters.stageId) query.set("pipeline_stage_id", filters.stageId);
+  if (filters.contactId) query.set("contact_id", filters.contactId);
   const res = await fetch(
-    `${GHL_BASE}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&pipeline_stage_id=${stageId}&limit=100`,
+    `${GHL_BASE}/opportunities/search?${query.toString()}`,
     { headers: getHeaders() }
   );
   if (!res.ok) {
@@ -152,6 +184,23 @@ export async function searchOpportunities(
     throw new Error(`GHL search opportunities failed (${res.status}): ${text}`);
   }
   return res.json();
+}
+
+export async function searchContactOpportunities(
+  contactId: string,
+  pipelineId?: string
+) {
+  const data = await searchOpportunities({ contactId, pipelineId });
+  const opportunities = (data.opportunities || []).filter(
+    (opp: {
+      pipelineId?: string;
+      pipeline?: { id?: string };
+    }) =>
+      !pipelineId ||
+      opp.pipelineId === pipelineId ||
+      opp.pipeline?.id === pipelineId
+  );
+  return { ...data, opportunities };
 }
 
 export async function updateOpportunity(
@@ -180,14 +229,21 @@ export interface PipelineInfo {
 export async function getAIOutreachPipeline(): Promise<PipelineInfo> {
   const data = await getPipelines();
   const pipelines = data.pipelines || [];
-  const aiPipeline = pipelines.find(
-    (p: { name: string }) =>
-      p.name.toLowerCase().includes("ai outreach") ||
-      p.name.toLowerCase().includes("outreach")
+  const pipelineName = getPipelineName();
+  const normalizedTarget = normalizeLabel(pipelineName);
+  const exactMatch = pipelines.find(
+    (p: { name: string }) => normalizeLabel(p.name) === normalizedTarget
   );
+  const partialMatches = pipelines.filter(
+    (p: { name: string }) =>
+      normalizeLabel(p.name).includes(normalizedTarget) ||
+      normalizedTarget.includes(normalizeLabel(p.name))
+  );
+  const aiPipeline =
+    exactMatch || (partialMatches.length === 1 ? partialMatches[0] : null);
   if (!aiPipeline) {
     throw new Error(
-      `No "AI Outreach" pipeline found. Available: ${pipelines.map((p: { name: string }) => p.name).join(", ")}`
+      `No "${pipelineName}" pipeline found for Outreach. Available: ${pipelines.map((p: { name: string }) => p.name).join(", ")}`
     );
   }
   const stages: Record<string, string> = {};
@@ -195,6 +251,29 @@ export async function getAIOutreachPipeline(): Promise<PipelineInfo> {
     stages[s.name] = s.id;
   }
   return { pipelineId: aiPipeline.id, stages };
+}
+
+export function findStageId(
+  stages: Record<string, string>,
+  preferredNames: string[]
+) {
+  const entries = Object.entries(stages);
+
+  for (const preferredName of preferredNames) {
+    const exact = entries.find(
+      ([name]) => normalizeLabel(name) === normalizeLabel(preferredName)
+    );
+    if (exact) return exact[1];
+  }
+
+  for (const preferredName of preferredNames) {
+    const partial = entries.find(([name]) =>
+      normalizeLabel(name).includes(normalizeLabel(preferredName))
+    );
+    if (partial) return partial[1];
+  }
+
+  return null;
 }
 
 // ── Pipeline stage counts ──────────────────────────────────────
@@ -205,7 +284,10 @@ export async function getPipelineStageCounts() {
 
   for (const [name, stageId] of Object.entries(pipeline.stages)) {
     try {
-      const data = await searchOpportunities(pipeline.pipelineId, stageId);
+      const data = await searchOpportunities({
+        pipelineId: pipeline.pipelineId,
+        stageId,
+      });
       // Use meta.total for accurate count (searchOpportunities only returns up to 100)
       const count = data.meta?.total ?? (data.opportunities || []).length;
       stageCounts.push({ name, count, id: stageId });

@@ -26,6 +26,12 @@ import {
   generateRunId,
   getQuickStats,
 } from "@/lib/outreach-store";
+import {
+  buildColdDmsCsv,
+  buildColdDmsRow,
+  ColdDmsRow,
+  mergeColdDmsRows,
+} from "@/lib/outreach-export";
 
 // ── CSV Parsing ────────────────────────────────────────────────
 
@@ -124,6 +130,7 @@ export default function OutreachRunsPage() {
     dms_queued: number;
     errors: string[];
     colddms_usernames: string[];
+    colddms_csv: string;
   } | null>(null);
   const [runError, setRunError] = useState("");
 
@@ -178,6 +185,8 @@ export default function OutreachRunsPage() {
       already_existed: number;
       total: number;
       colddms_usernames: string[];
+      colddms_rows?: ColdDmsRow[];
+      colddms_csv?: string;
       error?: string;
     };
 
@@ -202,15 +211,26 @@ export default function OutreachRunsPage() {
 
     try {
       const res = await fetch("/api/outreach/run", { method: "POST" });
-      const runData = await res.json();
+      const runData: {
+        smartlead_added: number;
+        errors: string[];
+        colddms_usernames: string[];
+        colddms_rows?: ColdDmsRow[];
+        colddms_csv?: string;
+        error?: string;
+      } = await res.json();
       if (!res.ok) throw new Error(runData.error || "Outreach run failed");
 
       // Combine results
-      const allUsernames = [
-        ...(importData.colddms_usernames || []),
-        ...(runData.colddms_usernames || []),
-      ];
-      const uniqueUsernames = [...new Set(allUsernames)];
+      const mergedRows = mergeColdDmsRows(
+        importData.colddms_rows,
+        runData.colddms_rows
+      );
+      const uniqueUsernames = mergedRows.map((row) => row.username);
+      const colddmsCsv =
+        runData.colddms_csv ||
+        importData.colddms_csv ||
+        buildColdDmsCsv(mergedRows);
 
       const combined = {
         leads_imported: importData.total,
@@ -221,6 +241,7 @@ export default function OutreachRunsPage() {
         dms_queued: uniqueUsernames.length,
         errors: runData.errors || [],
         colddms_usernames: uniqueUsernames,
+        colddms_csv: colddmsCsv,
       };
       setResult(combined);
       setRunStatus("done");
@@ -239,6 +260,7 @@ export default function OutreachRunsPage() {
         error_details: combined.errors,
         colddms_file: `colddms_${new Date().toISOString().split("T")[0]}.txt`,
         colddms_usernames: uniqueUsernames,
+        colddms_csv: combined.colddms_csv,
         status:
           combined.errors.length > 0 && combined.smartlead_added === 0
             ? "failed"
@@ -267,13 +289,16 @@ export default function OutreachRunsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadCsv = (usernames: string[]) => {
-    const rows = ["username,firstName,name", ...usernames.map((u) => `${u},,`)];
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const downloadCsv = (csvContent: string, usernames: string[], filename?: string) => {
+    const fallbackRows = usernames
+      .map((username) => buildColdDmsRow({ username }))
+      .filter((row): row is ColdDmsRow => Boolean(row));
+    const csv = csvContent || buildColdDmsCsv(fallbackRows);
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `colddms_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = filename || `colddms_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -489,9 +514,9 @@ export default function OutreachRunsPage() {
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 13 }}>
                     <Download size={14} /> Download ColdDMs (.txt)
                   </button>
-                  <button className="btn-secondary" onClick={() => downloadCsv(result.colddms_usernames)}
+                  <button className="btn-secondary" onClick={() => downloadCsv(result.colddms_csv, result.colddms_usernames)}
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 13 }}>
-                    <FileText size={14} /> Download ColdDMs (.csv)
+                    <FileText size={14} /> Download ColdDMs Sheet (.csv)
                   </button>
                   <button className="btn-secondary" onClick={() => copyUsernames(result.colddms_usernames)}
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 13 }}>
@@ -575,10 +600,16 @@ export default function OutreachRunsPage() {
                     <td style={{ padding: "10px 14px", fontSize: 13, color: run.errors > 0 ? "var(--danger)" : "var(--text-muted)" }}>{run.errors}</td>
                     <td style={{ padding: "10px 14px" }}>
                       {run.colddms_usernames.length > 0 && (
-                        <button className="btn-secondary" onClick={() => downloadTxt(run.colddms_usernames, run.colddms_file)}
-                          style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11 }}>
-                          <Download size={12} /> Download
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button className="btn-secondary" onClick={() => downloadTxt(run.colddms_usernames, run.colddms_file)}
+                            style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11 }}>
+                            <Download size={12} /> Txt
+                          </button>
+                          <button className="btn-secondary" onClick={() => downloadCsv(run.colddms_csv || "", run.colddms_usernames, run.colddms_file.replace(/\.txt$/, ".csv"))}
+                            style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11 }}>
+                            <FileText size={12} /> CSV
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td style={{ padding: "10px 14px" }}>

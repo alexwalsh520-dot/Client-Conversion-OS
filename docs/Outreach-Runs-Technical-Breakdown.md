@@ -311,8 +311,11 @@ CSV File
 
 | Variable | Used By | Purpose |
 |----------|---------|---------|
-| `GHL_API_KEY` | All GHL API calls | Bearer token authentication |
-| `GHL_LOCATION_ID` | All GHL API calls | Identifies the GHL sub-account |
+| `OUTREACH_GHL_API_KEY` | Outreach GHL API calls | Optional override for the Outreach sub-account token |
+| `OUTREACH_GHL_LOCATION_ID` | Outreach GHL API calls | Optional override for the Outreach sub-account/location |
+| `OUTREACH_GHL_PIPELINE_NAME` | Outreach GHL API calls | Optional override for the outreach pipeline name (defaults to `AI Outreach`) |
+| `GHL_API_KEY` | Outreach fallback + other GHL calls | Bearer token authentication |
+| `GHL_LOCATION_ID` | Outreach fallback + other GHL calls | Default GHL sub-account/location |
 | `SMARTLEAD_API_KEY` | Smartlead API calls | API authentication |
 | `SMARTLEAD_CAMPAIGN_ID` | Smartlead API calls | Which email campaign to add leads to |
 | `GAMMA_LINK` | Run Outreach | Custom field sent with each Smartlead lead |

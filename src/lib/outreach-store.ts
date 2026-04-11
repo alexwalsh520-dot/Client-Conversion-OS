@@ -15,6 +15,7 @@ export interface OutreachRun {
   error_details: string[];
   colddms_file: string;
   colddms_usernames: string[];
+  colddms_csv?: string;
   status: "completed" | "failed" | "partial";
 }
 

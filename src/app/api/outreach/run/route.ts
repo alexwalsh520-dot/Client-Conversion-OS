@@ -5,8 +5,16 @@ import {
   getContact,
   getContactNotes,
   updateOpportunity,
+  findStageId,
 } from "@/lib/ghl";
 import { addLeadsToCampaign } from "@/lib/smartlead";
+import {
+  buildColdDmsCsv,
+  buildColdDmsRow,
+  ColdDmsRow,
+  mergeColdDmsRows,
+  normalizeInstagramUsername,
+} from "@/lib/outreach-export";
 
 function parseInstagramFromNotes(
   notes: { body?: string }[]
@@ -28,8 +36,16 @@ function parseInstagramFromNotes(
 export async function POST() {
   try {
     const pipeline = await getAIOutreachPipeline();
-    const newLeadStageId = pipeline.stages["New Lead"];
-    const contactedStageId = pipeline.stages["Contacted"];
+    const newLeadStageId = findStageId(pipeline.stages, [
+      "New Lead",
+      "Lead",
+      "Fresh Leads",
+    ]);
+    const contactedStageId = findStageId(pipeline.stages, [
+      "Contacted",
+      "In Contact (Contacted)",
+      "In Contact",
+    ]);
 
     if (!newLeadStageId) {
       return NextResponse.json(
@@ -45,10 +61,10 @@ export async function POST() {
     }
 
     // Get all opportunities in New Lead stage
-    const oppData = await searchOpportunities(
-      pipeline.pipelineId,
-      newLeadStageId
-    );
+    const oppData = await searchOpportunities({
+      pipelineId: pipeline.pipelineId,
+      stageId: newLeadStageId,
+    });
     const opportunities = oppData.opportunities || [];
 
     if (opportunities.length === 0) {
@@ -64,12 +80,11 @@ export async function POST() {
     }
 
     const errors: string[] = [];
-    const smartleadLeads: {
+    const smartleadLeads = new Map<string, {
       email: string;
       first_name: string;
-    }[] = [];
-    const colddmsUsernames: string[] = [];
-    const colddmsCsvRows: string[] = ["username,firstName,name"];
+    }>();
+    const coldDmsRows: ColdDmsRow[] = [];
     let processed = 0;
 
     for (const opp of opportunities) {
@@ -95,7 +110,6 @@ export async function POST() {
         const email = contact.email;
         const firstName = contact.firstName || contact.first_name || "";
         const lastName = contact.lastName || contact.last_name || "";
-        const fullName = `${firstName} ${lastName}`.trim();
 
         // Get Instagram from notes
         let igUsername: string | null = null;
@@ -109,15 +123,21 @@ export async function POST() {
 
         // Add to Smartlead if has email
         if (email) {
-          smartleadLeads.push({ email, first_name: firstName });
+          smartleadLeads.set(email.trim().toLowerCase(), {
+            email: email.trim(),
+            first_name: firstName,
+          });
         }
 
         // Add to ColdDMs if has IG
         if (igUsername) {
-          colddmsUsernames.push(igUsername);
-          colddmsCsvRows.push(
-            `${igUsername},${firstName},${fullName}`
-          );
+          const row = buildColdDmsRow({
+            username: normalizeInstagramUsername(igUsername),
+            firstName,
+            lastName,
+            email,
+          });
+          if (row) coldDmsRows.push(row);
         }
 
         // Move opportunity to Contacted
@@ -141,10 +161,11 @@ export async function POST() {
 
     // Batch add to Smartlead
     let smartleadAdded = 0;
-    if (smartleadLeads.length > 0) {
+    const smartleadLeadList = Array.from(smartleadLeads.values());
+    if (smartleadLeadList.length > 0) {
       try {
-        await addLeadsToCampaign(smartleadLeads);
-        smartleadAdded = smartleadLeads.length;
+        await addLeadsToCampaign(smartleadLeadList);
+        smartleadAdded = smartleadLeadList.length;
       } catch (e) {
         errors.push(
           `Smartlead batch add failed: ${e instanceof Error ? e.message : "unknown"}`
@@ -153,13 +174,16 @@ export async function POST() {
       }
     }
 
+    const mergedColdDmsRows = mergeColdDmsRows(coldDmsRows);
+
     return NextResponse.json({
       processed,
       smartlead_added: smartleadAdded,
-      dms_queued: colddmsUsernames.length,
+      dms_queued: mergedColdDmsRows.length,
       errors,
-      colddms_usernames: colddmsUsernames,
-      colddms_csv: colddmsCsvRows.join("\n"),
+      colddms_usernames: mergedColdDmsRows.map((row) => row.username),
+      colddms_rows: mergedColdDmsRows,
+      colddms_csv: buildColdDmsCsv(mergedColdDmsRows),
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Unknown error";

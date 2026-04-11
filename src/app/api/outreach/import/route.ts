@@ -5,12 +5,20 @@ import {
   addContactNote,
   createOpportunity,
   getAIOutreachPipeline,
+  searchContactOpportunities,
+  findStageId,
 } from "@/lib/ghl";
+import {
+  buildColdDmsCsv,
+  buildColdDmsRow,
+  ColdDmsRow,
+  normalizeInstagramUsername,
+} from "@/lib/outreach-export";
 
 interface LeadInput {
   first_name: string;
   last_name?: string;
-  email: string;
+  email?: string;
   instagram_username?: string;
   instagram_link?: string;
 }
@@ -30,7 +38,8 @@ export async function POST(req: NextRequest) {
     // Get pipeline info once
     const pipeline = await getAIOutreachPipeline();
     const newLeadStageId =
-      pipeline.stages["New Lead"] || Object.values(pipeline.stages)[0];
+      findStageId(pipeline.stages, ["New Lead", "Lead", "Fresh Leads"]) ||
+      Object.values(pipeline.stages)[0];
     if (!newLeadStageId) {
       return NextResponse.json(
         { error: 'No "New Lead" stage found in pipeline' },
@@ -47,13 +56,26 @@ export async function POST(req: NextRequest) {
       contactId?: string;
       error?: string;
     }[] = [];
-    const colddmsUsernames: string[] = [];
+    const colddmsRows: ColdDmsRow[] = [];
 
     for (const lead of leads) {
       try {
-        if (!lead.email && !lead.instagram_username) {
+        const email = lead.email?.trim() || "";
+        const firstName = lead.first_name?.trim() || "";
+        const lastName = lead.last_name?.trim() || "";
+        const igUsername = normalizeInstagramUsername(
+          lead.instagram_username ||
+            (lead.instagram_link
+              ? lead.instagram_link.split("/").filter(Boolean).pop()
+              : null)
+        );
+        const igLink =
+          lead.instagram_link?.trim() ||
+          (igUsername ? `https://instagram.com/${igUsername}` : "");
+
+        if (!email && !igUsername) {
           results.push({
-            email: lead.email || "unknown",
+            email: email || "unknown",
             status: "skipped",
             error: "No email or instagram",
           });
@@ -65,9 +87,9 @@ export async function POST(req: NextRequest) {
         let isNew = true;
 
         // Check for duplicate if email exists
-        if (lead.email) {
+        if (email) {
           try {
-            const dupCheck = await searchDuplicateContact(lead.email);
+            const dupCheck = await searchDuplicateContact(email);
             const existing = dupCheck.contact;
             if (existing && existing.id) {
               contactId = existing.id;
@@ -79,19 +101,21 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const contactFirstName = firstName || igUsername || "Instagram Lead";
+
         // Create new contact if not duplicate
-        if (!contactId && lead.email) {
+        if (!contactId) {
           const created = await createContact({
-            firstName: lead.first_name,
-            lastName: lead.last_name,
-            email: lead.email,
+            firstName: contactFirstName,
+            lastName,
+            email: email || undefined,
           });
           contactId = created.contact?.id;
         }
 
         if (!contactId) {
           results.push({
-            email: lead.email || "unknown",
+            email: email || "unknown",
             status: "failed",
             error: "Could not create or find contact",
           });
@@ -100,15 +124,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Add Instagram note if available
-        const igUsername =
-          lead.instagram_username ||
-          (lead.instagram_link
-            ? lead.instagram_link.split("/").filter(Boolean).pop()
-            : null);
-        const igLink =
-          lead.instagram_link ||
-          (igUsername ? `https://instagram.com/${igUsername}` : null);
-
+        let coldDmsRow: ColdDmsRow | null = null;
         if (igUsername) {
           try {
             await addContactNote(
@@ -119,34 +135,59 @@ export async function POST(req: NextRequest) {
             // Non-fatal: note failed but continue
             console.error("Failed to add IG note:", e);
           }
-          colddmsUsernames.push(igUsername.replace(/^@/, ""));
+          coldDmsRow = buildColdDmsRow({
+            username: igUsername,
+            firstName: contactFirstName,
+            lastName,
+            email,
+            instagramLink: igLink,
+          });
         }
 
-        // Create opportunity (only for new contacts)
-        if (isNew) {
+        let hasOutreachOpportunity = false;
+        if (!isNew) {
+          const existingOpps = await searchContactOpportunities(
+            contactId,
+            pipeline.pipelineId
+          );
+          hasOutreachOpportunity = (existingOpps.opportunities || []).length > 0;
+        }
+
+        if (!hasOutreachOpportunity) {
           try {
             await createOpportunity({
               pipelineId: pipeline.pipelineId,
               pipelineStageId: newLeadStageId,
               contactId,
-              name: `${lead.first_name} ${lead.last_name || ""}`.trim(),
+              name: `${firstName} ${lastName}`.trim() || igUsername || email || "Lead",
             });
           } catch (e) {
-            console.error("Failed to create opportunity:", e);
+            failed++;
+            results.push({
+              email: email || "unknown",
+              status: "failed",
+              contactId,
+              error:
+                e instanceof Error
+                  ? e.message
+                  : "Failed to create outreach opportunity",
+            });
+            continue;
           }
         }
 
         success++;
+        if (coldDmsRow) colddmsRows.push(coldDmsRow);
         results.push({
-          email: lead.email,
-          status: isNew ? "created" : "existing",
+          email: email || "unknown",
+          status: isNew ? "created" : hasOutreachOpportunity ? "existing" : "existing_added_to_pipeline",
           contactId,
         });
       } catch (e: unknown) {
         failed++;
         const msg = e instanceof Error ? e.message : "Unknown error";
         results.push({
-          email: lead.email || "unknown",
+          email: lead.email?.trim() || "unknown",
           status: "failed",
           error: msg,
         });
@@ -159,7 +200,9 @@ export async function POST(req: NextRequest) {
       already_existed: alreadyExisted,
       total: leads.length,
       results,
-      colddms_usernames: colddmsUsernames,
+      colddms_usernames: colddmsRows.map((row) => row.username),
+      colddms_rows: colddmsRows,
+      colddms_csv: buildColdDmsCsv(colddmsRows),
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Unknown error";
