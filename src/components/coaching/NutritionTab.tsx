@@ -114,13 +114,22 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
   const [checklist, setChecklist] = useState({ allergies: false, everfit: false, message: false });
 
   // Categorize forms and clients
-  const linkedFormIds = new Set(clients.filter((c) => c.nutritionFormId).map((c) => c.nutritionFormId));
-  const unlinkedForms = nutritionForms.filter((nf) => !linkedFormIds.has(nf.id));
+  const linkedFormIds = new Set(
+    clients
+      .map((c) => c.nutritionFormId)
+      .filter((id): id is number => typeof id === "number"),
+  );
+  const unlinkedForms = nutritionForms.filter(
+    (nf) => typeof nf.id === "number" && !linkedFormIds.has(nf.id),
+  );
 
   const pendingClients = clients.filter((c) => c.nutritionFormId && (c.nutritionStatus === "pending" || c.nutritionStatus === "assigned"));
   const doneClients = clients.filter((c) => c.nutritionFormId && c.nutritionStatus === "done");
 
-  const getFormForClient = (client: Client) => nutritionForms.find((nf) => nf.id === client.nutritionFormId);
+  const getFormForClient = (client: Client) =>
+    typeof client.nutritionFormId === "number"
+      ? nutritionForms.find((nf) => nf.id === client.nutritionFormId)
+      : undefined;
 
   // Search filter
   const filterBySearch = (name: string, email: string) => {

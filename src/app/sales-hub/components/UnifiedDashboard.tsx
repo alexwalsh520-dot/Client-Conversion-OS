@@ -38,6 +38,8 @@ interface UnifiedDashboardProps {
   filters: Filters;
 }
 
+const AUTO_REFRESH_MS = 30_000;
+
 interface ClientMetrics {
   label: string;
   callsBooked: number;
@@ -156,8 +158,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   });
 
   /* ── Fetch Manychat ─────────────────────────────────────────────── */
-  const fetchManychat = useCallback(async () => {
-    setManychat({ data: null, loading: true, error: "" });
+  const fetchManychat = useCallback(async (background = false) => {
+    if (!background) {
+      setManychat({ data: null, loading: true, error: "" });
+    } else {
+      setManychat((prev) => ({ ...prev, error: "" }));
+    }
     try {
       if (filters.client === "all") {
         const [tyson, keith, zoeEmily] = await Promise.all([
@@ -183,17 +189,21 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         setManychat({ data: { [filters.client]: res }, loading: false, error: "" });
       }
     } catch (err) {
-      setManychat({
-        data: null,
+      setManychat((prev) => ({
+        data: background ? prev.data : null,
         loading: false,
         error: err instanceof Error ? err.message : "Unknown error",
-      });
+      }));
     }
   }, [filters.client, dateFrom, dateTo]);
 
   /* ── Fetch Sheet ────────────────────────────────────────────────── */
-  const fetchSheet = useCallback(async () => {
-    setSheet({ data: null, loading: true, error: "" });
+  const fetchSheet = useCallback(async (background = false) => {
+    if (!background) {
+      setSheet({ data: null, loading: true, error: "" });
+    } else {
+      setSheet((prev) => ({ ...prev, error: "" }));
+    }
     try {
       const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", zoeEmily: "Zoe and Emily" };
       const clientParam =
@@ -205,11 +215,11 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       );
       setSheet({ data: res, loading: false, error: "" });
     } catch (err) {
-      setSheet({
-        data: null,
+      setSheet((prev) => ({
+        data: background ? prev.data : null,
         loading: false,
         error: err instanceof Error ? err.message : "Unknown error",
-      });
+      }));
     }
   }, [filters.client, dateFrom, dateTo]);
 
@@ -221,6 +231,15 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   useEffect(() => {
     fetchSheet();
   }, [fetchSheet]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void fetchManychat(true);
+      void fetchSheet(true);
+    }, AUTO_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchManychat, fetchSheet]);
 
   const manychatDashboard = useMemo(() => {
     const metricsMap = manychat.data;
