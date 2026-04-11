@@ -1,4 +1,5 @@
 import { getServiceSupabase } from "@/lib/supabase";
+import { findExistingInstagramContactIdForManychatLead } from "@/lib/dm-contact-linking";
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -300,6 +301,25 @@ export async function syncManychatEventToGhl(event: ManychatDmEvent) {
   if (existingLink?.ghl_contact_id) {
     await updateContact(existingLink.ghl_contact_id, normalizedEvent, clientLabel, fieldIds);
     return { clientKey, clientLabel, contactId: existingLink.ghl_contact_id, created: false };
+  }
+
+  const existingInstagramContactId = await findExistingInstagramContactIdForManychatLead({
+    firstName: normalizedEvent.firstName,
+    lastName: normalizedEvent.lastName,
+    instagramHandle: normalizedEvent.instagramHandle,
+    eventAt: normalizedEvent.eventAt,
+  });
+
+  if (existingInstagramContactId) {
+    await updateContact(existingInstagramContactId, normalizedEvent, clientLabel, fieldIds);
+    await saveContactLink(clientKey, normalizedEvent.subscriberId, existingInstagramContactId);
+    return {
+      clientKey,
+      clientLabel,
+      contactId: existingInstagramContactId,
+      created: false,
+      linkedExistingInstagramContact: true,
+    };
   }
 
   const contactId = await createContact(normalizedEvent, clientLabel, fieldIds);

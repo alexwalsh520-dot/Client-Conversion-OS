@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeDmStages, getDmAnalysisVersion } from "@/lib/dm-stage-ai";
 import { ensureTrackedOutboundLinkEvents } from "@/lib/dm-link-tracking";
+import { reconcileConversationContactLink } from "@/lib/dm-contact-linking";
 import {
   fetchConversation,
   fetchConversationMessages,
@@ -269,7 +270,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const contactLink = await getContactLinkByGhlContactId(contactId);
+    const contactLink =
+      (await getContactLinkByGhlContactId(contactId)) ||
+      (await reconcileConversationContactLink(contactId));
     if (!contactLink) {
       return NextResponse.json({
         status: "skipped",
