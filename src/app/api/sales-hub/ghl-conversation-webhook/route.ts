@@ -234,7 +234,7 @@ export async function POST(req: NextRequest) {
       const conversations = await searchConversationsByContact(contactId, locationId);
       const fallbackConversation =
         conversations.find((conversation) =>
-          providedChannel ? isInstagramChannel(conversation.channel) : true,
+          providedChannel ? isInstagramChannel(conversation.channel || null) : true,
         ) || conversations[0];
 
       if (!fallbackConversation) {
