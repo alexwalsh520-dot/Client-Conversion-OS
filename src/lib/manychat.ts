@@ -1,6 +1,7 @@
-// Manychat / DM metrics
+// DM metrics + funnel data
 //
-// Pulls EXCLUSIVELY from manychat_tag_events table (populated by Manychat webhooks).
+// Hard events come from manychat_tag_events.
+// Middle funnel stages come from dm_conversation_stage_state (AI classification of live GHL conversations).
 // NEVER falls back to dm_transcripts — those are for setter reviews only.
 
 import { getServiceSupabase } from "./supabase";
@@ -43,22 +44,72 @@ const CLIENT_SETTERS: Record<Client, string[]> = {
 const FUNNEL_STAGE_DEFS = [
   { id: "new_lead", label: "New lead" },
   { id: "lead_engaged", label: "Engaged" },
-  { id: "journey_shared", label: "Journey" },
-  { id: "goal_identified", label: "Goal clear" },
-  { id: "current_situation_identified", label: "Current state" },
-  { id: "consequence_recognized", label: "Consequence" },
-  { id: "root_problem_identified", label: "Root problem" },
-  { id: "need_labeled", label: "Need labeled" },
-  { id: "financially_qualified", label: "Money okay" },
+  { id: "goal_clear", label: "Goal clear" },
+  { id: "gap_clear", label: "Gap clear" },
+  { id: "stakes_clear", label: "Stakes clear" },
+  { id: "qualified", label: "Qualified" },
   { id: "call_link_sent", label: "Link sent" },
+  { id: "booked", label: "Booked" },
 ] as const;
 
-const LIVE_STAGE_TAGS = new Set([
-  "new_lead",
-  "lead_engaged",
-  "call_link_sent",
-  "sub_link_sent",
-]);
+const LIVE_STAGE_TAGS = new Set(FUNNEL_STAGE_DEFS.map((stage) => stage.id));
+
+interface CohortLead {
+  subscriberId: string;
+  setterName: string | null;
+  newLeadAt: string;
+}
+
+interface ManychatTagEventRow {
+  subscriber_id: string;
+  tag_name: string;
+  setter_name: string | null;
+  event_at: string;
+}
+
+interface StageStateRow {
+  subscriber_id: string;
+  goal_clear: boolean | null;
+  gap_clear: boolean | null;
+  stakes_clear: boolean | null;
+  qualified: boolean | null;
+}
+
+interface ContactLinkRow {
+  subscriber_id: string;
+  ghl_contact_id: string;
+}
+
+interface AppointmentRow {
+  contact_id: string | null;
+  created_at: string | null;
+  status: string | null;
+}
+
+function toIsoStart(date: string) {
+  return `${date}T00:00:00Z`;
+}
+
+function normalizeSetterName(value: string | null | undefined): string | null {
+  return value?.trim().toLowerCase() || null;
+}
+
+function buildCohort(events: ManychatTagEventRow[]): Map<string, CohortLead> {
+  const cohort = new Map<string, CohortLead>();
+
+  for (const event of events) {
+    const existing = cohort.get(event.subscriber_id);
+    if (!existing || new Date(event.event_at).getTime() < new Date(existing.newLeadAt).getTime()) {
+      cohort.set(event.subscriber_id, {
+        subscriberId: event.subscriber_id,
+        setterName: normalizeSetterName(event.setter_name),
+        newLeadAt: event.event_at,
+      });
+    }
+  }
+
+  return cohort;
+}
 
 // ── Main metrics function ─────────────────────────────────────────
 
@@ -82,49 +133,193 @@ export async function getMetrics(
     setterMetrics[s] = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
   }
 
-  // Pull ONLY from manychat_tag_events — no fallback
   try {
-    const { data: events, error } = await sb
+    const { data: newLeadEvents, error: newLeadError } = await sb
       .from("manychat_tag_events")
-      .select("tag_name, setter_name, subscriber_id")
+      .select("subscriber_id, setter_name, event_at")
       .eq("client", client)
+      .eq("tag_name", "new_lead")
       .gte("event_at", `${dateFrom}T00:00:00Z`)
       .lte("event_at", `${dateTo}T23:59:59Z`);
 
-    if (error) {
-      console.error("manychat_tag_events query error:", error);
+    if (newLeadError) {
+      console.error("manychat_tag_events cohort query error:", newLeadError);
       return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
     }
 
-    // If no events, return zeros — do NOT fall back to dm_transcripts
-    if (!events || events.length === 0) {
+    if (!newLeadEvents || newLeadEvents.length === 0) {
       return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
     }
 
-    const METRIC_TAGS = ["new_lead", "lead_engaged", "call_link_sent", "sub_link_sent"] as const;
-    const METRIC_KEYS = ["newLeads", "leadsEngaged", "callLinksSent", "subLinksSent"] as const;
+    const cohort = buildCohort(newLeadEvents as ManychatTagEventRow[]);
+    const cohortIds = [...cohort.keys()];
+    const cohortMinDate = [...cohort.values()]
+      .map((lead) => lead.newLeadAt)
+      .sort()[0] || toIsoStart(dateFrom);
 
-    for (let i = 0; i < METRIC_TAGS.length; i++) {
-      const tagName = METRIC_TAGS[i];
-      const metricKey = METRIC_KEYS[i];
-      const tagEvents = events.filter((e) => e.tag_name === tagName);
-      const uniqueSubscribers = new Set(tagEvents.map((e) => e.subscriber_id));
-      dashboard[metricKey] = uniqueSubscribers.size;
+    dashboard.newLeads = cohortIds.length;
+    funnel[0].count = cohortIds.length;
 
-      for (const setter of setters) {
-        const setterEvents = tagEvents.filter((e) => e.setter_name === setter);
-        const uniqueSetterSubs = new Set(setterEvents.map((e) => e.subscriber_id));
-        setterMetrics[setter][metricKey] = uniqueSetterSubs.size;
+    for (const lead of cohort.values()) {
+      const setter = lead.setterName;
+      if (setter && setterMetrics[setter]) {
+        setterMetrics[setter].newLeads += 1;
       }
     }
 
-    for (const stage of funnel) {
-      const tagEvents = events.filter((e) => e.tag_name === stage.id);
-      const uniqueSubscribers = new Set(tagEvents.map((e) => e.subscriber_id));
-      stage.count = uniqueSubscribers.size;
-      if (uniqueSubscribers.size > 0) {
-        stage.tracked = true;
+    const { data: allEvents, error: eventError } = await sb
+      .from("manychat_tag_events")
+      .select("subscriber_id, tag_name, setter_name, event_at")
+      .eq("client", client)
+      .in("subscriber_id", cohortIds);
+
+    if (eventError) {
+      console.error("manychat_tag_events progression query error:", eventError);
+      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+    }
+
+    const eventsBySubscriber = new Map<string, ManychatTagEventRow[]>();
+    for (const event of (allEvents || []) as ManychatTagEventRow[]) {
+      const list = eventsBySubscriber.get(event.subscriber_id) || [];
+      list.push(event);
+      eventsBySubscriber.set(event.subscriber_id, list);
+    }
+
+    const stageSubscribers = {
+      lead_engaged: new Set<string>(),
+      call_link_sent: new Set<string>(),
+      sub_link_sent: new Set<string>(),
+    };
+
+    for (const lead of cohort.values()) {
+      const events = eventsBySubscriber.get(lead.subscriberId) || [];
+      const newLeadTime = new Date(lead.newLeadAt).getTime();
+
+      for (const event of events) {
+        const eventTime = new Date(event.event_at).getTime();
+        if (eventTime < newLeadTime) continue;
+        if (event.tag_name === "lead_engaged") stageSubscribers.lead_engaged.add(lead.subscriberId);
+        if (event.tag_name === "call_link_sent") stageSubscribers.call_link_sent.add(lead.subscriberId);
+        if (event.tag_name === "sub_link_sent") stageSubscribers.sub_link_sent.add(lead.subscriberId);
       }
+
+      const setter = lead.setterName;
+      if (setter && setterMetrics[setter]) {
+        if (stageSubscribers.lead_engaged.has(lead.subscriberId)) setterMetrics[setter].leadsEngaged += 1;
+        if (stageSubscribers.call_link_sent.has(lead.subscriberId)) setterMetrics[setter].callLinksSent += 1;
+        if (stageSubscribers.sub_link_sent.has(lead.subscriberId)) setterMetrics[setter].subLinksSent += 1;
+      }
+    }
+
+    dashboard.leadsEngaged = stageSubscribers.lead_engaged.size;
+    dashboard.callLinksSent = stageSubscribers.call_link_sent.size;
+    dashboard.subLinksSent = stageSubscribers.sub_link_sent.size;
+
+    const { data: stageStates, error: stageError } = await sb
+      .from("dm_conversation_stage_state")
+      .select("subscriber_id, goal_clear, gap_clear, stakes_clear, qualified")
+      .eq("client", client)
+      .in("subscriber_id", cohortIds);
+
+    if (stageError) {
+      console.error("dm_conversation_stage_state query error:", stageError);
+      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+    }
+
+    const stageStateMap = new Map<string, StageStateRow>();
+    for (const row of (stageStates || []) as StageStateRow[]) {
+      const existing = stageStateMap.get(row.subscriber_id);
+      stageStateMap.set(row.subscriber_id, {
+        subscriber_id: row.subscriber_id,
+        goal_clear: Boolean(existing?.goal_clear || row.goal_clear),
+        gap_clear: Boolean(existing?.gap_clear || row.gap_clear),
+        stakes_clear: Boolean(existing?.stakes_clear || row.stakes_clear),
+        qualified: Boolean(existing?.qualified || row.qualified),
+      });
+    }
+
+    const aiStageCounts = {
+      goal_clear: 0,
+      gap_clear: 0,
+      stakes_clear: 0,
+      qualified: 0,
+    };
+
+    for (const lead of cohort.values()) {
+      const state = stageStateMap.get(lead.subscriberId);
+      if (!state) continue;
+      if (state.goal_clear) aiStageCounts.goal_clear += 1;
+      if (state.gap_clear) aiStageCounts.gap_clear += 1;
+      if (state.stakes_clear) aiStageCounts.stakes_clear += 1;
+      if (state.qualified) aiStageCounts.qualified += 1;
+    }
+
+    const { data: contactLinks, error: linkError } = await sb
+      .from("manychat_contact_links")
+      .select("subscriber_id, ghl_contact_id")
+      .eq("client", client)
+      .in("subscriber_id", cohortIds);
+
+    if (linkError) {
+      console.error("manychat_contact_links query error:", linkError);
+      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+    }
+
+    const linkMap = new Map<string, ContactLinkRow>();
+    const contactIds: string[] = [];
+    for (const row of (contactLinks || []) as ContactLinkRow[]) {
+      linkMap.set(row.subscriber_id, row);
+      if (row.ghl_contact_id) contactIds.push(row.ghl_contact_id);
+    }
+
+    let bookedCount = 0;
+    if (contactIds.length > 0) {
+      const { data: appointments, error: appointmentError } = await sb
+        .from("ghl_appointments")
+        .select("contact_id, created_at, status")
+        .in("contact_id", contactIds)
+        .gte("created_at", cohortMinDate);
+
+      if (appointmentError) {
+        console.error("ghl_appointments query error:", appointmentError);
+        return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+      }
+
+      const bookedSubscribers = new Set<string>();
+      const appointmentsByContact = new Map<string, AppointmentRow[]>();
+
+      for (const row of (appointments || []) as AppointmentRow[]) {
+        if (!row.contact_id) continue;
+        const list = appointmentsByContact.get(row.contact_id) || [];
+        list.push(row);
+        appointmentsByContact.set(row.contact_id, list);
+      }
+
+      for (const lead of cohort.values()) {
+        const link = linkMap.get(lead.subscriberId);
+        if (!link?.ghl_contact_id) continue;
+        const rows = appointmentsByContact.get(link.ghl_contact_id) || [];
+        const newLeadTime = new Date(lead.newLeadAt).getTime();
+        const hasBooked = rows.some((row) => {
+          const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0;
+          const status = row.status?.toLowerCase() || "";
+          return createdAt >= newLeadTime && status !== "cancelled";
+        });
+        if (hasBooked) bookedSubscribers.add(lead.subscriberId);
+      }
+
+      bookedCount = bookedSubscribers.size;
+    }
+
+    for (const stage of funnel) {
+      if (stage.id === "new_lead") stage.count = dashboard.newLeads;
+      if (stage.id === "lead_engaged") stage.count = dashboard.leadsEngaged;
+      if (stage.id === "goal_clear") stage.count = aiStageCounts.goal_clear;
+      if (stage.id === "gap_clear") stage.count = aiStageCounts.gap_clear;
+      if (stage.id === "stakes_clear") stage.count = aiStageCounts.stakes_clear;
+      if (stage.id === "qualified") stage.count = aiStageCounts.qualified;
+      if (stage.id === "call_link_sent") stage.count = dashboard.callLinksSent;
+      if (stage.id === "booked") stage.count = bookedCount;
     }
 
     return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };

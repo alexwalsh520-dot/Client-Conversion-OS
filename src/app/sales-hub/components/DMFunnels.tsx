@@ -9,7 +9,6 @@ type ClientKey = Exclude<Client, "all">;
 interface DMFunnelsProps {
   selectedClient: Client;
   metricsMap: Partial<Record<ClientKey, ManychatMetrics>>;
-  bookedCounts: Partial<Record<ClientKey, number>>;
   loading: boolean;
   error: string;
 }
@@ -31,19 +30,9 @@ const CLIENT_META: Record<ClientKey, { label: string; color: string }> = {
   zoeEmily: { label: "Zoe and Emily", color: "var(--accent)" },
 };
 
-function buildBookedStage(count: number): RenderStage {
-  return {
-    id: "booked",
-    label: "Booked",
-    count,
-    tracked: true,
-  };
-}
-
 function buildClientFunnels(
   selectedClient: Client,
   metricsMap: Partial<Record<ClientKey, ManychatMetrics>>,
-  bookedCounts: Partial<Record<ClientKey, number>>,
 ): ClientFunnel[] {
   const clientKeys: ClientKey[] =
     selectedClient === "all" ? ["tyson", "keith", "zoeEmily"] : [selectedClient];
@@ -57,7 +46,7 @@ function buildClientFunnels(
         key,
         label: CLIENT_META[key].label,
         color: CLIENT_META[key].color,
-        stages: [...metrics.funnel, buildBookedStage(bookedCounts[key] || 0)],
+        stages: metrics.funnel,
       };
     })
     .filter((funnel): funnel is ClientFunnel => Boolean(funnel));
@@ -233,14 +222,13 @@ function FunnelStrip({
 export default function DMFunnels({
   selectedClient,
   metricsMap,
-  bookedCounts,
   loading,
   error,
 }: DMFunnelsProps) {
   if (loading) return null;
   if (error) return null;
 
-  const clientFunnels = buildClientFunnels(selectedClient, metricsMap, bookedCounts);
+  const clientFunnels = buildClientFunnels(selectedClient, metricsMap);
   if (clientFunnels.length === 0) return null;
 
   const allClientStages = aggregateFunnels(clientFunnels);
@@ -298,8 +286,9 @@ export default function DMFunnels({
       >
         <Link2 size={14} style={{ color: "var(--accent)", marginTop: 1 }} />
         <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.55 }}>
-          Gray funnel steps still need ManyChat tags. Once those tags are firing, these strips will
-          show the real drop-off point by stage and by client.
+          New lead, engaged, link sent, and booked come from hard system events. Goal clear, gap
+          clear, stakes clear, and qualified are designed to come from AI reading the live
+          conversation history.
         </div>
       </div>
     </div>

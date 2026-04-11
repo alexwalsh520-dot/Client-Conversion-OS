@@ -296,24 +296,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     };
   }, [sheet.data, filters.client]);
 
-  const bookedCounts = useMemo((): Partial<Record<ClientKey, number>> => {
-    if (!sheet.data) return {};
-
-    if (filters.client === "all" && clientBreakdown) {
-      return {
-        tyson: clientBreakdown.tyson.callsBooked,
-        keith: clientBreakdown.keith.callsBooked,
-        zoeEmily: clientBreakdown.zoeEmily.callsBooked,
-      };
-    }
-
-    return filters.client === "all"
-      ? {}
-      : {
-          [filters.client]: closerMetrics?.callsBooked || 0,
-        };
-  }, [sheet.data, filters.client, clientBreakdown, closerMetrics]);
-
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
@@ -467,7 +449,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         <DMFunnels
           selectedClient={filters.client}
           metricsMap={manychat.data || {}}
-          bookedCounts={bookedCounts}
           loading={manychat.loading || sheet.loading}
           error={manychat.error || sheet.error}
         />
