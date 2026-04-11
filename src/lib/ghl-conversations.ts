@@ -54,6 +54,48 @@ async function ghlFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function searchConversations(
+  params: Record<string, string | number | null | undefined>,
+): Promise<GhlConversationSearchResult[]> {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === "") continue;
+    query.set(key, String(value));
+  }
+
+  const response = await ghlFetch<Record<string, unknown>>(
+    `/conversations/search?${query.toString()}`,
+  );
+
+  const list = Array.isArray(response.conversations)
+    ? (response.conversations as unknown[])
+    : Array.isArray(response.data)
+      ? (response.data as unknown[])
+      : [];
+
+  return list
+    .flatMap((item) => {
+      const record = asRecord(item);
+      const id = readString(record, ["id", "_id"]);
+      if (!id) return [];
+
+      return [{
+        id,
+        contactId: readString(record, ["contactId", "contact_id"]),
+        locationId: readString(record, ["locationId", "location_id"]),
+        channel: normalizeConversationChannel(record),
+        lastMessageDate: readString(record, ["lastMessageDate", "dateUpdated", "dateAdded"]),
+        raw: record,
+      }];
+    })
+    .sort((a, b) => {
+      const timeA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+      const timeB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+      return timeB - timeA;
+    });
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
@@ -129,36 +171,24 @@ export async function searchConversationsByContact(
   contactId: string,
   locationId: string,
 ): Promise<GhlConversationSearchResult[]> {
-  const response = await ghlFetch<Record<string, unknown>>(
-    `/conversations/search?locationId=${encodeURIComponent(locationId)}&contactId=${encodeURIComponent(contactId)}`,
-  );
+  return searchConversations({
+    locationId,
+    contactId,
+  });
+}
 
-  const list = Array.isArray(response.conversations)
-    ? (response.conversations as unknown[])
-    : Array.isArray(response.data)
-      ? (response.data as unknown[])
-      : [];
-
-  return list
-    .flatMap((item) => {
-      const record = asRecord(item);
-      const id = readString(record, ["id", "_id"]);
-      if (!id) return [];
-
-      return [{
-        id,
-        contactId: readString(record, ["contactId", "contact_id"]),
-        locationId: readString(record, ["locationId", "location_id"]),
-        channel: normalizeConversationChannel(record),
-        lastMessageDate: readString(record, ["lastMessageDate", "dateUpdated", "dateAdded"]),
-        raw: record,
-      }];
-    })
-    .sort((a, b) => {
-      const timeA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
-      const timeB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
-      return timeB - timeA;
-    });
+export async function searchRecentConversations(
+  locationId: string,
+  options?: {
+    limit?: number;
+    page?: number;
+  },
+): Promise<GhlConversationSearchResult[]> {
+  return searchConversations({
+    locationId,
+    limit: options?.limit ?? 100,
+    page: options?.page ?? 1,
+  });
 }
 
 export async function fetchConversationMessages(

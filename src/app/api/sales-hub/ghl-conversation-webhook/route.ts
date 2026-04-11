@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeDmStages, getDmAnalysisVersion } from "@/lib/dm-stage-ai";
+import { ensureTrackedOutboundLinkEvents } from "@/lib/dm-link-tracking";
 import {
   fetchConversation,
   fetchConversationMessages,
@@ -289,6 +290,13 @@ export async function POST(req: NextRequest) {
       messages,
     );
 
+    const trackedLinkEvents = await ensureTrackedOutboundLinkEvents({
+      client: contactLink.client,
+      subscriberId: contactLink.subscriber_id,
+      setterName,
+      messages,
+    });
+
     const latestMessageAt = latestTimestamp(messages);
     const existingStageState = await getExistingStageState(conversationId);
     const shouldReanalyze =
@@ -315,6 +323,11 @@ export async function POST(req: NextRequest) {
       storedMessages: messages.length,
       classified: Boolean(classification),
       reusedClassification: !classification && Boolean(existingStageState),
+      autoTagged: trackedLinkEvents.created.map((event) => ({
+        tagName: event.tagName,
+        eventAt: event.eventAt,
+        matchedUrl: event.matchedUrl,
+      })),
       client: contactLink.client,
       subscriberId: contactLink.subscriber_id,
       conversationId,
