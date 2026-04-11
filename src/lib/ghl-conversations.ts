@@ -140,18 +140,20 @@ export async function searchConversationsByContact(
       : [];
 
   return list
-    .map((item) => {
+    .flatMap((item) => {
       const record = asRecord(item);
-      return {
-        id: readString(record, ["id", "_id"]),
+      const id = readString(record, ["id", "_id"]);
+      if (!id) return [];
+
+      return [{
+        id,
         contactId: readString(record, ["contactId", "contact_id"]),
         locationId: readString(record, ["locationId", "location_id"]),
         channel: normalizeConversationChannel(record),
         lastMessageDate: readString(record, ["lastMessageDate", "dateUpdated", "dateAdded"]),
         raw: record,
-      };
+      }];
     })
-    .filter((record): record is GhlConversationSearchResult => Boolean(record.id))
     .sort((a, b) => {
       const timeA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
       const timeB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
