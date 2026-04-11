@@ -8,6 +8,7 @@ import {
   Home,
   Users,
   Megaphone,
+  Rocket,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
 ];
 
@@ -214,4 +216,3 @@ export default function Sidebar() {
     </>
   );
 }
-
