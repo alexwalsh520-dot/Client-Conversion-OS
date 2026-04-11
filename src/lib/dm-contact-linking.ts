@@ -18,6 +18,7 @@ interface GhlSearchContact {
   contactName?: string | null;
   dateAdded?: string | null;
   tags?: string[] | null;
+  customFields?: Array<{ id?: string; value?: string | null }> | null;
   attributionSource?: {
     medium?: string | null;
     sessionSource?: string | null;
@@ -146,6 +147,22 @@ async function saveContactLink(client: string, subscriberId: string, contactId: 
 
 function uniqueQueries(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])];
+}
+
+function parseSubscriberIdFromCustomFields(contact: GhlSearchContact): string | null {
+  const values = (contact.customFields || [])
+    .map((field) => field?.value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  return values.find((value) => /^\d{6,}$/.test(value)) || null;
+}
+
+function parseClientFromTags(contact: GhlSearchContact): string | null {
+  const tags = (contact.tags || []).map((tag) => normalizeText(tag));
+  if (tags.includes("client_tyson_sonnek")) return "tyson_sonnek";
+  if (tags.includes("client_keith_holland")) return "keith_holland";
+  if (tags.includes("client_zoe_and_emily")) return "zoe_and_emily";
+  return null;
 }
 
 async function getSearchPoolForIdentity(identity: {
@@ -296,11 +313,22 @@ export async function reconcileConversationContactLink(
   if (!bestLinkedCandidate) return null;
 
   const matchedLink = linkByContactId.get(bestLinkedCandidate.contact.id);
-  if (!matchedLink) return null;
+  if (matchedLink) {
+    await saveContactLink(matchedLink.client, matchedLink.subscriber_id, contactId);
+    return {
+      ...matchedLink,
+      ghl_contact_id: contactId,
+    };
+  }
 
-  await saveContactLink(matchedLink.client, matchedLink.subscriber_id, contactId);
+  const subscriberId = parseSubscriberIdFromCustomFields(bestLinkedCandidate.contact);
+  const client = parseClientFromTags(bestLinkedCandidate.contact);
+  if (!subscriberId || !client) return null;
+
+  await saveContactLink(client, subscriberId, contactId);
   return {
-    ...matchedLink,
+    client,
+    subscriber_id: subscriberId,
     ghl_contact_id: contactId,
   };
 }
