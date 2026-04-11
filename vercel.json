@@ -2,10 +2,6 @@
   "framework": "nextjs",
   "crons": [
     {
-      "path": "/api/cron/dm-link-sync",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/sync",
       "schedule": "0 6 * * *"
     },
