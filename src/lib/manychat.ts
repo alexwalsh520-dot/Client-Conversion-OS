@@ -4,6 +4,7 @@
 // Middle funnel stages come from dm_conversation_stage_state (AI classification of live GHL conversations).
 // NEVER falls back to dm_transcripts — those are for setter reviews only.
 
+import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
 type Client = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
@@ -58,6 +59,7 @@ interface CohortLead {
   subscriberId: string;
   setterName: string | null;
   newLeadAt: string;
+  subscriberName: string | null;
 }
 
 interface ManychatTagEventRow {
@@ -65,6 +67,7 @@ interface ManychatTagEventRow {
   tag_name: string;
   setter_name: string | null;
   event_at: string;
+  subscriber_name?: string | null;
 }
 
 interface StageStateRow {
@@ -104,11 +107,41 @@ function buildCohort(events: ManychatTagEventRow[]): Map<string, CohortLead> {
         subscriberId: event.subscriber_id,
         setterName: normalizeSetterName(event.setter_name),
         newLeadAt: event.event_at,
+        subscriberName: event.subscriber_name?.trim() || null,
+      });
+    } else if (!existing.subscriberName && event.subscriber_name?.trim()) {
+      cohort.set(event.subscriber_id, {
+        ...existing,
+        subscriberName: event.subscriber_name.trim(),
       });
     }
   }
 
   return cohort;
+}
+
+function normalizePersonName(value: string | null | undefined): string {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesClientOffer(client: Client, offer: string | null | undefined): boolean {
+  const normalized = (offer || "").toLowerCase();
+  if (client === "tyson_sonnek") return normalized.includes("tyson");
+  if (client === "keith_holland") return normalized.includes("keith");
+  if (client === "zoe_and_emily") return normalized.includes("zoe") || normalized.includes("emily");
+  return false;
+}
+
+function addDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 // ── Main metrics function ─────────────────────────────────────────
@@ -136,7 +169,7 @@ export async function getMetrics(
   try {
     const { data: newLeadEvents, error: newLeadError } = await sb
       .from("manychat_tag_events")
-      .select("subscriber_id, setter_name, event_at")
+      .select("subscriber_id, subscriber_name, setter_name, event_at")
       .eq("client", client)
       .eq("tag_name", "new_lead")
       .gte("event_at", `${dateFrom}T00:00:00Z`)
@@ -257,6 +290,25 @@ export async function getMetrics(
     }
 
     const bookedSubscribers = new Set<string>();
+
+    try {
+      const salesRows = await fetchSheetData(dateFrom, addDays(dateTo, 30));
+      const bookedNames = new Set(
+        salesRows
+          .filter((row) => matchesClientOffer(client, row.offer))
+          .map((row) => normalizePersonName(row.name))
+          .filter(Boolean)
+      );
+
+      for (const lead of cohort.values()) {
+        if (!lead.subscriberName) continue;
+        if (bookedNames.has(normalizePersonName(lead.subscriberName))) {
+          bookedSubscribers.add(lead.subscriberId);
+        }
+      }
+    } catch (sheetError) {
+      console.error("sales tracker booked query error:", sheetError);
+    }
 
     if (contactIds.length > 0) {
       const { data: appointments, error: appointmentError } = await sb
