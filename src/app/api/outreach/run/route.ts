@@ -84,6 +84,12 @@ async function mapWithConcurrency<T, R>(
 interface RunRequestBody {
   contactIds?: string[];
   limit?: number;
+  pipeline?: {
+    pipelineId?: string;
+    stageMap?: Record<string, string>;
+    newLeadStageId?: string | null;
+    contactedStageId?: string | null;
+  };
 }
 
 interface ProcessedContact {
@@ -105,17 +111,27 @@ export async function POST(req: NextRequest) {
       // Allow empty body for manual or legacy calls.
     }
 
-    const pipeline = await getAIOutreachPipeline();
-    const newLeadStageId = findStageId(pipeline.stages, [
-      "New Lead",
-      "Lead",
-      "Fresh Leads",
-    ]);
-    const contactedStageId = findStageId(pipeline.stages, [
-      "Contacted",
-      "In Contact (Contacted)",
-      "In Contact",
-    ]);
+    const pipeline =
+      body.pipeline?.pipelineId && body.pipeline.stageMap
+        ? {
+            pipelineId: body.pipeline.pipelineId,
+            stages: body.pipeline.stageMap,
+          }
+        : await getAIOutreachPipeline();
+    const newLeadStageId =
+      body.pipeline?.newLeadStageId ||
+      findStageId(pipeline.stages, [
+        "New Lead",
+        "Lead",
+        "Fresh Leads",
+      ]);
+    const contactedStageId =
+      body.pipeline?.contactedStageId ||
+      findStageId(pipeline.stages, [
+        "Contacted",
+        "In Contact (Contacted)",
+        "In Contact",
+      ]);
 
     if (!newLeadStageId) {
       return NextResponse.json(

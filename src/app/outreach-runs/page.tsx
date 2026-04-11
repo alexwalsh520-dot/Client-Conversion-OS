@@ -144,6 +144,14 @@ interface RunApiResponse {
   error?: string;
 }
 
+interface PipelineApiResponse {
+  pipelineId: string;
+  stageMap?: Record<string, string>;
+  newLeadStageId?: string | null;
+  contactedStageId?: string | null;
+  error?: string;
+}
+
 function chunkArray<T>(items: T[], size: number) {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -233,6 +241,25 @@ export default function OutreachRunsPage() {
     setResult(null);
 
     try {
+      const pipelineRes = await fetch("/api/outreach/pipeline");
+      const { data: pipelineData, raw: pipelineRaw } =
+        await readApiResponse<PipelineApiResponse>(pipelineRes);
+      if (!pipelineData) {
+        throw new Error(pipelineRaw || "Failed to load outreach pipeline");
+      }
+      if (!pipelineRes.ok) {
+        throw new Error(
+          pipelineData.error || pipelineRaw || "Failed to load outreach pipeline"
+        );
+      }
+
+      const pipeline = {
+        pipelineId: pipelineData.pipelineId,
+        stageMap: pipelineData.stageMap || {},
+        newLeadStageId: pipelineData.newLeadStageId || null,
+        contactedStageId: pipelineData.contactedStageId || null,
+      };
+
       const importTotals = {
         success: 0,
         failed: 0,
@@ -254,7 +281,7 @@ export default function OutreachRunsPage() {
         const res = await fetch("/api/outreach/import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leads: batch }),
+          body: JSON.stringify({ leads: batch, pipeline }),
         });
         const { data, raw } = await readApiResponse<ImportApiResponse>(res);
 
@@ -310,7 +337,7 @@ export default function OutreachRunsPage() {
         const res = await fetch("/api/outreach/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contactIds: batch }),
+          body: JSON.stringify({ contactIds: batch, pipeline }),
         });
         const { data, raw } = await readApiResponse<RunApiResponse>(res);
 

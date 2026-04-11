@@ -27,6 +27,12 @@ interface LeadInput {
   instagram_link?: string;
 }
 
+interface PipelineInput {
+  pipelineId?: string;
+  stageMap?: Record<string, string>;
+  newLeadStageId?: string | null;
+}
+
 interface ImportLeadResult {
   email: string;
   status: string;
@@ -68,6 +74,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const leads: LeadInput[] = body.leads || [];
+    const pipelineInput: PipelineInput | undefined = body.pipeline;
 
     if (leads.length === 0) {
       return NextResponse.json(
@@ -76,9 +83,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get pipeline info once
-    const pipeline = await getAIOutreachPipeline();
+    const pipeline =
+      pipelineInput?.pipelineId && pipelineInput.stageMap
+        ? {
+            pipelineId: pipelineInput.pipelineId,
+            stages: pipelineInput.stageMap,
+          }
+        : await getAIOutreachPipeline();
     const newLeadStageId =
+      pipelineInput?.newLeadStageId ||
       findStageId(pipeline.stages, ["New Lead", "Lead", "Fresh Leads"]) ||
       Object.values(pipeline.stages)[0];
     if (!newLeadStageId) {
