@@ -72,6 +72,15 @@ export interface Client {
   amountPaid: number;
   salesPerson: string;
   comments: string;
+  phoneNumber: string;
+  nutritionFormId: number | null;
+  nutritionStatus: '' | 'pending' | 'assigned' | 'done';
+  nutritionAssignedTo: string;
+  nutritionAssignedAt: string | null;
+  nutritionCompletedAt: string | null;
+  nutritionChecklistAllergies: boolean;
+  nutritionChecklistEverfit: boolean;
+  nutritionChecklistMessage: boolean;
   createdAt?: string;
 }
 
@@ -172,7 +181,7 @@ export interface FinanceRecord {
   retentionDate: string | null;
 }
 
-export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses';
+export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses' | 'nutrition';
 
 export interface Expense {
   id?: number;
@@ -183,5 +192,37 @@ export interface Expense {
   commissions: number;
   platform: string;
   comments: string;
+  createdAt?: string;
+}
+
+export interface NutritionIntakeForm {
+  id?: number;
+  timestamp: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  age: number | null;
+  height: string;
+  currentWeight: string;
+  goalWeight: string;
+  fitnessGoal: string;
+  foodsEnjoy: string;
+  foodsAvoid: string;
+  allergies: string;
+  proteinPreferences: string;
+  canCook: string;
+  mealCount: string;
+  medications: string;
+  supplements: string;
+  sleepHours: string;
+  waterIntake: string;
+  dailyMealsDescription: string;
+  dailyMealsDescription2: string;
+  dietPlanSent: string;
   createdAt?: string;
 }

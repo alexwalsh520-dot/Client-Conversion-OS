@@ -11,6 +11,7 @@ import {
   DollarSign,
   RefreshCw,
   Receipt,
+  Salad,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -29,9 +30,10 @@ import {
   getMeetings,
   getEODReports,
   getExpenses,
+  getNutritionIntakeForms,
 } from "@/lib/data";
 import { useAsyncData } from "@/lib/use-data";
-import type { CoachingTab, Client, CoachMeeting, CoachEODReport, Expense } from "@/lib/types";
+import type { CoachingTab, Client, CoachMeeting, CoachEODReport, Expense, NutritionIntakeForm } from "@/lib/types";
 
 import ClientRosterTab from "@/components/coaching/ClientRosterTab";
 import OnboardingTab from "@/components/coaching/OnboardingTab";
@@ -41,6 +43,7 @@ import MilestonesTab from "@/components/coaching/MilestonesTab";
 import EODReportsTab from "@/components/coaching/EODReportsTab";
 import FinancialsTab from "@/components/coaching/FinancialsTab";
 import ExpensesTab from "@/components/coaching/ExpensesTab";
+import NutritionTab from "@/components/coaching/NutritionTab";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "roster", label: "Client Roster", icon: <Users size={14} /> },
@@ -51,6 +54,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "eod", label: "EOD Reports", icon: <FileText size={14} /> },
   { key: "financials", label: "Financials", icon: <DollarSign size={14} /> },
   { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
+  { key: "nutrition", label: "Nutrition", icon: <Salad size={14} /> },
 ];
 
 export default function CoachingPage() {
@@ -72,6 +76,7 @@ export default function CoachingPage() {
   const { data: eodReports, refetch: refetchEOD } = useAsyncData(getEODReports, mockEODReports);
   const { data: milestoneActivity, refetch: refetchMilestoneActivity } = useAsyncData(getMilestoneActivity, []);
   const { data: expenses, refetch: refetchExpenses } = useAsyncData(getExpenses, []);
+  const { data: nutritionForms, refetch: refetchNutritionForms } = useAsyncData(getNutritionIntakeForms, []);
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -189,6 +194,28 @@ export default function CoachingPage() {
     refetchExpenses();
   };
 
+  const handleLinkNutritionForm = async (clientId: number, nutritionFormId: number) => {
+    await apiCall("link_nutrition_form", { clientId, nutritionFormId });
+    refetchClients();
+    refetchNutritionForms();
+  };
+
+  const handleAssignNutritionTask = async (clientId: number, assignedTo: string) => {
+    await apiCall("assign_nutrition_task", { clientId, assignedTo });
+    refetchClients();
+  };
+
+  const handleCompleteNutritionTask = async (clientId: number, checklist: { checklistAllergies: boolean; checklistEverfit: boolean; checklistMessage: boolean }) => {
+    await apiCall("complete_nutrition_task", { clientId, ...checklist });
+    refetchClients();
+  };
+
+  const handleUnlinkNutritionForm = async (clientId: number) => {
+    await apiCall("unlink_nutrition_form", { clientId });
+    refetchClients();
+    refetchNutritionForms();
+  };
+
   return (
     <div className="fade-up">
       {/* Header */}
@@ -266,7 +293,7 @@ export default function CoachingPage() {
       {/* Tab Content */}
       <div className="section">
         {activeTab === "roster" && (
-          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} onSave={handleSaveClient} onDelete={handleDeleteClient} onDeleteMeeting={handleDeleteMeeting} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
+          <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} nutritionForms={nutritionForms} onSave={handleSaveClient} onDelete={handleDeleteClient} onDeleteMeeting={handleDeleteMeeting} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
         )}
         {activeTab === "onboarding" && (
           <OnboardingTab clients={clients} onClientClick={navigateToClient} />
@@ -295,6 +322,16 @@ export default function CoachingPage() {
         )}
         {activeTab === "expenses" && (
           <ExpensesTab expenses={expenses} clients={clients} onSaveExpense={handleSaveExpense} onDeleteExpense={handleDeleteExpense} />
+        )}
+        {activeTab === "nutrition" && (
+          <NutritionTab
+            clients={clients}
+            nutritionForms={nutritionForms}
+            onLinkForm={handleLinkNutritionForm}
+            onAssignTask={handleAssignNutritionTask}
+            onCompleteTask={handleCompleteNutritionTask}
+            onUnlinkForm={handleUnlinkNutritionForm}
+          />
         )}
       </div>
     </div>

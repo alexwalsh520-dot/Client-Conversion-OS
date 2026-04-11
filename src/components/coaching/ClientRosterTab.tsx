@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil } from "lucide-react";
-import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
+import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport, NutritionIntakeForm } from "@/lib/types";
 
 interface ClientNote {
   id?: number;
@@ -19,6 +19,7 @@ interface Props {
   milestones: CoachMilestone[];
   meetings: CoachMeeting[];
   eodReports: CoachEODReport[];
+  nutritionForms: NutritionIntakeForm[];
   onSave: (client: Partial<Client>) => Promise<void>;
   onDelete: (clientId: number) => Promise<void>;
   onDeleteMeeting?: (meetingId: number) => Promise<void>;
@@ -26,13 +27,16 @@ interface Props {
   onClearSelection?: () => void;
 }
 
-export default function ClientRosterTab({ clients, pauses, milestones, meetings, eodReports, onSave, onDelete, onDeleteMeeting, selectedClientName, onClearSelection }: Props) {
+export default function ClientRosterTab({ clients, pauses, milestones, meetings, eodReports, nutritionForms, onSave, onDelete, onDeleteMeeting, selectedClientName, onClearSelection }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [coachFilter, setCoachFilter] = useState<string>("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<Client>>({});
+  const [nutritionSearch, setNutritionSearch] = useState("");
+  const [showNutritionDropdown, setShowNutritionDropdown] = useState(false);
+  const [selectedNutritionForm, setSelectedNutritionForm] = useState<NutritionIntakeForm | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -255,6 +259,91 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
               <X size={16} />
             </button>
           </div>
+          {/* Nutrition Form Link — only for new clients */}
+          {!editingId && (
+            <div style={{ marginBottom: 14, position: "relative" }}>
+              <label className="field-label">Link Nutrition Intake Form (optional)</label>
+              <input
+                className="input-field"
+                placeholder="Search by name or email..."
+                value={nutritionSearch}
+                onChange={(e) => {
+                  setNutritionSearch(e.target.value);
+                  setShowNutritionDropdown(true);
+                }}
+                onFocus={() => setShowNutritionDropdown(true)}
+              />
+              {showNutritionDropdown && nutritionSearch.length > 0 && (
+                <div style={{
+                  position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+                  background: "var(--card-bg, #1a1a2e)", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 8, maxHeight: 200, overflowY: "auto", marginTop: 4,
+                }}>
+                  {nutritionForms
+                    .filter((nf) => {
+                      const q = nutritionSearch.toLowerCase();
+                      const fullName = `${nf.firstName} ${nf.lastName}`.toLowerCase();
+                      return fullName.includes(q) || nf.email.toLowerCase().includes(q);
+                    })
+                    .slice(0, 10)
+                    .map((nf) => (
+                      <div
+                        key={nf.id}
+                        onClick={() => {
+                          setSelectedNutritionForm(nf);
+                          setNutritionSearch(`${nf.firstName} ${nf.lastName} (${nf.email})`);
+                          setShowNutritionDropdown(false);
+                          setFormData({
+                            ...formData,
+                            name: `${nf.firstName} ${nf.lastName}`,
+                            email: nf.email,
+                            phoneNumber: nf.phone,
+                            nutritionFormId: nf.id,
+                          });
+                        }}
+                        style={{
+                          padding: "8px 12px", cursor: "pointer", fontSize: 13,
+                          color: "var(--text-primary)", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <span style={{ fontWeight: 600 }}>{nf.firstName} {nf.lastName}</span>
+                        <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: 12 }}>{nf.email}</span>
+                        {nf.timestamp && (
+                          <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: 11 }}>
+                            Submitted {new Date(nf.timestamp).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  {nutritionForms.filter((nf) => {
+                    const q = nutritionSearch.toLowerCase();
+                    return `${nf.firstName} ${nf.lastName}`.toLowerCase().includes(q) || nf.email.toLowerCase().includes(q);
+                  }).length === 0 && (
+                    <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 13 }}>
+                      No matching intake forms found
+                    </div>
+                  )}
+                </div>
+              )}
+              {selectedNutritionForm && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <CheckCircle size={12} /> Linked to {selectedNutritionForm.firstName} {selectedNutritionForm.lastName}&apos;s intake form
+                  <button
+                    onClick={() => {
+                      setSelectedNutritionForm(null);
+                      setNutritionSearch("");
+                      setFormData({ ...formData, nutritionFormId: undefined });
+                    }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", marginLeft: 4 }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <div>
               <label className="field-label">Name *</label>
@@ -263,6 +352,10 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             <div>
               <label className="field-label">Email</label>
               <input className="input-field" value={formData.email || ""} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+            </div>
+            <div>
+              <label className="field-label">Phone</label>
+              <input className="input-field" value={formData.phoneNumber || ""} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} />
             </div>
             <div>
               <label className="field-label">Coach</label>

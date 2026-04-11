@@ -20,7 +20,11 @@ type Action =
   | "upsert_finance"
   | "update_milestone_checkbox"
   | "upsert_expense"
-  | "delete_expense";
+  | "delete_expense"
+  | "link_nutrition_form"
+  | "assign_nutrition_task"
+  | "complete_nutrition_task"
+  | "unlink_nutrition_form";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -69,7 +73,13 @@ export async function POST(req: NextRequest) {
           amount_paid: payload.amountPaid || 0,
           sales_person: payload.salesPerson || null,
           comments: payload.comments || null,
+          phone_number: payload.phoneNumber || null,
         };
+        // Link nutrition form if provided
+        if (payload.nutritionFormId) {
+          row.nutrition_form_id = payload.nutritionFormId;
+          row.nutrition_status = "pending";
+        }
         // Set onboarding_date for new clients so they appear in Recently Onboarded
         if (!payload.id) {
           row.onboarding_date = payload.onboardingDate || new Date().toISOString().split("T")[0];
@@ -136,6 +146,23 @@ export async function POST(req: NextRequest) {
             paymentPlatform: payload.paymentPlatform,
             onboardingFathomLink: payload.onboardingFathomLink,
           }).catch(() => {}); // fire-and-forget, don't block response
+        }
+
+        // Slack notification for new client with linked nutrition form
+        if (payload.nutritionFormId && data) {
+          postToCoachingChannel([
+            {
+              type: "header",
+              text: { type: "plain_text", text: ":salad: New Meal Plan Task" },
+            },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${payload.name}* has been onboarded and needs a custom meal plan.\n\n<@U08LCV3Q9L7> please check the Nutrition tab on CCOS.`,
+              },
+            },
+          ]).catch((err) => console.error("[coaching] Slack nutrition notification failed:", err));
         }
 
         return NextResponse.json({ success: true, data });
@@ -641,6 +668,133 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
         return NextResponse.json({ success: true });
+      }
+
+      // ---- Nutrition ----
+      case "link_nutrition_form": {
+        const { clientId, nutritionFormId } = payload;
+        if (!clientId || !nutritionFormId) {
+          return NextResponse.json({ error: "Missing clientId or nutritionFormId" }, { status: 400 });
+        }
+
+        const { data, error } = await db
+          .from("clients")
+          .update({
+            nutrition_form_id: nutritionFormId,
+            nutrition_status: "pending",
+          })
+          .eq("id", clientId)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // Send Slack notification — new meal plan task
+        const clientName = data.name || "Unknown";
+        postToCoachingChannel([
+          {
+            type: "header",
+            text: { type: "plain_text", text: ":salad: New Meal Plan Task" },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*${clientName}* has been onboarded and needs a custom meal plan.\n\n<@U08LCV3Q9L7> please check the Nutrition tab on CCOS.`,
+            },
+          },
+        ]).catch((err) => console.error("[coaching] Slack nutrition notification failed:", err));
+
+        return NextResponse.json({ success: true, data });
+      }
+
+      case "assign_nutrition_task": {
+        const { clientId, assignedTo } = payload;
+        if (!clientId || !assignedTo) {
+          return NextResponse.json({ error: "Missing clientId or assignedTo" }, { status: 400 });
+        }
+
+        const { data, error } = await db
+          .from("clients")
+          .update({
+            nutrition_assigned_to: assignedTo,
+            nutrition_status: "assigned",
+            nutrition_assigned_at: new Date().toISOString(),
+          })
+          .eq("id", clientId)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return NextResponse.json({ success: true, data });
+      }
+
+      case "complete_nutrition_task": {
+        const { clientId, checklistAllergies, checklistEverfit, checklistMessage } = payload;
+        if (!clientId) {
+          return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
+        }
+
+        const { data, error } = await db
+          .from("clients")
+          .update({
+            nutrition_status: "done",
+            nutrition_completed_at: new Date().toISOString(),
+            nutrition_checklist_allergies: checklistAllergies || false,
+            nutrition_checklist_everfit: checklistEverfit || false,
+            nutrition_checklist_message: checklistMessage || false,
+          })
+          .eq("id", clientId)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // Slack notification — meal plan completed
+        const completedBy = data.nutrition_assigned_to || "Unknown";
+        const clientName = data.name || "Unknown";
+        const today = new Date().toISOString().split("T")[0];
+        postToCoachingChannel([
+          {
+            type: "header",
+            text: { type: "plain_text", text: ":white_check_mark: Meal Plan Completed" },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*${completedBy}* completed the meal plan for *${clientName}* on ${today}.`,
+            },
+          },
+        ]).catch((err) => console.error("[coaching] Slack nutrition completion failed:", err));
+
+        return NextResponse.json({ success: true, data });
+      }
+
+      case "unlink_nutrition_form": {
+        const { clientId } = payload;
+        if (!clientId) {
+          return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
+        }
+
+        const { data, error } = await db
+          .from("clients")
+          .update({
+            nutrition_form_id: null,
+            nutrition_status: "",
+            nutrition_assigned_to: "",
+            nutrition_assigned_at: null,
+            nutrition_completed_at: null,
+            nutrition_checklist_allergies: false,
+            nutrition_checklist_everfit: false,
+            nutrition_checklist_message: false,
+          })
+          .eq("id", clientId)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return NextResponse.json({ success: true, data });
       }
 
       default:

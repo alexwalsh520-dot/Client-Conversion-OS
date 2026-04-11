@@ -21,6 +21,7 @@ import type {
   EODClientCheckin,
   FinanceRecord,
   Expense,
+  NutritionIntakeForm,
 } from "./types";
 
 // ---- Coaching Feedback ----
@@ -285,6 +286,15 @@ export async function getClients(): Promise<Client[]> {
       amountPaid: Number(row.amount_paid) || 0,
       salesPerson: row.sales_person || "",
       comments: row.comments || "",
+      phoneNumber: row.phone_number || "",
+      nutritionFormId: row.nutrition_form_id || null,
+      nutritionStatus: row.nutrition_status || "",
+      nutritionAssignedTo: row.nutrition_assigned_to || "",
+      nutritionAssignedAt: row.nutrition_assigned_at || null,
+      nutritionCompletedAt: row.nutrition_completed_at || null,
+      nutritionChecklistAllergies: row.nutrition_checklist_allergies || false,
+      nutritionChecklistEverfit: row.nutrition_checklist_everfit || false,
+      nutritionChecklistMessage: row.nutrition_checklist_message || false,
       createdAt: row.created_at,
     }));
   } catch {
@@ -501,6 +511,54 @@ export async function getFinances(): Promise<FinanceRecord[]> {
   } catch {
     console.warn("[data] Finances: falling back to mock data");
     return mock.mockFinances;
+  }
+}
+
+// ---- Nutrition Intake Forms ----
+
+export async function getNutritionIntakeForms(): Promise<NutritionIntakeForm[]> {
+  try {
+    const { data, error } = await supabase
+      .from("nutrition_intake_forms")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error || !data?.length) return [];
+
+    return data.map((row) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      firstName: row.first_name || "",
+      lastName: row.last_name || "",
+      email: row.email || "",
+      phone: row.phone || "",
+      address: row.address || "",
+      city: row.city || "",
+      state: row.state || "",
+      zipCode: row.zip_code || "",
+      age: row.age || null,
+      height: row.height || "",
+      currentWeight: row.current_weight || "",
+      goalWeight: row.goal_weight || "",
+      fitnessGoal: row.fitness_goal || "",
+      foodsEnjoy: row.foods_enjoy || "",
+      foodsAvoid: row.foods_avoid || "",
+      allergies: row.allergies || "",
+      proteinPreferences: row.protein_preferences || "",
+      canCook: row.can_cook || "",
+      mealCount: row.meal_count || "",
+      medications: row.medications || "",
+      supplements: row.supplements || "",
+      sleepHours: row.sleep_hours || "",
+      waterIntake: row.water_intake || "",
+      dailyMealsDescription: row.daily_meals_description || "",
+      dailyMealsDescription2: row.daily_meals_description_2 || "",
+      dietPlanSent: row.diet_plan_sent || "",
+      createdAt: row.created_at,
+    }));
+  } catch {
+    console.warn("[data] Nutrition intake forms: returning empty array");
+    return [];
   }
 }
 

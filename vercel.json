@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/eod-check",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/nutrition-summary",
+      "schedule": "0 11 1,15 * *"
     }
   ]
 }

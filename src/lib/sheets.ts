@@ -11,6 +11,7 @@ const SHEET_IDS = {
   sales: "1890ucxVRqIPiXjs2-XoW517_RKKvPZC0tT-OU33av9o",
   tysonAds: "1r7UXESjrCvqg3Uf0sm0GGlzKuKlkpUR1Z5RjHbcYmAY",
   keithAds: "1DomGcRLp4NBV-nlXVq-zfq9vg8jPPNa1Wq4aalVr_Xk",
+  nutritionIntake: "1gt8afnAHmiECqoUJOmbnzETxrUJQS5Y5Vr6wv24SqAo",
 };
 
 // Row types matching Supabase table columns (snake_case)
@@ -1232,6 +1233,79 @@ export async function updateMilestoneInSheet(
   } catch (e) {
     console.warn(`[sheets-write] Failed to update milestone in "${coachTab}":`, (e as Error).message?.substring(0, 120));
   }
+}
+
+// ---- Nutrition Intake Form ----
+
+export interface NutritionIntakeRow {
+  timestamp: string | null;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  age: number | null;
+  height: string;
+  current_weight: string;
+  goal_weight: string;
+  fitness_goal: string;
+  foods_enjoy: string;
+  foods_avoid: string;
+  allergies: string;
+  protein_preferences: string;
+  can_cook: string;
+  meal_count: string;
+  medications: string;
+  supplements: string;
+  sleep_hours: string;
+  water_intake: string;
+  daily_meals_description: string;
+  daily_meals_description_2: string;
+  diet_plan_sent: string;
+}
+
+export async function fetchNutritionIntake(): Promise<NutritionIntakeRow[]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_IDS.nutritionIntake,
+    range: "'Form Responses 1'!A2:AA2000",
+  });
+
+  const rows = res.data.values || [];
+  return rows
+    .filter((row) => row[1]) // Must have a first name
+    .map((row) => ({
+      timestamp: parseTimestamp(row[0]),
+      first_name: (row[1] || "").trim(),
+      last_name: (row[2] || "").trim(),
+      email: (row[3] || "").trim(),
+      phone: (row[4] || "").trim(),
+      address: (row[5] || "").trim(),
+      city: (row[6] || "").trim(),
+      state: (row[7] || "").trim(),
+      zip_code: (row[8] || "").trim(),
+      age: row[9] ? parseNum(row[9]) || null : null,
+      height: (row[10] || "").trim(),
+      current_weight: (row[11] || "").trim(),
+      goal_weight: (row[12] || "").trim(),
+      fitness_goal: (row[13] || "").trim(),
+      foods_enjoy: (row[14] || "").trim(),
+      foods_avoid: (row[15] || "").trim(),
+      allergies: (row[16] || "").trim(),
+      protein_preferences: (row[17] || "").trim(),
+      can_cook: (row[18] || "").trim(),
+      meal_count: (row[19] || "").trim(),
+      medications: (row[20] || "").trim(),
+      supplements: (row[21] || "").trim(),
+      sleep_hours: (row[22] || "").trim(),
+      water_intake: (row[23] || "").trim(),
+      daily_meals_description: (row[24] || "").trim(),
+      daily_meals_description_2: (row[25] || "").trim(),
+      diet_plan_sent: (row[26] || "").trim(),
+    }));
 }
 
 // Export sheet IDs for reference
