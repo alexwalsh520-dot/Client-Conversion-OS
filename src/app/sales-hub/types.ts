@@ -36,8 +36,16 @@ export interface ManychatDashboard {
   subLinksSent: number;
 }
 
+export interface ManychatFunnelStage {
+  id: string;
+  label: string;
+  count: number;
+  tracked: boolean;
+}
+
 export interface ManychatMetrics {
   dashboard: ManychatDashboard;
+  funnel: ManychatFunnelStage[];
   setters: Record<string, ManychatDashboard>;
   tagsDetected: boolean;
 }

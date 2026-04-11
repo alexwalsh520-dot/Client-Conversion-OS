@@ -18,6 +18,7 @@ import {
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, SheetRow, ManychatMetrics, ManychatDashboard } from "../types";
+import DMFunnels from "./DMFunnels";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -68,6 +69,8 @@ function sumDashboards(a: ManychatDashboard, b: ManychatDashboard): ManychatDash
     subLinksSent: a.subLinksSent + b.subLinksSent,
   };
 }
+
+type ClientKey = Exclude<Filters["client"], "all">;
 
 /* ── Compute metrics from rows ────────────────────────────────────── */
 
@@ -140,7 +143,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   const { dateFrom, dateTo } = getEffectiveDates(filters);
 
   /* -- Manychat state -- */
-  const [manychat, setManychat] = useState<DataState<ManychatDashboard>>({
+  const [manychat, setManychat] = useState<DataState<Partial<Record<ClientKey, ManychatMetrics>>>>({
     data: null,
     loading: true,
     error: "",
@@ -169,7 +172,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           ),
         ]);
         setManychat({
-          data: sumDashboards(sumDashboards(tyson.dashboard, keith.dashboard), zoeEmily.dashboard),
+          data: { tyson, keith, zoeEmily },
           loading: false,
           error: "",
         });
@@ -177,7 +180,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
         const res = await fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
         );
-        setManychat({ data: res.dashboard, loading: false, error: "" });
+        setManychat({ data: { [filters.client]: res }, loading: false, error: "" });
       }
     } catch (err) {
       setManychat({
@@ -218,6 +221,23 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   useEffect(() => {
     fetchSheet();
   }, [fetchSheet]);
+
+  const manychatDashboard = useMemo(() => {
+    const metricsMap = manychat.data;
+    if (!metricsMap) return null;
+
+    if (filters.client === "all") {
+      return (["tyson", "keith", "zoeEmily"] as ClientKey[])
+        .map((client) => metricsMap[client]?.dashboard)
+        .filter((dashboard): dashboard is ManychatDashboard => Boolean(dashboard))
+        .reduce(
+          (sum, dashboard) => sumDashboards(sum, dashboard),
+          { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 },
+        );
+    }
+
+    return metricsMap[filters.client]?.dashboard || null;
+  }, [filters.client, manychat.data]);
 
   /* ── Computed closer metrics ────────────────────────────────────── */
   const closerMetrics = useMemo(() => {
@@ -275,6 +295,24 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       zoeEmily: computeMetrics(zoeEmilyRows, "Zoe and Emily"),
     };
   }, [sheet.data, filters.client]);
+
+  const bookedCounts = useMemo((): Partial<Record<ClientKey, number>> => {
+    if (!sheet.data) return {};
+
+    if (filters.client === "all" && clientBreakdown) {
+      return {
+        tyson: clientBreakdown.tyson.callsBooked,
+        keith: clientBreakdown.keith.callsBooked,
+        zoeEmily: clientBreakdown.zoeEmily.callsBooked,
+      };
+    }
+
+    return filters.client === "all"
+      ? {}
+      : {
+          [filters.client]: closerMetrics?.callsBooked || 0,
+        };
+  }, [sheet.data, filters.client, clientBreakdown, closerMetrics]);
 
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
@@ -371,28 +409,28 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           {renderKPICard(
             <Users size={12} style={{ color: "var(--accent)" }} />,
             "New Leads",
-            manychat.data ? fmtNumber(manychat.data.newLeads) : "—",
+            manychatDashboard ? fmtNumber(manychatDashboard.newLeads) : "—",
             manychat.loading,
             manychat.error,
           )}
           {renderKPICard(
             <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
             "Leads Engaged",
-            manychat.data ? fmtNumber(manychat.data.leadsEngaged) : "—",
+            manychatDashboard ? fmtNumber(manychatDashboard.leadsEngaged) : "—",
             manychat.loading,
             manychat.error,
           )}
           {renderKPICard(
             <Link2 size={12} style={{ color: "var(--accent)" }} />,
             "Call Links Sent",
-            manychat.data ? fmtNumber(manychat.data.callLinksSent) : "—",
+            manychatDashboard ? fmtNumber(manychatDashboard.callLinksSent) : "—",
             manychat.loading,
             manychat.error,
           )}
           {renderKPICard(
             <CreditCard size={12} style={{ color: "var(--accent)" }} />,
             "Sub Links Sent",
-            manychat.data ? fmtNumber(manychat.data.subLinksSent) : "—",
+            manychatDashboard ? fmtNumber(manychatDashboard.subLinksSent) : "—",
             manychat.loading,
             manychat.error,
           )}
@@ -401,8 +439,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           {renderKPICard(
             <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
             "Engagement Rate",
-            manychat.data && manychat.data.newLeads > 0
-              ? `${((manychat.data.leadsEngaged / manychat.data.newLeads) * 100).toFixed(1)}%`
+            manychatDashboard && manychatDashboard.newLeads > 0
+              ? `${((manychatDashboard.leadsEngaged / manychatDashboard.newLeads) * 100).toFixed(1)}%`
               : "—",
             manychat.loading,
             manychat.error,
@@ -410,8 +448,8 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           {renderKPICard(
             <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
             "Booking Rate",
-            manychat.data && manychat.data.newLeads > 0
-              ? `${((manychat.data.callLinksSent / manychat.data.newLeads) * 100).toFixed(1)}%`
+            manychatDashboard && manychatDashboard.newLeads > 0
+              ? `${((manychatDashboard.callLinksSent / manychatDashboard.newLeads) * 100).toFixed(1)}%`
               : "—",
             manychat.loading,
             manychat.error,
@@ -419,13 +457,20 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           {renderKPICard(
             <CreditCard size={12} style={{ color: "var(--accent)" }} />,
             "Subscription Rate",
-            manychat.data && manychat.data.leadsEngaged > 0
-              ? `${((manychat.data.subLinksSent / manychat.data.leadsEngaged) * 100).toFixed(1)}%`
+            manychatDashboard && manychatDashboard.leadsEngaged > 0
+              ? `${((manychatDashboard.subLinksSent / manychatDashboard.leadsEngaged) * 100).toFixed(1)}%`
               : "—",
             manychat.loading,
             manychat.error,
           )}
         </div>
+        <DMFunnels
+          selectedClient={filters.client}
+          metricsMap={manychat.data || {}}
+          bookedCounts={bookedCounts}
+          loading={manychat.loading || sheet.loading}
+          error={manychat.error || sheet.error}
+        />
       </div>
 
       {/* ── Closer Metrics ────────────────────────────────────────────── */}

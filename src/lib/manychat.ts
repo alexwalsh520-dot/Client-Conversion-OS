@@ -16,6 +16,12 @@ export interface ManychatMetrics {
     callLinksSent: number;
     subLinksSent: number;
   };
+  funnel: {
+    id: string;
+    label: string;
+    count: number;
+    tracked: boolean;
+  }[];
   setters: Record<
     string,
     {
@@ -34,6 +40,26 @@ const CLIENT_SETTERS: Record<Client, string[]> = {
   zoe_and_emily: ["kelechi", "debbie"],
 };
 
+const FUNNEL_STAGE_DEFS = [
+  { id: "new_lead", label: "New lead" },
+  { id: "lead_engaged", label: "Engaged" },
+  { id: "journey_shared", label: "Journey" },
+  { id: "goal_identified", label: "Goal clear" },
+  { id: "current_situation_identified", label: "Current state" },
+  { id: "consequence_recognized", label: "Consequence" },
+  { id: "root_problem_identified", label: "Root problem" },
+  { id: "need_labeled", label: "Need labeled" },
+  { id: "financially_qualified", label: "Money okay" },
+  { id: "call_link_sent", label: "Link sent" },
+] as const;
+
+const LIVE_STAGE_TAGS = new Set([
+  "new_lead",
+  "lead_engaged",
+  "call_link_sent",
+  "sub_link_sent",
+]);
+
 // ── Main metrics function ─────────────────────────────────────────
 
 export async function getMetrics(
@@ -45,6 +71,12 @@ export async function getMetrics(
   const setters = CLIENT_SETTERS[client];
 
   const dashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+  const funnel = FUNNEL_STAGE_DEFS.map((stage) => ({
+    id: stage.id,
+    label: stage.label,
+    count: 0,
+    tracked: LIVE_STAGE_TAGS.has(stage.id),
+  }));
   const setterMetrics: Record<string, typeof dashboard> = {};
   for (const s of setters) {
     setterMetrics[s] = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
@@ -61,12 +93,12 @@ export async function getMetrics(
 
     if (error) {
       console.error("manychat_tag_events query error:", error);
-      return { dashboard, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
     }
 
     // If no events, return zeros — do NOT fall back to dm_transcripts
     if (!events || events.length === 0) {
-      return { dashboard, setters: setterMetrics, tagsDetected: true };
+      return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
     }
 
     const METRIC_TAGS = ["new_lead", "lead_engaged", "call_link_sent", "sub_link_sent"] as const;
@@ -86,10 +118,19 @@ export async function getMetrics(
       }
     }
 
-    return { dashboard, setters: setterMetrics, tagsDetected: true };
+    for (const stage of funnel) {
+      const tagEvents = events.filter((e) => e.tag_name === stage.id);
+      const uniqueSubscribers = new Set(tagEvents.map((e) => e.subscriber_id));
+      stage.count = uniqueSubscribers.size;
+      if (uniqueSubscribers.size > 0) {
+        stage.tracked = true;
+      }
+    }
+
+    return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
   } catch (err) {
     console.error("manychat_tag_events error:", err);
-    return { dashboard, setters: setterMetrics, tagsDetected: false };
+    return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
   }
 }
 
