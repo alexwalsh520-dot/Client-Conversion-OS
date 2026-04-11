@@ -9,6 +9,15 @@ export interface GhlConversationDetails {
   raw: Record<string, unknown>;
 }
 
+export interface GhlConversationSearchResult {
+  id: string;
+  contactId?: string | null;
+  locationId?: string | null;
+  channel?: string | null;
+  lastMessageDate?: string | null;
+  raw: Record<string, unknown>;
+}
+
 export interface GhlConversationMessage {
   messageId: string;
   conversationId: string;
@@ -87,6 +96,22 @@ function normalizeBody(record: Record<string, unknown>): string {
   );
 }
 
+function normalizeConversationChannel(record: Record<string, unknown>): string | null {
+  const direct = readString(record, ["channel", "type", "providerType"]);
+  if (direct) return direct;
+
+  const lastMessageType = readString(record, ["lastMessageType", "messageType"]);
+  if (!lastMessageType) return null;
+
+  const value = lastMessageType.toLowerCase();
+  if (value.includes("instagram")) return "Instagram DM";
+  if (value.includes("facebook") || value.includes("messenger")) return "Facebook Messenger";
+  if (value.includes("sms")) return "SMS";
+  if (value.includes("email")) return "Email";
+  if (value.includes("whatsapp")) return "WhatsApp";
+  return lastMessageType;
+}
+
 export async function fetchConversation(conversationId: string): Promise<GhlConversationDetails> {
   const response = await ghlFetch<Record<string, unknown>>(`/conversations/${conversationId}`);
   const record = asRecord(response.conversation || response.data || response);
@@ -95,9 +120,43 @@ export async function fetchConversation(conversationId: string): Promise<GhlConv
     id: readString(record, ["id", "_id"]) || conversationId,
     contactId: readString(record, ["contactId", "contact_id"]),
     locationId: readString(record, ["locationId", "location_id"]),
-    channel: readString(record, ["channel", "type"]),
+    channel: normalizeConversationChannel(record),
     raw: record,
   };
+}
+
+export async function searchConversationsByContact(
+  contactId: string,
+  locationId: string,
+): Promise<GhlConversationSearchResult[]> {
+  const response = await ghlFetch<Record<string, unknown>>(
+    `/conversations/search?locationId=${encodeURIComponent(locationId)}&contactId=${encodeURIComponent(contactId)}`,
+  );
+
+  const list = Array.isArray(response.conversations)
+    ? (response.conversations as unknown[])
+    : Array.isArray(response.data)
+      ? (response.data as unknown[])
+      : [];
+
+  return list
+    .map((item) => {
+      const record = asRecord(item);
+      return {
+        id: readString(record, ["id", "_id"]),
+        contactId: readString(record, ["contactId", "contact_id"]),
+        locationId: readString(record, ["locationId", "location_id"]),
+        channel: normalizeConversationChannel(record),
+        lastMessageDate: readString(record, ["lastMessageDate", "dateUpdated", "dateAdded"]),
+        raw: record,
+      };
+    })
+    .filter((record): record is GhlConversationSearchResult => Boolean(record.id))
+    .sort((a, b) => {
+      const timeA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+      const timeB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+      return timeB - timeA;
+    });
 }
 
 export async function fetchConversationMessages(

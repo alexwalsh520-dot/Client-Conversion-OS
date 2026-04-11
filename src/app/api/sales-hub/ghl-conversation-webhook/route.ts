@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeDmStages, getDmAnalysisVersion } from "@/lib/dm-stage-ai";
-import { fetchConversation, fetchConversationMessages } from "@/lib/ghl-conversations";
+import {
+  fetchConversation,
+  fetchConversationMessages,
+  searchConversationsByContact,
+} from "@/lib/ghl-conversations";
 import { getServiceSupabase } from "@/lib/supabase";
 
 interface ContactLink {
@@ -15,6 +19,10 @@ function getSecret(): string | null {
 
 function coerceString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isInstagramChannel(value: string | null): boolean {
+  return Boolean(value && value.toLowerCase().includes("instagram"));
 }
 
 function buildTranscript(
@@ -200,7 +208,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json()) as Record<string, unknown>;
 
-    const conversationId =
+    let conversationId =
       coerceString(body.conversationId) ||
       coerceString(body.conversation_id) ||
       coerceString(body.id);
@@ -208,13 +216,50 @@ export async function POST(req: NextRequest) {
     let contactId =
       coerceString(body.contactId) ||
       coerceString(body.contact_id);
+    const providedChannel = coerceString(body.channel);
 
     if (!conversationId) {
-      return NextResponse.json({ error: "conversationId is required" }, { status: 400 });
+      if (!contactId) {
+        return NextResponse.json(
+          { error: "conversationId or contactId is required" },
+          { status: 400 },
+        );
+      }
+
+      const locationId = process.env.GHL_LOCATION_ID;
+      if (!locationId) {
+        return NextResponse.json({ error: "GHL_LOCATION_ID not configured" }, { status: 500 });
+      }
+
+      const conversations = await searchConversationsByContact(contactId, locationId);
+      const fallbackConversation =
+        conversations.find((conversation) =>
+          providedChannel ? isInstagramChannel(conversation.channel) : true,
+        ) || conversations[0];
+
+      if (!fallbackConversation) {
+        return NextResponse.json({
+          status: "skipped",
+          reason: "No conversation found for contact",
+          contactId,
+        });
+      }
+
+      conversationId = fallbackConversation.id;
     }
 
     const conversation = await fetchConversation(conversationId);
     contactId = contactId || conversation.contactId || null;
+    const channel = providedChannel || conversation.channel || null;
+
+    if (!isInstagramChannel(channel)) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: "Non-Instagram conversation",
+        conversationId,
+        channel,
+      });
+    }
 
     if (!contactId) {
       return NextResponse.json(
@@ -233,7 +278,6 @@ export async function POST(req: NextRequest) {
 
     const setterName = await getSetterName(contactLink.client, contactLink.subscriber_id);
     const messages = await fetchConversationMessages(conversationId);
-    const channel = coerceString(body.channel) || conversation.channel || null;
 
     await upsertConversationMessages(
       contactLink.client,
