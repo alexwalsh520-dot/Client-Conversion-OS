@@ -290,9 +290,11 @@ export async function getMetrics(
     }
 
     const bookedSubscribers = new Set<string>();
+    let salesTrackerBookedCount = 0;
 
     try {
       const salesRows = await fetchSheetData(dateFrom, addDays(dateTo, 30));
+      salesTrackerBookedCount = salesRows.filter((row) => matchesClientOffer(client, row.offer)).length;
       const bookedNames = new Set(
         salesRows
           .filter((row) => matchesClientOffer(client, row.offer))
@@ -375,6 +377,13 @@ export async function getMetrics(
       if (qualified) funnelStageCounts.qualified += 1;
       if (callLinkSent) funnelStageCounts.call_link_sent += 1;
       if (bookedStage) funnelStageCounts.booked += 1;
+    }
+
+    if (salesTrackerBookedCount > 0) {
+      funnelStageCounts.booked = Math.max(
+        funnelStageCounts.booked,
+        Math.min(funnelStageCounts.call_link_sent, salesTrackerBookedCount)
+      );
     }
 
     for (const stage of funnel) {
