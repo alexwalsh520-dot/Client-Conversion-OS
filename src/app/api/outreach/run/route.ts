@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getAIOutreachPipeline,
   searchOpportunities,
@@ -6,6 +6,7 @@ import {
   getContactNotes,
   updateOpportunity,
   findStageId,
+  searchContactOpportunities,
 } from "@/lib/ghl";
 import { addLeadsToCampaign } from "@/lib/smartlead";
 import {
@@ -15,6 +16,11 @@ import {
   mergeColdDmsRows,
   normalizeInstagramUsername,
 } from "@/lib/outreach-export";
+
+export const maxDuration = 300;
+
+const RUN_CONCURRENCY = 8;
+const FALLBACK_CONTACT_LIMIT = 100;
 
 function parseInstagramFromNotes(
   notes: { body?: string }[]
@@ -33,8 +39,72 @@ function parseInstagramFromNotes(
   return null;
 }
 
-export async function POST() {
+function getOpportunityStageId(opp: {
+  pipelineStageId?: string;
+  pipelineStage?: { id?: string };
+  stageId?: string;
+}) {
+  return opp.pipelineStageId || opp.pipelineStage?.id || opp.stageId || null;
+}
+
+function getOpportunityContactId(opp: {
+  contact?: { id?: string };
+  contactId?: string;
+}) {
+  return opp.contact?.id || opp.contactId || null;
+}
+
+function dedupeContactIds(contactIds: string[]) {
+  return Array.from(
+    new Set(contactIds.map((contactId) => contactId.trim()).filter(Boolean))
+  );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= items.length) return;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    })
+  );
+
+  return results;
+}
+
+interface RunRequestBody {
+  contactIds?: string[];
+  limit?: number;
+}
+
+interface ProcessedContact {
+  processed: boolean;
+  error?: string;
+  smartleadLead?: {
+    email: string;
+    first_name: string;
+  };
+  coldDmsRow?: ColdDmsRow | null;
+}
+
+export async function POST(req: NextRequest) {
   try {
+    let body: RunRequestBody = {};
+    try {
+      body = await req.json();
+    } catch {
+      // Allow empty body for manual or legacy calls.
+    }
+
     const pipeline = await getAIOutreachPipeline();
     const newLeadStageId = findStageId(pipeline.stages, [
       "New Lead",
@@ -60,14 +130,25 @@ export async function POST() {
       );
     }
 
-    // Get all opportunities in New Lead stage
-    const oppData = await searchOpportunities({
-      pipelineId: pipeline.pipelineId,
-      stageId: newLeadStageId,
-    });
-    const opportunities = oppData.opportunities || [];
+    let contactIds = dedupeContactIds(body.contactIds || []);
 
-    if (opportunities.length === 0) {
+    if (contactIds.length === 0) {
+      const oppData = await searchOpportunities({
+        pipelineId: pipeline.pipelineId,
+        stageId: newLeadStageId,
+        limit: body.limit || FALLBACK_CONTACT_LIMIT,
+      });
+      const opportunities = oppData.opportunities || [];
+      contactIds = dedupeContactIds(
+        opportunities
+          .map(getOpportunityContactId)
+          .filter(
+            (contactId: string | null): contactId is string => Boolean(contactId)
+          )
+      );
+    }
+
+    if (contactIds.length === 0) {
       return NextResponse.json({
         processed: 0,
         smartlead_added: 0,
@@ -75,91 +156,107 @@ export async function POST() {
         errors: [],
         colddms_usernames: [],
         colddms_csv: "",
-        message: "No leads in New Lead stage",
+        message: "No leads ready to run",
       });
     }
 
+    const processedContacts = await mapWithConcurrency<string, ProcessedContact>(
+      contactIds,
+      RUN_CONCURRENCY,
+      async (contactId) => {
+        try {
+          const contactData = await getContact(contactId);
+          const contact = contactData.contact || contactData;
+          const email = contact.email;
+          const firstName = contact.firstName || contact.first_name || "";
+          const lastName = contact.lastName || contact.last_name || "";
+
+          let igUsername: string | null = null;
+          try {
+            const notesData = await getContactNotes(contactId);
+            const notes = notesData.notes || [];
+            igUsername = parseInstagramFromNotes(notes);
+          } catch {
+            // Non-fatal
+          }
+
+          const oppData = await searchContactOpportunities(
+            contactId,
+            pipeline.pipelineId
+          );
+          const opportunities = oppData.opportunities || [];
+          if (opportunities.length === 0) {
+            return {
+              processed: false,
+              error: `Contact ${contactId}: no AI Outreach opportunity found`,
+            };
+          }
+
+          const newLeadOpportunity = opportunities.find(
+            (opp: {
+              pipelineStageId?: string;
+              pipelineStage?: { id?: string };
+              stageId?: string;
+            }) => getOpportunityStageId(opp) === newLeadStageId
+          );
+
+          if (newLeadOpportunity) {
+            await updateOpportunity(newLeadOpportunity.id, {
+              pipelineStageId: contactedStageId,
+            });
+          }
+
+          return {
+            processed: true,
+            smartleadLead: email
+              ? {
+                  email: email.trim(),
+                  first_name: firstName,
+                }
+              : undefined,
+            coldDmsRow: igUsername
+              ? buildColdDmsRow({
+                  username: normalizeInstagramUsername(igUsername),
+                  firstName,
+                  lastName,
+                  email,
+                })
+              : null,
+          };
+        } catch (e) {
+          return {
+            processed: false,
+            error: `Contact ${contactId}: ${e instanceof Error ? e.message : "unknown"}`,
+          };
+        }
+      }
+    );
+
     const errors: string[] = [];
-    const smartleadLeads = new Map<string, {
-      email: string;
-      first_name: string;
-    }>();
+    const smartleadLeads = new Map<
+      string,
+      {
+        email: string;
+        first_name: string;
+      }
+    >();
     const coldDmsRows: ColdDmsRow[] = [];
     let processed = 0;
 
-    for (const opp of opportunities) {
-      try {
-        const contactId = opp.contact?.id || opp.contactId;
-        if (!contactId) {
-          errors.push(`Opportunity ${opp.id}: no contact ID`);
-          continue;
-        }
-
-        // Get contact details
-        let contact;
-        try {
-          const contactData = await getContact(contactId);
-          contact = contactData.contact || contactData;
-        } catch (e) {
-          errors.push(
-            `Failed to get contact ${contactId}: ${e instanceof Error ? e.message : "unknown"}`
-          );
-          continue;
-        }
-
-        const email = contact.email;
-        const firstName = contact.firstName || contact.first_name || "";
-        const lastName = contact.lastName || contact.last_name || "";
-
-        // Get Instagram from notes
-        let igUsername: string | null = null;
-        try {
-          const notesData = await getContactNotes(contactId);
-          const notes = notesData.notes || [];
-          igUsername = parseInstagramFromNotes(notes);
-        } catch {
-          // Non-fatal
-        }
-
-        // Add to Smartlead if has email
-        if (email) {
-          smartleadLeads.set(email.trim().toLowerCase(), {
-            email: email.trim(),
-            first_name: firstName,
-          });
-        }
-
-        // Add to ColdDMs if has IG
-        if (igUsername) {
-          const row = buildColdDmsRow({
-            username: normalizeInstagramUsername(igUsername),
-            firstName,
-            lastName,
-            email,
-          });
-          if (row) coldDmsRows.push(row);
-        }
-
-        // Move opportunity to Contacted
-        try {
-          await updateOpportunity(opp.id, {
-            pipelineStageId: contactedStageId,
-          });
-        } catch (e) {
-          errors.push(
-            `Failed to move opp ${opp.id}: ${e instanceof Error ? e.message : "unknown"}`
-          );
-        }
-
-        processed++;
-      } catch (e) {
-        errors.push(
-          `Error processing opp ${opp.id}: ${e instanceof Error ? e.message : "unknown"}`
+    for (const processedContact of processedContacts) {
+      if (processedContact.error) errors.push(processedContact.error);
+      if (processedContact.processed) processed++;
+      if (processedContact.smartleadLead) {
+        smartleadLeads.set(
+          processedContact.smartleadLead.email.trim().toLowerCase(),
+          processedContact.smartleadLead
         );
+      }
+      if (processedContact.coldDmsRow) {
+        coldDmsRows.push(processedContact.coldDmsRow);
       }
     }
 
-    // Batch add to Smartlead
     let smartleadAdded = 0;
     const smartleadLeadList = Array.from(smartleadLeads.values());
     if (smartleadLeadList.length > 0) {

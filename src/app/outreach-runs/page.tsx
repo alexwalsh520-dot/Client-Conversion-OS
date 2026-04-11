@@ -110,6 +110,59 @@ function parseCSV(text: string): ParsedLead[] {
   return leads;
 }
 
+const IMPORT_BATCH_SIZE = 40;
+const RUN_BATCH_SIZE = 40;
+
+interface ImportApiResult {
+  email: string;
+  status: string;
+  contactId?: string;
+  error?: string;
+}
+
+interface ImportApiResponse {
+  success: number;
+  failed: number;
+  already_existed: number;
+  total: number;
+  results: ImportApiResult[];
+  contact_ids?: string[];
+  colddms_usernames: string[];
+  colddms_rows?: ColdDmsRow[];
+  colddms_csv?: string;
+  error?: string;
+}
+
+interface RunApiResponse {
+  processed: number;
+  smartlead_added: number;
+  dms_queued: number;
+  errors: string[];
+  colddms_usernames: string[];
+  colddms_rows?: ColdDmsRow[];
+  colddms_csv?: string;
+  error?: string;
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function readApiResponse<T>(res: Response) {
+  const raw = await res.text();
+  if (!raw) return { data: null as T | null, raw: "" };
+
+  try {
+    return { data: JSON.parse(raw) as T, raw };
+  } catch {
+    return { data: null as T | null, raw };
+  }
+}
+
 // ── Component ──────────────────────────────────────────────────
 
 export default function OutreachRunsPage() {
@@ -179,67 +232,118 @@ export default function OutreachRunsPage() {
     setRunError("");
     setResult(null);
 
-    let importData: {
-      success: number;
-      failed: number;
-      already_existed: number;
-      total: number;
-      colddms_usernames: string[];
-      colddms_rows?: ColdDmsRow[];
-      colddms_csv?: string;
-      error?: string;
-    };
-
-    // Step 1: Import to GHL
     try {
-      const res = await fetch("/api/outreach/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: parsedLeads }),
-      });
-      importData = await res.json();
-      if (!res.ok) throw new Error(importData.error || "Import failed");
-    } catch (e: unknown) {
-      setRunError(e instanceof Error ? e.message : "Import to GHL failed");
-      setRunStatus("error");
-      return;
-    }
+      const importTotals = {
+        success: 0,
+        failed: 0,
+        already_existed: 0,
+        results: [] as ImportApiResult[],
+        colddms_rows: [] as ColdDmsRow[],
+      };
+      const importedContactIds = new Set<string>();
+      const importBatches = chunkArray(parsedLeads, IMPORT_BATCH_SIZE);
 
-    // Step 2: Run outreach (add to Smartlead + move to Contacted)
-    setRunStatus("running");
-    setRunStep("Adding to Smartlead campaign...");
+      for (let index = 0; index < importBatches.length; index++) {
+        const batch = importBatches[index];
+        const completedCount = Math.min(
+          (index + 1) * IMPORT_BATCH_SIZE,
+          parsedLeads.length
+        );
+        setRunStep(`Importing leads to GHL... ${completedCount} of ${parsedLeads.length}`);
 
-    try {
-      const res = await fetch("/api/outreach/run", { method: "POST" });
-      const runData: {
-        smartlead_added: number;
-        errors: string[];
-        colddms_usernames: string[];
-        colddms_rows?: ColdDmsRow[];
-        colddms_csv?: string;
-        error?: string;
-      } = await res.json();
-      if (!res.ok) throw new Error(runData.error || "Outreach run failed");
+        const res = await fetch("/api/outreach/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leads: batch }),
+        });
+        const { data, raw } = await readApiResponse<ImportApiResponse>(res);
 
-      // Combine results
+        if (!data) {
+          throw new Error(raw || "Import failed");
+        }
+        if (!res.ok) {
+          throw new Error(data.error || raw || "Import failed");
+        }
+
+        importTotals.success += data.success || 0;
+        importTotals.failed += data.failed || 0;
+        importTotals.already_existed += data.already_existed || 0;
+        importTotals.results.push(...(data.results || []));
+        importTotals.colddms_rows = mergeColdDmsRows(
+          importTotals.colddms_rows,
+          data.colddms_rows
+        );
+
+        for (const contactId of data.contact_ids || []) {
+          if (contactId) importedContactIds.add(contactId);
+        }
+
+        for (const item of data.results || []) {
+          if (
+            item.contactId &&
+            item.status !== "failed" &&
+            item.status !== "skipped"
+          ) {
+            importedContactIds.add(item.contactId);
+          }
+        }
+      }
+
+      setRunStatus("running");
+
+      const runTotals = {
+        smartlead_added: 0,
+        errors: [] as string[],
+        colddms_rows: [] as ColdDmsRow[],
+      };
+      const contactIds = Array.from(importedContactIds);
+      const runBatches = chunkArray(contactIds, RUN_BATCH_SIZE);
+
+      for (let index = 0; index < runBatches.length; index++) {
+        const batch = runBatches[index];
+        const completedCount = Math.min(
+          (index + 1) * RUN_BATCH_SIZE,
+          contactIds.length
+        );
+        setRunStep(`Adding to Smartlead campaign... ${completedCount} of ${contactIds.length}`);
+
+        const res = await fetch("/api/outreach/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contactIds: batch }),
+        });
+        const { data, raw } = await readApiResponse<RunApiResponse>(res);
+
+        if (!data) {
+          throw new Error(raw || "Outreach run failed");
+        }
+        if (!res.ok) {
+          throw new Error(data.error || raw || "Outreach run failed");
+        }
+
+        runTotals.smartlead_added += data.smartlead_added || 0;
+        runTotals.errors.push(...(data.errors || []));
+        runTotals.colddms_rows = mergeColdDmsRows(
+          runTotals.colddms_rows,
+          data.colddms_rows
+        );
+      }
+
       const mergedRows = mergeColdDmsRows(
-        importData.colddms_rows,
-        runData.colddms_rows
+        importTotals.colddms_rows,
+        runTotals.colddms_rows
       );
       const uniqueUsernames = mergedRows.map((row) => row.username);
-      const colddmsCsv =
-        runData.colddms_csv ||
-        importData.colddms_csv ||
-        buildColdDmsCsv(mergedRows);
+      const colddmsCsv = buildColdDmsCsv(mergedRows);
 
       const combined = {
-        leads_imported: importData.total,
-        new_contacts: importData.success - (importData.already_existed || 0),
-        already_existed: importData.already_existed || 0,
-        failed_import: importData.failed || 0,
-        smartlead_added: runData.smartlead_added || 0,
+        leads_imported: parsedLeads.length,
+        new_contacts: importTotals.success - importTotals.already_existed,
+        already_existed: importTotals.already_existed,
+        failed_import: importTotals.failed,
+        smartlead_added: runTotals.smartlead_added,
         dms_queued: uniqueUsernames.length,
-        errors: runData.errors || [],
+        errors: runTotals.errors,
         colddms_usernames: uniqueUsernames,
         colddms_csv: colddmsCsv,
       };
