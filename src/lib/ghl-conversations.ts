@@ -108,6 +108,14 @@ function readString(record: Record<string, unknown>, keys: string[]): string | n
   return null;
 }
 
+function readNumber(record: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
 function normalizeDirection(record: Record<string, unknown>): "inbound" | "outbound" | "unknown" {
   const direction = readString(record, ["direction", "messageDirection", "directionType"]);
   if (direction) {
@@ -122,7 +130,7 @@ function normalizeDirection(record: Record<string, unknown>): "inbound" | "outbo
 }
 
 function normalizeTimestamp(record: Record<string, unknown>): string | null {
-  return readString(record, [
+  const direct = readString(record, [
     "dateAdded",
     "createdAt",
     "updatedAt",
@@ -130,6 +138,13 @@ function normalizeTimestamp(record: Record<string, unknown>): string | null {
     "created_at",
     "date_added",
   ]);
+
+  if (direct) return direct;
+
+  const epoch = readNumber(record, ["dateAdded", "dateUpdated", "lastMessageDate"]);
+  if (epoch) return new Date(epoch).toISOString();
+
+  return null;
 }
 
 function normalizeBody(record: Record<string, unknown>): string {
@@ -202,6 +217,8 @@ export async function fetchConversationMessages(
     ? response
     : Array.isArray((response as Record<string, unknown>).messages)
       ? ((response as Record<string, unknown>).messages as unknown[])
+      : Array.isArray(asRecord((response as Record<string, unknown>).messages).messages)
+        ? (asRecord((response as Record<string, unknown>).messages).messages as unknown[])
       : Array.isArray((response as Record<string, unknown>).data)
         ? ((response as Record<string, unknown>).data as unknown[])
         : Array.isArray((response as Record<string, unknown>).conversationMessages)

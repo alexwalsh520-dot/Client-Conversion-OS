@@ -238,22 +238,6 @@ export async function getMetrics(
       });
     }
 
-    const aiStageCounts = {
-      goal_clear: 0,
-      gap_clear: 0,
-      stakes_clear: 0,
-      qualified: 0,
-    };
-
-    for (const lead of cohort.values()) {
-      const state = stageStateMap.get(lead.subscriberId);
-      if (!state) continue;
-      if (state.goal_clear) aiStageCounts.goal_clear += 1;
-      if (state.gap_clear) aiStageCounts.gap_clear += 1;
-      if (state.stakes_clear) aiStageCounts.stakes_clear += 1;
-      if (state.qualified) aiStageCounts.qualified += 1;
-    }
-
     const { data: contactLinks, error: linkError } = await sb
       .from("manychat_contact_links")
       .select("subscriber_id, ghl_contact_id")
@@ -272,7 +256,8 @@ export async function getMetrics(
       if (row.ghl_contact_id) contactIds.push(row.ghl_contact_id);
     }
 
-    let bookedCount = 0;
+    const bookedSubscribers = new Set<string>();
+
     if (contactIds.length > 0) {
       const { data: appointments, error: appointmentError } = await sb
         .from("ghl_appointments")
@@ -285,7 +270,6 @@ export async function getMetrics(
         return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
       }
 
-      const bookedSubscribers = new Set<string>();
       const appointmentsByContact = new Map<string, AppointmentRow[]>();
 
       for (const row of (appointments || []) as AppointmentRow[]) {
@@ -307,19 +291,49 @@ export async function getMetrics(
         });
         if (hasBooked) bookedSubscribers.add(lead.subscriberId);
       }
+    }
 
-      bookedCount = bookedSubscribers.size;
+    const funnelStageCounts = {
+      lead_engaged: 0,
+      goal_clear: 0,
+      gap_clear: 0,
+      stakes_clear: 0,
+      qualified: 0,
+      call_link_sent: 0,
+      booked: 0,
+    };
+
+    for (const lead of cohort.values()) {
+      const state = stageStateMap.get(lead.subscriberId);
+      const engaged = stageSubscribers.lead_engaged.has(lead.subscriberId);
+      const linkSent = stageSubscribers.call_link_sent.has(lead.subscriberId);
+      const booked = bookedSubscribers.has(lead.subscriberId);
+
+      const goalClear = engaged && Boolean(state?.goal_clear || linkSent || booked);
+      const gapClear = goalClear && Boolean(state?.gap_clear || linkSent || booked);
+      const stakesClear = gapClear && Boolean(state?.stakes_clear || linkSent || booked);
+      const qualified = stakesClear && Boolean(state?.qualified || linkSent || booked);
+      const callLinkSent = qualified && (linkSent || booked);
+      const bookedStage = callLinkSent && booked;
+
+      if (engaged) funnelStageCounts.lead_engaged += 1;
+      if (goalClear) funnelStageCounts.goal_clear += 1;
+      if (gapClear) funnelStageCounts.gap_clear += 1;
+      if (stakesClear) funnelStageCounts.stakes_clear += 1;
+      if (qualified) funnelStageCounts.qualified += 1;
+      if (callLinkSent) funnelStageCounts.call_link_sent += 1;
+      if (bookedStage) funnelStageCounts.booked += 1;
     }
 
     for (const stage of funnel) {
       if (stage.id === "new_lead") stage.count = dashboard.newLeads;
-      if (stage.id === "lead_engaged") stage.count = dashboard.leadsEngaged;
-      if (stage.id === "goal_clear") stage.count = aiStageCounts.goal_clear;
-      if (stage.id === "gap_clear") stage.count = aiStageCounts.gap_clear;
-      if (stage.id === "stakes_clear") stage.count = aiStageCounts.stakes_clear;
-      if (stage.id === "qualified") stage.count = aiStageCounts.qualified;
-      if (stage.id === "call_link_sent") stage.count = dashboard.callLinksSent;
-      if (stage.id === "booked") stage.count = bookedCount;
+      if (stage.id === "lead_engaged") stage.count = funnelStageCounts.lead_engaged;
+      if (stage.id === "goal_clear") stage.count = funnelStageCounts.goal_clear;
+      if (stage.id === "gap_clear") stage.count = funnelStageCounts.gap_clear;
+      if (stage.id === "stakes_clear") stage.count = funnelStageCounts.stakes_clear;
+      if (stage.id === "qualified") stage.count = funnelStageCounts.qualified;
+      if (stage.id === "call_link_sent") stage.count = funnelStageCounts.call_link_sent;
+      if (stage.id === "booked") stage.count = funnelStageCounts.booked;
     }
 
     return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
