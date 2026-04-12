@@ -247,6 +247,27 @@ function parseDate(val: string | undefined | null, fallbackYear?: number): strin
 /**
  * Parse a DD/MM/YYYY HH:MM:SS timestamp into ISO format for TIMESTAMPTZ
  */
+/**
+ * Parse US-format timestamps: "M/DD/YYYY HH:MM:SS" → ISO string
+ * Used by nutrition intake form (Google Forms uses US date format)
+ */
+function parseUSTimestamp(val: string | undefined | null): string | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+  // Match "M/DD/YYYY HH:MM:SS" (US format: month/day/year)
+  const m = trimmed.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/
+  );
+  if (m) {
+    const [, month, day, year, hour, min, sec] = m;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${hour.padStart(2, "0")}:${min}:${sec}`;
+  }
+  // Fallback
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.toISOString();
+  return null;
+}
+
 function parseTimestamp(val: string | undefined | null): string | null {
   if (!val) return null;
   const trimmed = val.trim();
@@ -1278,7 +1299,7 @@ export async function fetchNutritionIntake(): Promise<NutritionIntakeRow[]> {
   return rows
     .filter((row) => row[1]) // Must have a first name
     .map((row) => ({
-      timestamp: parseTimestamp(row[0]),
+      timestamp: parseUSTimestamp(row[0]),
       first_name: (row[1] || "").trim(),
       last_name: (row[2] || "").trim(),
       email: (row[3] || "").trim(),
