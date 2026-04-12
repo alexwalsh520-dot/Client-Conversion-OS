@@ -11,7 +11,7 @@ import {
   DollarSign,
   RefreshCw,
   Receipt,
-  Salad,
+  UtensilsCrossed,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -54,7 +54,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "eod", label: "EOD Reports", icon: <FileText size={14} /> },
   { key: "financials", label: "Financials", icon: <DollarSign size={14} /> },
   { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
-  { key: "nutrition", label: "Nutrition", icon: <Salad size={14} /> },
+  { key: "nutrition", label: "Nutrition", icon: <UtensilsCrossed size={14} /> },
 ];
 
 export default function CoachingPage() {

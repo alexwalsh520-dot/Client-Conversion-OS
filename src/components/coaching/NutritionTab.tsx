@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import {
-  Salad,
+  UtensilsCrossed,
   ChevronDown,
   ChevronRight,
   Link2,
@@ -172,7 +172,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
           style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 16, fontWeight: 600, padding: 0, marginBottom: 12 }}
         >
           {expandedUnlinked ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-          <Salad size={16} />
+          <UtensilsCrossed size={16} />
           Unlinked Intake Forms
           <span style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
             {unlinkedForms.length}
@@ -199,8 +199,8 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                   {unlinkedForms
                     .filter((nf) => filterBySearch(`${nf.firstName} ${nf.lastName}`, nf.email))
                     .map((nf) => (
-                    <>
-                      <tr key={nf.id}>
+                    <React.Fragment key={nf.id}>
+                      <tr>
                         <td style={{ fontWeight: 600 }}>{nf.firstName} {nf.lastName}</td>
                         <td style={{ fontSize: 12 }}>{nf.email}</td>
                         <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -275,7 +275,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -326,8 +326,8 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                       const isExpanded = expandedClientId === client.id;
 
                       return (
-                        <>
-                          <tr key={client.id}>
+                        <React.Fragment key={client.id}>
+                          <tr>
                             <td style={{ fontWeight: 600 }}>{client.name}</td>
                             <td>{client.coachName}</td>
                             <td>
@@ -439,7 +439,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                               </td>
                             </tr>
                           )}
-                        </>
+                        </React.Fragment>
                       );
                     })}
                 </tbody>
