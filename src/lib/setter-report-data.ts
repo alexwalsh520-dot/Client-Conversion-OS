@@ -52,6 +52,12 @@ interface LeadCohortRow {
   setterName: string | null;
 }
 
+interface AppointmentRow {
+  appointment_id: string;
+  contact_id: string | null;
+  created_at: string | null;
+}
+
 interface ResponseGap {
   leadName: string | null;
   subscriberId: string;
@@ -453,7 +459,11 @@ function countFunnelForSetter(params: {
   stageStates: StageStateRow[];
   dateFrom: string;
   dateTo: string;
-}): SetterFunnelCounts & { trackingStartDate: string | null; leadNamesBySubscriber: Map<string, string> } {
+}): SetterFunnelCounts & {
+  trackingStartDate: string | null;
+  leadNamesBySubscriber: Map<string, string>;
+  leadIds: Set<string>;
+} {
   const { setter, tagEvents, stageStates, dateFrom, dateTo } = params;
   const setterKey = setter.key;
 
@@ -554,7 +564,31 @@ function countFunnelForSetter(params: {
     subLinkSent: subLinkIds.size,
     trackingStartDate,
     leadNamesBySubscriber,
+    leadIds,
   };
+}
+
+function countBookedAppointmentsForSetter(params: {
+  appointmentRows: AppointmentRow[];
+  linksByContactId: Map<string, { client: string; subscriber_id: string }>;
+  leadIds: Set<string>;
+  dateFrom: string;
+  dateTo: string;
+  trackingStartDate: string | null;
+}) {
+  const { appointmentRows, linksByContactId, leadIds, dateFrom, dateTo, trackingStartDate } = params;
+  const effectiveStart =
+    trackingStartDate && trackingStartDate > dateFrom ? trackingStartDate : dateFrom;
+
+  return appointmentRows.filter((row) => {
+    if (!row.contact_id || !row.created_at) return false;
+    const link = linksByContactId.get(row.contact_id);
+    if (!link) return false;
+    if (!leadIds.has(link.subscriber_id)) return false;
+
+    const bookedDate = toEtDateStr(row.created_at);
+    return bookedDate >= effectiveStart && bookedDate <= dateTo;
+  }).length;
 }
 
 function buildPeriodMetrics(params: {
@@ -565,8 +599,20 @@ function buildPeriodMetrics(params: {
   stageStates: StageStateRow[];
   messages: MessageRow[];
   sheetRows: SheetRow[];
+  appointmentRows: AppointmentRow[];
+  linksByContactId: Map<string, { client: string; subscriber_id: string }>;
 }) {
-  const { setter, dateFrom, dateTo, tagEvents, stageStates, messages, sheetRows } = params;
+  const {
+    setter,
+    dateFrom,
+    dateTo,
+    tagEvents,
+    stageStates,
+    messages,
+    sheetRows,
+    appointmentRows,
+    linksByContactId,
+  } = params;
 
   const funnel = countFunnelForSetter({
     setter,
@@ -584,6 +630,14 @@ function buildPeriodMetrics(params: {
     funnel.trackingStartDate,
   );
   const sales = computeSalesStats(setterSheetRows, funnel.newLeads);
+  const bookedAppointments = countBookedAppointmentsForSetter({
+    appointmentRows,
+    linksByContactId,
+    leadIds: funnel.leadIds,
+    dateFrom,
+    dateTo,
+    trackingStartDate: funnel.trackingStartDate,
+  });
 
   const effectiveMessageStart =
     funnel.trackingStartDate && funnel.trackingStartDate > dateFrom ? funnel.trackingStartDate : dateFrom;
@@ -612,6 +666,8 @@ function buildPeriodMetrics(params: {
       linkSent: funnel.linkSent,
       subLinkSent: funnel.subLinkSent,
       ...sales,
+      booked: bookedAppointments,
+      bookingRate: funnel.newLeads > 0 ? (bookedAppointments / funnel.newLeads) * 100 : 0,
       averageResponseMinutes: responseTime.averageMinutes,
       responseSampleCount: responseTime.sampleCount,
       worstResponseGaps: responseTime.worstGaps,
@@ -628,7 +684,16 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
   const transcriptStart = addDays(reportDate, -6);
   const queryEndDate = addDays(reportDate, 1);
 
-  const [tagEventsRes, stageStatesRes, mtdMessagesRes, recentMessagesRes, legacyUploadsRes, mtdSheetRows] =
+  const [
+    tagEventsRes,
+    stageStatesRes,
+    mtdMessagesRes,
+    recentMessagesRes,
+    legacyUploadsRes,
+    appointmentRowsRes,
+    contactLinksRes,
+    mtdSheetRows,
+  ] =
     await Promise.all([
       sb
         .from("manychat_tag_events")
@@ -658,10 +723,26 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
         .from("dm_transcripts")
         .select("id", { count: "exact", head: true })
         .gte("submitted_at", startOfUtcDay(transcriptStart)),
+      sb
+        .from("ghl_appointments")
+        .select("appointment_id, contact_id, created_at")
+        .gte("created_at", startOfUtcDay(monthStart))
+        .lte("created_at", endOfUtcDay(queryEndDate)),
+      sb
+        .from("manychat_contact_links")
+        .select("client, subscriber_id, ghl_contact_id"),
       fetchSheetData(monthStart, reportDate),
     ]);
 
-  const results = [tagEventsRes, stageStatesRes, mtdMessagesRes, recentMessagesRes, legacyUploadsRes];
+  const results = [
+    tagEventsRes,
+    stageStatesRes,
+    mtdMessagesRes,
+    recentMessagesRes,
+    legacyUploadsRes,
+    appointmentRowsRes,
+    contactLinksRes,
+  ];
   for (const result of results) {
     if (result.error) {
       throw new Error(result.error.message);
@@ -693,6 +774,19 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
     reportDate,
   );
   const legacyUploads = legacyUploadsRes.count || 0;
+  const appointmentRows = (appointmentRowsRes.data || []) as AppointmentRow[];
+  const linksByContactId = new Map<string, { client: string; subscriber_id: string }>();
+  for (const row of (contactLinksRes.data || []) as Array<{
+    client: string;
+    subscriber_id: string;
+    ghl_contact_id: string;
+  }>) {
+    if (!row.ghl_contact_id) continue;
+    linksByContactId.set(row.ghl_contact_id, {
+      client: row.client,
+      subscriber_id: row.subscriber_id,
+    });
+  }
 
   const setters = SETTERS.map((setter) => {
     const dailyPeriod = buildPeriodMetrics({
@@ -703,6 +797,8 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      appointmentRows,
+      linksByContactId,
     });
 
     const wtdPeriod = buildPeriodMetrics({
@@ -713,6 +809,8 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      appointmentRows,
+      linksByContactId,
     });
 
     const mtdPeriod = buildPeriodMetrics({
@@ -723,6 +821,8 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      appointmentRows,
+      linksByContactId,
     });
 
     const leadNamesBySubscriber = mtdPeriod.leadNamesBySubscriber;

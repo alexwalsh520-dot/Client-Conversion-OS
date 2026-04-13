@@ -10,7 +10,7 @@ import {
   type SetterReportRow,
 } from "@/lib/setter-report-data";
 
-const ACTION_ITEMS_PROMPT = `You are the sales manager. Your only job is to find the easiest next fix that can improve booking rate, show rate, close rate, or AOV.
+const ACTION_ITEMS_PROMPT = `You are the sales manager. Your only job is to find the easiest next fix that can improve booking rate or show rate.
 
 Return VALID JSON only. No markdown. No explanation outside JSON.
 
@@ -94,16 +94,12 @@ function formatMetricBlock(metrics: {
   newLeads: number;
   booked: number;
   showRate: number;
-  closeRate: number;
-  aov: number;
   averageResponseMinutes: number | null;
 }) {
   return [
     `- New Leads: ${metrics.newLeads}`,
-    `- Booked Calls: ${metrics.booked}`,
+    `- Appointments Booked: ${metrics.booked}`,
     `- Show Rate: ${formatPercent(metrics.showRate)}`,
-    `- Close Rate: ${formatPercent(metrics.closeRate)}`,
-    `- AOV: ${formatMoney(metrics.aov)}`,
     `- Avg Response Time: ${formatResponseDuration(metrics.averageResponseMinutes)}`,
   ].join("\n");
 }
@@ -208,9 +204,9 @@ function buildActionContext(data: Awaited<ReturnType<typeof getSetterReportData>
 
     return `
 SETTER: ${setter.setterName} (${setter.setterKey}) | CLIENT: ${setter.clientLabel}
-DAILY: new=${setter.daily.newLeads}, booked=${setter.daily.booked}, show=${formatPercent(setter.daily.showRate)}, close=${formatPercent(setter.daily.closeRate)}, aov=${formatMoney(setter.daily.aov)}, response=${formatResponseDuration(setter.daily.averageResponseMinutes)}
-WTD: new=${setter.wtd.newLeads}, booked=${setter.wtd.booked}, show=${formatPercent(setter.wtd.showRate)}, close=${formatPercent(setter.wtd.closeRate)}, aov=${formatMoney(setter.wtd.aov)}, response=${formatResponseDuration(setter.wtd.averageResponseMinutes)}
-MTD: new=${setter.mtd.newLeads}, engaged=${setter.mtd.engaged}, goal=${setter.mtd.goalClear}, gap=${setter.mtd.gapClear}, stakes=${setter.mtd.stakesClear}, qualified=${setter.mtd.qualified}, link=${setter.mtd.linkSent}, booked=${setter.mtd.booked}, show=${formatPercent(setter.mtd.showRate)}, close=${formatPercent(setter.mtd.closeRate)}, aov=${formatMoney(setter.mtd.aov)}, response=${formatResponseDuration(setter.mtd.averageResponseMinutes)}
+DAILY: new=${setter.daily.newLeads}, booked=${setter.daily.booked}, show=${formatPercent(setter.daily.showRate)}, response=${formatResponseDuration(setter.daily.averageResponseMinutes)}
+WTD: new=${setter.wtd.newLeads}, booked=${setter.wtd.booked}, show=${formatPercent(setter.wtd.showRate)}, response=${formatResponseDuration(setter.wtd.averageResponseMinutes)}
+MTD: new=${setter.mtd.newLeads}, engaged=${setter.mtd.engaged}, goal=${setter.mtd.goalClear}, gap=${setter.mtd.gapClear}, stakes=${setter.mtd.stakesClear}, qualified=${setter.mtd.qualified}, link=${setter.mtd.linkSent}, booked=${setter.mtd.booked}, show=${formatPercent(setter.mtd.showRate)}, response=${formatResponseDuration(setter.mtd.averageResponseMinutes)}
 TOP DROPOFF: ${topDrop.label} at ${formatPercent(topDrop.rate)}
 WORST RESPONSE GAPS:
 ${worstGaps}
@@ -224,15 +220,15 @@ ${transcripts}
     const wtd = aggregateMetrics(rows, "wtd");
     const mtd = aggregateMetrics(rows, "mtd");
     return `${label}
-- DAILY: new=${daily.newLeads}, booked=${daily.booked}, show=${formatPercent(daily.showRate)}, close=${formatPercent(daily.closeRate)}, aov=${formatMoney(daily.aov)}
-- WTD: new=${wtd.newLeads}, booked=${wtd.booked}, show=${formatPercent(wtd.showRate)}, close=${formatPercent(wtd.closeRate)}, aov=${formatMoney(wtd.aov)}
-- MTD: new=${mtd.newLeads}, booked=${mtd.booked}, show=${formatPercent(mtd.showRate)}, close=${formatPercent(mtd.closeRate)}, aov=${formatMoney(mtd.aov)}`;
+- DAILY: new=${daily.newLeads}, booked=${daily.booked}, show=${formatPercent(daily.showRate)}, response=${formatResponseDuration(daily.averageResponseMinutes)}
+- WTD: new=${wtd.newLeads}, booked=${wtd.booked}, show=${formatPercent(wtd.showRate)}, response=${formatResponseDuration(wtd.averageResponseMinutes)}
+- MTD: new=${mtd.newLeads}, booked=${mtd.booked}, show=${formatPercent(mtd.showRate)}, response=${formatResponseDuration(mtd.averageResponseMinutes)}`;
   });
 
   return `REPORT DATE: ${data.reportDate}
-TEAM DAILY: new=${teamDaily.newLeads}, booked=${teamDaily.booked}, show=${formatPercent(teamDaily.showRate)}, close=${formatPercent(teamDaily.closeRate)}, aov=${formatMoney(teamDaily.aov)}, response=${formatResponseDuration(teamDaily.averageResponseMinutes)}
-TEAM WTD: new=${teamWtd.newLeads}, booked=${teamWtd.booked}, show=${formatPercent(teamWtd.showRate)}, close=${formatPercent(teamWtd.closeRate)}, aov=${formatMoney(teamWtd.aov)}, response=${formatResponseDuration(teamWtd.averageResponseMinutes)}
-TEAM MTD: new=${teamMtd.newLeads}, booked=${teamMtd.booked}, show=${formatPercent(teamMtd.showRate)}, close=${formatPercent(teamMtd.closeRate)}, aov=${formatMoney(teamMtd.aov)}, response=${formatResponseDuration(teamMtd.averageResponseMinutes)}
+TEAM DAILY: new=${teamDaily.newLeads}, booked=${teamDaily.booked}, show=${formatPercent(teamDaily.showRate)}, response=${formatResponseDuration(teamDaily.averageResponseMinutes)}
+TEAM WTD: new=${teamWtd.newLeads}, booked=${teamWtd.booked}, show=${formatPercent(teamWtd.showRate)}, response=${formatResponseDuration(teamWtd.averageResponseMinutes)}
+TEAM MTD: new=${teamMtd.newLeads}, booked=${teamMtd.booked}, show=${formatPercent(teamMtd.showRate)}, response=${formatResponseDuration(teamMtd.averageResponseMinutes)}
 
 OFFERS:
 ${offerParts.join("\n")}
@@ -339,7 +335,7 @@ export async function GET(req: NextRequest) {
   );
 
   const reportSections = [
-    "# DAILY SETTER REPORT",
+    "# C.C. Setter Report",
     `**${formatLongDate(reportDate)}**`,
     "**Team Targets: 15% Booking Rate | 65% Show Rate**",
     "",
@@ -395,13 +391,13 @@ export async function GET(req: NextRequest) {
   ];
 
   const report = reportSections.join("\n");
-  const pdf = generatePDF(`Daily Setter Report (${reportDate})`, report);
+  const pdf = generatePDF(`C.C. Setter Report (${reportDate})`, report);
 
   const uploaded = await uploadFileAsCso(
     pdf,
     `setter-report-${reportDate}.pdf`,
-    `Daily Setter Report — ${reportDate}`,
-    `📋 *DAILY SETTER REPORT — ${reportDate}*\nCompany MTD: ${companyMtd.booked} booked | ${formatPercent(companyMtd.showRate)} show | ${formatPercent(companyMtd.closeRate)} close | ${formatMoney(companyMtd.aov)} AOV`,
+    `C.C. Setter Report — ${reportDate}`,
+    `📋 *C.C. Setter Report — ${reportDate}*\nCompany MTD: ${companyMtd.newLeads} leads | ${companyMtd.booked} booked | ${formatPercent(companyMtd.showRate)} show | ${formatResponseDuration(companyMtd.averageResponseMinutes)} avg response`,
   );
 
   return NextResponse.json({

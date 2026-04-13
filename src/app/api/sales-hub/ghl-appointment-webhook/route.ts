@@ -16,6 +16,15 @@ const CLOSER_MAP: Record<string, string> = {
 
 const VALID_EVENTS = ["booked", "rescheduled", "cancelled", "noshow", "confirmed"];
 
+function readString(source: Record<string, unknown> | null | undefined, keys: string[]) {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 function deriveClient(calendarName: string | null | undefined): string | null {
   if (!calendarName) return null;
   const upper = calendarName.toUpperCase();
@@ -27,24 +36,52 @@ function deriveClient(calendarName: string | null | undefined): string | null {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const root = body as Record<string, unknown>;
+    const calendar = (root.calendar || {}) as Record<string, unknown>;
+    const user = (root.user || {}) as Record<string, unknown>;
 
-    const {
-      event_type,
-      appointment_id,
-      calendar_id,
-      calendar_name,
-      contact_id,
-      contact_name,
-      contact_phone,
-      contact_email,
-      start_time,
-      end_time,
-      assigned_user_id,
-      status,
-    } = body;
+    const event_type =
+      readString(root, ["event_type", "eventType"]) ||
+      readString(calendar, ["status", "appoinmentStatus", "appointmentStatus"]);
+    const appointment_id =
+      readString(root, ["appointment_id", "appointmentId"]) ||
+      readString(calendar, ["appointmentId", "appointment_id"]);
+    const calendar_id =
+      readString(root, ["calendar_id", "calendarId"]) ||
+      readString(calendar, ["id", "calendarId", "calendar_id"]);
+    const calendar_name =
+      readString(root, ["calendar_name", "calendarName"]) ||
+      readString(calendar, ["calendarName", "name"]);
+    const contact_id = readString(root, ["contact_id", "contactId", "id"]);
+    const contact_name =
+      readString(root, ["contact_name", "contactName", "full_name", "fullName"]) ||
+      [readString(root, ["first_name", "firstName"]), readString(root, ["last_name", "lastName"])]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      null;
+    const contact_phone = readString(root, ["contact_phone", "contactPhone", "phone"]);
+    const contact_email = readString(root, ["contact_email", "contactEmail", "email"]);
+    const start_time =
+      readString(root, ["start_time", "startTime"]) ||
+      readString(calendar, ["startTime", "start_time"]);
+    const end_time =
+      readString(root, ["end_time", "endTime"]) ||
+      readString(calendar, ["endTime", "end_time"]);
+    const assigned_user_id =
+      readString(root, ["assigned_user_id", "assignedUserId"]) ||
+      readString(calendar, ["created_by_user_id", "assigned_user_id"]) ||
+      readString(user, ["id", "userId"]);
+    const status =
+      readString(root, ["status"]) ||
+      readString(calendar, ["status", "appoinmentStatus", "appointmentStatus"]);
 
     // Validate required fields
     if (!appointment_id) {
+      console.error("[ghl-appointment-webhook] Missing appointment_id", {
+        topLevelKeys: Object.keys(root),
+        calendarKeys: Object.keys(calendar),
+      });
       return NextResponse.json(
         { error: "Missing required field: appointment_id" },
         { status: 400 }
