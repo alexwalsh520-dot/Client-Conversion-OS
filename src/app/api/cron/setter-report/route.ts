@@ -79,6 +79,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const isVercelCron = req.headers.get("x-vercel-cron") === "true";
+  const forceRun = req.nextUrl.searchParams.get("force") === "1";
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
@@ -89,6 +92,22 @@ export async function GET(req: NextRequest) {
   const etNow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
   const todayStr = etNow.toISOString().split("T")[0];
   const monthStart = todayStr.substring(0, 8) + "01";
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+  );
+
+  if (isVercelCron && !forceRun && etHour !== 0) {
+    return NextResponse.json({
+      skipped: true,
+      reason: "Not midnight in America/New_York",
+      etHour,
+      date: todayStr,
+    });
+  }
 
   const data = await getSetterReportData(todayStr);
   const setterContextParts: string[] = [];
