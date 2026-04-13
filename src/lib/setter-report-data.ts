@@ -15,6 +15,7 @@ interface TagEventRow {
   client: string;
   setter_name: string | null;
   subscriber_id: string;
+  subscriber_name?: string | null;
   tag_name: string;
   event_at: string;
 }
@@ -44,8 +45,25 @@ interface MessageRow {
   sent_at: string | null;
 }
 
+interface LeadCohortRow {
+  subscriberId: string;
+  leadName: string | null;
+  newLeadAt: string;
+  setterName: string | null;
+}
+
+interface ResponseGap {
+  leadName: string | null;
+  subscriberId: string;
+  conversationId: string;
+  activeMinutes: number;
+  prospectAt: string;
+  setterAt: string;
+}
+
 export interface SetterTranscript {
   conversationId: string;
+  leadName: string | null;
   latestMessageAt: string | null;
   messageCount: number;
   transcript: string;
@@ -54,16 +72,12 @@ export interface SetterTranscript {
 export interface SetterResponseStats {
   averageMinutes: number | null;
   sampleCount: number;
-  worstGaps: Array<{
-    conversationId: string;
-    minutes: number;
-    prospectAt: string;
-    setterAt: string;
-  }>;
+  worstGaps: ResponseGap[];
 }
 
 export interface SetterSalesStats {
   booked: number;
+  showEligible: number;
   taken: number;
   wins: number;
   noShows: number;
@@ -86,20 +100,36 @@ export interface SetterFunnelCounts {
   subLinkSent: number;
 }
 
+export interface SetterPeriodMetrics extends SetterFunnelCounts, SetterSalesStats {
+  averageResponseMinutes: number | null;
+  responseSampleCount: number;
+  worstResponseGaps: ResponseGap[];
+}
+
 export interface SetterReportRow {
   setterKey: string;
   setterName: string;
   clientKey: ClientKey;
   clientLabel: string;
   trackingStartDate: string | null;
-  daily: SetterFunnelCounts;
-  mtd: SetterFunnelCounts & SetterSalesStats;
-  responseTime: SetterResponseStats;
+  daily: SetterPeriodMetrics;
+  wtd: SetterPeriodMetrics;
+  mtd: SetterPeriodMetrics;
   transcripts: SetterTranscript[];
+}
+
+export interface SetterSummaryMetrics {
+  newLeads: number;
+  booked: number;
+  showRate: number;
+  closeRate: number;
+  aov: number;
+  averageResponseMinutes: number | null;
 }
 
 export interface SetterReportData {
   reportDate: string;
+  weekStart: string;
   monthStart: string;
   transcriptSource: "dm_conversation_messages";
   legacyTranscriptSource: "dm_transcripts";
@@ -143,30 +173,128 @@ const SETTERS: SetterDef[] = [
   },
 ];
 
-function startOfDay(date: string) {
+const ET_TIMEZONE = "America/New_York";
+const ET_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: ET_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function startOfUtcDay(date: string) {
   return `${date}T00:00:00Z`;
 }
 
-function endOfDay(date: string) {
+function endOfUtcDay(date: string) {
   return `${date}T23:59:59.999Z`;
 }
 
-function addDays(date: string, days: number) {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+function parseDateOnly(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 }
 
-function subtractDays(date: string, days: number) {
-  return addDays(date, -days);
+function formatDateOnly(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: string, days: number) {
+  const value = parseDateOnly(date);
+  value.setUTCDate(value.getUTCDate() + days);
+  return formatDateOnly(value);
 }
 
 function monthStartOf(date: string) {
   return `${date.slice(0, 8)}01`;
 }
 
+function weekStartOf(date: string) {
+  const value = parseDateOnly(date);
+  const day = value.getUTCDay();
+  const offset = day === 0 ? 6 : day - 1;
+  value.setUTCDate(value.getUTCDate() - offset);
+  return formatDateOnly(value);
+}
+
 function normalizeSetterName(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
+}
+
+function getEtParts(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const parts = ET_PARTS.formatToParts(date);
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
+
+  const dateStr = `${map.year}-${map.month}-${map.day}`;
+  const hour = Number(map.hour || "0");
+  const minute = Number(map.minute || "0");
+  const second = Number(map.second || "0");
+
+  return {
+    dateStr,
+    hour,
+    minute,
+    second,
+    minutesOfDay: hour * 60 + minute + second / 60,
+  };
+}
+
+function toEtDateStr(value: string | Date) {
+  return getEtParts(value).dateStr;
+}
+
+function formatEtDateTime(value: string | null) {
+  if (!value) return "Unknown";
+  return new Date(value).toLocaleString("en-US", {
+    timeZone: ET_TIMEZONE,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatMinutesAsClock(minutes: number) {
+  if (minutes >= 60) {
+    const hours = minutes / 60;
+    return `${hours.toFixed(hours >= 10 ? 1 : 2)} hr`;
+  }
+  return `${minutes.toFixed(minutes >= 10 ? 1 : 2)} min`;
+}
+
+function computeTrackedWindowMinutes(startIso: string, endIso: string) {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return 0;
+  if (end.getTime() <= start.getTime()) return 0;
+
+  const startEt = getEtParts(start);
+  const endEt = getEtParts(end);
+  let cursor = startEt.dateStr;
+  let total = 0;
+
+  while (cursor <= endEt.dateStr) {
+    const startMinute = cursor === startEt.dateStr ? startEt.minutesOfDay : 0;
+    const endMinute = cursor === endEt.dateStr ? endEt.minutesOfDay : 24 * 60;
+    const overlap = Math.max(0, Math.min(endMinute, 24 * 60) - Math.max(startMinute, 12 * 60));
+    total += overlap;
+    cursor = addDays(cursor, 1);
+  }
+
+  return total;
 }
 
 function buildTranscript(messages: MessageRow[]) {
@@ -180,28 +308,32 @@ function buildTranscript(messages: MessageRow[]) {
           : message.direction === "outbound"
             ? "Setter"
             : "Unknown";
-      const stamp = message.sent_at ? ` (${message.sent_at})` : "";
+      const stamp = message.sent_at ? ` (${formatEtDateTime(message.sent_at)})` : "";
       return `${speaker}${stamp}: ${(message.body || "").trim()}`;
     })
     .join("\n");
 }
 
-function getEtHour(dateString: string) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    hour12: false,
+function filterRowsByDate<T>(
+  rows: T[],
+  getIso: (row: T) => string | null | undefined,
+  dateFrom: string,
+  dateTo: string,
+) {
+  return rows.filter((row) => {
+    const iso = getIso(row);
+    if (!iso) return false;
+    const etDate = toEtDateStr(iso);
+    return etDate >= dateFrom && etDate <= dateTo;
   });
-  return Number(formatter.format(new Date(dateString)));
 }
 
-function isTrackedInboundWindow(dateString: string) {
-  const hour = getEtHour(dateString);
-  return hour >= 12 && hour < 24;
-}
-
-function computeResponseStats(messages: MessageRow[]): SetterResponseStats {
+function computeResponseStats(
+  messages: MessageRow[],
+  leadNamesBySubscriber: Map<string, string>,
+): SetterResponseStats {
   const grouped = new Map<string, MessageRow[]>();
+
   for (const message of messages) {
     if (!message.conversation_id || !message.sent_at) continue;
     const list = grouped.get(message.conversation_id) || [];
@@ -209,12 +341,7 @@ function computeResponseStats(messages: MessageRow[]): SetterResponseStats {
     grouped.set(message.conversation_id, list);
   }
 
-  const samples: Array<{
-    conversationId: string;
-    minutes: number;
-    prospectAt: string;
-    setterAt: string;
-  }> = [];
+  const samples: ResponseGap[] = [];
 
   for (const [conversationId, convoMessages] of grouped.entries()) {
     const ordered = [...convoMessages].sort((a, b) =>
@@ -226,25 +353,29 @@ function computeResponseStats(messages: MessageRow[]): SetterResponseStats {
       if (!message.sent_at) continue;
 
       if (message.direction === "inbound") {
-        if (!pendingInbound && isTrackedInboundWindow(message.sent_at)) {
+        if (!pendingInbound) {
           pendingInbound = message;
         }
         continue;
       }
 
       if (message.direction === "outbound" && pendingInbound?.sent_at) {
-        const minutes =
-          (new Date(message.sent_at).getTime() - new Date(pendingInbound.sent_at).getTime()) /
-          60000;
+        const activeMinutes = computeTrackedWindowMinutes(
+          pendingInbound.sent_at,
+          message.sent_at,
+        );
 
-        if (Number.isFinite(minutes) && minutes >= 0) {
+        if (Number.isFinite(activeMinutes) && activeMinutes > 0) {
           samples.push({
+            leadName: leadNamesBySubscriber.get(pendingInbound.subscriber_id) || null,
+            subscriberId: pendingInbound.subscriber_id,
             conversationId,
-            minutes,
+            activeMinutes,
             prospectAt: pendingInbound.sent_at,
             setterAt: message.sent_at,
           });
         }
+
         pendingInbound = null;
       }
     }
@@ -252,17 +383,27 @@ function computeResponseStats(messages: MessageRow[]): SetterResponseStats {
 
   const averageMinutes =
     samples.length > 0
-      ? samples.reduce((sum, sample) => sum + sample.minutes, 0) / samples.length
+      ? samples.reduce((sum, sample) => sum + sample.activeMinutes, 0) / samples.length
       : null;
 
   return {
     averageMinutes,
     sampleCount: samples.length,
-    worstGaps: [...samples].sort((a, b) => b.minutes - a.minutes).slice(0, 5),
+    worstGaps: [...samples]
+      .sort((a, b) => b.activeMinutes - a.activeMinutes)
+      .slice(0, 5),
   };
 }
 
-function filterSheetRowsForSetter(rows: SheetRow[], setter: SetterDef, trackingStartDate: string | null) {
+function filterSheetRowsForSetter(
+  rows: SheetRow[],
+  setter: SetterDef,
+  dateFrom: string,
+  dateTo: string,
+  trackingStartDate: string | null,
+) {
+  const effectiveStart = trackingStartDate && trackingStartDate > dateFrom ? trackingStartDate : dateFrom;
+
   return rows.filter((row) => {
     const setterMatch = setter.sheetKeys.some((key) =>
       (row.setter || "").toUpperCase().includes(key),
@@ -278,21 +419,22 @@ function filterSheetRowsForSetter(rows: SheetRow[], setter: SetterDef, trackingS
           : offerLower.includes("zoe") || offerLower.includes("emily");
 
     if (!clientMatch) return false;
-    if (trackingStartDate && row.date && row.date < trackingStartDate) return false;
-    return true;
+    return row.date >= effectiveStart && row.date <= dateTo;
   });
 }
 
 function computeSalesStats(rows: SheetRow[], newLeads: number): SetterSalesStats {
   const booked = rows.length;
-  const taken = rows.filter((row) => row.callTaken).length;
+  const showEligible = rows.filter((row) => row.callTakenStatus !== "pending").length;
+  const taken = rows.filter((row) => row.callTakenStatus === "yes").length;
   const wins = rows.filter((row) => row.outcome === "WIN").length;
-  const noShows = rows.filter((row) => ["NS/RS", "NS", "NO SHOW"].includes((row.outcome || "").toUpperCase())).length;
+  const noShows = rows.filter((row) => row.callTakenStatus === "no").length;
   const cashCollected = rows.reduce((sum, row) => sum + (row.cashCollected || 0), 0);
   const revenue = rows.reduce((sum, row) => sum + (row.revenue || 0), 0);
 
   return {
     booked,
+    showEligible,
     taken,
     wins,
     noShows,
@@ -300,7 +442,7 @@ function computeSalesStats(rows: SheetRow[], newLeads: number): SetterSalesStats
     revenue,
     aov: wins > 0 ? cashCollected / wins : 0,
     bookingRate: newLeads > 0 ? (booked / newLeads) * 100 : 0,
-    showRate: booked > 0 ? (taken / booked) * 100 : 0,
+    showRate: showEligible > 0 ? (taken / showEligible) * 100 : 0,
     closeRate: taken > 0 ? (wins / taken) * 100 : 0,
   };
 }
@@ -309,23 +451,31 @@ function countFunnelForSetter(params: {
   setter: SetterDef;
   tagEvents: TagEventRow[];
   stageStates: StageStateRow[];
-}): SetterFunnelCounts & { trackingStartDate: string | null } {
+}): SetterFunnelCounts & { trackingStartDate: string | null; leadNamesBySubscriber: Map<string, string> } {
   const { setter, tagEvents, stageStates } = params;
   const setterKey = setter.key;
+
   const newLeadEvents = tagEvents.filter(
     (event) =>
       event.client === setter.clientKey &&
       normalizeSetterName(event.setter_name) === setterKey &&
       event.tag_name === "new_lead",
   );
-  const trackingStartDate = newLeadEvents
-    .map((event) => event.event_at.slice(0, 10))
-    .sort()[0] || null;
 
-  const leadIds = new Set(newLeadEvents.map((event) => event.subscriber_id));
+  const orderedNewLeadEvents = [...newLeadEvents].sort((a, b) => a.event_at.localeCompare(b.event_at));
+  const trackingStartDate = orderedNewLeadEvents[0]?.event_at.slice(0, 10) || null;
+  const leadIds = new Set(orderedNewLeadEvents.map((event) => event.subscriber_id));
+  const leadNamesBySubscriber = new Map<string, string>();
   const engagedIds = new Set<string>();
   const callLinkIds = new Set<string>();
   const subLinkIds = new Set<string>();
+
+  for (const event of orderedNewLeadEvents) {
+    const leadName = event.subscriber_name?.trim();
+    if (leadName) {
+      leadNamesBySubscriber.set(event.subscriber_id, leadName);
+    }
+  }
 
   for (const event of tagEvents) {
     if (
@@ -334,6 +484,11 @@ function countFunnelForSetter(params: {
       !leadIds.has(event.subscriber_id)
     ) {
       continue;
+    }
+
+    const leadName = event.subscriber_name?.trim();
+    if (leadName && !leadNamesBySubscriber.has(event.subscriber_id)) {
+      leadNamesBySubscriber.set(event.subscriber_id, leadName);
     }
 
     if (event.tag_name === "lead_engaged") engagedIds.add(event.subscriber_id);
@@ -350,6 +505,7 @@ function countFunnelForSetter(params: {
     ) {
       continue;
     }
+
     const existing = stageBySubscriber.get(row.subscriber_id);
     stageBySubscriber.set(row.subscriber_id, {
       ...row,
@@ -389,108 +545,177 @@ function countFunnelForSetter(params: {
     linkSent: callLinkIds.size,
     subLinkSent: subLinkIds.size,
     trackingStartDate,
+    leadNamesBySubscriber,
+  };
+}
+
+function buildPeriodMetrics(params: {
+  setter: SetterDef;
+  dateFrom: string;
+  dateTo: string;
+  tagEvents: TagEventRow[];
+  stageStates: StageStateRow[];
+  messages: MessageRow[];
+  sheetRows: SheetRow[];
+}) {
+  const { setter, dateFrom, dateTo, tagEvents, stageStates, messages, sheetRows } = params;
+
+  const funnel = countFunnelForSetter({
+    setter,
+    tagEvents,
+    stageStates,
+  });
+
+  const setterSheetRows = filterSheetRowsForSetter(
+    sheetRows,
+    setter,
+    dateFrom,
+    dateTo,
+    funnel.trackingStartDate,
+  );
+  const sales = computeSalesStats(setterSheetRows, funnel.newLeads);
+
+  const effectiveMessageStart =
+    funnel.trackingStartDate && funnel.trackingStartDate > dateFrom ? funnel.trackingStartDate : dateFrom;
+
+  const setterMessages = filterRowsByDate(
+    messages.filter(
+      (message) =>
+        message.client === setter.clientKey &&
+        normalizeSetterName(message.setter_name) === setter.key,
+    ),
+    (message) => message.sent_at,
+    effectiveMessageStart,
+    dateTo,
+  );
+
+  const responseTime = computeResponseStats(setterMessages, funnel.leadNamesBySubscriber);
+
+  return {
+    metrics: {
+      newLeads: funnel.newLeads,
+      engaged: funnel.engaged,
+      goalClear: funnel.goalClear,
+      gapClear: funnel.gapClear,
+      stakesClear: funnel.stakesClear,
+      qualified: funnel.qualified,
+      linkSent: funnel.linkSent,
+      subLinkSent: funnel.subLinkSent,
+      ...sales,
+      averageResponseMinutes: responseTime.averageMinutes,
+      responseSampleCount: responseTime.sampleCount,
+      worstResponseGaps: responseTime.worstGaps,
+    } satisfies SetterPeriodMetrics,
+    trackingStartDate: funnel.trackingStartDate,
+    leadNamesBySubscriber: funnel.leadNamesBySubscriber,
   };
 }
 
 export async function getSetterReportData(reportDate: string): Promise<SetterReportData> {
   const sb = getServiceSupabase();
+  const weekStart = weekStartOf(reportDate);
   const monthStart = monthStartOf(reportDate);
-  const transcriptStart = subtractDays(reportDate, 2);
+  const transcriptStart = addDays(reportDate, -6);
+  const queryEndDate = addDays(reportDate, 1);
 
-  const [dailyTagsRes, mtdTagsRes, dailyStagesRes, mtdStagesRes, mtdMessagesRes, recentMessagesRes, legacyUploadsRes, mtdSheetRows] =
+  const [tagEventsRes, stageStatesRes, mtdMessagesRes, recentMessagesRes, legacyUploadsRes, mtdSheetRows] =
     await Promise.all([
       sb
         .from("manychat_tag_events")
-        .select("client, setter_name, subscriber_id, tag_name, event_at")
-        .gte("event_at", startOfDay(reportDate))
-        .lte("event_at", endOfDay(reportDate))
-        .in("client", SETTERS.map((setter) => setter.clientKey)),
-      sb
-        .from("manychat_tag_events")
-        .select("client, setter_name, subscriber_id, tag_name, event_at")
-        .gte("event_at", startOfDay(monthStart))
-        .lte("event_at", endOfDay(reportDate))
+        .select("client, setter_name, subscriber_id, subscriber_name, tag_name, event_at")
+        .gte("event_at", startOfUtcDay(monthStart))
+        .lte("event_at", endOfUtcDay(queryEndDate))
         .in("client", SETTERS.map((setter) => setter.clientKey)),
       sb
         .from("dm_conversation_stage_state")
         .select("client, setter_name, subscriber_id, conversation_id, goal_clear, gap_clear, stakes_clear, qualified, booking_readiness_score, stage_evidence, latest_message_at, updated_at")
-        .lte("updated_at", endOfDay(reportDate))
-        .in("client", SETTERS.map((setter) => setter.clientKey)),
-      sb
-        .from("dm_conversation_stage_state")
-        .select("client, setter_name, subscriber_id, conversation_id, goal_clear, gap_clear, stakes_clear, qualified, booking_readiness_score, stage_evidence, latest_message_at, updated_at")
-        .lte("updated_at", endOfDay(reportDate))
+        .gte("updated_at", startOfUtcDay(monthStart))
+        .lte("updated_at", endOfUtcDay(queryEndDate))
         .in("client", SETTERS.map((setter) => setter.clientKey)),
       sb
         .from("dm_conversation_messages")
         .select("client, setter_name, subscriber_id, conversation_id, direction, body, sent_at")
-        .gte("sent_at", startOfDay(monthStart))
-        .lte("sent_at", endOfDay(reportDate))
+        .gte("sent_at", startOfUtcDay(monthStart))
+        .lte("sent_at", endOfUtcDay(queryEndDate))
         .in("client", SETTERS.map((setter) => setter.clientKey)),
       sb
         .from("dm_conversation_messages")
         .select("client, setter_name, subscriber_id, conversation_id, direction, body, sent_at")
-        .gte("sent_at", startOfDay(transcriptStart))
-        .lte("sent_at", endOfDay(reportDate))
+        .gte("sent_at", startOfUtcDay(transcriptStart))
+        .lte("sent_at", endOfUtcDay(queryEndDate))
         .in("client", SETTERS.map((setter) => setter.clientKey)),
       sb
         .from("dm_transcripts")
         .select("id", { count: "exact", head: true })
-        .gte("submitted_at", startOfDay(transcriptStart)),
+        .gte("submitted_at", startOfUtcDay(transcriptStart)),
       fetchSheetData(monthStart, reportDate),
     ]);
 
-  const results = [
-    dailyTagsRes,
-    mtdTagsRes,
-    dailyStagesRes,
-    mtdStagesRes,
-    mtdMessagesRes,
-    recentMessagesRes,
-    legacyUploadsRes,
-  ];
+  const results = [tagEventsRes, stageStatesRes, mtdMessagesRes, recentMessagesRes, legacyUploadsRes];
   for (const result of results) {
     if (result.error) {
       throw new Error(result.error.message);
     }
   }
 
-  const dailyTags = (dailyTagsRes.data || []) as TagEventRow[];
-  const mtdTags = (mtdTagsRes.data || []) as TagEventRow[];
-  const dailyStages = (dailyStagesRes.data || []) as StageStateRow[];
-  const mtdStages = (mtdStagesRes.data || []) as StageStateRow[];
-  const mtdMessages = (mtdMessagesRes.data || []) as MessageRow[];
-  const recentMessages = (recentMessagesRes.data || []) as MessageRow[];
+  const allTagEvents = filterRowsByDate(
+    (tagEventsRes.data || []) as TagEventRow[],
+    (row) => row.event_at,
+    monthStart,
+    reportDate,
+  );
+  const allStageStates = filterRowsByDate(
+    (stageStatesRes.data || []) as StageStateRow[],
+    (row) => row.updated_at,
+    monthStart,
+    reportDate,
+  );
+  const allMessages = filterRowsByDate(
+    (mtdMessagesRes.data || []) as MessageRow[],
+    (row) => row.sent_at,
+    monthStart,
+    reportDate,
+  );
+  const recentMessages = filterRowsByDate(
+    (recentMessagesRes.data || []) as MessageRow[],
+    (row) => row.sent_at,
+    transcriptStart,
+    reportDate,
+  );
   const legacyUploads = legacyUploadsRes.count || 0;
 
   const setters = SETTERS.map((setter) => {
-    const daily = countFunnelForSetter({
+    const dailyPeriod = buildPeriodMetrics({
       setter,
-      tagEvents: dailyTags,
-      stageStates: dailyStages,
+      dateFrom: reportDate,
+      dateTo: reportDate,
+      tagEvents: allTagEvents,
+      stageStates: allStageStates,
+      messages: allMessages,
+      sheetRows: mtdSheetRows,
     });
 
-    const mtdFunnel = countFunnelForSetter({
+    const wtdPeriod = buildPeriodMetrics({
       setter,
-      tagEvents: mtdTags,
-      stageStates: mtdStages,
+      dateFrom: weekStart,
+      dateTo: reportDate,
+      tagEvents: allTagEvents,
+      stageStates: allStageStates,
+      messages: allMessages,
+      sheetRows: mtdSheetRows,
     });
 
-    const setterSheetRows = filterSheetRowsForSetter(
-      mtdSheetRows,
+    const mtdPeriod = buildPeriodMetrics({
       setter,
-      mtdFunnel.trackingStartDate,
-    );
-    const sales = computeSalesStats(setterSheetRows, mtdFunnel.newLeads);
+      dateFrom: monthStart,
+      dateTo: reportDate,
+      tagEvents: allTagEvents,
+      stageStates: allStageStates,
+      messages: allMessages,
+      sheetRows: mtdSheetRows,
+    });
 
-    const setterMessages = mtdMessages.filter(
-      (message) =>
-        message.client === setter.clientKey &&
-        normalizeSetterName(message.setter_name) === setter.key,
-    );
-
-    const responseTime = computeResponseStats(setterMessages);
-
+    const leadNamesBySubscriber = mtdPeriod.leadNamesBySubscriber;
     const recentSetterMessages = recentMessages.filter(
       (message) =>
         message.client === setter.clientKey &&
@@ -507,8 +732,10 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
     const transcripts = [...recentConversations.entries()]
       .map(([conversationId, messages]) => {
         const ordered = [...messages].sort((a, b) => (a.sent_at || "").localeCompare(b.sent_at || ""));
+        const subscriberId = ordered.find((message) => message.subscriber_id)?.subscriber_id || "";
         return {
           conversationId,
+          leadName: leadNamesBySubscriber.get(subscriberId) || null,
           latestMessageAt: ordered.at(-1)?.sent_at || null,
           messageCount: ordered.length,
           transcript: buildTranscript(ordered),
@@ -522,35 +749,36 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       setterName: setter.name,
       clientKey: setter.clientKey,
       clientLabel: setter.clientLabel,
-      trackingStartDate: mtdFunnel.trackingStartDate,
-      daily,
-      mtd: {
-        newLeads: mtdFunnel.newLeads,
-        engaged: mtdFunnel.engaged,
-        goalClear: mtdFunnel.goalClear,
-        gapClear: mtdFunnel.gapClear,
-        stakesClear: mtdFunnel.stakesClear,
-        qualified: mtdFunnel.qualified,
-        linkSent: mtdFunnel.linkSent,
-        subLinkSent: mtdFunnel.subLinkSent,
-        ...sales,
-      },
-      responseTime,
+      trackingStartDate: mtdPeriod.trackingStartDate,
+      daily: dailyPeriod.metrics,
+      wtd: wtdPeriod.metrics,
+      mtd: mtdPeriod.metrics,
       transcripts,
     };
   });
 
   return {
     reportDate,
+    weekStart,
     monthStart,
     transcriptSource: "dm_conversation_messages",
     legacyTranscriptSource: "dm_transcripts",
     setters,
     dataQuality: {
       recentLiveMessages: recentMessages.length,
-      recentStageStates: mtdStages.length,
+      recentStageStates: allStageStates.length,
       recentLegacyUploads: legacyUploads,
       missingSetterMessages: recentMessages.filter((message) => !normalizeSetterName(message.setter_name)).length,
     },
   };
+}
+
+export function formatResponseDuration(minutes: number | null) {
+  if (minutes === null || !Number.isFinite(minutes)) return "—";
+  return formatMinutesAsClock(minutes);
+}
+
+export function formatResponseGap(gap: ResponseGap) {
+  const name = gap.leadName || "Unknown lead";
+  return `${name} | Lead: ${formatEtDateTime(gap.prospectAt)} | Reply: ${formatEtDateTime(gap.setterAt)} | Gap: ${formatMinutesAsClock(gap.activeMinutes)}`;
 }
