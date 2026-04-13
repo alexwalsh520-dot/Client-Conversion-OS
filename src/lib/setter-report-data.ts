@@ -91,6 +91,7 @@ export interface SetterReportRow {
   setterName: string;
   clientKey: ClientKey;
   clientLabel: string;
+  trackingStartDate: string | null;
   daily: SetterFunnelCounts;
   mtd: SetterFunnelCounts & SetterSalesStats;
   responseTime: SetterResponseStats;
@@ -261,7 +262,7 @@ function computeResponseStats(messages: MessageRow[]): SetterResponseStats {
   };
 }
 
-function filterSheetRowsForSetter(rows: SheetRow[], setter: SetterDef) {
+function filterSheetRowsForSetter(rows: SheetRow[], setter: SetterDef, trackingStartDate: string | null) {
   return rows.filter((row) => {
     const setterMatch = setter.sheetKeys.some((key) =>
       (row.setter || "").toUpperCase().includes(key),
@@ -269,9 +270,16 @@ function filterSheetRowsForSetter(rows: SheetRow[], setter: SetterDef) {
     if (!setterMatch) return false;
 
     const offerLower = (row.offer || "").toLowerCase();
-    if (setter.clientKey === "tyson_sonnek") return offerLower.includes("tyson");
-    if (setter.clientKey === "keith_holland") return offerLower.includes("keith");
-    return offerLower.includes("zoe") || offerLower.includes("emily");
+    const clientMatch =
+      setter.clientKey === "tyson_sonnek"
+        ? offerLower.includes("tyson")
+        : setter.clientKey === "keith_holland"
+          ? offerLower.includes("keith")
+          : offerLower.includes("zoe") || offerLower.includes("emily");
+
+    if (!clientMatch) return false;
+    if (trackingStartDate && row.date && row.date < trackingStartDate) return false;
+    return true;
   });
 }
 
@@ -301,7 +309,7 @@ function countFunnelForSetter(params: {
   setter: SetterDef;
   tagEvents: TagEventRow[];
   stageStates: StageStateRow[];
-}): SetterFunnelCounts {
+}): SetterFunnelCounts & { trackingStartDate: string | null } {
   const { setter, tagEvents, stageStates } = params;
   const setterKey = setter.key;
   const newLeadEvents = tagEvents.filter(
@@ -310,6 +318,9 @@ function countFunnelForSetter(params: {
       normalizeSetterName(event.setter_name) === setterKey &&
       event.tag_name === "new_lead",
   );
+  const trackingStartDate = newLeadEvents
+    .map((event) => event.event_at.slice(0, 10))
+    .sort()[0] || null;
 
   const leadIds = new Set(newLeadEvents.map((event) => event.subscriber_id));
   const engagedIds = new Set<string>();
@@ -377,6 +388,7 @@ function countFunnelForSetter(params: {
     qualified,
     linkSent: callLinkIds.size,
     subLinkSent: subLinkIds.size,
+    trackingStartDate,
   };
 }
 
@@ -464,7 +476,11 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: mtdStages,
     });
 
-    const setterSheetRows = filterSheetRowsForSetter(mtdSheetRows, setter);
+    const setterSheetRows = filterSheetRowsForSetter(
+      mtdSheetRows,
+      setter,
+      mtdFunnel.trackingStartDate,
+    );
     const sales = computeSalesStats(setterSheetRows, mtdFunnel.newLeads);
 
     const setterMessages = mtdMessages.filter(
@@ -506,9 +522,17 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       setterName: setter.name,
       clientKey: setter.clientKey,
       clientLabel: setter.clientLabel,
+      trackingStartDate: mtdFunnel.trackingStartDate,
       daily,
       mtd: {
-        ...mtdFunnel,
+        newLeads: mtdFunnel.newLeads,
+        engaged: mtdFunnel.engaged,
+        goalClear: mtdFunnel.goalClear,
+        gapClear: mtdFunnel.gapClear,
+        stakesClear: mtdFunnel.stakesClear,
+        qualified: mtdFunnel.qualified,
+        linkSent: mtdFunnel.linkSent,
+        subLinkSent: mtdFunnel.subLinkSent,
         ...sales,
       },
       responseTime,
