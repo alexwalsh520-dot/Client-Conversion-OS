@@ -451,15 +451,19 @@ function countFunnelForSetter(params: {
   setter: SetterDef;
   tagEvents: TagEventRow[];
   stageStates: StageStateRow[];
+  dateFrom: string;
+  dateTo: string;
 }): SetterFunnelCounts & { trackingStartDate: string | null; leadNamesBySubscriber: Map<string, string> } {
-  const { setter, tagEvents, stageStates } = params;
+  const { setter, tagEvents, stageStates, dateFrom, dateTo } = params;
   const setterKey = setter.key;
 
   const newLeadEvents = tagEvents.filter(
     (event) =>
       event.client === setter.clientKey &&
       normalizeSetterName(event.setter_name) === setterKey &&
-      event.tag_name === "new_lead",
+      event.tag_name === "new_lead" &&
+      toEtDateStr(event.event_at) >= dateFrom &&
+      toEtDateStr(event.event_at) <= dateTo,
   );
 
   const orderedNewLeadEvents = [...newLeadEvents].sort((a, b) => a.event_at.localeCompare(b.event_at));
@@ -481,7 +485,8 @@ function countFunnelForSetter(params: {
     if (
       event.client !== setter.clientKey ||
       normalizeSetterName(event.setter_name) !== setterKey ||
-      !leadIds.has(event.subscriber_id)
+      !leadIds.has(event.subscriber_id) ||
+      toEtDateStr(event.event_at) > dateTo
     ) {
       continue;
     }
@@ -498,10 +503,13 @@ function countFunnelForSetter(params: {
 
   const stageBySubscriber = new Map<string, StageStateRow>();
   for (const row of stageStates) {
+    const stageAt = row.updated_at || row.latest_message_at;
     if (
+      !stageAt ||
       row.client !== setter.clientKey ||
       normalizeSetterName(row.setter_name) !== setterKey ||
-      !leadIds.has(row.subscriber_id)
+      !leadIds.has(row.subscriber_id) ||
+      toEtDateStr(stageAt) > dateTo
     ) {
       continue;
     }
@@ -564,6 +572,8 @@ function buildPeriodMetrics(params: {
     setter,
     tagEvents,
     stageStates,
+    dateFrom,
+    dateTo,
   });
 
   const setterSheetRows = filterSheetRowsForSetter(
