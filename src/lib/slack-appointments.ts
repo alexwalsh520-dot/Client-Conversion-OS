@@ -33,6 +33,11 @@ interface SlackHistoryResponse {
   }>;
 }
 
+interface SlackJoinResponse {
+  ok: boolean;
+  error?: string;
+}
+
 function getBotToken() {
   return process.env.SLACK_BOT_TOKEN || null;
 }
@@ -78,6 +83,27 @@ export async function fetchSlackAppointmentBookings(
   const oldest = toUnixSeconds(addDays(dateFrom, -1), false);
   const latest = toUnixSeconds(addDays(dateTo, 1), true);
   const bookings: SlackAppointmentBooking[] = [];
+
+  try {
+    const joinRes = await fetch(`${SLACK_API_BASE}/conversations.join`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ channel }),
+      cache: "no-store",
+    });
+
+    if (joinRes.ok) {
+      const joinData = (await joinRes.json()) as SlackJoinResponse;
+      if (!joinData.ok && joinData.error !== "already_in_channel") {
+        console.warn("[slack-appointments] join warning", joinData.error);
+      }
+    }
+  } catch (error) {
+    console.warn("[slack-appointments] join request failed", error);
+  }
 
   let cursor: string | undefined;
 
