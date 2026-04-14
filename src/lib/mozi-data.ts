@@ -1,7 +1,7 @@
 import type { EngineResult } from './mozi-engine';
 
 // Mock data matching the HTML prototype values (all money in cents)
-const MOCK_DATA: EngineResult & { byInfluencer: Record<string, any> } = {
+const MOCK_DATA: EngineResult & { byInfluencer: Record<string, any>; [key: string]: unknown } = {
   status: 'buy',
   ratio: 7.97,
   payback30: 48700,
