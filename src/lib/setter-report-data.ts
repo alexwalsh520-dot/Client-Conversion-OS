@@ -1,4 +1,8 @@
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
+import {
+  fetchSlackAppointmentBookings,
+  type SlackAppointmentBooking,
+} from "@/lib/slack-appointments";
 import { getServiceSupabase } from "@/lib/supabase";
 
 type ClientKey = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
@@ -56,6 +60,12 @@ interface AppointmentRow {
   appointment_id: string;
   contact_id: string | null;
   created_at: string | null;
+}
+
+interface MatchedSlackBooking {
+  bookedEtDate: string;
+  clientKey: ClientKey | null;
+  setterKey: string | null;
 }
 
 interface ResponseGap {
@@ -233,6 +243,36 @@ function normalizeSetterName(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
+function normalizeName(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function namesLikelyMatch(a: string | null | undefined, b: string | null | undefined) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function clientKeyFromOffer(offer: string | null | undefined): ClientKey | null {
+  const normalized = (offer || "").toLowerCase();
+  if (normalized.includes("tyson")) return "tyson_sonnek";
+  if (normalized.includes("keith")) return "keith_holland";
+  if (normalized.includes("zoe") || normalized.includes("emily")) return "zoe_and_emily";
+  return null;
+}
+
+function setterKeyFromSheetRow(setterName: string | null | undefined) {
+  const normalized = normalizeSetterName(setterName);
+  return SETTERS.find((setter) => setter.name.toLowerCase() === normalized)?.key || null;
+}
+
 function getEtParts(value: string | Date) {
   const date = typeof value === "string" ? new Date(value) : value;
   const parts = ET_PARTS.formatToParts(date);
@@ -278,6 +318,15 @@ function formatMinutesAsClock(minutes: number) {
     return `${hours.toFixed(hours >= 10 ? 1 : 2)} hr`;
   }
   return `${minutes.toFixed(minutes >= 10 ? 1 : 2)} min`;
+}
+
+function parseSlackAppointmentDate(appointmentTime: string | null | undefined) {
+  if (!appointmentTime) return null;
+  const match = appointmentTime.match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
+  if (!match) return null;
+  const parsed = new Date(`${match[1]} ${match[2]}, ${match[3]} 12:00:00 UTC`);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return formatDateOnly(parsed);
 }
 
 function computeTrackedWindowMinutes(startIso: string, endIso: string) {
@@ -569,6 +618,8 @@ function countFunnelForSetter(params: {
 }
 
 function countBookedAppointmentsForSetter(params: {
+  setter: SetterDef;
+  slackBookings: MatchedSlackBooking[];
   appointmentRows: AppointmentRow[];
   linksByContactId: Map<string, { client: string; subscriber_id: string }>;
   leadIds: Set<string>;
@@ -576,9 +627,25 @@ function countBookedAppointmentsForSetter(params: {
   dateTo: string;
   trackingStartDate: string | null;
 }) {
-  const { appointmentRows, linksByContactId, leadIds, dateFrom, dateTo, trackingStartDate } = params;
+  const {
+    setter,
+    slackBookings,
+    appointmentRows,
+    linksByContactId,
+    leadIds,
+    dateFrom,
+    dateTo,
+    trackingStartDate,
+  } = params;
   const effectiveStart =
     trackingStartDate && trackingStartDate > dateFrom ? trackingStartDate : dateFrom;
+
+  if (slackBookings.length > 0) {
+    return slackBookings.filter((booking) => {
+      if (booking.setterKey !== setter.key) return false;
+      return booking.bookedEtDate >= effectiveStart && booking.bookedEtDate <= dateTo;
+    }).length;
+  }
 
   return appointmentRows.filter((row) => {
     if (!row.contact_id || !row.created_at) return false;
@@ -591,6 +658,53 @@ function countBookedAppointmentsForSetter(params: {
   }).length;
 }
 
+function matchSlackBookingsToSetters(
+  bookings: SlackAppointmentBooking[],
+  sheetRows: SheetRow[],
+): MatchedSlackBooking[] {
+  return bookings.map((booking) => {
+    const clientKey = clientKeyFromOffer(booking.offer);
+    const appointmentDate = parseSlackAppointmentDate(booking.appointmentTime);
+    const bookedEtDate = toEtDateStr(booking.postedAt);
+
+    const candidates = sheetRows.filter((row) => {
+      if (!clientKeyFromOffer(row.offer) || clientKeyFromOffer(row.offer) !== clientKey) return false;
+      if (appointmentDate && row.date !== appointmentDate) return false;
+      return true;
+    });
+
+    const exactNameMatches = candidates.filter((row) => namesLikelyMatch(row.name, booking.prospectName));
+    const bestMatch =
+      exactNameMatches.length === 1
+        ? exactNameMatches[0]
+        : exactNameMatches[0] || (candidates.length === 1 ? candidates[0] : null);
+
+    const matchedSetterKey = setterKeyFromSheetRow(bestMatch?.setter);
+
+    if (matchedSetterKey) {
+      return {
+        bookedEtDate,
+        clientKey,
+        setterKey: matchedSetterKey,
+      };
+    }
+
+    if (clientKey === "tyson_sonnek") {
+      return { bookedEtDate, clientKey, setterKey: "amara" };
+    }
+
+    if (clientKey === "keith_holland") {
+      return { bookedEtDate, clientKey, setterKey: "gideon" };
+    }
+
+    return {
+      bookedEtDate,
+      clientKey,
+      setterKey: null,
+    };
+  });
+}
+
 function buildPeriodMetrics(params: {
   setter: SetterDef;
   dateFrom: string;
@@ -599,6 +713,7 @@ function buildPeriodMetrics(params: {
   stageStates: StageStateRow[];
   messages: MessageRow[];
   sheetRows: SheetRow[];
+  slackBookings: MatchedSlackBooking[];
   appointmentRows: AppointmentRow[];
   linksByContactId: Map<string, { client: string; subscriber_id: string }>;
 }) {
@@ -610,6 +725,7 @@ function buildPeriodMetrics(params: {
     stageStates,
     messages,
     sheetRows,
+    slackBookings,
     appointmentRows,
     linksByContactId,
   } = params;
@@ -631,6 +747,8 @@ function buildPeriodMetrics(params: {
   );
   const sales = computeSalesStats(setterSheetRows, funnel.newLeads);
   const bookedAppointments = countBookedAppointmentsForSetter({
+    setter,
+    slackBookings,
     appointmentRows,
     linksByContactId,
     leadIds: funnel.leadIds,
@@ -683,6 +801,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
   const monthStart = monthStartOf(reportDate);
   const transcriptStart = addDays(reportDate, -6);
   const queryEndDate = addDays(reportDate, 1);
+  const sheetMatchEndDate = addDays(reportDate, 45);
 
   const [
     tagEventsRes,
@@ -692,6 +811,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
     legacyUploadsRes,
     appointmentRowsRes,
     contactLinksRes,
+    slackBookings,
     mtdSheetRows,
   ] =
     await Promise.all([
@@ -731,7 +851,8 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       sb
         .from("manychat_contact_links")
         .select("client, subscriber_id, ghl_contact_id"),
-      fetchSheetData(monthStart, reportDate),
+      fetchSlackAppointmentBookings(monthStart, reportDate),
+      fetchSheetData(monthStart, sheetMatchEndDate),
     ]);
 
   const results = [
@@ -775,6 +896,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
   );
   const legacyUploads = legacyUploadsRes.count || 0;
   const appointmentRows = (appointmentRowsRes.data || []) as AppointmentRow[];
+  const matchedSlackBookings = matchSlackBookingsToSetters(slackBookings, mtdSheetRows);
   const linksByContactId = new Map<string, { client: string; subscriber_id: string }>();
   for (const row of (contactLinksRes.data || []) as Array<{
     client: string;
@@ -797,6 +919,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      slackBookings: matchedSlackBookings,
       appointmentRows,
       linksByContactId,
     });
@@ -809,6 +932,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      slackBookings: matchedSlackBookings,
       appointmentRows,
       linksByContactId,
     });
@@ -821,6 +945,7 @@ export async function getSetterReportData(reportDate: string): Promise<SetterRep
       stageStates: allStageStates,
       messages: allMessages,
       sheetRows: mtdSheetRows,
+      slackBookings: matchedSlackBookings,
       appointmentRows,
       linksByContactId,
     });

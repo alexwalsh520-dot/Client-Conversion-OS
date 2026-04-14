@@ -90,17 +90,55 @@ function formatMoney(value: number) {
   return `$${Math.round(value).toLocaleString()}`;
 }
 
+function pickResponseMetric(...options: Array<{
+  label: string;
+  averageResponseMinutes: number | null;
+  responseSampleCount?: number;
+}>) {
+  for (const option of options) {
+    if ((option.responseSampleCount || 0) > 0 && option.averageResponseMinutes !== null) {
+      return option;
+    }
+  }
+
+  return {
+    label: options[0]?.label || "Daily",
+    averageResponseMinutes: null,
+    responseSampleCount: 0,
+  };
+}
+
 function formatMetricBlock(metrics: {
   newLeads: number;
   booked: number;
   showRate: number;
   averageResponseMinutes: number | null;
-}) {
+  responseSampleCount?: number;
+}, responseFallbacks: Array<{
+  label: string;
+  averageResponseMinutes: number | null;
+  responseSampleCount?: number;
+}> = [], primaryLabel = "Daily") {
+  const responseMetric = pickResponseMetric(
+    {
+      label: primaryLabel,
+      averageResponseMinutes: metrics.averageResponseMinutes,
+      responseSampleCount: metrics.responseSampleCount,
+    },
+    ...responseFallbacks,
+  );
+  const responseLabel =
+    responseMetric.averageResponseMinutes === null
+      ? "—"
+      : responseMetric.label === "Daily"
+        ? formatResponseDuration(responseMetric.averageResponseMinutes)
+        : `${formatResponseDuration(responseMetric.averageResponseMinutes)} (${responseMetric.label})`;
+
   return [
     `- New Leads: ${metrics.newLeads}`,
     `- Appointments Booked: ${metrics.booked}`,
     `- Show Rate: ${formatPercent(metrics.showRate)}`,
-    `- Avg Response Time: ${formatResponseDuration(metrics.averageResponseMinutes)}`,
+    `- Avg Response Time: ${responseLabel}`,
   ].join("\n");
 }
 
@@ -124,6 +162,7 @@ function aggregateMetrics(rows: SetterReportRow[], periodKey: "daily" | "wtd" | 
     showRate: totalShowEligible > 0 ? (totalTaken / totalShowEligible) * 100 : 0,
     closeRate: totalTaken > 0 ? (totalWins / totalTaken) * 100 : 0,
     aov: totalWins > 0 ? totalCash / totalWins : 0,
+    responseSampleCount: totalResponseSamples,
     averageResponseMinutes:
       totalResponseSamples > 0 ? responseWeightedMinutes / totalResponseSamples : null,
   };
@@ -245,13 +284,24 @@ function buildSetterSection(
     `### ${setter.setterName} — ${setter.clientLabel}`,
     "",
     "**Daily**",
-    formatMetricBlock(setter.daily),
+    formatMetricBlock(
+      setter.daily,
+      [
+        { label: "Week to Date", averageResponseMinutes: setter.wtd.averageResponseMinutes, responseSampleCount: setter.wtd.responseSampleCount },
+        { label: "Month to Date", averageResponseMinutes: setter.mtd.averageResponseMinutes, responseSampleCount: setter.mtd.responseSampleCount },
+      ],
+      "Daily",
+    ),
     "",
     "**Week to Date**",
-    formatMetricBlock(setter.wtd),
+    formatMetricBlock(
+      setter.wtd,
+      [{ label: "Month to Date", averageResponseMinutes: setter.mtd.averageResponseMinutes, responseSampleCount: setter.mtd.responseSampleCount }],
+      "Week to Date",
+    ),
     "",
     "**Month to Date**",
-    formatMetricBlock(setter.mtd),
+    formatMetricBlock(setter.mtd, [], "Month to Date"),
     "",
     "**Action Items**",
     ...(actionItems.length > 0
@@ -344,13 +394,24 @@ export async function GET(req: NextRequest) {
     "## COMPANY SCOREBOARD",
     "",
     `### Daily (${formatLongDate(reportDate)})`,
-    formatMetricBlock(companyDaily),
+    formatMetricBlock(
+      companyDaily,
+      [
+        { label: "Week to Date", averageResponseMinutes: companyWtd.averageResponseMinutes, responseSampleCount: companyWtd.responseSampleCount },
+        { label: "Month to Date", averageResponseMinutes: companyMtd.averageResponseMinutes, responseSampleCount: companyMtd.responseSampleCount },
+      ],
+      "Daily",
+    ),
     "",
     `### Week to Date (${formatShortDate(data.weekStart)} to ${formatShortDate(reportDate)})`,
-    formatMetricBlock(companyWtd),
+    formatMetricBlock(
+      companyWtd,
+      [{ label: "Month to Date", averageResponseMinutes: companyMtd.averageResponseMinutes, responseSampleCount: companyMtd.responseSampleCount }],
+      "Week to Date",
+    ),
     "",
     `### Month to Date (${formatShortDate(data.monthStart)} to ${formatShortDate(reportDate)})`,
-    formatMetricBlock(companyMtd),
+    formatMetricBlock(companyMtd, [], "Month to Date"),
     "",
     "---",
     "",
@@ -364,13 +425,24 @@ export async function GET(req: NextRequest) {
         `### ${label}`,
         "",
         "**Daily**",
-        formatMetricBlock(daily),
+        formatMetricBlock(
+          daily,
+          [
+            { label: "Week to Date", averageResponseMinutes: wtd.averageResponseMinutes, responseSampleCount: wtd.responseSampleCount },
+            { label: "Month to Date", averageResponseMinutes: mtd.averageResponseMinutes, responseSampleCount: mtd.responseSampleCount },
+          ],
+          "Daily",
+        ),
         "",
         "**Week to Date**",
-        formatMetricBlock(wtd),
+        formatMetricBlock(
+          wtd,
+          [{ label: "Month to Date", averageResponseMinutes: mtd.averageResponseMinutes, responseSampleCount: mtd.responseSampleCount }],
+          "Week to Date",
+        ),
         "",
         "**Month to Date**",
-        formatMetricBlock(mtd),
+        formatMetricBlock(mtd, [], "Month to Date"),
         "",
       ];
     }),
