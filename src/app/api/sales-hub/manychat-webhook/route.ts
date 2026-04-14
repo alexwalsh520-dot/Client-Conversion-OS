@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { normalizeClientKey, syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
+import { normalizeClientKey, normalizeSetterKey, syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
 
 /**
  * Manychat Webhook — receives tag events from Manychat External Requests.
@@ -68,13 +68,14 @@ export async function POST(req: NextRequest) {
     const normalizedEventAt = event_at || new Date().toISOString();
 
     const clientKey = normalizeClientKey(client);
+    const setterKey = normalizeSetterKey(setter_name);
 
     const { error } = await sb.from("manychat_tag_events").insert({
       subscriber_id,
       subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
       tag_name: tag_name.toLowerCase().trim(),
       client: clientKey,
-      setter_name: setter_name?.toLowerCase().trim() || null,
+      setter_name: setterKey,
       event_at: normalizedEventAt,
     });
 
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
       instagramHandle: instagram_handle,
       tagName: tag_name,
       client,
-      setterName: setter_name,
+      setterName: setterKey,
       eventAt: normalizedEventAt,
     });
 

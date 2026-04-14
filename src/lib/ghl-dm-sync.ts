@@ -83,9 +83,17 @@ function normalizeTagName(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function normalizeSetter(value?: string | null): string | null {
+export function normalizeSetterKey(value?: string | null): string | null {
   if (!value) return null;
-  return value.trim().toLowerCase().replace(/^setter[_:]/, "");
+
+  const normalized = value.trim().toLowerCase().replace(/^setter[_:]/, "");
+
+  if (["amara", "amara edwin"].includes(normalized)) return "amara";
+  if (["gideon", "gideon adebowale"].includes(normalized)) return "gideon";
+  if (["debbie", "debbie nwosu", "deborah", "deb"].includes(normalized)) return "debbie";
+  if (["kelechi", "kels", "kel", "kelechi umunna"].includes(normalized)) return "kelechi";
+
+  return normalized;
 }
 
 export function normalizeClientKey(raw: string): ClientKey {
@@ -98,7 +106,20 @@ export function normalizeClientKey(raw: string): ClientKey {
     return "keith_holland";
   }
   if (
-    ["zoe", "zoe_and_emily", "client_zoe_and_emily", "zoe and emily", "zoe_emily"].includes(value)
+    [
+      "zoe",
+      "emily",
+      "zoe_and_emily",
+      "client_zoe_and_emily",
+      "client_zoe_emily",
+      "zoe and emily",
+      "zoe & emily",
+      "zoe + emily",
+      "zoe_emily",
+      "zoe emily",
+      "zoe and em",
+      "zoe & em",
+    ].includes(value)
   ) {
     return "zoe_and_emily";
   }
@@ -216,7 +237,7 @@ function buildCustomFieldsPayload(
   ];
 
   if (event.setterName) {
-    pairs.push(["dm_setter", normalizeSetter(event.setterName) || event.setterName]);
+    pairs.push(["dm_setter", normalizeSetterKey(event.setterName) || event.setterName]);
   }
 
   if (event.instagramHandle) {
@@ -242,7 +263,7 @@ async function createContact(
   const name = buildDisplayName(event);
   const tags = uniqueStrings([
     `client_${clientLabel.replace(/\s+/g, "_")}`,
-    event.setterName ? `setter_${normalizeSetter(event.setterName)}` : null,
+    event.setterName ? `setter_${normalizeSetterKey(event.setterName)}` : null,
     normalizeTagName(event.tagName),
   ]);
 
@@ -292,7 +313,7 @@ export async function syncManychatEventToGhl(event: ManychatDmEvent) {
     ...event,
     client: clientKey,
     tagName: normalizeTagName(event.tagName),
-    setterName: normalizeSetter(event.setterName),
+    setterName: normalizeSetterKey(event.setterName),
   };
 
   const fieldIds = await getCustomFieldIds();
