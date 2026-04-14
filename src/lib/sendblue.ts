@@ -1,12 +1,13 @@
-// SendBlue API client for the Sales Manager Hub (placeholder)
-// Sends iMessage/SMS via SendBlue and checks for responses
-// Credentials not yet provided — all functions degrade gracefully
+// SendBlue API client for the Sales Manager Hub
+// Uses the legacy send endpoint for outbound messages and the v2 read endpoint
+// for message history and response tracking.
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const SENDBLUE_BASE_URL = "https://api.sendblue.co/api";
+const SENDBLUE_SEND_BASE_URL = "https://api.sendblue.co/api";
+const SENDBLUE_READ_BASE_URL = "https://api.sendblue.co/api/v2";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,21 +28,27 @@ interface SendBlueResponse {
   status?: string;
   message?: string;
   error?: string;
-  // Message list responses
-  messages?: SendBlueMessage[];
+  data?: SendBlueMessage[];
 }
 
 interface SendBlueMessage {
-  content: string;
-  is_outbound: boolean;
-  date: string;
-  status: string;
+  content?: string;
+  is_outbound?: boolean;
+  date?: string;
+  date_sent?: string;
+  date_updated?: string;
+  status?: string;
+  from_number?: string;
+  to_number?: string;
+  number?: string;
+  service?: string;
 }
 
 /**
  * Internal fetch wrapper with SendBlue auth headers.
  */
 async function sendBlueFetch<T>(
+  baseUrl: string,
   path: string,
   options?: RequestInit
 ): Promise<T> {
@@ -53,7 +60,7 @@ async function sendBlueFetch<T>(
     );
   }
 
-  const url = `${SENDBLUE_BASE_URL}${path}`;
+  const url = `${baseUrl}${path}`;
 
   const response = await fetch(url, {
     ...options,
@@ -68,7 +75,7 @@ async function sendBlueFetch<T>(
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
-      `SendBlue API error (HTTP ${response.status}): ${body.substring(0, 300)}`
+      `SendBlue API error (HTTP ${response.status}) on ${path}: ${body.substring(0, 300)}`
     );
   }
 
@@ -118,13 +125,17 @@ export async function sendMessage(
   const normalizedTo = to.startsWith("+") ? to : `+1${to.replace(/\D/g, "")}`;
 
   try {
-    const data = await sendBlueFetch<SendBlueResponse>("/send-message", {
+    const data = await sendBlueFetch<SendBlueResponse>(
+      SENDBLUE_SEND_BASE_URL,
+      "/send-message",
+      {
       method: "POST",
       body: JSON.stringify({
         number: normalizedTo,
         content,
       }),
-    });
+      }
+    );
 
     if (data.status === "QUEUED" || data.status === "SENT") {
       return { success: true };
@@ -153,14 +164,26 @@ export async function sendMessage(
  */
 export async function getMessages(
   phoneNumber: string
-): Promise<{ responded: boolean; lastResponse?: string }> {
+): Promise<{
+  responded: boolean;
+  lastResponse?: string;
+  messages: Array<{
+    content: string;
+    direction: "inbound" | "outbound";
+    sentAt: string | null;
+    fromNumber: string | null;
+    toNumber: string | null;
+    service: string | null;
+    status: string | null;
+  }>;
+}> {
   if (!isSendBlueConfigured()) {
     // Graceful fallback when not configured — caller can check isSendBlueConfigured()
-    return { responded: false };
+    return { responded: false, messages: [] };
   }
 
   if (!phoneNumber) {
-    return { responded: false };
+    return { responded: false, messages: [] };
   }
 
   const normalizedNumber = phoneNumber.startsWith("+")
@@ -169,32 +192,44 @@ export async function getMessages(
 
   try {
     const data = await sendBlueFetch<SendBlueResponse>(
-      `/messages?number=${encodeURIComponent(normalizedNumber)}`
+      SENDBLUE_READ_BASE_URL,
+      `/messages?number=${encodeURIComponent(normalizedNumber)}&limit=25&order_by=date_sent&order_direction=desc`
     );
 
-    const messages = data.messages || [];
+    const messages = Array.isArray(data.data) ? data.data : [];
+    const normalizedMessages = messages.map((message) => ({
+      content: message.content || "",
+      direction: message.is_outbound ? "outbound" as const : "inbound" as const,
+      sentAt: message.date_sent || message.date || null,
+      fromNumber: message.from_number || null,
+      toNumber: message.to_number || null,
+      service: message.service || null,
+      status: message.status || null,
+    }));
 
     // Find inbound messages (not from us)
-    const inboundMessages = messages.filter((m) => !m.is_outbound);
+    const inboundMessages = normalizedMessages.filter((message) => message.direction === "inbound");
 
     if (inboundMessages.length === 0) {
-      return { responded: false };
+      return { responded: false, messages: normalizedMessages };
     }
 
     // Sort by date descending and return the most recent
     inboundMessages.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      (a, b) =>
+        new Date(b.sentAt || 0).getTime() - new Date(a.sentAt || 0).getTime()
     );
 
     return {
       responded: true,
       lastResponse: inboundMessages[0].content,
+      messages: normalizedMessages,
     };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown error fetching messages";
     console.error("[sendblue] getMessages failed:", message);
     // Fail open — return unknown state so callers can handle gracefully
-    return { responded: false };
+    return { responded: false, messages: [] };
   }
 }

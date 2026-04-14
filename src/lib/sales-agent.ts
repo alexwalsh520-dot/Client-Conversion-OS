@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { listMeetings } from "@/lib/fathom";
 import { getMessages as getSendBlueMessages } from "@/lib/sendblue";
+import { getSetterReportData } from "@/lib/setter-report-data";
 
 // âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -18,42 +19,6 @@ interface AgentTool {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
-}
-
-interface SalesMetrics {
-  cashCollected: number;
-  closeRate: number;
-  showRate: number;
-  aov: number;
-  callsBooked: number;
-  callsTaken: number;
-  wins: number;
-  losses: number;
-  noShows: number;
-  pendingFollowUps: number;
-}
-
-interface CloserMetrics {
-  name: string;
-  cash: number;
-  aov: number;
-  closeRate: number;
-  showRate: number;
-  booked: number;
-  taken: number;
-  wins: number;
-  losses: number;
-}
-
-interface SetterMetrics {
-  name: string;
-  client: string;
-  booked: number;
-  taken: number;
-  showRate: number;
-  newLeads: number;
-  engaged: number;
-  callLinks: number;
 }
 
 // âââ Supabase Client âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -69,14 +34,26 @@ function getSupabase() {
 
 export const AGENT_TOOLS: AgentTool[] = [
   {
+    name: "get_live_setter_report",
+    description: "Get live setter funnel data, live response timing, and live DM transcripts from the current CCOS tracking pipeline.",
+    input_schema: {
+      type: "object",
+      properties: {
+        reportDate: { type: "string", description: "Report date in YYYY-MM-DD format" },
+        setter: { type: "string", description: "Optional setter name filter (Amara, Gideon, Kelechi, Debbie)" }
+      },
+      required: ["reportDate"]
+    }
+  },
+  {
     name: "get_sales_dashboard",
-    description: "Get current sales metrics for a date range. Returns cash collected, close rate, show rate, AOV, calls booked/taken, wins, losses, no-shows, and pending follow-ups. Can filter by client (tyson, keith, or both).",
+    description: "Get current sales metrics for a date range. Returns cash collected, close rate, show rate, AOV, calls booked/taken, wins, losses, no-shows, and pending follow-ups. Can filter by client.",
     input_schema: {
       type: "object",
       properties: {
         dateFrom: { type: "string", description: "Start date in YYYY-MM-DD format" },
         dateTo: { type: "string", description: "End date in YYYY-MM-DD format" },
-        client: { type: "string", enum: ["tyson", "keith", "both"], description: "Filter by client. Defaults to both." }
+        client: { type: "string", enum: ["all", "tyson", "keith", "zoe"], description: "Filter by client. Defaults to all." }
       },
       required: ["dateFrom", "dateTo"]
     }
@@ -206,7 +183,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       properties: {
         dateFrom: { type: "string", description: "Start date YYYY-MM-DD" },
         dateTo: { type: "string", description: "End date YYYY-MM-DD" },
-        client: { type: "string", enum: ["tyson", "keith", "both"], description: "Filter by client" }
+        client: { type: "string", enum: ["all", "tyson", "keith", "zoe"], description: "Filter by client" }
       },
       required: ["dateFrom", "dateTo"]
     }
@@ -230,6 +207,37 @@ export const AGENT_TOOLS: AgentTool[] = [
 async function executeTool(toolName: string, input: Record<string, unknown>): Promise<string> {
   try {
     switch (toolName) {
+      case "get_live_setter_report": {
+        const reportDate =
+          (input.reportDate as string) || new Date().toISOString().split("T")[0];
+        const setterFilter = (input.setter as string | undefined)?.toLowerCase().trim() || null;
+        const data = await getSetterReportData(reportDate);
+
+        const setters = data.setters.filter((row) => {
+          if (!setterFilter) return true;
+          return (
+            row.setterName.toLowerCase().includes(setterFilter) ||
+            row.setterKey.toLowerCase().includes(setterFilter)
+          );
+        });
+
+        return JSON.stringify({
+          reportDate: data.reportDate,
+          weekStart: data.weekStart,
+          monthStart: data.monthStart,
+          dataQuality: data.dataQuality,
+          setters: setters.map((row) => ({
+            setterKey: row.setterKey,
+            setterName: row.setterName,
+            clientLabel: row.clientLabel,
+            daily: row.daily,
+            wtd: row.wtd,
+            mtd: row.mtd,
+            transcripts: row.transcripts,
+          })),
+        });
+      }
+
       case "get_sales_dashboard":
       case "get_closer_performance":
       case "get_setter_performance":
@@ -243,8 +251,13 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
 
         // Filter by client if specified
         let filtered = rows;
-        if (input.client && input.client !== "both") {
-          const clientName = input.client === "tyson" ? "Tyson Sonnek" : "Keith Holland";
+        if (input.client && input.client !== "all" && input.client !== "both") {
+          const clientName =
+            input.client === "tyson"
+              ? "Tyson Sonnek"
+              : input.client === "keith"
+                ? "Keith Holland"
+                : "Zoe and Emily";
           filtered = rows.filter(r => r.offer === clientName);
         }
 
@@ -294,20 +307,46 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
       }
 
       case "get_dm_transcripts": {
+        const reportDate =
+          (input.dateTo as string) ||
+          new Date().toISOString().split("T")[0];
+        const liveData = await getSetterReportData(reportDate);
+        const setterFilter = (input.setter as string).toLowerCase().trim();
+        const limit = (input.limit as number) || 10;
+
+        const liveMatches = liveData.setters
+          .filter((row) =>
+            row.setterName.toLowerCase().includes(setterFilter) ||
+            row.setterKey.toLowerCase().includes(setterFilter)
+          )
+          .flatMap((row) =>
+            row.transcripts.map((transcript) => ({
+              source: "live_dm_conversation_messages",
+              setter: row.setterName,
+              client: row.clientLabel,
+              ...transcript,
+            }))
+          )
+          .slice(0, limit);
+
+        if (liveMatches.length > 0) {
+          return JSON.stringify(liveMatches);
+        }
+
         const supabase = getSupabase();
         let query = supabase
           .from("dm_transcripts")
           .select("*")
           .ilike("setter_name", `%${input.setter}%`)
           .order("submitted_at", { ascending: false })
-          .limit((input.limit as number) || 10);
+          .limit(limit);
 
         if (input.dateFrom) query = query.gte("submitted_at", `${input.dateFrom}T00:00:00Z`);
         if (input.dateTo) query = query.lte("submitted_at", `${input.dateTo}T23:59:59Z`);
 
         const { data, error } = await query;
         if (error) return JSON.stringify({ error: error.message });
-        return JSON.stringify(data);
+        return JSON.stringify({ source: "legacy_dm_transcripts", transcripts: data });
       }
 
       case "get_call_transcripts": {
@@ -467,30 +506,34 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
 
 // âââ System Prompt âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-const SYSTEM_PROMPT = `You are the AI Chief Sales Officer for Client Conversion OS. Your name is "Sales Brain." You report directly to Matthew Conder (CEO/Founder). Your SOLE purpose is to maximize revenue.
+const SYSTEM_PROMPT = `You are the AI Chief Sales Officer for Client Conversion OS. Your name is "Sales Brain." You report directly to Matthew Conder (CEO/Founder). Your only job is to make the business more money.
 
 ## WHO YOU ARE
-You are the most ruthless, data-obsessed sales manager in the industry. You don't sugarcoat. You don't give generic advice. Every recommendation you make ties directly to a dollar amount. You think in terms of revenue per show, cash collected per setter, and conversion efficiency at every stage of the funnel.
+You are a hard-nosed sales manager. You do not guess. You do not use fluff. You use the numbers, the DM conversations, the reminder messages, and the call transcripts to find the easiest lever to improve right now.
 
 ## THE BUSINESS
-Client Conversion OS manages sales for fitness coaching businesses. Currently two clients:
-- **Tyson Sonnek** â Higher volume, higher close rate (47.7%), better show rate (57.6%)
-- **Keith Holland** â Lower volume, lower close rate (35.7%), worse show rate (48.5%)
+Client Conversion OS manages sales for fitness coaching businesses. Current offers:
+- **Tyson Sonnek** — biggest live DM volume
+- **Keith Holland** — lower live DM volume
+- **Zoe and Emily** — newest offer, judge lightly until real ad traffic is in
 
 ## THE TEAM
 **Closers:** Broz, Will, Jacob
-- Will: Highest cash ($14.8K), 50% close rate, but worst show rate (49%)
-- Jacob: Highest AOV ($1,882.50), 63.6% show rate (best)
-- Broz: Most calls taken, 38.1% close rate (needs work), decent show rate (57.8%)
 
-**Setters:** Amara (Tyson), Kelechi (Tyson), Gideon (Keith), Debbie (Keith)
-- Amara: Highest volume (55 booked), show rates range 47-69%
-- Kelechi: Wildly inconsistent (36-67% show rate depending on closer)
-- Gideon: Worst performer (33-37.5% show rate). Every call he books has a coin-flip chance of being wasted.
-- Debbie: 100% with Broz, 33% everywhere else. No standardized process.
+**Setters:** Amara (Tyson), Gideon (Keith), Kelechi (Zoe and Emily), Debbie (Zoe and Emily)
 
 ## THE SALES FUNNEL
 DM Prospect â Qualify â Book Call â Confirm â Show Up â Close â Collect Cash
+
+For setter coaching, use the live DM funnel first:
+- new lead
+- engaged
+- goal clear
+- gap clear
+- stakes clear
+- qualified
+- link sent
+- booked
 
 Key metrics and benchmarks:
 - DM Booking Rate: Target 15%+
@@ -501,18 +544,20 @@ Key metrics and benchmarks:
 
 ## HOW YOU THINK
 1. Always start with the NUMBERS. Pull the actual data before giving advice.
-2. Calculate the DOLLAR IMPACT of every problem and recommendation.
-3. Focus on the BIGGEST LEVER first (what single change makes the most money).
+2. Focus on the LOWEST-HANGING FRUIT first.
+3. Focus on the BIGGEST LEVER first (what single change makes the most money fastest).
 4. Be SPECIFIC â name names, cite conversations, reference exact metrics.
 5. When reviewing transcripts, score against the framework: Pain â Commitment â Urgency â Book â Confirm.
 6. Never give advice without backing it up with data from the tools.
+7. Give no more than 3 action items at a time unless asked.
+8. If data is missing, say exactly what is missing instead of pretending.
 
 ## HOW YOU RESPOND
 - Keep it sharp and direct. No fluff.
 - Use numbers and percentages. Always.
 - When someone asks a question, PULL THE DATA FIRST using your tools, then answer.
 - Format responses for Slack (use *bold*, _italic_, and bullet points with â¢).
-- If you identify a problem, also provide the specific fix with a dollar value attached.
+- If you identify a problem, also provide the specific fix and why it should lift booking rate, show rate, close rate, or AOV.
 - Reference the GAS Protocol: Get leads â Acquire customers â Scale revenue.
 
 ## ALERT THRESHOLDS
@@ -656,45 +701,69 @@ export async function autoReviewNewCalls(): Promise<string[]> {
 }
 
 export async function autoReviewNewDMs(): Promise<string[]> {
-  const supabase = getSupabase();
-  const yesterday = new Date(Date.now() - 86400000).toISOString();
   const reviews: string[] = [];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
 
   try {
-    const { data: transcripts } = await supabase
-      .from("dm_transcripts")
-      .select("*")
-      .gte("created_at", yesterday)
-      .is("reviewed_at", null)
-      .order("created_at", { ascending: false });
+    const liveData = await getSetterReportData(yesterday);
+    const rowsWithTranscripts = liveData.setters.filter(
+      (row) => row.transcripts.length > 0
+    );
 
-    if (!transcripts || transcripts.length === 0) return [];
+    if (rowsWithTranscripts.length === 0) {
+      const supabase = getSupabase();
+      const cutoff = new Date(Date.now() - 86400000).toISOString();
+      const { data: transcripts } = await supabase
+        .from("dm_transcripts")
+        .select("*")
+        .gte("created_at", cutoff)
+        .is("reviewed_at", null)
+        .order("created_at", { ascending: false });
 
-    // Group by setter for batch review
-    const bySetterMap = new Map<string, typeof transcripts>();
-    for (const t of transcripts) {
-      const setter = t.setter_name || "Unknown";
-      if (!bySetterMap.has(setter)) bySetterMap.set(setter, []);
-      bySetterMap.get(setter)!.push(t);
+      if (!transcripts || transcripts.length === 0) return [];
+
+      const bySetterMap = new Map<string, typeof transcripts>();
+      for (const transcript of transcripts) {
+        const setter = transcript.setter_name || "Unknown";
+        if (!bySetterMap.has(setter)) bySetterMap.set(setter, []);
+        bySetterMap.get(setter)!.push(transcript);
+      }
+
+      for (const [setter, setterTranscripts] of bySetterMap) {
+        const summary = setterTranscripts
+          .map((transcript, index) => `Conversation ${index + 1} (Lead: ${transcript.lead_name || "Unknown"}):\n${transcript.transcript || transcript.messages || "No content"}`)
+          .join("\n\n---\n\n");
+
+        const review = await runSalesAgent(
+          `Review these ${setterTranscripts.length} DM transcripts from setter ${setter}. Give me the 1-3 lowest-hanging actions to lift booking rate and show rate. Use specific examples.\n\n${summary}`
+        );
+
+        reviews.push(`*${setter}* (${setterTranscripts.length} conversations)\n${review}`);
+
+        const ids = setterTranscripts.map((transcript) => transcript.id);
+        await supabase
+          .from("dm_transcripts")
+          .update({ reviewed_at: new Date().toISOString() })
+          .in("id", ids);
+      }
+
+      return reviews;
     }
 
-    for (const [setter, setterTranscripts] of bySetterMap) {
-      const summary = setterTranscripts
-        .map((t, i) => `Conversation ${i + 1} (Lead: ${t.lead_name || "Unknown"}):\n${t.transcript || t.messages || "No content"}`)
+    for (const row of rowsWithTranscripts) {
+      const summary = row.transcripts
+        .slice(0, 5)
+        .map(
+          (transcript, index) =>
+            `Conversation ${index + 1} (Lead: ${transcript.leadName || "Unknown"}):\n${transcript.transcript || "No content"}`
+        )
         .join("\n\n---\n\n");
 
       const review = await runSalesAgent(
-        `Review these ${setterTranscripts.length} DM transcripts from setter ${setter}. Look for patterns in: hook quality, pain amplification, commitment extraction, follow-up timing, and confirmation cadence. Give me Stop/Start/Keep Doing with specific examples from these conversations.\n\n${summary}`
+        `Review these ${row.transcripts.length} live DM transcripts from setter ${row.setterName} for ${row.clientLabel}. Daily funnel: ${JSON.stringify(row.daily)}. Week-to-date funnel: ${JSON.stringify(row.wtd)}. Month-to-date funnel: ${JSON.stringify(row.mtd)}. Give me the 1-3 lowest-hanging actions to lift booking rate and show rate. Use specific examples and tie each action to the funnel drop-off.\n\n${summary}`
       );
 
-      reviews.push(`*${setter}* (${setterTranscripts.length} conversations)\n${review}`);
-
-      // Mark as reviewed
-      const ids = setterTranscripts.map(t => t.id);
-      await supabase
-        .from("dm_transcripts")
-        .update({ reviewed_at: new Date().toISOString() })
-        .in("id", ids);
+      reviews.push(`*${row.setterName}* (${row.clientLabel})\n${review}`);
     }
   } catch (err) {
     console.error("Error reviewing DMs:", err);
@@ -714,7 +783,7 @@ export async function checkAlerts(): Promise<string[]> {
     const dashboardData = await executeTool("get_sales_dashboard", {
       dateFrom: monthStart,
       dateTo: today,
-      client: "both"
+      client: "all"
     });
     const data = JSON.parse(dashboardData);
 

@@ -259,15 +259,15 @@ async function fetchSendBlueMessages(phone: string): Promise<string | null> {
   const apiSecret = process.env.SENDBLUE_API_SECRET_KEY;
   if (!apiKeyId || !apiSecret || !phone) return null;
   try {
-    const res = await fetch(`https://api.sendblue.co/api/messages?number=${encodeURIComponent(phone)}&limit=10`, {
+    const res = await fetch(`https://api.sendblue.co/api/v2/messages?number=${encodeURIComponent(phone)}&limit=10&order_by=date_sent&order_direction=desc`, {
       headers: { "sb-api-key-id": apiKeyId, "sb-api-secret-key": apiSecret },
     });
     if (!res.ok) return null;
     const data = await res.json();
-    if (!data.messages || !Array.isArray(data.messages) || data.messages.length === 0) return null;
-    return data.messages
-      .map((m: { content?: string; from_number?: string; date?: string }) =>
-        `${m.from_number === phone ? "Prospect" : "Us"}: ${m.content || ""} (${m.date || ""})`).join("\n");
+    if (!Array.isArray(data.data) || data.data.length === 0) return null;
+    return data.data
+      .map((m: { content?: string; is_outbound?: boolean; date_sent?: string }) =>
+        `${m.is_outbound ? "Us" : "Prospect"}: ${m.content || ""} (${m.date_sent || ""})`).join("\n");
   } catch { return null; }
 }
 
