@@ -38,6 +38,12 @@ interface SlackJoinResponse {
   error?: string;
 }
 
+interface SlackAuthTestResponse {
+  ok: boolean;
+  error?: string;
+  user_id?: string;
+}
+
 function getBotToken() {
   return process.env.SLACK_BOT_TOKEN || null;
 }
@@ -99,6 +105,39 @@ export async function fetchSlackAppointmentBookings(
       const joinData = (await joinRes.json()) as SlackJoinResponse;
       if (!joinData.ok && joinData.error !== "already_in_channel") {
         console.warn("[slack-appointments] join warning", joinData.error);
+
+        const authRes = await fetch(`${SLACK_API_BASE}/auth.test`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          cache: "no-store",
+        });
+
+        if (authRes.ok) {
+          const authData = (await authRes.json()) as SlackAuthTestResponse;
+          if (authData.ok && authData.user_id) {
+            const inviteRes = await fetch(`${SLACK_API_BASE}/conversations.invite`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify({
+                channel,
+                users: authData.user_id,
+              }),
+              cache: "no-store",
+            });
+
+            if (inviteRes.ok) {
+              const inviteData = (await inviteRes.json()) as SlackJoinResponse;
+              if (!inviteData.ok && inviteData.error !== "already_in_channel") {
+                console.warn("[slack-appointments] invite warning", inviteData.error);
+              }
+            }
+          }
+        }
       }
     }
   } catch (error) {
