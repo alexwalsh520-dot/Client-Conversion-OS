@@ -132,11 +132,16 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
   });
 
   const handleSave = async () => {
-    await onSave(formData);
-    setShowAddForm(false);
-    setEditingId(null);
-    setFormData({});
-    setConfirmingDelete(false);
+    try {
+      await onSave(formData);
+      setShowAddForm(false);
+      setEditingId(null);
+      setFormData({});
+      setConfirmingDelete(false);
+    } catch (err) {
+      console.error("[ClientRoster] Save failed:", err);
+      alert("Failed to save: " + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   const handleDelete = async () => {
@@ -359,7 +364,31 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             </div>
             <div>
               <label className="field-label">Coach</label>
-              <input className="input-field" value={formData.coachName || ""} onChange={(e) => setFormData({ ...formData, coachName: e.target.value })} />
+              <select
+                className="input-field"
+                value={
+                  [...new Set(clients.map((c) => c.coachName).filter(Boolean))].includes(formData.coachName || "")
+                    ? formData.coachName
+                    : formData.coachName ? "__custom__" : ""
+                }
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    const name = prompt("Enter new coach name:");
+                    if (name?.trim()) setFormData({ ...formData, coachName: name.trim() });
+                  } else if (e.target.value !== "__custom__") {
+                    setFormData({ ...formData, coachName: e.target.value });
+                  }
+                }}
+              >
+                <option value="">Select coach...</option>
+                {[...new Set(clients.map((c) => c.coachName).filter(Boolean))].sort().map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+                {formData.coachName && ![...new Set(clients.map((c) => c.coachName).filter(Boolean))].includes(formData.coachName) && (
+                  <option value="__custom__">{formData.coachName}</option>
+                )}
+                <option value="__new__">+ Add new coach</option>
+              </select>
             </div>
             <div>
               <label className="field-label">Program</label>
