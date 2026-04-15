@@ -85,11 +85,21 @@ export async function POST(req: NextRequest) {
           row.onboarding_date = payload.onboardingDate || new Date().toISOString().split("T")[0];
           row.onboarding_status = "onboarded";
         }
-        if (payload.id) Object.assign(row, { id: payload.id });
+        // EDIT existing client: use update, never upsert
+        if (payload.id) {
+          const { data, error } = await db
+            .from("clients")
+            .update(row)
+            .eq("id", payload.id)
+            .select()
+            .single();
 
-        // Dedup: if a client with the same name already exists and this is a new add,
-        // merge into the existing record instead of creating a duplicate
-        if (!payload.id && payload.name) {
+          if (error) throw error;
+          return NextResponse.json({ success: true, data });
+        }
+
+        // NEW client: check for dedup by name first
+        if (payload.name) {
           const { data: existing } = await db
             .from("clients")
             .select("*")
@@ -98,11 +108,11 @@ export async function POST(req: NextRequest) {
             .maybeSingle();
 
           if (existing) {
-            // Merge: keep values from whichever has more info, prefer the new submission
-            const merged: Record<string, unknown> = { id: existing.id };
+            // Merge into existing record
+            const merged: Record<string, unknown> = {};
             const fields = ["email", "coach_name", "program", "offer", "start_date", "end_date", "status",
               "payment_platform", "sales_fathom_link", "onboarding_fathom_link", "sales_person", "comments",
-              "onboarding_date", "onboarding_status"];
+              "onboarding_date", "onboarding_status", "phone_number"];
             for (const f of fields) {
               const newVal = row[f];
               const oldVal = existing[f];
@@ -110,6 +120,10 @@ export async function POST(req: NextRequest) {
             }
             merged.name = payload.name;
             merged.amount_paid = (payload.amountPaid && payload.amountPaid > 0) ? payload.amountPaid : (existing.amount_paid || 0);
+            if (payload.nutritionFormId) {
+              merged.nutrition_form_id = payload.nutritionFormId;
+              merged.nutrition_status = "pending";
+            }
 
             const { data: mergedData, error: mergeErr } = await db
               .from("clients")
@@ -123,9 +137,13 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // Set onboarding fields for genuinely new clients
+        row.onboarding_date = payload.onboardingDate || new Date().toISOString().split("T")[0];
+        row.onboarding_status = "onboarded";
+
         const { data, error } = await db
           .from("clients")
-          .upsert(row, { onConflict: "id" })
+          .insert(row)
           .select()
           .single();
 
