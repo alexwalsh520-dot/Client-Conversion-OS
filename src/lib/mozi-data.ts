@@ -1,7 +1,15 @@
 import type { EngineResult } from './mozi-engine';
 
+type DashboardData = EngineResult & {
+  byInfluencer: Record<string, any>;
+  revenue30: number;
+  clients30: number;
+  roas: number;
+  capacityPct: number;
+};
+
 // Mock data matching the HTML prototype values (all money in cents)
-const MOCK_DATA: EngineResult & { byInfluencer: Record<string, any>; [key: string]: unknown } = {
+const MOCK_DATA: DashboardData = {
   status: 'buy',
   ratio: 7.97,
   payback30: 48700,
@@ -33,7 +41,7 @@ const MOCK_DATA: EngineResult & { byInfluencer: Record<string, any>; [key: strin
   },
 };
 
-export async function getDashboardData(): Promise<EngineResult & { byInfluencer: Record<string, any> }> {
+export async function getDashboardData(): Promise<DashboardData> {
   // If Supabase isn't configured, use mock data
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.log('Supabase not configured, using mock data');
@@ -73,7 +81,7 @@ export async function getDashboardData(): Promise<EngineResult & { byInfluencer:
       cashOnHand: data.cash_on_hand ?? 0,
       monthlyBurn: data.monthly_burn ?? 0,
       byInfluencer: data.by_influencer || {},
-    };
+    } satisfies DashboardData;
   } catch {
     return MOCK_DATA;
   }
