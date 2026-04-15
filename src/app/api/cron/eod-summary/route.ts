@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 
 const AHMAD_SLACK_ID = "U08FK5NPG9W";
@@ -64,8 +65,10 @@ export async function GET(req: NextRequest) {
   const isVercelCron = req.headers.get("x-vercel-cron") === "true";
   const authHeader = req.headers.get("authorization");
   const isAuthed = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const session = await auth();
+  const hasSession = !!session?.user;
 
-  if (!isVercelCron && !isAuthed && process.env.NODE_ENV === "production") {
+  if (!isVercelCron && !isAuthed && !hasSession && process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
