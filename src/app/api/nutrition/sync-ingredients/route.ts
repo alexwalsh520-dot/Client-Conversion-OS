@@ -41,10 +41,18 @@ interface UsdaSearchResponse {
 
 /**
  * Search USDA for a term and pick the best match.
- * Preference order: Foundation → SR Legacy.
+ *
+ * Preference logic:
+ * - If the search mentions a prepared state (cooked, roasted, steamed, boiled,
+ *   baked, grilled, broiled, poached), prefer SR Legacy. Foundation Foods
+ *   mostly contains raw versions; picking Foundation would give wrong data
+ *   for "cooked chicken" etc.
+ * - For raw/generic searches, prefer Foundation (more accurate, lab-tested).
+ * - Within each dataset, prefer descriptions that match the search terms
+ *   most closely.
  */
 async function searchUsda(apiKey: string, searchTerm: string): Promise<UsdaFood | null> {
-  const url = `${USDA_API_BASE}/foods/search?api_key=${apiKey}&query=${encodeURIComponent(searchTerm)}&dataType=Foundation,SR%20Legacy&pageSize=10`;
+  const url = `${USDA_API_BASE}/foods/search?api_key=${apiKey}&query=${encodeURIComponent(searchTerm)}&dataType=Foundation,SR%20Legacy&pageSize=25`;
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -56,14 +64,35 @@ async function searchUsda(apiKey: string, searchTerm: string): Promise<UsdaFood 
   const foods = data.foods || [];
   if (foods.length === 0) return null;
 
-  // Prefer Foundation over SR Legacy
-  const foundation = foods.find((f) => f.dataType === "Foundation");
-  if (foundation) return foundation;
+  const preparedKeywords = ["cooked", "roasted", "steamed", "boiled", "baked", "grilled", "broiled", "poached", "pan fried"];
+  const rawKeywords = ["raw", "dry"];
+  const wantsPrepared = preparedKeywords.some((kw) => searchTerm.toLowerCase().includes(kw));
+  const wantsRaw = rawKeywords.some((kw) => searchTerm.toLowerCase().includes(kw));
 
-  const srLegacy = foods.find((f) => f.dataType === "SR Legacy");
-  if (srLegacy) return srLegacy;
+  // If we want "cooked X", filter out results with "raw" in description and vice versa
+  const filteredFoods = foods.filter((f) => {
+    const desc = (f.description || "").toLowerCase();
+    if (wantsPrepared && desc.includes("raw")) return false;
+    if (wantsRaw && !desc.includes("raw") && !desc.includes("dry")) return false;
+    return true;
+  });
 
-  return foods[0] || null;
+  const candidates = filteredFoods.length > 0 ? filteredFoods : foods;
+
+  const foundation = candidates.find((f) => f.dataType === "Foundation");
+  const srLegacy = candidates.find((f) => f.dataType === "SR Legacy");
+
+  // For prepared states, prefer SR Legacy (Foundation rarely has cooked versions)
+  if (wantsPrepared) {
+    if (srLegacy) return srLegacy;
+    if (foundation) return foundation;
+  } else {
+    // For raw/generic, prefer Foundation (lab-tested, most accurate)
+    if (foundation) return foundation;
+    if (srLegacy) return srLegacy;
+  }
+
+  return candidates[0] || null;
 }
 
 /**
