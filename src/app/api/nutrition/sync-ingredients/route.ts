@@ -74,13 +74,13 @@ async function searchUsda(apiKey: string, searchTerm: string): Promise<UsdaFood 
  */
 function getNutrientValue(food: UsdaFood, ...nutrientNumbers: string[]): number {
   const nutrients = food.foodNutrients || [];
+  // Try each candidate in order; return the first match (even if 0, which is valid)
   for (const target of nutrientNumbers) {
     for (const n of nutrients) {
       const num = n.nutrientNumber || n.nutrient?.number;
       const id = n.nutrientId?.toString() || n.nutrient?.id?.toString();
       if (num === target || id === target) {
-        const val = n.value ?? n.amount ?? 0;
-        if (val > 0) return val;
+        return n.value ?? n.amount ?? 0;
       }
     }
   }
@@ -142,14 +142,14 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // USDA nutrient numbers — Foundation and SR Legacy sometimes use different IDs for the same nutrient.
-      // Energy: "208" (kcal, SR Legacy) or "1008" (kcal, Foundation); skip "957" (kJ).
-      // Protein: "203" or ID 1003
-      // Carbs: "205" or ID 1005
-      // Fat: "204" or ID 1004
-      // Fiber: "291" or ID 1079
-      // Sugars: "269" or ID 2000
-      // Sodium: "307" or ID 1093
+      // USDA nutrient numbers:
+      //   Energy: "208" (SR Legacy kcal), "958" (Foundation Atwater Specific, preferred), "957" (Foundation Atwater General)
+      //   Protein: "203"
+      //   Carbs:   "205"
+      //   Fat:     "204"
+      //   Fiber:   "291"
+      //   Sugars:  "269"
+      //   Sodium:  "307"
       const row = {
         name: seed.displayName,
         slug: seed.slug,
@@ -157,13 +157,13 @@ export async function POST(req: NextRequest) {
         category: seed.category,
         usda_fdc_id: food.fdcId,
         data_type: food.dataType,
-        calories_per_100g: getNutrientValue(food, "208", "1008"),
-        protein_g_per_100g: getNutrientValue(food, "203", "1003"),
-        carbs_g_per_100g: getNutrientValue(food, "205", "1005"),
-        fat_g_per_100g: getNutrientValue(food, "204", "1004"),
-        fiber_g_per_100g: getNutrientValue(food, "291", "1079"),
-        sugar_g_per_100g: getNutrientValue(food, "269", "2000"),
-        sodium_mg_per_100g: getNutrientValue(food, "307", "1093"),
+        calories_per_100g: getNutrientValue(food, "208", "958", "957"),
+        protein_g_per_100g: getNutrientValue(food, "203"),
+        carbs_g_per_100g: getNutrientValue(food, "205"),
+        fat_g_per_100g: getNutrientValue(food, "204"),
+        fiber_g_per_100g: getNutrientValue(food, "291"),
+        sugar_g_per_100g: getNutrientValue(food, "269"),
+        sodium_mg_per_100g: getNutrientValue(food, "307"),
         verified: false,
         notes: `Auto-synced from USDA: ${food.description}`,
         updated_at: new Date().toISOString(),
