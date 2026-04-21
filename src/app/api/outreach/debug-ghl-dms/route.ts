@@ -103,10 +103,6 @@ export async function GET() {
   const firstConvId = firstBodyPeek && Array.isArray(firstBodyPeek.conversations) && firstBodyPeek.conversations[0]
     ? (firstBodyPeek.conversations[0] as { id?: string }).id
     : null;
-  const firstBody = firstSearch.body as SearchResponse | null;
-  const firstConvId = firstBody && Array.isArray(firstBody.conversations) && firstBody.conversations[0]
-    ? (firstBody.conversations[0] as { id?: string }).id
-    : null;
 
   if (firstConvId) {
     const msgR = await ghlGet(`/conversations/${firstConvId}/messages`);
