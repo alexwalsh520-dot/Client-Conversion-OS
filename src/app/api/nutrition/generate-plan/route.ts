@@ -234,12 +234,30 @@ export async function POST(req: NextRequest) {
     // across the week without being every day.
     const rotateAvoid = (dayIdx: number): string[] => {
       if (preferredProteins.length === 0) return [];
-      // Days 3-7: ask Claude to avoid proteins it likely used on prior days
       if (dayIdx < 2) return [];
-      // Rotate through the list so each day avoids 1-2 proteins
       const cycle = preferredProteins;
       const avoidIdx = dayIdx % cycle.length;
       return [cycle[avoidIdx]];
+    };
+
+    // Structural format rotation so meals don't default to the same shape every day.
+    // Breakfast and lunch cycles are different length to further break pattern lock-in.
+    const BREAKFAST_FORMATS = ["bowl (oats/yogurt)", "scramble/omelette plate", "savory burrito or wrap", "smoothie bowl", "pancakes or protein toast", "egg-and-toast plate", "breakfast tacos"];
+    const LUNCH_FORMATS     = ["rice bowl", "wrap or burrito", "salad with protein", "sandwich plate", "pasta plate", "taco plate", "stir-fry over rice"];
+    const DINNER_FORMATS    = ["protein + starch + vegetable plate", "crockpot stew/chili style", "stir-fry bowl", "taco/fajita plate", "pasta bake or skillet", "grain bowl with roasted vegetables", "salad with hearty protein"];
+    const SNACK_FORMATS     = ["yogurt + fruit + grain", "protein shake + fruit", "cottage cheese + fruit", "rice cakes + protein", "hard-boiled eggs + fruit", "cheese + fruit + crackers", "protein bar + fruit"];
+
+    const formatHintsFor = (dayIdx: number) => {
+      const h: Record<string, string> = {
+        Breakfast: BREAKFAST_FORMATS[dayIdx % BREAKFAST_FORMATS.length],
+        Lunch:     LUNCH_FORMATS    [dayIdx % LUNCH_FORMATS.length],
+        Dinner:    DINNER_FORMATS   [dayIdx % DINNER_FORMATS.length],
+        Snack:     SNACK_FORMATS    [dayIdx % SNACK_FORMATS.length],
+        "Morning Snack":   SNACK_FORMATS[(dayIdx + 3) % SNACK_FORMATS.length],
+        "Afternoon Snack": SNACK_FORMATS[(dayIdx + 5) % SNACK_FORMATS.length],
+        "Evening Snack":   SNACK_FORMATS[(dayIdx + 2) % SNACK_FORMATS.length],
+      };
+      return h;
     };
 
     // --- Build 7 per-day Claude inputs ---
@@ -257,6 +275,7 @@ export async function POST(req: NextRequest) {
         prefersSpicy: spicy,
         preferredProteins,
         avoidProteins: rotateAvoid(i),
+        formatHints: formatHintsFor(i),
       });
     }
 
@@ -289,12 +308,14 @@ export async function POST(req: NextRequest) {
     days.forEach((d, idx) => {
       const t = computeTotals(d);
       const calPct = (t.cal - targets.calories) / targets.calories;
-      const pPct = (t.p - targets.proteinG) / targets.proteinG;
-      const fPct = (t.f - targets.fatG) / targets.fatG;
+      const pPct   = (t.p   - targets.proteinG) / targets.proteinG;
+      const cPct   = (t.c   - targets.carbsG)   / targets.carbsG;
+      const fPct   = (t.f   - targets.fatG)     / targets.fatG;
 
-      const calBad  = Math.abs(calPct) > 0.10;
-      const protBad = Math.abs(pPct)   > 0.10;
-      const fatBad  = Math.abs(fPct)   > 0.15;
+      const calBad   = Math.abs(calPct) > 0.08;  // tightened: retry if >8% off
+      const protBad  = Math.abs(pPct)   > 0.10;
+      const carbBad  = Math.abs(cPct)   > 0.12;  // new: retry if carbs are off
+      const fatBad   = Math.abs(fPct)   > 0.12;  // tightened from 15% to 12%
 
       // Check if any single meal exceeds 40% of daily fat target
       let worstMealFat = 0;
@@ -313,7 +334,7 @@ export async function POST(req: NextRequest) {
       }
       const mealFatBad = worstMealFat > targets.fatG * 0.40;
 
-      if (calBad || protBad || fatBad || mealFatBad) {
+      if (calBad || protBad || carbBad || fatBad || mealFatBad) {
         const pieces: string[] = [];
         pieces.push(`Your prior attempt hit: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat.`);
         pieces.push(`Targets: ${targets.calories} kcal, ${targets.proteinG}g protein, ${targets.carbsG}g carbs, ${targets.fatG}g fat.`);
@@ -321,8 +342,10 @@ export async function POST(req: NextRequest) {
         if (calBad && calPct < 0)  pieces.push(`CALORIES are ${Math.round(-calPct * 100)}% UNDER — increase protein and carb portions; add 10-15g oil if fat is low.`);
         if (fatBad && fPct > 0)    pieces.push(`FAT is ${Math.round(fPct * 100)}% OVER — cut butter/oil/cheese/nut portions in half.`);
         if (fatBad && fPct < 0)    pieces.push(`FAT is ${Math.round(-fPct * 100)}% UNDER — add 5-10g oil, avocado, or a small cheese portion.`);
-        if (protBad && pPct > 0)   pieces.push(`PROTEIN is ${Math.round(pPct * 100)}% OVER — reduce protein portion sizes slightly.`);
+        if (protBad && pPct > 0)   pieces.push(`PROTEIN is ${Math.round(pPct * 100)}% OVER — reduce protein portions by 10-15g each and move the calories into carbs (rice, potato, oats, bread). Protein and carbs both cost 4 kcal/g, so swap them 1:1.`);
         if (protBad && pPct < 0)   pieces.push(`PROTEIN is ${Math.round(-pPct * 100)}% UNDER — bump the main protein's grams (aim for 30-40g protein per main meal).`);
+        if (carbBad && cPct > 0)   pieces.push(`CARBS are ${Math.round(cPct * 100)}% OVER — trim starch portions (rice, bread, pasta) by 20-30%.`);
+        if (carbBad && cPct < 0)   pieces.push(`CARBS are ${Math.round(-cPct * 100)}% UNDER — increase rice/potato/oats/bread portions by 30-50g. Don't add more protein to fill the calorie gap — swap into carbs.`);
         if (mealFatBad)            pieces.push(`"${worstMealName}" has ${Math.round(worstMealFat)}g fat — that's more than 40% of the daily target. Spread fats across meals; no single meal should exceed ${Math.round(targets.fatG * 0.4)}g fat.`);
         outOfSpec.push({ idx, errMsg: pieces.join(" ") });
       }
@@ -337,14 +360,20 @@ export async function POST(req: NextRequest) {
         priorAttemptError: errMsg,
       }));
       const retryDays = await generateAllDays(retryInputs, apiKey);
-      // Merge retry results back into days array (only if the retry actually improved things)
+      // Merge retry results back into days array — score compares ALL four macros
+      // (not just calories+fat, so protein/carb corrections aren't rejected).
+      // Each macro contributes its own kcal-equivalent distance from target.
+      const scoreDay = (t: { cal: number; p: number; c: number; f: number }) =>
+        Math.abs(t.cal - targets.calories) +
+        Math.abs(t.p - targets.proteinG) * 4 +
+        Math.abs(t.c - targets.carbsG) * 4 +
+        Math.abs(t.f - targets.fatG) * 9;
+
       retryDays.forEach((rd) => {
         const idx = rd.day - 1;
         const before = computeTotals(days[idx]);
         const after  = computeTotals(rd);
-        const scoreBefore = Math.abs(before.cal - targets.calories) + Math.abs(before.f - targets.fatG) * 9;
-        const scoreAfter  = Math.abs(after.cal - targets.calories)  + Math.abs(after.f - targets.fatG)  * 9;
-        if (scoreAfter < scoreBefore) {
+        if (scoreDay(after) < scoreDay(before)) {
           days[idx] = rd;
         }
       });

@@ -46,6 +46,8 @@ export interface DayGenerationInput {
   avoidProteins?: string[];
   // Corrective feedback from a prior attempt on this day, if any
   priorAttemptError?: string;
+  // Structural format hint to rotate meal formats across the week (bowl, wrap, salad, plate, etc.)
+  formatHints?: Partial<Record<string, string>>;
 }
 
 function buildSystemPrompt(): string {
@@ -64,7 +66,11 @@ MACRO HIERARCHY — strictness applies top-down:
      portions (NOT 30-50g); nuts 15g portions (NOT 30g). Track them across the day.
    → NO SINGLE MEAL may contain more than 40% of the daily fat target. Spread fats across the day.
 3. PROTEIN must be within ±7% of target. Spread 20-40g per meal.
-4. CARBS are a "remainder" macro — within ±10% is fine.
+   → Do NOT overshoot protein. Protein and carbs both cost 4 kcal/g, so 30g extra
+     protein means 30g less carbs. High-protein meals feel like "more food" but they
+     cannibalize the carb budget and leave clients underfueled.
+4. CARBS must be within ±10% of target. Starches (rice, oats, potato, bread, pasta,
+   tortilla) fill the remaining calorie budget after protein and fat are set.
 
 MEAL COMPOSITION:
 - LUNCH AND DINNER must each include at least ONE vegetable ingredient
@@ -72,6 +78,15 @@ MEAL COMPOSITION:
   A "taco bowl" or "burrito bowl" without any vegetables is not realistic — peppers, onions,
   tomato, and lettuce belong in those dishes.
 - Most meals should have 4-6 ingredients, not 2-3.
+
+VARIETY — applies to EVERY meal slot, not just lunch:
+- Follow the per-meal "format hint" when one is provided; it exists so your meal doesn't
+  look identical to the other days of the week.
+- Don't default to the same shape every day (e.g., not every breakfast an "oats bowl",
+  not every lunch a "rice bowl", not every dinner a "protein + rice plate").
+- Some repetition is fine for simple snacks, but breakfast/lunch/dinner should each have
+  meaningful variation across the 7 days in at least protein source, carb source, AND
+  structural format.
 
 INGREDIENT SELECTION:
 - Respect the client's ranked protein preferences — their #1 choice should appear 1-2×/week;
@@ -107,7 +122,12 @@ function buildUserPrompt(input: DayGenerationInput): string {
           .join("\n")}`
       : "";
 
-  const mealSlotsBlock = mealSlots.map((s, i) => `${i + 1}. ${s.name} at ${s.time}`).join("\n");
+  const mealSlotsBlock = mealSlots
+    .map((s, i) => {
+      const hint = input.formatHints?.[s.name];
+      return `${i + 1}. ${s.name} at ${s.time}${hint ? `  (format hint: ${hint})` : ""}`;
+    })
+    .join("\n");
 
   // Client-specific directives
   const directives: string[] = [];
