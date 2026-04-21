@@ -65,6 +65,11 @@ MACRO HIERARCHY — strictness applies top-down:
    → Use added fats SPARINGLY: butter/oil 5-10g per meal (NOT 15-25g); cheese 15-20g
      portions (NOT 30-50g); nuts 15g portions (NOT 30g). Track them across the day.
    → NO SINGLE MEAL may contain more than 40% of the daily fat target. Spread fats across the day.
+   → CROSS-MEAL BALANCE: if the day's MAIN protein (dinner or lunch) is inherently high-fat
+     (salmon ~12g fat/100g, fatty beef, pork belly, duck), keep the other meals LEAN —
+     use egg whites instead of whole eggs, skip butter/oil in cooking, use cottage cheese
+     or Greek yogurt instead of cream cheese. Stacking fatty fish on top of an eggs+beef+
+     butter breakfast will blow the daily fat budget.
 3. PROTEIN must be within ±7% of target. Spread 20-40g per meal.
    → Do NOT overshoot protein. Protein and carbs both cost 4 kcal/g, so 30g extra
      protein means 30g less carbs. High-protein meals feel like "more food" but they

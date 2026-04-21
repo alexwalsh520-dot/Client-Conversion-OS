@@ -69,6 +69,33 @@ interface IngredientHandle {
   originalGrams: number;
 }
 
+/**
+ * "Added fats" = small-portion flavor/cooking fats that can be reduced
+ * aggressively (even to near-zero) without ruining the meal. Core proteins
+ * (salmon, beef) and whole foods (avocado) are NOT in this bucket — reducing
+ * a 200g salmon to 50g would be a different meal.
+ */
+function isAddedFat(row: IngredientRow): boolean {
+  const s = row.slug.toLowerCase();
+  const n = (row.name || "").toLowerCase();
+  // Category-based
+  if (row.category === "fat" && !s.includes("avocado") && !s.includes("nut")) return true;
+  if (row.category === "condiment" && Number(row.fat_g_per_100g) > 15) return true;
+  // Slug/name-based flags
+  return (
+    s.includes("butter") ||
+    s.includes("oil") ||
+    s.includes("cream_cheese") ||
+    s.includes("heavy_cream") ||
+    s.includes("mayo") ||
+    s.includes("dressing") ||
+    s.includes("ghee") ||
+    n.includes("butter") ||
+    n.includes("oil") ||
+    n.includes("dressing")
+  );
+}
+
 function collectHandles(day: DayPlan, byslug: Map<string, IngredientRow>): IngredientHandle[] {
   const handles: IngredientHandle[] = [];
   day.meals.forEach((meal, mealIdx) => {
@@ -147,42 +174,59 @@ export function optimizeDayPortions(
       return Number(row.calories_per_100g);
     };
 
+    // Bounds: allow aggressive reduction of "added fats" when the worst macro
+    // is fat and we're significantly over. Small-portion cooking fats can go
+    // to near-zero without ruining the meal.
+    const getChangeFrac = (h: IngredientHandle): number => {
+      const aggressiveFatCut =
+        worst.macro === "f" && worst.d < 0 && worst.err > 0.15 && isAddedFat(h.row);
+      return aggressiveFatCut ? 0.85 : maxChangeFrac;
+    };
+    const getLowerBound = (h: IngredientHandle): number => {
+      const aggressiveFatCut =
+        worst.macro === "f" && worst.d < 0 && worst.err > 0.15 && isAddedFat(h.row);
+      // Allow added fats to drop nearly to zero when fat is way over.
+      const floor = aggressiveFatCut ? 1 : 5;
+      return Math.max(floor, h.originalGrams * (1 - getChangeFrac(h)));
+    };
+
     // Score each handle by density × available room to move in the needed direction.
-    // Skip handles already maxed/minimized against the 35% bound.
-    const direction = worst.d >= 0 ? 1 : -1; // +1 = need to add, -1 = need to remove
+    const direction = worst.d >= 0 ? 1 : -1;
     let best: IngredientHandle | null = null;
     let bestScore = 0;
     for (const h of handles) {
       const density = densityOf(h.row, worst.macro);
-      if (density <= 0.1) continue; // ignore ingredients with near-zero density for this macro
+      if (density <= 0.1) continue;
       const current = day.meals[h.mealIdx].ingredients[h.ingIdx].grams;
-      const upperBound = Math.max(h.originalGrams * (1 + maxChangeFrac), h.originalGrams + 30);
-      const lowerBound = Math.max(5, h.originalGrams * (1 - maxChangeFrac));
+      const changeFrac = getChangeFrac(h);
+      const upperBound = Math.max(h.originalGrams * (1 + changeFrac), h.originalGrams + 30);
+      const lowerBound = getLowerBound(h);
       const roomToAdd = upperBound - current;
       const roomToRemove = current - lowerBound;
       const room = direction > 0 ? roomToAdd : roomToRemove;
       if (room <= 0.5) continue;
-      const score = density * Math.min(room, 25); // capped per-step room
+      // Boost priority for added-fat reductions when fat is way over
+      const addedFatBoost =
+        worst.macro === "f" && direction < 0 && isAddedFat(h.row) ? 1.5 : 1.0;
+      const score = density * Math.min(room, 30) * addedFatBoost;
       if (score > bestScore) {
         bestScore = score;
         best = h;
       }
     }
 
-    if (!best) break; // no ingredient can move further — we've hit bounds
+    if (!best) break;
 
-    // How many grams to change for this ingredient to close its share of the gap?
     const density = densityOf(best.row, worst.macro);
-    // deltaGrams * density/100 = worst.d   =>   deltaGrams = worst.d * 100 / density
-    const needed = Math.abs(worst.d) * 100 / Math.max(density, 0.1);
-    // Apply half the fraction of what's needed to avoid overshoot — the outer loop will iterate
-    const stepG = Math.min(Math.max(Math.round(needed * 0.6), 2), 20); // per-step 2-20g
+    const needed = (Math.abs(worst.d) * 100) / Math.max(density, 0.1);
+    const stepG = Math.min(Math.max(Math.round(needed * 0.6), 2), 25);
 
     const meal = day.meals[best.mealIdx];
     const ing = meal.ingredients[best.ingIdx];
     const current = ing.grams;
-    const upperBound = Math.max(best.originalGrams * (1 + maxChangeFrac), best.originalGrams + 30);
-    const lowerBound = Math.max(5, best.originalGrams * (1 - maxChangeFrac));
+    const changeFrac = getChangeFrac(best);
+    const upperBound = Math.max(best.originalGrams * (1 + changeFrac), best.originalGrams + 30);
+    const lowerBound = getLowerBound(best);
 
     if (direction > 0) {
       ing.grams = Math.min(upperBound, current + stepG);
@@ -191,7 +235,6 @@ export function optimizeDayPortions(
     }
     ing.grams = Math.round(ing.grams);
 
-    // Safety: if we didn't actually move, break to prevent infinite loop
     if (ing.grams === current) break;
   }
 }
