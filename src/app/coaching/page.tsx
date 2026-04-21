@@ -331,6 +331,7 @@ export default function CoachingPage() {
             onAssignTask={handleAssignNutritionTask}
             onCompleteTask={handleCompleteNutritionTask}
             onUnlinkForm={handleUnlinkNutritionForm}
+            onRefreshClients={refetchClients}
           />
         )}
       </div>

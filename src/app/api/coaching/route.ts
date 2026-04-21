@@ -166,22 +166,8 @@ export async function POST(req: NextRequest) {
           }).catch(() => {}); // fire-and-forget, don't block response
         }
 
-        // Slack notification for new client with linked nutrition form
-        if (payload.nutritionFormId && data) {
-          postToCoachingChannel([
-            {
-              type: "header",
-              text: { type: "plain_text", text: ":salad: New Meal Plan Task" },
-            },
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `*${payload.name}* has been onboarded and needs a custom meal plan.\n\n<@U08LCV3Q9L7> please check the Nutrition tab on CCOS.`,
-              },
-            },
-          ]).catch((err) => console.error("[coaching] Slack nutrition notification failed:", err));
-        }
+        // Per-task Slack ping intentionally removed. Daman tracks her own queue
+        // and the bi-monthly summary covers payroll counts.
 
         return NextResponse.json({ success: true, data });
       }
@@ -707,21 +693,8 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
 
-        // Send Slack notification — new meal plan task
-        const clientName = data.name || "Unknown";
-        postToCoachingChannel([
-          {
-            type: "header",
-            text: { type: "plain_text", text: ":salad: New Meal Plan Task" },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `*${clientName}* has been onboarded and needs a custom meal plan.\n\n<@U08LCV3Q9L7> please check the Nutrition tab on CCOS.`,
-            },
-          },
-        ]).catch((err) => console.error("[coaching] Slack nutrition notification failed:", err));
+        // Per-task Slack ping intentionally removed. Daman tracks her own queue
+        // and the bi-monthly summary covers payroll counts.
 
         return NextResponse.json({ success: true, data });
       }

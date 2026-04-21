@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   UtensilsCrossed,
   ChevronDown,
@@ -14,6 +14,12 @@ import {
   ClipboardList,
   Copy,
   Check,
+  Sparkles,
+  FileText,
+  Download,
+  MessageSquarePlus,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import type { Client, NutritionIntakeForm } from "@/lib/types";
 
@@ -21,13 +27,12 @@ interface Props {
   clients: Client[];
   nutritionForms: NutritionIntakeForm[];
   onLinkForm: (clientId: number, nutritionFormId: number) => Promise<void>;
-  onAssignTask: (clientId: number, assignedTo: string) => Promise<void>;
-  onCompleteTask: (clientId: number, checklist: { checklistAllergies: boolean; checklistEverfit: boolean; checklistMessage: boolean }) => Promise<void>;
-  onUnlinkForm: (clientId: number) => Promise<void>;
+  // Legacy props retained for API compatibility; unused by the new flow.
+  onAssignTask?: (clientId: number, assignedTo: string) => Promise<void>;
+  onCompleteTask?: (clientId: number, checklist: { checklistAllergies: boolean; checklistEverfit: boolean; checklistMessage: boolean }) => Promise<void>;
+  onUnlinkForm?: (clientId: number) => Promise<void>;
+  onRefreshClients?: () => void;
 }
-
-// Assignment options
-const ASSIGNEES = ["Daman", "FMZ"];
 
 function daysSince(dateStr: string | null): number {
   if (!dateStr) return 0;
@@ -94,7 +99,359 @@ function IntakeFormDetail({ form }: { form: NutritionIntakeForm }) {
   );
 }
 
-export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAssignTask, onCompleteTask, onUnlinkForm }: Props) {
+// ============ MEAL PLAN TASK PANEL ============
+
+interface MealPlan {
+  id: number;
+  client_id: number;
+  version: number;
+  pdf_path: string | null;
+  targets_calories: number;
+  targets_protein_g: number;
+  targets_carbs_g: number;
+  targets_fat_g: number;
+  sex: string;
+  weight_kg: number;
+  meals_per_day: number;
+  plan_data: unknown;
+  created_at: string;
+  created_by: string;
+  pdfUrl: string | null;
+}
+
+interface Comment {
+  id: number;
+  client_id: number;
+  comment: string;
+  created_at: string;
+  created_by: string;
+}
+
+function MealPlanTaskPanel({
+  client,
+  intakeForm,
+  isDoneSection,
+  onRefreshClients,
+}: {
+  client: Client;
+  intakeForm: NutritionIntakeForm | undefined;
+  isDoneSection: boolean;
+  onRefreshClients?: () => void;
+}) {
+  const [plans, setPlans] = useState<MealPlan[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [newComment, setNewComment] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState({ allergies: false, delivered: false, tipsReviewed: false });
+  const [completing, setCompleting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [plansRes, commentsRes] = await Promise.all([
+        fetch(`/api/nutrition/plan?clientId=${client.id}`),
+        fetch(`/api/nutrition/comments?clientId=${client.id}`),
+      ]);
+      const plansData = await plansRes.json();
+      const commentsData = await commentsRes.json();
+      if (plansData.success) setPlans(plansData.plans || []);
+      if (commentsData.success) setComments(commentsData.comments || []);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  }, [client.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const latestPlan = plans[0];
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    setPreviewUrl(null);
+    try {
+      const res = await fetch("/api/nutrition/generate-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Generation failed");
+      }
+      await load();
+      setPreviewUrl(data.pdfUrl);
+      if (onRefreshClients) onRefreshClients();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setGenerating(false);
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    await fetch("/api/nutrition/comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId: client.id, comment: newComment.trim() }),
+    });
+    setNewComment("");
+    await load();
+  };
+
+  const handleDeleteComment = async (id: number) => {
+    if (!confirm("Delete this comment?")) return;
+    await fetch(`/api/nutrition/comments?id=${id}`, { method: "DELETE" });
+    await load();
+  };
+
+  const handleComplete = async () => {
+    if (!checklist.allergies || !checklist.delivered || !checklist.tipsReviewed) return;
+    setCompleting(true);
+    try {
+      const res = await fetch("/api/nutrition/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, checklist }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed");
+      if (onRefreshClients) onRefreshClients();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setCompleting(false);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+        <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Loading task...
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, background: "rgba(255,255,255,0.02)" }}>
+      {/* Client intake form details */}
+      {intakeForm && <IntakeFormDetail form={intakeForm} />}
+
+      {/* Generation controls */}
+      <div style={{ marginTop: 20, padding: 16, background: "rgba(201,169,110,0.08)", borderRadius: 10, border: "1px solid rgba(201,169,110,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Sparkles size={14} /> Custom Meal Plan
+          </div>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            style={{
+              padding: "8px 18px", borderRadius: 8, border: "none",
+              background: generating ? "rgba(255,255,255,0.1)" : "var(--accent)",
+              color: generating ? "var(--text-muted)" : "#000",
+              cursor: generating ? "default" : "pointer", fontWeight: 600, fontSize: 13,
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {generating ? (
+              <>
+                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                Generating... (~30-40s)
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                {latestPlan ? `Generate v${latestPlan.version + 1}` : "Generate Custom Meal Plan"}
+              </>
+            )}
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ padding: 10, background: "rgba(217,142,142,0.1)", borderRadius: 6, color: "var(--danger)", fontSize: 12, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <AlertTriangle size={13} /> {error}
+          </div>
+        )}
+
+        {/* Latest plan preview & download */}
+        {latestPlan && (
+          <div style={{ padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Latest Plan — Version {latestPlan.version}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {new Date(latestPlan.created_at).toLocaleString()}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+              <span>{latestPlan.targets_calories} kcal</span>
+              <span>·</span>
+              <span>{latestPlan.targets_protein_g}g P</span>
+              <span>·</span>
+              <span>{latestPlan.targets_carbs_g}g C</span>
+              <span>·</span>
+              <span>{latestPlan.targets_fat_g}g F</span>
+              <span>·</span>
+              <span>{latestPlan.meals_per_day} meals/day</span>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {latestPlan.pdfUrl && (
+                <>
+                  <button
+                    onClick={() => setPreviewUrl(previewUrl === latestPlan.pdfUrl ? null : latestPlan.pdfUrl!)}
+                    style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", background: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+                  >
+                    <FileText size={12} /> {previewUrl === latestPlan.pdfUrl ? "Hide Preview" : "Preview"}
+                  </button>
+                  <a
+                    href={latestPlan.pdfUrl}
+                    download={`meal_plan_v${latestPlan.version}.pdf`}
+                    style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: "var(--success)", color: "#000", fontSize: 12, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}
+                  >
+                    <Download size={12} /> Download
+                  </a>
+                </>
+              )}
+            </div>
+
+            {previewUrl && (
+              <iframe
+                src={previewUrl}
+                style={{ width: "100%", height: 600, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, marginTop: 12, background: "#fff" }}
+                title="Meal plan preview"
+              />
+            )}
+          </div>
+        )}
+
+        {/* Version history */}
+        {plans.length > 1 && (
+          <details style={{ marginBottom: 12 }}>
+            <summary style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+              Previous versions ({plans.length - 1})
+            </summary>
+            <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+              {plans.slice(1).map((p) => (
+                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 4 }}>
+                  <span style={{ color: "var(--text-primary)" }}>v{p.version}</span>
+                  <span style={{ color: "var(--text-muted)", flex: 1 }}>{new Date(p.created_at).toLocaleDateString()}</span>
+                  {p.pdfUrl && (
+                    <a href={p.pdfUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "none", fontSize: 11 }}>
+                      Open PDF
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      {/* Comments */}
+      <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+          <MessageSquarePlus size={13} /> Comments <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11 }}>(used when generating next version)</span>
+        </div>
+
+        {comments.length > 0 ? (
+          <div style={{ display: "grid", gap: 6, marginBottom: 12, maxHeight: 240, overflowY: "auto" }}>
+            {comments.slice(0, 7).map((c) => (
+              <div key={c.id} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 6, fontSize: 12, display: "flex", gap: 8 }}>
+                <div style={{ flex: 1, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{c.comment}</div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                  <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{new Date(c.created_at).toLocaleDateString()}</span>
+                  <button
+                    onClick={() => handleDeleteComment(c.id)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}
+                    title="Delete comment"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {comments.length > 7 && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic", padding: "4px 10px" }}>
+                Only the 7 most recent comments are used for regeneration. Older comments ({comments.length - 7}) are archived.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 10 }}>
+            No comments yet. Add feedback that will shape the next generated version.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            className="input-field"
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
+            placeholder="e.g. add more mangoes, +200 kcal, this is a female, new weight: 160 lbs..."
+            style={{ flex: 1, fontSize: 12 }}
+          />
+          <button
+            onClick={handleAddComment}
+            disabled={!newComment.trim()}
+            style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: newComment.trim() ? "var(--accent)" : "rgba(255,255,255,0.1)", color: newComment.trim() ? "#000" : "var(--text-muted)", cursor: newComment.trim() ? "pointer" : "default", fontSize: 12, fontWeight: 600 }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Completion checklist — only in Pending section (not Done) */}
+      {!isDoneSection && latestPlan && (
+        <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10 }}>
+            Completion Checklist
+          </div>
+          {[
+            { key: "allergies" as const, label: "Confirmed no allergic items are in the meal plan" },
+            { key: "delivered" as const, label: "Meal plan delivered to the customer" },
+            { key: "tipsReviewed" as const, label: "Tips section reviewed and appropriate for client" },
+          ].map(({ key, label }) => (
+            <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
+              <input
+                type="checkbox"
+                checked={checklist[key]}
+                onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
+                style={{ accentColor: "var(--accent)" }}
+              />
+              {label}
+            </label>
+          ))}
+          <button
+            onClick={handleComplete}
+            disabled={!checklist.allergies || !checklist.delivered || !checklist.tipsReviewed || completing}
+            style={{
+              marginTop: 10, padding: "8px 20px", borderRadius: 8, border: "none",
+              background: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "var(--success)" : "rgba(255,255,255,0.1)",
+              color: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "#000" : "var(--text-muted)",
+              cursor: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "pointer" : "default",
+              fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {completing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle size={14} />}
+            Mark as Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ MAIN COMPONENT ============
+
+export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRefreshClients }: Props) {
   const [expandedUnlinked, setExpandedUnlinked] = useState(true);
   const [expandedPending, setExpandedPending] = useState(true);
   const [expandedDone, setExpandedDone] = useState(false);
@@ -106,32 +463,15 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
   const [linkingFormId, setLinkingFormId] = useState<number | null>(null);
   const [linkClientSearch, setLinkClientSearch] = useState("");
 
-  // Assignment state
-  const [assigningClientId, setAssigningClientId] = useState<number | null>(null);
-  const [customAssignee, setCustomAssignee] = useState("");
-
-  // Checklist state
-  const [checklist, setChecklist] = useState({ allergies: false, everfit: false, message: false });
-
   // Categorize forms and clients
-  const linkedFormIds = new Set(
-    clients
-      .map((c) => c.nutritionFormId)
-      .filter((id): id is number => typeof id === "number"),
-  );
-  const unlinkedForms = nutritionForms.filter(
-    (nf) => typeof nf.id === "number" && !linkedFormIds.has(nf.id),
-  );
+  const linkedFormIds = new Set(clients.filter((c) => c.nutritionFormId).map((c) => c.nutritionFormId));
+  const unlinkedForms = nutritionForms.filter((nf) => !linkedFormIds.has(nf.id));
 
   const pendingClients = clients.filter((c) => c.nutritionFormId && (c.nutritionStatus === "pending" || c.nutritionStatus === "assigned"));
   const doneClients = clients.filter((c) => c.nutritionFormId && c.nutritionStatus === "done");
 
-  const getFormForClient = (client: Client) =>
-    typeof client.nutritionFormId === "number"
-      ? nutritionForms.find((nf) => nf.id === client.nutritionFormId)
-      : undefined;
+  const getFormForClient = (client: Client) => nutritionForms.find((nf) => nf.id === client.nutritionFormId);
 
-  // Search filter
   const filterBySearch = (name: string, email: string) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -146,10 +486,10 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
           <ClipboardList size={14} /> Nutrition Meal Plan Process
         </div>
         <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.8 }}>
-          <li><strong>Unlinked:</strong> Intake forms submitted but not yet matched to a client. Link them to existing clients here.</li>
-          <li><strong>Pending:</strong> Client onboarded — assign yourself and create their custom meal plan on Everfit.</li>
-          <li><strong>Checklist:</strong> Before marking done: (1) no allergic items, (2) plan assigned in Everfit, (3) message sent to client.</li>
-          <li><strong>Done:</strong> Meal plan completed and delivered.</li>
+          <li><strong>Unlinked:</strong> Intake forms submitted but not yet matched to a client. Link them here or from Client Roster.</li>
+          <li><strong>Pending:</strong> Client onboarded with linked form. Click <em>Generate Custom Meal Plan</em> to produce a 7-day PDF. Add comments to refine subsequent versions.</li>
+          <li><strong>Completion:</strong> After downloading, confirm (1) no allergic items, (2) delivered to client, (3) tips reviewed → mark done.</li>
+          <li><strong>Done:</strong> Completed plans. You can still generate new versions here if a client requests revisions later.</li>
         </ol>
       </div>
 
@@ -224,14 +564,14 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                         </td>
                       </tr>
                       {expandedFormId === nf.id && (
-                        <tr key={`detail-${nf.id}`}>
+                        <tr>
                           <td colSpan={4} style={{ padding: 16, background: "rgba(255,255,255,0.02)" }}>
                             <IntakeFormDetail form={nf} />
                           </td>
                         </tr>
                       )}
                       {linkingFormId === nf.id && (
-                        <tr key={`link-${nf.id}`}>
+                        <tr>
                           <td colSpan={4} style={{ padding: 12, background: "rgba(255,255,255,0.02)" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Link to client:</span>
@@ -311,8 +651,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                     <th>Client</th>
                     <th>Coach</th>
                     <th>Days Since Onboarding</th>
-                    <th>Assigned To</th>
-                    <th style={{ width: 120 }}>Actions</th>
+                    <th style={{ width: 100 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -322,7 +661,6 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                     .map((client) => {
                       const days = daysSince(client.onboardingDate || client.startDate);
                       const form = getFormForClient(client);
-                      const isAssigning = assigningClientId === client.id;
                       const isExpanded = expandedClientId === client.id;
 
                       return (
@@ -338,104 +676,23 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                               </span>
                             </td>
                             <td>
-                              {client.nutritionStatus === "assigned" ? (
-                                <span style={{ color: "var(--accent)", fontWeight: 600 }}>{client.nutritionAssignedTo}</span>
-                              ) : (
-                                <button
-                                  onClick={() => setAssigningClientId(isAssigning ? null : client.id!)}
-                                  style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-                                >
-                                  Assign
-                                </button>
-                              )}
-                            </td>
-                            <td>
                               <button
                                 onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
                                 style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
                               >
-                                {isExpanded ? "Hide" : "View"}
+                                {isExpanded ? "Hide" : "Open"}
                               </button>
                             </td>
                           </tr>
-                          {isAssigning && (
-                            <tr key={`assign-${client.id}`}>
-                              <td colSpan={5} style={{ padding: 12, background: "rgba(255,255,255,0.02)" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                                  <span style={{ color: "var(--text-muted)" }}>Assign to:</span>
-                                  {ASSIGNEES.map((a) => (
-                                    <button
-                                      key={a}
-                                      onClick={async () => { await onAssignTask(client.id!, a); setAssigningClientId(null); }}
-                                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: "var(--accent)", color: "#000", cursor: "pointer", fontWeight: 600, fontSize: 12 }}
-                                    >
-                                      {a}
-                                    </button>
-                                  ))}
-                                  <input
-                                    placeholder="Other..."
-                                    value={customAssignee}
-                                    onChange={(e) => setCustomAssignee(e.target.value)}
-                                    onKeyDown={async (e) => {
-                                      if (e.key === "Enter" && customAssignee.trim()) {
-                                        await onAssignTask(client.id!, customAssignee.trim());
-                                        setCustomAssignee("");
-                                        setAssigningClientId(null);
-                                      }
-                                    }}
-                                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text-primary)", fontSize: 12, width: 120 }}
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                          )}
                           {isExpanded && (
-                            <tr key={`detail-${client.id}`}>
-                              <td colSpan={5} style={{ padding: 16, background: "rgba(255,255,255,0.02)" }}>
-                                {form ? <IntakeFormDetail form={form} /> : <span style={{ color: "var(--text-muted)", fontSize: 13 }}>No intake form data available</span>}
-
-                                {/* Checklist — only show when assigned */}
-                                {client.nutritionStatus === "assigned" && (
-                                  <div style={{ marginTop: 16, padding: 12, background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
-                                    <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14, color: "var(--text-primary)" }}>Completion Checklist</div>
-                                    {[
-                                      { key: "allergies" as const, label: "Made sure no allergic items are assigned" },
-                                      { key: "everfit" as const, label: "Meal plan assigned to client in Everfit" },
-                                      { key: "message" as const, label: "Message sent to client in Everfit" },
-                                    ].map(({ key, label }) => (
-                                      <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
-                                        <input
-                                          type="checkbox"
-                                          checked={checklist[key]}
-                                          onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
-                                          style={{ accentColor: "var(--accent)" }}
-                                        />
-                                        {label}
-                                      </label>
-                                    ))}
-                                    <button
-                                      onClick={async () => {
-                                        await onCompleteTask(client.id!, {
-                                          checklistAllergies: checklist.allergies,
-                                          checklistEverfit: checklist.everfit,
-                                          checklistMessage: checklist.message,
-                                        });
-                                        setChecklist({ allergies: false, everfit: false, message: false });
-                                        setExpandedClientId(null);
-                                      }}
-                                      disabled={!checklist.allergies || !checklist.everfit || !checklist.message}
-                                      style={{
-                                        marginTop: 10, padding: "8px 20px", borderRadius: 8, border: "none",
-                                        background: (checklist.allergies && checklist.everfit && checklist.message) ? "var(--success)" : "rgba(255,255,255,0.1)",
-                                        color: (checklist.allergies && checklist.everfit && checklist.message) ? "#000" : "var(--text-muted)",
-                                        cursor: (checklist.allergies && checklist.everfit && checklist.message) ? "pointer" : "default",
-                                        fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6,
-                                      }}
-                                    >
-                                      <CheckCircle size={14} /> Mark as Done
-                                    </button>
-                                  </div>
-                                )}
+                            <tr>
+                              <td colSpan={4} style={{ padding: 0 }}>
+                                <MealPlanTaskPanel
+                                  client={client}
+                                  intakeForm={form}
+                                  isDoneSection={false}
+                                  onRefreshClients={onRefreshClients}
+                                />
                               </td>
                             </tr>
                           )}
@@ -477,28 +734,57 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onAs
                     <th>Coach</th>
                     <th>Completed By</th>
                     <th>Completed On</th>
+                    <th style={{ width: 100 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {doneClients
                     .filter((c) => filterBySearch(c.name, c.email))
                     .sort((a, b) => new Date(b.nutritionCompletedAt || "").getTime() - new Date(a.nutritionCompletedAt || "").getTime())
-                    .map((client) => (
-                      <tr key={client.id}>
-                        <td style={{ fontWeight: 600 }}>{client.name}</td>
-                        <td>{client.coachName}</td>
-                        <td>{client.nutritionAssignedTo}</td>
-                        <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                          {client.nutritionCompletedAt ? new Date(client.nutritionCompletedAt).toLocaleDateString() : "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    .map((client) => {
+                      const isExpanded = expandedClientId === client.id;
+                      const form = getFormForClient(client);
+                      return (
+                        <React.Fragment key={client.id}>
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>{client.name}</td>
+                            <td>{client.coachName}</td>
+                            <td>{client.nutritionAssignedTo || "Daman"}</td>
+                            <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              {client.nutritionCompletedAt ? new Date(client.nutritionCompletedAt).toLocaleDateString() : "—"}
+                            </td>
+                            <td>
+                              <button
+                                onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
+                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+                              >
+                                {isExpanded ? "Hide" : "Open"}
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 0 }}>
+                                <MealPlanTaskPanel
+                                  client={client}
+                                  intakeForm={form}
+                                  isDoneSection={true}
+                                  onRefreshClients={onRefreshClients}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             )}
           </div>
         )}
       </div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
