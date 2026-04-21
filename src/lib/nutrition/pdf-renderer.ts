@@ -1,322 +1,574 @@
 /**
  * Server-side PDF renderer using jsPDF.
- * Produces a clean, unbranded 7-day meal plan with grocery list and tips.
- * Footer on every page: "Reviewed by Damanjeet Kaur".
+ * Matches the sample "Custom Nutrition Plan" layout:
+ *   Page 1: cover (name, details table, macro targets box)
+ *   Pages 2..N+1: one per day (meal tables + day total band)
+ *   Page N+2: weekly grocery list, grouped + 2 columns
+ *   Page N+3: nutrition tips & guidelines
+ * Footer on every page: "Reviewed by Damanjeet Kaur | Prepared <date> | Page N".
  */
 
 import { jsPDF } from "jspdf";
-import type { IngredientRow } from "./ingredient-filter";
 import type { MacroTargets } from "./macro-calculator";
-import type { DayPlan, GroceryItem, MacroSummary } from "./macro-validator";
-import { computeMealMacros } from "./macro-validator";
 
-export interface PdfContext {
-  clientFirstName: string;
-  clientLastName: string;
-  goal: string;
-  targets: MacroTargets;
-  days: DayPlan[];
-  dayMacros: MacroSummary[];
-  grocery: GroceryItem[];
-  tips: string[];
-  byslug: Map<string, IngredientRow>;
-  version: number;
+// Colors (matching sample)
+const INK = "#1f2a44";        // dark navy for headers/body
+const GOLD = "#c9a96e";       // accent (name, meal labels, day total band)
+const CREAM = "#f5efdf";      // totals row + macro box bg
+const GRAY = "#6b7280";       // labels
+const LIGHT_DIVIDER = "#e5e7eb";
+
+const FOOTER_REVIEW_TEXT = "Reviewed by Damanjeet Kaur";
+
+// ============================================================================
+// Input types — self-contained, no dependence on Map<slug, IngredientRow>
+// ============================================================================
+
+export interface PdfIngredient {
+  name: string;          // display name, e.g. "Grilled Chicken Breast"
+  amount: string;        // display amount, e.g. "180g" or "240ml"
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  category: string;      // DB category: protein, carb, vegetable, fruit, dairy, condiment, supplement, beverage, legume, grain, seafood, fat
 }
 
-const FOOTER_TEXT = "Reviewed by Damanjeet Kaur";
-const INK = "#1a1a1a";
-const SUBTLE = "#666666";
-const ACCENT = "#c9a96e";
-const DIVIDER = "#e0e0e0";
+export interface PdfMeal {
+  name: string;          // "Breakfast", "Lunch", etc.
+  time: string;          // "7:30 AM"
+  ingredients: PdfIngredient[];
+  totalCal: number;
+  totalP: number;
+  totalC: number;
+  totalF: number;
+}
 
-export function renderMealPlanPDF(ctx: PdfContext): Uint8Array {
+export interface PdfDay {
+  dayNumber: number;     // 1..7
+  weekday: string;       // "Monday", ...
+  meals: PdfMeal[];
+  totalCal: number;
+  totalP: number;
+  totalC: number;
+  totalF: number;
+}
+
+export interface PdfGroceryItem {
+  name: string;
+  amount: string;        // "360 g" or "150 ml"
+  category: string;
+}
+
+export interface PdfTip {
+  title: string;
+  body: string;
+}
+
+export interface PdfClient {
+  firstName: string;
+  lastName: string;
+  age: number;
+  weightKg: number;
+  weightLbs: number;
+  heightCm: number;
+  heightFtIn: string;   // e.g. "5'11""
+  goalLabel: string;    // "Fat Loss", "Muscle Gain", "Maintenance"
+  mealsPerDay: number;
+  allergies: string;    // free text (e.g. "Tree nuts" or "None")
+}
+
+export interface PdfInput {
+  client: PdfClient;
+  targets: MacroTargets;
+  days: PdfDay[];
+  grocery: PdfGroceryItem[];
+  tips: PdfTip[];
+}
+
+// ============================================================================
+// Table column layout for daily meal tables
+// ============================================================================
+
+const TABLE_COLS = [
+  { key: "ingredient", label: "Ingredient", width: 250, align: "left" as const },
+  { key: "amt",        label: "Amt",        width: 55,  align: "left" as const },
+  { key: "cal",        label: "Cal",        width: 45,  align: "left" as const },
+  { key: "p",          label: "P (g)",      width: 50,  align: "left" as const },
+  { key: "c",          label: "C (g)",      width: 50,  align: "left" as const },
+  { key: "f",          label: "F (g)",      width: 45,  align: "left" as const },
+];
+const TABLE_TOTAL_WIDTH = TABLE_COLS.reduce((s, c) => s + c.width, 0); // 495
+
+// ============================================================================
+// Grocery category display order (matching sample)
+// ============================================================================
+
+const GROCERY_CATEGORY_ORDER = [
+  "Fruits",
+  "Vegetables",
+  "Other",
+  "Proteins",
+  "Oils, Sauces & Condiments",
+  "Grains & Carbs",
+  "Beverages",
+  "Dairy & Eggs",
+];
+
+export function mapDbCategoryToDisplay(dbCategory: string): string {
+  switch (dbCategory) {
+    case "fruit":      return "Fruits";
+    case "vegetable":  return "Vegetables";
+    case "protein":
+    case "seafood":    return "Proteins";
+    case "fat":
+    case "condiment":  return "Oils, Sauces & Condiments";
+    case "carb":
+    case "grain":      return "Grains & Carbs";
+    case "beverage":   return "Beverages";
+    case "dairy":      return "Dairy & Eggs";
+    case "legume":
+    case "supplement": return "Other";
+    default:           return "Other";
+  }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function fmtNum(n: number, decimals = 0): string {
+  if (!isFinite(n)) return "0";
+  const rounded = decimals === 0 ? Math.round(n) : Number(n.toFixed(decimals));
+  return String(rounded);
+}
+
+function fmtMacro(n: number): string {
+  // 1 decimal for small numbers, 0 for larger
+  if (n < 10) return n.toFixed(1).replace(/\.0$/, "");
+  if (n < 100) return n.toFixed(1).replace(/\.0$/, "");
+  return String(Math.round(n));
+}
+
+// ============================================================================
+// Main renderer
+// ============================================================================
+
+export function renderMealPlanPDF(input: PdfInput): Uint8Array {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth();   // 612
+  const pageHeight = doc.internal.pageSize.getHeight(); // 792
   const marginX = 54;
   const marginTop = 60;
   const marginBottom = 60;
+  const contentWidth = pageWidth - marginX * 2;
 
-  const usedDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  const addFooter = () => {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(SUBTLE);
-    doc.text(FOOTER_TEXT, marginX, pageHeight - 30);
-    doc.text(
-      `Page ${doc.getNumberOfPages()}`,
-      pageWidth - marginX,
-      pageHeight - 30,
-      { align: "right" }
-    );
-    // thin divider above footer
-    doc.setDrawColor(DIVIDER);
-    doc.setLineWidth(0.5);
-    doc.line(marginX, pageHeight - 40, pageWidth - marginX, pageHeight - 40);
-  };
-
-  // ========== PAGE 1: COVER ==========
-  const fullName = `${ctx.clientFirstName} ${ctx.clientLastName}`.trim();
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  doc.setTextColor(INK);
-  doc.text("7-Day Custom Meal Plan", marginX, 120);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.setTextColor(SUBTLE);
-  doc.text(`Prepared for ${fullName}`, marginX, 145);
-  doc.text(`${usedDate} · Version ${ctx.version}`, marginX, 160);
-
-  // Goal
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(INK);
-  doc.text("Fitness Goal", marginX, 210);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(SUBTLE);
-  const goalLines = doc.splitTextToSize(ctx.goal || "—", pageWidth - 2 * marginX);
-  doc.text(goalLines, marginX, 225);
-
-  // Daily Targets box
-  const targetsY = 285;
-  doc.setDrawColor(ACCENT);
-  doc.setLineWidth(1);
-  doc.roundedRect(marginX, targetsY, pageWidth - 2 * marginX, 100, 8, 8);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(INK);
-  doc.text("Daily Macro Targets", marginX + 20, targetsY + 25);
-
-  doc.setFontSize(10);
-  doc.setTextColor(SUBTLE);
-  doc.setFont("helvetica", "normal");
-
-  const targetItems = [
-    { label: "Calories", value: `${ctx.targets.calories} kcal` },
-    { label: "Protein", value: `${ctx.targets.proteinG} g` },
-    { label: "Carbs", value: `${ctx.targets.carbsG} g` },
-    { label: "Fat", value: `${ctx.targets.fatG} g` },
-  ];
-  const colWidth = (pageWidth - 2 * marginX - 40) / 4;
-  targetItems.forEach((item, i) => {
-    const x = marginX + 20 + i * colWidth;
-    doc.setTextColor(SUBTLE);
-    doc.setFontSize(9);
-    doc.text(item.label.toUpperCase(), x, targetsY + 55);
-    doc.setTextColor(INK);
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(item.value, x, targetsY + 75);
-    doc.setFont("helvetica", "normal");
+  const preparedDate = new Date().toLocaleDateString("en-US", {
+    year: "numeric", month: "long", day: "numeric",
   });
 
-  // Plan overview note
-  doc.setFontSize(9);
-  doc.setTextColor(SUBTLE);
-  doc.setFont("helvetica", "normal");
-  const overviewText =
-    `This plan provides 7 days of structured meals calibrated to your targets above. ` +
-    `Portion sizes are listed in grams (and ounces for reference). ` +
-    `Consistency with portions is the most important factor — aim to weigh ingredients when possible. ` +
-    `A consolidated grocery list for the full week is included at the end of the plan, followed by personalized tips to help you succeed.`;
-  const overviewLines = doc.splitTextToSize(overviewText, pageWidth - 2 * marginX);
-  doc.text(overviewLines, marginX, 420);
-
-  addFooter();
-
-  // ========== PAGES 2-8: DAILY MEAL PLANS ==========
-  for (let di = 0; di < ctx.days.length; di++) {
-    const day = ctx.days[di];
-    const dayTotals = ctx.dayMacros[di];
-    doc.addPage();
-
-    // Day header
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.setTextColor(INK);
-    doc.text(`Day ${day.day}`, marginX, marginTop);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(SUBTLE);
-    const totalsLine = `${dayTotals.calories} kcal · ${dayTotals.proteinG}g P · ${dayTotals.carbsG}g C · ${dayTotals.fatG}g F`;
-    doc.text(totalsLine, marginX, marginTop + 18);
-
-    // Divider
-    doc.setDrawColor(DIVIDER);
+  // ---------- Footer drawn on every page ----------
+  const drawFooter = () => {
+    const footerY = pageHeight - 30;
+    // Light divider line
+    doc.setDrawColor(LIGHT_DIVIDER);
     doc.setLineWidth(0.5);
-    doc.line(marginX, marginTop + 30, pageWidth - marginX, marginTop + 30);
-
-    let y = marginTop + 55;
-
-    for (const meal of day.meals) {
-      const mealMacros = computeMealMacros(meal, ctx.byslug);
-
-      // Meal name + time
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(INK);
-      doc.text(meal.name, marginX, y);
-
-      if (meal.time) {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(SUBTLE);
-        doc.text(meal.time, pageWidth - marginX, y, { align: "right" });
-      }
-
-      // Meal macros line
-      y += 14;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(SUBTLE);
-      doc.text(
-        `${mealMacros.calories} kcal · ${mealMacros.proteinG}g P · ${mealMacros.carbsG}g C · ${mealMacros.fatG}g F`,
-        marginX,
-        y
-      );
-
-      y += 12;
-
-      // Ingredients
-      doc.setFontSize(10);
-      doc.setTextColor(INK);
-      for (const ing of meal.ingredients) {
-        const row = ctx.byslug.get(ing.slug);
-        const name = row?.name || ing.slug;
-        const oz = (ing.grams / 28.3495).toFixed(1);
-        const line = `  •  ${name} — ${ing.grams}g (${oz} oz)`;
-        doc.text(line, marginX, y);
-        y += 14;
-      }
-
-      y += 10;
-
-      // Page break if running out of space
-      if (y > pageHeight - marginBottom - 60 && day.meals.indexOf(meal) < day.meals.length - 1) {
-        addFooter();
-        doc.addPage();
-        y = marginTop;
-      }
-    }
-
-    addFooter();
-  }
-
-  // ========== GROCERY LIST ==========
-  doc.addPage();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(INK);
-  doc.text("Grocery List", marginX, marginTop);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(SUBTLE);
-  doc.text("Total quantities for the full 7 days. Round up at the store for practical portioning.", marginX, marginTop + 18);
-
-  doc.setDrawColor(DIVIDER);
-  doc.setLineWidth(0.5);
-  doc.line(marginX, marginTop + 30, pageWidth - marginX, marginTop + 30);
-
-  let gy = marginTop + 55;
-  let currentCat = "";
-
-  const categoryLabels: Record<string, string> = {
-    protein: "Proteins",
-    seafood: "Seafood",
-    dairy: "Dairy",
-    grain: "Grains",
-    carb: "Carbs & Starches",
-    legume: "Legumes",
-    vegetable: "Vegetables",
-    fruit: "Fruits",
-    fat: "Fats, Oils & Nuts",
-    condiment: "Condiments & Sauces",
-    supplement: "Supplements",
-    beverage: "Beverages",
+    doc.line(marginX, footerY - 12, pageWidth - marginX, footerY - 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(GRAY);
+    const page = doc.getNumberOfPages();
+    const text = `${FOOTER_REVIEW_TEXT}  |  Prepared ${preparedDate}  |  Page ${page}`;
+    doc.text(text, pageWidth / 2, footerY, { align: "center" });
   };
 
-  for (const item of ctx.grocery) {
-    if (item.category !== currentCat) {
-      currentCat = item.category;
-      if (gy > pageHeight - marginBottom - 80) {
-        addFooter();
-        doc.addPage();
-        gy = marginTop;
-      }
-      gy += 8;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(ACCENT);
-      doc.text((categoryLabels[currentCat] || currentCat).toUpperCase(), marginX, gy);
-      gy += 16;
-    }
-
-    if (gy > pageHeight - marginBottom - 20) {
-      addFooter();
-      doc.addPage();
-      gy = marginTop;
-    }
-
+  // ---------- Header strip on every page (same text as footer, top of page) ----------
+  const drawTopHeader = () => {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(INK);
-    doc.text(item.name, marginX + 10, gy);
+    doc.setFontSize(8);
+    doc.setTextColor(GRAY);
+    const page = doc.getNumberOfPages();
+    const text = `${FOOTER_REVIEW_TEXT}  |  Prepared ${preparedDate}  |  Page ${page}`;
+    doc.text(text, pageWidth / 2, 30, { align: "center" });
+  };
 
-    doc.setTextColor(SUBTLE);
-    const qty = `${item.totalGrams}g (${item.totalOz} oz)`;
-    doc.text(qty, pageWidth - marginX, gy, { align: "right" });
-    gy += 14;
+  // ============================================================================
+  // PAGE 1: COVER
+  // ============================================================================
+  {
+    drawTopHeader();
+    let y = 140;
+
+    // Top gold rule
+    doc.setDrawColor(GOLD);
+    doc.setLineWidth(2);
+    const ruleWidth = 220;
+    const ruleX = (pageWidth - ruleWidth) / 2;
+    doc.line(ruleX, y, ruleX + ruleWidth, y);
+    y += 40;
+
+    // Title
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(30);
+    doc.setTextColor(INK);
+    doc.text("Custom Nutrition Plan", pageWidth / 2, y, { align: "center" });
+    y += 32;
+
+    // "Designed for" label
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(GRAY);
+    doc.text("Designed for", pageWidth / 2, y, { align: "center" });
+    y += 22;
+
+    // Name (gold, larger, bold)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(GOLD);
+    const fullName = `${input.client.firstName} ${input.client.lastName}`.trim();
+    doc.text(fullName, pageWidth / 2, y, { align: "center" });
+    y += 20;
+
+    // Bottom gold rule
+    doc.setDrawColor(GOLD);
+    doc.setLineWidth(2);
+    doc.line(ruleX, y, ruleX + ruleWidth, y);
+    y += 40;
+
+    // Details table (label gray/right-aligned, value dark/left-aligned)
+    const detailRows: Array<[string, string]> = [
+      ["Age", `${input.client.age} years`],
+      ["Weight", `${fmtNum(input.client.weightKg)} kg  (${fmtNum(input.client.weightLbs)} lbs)`],
+      ["Height", `${fmtNum(input.client.heightCm)} cm  (${input.client.heightFtIn})`],
+      ["Goal", input.client.goalLabel],
+      ["Meals / Day", String(input.client.mealsPerDay)],
+      ["Allergies", input.client.allergies || "None"],
+    ];
+    const labelX = pageWidth / 2 - 20;
+    const valueX = pageWidth / 2 - 5;
+    doc.setFontSize(10);
+    for (const [label, value] of detailRows) {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(GRAY);
+      doc.text(label, labelX, y, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.text(value, valueX, y, { align: "left" });
+      y += 18;
+    }
+
+    y += 30;
+    // Divider line
+    doc.setDrawColor(LIGHT_DIVIDER);
+    doc.setLineWidth(0.5);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 24;
+
+    // Daily Macro Targets heading
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(INK);
+    doc.text("Daily Macro Targets", marginX, y);
+    y += 22;
+
+    // Macro targets box (cream bg, 4 columns)
+    const boxX = marginX + 30;
+    const boxW = contentWidth - 60;
+    const boxH = 60;
+    doc.setFillColor(CREAM);
+    doc.roundedRect(boxX, y, boxW, boxH, 6, 6, "F");
+
+    const cells = [
+      { big: String(Math.round(input.targets.calories)), small: "kcal" },
+      { big: `${Math.round(input.targets.proteinG)}g`,    small: "Protein" },
+      { big: `${Math.round(input.targets.carbsG)}g`,      small: "Carbs" },
+      { big: `${Math.round(input.targets.fatG)}g`,        small: "Fat" },
+    ];
+    const cellW = boxW / 4;
+    for (let i = 0; i < cells.length; i++) {
+      const cx = boxX + cellW * i + cellW / 2;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(INK);
+      doc.text(cells[i].big, cx, y + 28, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(INK);
+      doc.text(cells[i].small, cx, y + 44, { align: "center" });
+    }
+
+    drawFooter();
   }
 
-  addFooter();
+  // ============================================================================
+  // PAGES FOR EACH DAY
+  // ============================================================================
+  for (const day of input.days) {
+    doc.addPage();
+    drawTopHeader();
+    let y = marginTop + 30;
 
-  // ========== TIPS ==========
-  doc.addPage();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(INK);
-  doc.text("Tips for Success", marginX, marginTop);
+    // Day title
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(INK);
+    doc.text(`Day ${day.dayNumber} — ${day.weekday}`, marginX, y);
+    y += 30;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(SUBTLE);
-  doc.text("A few pointers — some personalized to your intake form, some broadly useful.", marginX, marginTop + 18);
+    for (const meal of day.meals) {
+      // Ensure room; otherwise new page
+      const neededHeight = 20 + 22 + meal.ingredients.length * 18 + 22 + 20;
+      if (y + neededHeight > pageHeight - marginBottom - 30) {
+        doc.addPage();
+        drawTopHeader();
+        y = marginTop + 30;
+      }
 
-  doc.setDrawColor(DIVIDER);
-  doc.setLineWidth(0.5);
-  doc.line(marginX, marginTop + 30, pageWidth - marginX, marginTop + 30);
+      // Meal label
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(GOLD);
+      doc.text(meal.name, marginX, y);
+      // Time
+      const mealTextWidth = doc.getTextWidth(meal.name);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(GRAY);
+      doc.text(`· ${meal.time}`, marginX + mealTextWidth + 4, y);
+      y += 10;
 
-  let ty = marginTop + 55;
-  for (let i = 0; i < ctx.tips.length; i++) {
-    const tip = ctx.tips[i];
+      // Table header (dark navy bg, white text)
+      const headerH = 22;
+      doc.setFillColor(INK);
+      doc.rect(marginX, y, TABLE_TOTAL_WIDTH, headerH, "F");
+
+      let colX = marginX;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor("#ffffff");
+      for (const col of TABLE_COLS) {
+        doc.text(col.label, colX + 8, y + 14);
+        colX += col.width;
+      }
+      y += headerH;
+
+      // Rows
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(INK);
+      for (const ing of meal.ingredients) {
+        const rowH = 18;
+        // Light bottom border
+        doc.setDrawColor(LIGHT_DIVIDER);
+        doc.setLineWidth(0.5);
+        doc.line(marginX, y + rowH, marginX + TABLE_TOTAL_WIDTH, y + rowH);
+
+        const values = [
+          ing.name.length > 42 ? ing.name.slice(0, 41) + "…" : ing.name,
+          ing.amount,
+          fmtNum(ing.calories),
+          fmtMacro(ing.proteinG),
+          fmtMacro(ing.carbsG),
+          fmtMacro(ing.fatG),
+        ];
+        let cx = marginX;
+        for (let i = 0; i < TABLE_COLS.length; i++) {
+          doc.text(values[i], cx + 8, y + 12);
+          cx += TABLE_COLS[i].width;
+        }
+        y += rowH;
+      }
+
+      // Total row (cream bg, bold)
+      const totalH = 22;
+      doc.setFillColor(CREAM);
+      doc.rect(marginX, y, TABLE_TOTAL_WIDTH, totalH, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(INK);
+      const totalValues = [
+        "Total",
+        "",
+        fmtNum(meal.totalCal),
+        fmtMacro(meal.totalP),
+        fmtMacro(meal.totalC),
+        fmtMacro(meal.totalF),
+      ];
+      let tcx = marginX;
+      for (let i = 0; i < TABLE_COLS.length; i++) {
+        doc.text(totalValues[i], tcx + 8, y + 14);
+        tcx += TABLE_COLS[i].width;
+      }
+      y += totalH + 18;
+    }
+
+    // Day total band (gold)
+    const bandH = 28;
+    if (y + bandH > pageHeight - marginBottom - 30) {
+      doc.addPage();
+      drawTopHeader();
+      y = marginTop + 30;
+    }
+    doc.setFillColor(GOLD);
+    doc.rect(marginX, y, TABLE_TOTAL_WIDTH, bandH, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
-    doc.setTextColor(ACCENT);
-    doc.text(`${i + 1}.`, marginX, ty);
-
+    doc.setTextColor("#ffffff");
+    doc.text(`Day ${day.dayNumber} Total`, marginX + 12, y + 18);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(INK);
-    const lines = doc.splitTextToSize(tip, pageWidth - 2 * marginX - 24);
-    doc.text(lines, marginX + 24, ty);
-    ty += lines.length * 13 + 10;
-
-    if (ty > pageHeight - marginBottom - 40 && i < ctx.tips.length - 1) {
-      addFooter();
-      doc.addPage();
-      ty = marginTop;
+    const bandSegments = [
+      `${fmtNum(day.totalCal)} kcal`,
+      `${fmtMacro(day.totalP)}g protein`,
+      `${fmtMacro(day.totalC)}g carbs`,
+      `${fmtMacro(day.totalF)}g fat`,
+    ];
+    let segX = marginX + 130;
+    const segW = (TABLE_TOTAL_WIDTH - 140) / bandSegments.length;
+    for (const seg of bandSegments) {
+      doc.text(seg, segX, y + 18);
+      segX += segW;
     }
+
+    drawFooter();
   }
 
-  addFooter();
+  // ============================================================================
+  // GROCERY LIST PAGE
+  // ============================================================================
+  {
+    doc.addPage();
+    drawTopHeader();
+    let y = marginTop + 30;
 
-  // Return raw PDF bytes
-  return doc.output("arraybuffer") as unknown as Uint8Array;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(INK);
+    doc.text("Weekly Grocery List", marginX, y);
+    y += 24;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(GRAY);
+    doc.text("Totals across all 7 days. Adjust for items you already have.", marginX, y);
+    y += 18;
+
+    // Group items by display category
+    const groups = new Map<string, PdfGroceryItem[]>();
+    for (const item of input.grocery) {
+      const cat = mapDbCategoryToDisplay(item.category);
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(item);
+    }
+    for (const list of groups.values()) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // Two-column layout
+    const colGap = 20;
+    const colW = (contentWidth - colGap) / 2;
+    const leftX = marginX;
+    const rightX = marginX + colW + colGap;
+    const topY = y;
+    let leftY = topY;
+    let rightY = topY;
+
+    // Decide left vs right column based on cumulative height
+    const estimateGroupHeight = (items: PdfGroceryItem[]) => {
+      return 18 + items.length * 12 + 10;
+    };
+
+    // Order: iterate through preferred category order for consistency
+    const orderedCategories = GROCERY_CATEGORY_ORDER.filter((c) => groups.has(c));
+
+    // Simple placement: put groups in left col until it'd pass rightY, then right
+    for (const catName of orderedCategories) {
+      const items = groups.get(catName)!;
+      const h = estimateGroupHeight(items);
+
+      // Check if either column would overflow the page
+      const maxY = pageHeight - marginBottom - 20;
+      if (leftY + h > maxY && rightY + h > maxY) {
+        // Start new page
+        doc.addPage();
+        drawTopHeader();
+        leftY = marginTop + 30;
+        rightY = marginTop + 30;
+      }
+
+      // Place in shorter column
+      const placeLeft = leftY <= rightY;
+      const x = placeLeft ? leftX : rightX;
+      let curY = placeLeft ? leftY : rightY;
+
+      // Category title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(INK);
+      doc.text(catName, x, curY);
+      curY += 14;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(INK);
+      for (const item of items) {
+        doc.setTextColor(GOLD);
+        doc.text("•", x, curY);
+        doc.setTextColor(INK);
+        doc.text(`${item.name} — ${item.amount}`, x + 8, curY);
+        curY += 12;
+      }
+      curY += 8;
+
+      if (placeLeft) leftY = curY;
+      else rightY = curY;
+    }
+
+    drawFooter();
+  }
+
+  // ============================================================================
+  // TIPS PAGE
+  // ============================================================================
+  {
+    doc.addPage();
+    drawTopHeader();
+    let y = marginTop + 30;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(INK);
+    doc.text("Nutrition Tips & Guidelines", marginX, y);
+    y += 32;
+
+    for (const tip of input.tips) {
+      // Estimate height
+      const bodyLines = doc.splitTextToSize(tip.body, contentWidth);
+      const h = 18 + bodyLines.length * 12 + 14;
+      if (y + h > pageHeight - marginBottom - 20) {
+        doc.addPage();
+        drawTopHeader();
+        y = marginTop + 30;
+      }
+
+      // Gold square bullet + title
+      doc.setFillColor(GOLD);
+      doc.rect(marginX, y - 8, 8, 8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(GOLD);
+      doc.text(tip.title, marginX + 14, y);
+      y += 14;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(INK);
+      doc.text(bodyLines, marginX, y);
+      y += bodyLines.length * 12 + 14;
+    }
+
+    drawFooter();
+  }
+
+  return new Uint8Array(doc.output("arraybuffer"));
 }

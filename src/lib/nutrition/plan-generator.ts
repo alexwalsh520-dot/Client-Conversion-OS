@@ -1,7 +1,9 @@
 /**
- * Claude-powered meal plan generator.
- * Claude only returns structured JSON with slugs + grams.
- * All macro arithmetic is done by code (never Claude).
+ * Per-day Claude meal generator.
+ * Each call produces ONE day only — small output (< 1000 tokens), ~5-8s.
+ * Caller parallelizes 7 concurrent calls to stay well under Vercel's 60s limit.
+ *
+ * Claude outputs slugs + grams only. All macro arithmetic is done by code.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -26,144 +28,152 @@ export interface ClientIntakeSummary {
   dailyMealsDescription: string;
 }
 
-export interface GenerationInput {
+export interface DayGenerationInput {
+  dayNumber: number;                 // 1-7
+  weekday: string;                   // "Monday"..."Sunday"
+  mealSlots: { name: string; time: string }[]; // per-day meal structure
   intake: ClientIntakeSummary;
-  targets: MacroTargets;
-  mealsPerDay: number;
-  allowedIngredients: IngredientRow[];
-  priorComments: string[];                // comment texts, newest first
-  previousPlanSummary?: string | null;    // optional summary of last attempt
-  attempt: number;                        // 1, 2, 3 for retries
-  validationErrors?: string[];            // errors from previous attempt, if retry
+  targets: MacroTargets;             // daily targets
+  allowedIngredients: IngredientRow[]; // already filtered for allergies
+  priorComments: string[];           // newest first
+  variationHint?: string;            // e.g. "use different proteins than days 1-3"
 }
 
 function buildSystemPrompt(): string {
-  return `You are a clinical nutritionist building precise 7-day meal plans.
+  return `You are a clinical nutritionist building one day of a meal plan.
 
-CRITICAL RULES — THESE ARE NON-NEGOTIABLE:
-1. You may ONLY use ingredients from the allowed list provided. Using any other ingredient will cause the plan to be rejected.
-2. All quantities must be in grams as integers.
-3. Each day must have the exact number of meals requested.
-4. Each day must hit the calorie and protein targets within ±5% (target ±7% but aim for ±5% to have margin).
-5. Return ONLY valid JSON matching the schema provided. No markdown, no explanation.
-6. Never invent new ingredients. Never use free-text ingredient names.
-7. Never calculate macros yourself — that is done by the system. Just use realistic portion sizes.
-
-You WILL get feedback via the system if your plan fails validation. Adjust portion sizes (not ingredients) to meet targets on retry.`;
+RULES (NON-NEGOTIABLE):
+1. Output ONLY JSON — no markdown, no prose, no explanation.
+2. Use ONLY ingredients from the allowed list provided (use exact slug strings).
+3. Quantities must be integer grams.
+4. Each meal must have 3-5 ingredients for variety (unless it's a pure drink or snack).
+5. Each day must hit ±5% of the calorie and protein targets via portion sizes.
+6. Respect client preferences and protein sources when picking ingredients.
+7. Never invent ingredient slugs. Never use free-text names.
+8. Do not recommend supplements — only food ingredients from the list.`;
 }
 
-function buildUserPrompt(input: GenerationInput): string {
-  const { intake, targets, mealsPerDay, allowedIngredients, priorComments, validationErrors } = input;
+function buildUserPrompt(input: DayGenerationInput): string {
+  const { intake, targets, mealSlots, allowedIngredients, priorComments, dayNumber, weekday, variationHint } = input;
 
+  // Compact ingredient list: slug + short macro summary
   const ingredientList = allowedIngredients
-    .map(
-      (i) =>
-        `${i.slug} (${i.name}, ${i.category}) — per 100g: ${i.calories_per_100g}kcal / ${i.protein_g_per_100g}P / ${i.carbs_g_per_100g}C / ${i.fat_g_per_100g}F`
-    )
+    .map((i) => `${i.slug}|${i.name}|C${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`)
     .join("\n");
 
   const commentsBlock =
     priorComments.length > 0
-      ? `\n\n## NUTRITIONIST NOTES (apply these; newest first):\n${priorComments
+      ? `\n\nNUTRITIONIST NOTES (apply, newest first):\n${priorComments
           .slice(0, 7)
           .map((c, i) => `${i + 1}. ${c}`)
           .join("\n")}`
       : "";
 
-  const retryBlock =
-    validationErrors && validationErrors.length > 0
-      ? `\n\n## RETRY — previous attempt failed validation:\n${validationErrors
-          .map((e) => `- ${e}`)
-          .join("\n")}\nFix by adjusting portion sizes. Do NOT change the set of meals dramatically.`
-      : "";
+  const variationBlock = variationHint ? `\n\nVARIATION: ${variationHint}` : "";
 
-  return `## CLIENT
+  const mealSlotsBlock = mealSlots
+    .map((s, i) => `${i + 1}. ${s.name} at ${s.time}`)
+    .join("\n");
+
+  return `CLIENT INTAKE
 Name: ${intake.firstName} ${intake.lastName}
-Fitness goal: ${intake.fitnessGoal}
+Goal: ${intake.fitnessGoal}
 Preferred foods: ${intake.foodsEnjoy || "no preferences listed"}
 Foods to avoid: ${intake.foodsAvoid || "none"}
 Allergies: ${intake.allergies || "none"}
 Protein preferences: ${intake.proteinPreferences || "no preferences"}
 Can cook: ${intake.canCook || "unknown"}
-Preferred meals per day: ${intake.mealCount || "3"}
-Medications: ${intake.medications || "none"}
-Supplements: ${intake.supplements || "none"}
-Sleep: ${intake.sleepHours || "unknown"}
-Water: ${intake.waterIntake || "unknown"}
-Current eating habits: ${intake.dailyMealsDescription || "not provided"}
 
-## DAILY TARGETS (EACH DAY MUST HIT THESE WITHIN ±7%)
+DAY: ${dayNumber} (${weekday})
+
+DAILY TARGETS (hit these ±5% via portion sizes):
 Calories: ${targets.calories} kcal
 Protein: ${targets.proteinG}g
-Carbs: ${targets.carbsG}g
-Fat: ${targets.fatG}g
+Carbs:   ${targets.carbsG}g
+Fat:     ${targets.fatG}g
 
-## STRUCTURE
-- 7 days (day 1 through day 7)
-- ${mealsPerDay} meals per day
-- Use different ingredients across days to add variety
-- Favor the client's preferred foods and protein sources
-- Avoid everything in their avoid list and allergies${commentsBlock}${retryBlock}
+MEAL STRUCTURE (produce exactly these meals, in this order):
+${mealSlotsBlock}${commentsBlock}${variationBlock}
 
-## ALLOWED INGREDIENTS (you MUST only use these)
+ALLOWED INGREDIENTS (format: slug|name|category|macros per 100g):
 ${ingredientList}
 
-## RESPOND WITH JSON ONLY — no markdown fences, no prose. Schema:
+RESPOND WITH JSON ONLY. No markdown fences, no prose. Schema:
 {
-  "days": [
+  "meals": [
     {
-      "day": 1,
-      "meals": [
-        {
-          "name": "Breakfast",
-          "time": "7:30 AM",
-          "ingredients": [
-            { "slug": "chicken_breast_cooked_skinless", "grams": 150 }
-          ]
-        }
+      "name": "Breakfast",
+      "time": "7:30 AM",
+      "ingredients": [
+        { "slug": "chicken_breast_cooked_skinless", "grams": 180 }
       ]
     }
   ]
+}`;
 }
 
-Return exactly 7 day objects, each with exactly ${mealsPerDay} meal objects.`;
-}
+const DAY_CALL_MAX_TOKENS = 1500; // plenty for ~4-5 meals with ingredient lists
 
-export async function generateMealPlan(
-  input: GenerationInput,
+export async function generateDay(
+  input: DayGenerationInput,
   apiKey: string
-): Promise<{ days: DayPlan[]; rawResponse: string }> {
+): Promise<DayPlan> {
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
-    max_tokens: 6000, // a full 7-day plan JSON fits comfortably; larger values just slow generation
+    max_tokens: DAY_CALL_MAX_TOKENS,
     system: buildSystemPrompt(),
     messages: [{ role: "user", content: buildUserPrompt(input) }],
   });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
-    throw new Error("No text response from Claude");
+    throw new Error(`Day ${input.dayNumber}: no text response from Claude`);
   }
-
   const raw = textBlock.text;
 
-  // Extract JSON from the response (strip any markdown fences if present)
+  // Strip any accidental markdown fences
   let jsonStr = raw.trim();
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) jsonStr = fenceMatch[1].trim();
 
-  let parsed: { days: DayPlan[] };
+  let parsed: { meals: { name: string; time: string; ingredients: { slug: string; grams: number }[] }[] };
   try {
     parsed = JSON.parse(jsonStr);
   } catch (err) {
-    throw new Error(`Failed to parse Claude response as JSON: ${(err as Error).message}\n\nResponse: ${raw.slice(0, 500)}`);
+    throw new Error(
+      `Day ${input.dayNumber}: failed to parse Claude JSON: ${(err as Error).message} | raw: ${raw.slice(0, 300)}`
+    );
   }
 
-  if (!parsed.days || !Array.isArray(parsed.days)) {
-    throw new Error("Claude response missing 'days' array");
+  if (!parsed.meals || !Array.isArray(parsed.meals)) {
+    throw new Error(`Day ${input.dayNumber}: Claude response missing 'meals' array`);
   }
 
-  return { days: parsed.days, rawResponse: raw };
+  return {
+    day: input.dayNumber,
+    meals: parsed.meals.map((m) => ({
+      name: m.name,
+      time: m.time,
+      ingredients: (m.ingredients || []).map((i) => ({
+        slug: i.slug,
+        grams: Math.round(Number(i.grams) || 0),
+      })),
+    })),
+  };
+}
+
+/**
+ * Generate all 7 days in parallel. Returns array of DayPlan (day 1..7).
+ * If any day fails, throws — caller decides retry strategy.
+ */
+export async function generateAllDays(
+  inputs: DayGenerationInput[],
+  apiKey: string
+): Promise<DayPlan[]> {
+  const results = await Promise.all(inputs.map((inp) => generateDay(inp, apiKey)));
+  // Ensure ordered by day number
+  results.sort((a, b) => a.day - b.day);
+  return results;
 }

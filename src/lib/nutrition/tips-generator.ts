@@ -1,6 +1,7 @@
 /**
- * Generate personalized + generic tips for the client's meal plan PDF.
- * Deterministic — rule-based from intake form data.
+ * Generate the "Nutrition Tips & Guidelines" section.
+ * Structured as [{ title, body }] to match the sample layout.
+ * Bodies are personalized from the intake form where relevant.
  */
 
 export interface TipsContext {
@@ -17,130 +18,125 @@ export interface TipsContext {
   caloriesPerDay: number;
 }
 
-const GENERIC_TIPS = [
-  "Weigh ingredients in grams where possible — volume estimates vary and throw off your totals.",
-  "Cook proteins in bulk (2-3 days at a time) to save prep time and stay consistent on busy days.",
-  "If you miss a meal, don't double up the next one — spread portions across your remaining meals.",
-  "Track adherence, not perfection. Hitting 80-90% of the plan every week beats a perfect week followed by an off week.",
-  "Fiber helps satiety and digestion. Aim to include vegetables or fruit in most meals.",
-  "Train fasted or fed based on what works for you — what matters more is hitting your daily totals.",
-  "Water intake matters: aim for ~35ml per kg bodyweight (roughly 3L/day for most people).",
-  "Sleep recovery > any supplement. 7-9 hours is ideal for body composition goals.",
-  "Alcohol provides 7 kcal/g and stalls progress on both fat loss and muscle gain. Minimize during the program.",
-  "Meal timing flexibility: hit your daily totals. Eating windows can shift around your schedule.",
-  "If hunger spikes, add more low-calorie vegetables or 1-2 tbsp of raw nuts — don't starve yourself.",
-  "Protein at every meal (~25-40g) drives muscle retention better than backloading it all at dinner.",
-];
+export interface Tip {
+  title: string;
+  body: string;
+}
 
 /**
- * Build an ordered list of tips: 3-4 personalized + 5 generic.
+ * Personalized + consistent 10-tip list, mirroring the sample PDF layout.
  */
-export function generateTips(ctx: TipsContext): string[] {
-  const tips: string[] = [];
+export function generateTips(ctx: TipsContext): Tip[] {
+  const tips: Tip[] = [];
 
-  // --- Personalized tips ---
-
-  // Cooking/meal prep
-  const canCookLower = (ctx.canCook || "").toLowerCase();
-  if (canCookLower.includes("yes") || canCookLower.includes("can") || canCookLower.includes("sometimes")) {
-    tips.push(
-      "Since you mentioned you can cook, batch-prep your proteins (chicken, beef, fish) on Sunday and Wednesday. Portion them into containers — this makes weekday adherence almost automatic."
-    );
-  } else if (canCookLower.includes("no") || canCookLower.includes("limited")) {
-    tips.push(
-      "If full cooking isn't feasible, build meals around microwaveable rice packets, pre-cooked rotisserie chicken, and bagged salad greens. Grocery stores also carry pre-portioned grilled chicken."
-    );
-  }
-
-  // Sleep
-  const sleepLower = (ctx.sleepHours || "").toLowerCase();
-  const sleepMatch = sleepLower.match(/(\d+)/);
-  const sleepHrs = sleepMatch ? parseInt(sleepMatch[1], 10) : null;
-  if (sleepHrs !== null && sleepHrs < 7) {
-    tips.push(
-      `You mentioned ~${sleepHrs} hours of sleep. Under 7 hours chronically blunts recovery, raises cortisol, and increases appetite. Prioritize getting to bed 30-60 min earlier over anything else in your plan.`
-    );
-  }
-
-  // Hydration
+  // 1. Hydration — personalized if water intake looks low
   const waterLower = (ctx.waterIntake || "").toLowerCase();
-  if (
+  const lowWater =
     waterLower.includes("less than") ||
     waterLower.includes("not enough") ||
-    waterLower.match(/^\s*\d+\s*(cup|oz)/) ||
     waterLower.includes("hardly") ||
-    waterLower.includes("little")
-  ) {
-    tips.push(
-      "Based on your intake, increase water — carry a 1L bottle and refill it 2-3 times per day. Dehydration often shows up as hunger and cravings."
-    );
-  }
+    waterLower.includes("little") ||
+    /^\s*\d+\s*(cup|oz)/.test(waterLower);
+  tips.push({
+    title: "Stay Hydrated",
+    body: lowWater
+      ? "Your intake form suggests water intake is on the low side. Aim for at least 3-4 liters per day and more on training days. Carry a water bottle and refill it 3-4 times throughout the day."
+      : "Drink at least 3-4 liters of water daily. Increase intake on training days or in hot weather. Carry a water bottle and aim to finish it 3-4 times throughout the day.",
+  });
 
-  // Supplements
+  // 2. Meal timing around training
+  tips.push({
+    title: "Meal Timing Around Training",
+    body: "Have a meal with both protein and carbs 1.5-2 hours before your workout. After training, eat a protein-rich meal within 60 minutes to maximize recovery.",
+  });
+
+  // 3. Prep in batches — phrased differently based on canCook
+  const canCookLower = (ctx.canCook || "").toLowerCase();
+  const cannotCook = canCookLower.includes("no") || canCookLower.includes("limited") || canCookLower.includes("can't");
+  tips.push({
+    title: "Prep in Batches",
+    body: cannotCook
+      ? "If full cooking isn't feasible for you, lean on microwaveable rice packets, pre-cooked rotisserie chicken, and bagged salad greens. Even one batch-prep session on Sunday cuts weekday stress dramatically."
+      : "Cook proteins (chicken, beef, eggs) and grains (rice, quinoa) in bulk on Sundays and Wednesdays. Store in portioned containers — this saves time and keeps you on track during busy days.",
+  });
+
+  // 4. Weighing food
+  tips.push({
+    title: "Weigh Your Food",
+    body: "Use a kitchen scale for at least the first 2-3 weeks. Most people underestimate portions by 20-40%. Once you can eyeball portions accurately, you can rely on estimation.",
+  });
+
+  // 5. Don't skip meals
+  tips.push({
+    title: "Don't Skip Meals",
+    body: "Each meal is designed to hit a specific macro split. Skipping one throws off your daily totals and can lead to overeating later. If you're short on time, even a quick version of the meal is better than nothing.",
+  });
+
+  // 6. Listen to your body
+  tips.push({
+    title: "Listen to Your Body",
+    body: "If you're consistently feeling sluggish, overly hungry, or bloated, note it down and bring it up at your next check-in. Small adjustments to food choices or timing can make a big difference.",
+  });
+
+  // 7. Grocery shopping tips
+  tips.push({
+    title: "Grocery Shopping Tips",
+    body: "Shop the perimeter of the store first — produce, meats, dairy. Use the consolidated grocery list in this plan to stay focused. Buy frozen vegetables as a backup for weeks when fresh ones go bad.",
+  });
+
+  // 8. Supplements — personalized based on supplements listed
   const supplementsLower = (ctx.supplements || "").toLowerCase();
-  if (
+  const hasSupplements =
     supplementsLower &&
     !/^\s*(n\/?a|none|no)\s*$/.test(supplementsLower) &&
     (supplementsLower.includes("creatine") ||
       supplementsLower.includes("whey") ||
       supplementsLower.includes("protein") ||
-      supplementsLower.includes("multi"))
-  ) {
-    const supplementTips: string[] = [];
-    if (supplementsLower.includes("creatine")) {
-      supplementTips.push("creatine daily (any time of day, with water)");
-    }
+      supplementsLower.includes("multi"));
+  if (hasSupplements) {
+    const pieces: string[] = [];
     if (supplementsLower.includes("whey") || supplementsLower.includes("protein powder")) {
-      supplementTips.push("whey post-workout or anytime you're short on protein");
+      pieces.push("whey around training for convenient protein");
+    }
+    if (supplementsLower.includes("creatine")) {
+      pieces.push("creatine any time of day, 5g daily with water");
     }
     if (supplementsLower.includes("multi")) {
-      supplementTips.push("multivitamin with breakfast for absorption");
+      pieces.push("multivitamin with your largest meal for best absorption");
     }
-    if (supplementTips.length > 0) {
-      tips.push(`On your supplements: ${supplementTips.join("; ")}.`);
-    }
+    tips.push({
+      title: "Supplements",
+      body: `Based on what you listed: ${pieces.join("; ")}. Consistency matters more than timing with most supplements.`,
+    });
+  } else {
+    tips.push({
+      title: "Supplements (If Applicable)",
+      body: "If you're using whey protein, creatine, or a multivitamin, take them consistently. Whey around training, creatine any time of day (5g daily), and multivitamin with your largest meal for best absorption.",
+    });
   }
 
-  // Allergies reminder
-  const allergiesLower = (ctx.allergies || "").toLowerCase();
-  if (allergiesLower && !/^\s*(n\/?a|none|no)\s*$/.test(allergiesLower)) {
-    tips.push(
-      `Your plan avoids your listed allergies/sensitivities. Always double-check packaged food labels — cross-contamination can happen in shared facilities.`
-    );
-  }
+  // 9. Sleep — personalized if sleep is low
+  const sleepLower = (ctx.sleepHours || "").toLowerCase();
+  const sleepMatch = sleepLower.match(/(\d+)/);
+  const sleepHrs = sleepMatch ? parseInt(sleepMatch[1], 10) : null;
+  tips.push({
+    title: "Sleep & Recovery",
+    body:
+      sleepHrs !== null && sleepHrs < 7
+        ? `You mentioned ~${sleepHrs} hours of sleep. Chronic sleep under 7 hours blunts recovery, raises cortisol, and increases appetite. Prioritize getting to bed 30-60 minutes earlier — it does more for body composition than any supplement.`
+        : "Aim for 7-9 hours of sleep per night. Poor sleep increases hunger hormones and reduces protein synthesis. Your nutrition plan works best when paired with adequate rest.",
+  });
 
-  // Protein target reminder
-  if (ctx.proteinG > 150) {
-    tips.push(
-      `Your protein target (${ctx.proteinG}g/day) is on the higher side for muscle preservation. If you struggle to hit it, add Greek yogurt or a whey shake between meals — these are efficient protein vehicles.`
-    );
-  }
+  // 10. Be consistent
+  tips.push({
+    title: "Be Consistent, Not Perfect",
+    body:
+      ctx.goal === "fat_loss"
+        ? "Fat loss isn't linear — expect ±1-2 lb weekly fluctuations. Hitting your targets 85-90% of the time is what produces results. Focus on the 2-week trend, not individual days."
+        : ctx.goal === "muscle_gain"
+        ? "Muscle gain is slow — plan on ~0.5-1 lb per month. Hitting targets 85-90% of the time is plenty. If scale weight isn't moving after 2-3 weeks, bump calories by 100-150."
+        : "Hitting your targets 85-90% of the time will get results. One off-plan meal won't ruin progress — but a pattern of skipping will. Focus on the weekly average, not each individual day.",
+  });
 
-  // Goal-specific tip
-  if (ctx.goal === "fat_loss") {
-    tips.push(
-      "Fat loss isn't linear — expect weekly fluctuations of ±1-2 lbs. Judge progress on 2-week trends, and weigh yourself first thing in the morning after the bathroom for consistency."
-    );
-  } else if (ctx.goal === "muscle_gain") {
-    tips.push(
-      "Muscle gain happens slowly — expect ~0.5-1 lb per month. If scale weight isn't moving up after 2-3 weeks, bump daily calories by 100-150."
-    );
-  }
-
-  // Meal count
-  const mealCountLower = (ctx.mealCount || "").toLowerCase();
-  if (mealCountLower.includes("smaller") || mealCountLower.match(/[56]/)) {
-    tips.push(
-      "Smaller, more frequent meals work well for blood sugar and satiety. Keep portions consistent across meals rather than having one giant dinner."
-    );
-  }
-
-  // --- Generic tips fill remaining slots up to 8 total ---
-  const shuffled = [...GENERIC_TIPS].sort(() => Math.random() - 0.5);
-  for (const g of shuffled) {
-    if (tips.length >= 8) break;
-    tips.push(g);
-  }
-
-  return tips.slice(0, 8);
+  return tips;
 }
