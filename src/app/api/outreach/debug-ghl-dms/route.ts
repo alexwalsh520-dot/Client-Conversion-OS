@@ -56,8 +56,53 @@ export async function GET() {
   }
 
   const firstSearch = await ghlGet(
-    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=1`,
+    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=10`,
   );
+  const firstBodyPeek = firstSearch.body as SearchResponse | null;
+  const convList = firstBodyPeek && Array.isArray(firstBodyPeek.conversations)
+    ? firstBodyPeek.conversations
+    : [];
+
+  const samples: Array<Record<string, unknown>> = [];
+  for (const conv of convList.slice(0, 6)) {
+    const convId = (conv as { id?: string }).id;
+    if (!convId) continue;
+    const msgR = await ghlGet(`/conversations/${convId}/messages`);
+    const b = msgR.body;
+    const messagesObj = (b as Record<string, unknown>)?.messages;
+    const list = Array.isArray(messagesObj)
+      ? messagesObj
+      : Array.isArray((messagesObj as Record<string, unknown>)?.messages)
+        ? (messagesObj as Record<string, unknown>).messages
+        : [];
+    const arr = Array.isArray(list) ? (list as Array<Record<string, unknown>>) : [];
+    const firstOutbound = arr.find((m) => m.direction === "outbound");
+    const firstInbound = arr.find((m) => m.direction === "inbound");
+    samples.push({
+      conversationId: convId,
+      contactName: (conv as { contactName?: string }).contactName,
+      contactId: (conv as { contactId?: string }).contactId,
+      msgCount: arr.length,
+      outbound: firstOutbound ? {
+        from: firstOutbound.from,
+        to: firstOutbound.to,
+        meta: firstOutbound.meta,
+        userId: firstOutbound.userId,
+        body: typeof firstOutbound.body === "string" ? firstOutbound.body.slice(0, 80) : firstOutbound.body,
+      } : null,
+      inbound: firstInbound ? {
+        from: firstInbound.from,
+        to: firstInbound.to,
+        meta: firstInbound.meta,
+        body: typeof firstInbound.body === "string" ? firstInbound.body.slice(0, 80) : firstInbound.body,
+      } : null,
+    });
+  }
+  results.handleSamples = samples;
+
+  const firstConvId = firstBodyPeek && Array.isArray(firstBodyPeek.conversations) && firstBodyPeek.conversations[0]
+    ? (firstBodyPeek.conversations[0] as { id?: string }).id
+    : null;
   const firstBody = firstSearch.body as SearchResponse | null;
   const firstConvId = firstBody && Array.isArray(firstBody.conversations) && firstBody.conversations[0]
     ? (firstBody.conversations[0] as { id?: string }).id
