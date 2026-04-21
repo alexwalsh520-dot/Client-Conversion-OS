@@ -42,6 +42,7 @@ import {
   type PdfInput,
   type PdfMeal,
 } from "@/lib/nutrition/pdf-renderer";
+import { optimizeAllDays } from "@/lib/nutrition/portion-optimizer";
 
 export const maxDuration = 60;
 
@@ -378,6 +379,12 @@ export async function POST(req: NextRequest) {
         }
       });
     }
+
+    // ---------- DETERMINISTIC PORTION OPTIMIZATION ----------
+    // After Claude retries, any remaining macro drift is pure arithmetic —
+    // nudging gram amounts on ingredients Claude already selected. This is
+    // deterministic and guaranteed to land within ±5% on nearly every day.
+    optimizeAllDays(days, byslug, targets);
 
     // --- Compute macros from DB, assemble PdfDay[] ---
     const pdfDays: PdfDay[] = days.map((d) => {
