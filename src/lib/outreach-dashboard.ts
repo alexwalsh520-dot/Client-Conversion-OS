@@ -50,6 +50,8 @@ interface DmMessageRow {
   direction: "inbound" | "outbound" | "unknown";
   body: string;
   sentAt: string | null;
+  igPageName: string | null;
+  igPageId: string | null;
 }
 
 interface EmailLeadSummary {
@@ -77,6 +79,8 @@ interface DmSourceConfig {
   label: string;
   description: string;
   locationId: string | null;
+  igHandle: string | null;
+  igPageId: string | null;
 }
 
 interface DmDataset {
@@ -305,6 +309,10 @@ function getDmSourceConfig(): DmSourceConfig {
     process.env.GHL_LOCATION_ID?.trim() ||
     null;
   const apiKey = process.env.GHL_API_KEY?.trim() || null;
+  const igHandle =
+    process.env.OUTREACH_DM_IG_HANDLE?.trim().replace(/^@/, "").toLowerCase() ||
+    "matthew_conder";
+  const igPageId = process.env.OUTREACH_DM_IG_PAGE_ID?.trim() || null;
 
   if (!locationId || !apiKey) {
     return {
@@ -313,16 +321,21 @@ function getDmSourceConfig(): DmSourceConfig {
       description:
         "GHL_API_KEY and GHL_LOCATION_ID (or OUTREACH_DM_LOCATION_ID) must be set for live Instagram DM numbers.",
       locationId: null,
+      igHandle,
+      igPageId,
     };
   }
 
-  const label = process.env.OUTREACH_DM_SOURCE_NAME?.trim() || "GHL Instagram DMs";
+  const label =
+    process.env.OUTREACH_DM_SOURCE_NAME?.trim() || `@${igHandle} Instagram DMs`;
 
   return {
     enabled: true,
     label,
     description: `Live from ${label} on GHL location ${locationId}.`,
     locationId,
+    igHandle,
+    igPageId,
   };
 }
 
@@ -526,23 +539,55 @@ async function getDmDataset(
           const messages = await fetchConversationMessages(conv.id);
           messagesByConversation.set(
             conv.id,
-            messages.map((message) => ({
-              conversationId: conv.id,
-              contactId: conv.contactId || message.contactId || null,
-              direction: message.direction,
-              body: message.body,
-              sentAt: message.sentAt ?? null,
-            })),
+            messages.map((message) => {
+              const raw = message.raw || {};
+              const metaIg = (raw.meta as { ig?: { pageName?: unknown; pageId?: unknown } } | undefined)?.ig;
+              return {
+                conversationId: conv.id,
+                contactId: conv.contactId || message.contactId || null,
+                direction: message.direction,
+                body: message.body,
+                sentAt: message.sentAt ?? null,
+                igPageName: typeof metaIg?.pageName === "string" ? metaIg.pageName : null,
+                igPageId: typeof metaIg?.pageId === "string" ? metaIg.pageId : null,
+              };
+            }),
           );
         } catch {
           messagesByConversation.set(conv.id, []);
         }
       });
 
+      let filteredItems: GhlConversationListItem[] = items;
+      let filteredAllTime = totalAllTime;
+
+      if (dmSource.igHandle || dmSource.igPageId) {
+        const handleLower = dmSource.igHandle?.toLowerCase() || null;
+        const pageIdTarget = dmSource.igPageId || null;
+        const kept: GhlConversationListItem[] = [];
+        const keptMessages = new Map<string, DmMessageRow[]>();
+
+        for (const conv of items) {
+          const msgs = messagesByConversation.get(conv.id) || [];
+          const matches = msgs.some((m) =>
+            (pageIdTarget && m.igPageId === pageIdTarget) ||
+            (handleLower && m.igPageName?.toLowerCase() === handleLower),
+          );
+          if (!matches) continue;
+          kept.push(conv);
+          keptMessages.set(conv.id, msgs);
+        }
+
+        filteredItems = kept;
+        filteredAllTime = kept.length;
+        messagesByConversation.clear();
+        for (const [k, v] of keptMessages) messagesByConversation.set(k, v);
+      }
+
       const data: DmDataset = {
-        conversations: items,
+        conversations: filteredItems,
         messagesByConversation,
-        totalConversationsAllTime: totalAllTime,
+        totalConversationsAllTime: filteredAllTime,
         rangeStartMs,
         rangeEndMs,
       };
@@ -944,12 +989,12 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
         description: "Live email data from Smartlead.",
       },
       dm: {
-        connected: dmSource.enabled && !dmError,
+        connected: dmSource.enabled && !dmError && dmThreads.length > 0,
         label: dmSource.label,
         description: dmError
           ? `DM source error: ${dmError}`
           : dmSource.enabled && dmThreads.length === 0
-            ? `Connected to ${dmSource.label} — no Instagram conversations with activity in the selected range.`
+            ? `Connected to GHL CC-Clients but found 0 Instagram conversations for @${dmSource.igHandle || "matthew_conder"} in this range. Either no DMs this period, or @${dmSource.igHandle || "matthew_conder"} isn't connected as an Instagram integration on this sub-account. Set OUTREACH_DM_IG_HANDLE to the connected handle, or connect the correct IG account in GHL.`
             : dmSource.description,
       },
     },
