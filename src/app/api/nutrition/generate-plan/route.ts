@@ -170,15 +170,26 @@ export async function POST(req: NextRequest) {
     };
 
     let plan: { days: DayPlan[] } | null = null;
+    let lastDays: DayPlan[] | null = null;
     let validationErrors: string[] | undefined;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Hobby plan enforces 60s lambda. Cap retries by elapsed time so we don't time out.
+    // Budget: leave ~15s for PDF render + upload + DB writes.
+    const TIME_BUDGET_MS = 45_000;
+    const MAX_ATTEMPTS = 2;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1 && Date.now() - startTime > TIME_BUDGET_MS) {
+        console.warn("[generate-plan] Skipping retry: time budget exceeded");
+        break;
+      }
+
       const { days } = await generateMealPlan(
         {
           intake: intakeSummary,
           targets,
           mealsPerDay,
-          allowedIngredients: rankedIngredients.slice(0, 120), // send top-ranked subset to stay within context
+          allowedIngredients: rankedIngredients.slice(0, 80), // trimmed to stay fast
           priorComments: commentList.map((c) => c.comment),
           attempt,
           validationErrors,
@@ -186,6 +197,7 @@ export async function POST(req: NextRequest) {
         apiKey
       );
 
+      lastDays = days;
       const validation = validatePlan(days, byslug, targets, blockedSlugs);
       if (validation.ok) {
         plan = { days };
@@ -195,10 +207,24 @@ export async function POST(req: NextRequest) {
       console.warn(`[generate-plan] Attempt ${attempt} failed validation:`, validation.errors);
     }
 
+    // If no strictly-valid plan, accept the last one if it at least has the right structure
+    // (7 days, correct meal count, only DB ingredients). User can refine via comments.
+    if (!plan && lastDays && lastDays.length === 7) {
+      const structuralOk = lastDays.every(
+        (d) =>
+          Array.isArray(d.meals) &&
+          d.meals.length === mealsPerDay &&
+          d.meals.every((m) => m.ingredients.every((i) => byslug.has(i.slug) && !blockedSlugs.has(i.slug)))
+      );
+      if (structuralOk) {
+        plan = { days: lastDays };
+      }
+    }
+
     if (!plan) {
       return NextResponse.json(
         {
-          error: "Could not generate a valid plan after 3 attempts",
+          error: "Could not generate a valid plan. Try adding a comment with specific guidance and regenerate.",
           validationErrors,
         },
         { status: 502 }

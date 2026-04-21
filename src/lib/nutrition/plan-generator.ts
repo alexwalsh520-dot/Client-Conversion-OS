@@ -137,7 +137,7 @@ export async function generateMealPlan(
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
-    max_tokens: 16000,
+    max_tokens: 6000, // a full 7-day plan JSON fits comfortably; larger values just slow generation
     system: buildSystemPrompt(),
     messages: [{ role: "user", content: buildUserPrompt(input) }],
   });

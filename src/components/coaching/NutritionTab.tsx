@@ -179,7 +179,19 @@ function MealPlanTaskPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: client.id }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { success?: boolean; error?: string; pdfUrl?: string } = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        // Non-JSON response (usually a Vercel timeout page). Surface a readable message.
+        if (res.status === 504 || /function.*invocation.*timeout/i.test(raw) || /an error occurred/i.test(raw)) {
+          throw new Error(
+            "Generation took too long and the server timed out. Try again — the model is usually faster on subsequent tries."
+          );
+        }
+        throw new Error(`Server returned a non-JSON response (status ${res.status}).`);
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Generation failed");
       }
