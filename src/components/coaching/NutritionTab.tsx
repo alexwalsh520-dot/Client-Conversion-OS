@@ -464,8 +464,10 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
   const [linkClientSearch, setLinkClientSearch] = useState("");
 
   // Categorize forms and clients
-  const linkedFormIds = new Set(clients.filter((c) => c.nutritionFormId).map((c) => c.nutritionFormId));
-  const unlinkedForms = nutritionForms.filter((nf) => !linkedFormIds.has(nf.id));
+  const linkedFormIds = new Set<number>(
+    clients.map((c) => c.nutritionFormId).filter((id): id is number => id != null)
+  );
+  const unlinkedForms = nutritionForms.filter((nf) => nf.id != null && !linkedFormIds.has(nf.id));
 
   const pendingClients = clients.filter((c) => c.nutritionFormId && (c.nutritionStatus === "pending" || c.nutritionStatus === "assigned"));
   const doneClients = clients.filter((c) => c.nutritionFormId && c.nutritionStatus === "done");
