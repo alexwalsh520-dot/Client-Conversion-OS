@@ -196,7 +196,7 @@ function MealPlanTaskPanel({
         throw new Error(data.error || "Generation failed");
       }
       await load();
-      setPreviewUrl(data.pdfUrl);
+      setPreviewUrl(data.pdfUrl ?? null);
       if (onRefreshClients) onRefreshClients();
     } catch (err) {
       setError((err as Error).message);
