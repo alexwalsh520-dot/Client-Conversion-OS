@@ -13,7 +13,6 @@ import {
   Loader2,
   Rocket,
   FileText,
-  BarChart3,
   Clock,
   AlertCircle,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import {
   saveRun,
   deleteRun,
   generateRunId,
-  getQuickStats,
 } from "@/lib/outreach-store";
 import {
   buildColdDmsCsv,
@@ -32,6 +30,7 @@ import {
   ColdDmsRow,
   mergeColdDmsRows,
 } from "@/lib/outreach-export";
+import OutreachDashboard from "@/components/outreach/OutreachDashboard";
 
 // ── CSV Parsing ────────────────────────────────────────────────
 
@@ -198,12 +197,10 @@ export default function OutreachRunsPage() {
   // History
   const [runs, setRuns] = useState<OutreachRun[]>([]);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
-  const [quickStats, setQuickStats] = useState(getQuickStats());
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setRuns(getRuns());
-    setQuickStats(getQuickStats());
   }, []);
 
   // ── File handling ──────────────────────────────────────────
@@ -401,7 +398,6 @@ export default function OutreachRunsPage() {
       };
       saveRun(run);
       setRuns(getRuns());
-      setQuickStats(getQuickStats());
     } catch (e: unknown) {
       setRunError(e instanceof Error ? e.message : "Outreach run failed");
       setRunStatus("error");
@@ -443,7 +439,6 @@ export default function OutreachRunsPage() {
   const handleDeleteRun = (id: string) => {
     deleteRun(id);
     setRuns(getRuns());
-    setQuickStats(getQuickStats());
   };
 
   return (
@@ -451,46 +446,14 @@ export default function OutreachRunsPage() {
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">
-          <span className="gradient-text">Outreach Runs</span>
+          <span className="gradient-text">Outreach</span>
         </h1>
         <p className="page-subtitle">
-          Upload leads, import to GHL, push to Smartlead, and download ColdDMs
+          Live outreach analytics plus CSV import, Smartlead pushes, and ColdDM downloads
         </p>
       </div>
 
-      {/* ── Quick Stats ─────────────────────────────────────── */}
-      <div className="section">
-        <h2 className="section-title">
-          <BarChart3 size={16} />
-          Quick Stats
-        </h2>
-        <div className="metric-grid metric-grid-4">
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total Leads Imported</div>
-            <div className="metric-card-value">{fmtNumber(quickStats.totalImported)}</div>
-            <div className="metric-card-trend metric-card-trend-flat">all-time</div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total Emails Sent</div>
-            <div className="metric-card-value">{fmtNumber(quickStats.totalEmails)}</div>
-            <div className="metric-card-trend metric-card-trend-flat">via Smartlead</div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total DMs Queued</div>
-            <div className="metric-card-value">{fmtNumber(quickStats.totalDMs)}</div>
-            <div className="metric-card-trend metric-card-trend-flat">via ColdDMs</div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Last Run</div>
-            <div className="metric-card-value" style={{ fontSize: 18 }}>
-              {quickStats.lastRun
-                ? new Date(quickStats.lastRun).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                : "—"}
-            </div>
-            <div className="metric-card-trend metric-card-trend-flat">{quickStats.totalRuns} total runs</div>
-          </div>
-        </div>
-      </div>
+      <OutreachDashboard />
 
       {/* ── Run Outreach Panel ──────────────────────────────── */}
       <div className="section">
