@@ -23,7 +23,7 @@ const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/ads", label: "Ads", icon: Megaphone },
-  { href: "/outreach-runs", label: "Outreach Runs", icon: Rocket },
+  { href: "/outreach-runs", label: "Outreach", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
 ];
 
@@ -81,7 +81,7 @@ export default function Sidebar() {
   };
 
   // Don't render on login or public pages
-  if (pathname === "/login" || pathname === "/review") return null;
+  if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") return null;
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";

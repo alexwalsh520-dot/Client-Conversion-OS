@@ -9,16 +9,17 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const isPublicPage = pathname === "/login" || pathname === "/review" || pathname === "/voice-notes";
 
   // Redirect to login when not authenticated (must be before conditional returns for hooks rules)
   useEffect(() => {
-    if (status === "unauthenticated" && pathname !== "/login" && pathname !== "/review") {
+    if (status === "unauthenticated" && !isPublicPage) {
       router.push("/login");
     }
-  }, [status, pathname, router]);
+  }, [status, isPublicPage, router]);
 
   // Public pages (no restriction)
-  if (pathname === "/login" || pathname === "/review") {
+  if (isPublicPage) {
     return <>{children}</>;
   }
 
@@ -38,8 +39,8 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // Admins always have access
   if (isAdmin) return <>{children}</>;
 
-  // Settings is always accessible (shows limited view for non-admins)
-  if (pathname === "/settings") return <>{children}</>;
+  // Settings and its child pages are always accessible (shows limited view for non-admins)
+  if (pathname === "/settings" || pathname.startsWith("/settings/")) return <>{children}</>;
 
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {

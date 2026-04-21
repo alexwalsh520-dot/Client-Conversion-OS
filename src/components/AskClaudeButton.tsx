@@ -1,8 +1,15 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
 export default function AskClaudeButton() {
+  const pathname = usePathname();
+
+  if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") {
+    return null;
+  }
+
   return (
     <button
       className="float-in"
