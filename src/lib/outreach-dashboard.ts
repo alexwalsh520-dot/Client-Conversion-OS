@@ -1,15 +1,20 @@
 import { searchDuplicateContact } from "@/lib/ghl";
-import { getServiceSupabase } from "@/lib/supabase";
+import { fetchConversationMessages } from "@/lib/ghl-conversations";
 import type {
   OutreachDashboardResponse,
   OutreachRange,
 } from "@/lib/outreach-dashboard-types";
 
 const SMARTLEAD_BASE = "https://server.smartlead.ai/api/v1";
+const GHL_BASE = "https://services.leadconnectorhq.com";
+const GHL_VERSION = "2021-07-28";
 const EMAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const DM_CACHE_TTL_MS = 2 * 60 * 1000;
 const EMAIL_CONTACT_CACHE_TTL_MS = 30 * 60 * 1000;
 const EMAIL_CONTACT_LOOKUP_CONCURRENCY = 10;
+const DM_MESSAGE_FETCH_CONCURRENCY = 8;
+const DM_CONV_PAGE_SIZE = 100;
+const DM_MAX_CONVERSATIONS_IN_RANGE = 1500;
 
 type ReplyIntent = "interested" | "not_interested" | "neutral" | "system";
 
@@ -31,19 +36,20 @@ interface SmartleadLeadStatisticsResponse {
   limit?: number;
 }
 
-interface DmMessageRow {
-  conversation_id: string;
-  subscriber_id: string | null;
-  contact_id: string | null;
-  direction: string | null;
-  body: string | null;
-  sent_at: string | null;
+interface GhlConversationListItem {
+  id: string;
+  contactId: string | null;
+  lastMessageDateMs: number | null;
+  lastMessageDirection: "inbound" | "outbound" | null;
+  lastMessageBody: string | null;
 }
 
-interface DmStageStateRow {
-  conversation_id: string;
-  qualified: boolean | null;
-  booking_readiness_score: number | null;
+interface DmMessageRow {
+  conversationId: string;
+  contactId: string | null;
+  direction: "inbound" | "outbound" | "unknown";
+  body: string;
+  sentAt: string | null;
 }
 
 interface EmailLeadSummary {
@@ -70,7 +76,15 @@ interface DmSourceConfig {
   enabled: boolean;
   label: string;
   description: string;
-  clients: string[];
+  locationId: string | null;
+}
+
+interface DmDataset {
+  conversations: GhlConversationListItem[];
+  messagesByConversation: Map<string, DmMessageRow[]>;
+  totalConversationsAllTime: number;
+  rangeStartMs: number;
+  rangeEndMs: number;
 }
 
 let emailDatasetCache:
@@ -84,18 +98,11 @@ let emailDatasetPromise: Promise<SmartleadLeadStatisticsRow[]> | null = null;
 let dmDatasetCache:
   | {
       expiresAt: number;
-      data: {
-        messages: DmMessageRow[];
-        stageStateByConversation: Map<string, DmStageStateRow>;
-      };
+      rangeKey: string;
+      data: DmDataset;
     }
   | null = null;
-let dmDatasetPromise:
-  | Promise<{
-      messages: DmMessageRow[];
-      stageStateByConversation: Map<string, DmStageStateRow>;
-    }>
-  | null = null;
+let dmDatasetPromise: Promise<DmDataset> | null = null;
 
 const emailContactCache = new Map<
   string,
@@ -258,43 +265,64 @@ function classifyEmailReply(body: string): ReplyIntent {
   return "neutral";
 }
 
-function classifyDmReply(
-  inboundBodies: string[],
-  stageState?: DmStageStateRow | null,
-): ReplyIntent {
+const DM_INTERESTED_PATTERNS = [
+  "interested",
+  "tell me more",
+  "hear more",
+  "how does it work",
+  "how it works",
+  "how much",
+  "pricing",
+  "price",
+  "sounds good",
+  "let's chat",
+  "lets chat",
+  "set up a call",
+  "hop on a call",
+  "book a call",
+  "send the link",
+  "send me the link",
+  "send me a link",
+  "yes please",
+  "sign me up",
+];
+
+function classifyDmReply(inboundBodies: string[]): ReplyIntent {
   const text = normalizeText(inboundBodies.join(" "));
+  if (!text) return "neutral";
   if (DM_NOT_INTERESTED_PATTERNS.some((pattern) => text.includes(pattern))) {
     return "not_interested";
   }
-  if (stageState?.qualified || (stageState?.booking_readiness_score || 0) >= 70) {
+  if (DM_INTERESTED_PATTERNS.some((pattern) => text.includes(pattern))) {
     return "interested";
   }
   return "neutral";
 }
 
 function getDmSourceConfig(): DmSourceConfig {
-  const clients = (process.env.OUTREACH_DM_CLIENT_FILTER || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const locationId =
+    process.env.OUTREACH_DM_LOCATION_ID?.trim() ||
+    process.env.GHL_LOCATION_ID?.trim() ||
+    null;
+  const apiKey = process.env.GHL_API_KEY?.trim() || null;
 
-  if (clients.length === 0) {
+  if (!locationId || !apiKey) {
     return {
       enabled: false,
       label: "DM source not connected",
       description:
-        "Need a live source for Matthew Conder's Instagram account before DM numbers can be trusted.",
-      clients: [],
+        "GHL_API_KEY and GHL_LOCATION_ID (or OUTREACH_DM_LOCATION_ID) must be set for live Instagram DM numbers.",
+      locationId: null,
     };
   }
 
-  const label = process.env.OUTREACH_DM_SOURCE_NAME?.trim() || "Matthew Conder Instagram";
+  const label = process.env.OUTREACH_DM_SOURCE_NAME?.trim() || "GHL Instagram DMs";
 
   return {
     enabled: true,
     label,
-    description: `Live from ${label}.`,
-    clients,
+    description: `Live from ${label} on GHL location ${locationId}.`,
+    locationId,
   };
 }
 
@@ -347,54 +375,181 @@ async function getEmailDataset() {
   return emailDatasetPromise;
 }
 
-async function getDmDataset(dmSource: DmSourceConfig) {
-  if (!dmSource.enabled) {
+async function ghlFetchJson<T>(path: string): Promise<T> {
+  const apiKey = process.env.GHL_API_KEY;
+  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+
+  const res = await fetch(`${GHL_BASE}${path}`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Version: GHL_VERSION,
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GHL ${path} failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+interface GhlConversationSearchResponse {
+  conversations?: Array<Record<string, unknown>>;
+  total?: number;
+}
+
+function parseLastMessageDate(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 1_000_000_000) return asNumber;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function parseDirection(value: unknown): "inbound" | "outbound" | null {
+  if (typeof value !== "string") return null;
+  const v = value.toLowerCase();
+  if (v.includes("inbound") || v === "received") return "inbound";
+  if (v.includes("outbound") || v === "sent") return "outbound";
+  return null;
+}
+
+async function listInstagramConversationsInRange(
+  locationId: string,
+  rangeStartMs: number,
+): Promise<{ items: GhlConversationListItem[]; totalAllTime: number }> {
+  const items: GhlConversationListItem[] = [];
+  let totalAllTime = 0;
+  let startAfterDate: number | undefined;
+
+  for (let page = 0; page < 50; page++) {
+    const params = new URLSearchParams({
+      locationId,
+      lastMessageType: "TYPE_INSTAGRAM",
+      limit: String(DM_CONV_PAGE_SIZE),
+    });
+    if (startAfterDate !== undefined) {
+      params.set("startAfterDate", String(startAfterDate));
+    }
+
+    const data = await ghlFetchJson<GhlConversationSearchResponse>(
+      `/conversations/search?${params.toString()}`,
+    );
+
+    if (page === 0) totalAllTime = typeof data.total === "number" ? data.total : 0;
+
+    const rows = data.conversations || [];
+    if (rows.length === 0) break;
+
+    let stop = false;
+    let lastDateOnPage: number | null = null;
+
+    for (const row of rows) {
+      const id = typeof row.id === "string" ? row.id : null;
+      if (!id) continue;
+
+      const lastMessageDateMs = parseLastMessageDate(row.lastMessageDate);
+      if (lastMessageDateMs !== null) lastDateOnPage = lastMessageDateMs;
+
+      if (lastMessageDateMs !== null && lastMessageDateMs < rangeStartMs) {
+        stop = true;
+        break;
+      }
+
+      items.push({
+        id,
+        contactId: typeof row.contactId === "string" ? row.contactId : null,
+        lastMessageDateMs,
+        lastMessageDirection: parseDirection(row.lastMessageDirection),
+        lastMessageBody: typeof row.lastMessageBody === "string" ? row.lastMessageBody : null,
+      });
+
+      if (items.length >= DM_MAX_CONVERSATIONS_IN_RANGE) {
+        stop = true;
+        break;
+      }
+    }
+
+    if (stop) break;
+    if (rows.length < DM_CONV_PAGE_SIZE) break;
+    if (lastDateOnPage === null) break;
+    startAfterDate = lastDateOnPage;
+  }
+
+  return { items, totalAllTime };
+}
+
+async function getDmDataset(
+  dmSource: DmSourceConfig,
+  range: OutreachRange,
+): Promise<DmDataset> {
+  const rangeStartMs = Date.parse(`${range.startDate}T00:00:00Z`);
+  const rangeEndMs = Date.parse(`${range.endDate}T23:59:59Z`);
+  const rangeKey = `${range.startDate}_${range.endDate}`;
+
+  if (!dmSource.enabled || !dmSource.locationId) {
     return {
-      messages: [],
-      stageStateByConversation: new Map<string, DmStageStateRow>(),
+      conversations: [],
+      messagesByConversation: new Map(),
+      totalConversationsAllTime: 0,
+      rangeStartMs,
+      rangeEndMs,
     };
   }
 
-  if (dmDatasetCache && dmDatasetCache.expiresAt > Date.now()) {
+  if (
+    dmDatasetCache &&
+    dmDatasetCache.rangeKey === rangeKey &&
+    dmDatasetCache.expiresAt > Date.now()
+  ) {
     return dmDatasetCache.data;
   }
   if (dmDatasetPromise) return dmDatasetPromise;
 
   dmDatasetPromise = (async () => {
     try {
-      const sb = getServiceSupabase();
-      const [messagesResult, stageStateResult] = await Promise.all([
-        sb
-          .from("dm_conversation_messages")
-          .select("conversation_id, subscriber_id, contact_id, direction, body, sent_at")
-          .eq("channel", "Instagram DM")
-          .in("client", dmSource.clients)
-          .order("sent_at", { ascending: true }),
-        sb
-          .from("dm_conversation_stage_state")
-          .select("conversation_id, qualified, booking_readiness_score")
-          .in("client", dmSource.clients),
-      ]);
+      const { items, totalAllTime } = await listInstagramConversationsInRange(
+        dmSource.locationId!,
+        rangeStartMs,
+      );
 
-      if (messagesResult.error) {
-        throw new Error(`Failed to load DM messages: ${messagesResult.error.message}`);
-      }
-      if (stageStateResult.error) {
-        throw new Error(`Failed to load DM stage state: ${stageStateResult.error.message}`);
-      }
+      const messagesByConversation = new Map<string, DmMessageRow[]>();
 
-      const stageStateByConversation = new Map<string, DmStageStateRow>();
-      for (const row of stageStateResult.data || []) {
-        stageStateByConversation.set(row.conversation_id, row);
-      }
+      await mapWithConcurrency(items, DM_MESSAGE_FETCH_CONCURRENCY, async (conv) => {
+        try {
+          const messages = await fetchConversationMessages(conv.id);
+          messagesByConversation.set(
+            conv.id,
+            messages.map((message) => ({
+              conversationId: conv.id,
+              contactId: conv.contactId || message.contactId || null,
+              direction: message.direction,
+              body: message.body,
+              sentAt: message.sentAt ?? null,
+            })),
+          );
+        } catch {
+          messagesByConversation.set(conv.id, []);
+        }
+      });
 
-      const data = {
-        messages: (messagesResult.data || []) as DmMessageRow[],
-        stageStateByConversation,
+      const data: DmDataset = {
+        conversations: items,
+        messagesByConversation,
+        totalConversationsAllTime: totalAllTime,
+        rangeStartMs,
+        rangeEndMs,
       };
 
       dmDatasetCache = {
         expiresAt: Date.now() + DM_CACHE_TTL_MS,
+        rangeKey,
         data,
       };
 
@@ -551,23 +706,18 @@ async function buildEmailSummaries() {
   return leads;
 }
 
-async function buildDmSummaries(dmSource: DmSourceConfig) {
-  const { messages, stageStateByConversation } = await getDmDataset(dmSource);
-  const messagesByConversation = new Map<string, DmMessageRow[]>();
-
-  for (const message of messages) {
-    if (!message.conversation_id) continue;
-    const list = messagesByConversation.get(message.conversation_id) || [];
-    list.push(message);
-    messagesByConversation.set(message.conversation_id, list);
-  }
-
+async function buildDmSummaries(
+  dmSource: DmSourceConfig,
+  range: OutreachRange,
+): Promise<{ threads: DmThreadSummary[]; dataset: DmDataset }> {
+  const dataset = await getDmDataset(dmSource, range);
   const threads: DmThreadSummary[] = [];
 
-  for (const [conversationId, threadMessages] of messagesByConversation.entries()) {
+  for (const conv of dataset.conversations) {
+    const threadMessages = dataset.messagesByConversation.get(conv.id) || [];
     const sortedMessages = [...threadMessages].sort((a, b) => {
-      const timeA = a.sent_at ? new Date(a.sent_at).getTime() : 0;
-      const timeB = b.sent_at ? new Date(b.sent_at).getTime() : 0;
+      const timeA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+      const timeB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
       return timeA - timeB;
     });
 
@@ -578,48 +728,42 @@ async function buildDmSummaries(dmSource: DmSourceConfig) {
     let followUpsToFirstReply: number | null = null;
 
     for (const message of sortedMessages) {
-      if (!message.sent_at) continue;
+      if (!message.sentAt) continue;
 
       if (message.direction === "outbound") {
-        outboundTimes.push(message.sent_at);
+        outboundTimes.push(message.sentAt);
         continue;
       }
 
       if (message.direction !== "inbound") continue;
 
-      inboundTimes.push(message.sent_at);
+      inboundTimes.push(message.sentAt);
       inboundBodies.push(message.body || "");
 
       if (!firstReplyAt) {
-        firstReplyAt = message.sent_at;
+        firstReplyAt = message.sentAt;
         followUpsToFirstReply = outboundTimes.length > 0
           ? Math.max(0, outboundTimes.length - 1)
           : 0;
       }
     }
 
-    const lastMessage = sortedMessages[sortedMessages.length - 1];
-    const personId = lastMessage?.contact_id
-      ? `contact:${lastMessage.contact_id}`
-      : lastMessage?.subscriber_id
-        ? `subscriber:${lastMessage.subscriber_id}`
-        : `conversation:${conversationId}`;
+    const personId = conv.contactId
+      ? `contact:${conv.contactId}`
+      : `conversation:${conv.id}`;
 
     threads.push({
-      threadId: conversationId,
+      threadId: conv.id,
       personId,
       outboundTimes,
       inboundTimes,
-      classification: classifyDmReply(
-        inboundBodies,
-        stageStateByConversation.get(conversationId),
-      ),
+      classification: classifyDmReply(inboundBodies),
       firstReplyAt,
       followUpsToFirstReply,
     });
   }
 
-  return threads;
+  return { threads, dataset };
 }
 
 function buildDateSeries(startDate: string, endDate: string) {
@@ -640,13 +784,29 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
   const notes = [
     "Email reply rate skips bounce notices and auto-replies.",
     "Interested email replies are best-effort from Smartlead reply text.",
-    "Positive DM replies are best-effort from DM text plus AI thread scoring.",
+    "DM numbers come live from GHL Instagram conversations on the CC-Clients sub-account.",
+    "Positive DM replies are best-effort from reply text matching.",
   ];
 
-  const [emailLeads, dmThreads] = await Promise.all([
+  let dmError: string | null = null;
+  const [emailLeads, dmResult] = await Promise.all([
     buildEmailSummaries(),
-    buildDmSummaries(dmSource),
+    buildDmSummaries(dmSource, range).catch((err: unknown) => {
+      dmError = err instanceof Error ? err.message : "Failed to load DM data";
+      return {
+        threads: [] as DmThreadSummary[],
+        dataset: {
+          conversations: [],
+          messagesByConversation: new Map(),
+          totalConversationsAllTime: 0,
+          rangeStartMs: 0,
+          rangeEndMs: 0,
+        } as DmDataset,
+      };
+    }),
   ]);
+  const dmThreads = dmResult.threads;
+  const dmDatasetAllTime = dmResult.dataset.totalConversationsAllTime;
 
   const dateSeries = buildDateSeries(range.startDate, range.endDate);
   const chart = dateSeries.map((date) => ({
@@ -766,7 +926,7 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
     },
     dm: {
       reachedInRange: dmReachedInRange.size,
-      reachedAllTime: dmReachedAllTime.size,
+      reachedAllTime: Math.max(dmDatasetAllTime, dmReachedAllTime.size),
       messagesInRange: chart.reduce((sum, point) => sum + point.dmMessages, 0),
       messagesAllTime: dmThreads.reduce((sum, thread) => sum + thread.outboundTimes.length, 0),
       repliesInRange: dmRepliedInRange.size,
@@ -784,11 +944,12 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
         description: "Live email data from Smartlead.",
       },
       dm: {
-        connected: dmSource.enabled,
+        connected: dmSource.enabled && !dmError,
         label: dmSource.label,
-        description:
-          dmSource.enabled && dmThreads.length === 0
-            ? `Connected to ${dmSource.label}, waiting for live Instagram webhook events.`
+        description: dmError
+          ? `DM source error: ${dmError}`
+          : dmSource.enabled && dmThreads.length === 0
+            ? `Connected to ${dmSource.label} — no Instagram conversations with activity in the selected range.`
             : dmSource.description,
       },
     },
