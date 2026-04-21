@@ -36,6 +36,68 @@ export function parseGoalFromText(text: string): GoalType {
 }
 
 /**
+ * Cross-check the text-derived goal against current vs goal bodyweight.
+ * A client who types "lose fat" but whose goal weight is 10+ lbs heavier than
+ * current needs a surplus, not a deficit — the numbers win over the language.
+ *
+ * Thresholds:
+ *  - goal_weight > current + 10 lbs (~4.5 kg)  →  muscle_gain
+ *  - goal_weight ≈ current (±5 lbs, ~2 kg)     →  keep text-derived goal; if text was
+ *                                                 fat_loss but they don't want to lose
+ *                                                 weight, treat as recomp
+ *  - goal_weight < current - 5 lbs  →  fat_loss (even if text was ambiguous)
+ *
+ * Returns the original goal unchanged if no numeric cross-check is possible.
+ */
+export function reconcileGoalWithWeights(
+  textGoal: GoalType,
+  currentKg: number | null,
+  goalKg: number | null
+): { goal: GoalType; overrodeText: boolean; note?: string } {
+  if (currentKg == null || goalKg == null || !isFinite(currentKg) || !isFinite(goalKg)) {
+    return { goal: textGoal, overrodeText: false };
+  }
+  const diffKg = goalKg - currentKg;
+  const absDiffLbs = Math.abs(diffKg) * 2.20462;
+
+  // Client wants to gain 10+ lbs — that's a surplus job
+  if (diffKg >= 4.5) {
+    if (textGoal !== "muscle_gain") {
+      return {
+        goal: "muscle_gain",
+        overrodeText: true,
+        note: `Goal weight is ${absDiffLbs.toFixed(0)} lbs heavier than current — calorie SURPLUS applied despite "${textGoal}" text.`,
+      };
+    }
+    return { goal: "muscle_gain", overrodeText: false };
+  }
+
+  // Client wants to lose 5+ lbs
+  if (diffKg <= -2.3) {
+    if (textGoal === "muscle_gain") {
+      return {
+        goal: "fat_loss",
+        overrodeText: true,
+        note: `Goal weight is ${absDiffLbs.toFixed(0)} lbs lighter than current — calorie DEFICIT applied despite "muscle_gain" text.`,
+      };
+    }
+    // If text already says fat_loss or recomp, keep it
+    return { goal: textGoal === "maintain" ? "fat_loss" : textGoal, overrodeText: textGoal === "maintain" };
+  }
+
+  // goal ≈ current (within ~5 lbs): client wants body recomp or maintenance
+  // If text said fat_loss or muscle_gain but weight barely changes → recomp
+  if (textGoal === "fat_loss" || textGoal === "muscle_gain") {
+    return {
+      goal: "recomp",
+      overrodeText: true,
+      note: `Goal weight is within ${absDiffLbs.toFixed(0)} lbs of current — treating as body recomposition.`,
+    };
+  }
+  return { goal: textGoal, overrodeText: false };
+}
+
+/**
  * Detects whether the client prefers quick-prep / crockpot meals based on free-text
  * fields like foods_avoid, daily_meals_description, can_cook.
  */

@@ -23,6 +23,7 @@ import {
   prefersQuickPrep as detectQuickPrep,
   prefersSpicy as detectSpicy,
   isOnAppetiteSuppressant,
+  reconcileGoalWithWeights,
 } from "@/lib/nutrition/parsers";
 import {
   filterAndRankIngredients,
@@ -178,12 +179,18 @@ export async function POST(req: NextRequest) {
     // --- Compute targets ---
     const directives = mergeCommentDirectives(commentList);
     const weightKg = directives.weightKgOverride ?? parseWeightToKg(intake.current_weight) ?? 80;
+    const goalKg = parseWeightToKg(intake.goal_weight);
     const heightCm = parseHeightToCm(intake.height) ?? 175;
     const age = intake.age || 30;
     const sex = directives.sexOverride ?? "male";
-    const goal = parseGoalFromText(intake.fitness_goal);
+    const textGoal = parseGoalFromText(intake.fitness_goal);
+    const reconciled = reconcileGoalWithWeights(textGoal, weightKg, goalKg);
+    const goal = reconciled.goal;
     const mealsPerDay = parseMealCount(intake.meal_count);
     const targets = calculateMacros({ sex, weightKg, heightCm, age, goal }, directives.macroOverrides);
+    if (reconciled.overrodeText && reconciled.note) {
+      targets.notes.push(reconciled.note);
+    }
 
     // --- Ingredients ---
     const { data: ingredients } = await db
