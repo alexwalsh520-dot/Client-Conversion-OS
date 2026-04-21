@@ -34,12 +34,12 @@ export async function GET() {
 
   const results: Record<string, unknown> = { locationId };
 
+  const nowMs = Date.now();
+  const tenDaysAgo = nowMs - 10 * 24 * 60 * 60 * 1000;
+
   const attempts = [
-    `/conversations/search?locationId=${locationId}&limit=5`,
-    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=5`,
-    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM_DM&limit=5`,
-    `/conversations/search?locationId=${locationId}&type=TYPE_INSTAGRAM&limit=5`,
-    `/conversations/search?locationId=${locationId}&channel=instagram&limit=5`,
+    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=2&sortBy=last_message_date&sort=desc`,
+    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=2&startAfterDate=${tenDaysAgo}`,
   ];
 
   for (const path of attempts) {
@@ -50,11 +50,40 @@ export async function GET() {
       total: body && typeof body === "object" ? body.total : null,
       count: body && typeof body === "object" && Array.isArray(body.conversations)
         ? body.conversations.length : null,
-      sample: body && typeof body === "object" && Array.isArray(body.conversations) && body.conversations.length > 0
-        ? Object.keys(body.conversations[0])
-        : body,
       firstConversation: body && typeof body === "object" && Array.isArray(body.conversations)
         ? body.conversations[0] : null,
+    };
+  }
+
+  const firstSearch = await ghlGet(
+    `/conversations/search?locationId=${locationId}&lastMessageType=TYPE_INSTAGRAM&limit=1`,
+  );
+  const firstBody = firstSearch.body as SearchResponse | null;
+  const firstConvId = firstBody && Array.isArray(firstBody.conversations) && firstBody.conversations[0]
+    ? (firstBody.conversations[0] as { id?: string }).id
+    : null;
+
+  if (firstConvId) {
+    const msgR = await ghlGet(`/conversations/${firstConvId}/messages`);
+    results[`/conversations/${firstConvId}/messages`] = {
+      status: msgR.status,
+      sample: (() => {
+        const b = msgR.body;
+        if (!b || typeof b !== "object") return b;
+        const messagesObj = (b as Record<string, unknown>).messages;
+        const list = Array.isArray(messagesObj)
+          ? messagesObj
+          : Array.isArray((messagesObj as Record<string, unknown>)?.messages)
+            ? (messagesObj as Record<string, unknown>).messages
+            : null;
+        const arr = Array.isArray(list) ? list : null;
+        return {
+          topKeys: Object.keys(b as Record<string, unknown>),
+          messageCount: arr ? arr.length : null,
+          firstMessageKeys: arr && arr[0] ? Object.keys(arr[0] as Record<string, unknown>) : null,
+          firstMessage: arr ? arr[0] : null,
+        };
+      })(),
     };
   }
 
