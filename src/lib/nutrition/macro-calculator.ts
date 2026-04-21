@@ -11,7 +11,7 @@
  */
 
 export type Sex = "male" | "female";
-export type GoalType = "fat_loss" | "muscle_gain" | "maintain";
+export type GoalType = "fat_loss" | "muscle_gain" | "maintain" | "recomp";
 
 export interface MacroInputs {
   sex: Sex;
@@ -57,8 +57,10 @@ function calculateBMR(sex: Sex, weightKg: number, heightCm: number, age: number)
 
 /**
  * Caloric target based on goal.
- * - Fat loss: -20% of TDEE (safer than flat -500 across body sizes)
- * - Muscle gain: +10% of TDEE (ISSN lean bulk consensus)
+ * - Fat loss: -20% of TDEE
+ * - Muscle gain: +10% of TDEE
+ * - Recomp (build + lose fat simultaneously): -10% (slight deficit; gains are possible
+ *   for intermediate trainees at a small deficit with high protein)
  * - Maintain: 0
  */
 function calculateGoalCalories(tdee: number, goal: GoalType): number {
@@ -67,6 +69,8 @@ function calculateGoalCalories(tdee: number, goal: GoalType): number {
       return tdee * 0.80;
     case "muscle_gain":
       return tdee * 1.10;
+    case "recomp":
+      return tdee * 0.90;
     case "maintain":
     default:
       return tdee;
@@ -81,7 +85,8 @@ function calculateProtein(weightKg: number, goal: GoalType): { grams: number; pe
   let perKg: number;
   switch (goal) {
     case "fat_loss":
-      perKg = 2.2; // Higher in deficit to preserve lean mass
+    case "recomp":
+      perKg = 2.2; // Higher in deficit to preserve lean mass (recomp behaves like a cut)
       break;
     case "muscle_gain":
       perKg = 1.8; // Sufficient for hypertrophy in surplus

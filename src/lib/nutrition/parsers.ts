@@ -28,15 +28,51 @@ export function parseGoalFromText(text: string): GoalType {
   const fatLossHit = fatLossKeywords.some((k) => s.includes(k));
   const muscleGainHit = muscleGainKeywords.some((k) => s.includes(k));
 
-  // If both are mentioned (recomp), default to fat_loss if body fat is emphasized
-  if (fatLossHit && muscleGainHit) {
-    // "lose body fat WHILE building lean muscle" is very common in intakes
-    // Prefer fat loss since deficit is the safer default for most
-    return "fat_loss";
-  }
+  // Both mentioned → body recomposition (slight deficit, high protein)
+  if (fatLossHit && muscleGainHit) return "recomp";
   if (fatLossHit) return "fat_loss";
   if (muscleGainHit) return "muscle_gain";
   return "maintain";
+}
+
+/**
+ * Detects whether the client prefers quick-prep / crockpot meals based on free-text
+ * fields like foods_avoid, daily_meals_description, can_cook.
+ */
+export function prefersQuickPrep(foodsAvoid: string, dailyMeals: string, canCook: string): boolean {
+  const combined = `${foodsAvoid || ""} ${dailyMeals || ""} ${canCook || ""}`.toLowerCase();
+  const hints = [
+    "long time to cook", "long cook", "time in the kitchen", "in the kitchen the whole time",
+    "crockpot", "crock pot", "slow cooker", "instant pot", "no time",
+    "quick meals", "easy meals", "busy schedule", "busy", "meal prep",
+    "one pot", "simple", "fast meals",
+  ];
+  return hints.some((h) => combined.includes(h));
+}
+
+/**
+ * Detects a preference for spicy food from foods_enjoy free text.
+ */
+export function prefersSpicy(foodsEnjoy: string): boolean {
+  const s = (foodsEnjoy || "").toLowerCase();
+  const hints = ["spicy", "hot sauce", "sriracha", "jalapeño", "jalapeno", "chili", "chile", "hot food", "heat"];
+  return hints.some((h) => s.includes(h));
+}
+
+/**
+ * Detects a stimulant medication (e.g., methylphenidate, amphetamine) that may
+ * suppress appetite — used to trigger a medication-aware nutrition tip.
+ */
+export function isOnAppetiteSuppressant(medications: string): boolean {
+  const s = (medications || "").toLowerCase();
+  const meds = [
+    "methylphenidate", "ritalin", "concerta", "focalin",
+    "adderall", "vyvanse", "dexedrine", "dextroamphetamine", "lisdexamfetamine",
+    "strattera", "atomoxetine",
+    "wellbutrin", "bupropion",
+    "phentermine", "contrave", "saxenda", "ozempic", "wegovy", "mounjaro",
+  ];
+  return meds.some((m) => s.includes(m));
 }
 
 /**

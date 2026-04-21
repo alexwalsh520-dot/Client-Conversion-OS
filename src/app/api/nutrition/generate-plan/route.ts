@@ -20,6 +20,9 @@ import {
   parsePreferredFoods,
   mergeCommentDirectives,
   parseMealCount,
+  prefersQuickPrep as detectQuickPrep,
+  prefersSpicy as detectSpicy,
+  isOnAppetiteSuppressant,
 } from "@/lib/nutrition/parsers";
 import {
   filterAndRankIngredients,
@@ -85,10 +88,23 @@ function mealSlotsFor(mealsPerDay: number): { name: string; time: string }[] {
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-function goalLabel(goal: "fat_loss" | "muscle_gain" | "maintain"): string {
+function goalLabel(goal: "fat_loss" | "muscle_gain" | "maintain" | "recomp"): string {
   if (goal === "fat_loss") return "Fat Loss";
   if (goal === "muscle_gain") return "Muscle Gain";
+  if (goal === "recomp") return "Body Recomposition";
   return "Maintenance";
+}
+
+/**
+ * Split a "Protein Preferences" free-text field (e.g., "Chicken, Beef, Fish, Eggs, Dairy")
+ * into an ordered list of short tokens, trimmed.
+ */
+function rankProteinPreferences(raw: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,;\n/|]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 1 && s.length < 30);
 }
 
 function cmToFtIn(cm: number): string {
@@ -199,9 +215,25 @@ export async function POST(req: NextRequest) {
     };
 
     const slots = mealSlotsFor(mealsPerDay);
-    // Send the top 80 ranked ingredients to Claude for this client (still gives plenty of variety)
     const allowed = rankedIngredients.slice(0, 80);
     const priorCommentTexts = commentList.map((c) => c.comment);
+
+    // Intake-driven flags used by the prompt
+    const quickPrep = detectQuickPrep(intake.foods_avoid, intake.daily_meals_description, intake.can_cook);
+    const spicy = detectSpicy(intake.foods_enjoy);
+    const preferredProteins = rankProteinPreferences(intake.protein_preferences || "");
+
+    // Rotate which proteins to "avoid" per day so the top preferences still get used
+    // across the week without being every day.
+    const rotateAvoid = (dayIdx: number): string[] => {
+      if (preferredProteins.length === 0) return [];
+      // Days 3-7: ask Claude to avoid proteins it likely used on prior days
+      if (dayIdx < 2) return [];
+      // Rotate through the list so each day avoids 1-2 proteins
+      const cycle = preferredProteins;
+      const avoidIdx = dayIdx % cycle.length;
+      return [cycle[avoidIdx]];
+    };
 
     // --- Build 7 per-day Claude inputs ---
     const dayInputs: DayGenerationInput[] = [];
@@ -214,15 +246,76 @@ export async function POST(req: NextRequest) {
         targets,
         allowedIngredients: allowed,
         priorComments: priorCommentTexts,
-        variationHint:
-          i < 2
-            ? undefined
-            : `Use different proteins and carbs than the previous days to keep the week varied.`,
+        prefersQuickPrep: quickPrep,
+        prefersSpicy: spicy,
+        preferredProteins,
+        avoidProteins: rotateAvoid(i),
       });
     }
 
     // --- Fire all 7 Claude calls in parallel ---
-    const days = await generateAllDays(dayInputs, apiKey);
+    let days = await generateAllDays(dayInputs, apiKey);
+
+    // ---------- MACRO VALIDATION + SELECTIVE SINGLE RETRY ----------
+    // Recompute day totals from DB macros; any day significantly out of spec
+    // (>10% over calories OR >15% over/under fat OR >10% under protein) gets
+    // one corrective retry in parallel — only if we still have time budget.
+    const computeTotals = (d: (typeof days)[number]) => {
+      let cal = 0, p = 0, c = 0, f = 0;
+      for (const meal of d.meals) {
+        for (const ing of meal.ingredients) {
+          const row = byslug.get(ing.slug);
+          if (!row) continue;
+          const factor = ing.grams / 100;
+          cal += Number(row.calories_per_100g) * factor;
+          p   += Number(row.protein_g_per_100g) * factor;
+          c   += Number(row.carbs_g_per_100g) * factor;
+          f   += Number(row.fat_g_per_100g) * factor;
+        }
+      }
+      return { cal, p, c, f };
+    };
+
+    const outOfSpec: { idx: number; errMsg: string }[] = [];
+    days.forEach((d, idx) => {
+      const t = computeTotals(d);
+      const calOver = t.cal > targets.calories * 1.10;
+      const fatOver = t.f > targets.fatG * 1.15;
+      const fatUnder = t.f < targets.fatG * 0.85;
+      const protUnder = t.p < targets.proteinG * 0.90;
+      if (calOver || fatOver || fatUnder || protUnder) {
+        const pieces: string[] = [];
+        pieces.push(`Your prior attempt hit: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat.`);
+        pieces.push(`Targets: ${targets.calories} kcal, ${targets.proteinG}g protein, ${targets.carbsG}g carbs, ${targets.fatG}g fat.`);
+        if (calOver)   pieces.push(`CALORIES are ${Math.round(((t.cal - targets.calories) / targets.calories) * 100)}% over — reduce added fats and starch portions.`);
+        if (fatOver)   pieces.push(`FAT is ${Math.round(((t.f - targets.fatG) / targets.fatG) * 100)}% over — cut butter/oil/cheese/nut portions in half.`);
+        if (fatUnder)  pieces.push(`FAT is ${Math.round(((targets.fatG - t.f) / targets.fatG) * 100)}% under — add 5-10g oil or a small cheese portion.`);
+        if (protUnder) pieces.push(`PROTEIN is ${Math.round(((targets.proteinG - t.p) / targets.proteinG) * 100)}% under — bump the main protein's grams.`);
+        outOfSpec.push({ idx, errMsg: pieces.join(" ") });
+      }
+    });
+
+    // Only retry if time budget allows (stay under 45s total so PDF render + upload fits)
+    const elapsedSoFar = Date.now() - startTime;
+    if (outOfSpec.length > 0 && elapsedSoFar < 35_000) {
+      console.log(`[generate-plan] Retrying ${outOfSpec.length} out-of-spec day(s)`);
+      const retryInputs = outOfSpec.map(({ idx, errMsg }) => ({
+        ...dayInputs[idx],
+        priorAttemptError: errMsg,
+      }));
+      const retryDays = await generateAllDays(retryInputs, apiKey);
+      // Merge retry results back into days array (only if the retry actually improved things)
+      retryDays.forEach((rd) => {
+        const idx = rd.day - 1;
+        const before = computeTotals(days[idx]);
+        const after  = computeTotals(rd);
+        const scoreBefore = Math.abs(before.cal - targets.calories) + Math.abs(before.f - targets.fatG) * 9;
+        const scoreAfter  = Math.abs(after.cal - targets.calories)  + Math.abs(after.f - targets.fatG)  * 9;
+        if (scoreAfter < scoreBefore) {
+          days[idx] = rd;
+        }
+      });
+    }
 
     // --- Compute macros from DB, assemble PdfDay[] ---
     const pdfDays: PdfDay[] = days.map((d) => {
@@ -253,6 +346,7 @@ export async function POST(req: NextRequest) {
         return {
           name: m.name,
           time: m.time || "",
+          dishName: m.dishName,
           ingredients: ingList,
           totalCal: mCal,
           totalP: mP,
@@ -309,6 +403,7 @@ export async function POST(req: NextRequest) {
       goal,
       proteinG: targets.proteinG,
       caloriesPerDay: targets.calories,
+      onAppetiteSuppressant: isOnAppetiteSuppressant(intake.medications || ""),
     });
 
     // --- PDF input ---

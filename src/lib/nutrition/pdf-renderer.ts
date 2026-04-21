@@ -37,6 +37,7 @@ export interface PdfIngredient {
 export interface PdfMeal {
   name: string;          // "Breakfast", "Lunch", etc.
   time: string;          // "7:30 AM"
+  dishName?: string;     // "Tex-Mex Egg Scramble Bowl" (from Claude)
   ingredients: PdfIngredient[];
   totalCal: number;
   totalP: number;
@@ -324,17 +325,30 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
         y = marginTop + 30;
       }
 
-      // Meal label
+      // Meal label (e.g. "Breakfast")
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.setTextColor(GOLD);
       doc.text(meal.name, marginX, y);
-      // Time
-      const mealTextWidth = doc.getTextWidth(meal.name);
+      let cursorX = marginX + doc.getTextWidth(meal.name);
+
+      // Dish name in between label and time if present
+      if (meal.dishName) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(INK);
+        const sep = "  ·  ";
+        doc.text(sep, cursorX, y);
+        cursorX += doc.getTextWidth(sep);
+        doc.text(meal.dishName, cursorX, y);
+        cursorX += doc.getTextWidth(meal.dishName);
+      }
+
+      // Time (gray, smaller)
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.setTextColor(GRAY);
-      doc.text(`· ${meal.time}`, marginX + mealTextWidth + 4, y);
+      doc.text(`  ·  ${meal.time}`, cursorX, y);
       y += 10;
 
       // Table header (dark navy bg, white text)

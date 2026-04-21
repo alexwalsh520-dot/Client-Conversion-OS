@@ -14,6 +14,7 @@ export interface IngredientQty {
 export interface Meal {
   name: string;        // "Breakfast", "Snack 1", etc.
   time?: string;       // "7:30 AM"
+  dishName?: string;   // "Tex-Mex Egg Scramble" — short dish name from Claude
   ingredients: IngredientQty[];
 }
 

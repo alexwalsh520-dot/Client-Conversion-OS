@@ -13,9 +13,10 @@ export interface TipsContext {
   sleepHours: string;
   waterIntake: string;
   allergies: string;
-  goal: "fat_loss" | "muscle_gain" | "maintain";
+  goal: "fat_loss" | "muscle_gain" | "maintain" | "recomp";
   proteinG: number;
   caloriesPerDay: number;
+  onAppetiteSuppressant: boolean;
 }
 
 export interface Tip {
@@ -66,11 +67,18 @@ export function generateTips(ctx: TipsContext): Tip[] {
     body: "Use a kitchen scale for at least the first 2-3 weeks. Most people underestimate portions by 20-40%. Once you can eyeball portions accurately, you can rely on estimation.",
   });
 
-  // 5. Don't skip meals
-  tips.push({
-    title: "Don't Skip Meals",
-    body: "Each meal is designed to hit a specific macro split. Skipping one throws off your daily totals and can lead to overeating later. If you're short on time, even a quick version of the meal is better than nothing.",
-  });
+  // 5. Don't skip meals (stimulant-aware)
+  if (ctx.onAppetiteSuppressant) {
+    tips.push({
+      title: "Appetite & Medication Timing",
+      body: "Your listed medication can suppress appetite during the day. Front-load your protein and calories in the morning (before the medication peaks) and keep easy, calorie-dense snacks ready for when it wears off. Don't skip — even a half-portion beats missing a meal and overeating at night.",
+    });
+  } else {
+    tips.push({
+      title: "Don't Skip Meals",
+      body: "Each meal is designed to hit a specific macro split. Skipping one throws off your daily totals and can lead to overeating later. If you're short on time, even a quick version of the meal is better than nothing.",
+    });
+  }
 
   // 6. Listen to your body
   tips.push({
@@ -135,6 +143,8 @@ export function generateTips(ctx: TipsContext): Tip[] {
         ? "Fat loss isn't linear — expect ±1-2 lb weekly fluctuations. Hitting your targets 85-90% of the time is what produces results. Focus on the 2-week trend, not individual days."
         : ctx.goal === "muscle_gain"
         ? "Muscle gain is slow — plan on ~0.5-1 lb per month. Hitting targets 85-90% of the time is plenty. If scale weight isn't moving after 2-3 weeks, bump calories by 100-150."
+        : ctx.goal === "recomp"
+        ? "Body recomposition is slow and non-linear — expect scale weight to stay roughly flat for weeks at a time while body composition shifts. Judge progress by the mirror, strength numbers, and how clothes fit, not daily scale weight. Hit your targets 85-90% of the time."
         : "Hitting your targets 85-90% of the time will get results. One off-plan meal won't ruin progress — but a pattern of skipping will. Focus on the weekly average, not each individual day.",
   });
 

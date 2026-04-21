@@ -1,9 +1,10 @@
 /**
  * Per-day Claude meal generator.
- * Each call produces ONE day only — small output (< 1000 tokens), ~5-8s.
+ * Each call produces ONE day only — small output (~1000 tokens), ~5-8s.
  * Caller parallelizes 7 concurrent calls to stay well under Vercel's 60s limit.
  *
- * Claude outputs slugs + grams only. All macro arithmetic is done by code.
+ * Claude outputs dish names + ingredient slugs + grams.
+ * All macro arithmetic is done by code.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -18,7 +19,7 @@ export interface ClientIntakeSummary {
   foodsEnjoy: string;
   foodsAvoid: string;
   allergies: string;
-  proteinPreferences: string;
+  proteinPreferences: string;  // "Chicken, Beef, Fish, Eggs, Dairy" — order matters
   canCook: string;
   mealCount: string;
   medications: string;
@@ -36,29 +37,52 @@ export interface DayGenerationInput {
   targets: MacroTargets;             // daily targets
   allowedIngredients: IngredientRow[]; // already filtered for allergies
   priorComments: string[];           // newest first
-  variationHint?: string;            // e.g. "use different proteins than days 1-3"
+  // Client flags detected by code from intake form
+  prefersQuickPrep: boolean;
+  prefersSpicy: boolean;
+  // Preferred proteins in ranked order (from intake "Protein Preferences")
+  preferredProteins: string[];
+  // Variation hint (e.g., avoid proteins used on prior days)
+  avoidProteins?: string[];
+  // Corrective feedback from a prior attempt on this day, if any
+  priorAttemptError?: string;
 }
 
 function buildSystemPrompt(): string {
-  return `You are a clinical nutritionist building one day of a meal plan.
+  return `You are a precise nutritionist building ONE day of a meal plan.
 
-RULES (NON-NEGOTIABLE):
-1. Output ONLY JSON — no markdown, no prose, no explanation.
-2. Use ONLY ingredients from the allowed list provided (use exact slug strings).
-3. Quantities must be integer grams.
-4. Each meal must have 3-5 ingredients for variety (unless it's a pure drink or snack).
-5. Each day must hit ±5% of the calorie and protein targets via portion sizes.
-6. Respect client preferences and protein sources when picking ingredients.
-7. Never invent ingredient slugs. Never use free-text names.
-8. Do not recommend supplements — only food ingredients from the list.`;
+OUTPUT FORMAT (non-negotiable):
+- Return ONLY valid JSON. No markdown fences. No prose.
+- Use ONLY ingredient slugs from the allowed list provided.
+- All quantities are integer grams.
+
+MACRO HIERARCHY — strictness applies top-down:
+1. CALORIES must be within ±5% of target. Calories overshoot easily — be conservative.
+2. FAT grams must be within ±10% of target. FAT is the #1 cause of plans failing validation.
+   → Use added fats SPARINGLY: butter/oil 5-10g per meal (NOT 15-25g); cheese 15-20g
+     portions (NOT 30-50g); nuts 15g portions (NOT 30g). Track them across the day.
+3. PROTEIN must be within ±7% of target. Spread 20-40g per meal.
+4. CARBS are a "remainder" macro — within ±10% is fine.
+
+INGREDIENT SELECTION:
+- Respect the client's ranked protein preferences — their #1 choice should appear 1-2×/week;
+  pick a variety across the 7 days. Do not skip their top preference.
+- Respect the foods-enjoy list: favor matching ingredients when they fit the macros.
+- Respect "foods to avoid" and allergies absolutely.
+- Every meal should name a REAL DISH (e.g., "Beef Burrito Bowl", "Oats with Berries and Whey").
+  Do not call a meal "Ingredients" or just a protein name.`;
 }
 
 function buildUserPrompt(input: DayGenerationInput): string {
-  const { intake, targets, mealSlots, allowedIngredients, priorComments, dayNumber, weekday, variationHint } = input;
+  const {
+    intake, targets, mealSlots, allowedIngredients, priorComments,
+    dayNumber, weekday, avoidProteins, priorAttemptError,
+    prefersQuickPrep, prefersSpicy, preferredProteins,
+  } = input;
 
-  // Compact ingredient list: slug + short macro summary
+  // Compact ingredient list
   const ingredientList = allowedIngredients
-    .map((i) => `${i.slug}|${i.name}|C${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`)
+    .map((i) => `${i.slug}|${i.name}|${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`)
     .join("\n");
 
   const commentsBlock =
@@ -69,11 +93,35 @@ function buildUserPrompt(input: DayGenerationInput): string {
           .join("\n")}`
       : "";
 
-  const variationBlock = variationHint ? `\n\nVARIATION: ${variationHint}` : "";
+  const mealSlotsBlock = mealSlots.map((s, i) => `${i + 1}. ${s.name} at ${s.time}`).join("\n");
 
-  const mealSlotsBlock = mealSlots
-    .map((s, i) => `${i + 1}. ${s.name} at ${s.time}`)
-    .join("\n");
+  // Client-specific directives
+  const directives: string[] = [];
+  if (preferredProteins.length > 0) {
+    directives.push(
+      `Client's ranked protein preferences: ${preferredProteins.join(" → ")}. Favor their top 2 protein preferences in today's meals.`
+    );
+  }
+  if (avoidProteins && avoidProteins.length > 0) {
+    directives.push(
+      `For variety, don't use these proteins today (already used on prior days): ${avoidProteins.join(", ")}.`
+    );
+  }
+  if (prefersQuickPrep) {
+    directives.push(
+      "Client prefers QUICK PREP / crockpot / one-pot style meals. Avoid meals requiring >20 minutes of active cooking. Favor: ground meat, pre-cooked rotisserie chicken, canned tuna/salmon, microwaveable rice, bagged salad, simple assembly."
+    );
+  }
+  if (prefersSpicy) {
+    directives.push(
+      "Client likes SPICY food. Where it fits (lunch/dinner especially), include salsa, hot sauce, jalapeños, chili powder, or sriracha as flavoring elements (they add flavor without major macro impact)."
+    );
+  }
+  const directivesBlock = directives.length > 0 ? `\n\nCLIENT DIRECTIVES:\n${directives.map((d) => `- ${d}`).join("\n")}` : "";
+
+  const retryBlock = priorAttemptError
+    ? `\n\nCORRECTIVE FEEDBACK — your previous attempt for this day failed validation:\n${priorAttemptError}\nFix by adjusting portion sizes (smaller oil/butter/cheese/nut portions are the usual culprits). Do not change the set of ingredients dramatically.`
+    : "";
 
   return `CLIENT INTAKE
 Name: ${intake.firstName} ${intake.lastName}
@@ -81,19 +129,19 @@ Goal: ${intake.fitnessGoal}
 Preferred foods: ${intake.foodsEnjoy || "no preferences listed"}
 Foods to avoid: ${intake.foodsAvoid || "none"}
 Allergies: ${intake.allergies || "none"}
-Protein preferences: ${intake.proteinPreferences || "no preferences"}
 Can cook: ${intake.canCook || "unknown"}
+Typical meals: ${intake.dailyMealsDescription || "not provided"}
 
 DAY: ${dayNumber} (${weekday})
 
-DAILY TARGETS (hit these ±5% via portion sizes):
-Calories: ${targets.calories} kcal
-Protein: ${targets.proteinG}g
-Carbs:   ${targets.carbsG}g
-Fat:     ${targets.fatG}g
+DAILY TARGETS (hit these via portion sizes):
+Calories: ${targets.calories} kcal  (max ${Math.round(targets.calories * 1.05)})
+Protein:  ${targets.proteinG}g       (min ${Math.round(targets.proteinG * 0.93)}, max ${Math.round(targets.proteinG * 1.07)})
+Carbs:    ${targets.carbsG}g
+Fat:      ${targets.fatG}g           (max ${Math.round(targets.fatG * 1.10)} — DO NOT OVERSHOOT)
 
 MEAL STRUCTURE (produce exactly these meals, in this order):
-${mealSlotsBlock}${commentsBlock}${variationBlock}
+${mealSlotsBlock}${directivesBlock}${commentsBlock}${retryBlock}
 
 ALLOWED INGREDIENTS (format: slug|name|category|macros per 100g):
 ${ingredientList}
@@ -104,15 +152,20 @@ RESPOND WITH JSON ONLY. No markdown fences, no prose. Schema:
     {
       "name": "Breakfast",
       "time": "7:30 AM",
+      "dishName": "Tex-Mex Egg Scramble Bowl",
       "ingredients": [
-        { "slug": "chicken_breast_cooked_skinless", "grams": 180 }
+        { "slug": "eggs_whole_cooked", "grams": 150 }
       ]
     }
   ]
-}`;
 }
 
-const DAY_CALL_MAX_TOKENS = 1500; // plenty for ~4-5 meals with ingredient lists
+The "name" field is fixed (from the meal structure above: Breakfast, Lunch, etc.).
+The "dishName" field is a short (2-5 word) dish name you invent based on the ingredients.
+Examples: "Tex-Mex Egg Scramble Bowl", "Lemon Herb Chicken & Rice", "Miso Salmon with Quinoa", "Peanut Butter Banana Oats".`;
+}
+
+const DAY_CALL_MAX_TOKENS = 1800; // slight bump for dishName + variety
 
 export async function generateDay(
   input: DayGenerationInput,
@@ -133,12 +186,18 @@ export async function generateDay(
   }
   const raw = textBlock.text;
 
-  // Strip any accidental markdown fences
   let jsonStr = raw.trim();
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) jsonStr = fenceMatch[1].trim();
 
-  let parsed: { meals: { name: string; time: string; ingredients: { slug: string; grams: number }[] }[] };
+  let parsed: {
+    meals: {
+      name: string;
+      time: string;
+      dishName?: string;
+      ingredients: { slug: string; grams: number }[];
+    }[];
+  };
   try {
     parsed = JSON.parse(jsonStr);
   } catch (err) {
@@ -156,6 +215,7 @@ export async function generateDay(
     meals: parsed.meals.map((m) => ({
       name: m.name,
       time: m.time,
+      dishName: m.dishName,
       ingredients: (m.ingredients || []).map((i) => ({
         slug: i.slug,
         grams: Math.round(Number(i.grams) || 0),
@@ -165,15 +225,13 @@ export async function generateDay(
 }
 
 /**
- * Generate all 7 days in parallel. Returns array of DayPlan (day 1..7).
- * If any day fails, throws — caller decides retry strategy.
+ * Generate all 7 days in parallel. Returns array of DayPlan (ordered day 1..7).
  */
 export async function generateAllDays(
   inputs: DayGenerationInput[],
   apiKey: string
 ): Promise<DayPlan[]> {
   const results = await Promise.all(inputs.map((inp) => generateDay(inp, apiKey)));
-  // Ensure ordered by day number
   results.sort((a, b) => a.day - b.day);
   return results;
 }
