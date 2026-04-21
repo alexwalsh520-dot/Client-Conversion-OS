@@ -26,6 +26,7 @@ import {
 } from "@/lib/nutrition/parsers";
 import {
   filterAndRankIngredients,
+  pickDiverseAllowed,
   type IngredientRow,
 } from "@/lib/nutrition/ingredient-filter";
 import {
@@ -215,13 +216,19 @@ export async function POST(req: NextRequest) {
     };
 
     const slots = mealSlotsFor(mealsPerDay);
-    const allowed = rankedIngredients.slice(0, 80);
     const priorCommentTexts = commentList.map((c) => c.comment);
 
     // Intake-driven flags used by the prompt
     const quickPrep = detectQuickPrep(intake.foods_avoid, intake.daily_meals_description, intake.can_cook);
     const spicy = detectSpicy(intake.foods_enjoy);
     const preferredProteins = rankProteinPreferences(intake.protein_preferences || "");
+
+    // Guarantee presence of spicy items when the client likes spicy food
+    const spicyRequired = spicy ? ["salsa", "hot_sauce", "jalapeno_raw"] : [];
+    const allowed = pickDiverseAllowed(rankedIngredients, {
+      size: 100,
+      extraRequiredSlugs: spicyRequired,
+    });
 
     // Rotate which proteins to "avoid" per day so the top preferences still get used
     // across the week without being every day.
@@ -276,21 +283,47 @@ export async function POST(req: NextRequest) {
       return { cal, p, c, f };
     };
 
+    // Symmetric validation — retry if ANY macro is outside ±10% in either direction.
+    // Also retries on per-meal fat violations (>40% of daily fat in one meal).
     const outOfSpec: { idx: number; errMsg: string }[] = [];
     days.forEach((d, idx) => {
       const t = computeTotals(d);
-      const calOver = t.cal > targets.calories * 1.10;
-      const fatOver = t.f > targets.fatG * 1.15;
-      const fatUnder = t.f < targets.fatG * 0.85;
-      const protUnder = t.p < targets.proteinG * 0.90;
-      if (calOver || fatOver || fatUnder || protUnder) {
+      const calPct = (t.cal - targets.calories) / targets.calories;
+      const pPct = (t.p - targets.proteinG) / targets.proteinG;
+      const fPct = (t.f - targets.fatG) / targets.fatG;
+
+      const calBad  = Math.abs(calPct) > 0.10;
+      const protBad = Math.abs(pPct)   > 0.10;
+      const fatBad  = Math.abs(fPct)   > 0.15;
+
+      // Check if any single meal exceeds 40% of daily fat target
+      let worstMealFat = 0;
+      let worstMealName = "";
+      for (const meal of d.meals) {
+        let mFat = 0;
+        for (const ing of meal.ingredients) {
+          const row = byslug.get(ing.slug);
+          if (!row) continue;
+          mFat += Number(row.fat_g_per_100g) * (ing.grams / 100);
+        }
+        if (mFat > worstMealFat) {
+          worstMealFat = mFat;
+          worstMealName = meal.dishName || meal.name;
+        }
+      }
+      const mealFatBad = worstMealFat > targets.fatG * 0.40;
+
+      if (calBad || protBad || fatBad || mealFatBad) {
         const pieces: string[] = [];
         pieces.push(`Your prior attempt hit: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat.`);
         pieces.push(`Targets: ${targets.calories} kcal, ${targets.proteinG}g protein, ${targets.carbsG}g carbs, ${targets.fatG}g fat.`);
-        if (calOver)   pieces.push(`CALORIES are ${Math.round(((t.cal - targets.calories) / targets.calories) * 100)}% over — reduce added fats and starch portions.`);
-        if (fatOver)   pieces.push(`FAT is ${Math.round(((t.f - targets.fatG) / targets.fatG) * 100)}% over — cut butter/oil/cheese/nut portions in half.`);
-        if (fatUnder)  pieces.push(`FAT is ${Math.round(((targets.fatG - t.f) / targets.fatG) * 100)}% under — add 5-10g oil or a small cheese portion.`);
-        if (protUnder) pieces.push(`PROTEIN is ${Math.round(((targets.proteinG - t.p) / targets.proteinG) * 100)}% under — bump the main protein's grams.`);
+        if (calBad && calPct > 0)  pieces.push(`CALORIES are ${Math.round(calPct * 100)}% OVER — reduce added fats (butter, oil, cheese, nuts) and starch portions.`);
+        if (calBad && calPct < 0)  pieces.push(`CALORIES are ${Math.round(-calPct * 100)}% UNDER — increase protein and carb portions; add 10-15g oil if fat is low.`);
+        if (fatBad && fPct > 0)    pieces.push(`FAT is ${Math.round(fPct * 100)}% OVER — cut butter/oil/cheese/nut portions in half.`);
+        if (fatBad && fPct < 0)    pieces.push(`FAT is ${Math.round(-fPct * 100)}% UNDER — add 5-10g oil, avocado, or a small cheese portion.`);
+        if (protBad && pPct > 0)   pieces.push(`PROTEIN is ${Math.round(pPct * 100)}% OVER — reduce protein portion sizes slightly.`);
+        if (protBad && pPct < 0)   pieces.push(`PROTEIN is ${Math.round(-pPct * 100)}% UNDER — bump the main protein's grams (aim for 30-40g protein per main meal).`);
+        if (mealFatBad)            pieces.push(`"${worstMealName}" has ${Math.round(worstMealFat)}g fat — that's more than 40% of the daily target. Spread fats across meals; no single meal should exceed ${Math.round(targets.fatG * 0.4)}g fat.`);
         outOfSpec.push({ idx, errMsg: pieces.join(" ") });
       }
     });

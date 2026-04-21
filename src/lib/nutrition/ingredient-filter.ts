@@ -88,6 +88,71 @@ export function filterAndRankIngredients(
   return scored.map((s) => s.ing);
 }
 
+/**
+ * Pick a DIVERSIFIED allowed-ingredient set for the Claude prompt.
+ *
+ * Plain `ranked.slice(0, N)` pushes out entire categories (vegetables,
+ * condiments, spices) when the preference keywords strongly match one category
+ * (e.g., "Chicken, Beef, Fish, Eggs, Dairy" fills the top 80 with proteins).
+ *
+ * This function guarantees a minimum presence from each category before
+ * filling remaining slots with top-ranked items.
+ */
+export function pickDiverseAllowed(
+  ranked: IngredientRow[],
+  opts: { size?: number; extraRequiredSlugs?: string[] } = {}
+): IngredientRow[] {
+  const size = opts.size ?? 100;
+  const extraRequiredSlugs = new Set(opts.extraRequiredSlugs ?? []);
+
+  // Minimum presence targets — ensures every meal type has viable options
+  const minPerCategory: Record<string, number> = {
+    protein: 12,
+    seafood: 4,
+    vegetable: 14, // generous, lunches/dinners need real variety
+    fruit: 5,
+    grain: 6,
+    carb: 6,
+    dairy: 6,
+    condiment: 8, // salsa, hot sauce, mustard, soy sauce, etc.
+    fat: 4,
+    legume: 3,
+    beverage: 2,
+    supplement: 2,
+  };
+
+  const byCategory = new Map<string, IngredientRow[]>();
+  for (const ing of ranked) {
+    if (!byCategory.has(ing.category)) byCategory.set(ing.category, []);
+    byCategory.get(ing.category)!.push(ing);
+  }
+
+  const chosen = new Map<string, IngredientRow>();
+
+  // 0. Always include explicitly required slugs (e.g., spicy items for spicy clients)
+  for (const ing of ranked) {
+    if (extraRequiredSlugs.has(ing.slug)) chosen.set(ing.slug, ing);
+  }
+
+  // 1. Fill per-category minimums using the ranked order within each category
+  for (const [cat, min] of Object.entries(minPerCategory)) {
+    const list = byCategory.get(cat) || [];
+    for (const ing of list.slice(0, min)) {
+      chosen.set(ing.slug, ing);
+      if (chosen.size >= size) break;
+    }
+    if (chosen.size >= size) break;
+  }
+
+  // 2. Fill remaining slots with the global top-ranked list
+  for (const ing of ranked) {
+    if (chosen.size >= size) break;
+    chosen.set(ing.slug, ing);
+  }
+
+  return Array.from(chosen.values());
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

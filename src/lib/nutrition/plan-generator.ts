@@ -57,20 +57,34 @@ OUTPUT FORMAT (non-negotiable):
 - All quantities are integer grams.
 
 MACRO HIERARCHY — strictness applies top-down:
-1. CALORIES must be within ±5% of target. Calories overshoot easily — be conservative.
+1. CALORIES must be within ±5% of target, in BOTH directions. Do not undershoot OR overshoot.
+   Plans that run 10%+ under target leave the client hungry and under-fueled.
 2. FAT grams must be within ±10% of target. FAT is the #1 cause of plans failing validation.
    → Use added fats SPARINGLY: butter/oil 5-10g per meal (NOT 15-25g); cheese 15-20g
      portions (NOT 30-50g); nuts 15g portions (NOT 30g). Track them across the day.
+   → NO SINGLE MEAL may contain more than 40% of the daily fat target. Spread fats across the day.
 3. PROTEIN must be within ±7% of target. Spread 20-40g per meal.
 4. CARBS are a "remainder" macro — within ±10% is fine.
+
+MEAL COMPOSITION:
+- LUNCH AND DINNER must each include at least ONE vegetable ingredient
+  (bell pepper, onion, tomato, lettuce, corn, broccoli, spinach, mushrooms, cucumber, etc.).
+  A "taco bowl" or "burrito bowl" without any vegetables is not realistic — peppers, onions,
+  tomato, and lettuce belong in those dishes.
+- Most meals should have 4-6 ingredients, not 2-3.
 
 INGREDIENT SELECTION:
 - Respect the client's ranked protein preferences — their #1 choice should appear 1-2×/week;
   pick a variety across the 7 days. Do not skip their top preference.
 - Respect the foods-enjoy list: favor matching ingredients when they fit the macros.
 - Respect "foods to avoid" and allergies absolutely.
-- Every meal should name a REAL DISH (e.g., "Beef Burrito Bowl", "Oats with Berries and Whey").
-  Do not call a meal "Ingredients" or just a protein name.`;
+
+DISH NAMING (truth-in-labeling):
+- Every meal needs a real dish name (e.g., "Beef Burrito Bowl", "Oats with Berries and Whey").
+- If you name a meal "Spicy X", it MUST include a real spicy ingredient
+  (salsa, hot_sauce, jalapeno_raw, or similar). Do NOT label a meal "Spicy" without one.
+- If you name a meal "Crockpot X" or "Slow Cooker X", it should look like a real one-pot dish
+  — include vegetables and sauce/seasoning, not just a protein cube + rice + cheese.`;
 }
 
 function buildUserPrompt(input: DayGenerationInput): string {
