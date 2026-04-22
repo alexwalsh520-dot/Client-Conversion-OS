@@ -1,30 +1,27 @@
+// Home page business metrics — the 4 Mozi numbers per client + total.
+//
+// Cohort source: Google Sheets sales tracker. Each row with cash_collected > 0
+// is one new client. This matches the user's mental model of "real coaching
+// program sale" and avoids Stripe artifacts (installment rebills, self-serve
+// Forge subscribers, payment-link duplicates) that were inflating AOV.
+//
+// LTGP source: Stripe history. Observed realized lifetime revenue per customer
+// minus coaching cost over tenure + fee drag.
+//
+// CAC source: Meta + Keith Ad Sheet for ad spend; Mercury for acquisition SaaS.
+
 import { CLIENTS } from "@/lib/mock-data";
 import { getServiceSupabase } from "@/lib/supabase";
-import { runCohortEngine, type ClientCohortResult } from "@/lib/mozi-cohort-engine";
 import { fetchAcquisitionCostsBreakdown, type AcquisitionCostsBreakdown } from "@/lib/mozi-acquisition-costs";
 import { fetchFulfillmentPayroll, type FulfillmentPayrollBreakdown } from "@/lib/mozi-coach-payroll";
-import { fetchSalesCommissions, type CommissionBreakdown } from "@/lib/mozi-sales-commissions";
+import { fetchSalesCohort, type SalesCohort, fetchSalesCommissions, type CommissionBreakdown } from "@/lib/mozi-sales-commissions";
 import { fetchKeithAdSpendLast30d } from "@/lib/mozi-keith-ads";
 import type { ClientKey } from "@/lib/mozi-costs-config";
 
-type LiveClientKey = ClientKey;                    // "keith" | "tyson"
-type UiClientKey = LiveClientKey;
+type UiClientKey = ClientKey;
 type CardState = "live" | "needs_setup";
 
-interface SettingsRow {
-  key: string;
-  value: unknown;
-}
-
-interface StripeChargeRow {
-  customer_id: string | null;
-  customer_email: string | null;
-  influencer: string | null;
-  amount: number | null;
-  refund_amount: number | null;
-  created_at: string | null;
-}
-
+interface SettingsRow { key: string; value: unknown; }
 interface SyncLogRow {
   source: string;
   status: string;
@@ -32,6 +29,14 @@ interface SyncLogRow {
   error_message: string | null;
   completed_at: string | null;
   started_at: string;
+}
+interface StripeChargeRow {
+  customer_id: string | null;
+  customer_email: string | null;
+  influencer: string | null;
+  amount: number | null;
+  refund_amount: number | null;
+  created_at: string | null;
 }
 
 interface MetricValueSet {
@@ -43,21 +48,19 @@ interface MetricValueSet {
 
 export interface ClientBreakdown {
   newClientCount: number;
-  cohortRevenueCents: number;
-  // GP30 direct-cost lines
-  coachingCostPerNewClientCents: number;
-  feeDragPerNewClientCents: number;
-  commissionsPerNewClientCents: number;
+  aovCents: number;                              // avg cash collected per sale
+  cohortRevenueCents: number;                    // sum of cash_collected in window
+  coachingCostPerNewClientCents: number;         // ~$38
+  feeDragPerNewClientCents: number;              // 3.9% × AOV
+  setterCommissionsPerNewClientCents: number;    // real per-row average
+  closerCommissionsPerNewClientCents: number;    // real per-row average
   directCostsPerNewClientCents: number;
   gp30Cents: number;
-  // CAC = ads + acquisition SaaS only
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
   cacTotalCents: number;
-  // Window-total commissions (already rolled into GP30 per-client) — shown so
-  // the report makes the flow obvious.
-  salesCommissionsWindowCents: number;
   monthlyGpPerActiveClientCents: number;
+  ltvPerCustomerCents: number;                   // realized lifetime revenue
   activeClients: number;
 }
 
@@ -77,30 +80,23 @@ export interface HomeBusinessMetricsResponse {
   sourceStatus: SyncLogRow[];
   report?: {
     window: { start: string; end: string };
-    avgProgramMonths: number;
+    salesCohort: SalesCohort;
     acquisitionBreakdown: AcquisitionCostsBreakdown;
     payrollBreakdown: FulfillmentPayrollBreakdown;
     commissions: CommissionBreakdown;
   };
 }
 
-// Evaluated at call time so env vars loaded late (e.g. dotenv in test scripts)
-// still drive the readiness flags correctly.
-function getClientConfig(): Array<{
-  key: UiClientKey;
-  label: string;
-  revenueReady: boolean;
-  adSpendReady: boolean;
-}> {
+function getClientConfig() {
   return [
     {
-      key: "keith",
+      key: "keith" as ClientKey,
       label: CLIENTS.keith.name,
       revenueReady: Boolean(process.env.STRIPE_KEY_KEITH),
-      adSpendReady: Boolean(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_KEITH),
+      adSpendReady: Boolean(process.env.GOOGLE_SHEETS_API_KEY),
     },
     {
-      key: "tyson",
+      key: "tyson" as ClientKey,
       label: CLIENTS.tyson.name,
       revenueReady: Boolean(process.env.STRIPE_KEY_TYSON_LLP || process.env.STRIPE_KEY_TYSON_SUBS),
       adSpendReady: Boolean(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_TYSON),
@@ -114,22 +110,10 @@ function emptyMetrics(): MetricValueSet {
 
 function buildMissingSetup(): string[] {
   const missing: string[] = [];
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    missing.push("Supabase server access");
-  }
-  if (!process.env.STRIPE_KEY_KEITH) missing.push("Keith Stripe access");
-  if (!process.env.STRIPE_KEY_TYSON_LLP && !process.env.STRIPE_KEY_TYSON_SUBS) {
-    missing.push("Tyson Stripe access");
-  }
-  if (!process.env.META_ACCESS_TOKEN || !process.env.META_AD_ACCOUNT_KEITH) {
-    missing.push("Keith Meta ad account access");
-  }
-  if (!process.env.META_ACCESS_TOKEN || !process.env.META_AD_ACCOUNT_TYSON) {
-    missing.push("Tyson Meta ad account access");
-  }
-  if (!process.env.MERCURY_TOKEN_CORESHIFT || !process.env.MERCURY_TOKEN_FORGE) {
-    missing.push("Mercury access (for acquisition SaaS + coach payroll)");
-  }
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) missing.push("Supabase server access");
+  if (!process.env.GOOGLE_SHEETS_API_KEY || !process.env.GOOGLE_SHEETS_SPREADSHEET_ID) missing.push("Sales tracker Google Sheets access");
+  if (!process.env.MERCURY_TOKEN_CORESHIFT || !process.env.MERCURY_TOKEN_FORGE) missing.push("Mercury access (acquisition SaaS + coach payroll)");
+  if (!process.env.META_ACCESS_TOKEN || !process.env.META_AD_ACCOUNT_TYSON) missing.push("Tyson Meta ad account access");
   return missing;
 }
 
@@ -164,22 +148,52 @@ async function loadAllCharges(): Promise<StripeChargeRow[]> {
   return charges;
 }
 
-function resultToBreakdown(r: ClientCohortResult, activeClients: number): ClientBreakdown {
-  return {
-    newClientCount: r.newClientCount,
-    cohortRevenueCents: r.cohortRevenueCents,
-    coachingCostPerNewClientCents: r.coachingCostPerNewClientCents,
-    feeDragPerNewClientCents: r.feeDragPerNewClientCents,
-    commissionsPerNewClientCents: r.commissionsPerNewClientCents,
-    directCostsPerNewClientCents: r.directCostsPerNewClientCents,
-    gp30Cents: r.gp30Cents,
-    cacAdSpendCents: r.cacAdSpendCents,
-    cacMercurySoftwareCents: r.cacMercurySoftwareCents,
-    cacTotalCents: r.cacTotalCents,
-    salesCommissionsWindowCents: r.salesCommissionsWindowCents,
-    monthlyGpPerActiveClientCents: r.monthlyGpPerActiveClientCents,
-    activeClients,
-  };
+// Stripe-side: observed mean lifetime revenue per customer, minus direct costs.
+// Used for LTGP only. The cohort/AOV math uses the sales tracker.
+function computeLtgp(
+  charges: StripeChargeRow[],
+  clientKey: ClientKey | "total",
+  perEndClientCoachingMonthly: number,
+  paymentFeePct: number,
+  chargebackPct: number,
+): { ltgpCents: number; ltvCents: number; monthlyGpPerActiveCents: number } {
+  const nowMs = Date.now();
+  const byCust = new Map<string, { firstAt: number; totalCents: number }>();
+  for (const c of charges) {
+    const infl = (c.influencer || "").toLowerCase();
+    if (clientKey !== "total" && infl !== clientKey) continue;
+    const key = c.customer_id || (c.customer_email ? c.customer_email.toLowerCase() : null);
+    if (!key) continue;
+    const gross = (c.amount ?? 0) - (c.refund_amount ?? 0);
+    if (gross <= 0) continue;
+    const createdMs = c.created_at ? new Date(c.created_at).getTime() : nowMs;
+    const existing = byCust.get(key);
+    if (existing) {
+      existing.totalCents += gross;
+      if (createdMs < existing.firstAt) existing.firstAt = createdMs;
+    } else {
+      byCust.set(key, { firstAt: createdMs, totalCents: gross });
+    }
+  }
+
+  let revenueSum = 0;
+  let count = 0;
+  let tenureMonthsSum = 0;
+  for (const cust of byCust.values()) {
+    if (cust.totalCents < 20000) continue;            // $200 floor (ignore micro-buys)
+    revenueSum += cust.totalCents;
+    count += 1;
+    tenureMonthsSum += Math.max(0.5, (nowMs - cust.firstAt) / (1000 * 60 * 60 * 24 * 30));
+  }
+  const ltv = count > 0 ? Math.round(revenueSum / count) : 0;
+  const tenureMonths = count > 0 ? tenureMonthsSum / count : 0;
+  const feeDrag = Math.round(ltv * ((paymentFeePct + chargebackPct) / 100));
+  const coachingOverTenure = Math.round(perEndClientCoachingMonthly * tenureMonths);
+  const ltgp = Math.max(0, ltv - feeDrag - coachingOverTenure);
+  const monthlyGpPerActive = tenureMonths > 0
+    ? Math.round((ltv - feeDrag) / tenureMonths) - perEndClientCoachingMonthly
+    : 0;
+  return { ltgpCents: ltgp, ltvCents: ltv, monthlyGpPerActiveCents: monthlyGpPerActive };
 }
 
 export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsResponse> {
@@ -199,8 +213,8 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
 
   const sb = getServiceSupabase();
   const thirtyDaysAgoYmd = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const nowYmd = new Date().toISOString().slice(0, 10);
 
-  // Parallel pulls
   const [
     allCharges,
     adSpendRes,
@@ -209,6 +223,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     syncLogRes,
     acquisitionBreakdown,
     payrollBreakdown,
+    salesCohort,
     commissionsResult,
     keithAdSpendSheet,
   ] = await Promise.all([
@@ -217,22 +232,11 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     sb.from("clients").select("offer, status, start_date, end_date"),
     sb.from("mozi_settings").select("key, value"),
     sb.from("mozi_sync_log").select("source, status, records_synced, error_message, completed_at, started_at").order("started_at", { ascending: false }).limit(20),
-    fetchAcquisitionCostsBreakdown().catch((e) => {
-      console.error("[mozi] acquisition breakdown failed:", e);
-      return null;
-    }),
-    fetchFulfillmentPayroll().catch((e) => {
-      console.error("[mozi] payroll breakdown failed:", e);
-      return null;
-    }),
-    fetchSalesCommissions().catch((e) => {
-      console.error("[mozi] sales commissions failed:", e);
-      return null;
-    }),
-    fetchKeithAdSpendLast30d().catch((e) => {
-      console.error("[mozi] Keith ad sheet failed:", e);
-      return null;
-    }),
+    fetchAcquisitionCostsBreakdown().catch((e) => { console.error("[mozi] acquisition failed:", e); return null; }),
+    fetchFulfillmentPayroll().catch((e) => { console.error("[mozi] payroll failed:", e); return null; }),
+    fetchSalesCohort({ dateFrom: thirtyDaysAgoYmd, dateTo: nowYmd }).catch((e) => { console.error("[mozi] sales cohort failed:", e); return null; }),
+    fetchSalesCommissions({ dateFrom: thirtyDaysAgoYmd, dateTo: nowYmd }).catch((e) => { console.error("[mozi] commissions failed:", e); return null; }),
+    fetchKeithAdSpendLast30d().catch((e) => { console.error("[mozi] Keith ad sheet failed:", e); return null; }),
   ]);
 
   if (adSpendRes.error) throw adSpendRes.error;
@@ -245,12 +249,13 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     ((settingsRes.data ?? []) as SettingsRow[]).map((r) => [r.key, r.value]),
   ) as Record<string, unknown>;
   const costs = (settingsMap.costs ?? {}) as Record<string, number>;
+  const paymentFeePct = costs.payment_fee_pct ?? 2.9;
+  const chargebackPct = costs.chargeback_rate_pct ?? 1;
 
-  // Active clients + avg program months
+  // Active clients per influencer
   const activeByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
   let totalActive = 0;
-  const durations: number[] = [];
-  for (const row of (clientsRes.data ?? []) as Array<{ offer: string | null; status: string | null; start_date: string | null; end_date: string | null }>) {
+  for (const row of (clientsRes.data ?? []) as Array<{ offer: string | null; status: string | null }>) {
     const offer = (row.offer || "").toLowerCase();
     const influencer: ClientKey | null = offer.includes("keith") ? "keith" : offer.includes("tyson") ? "tyson" : null;
     if (!influencer) continue;
@@ -258,115 +263,123 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
       activeByClient[influencer]++;
       totalActive++;
     }
-    if (row.start_date) {
-      const start = new Date(row.start_date);
-      const end = row.end_date ? new Date(row.end_date) : new Date();
-      const months = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30);
-      if (months > 0.5 && months < 60) durations.push(months);
-    }
   }
-  const avgProgramMonths = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 3;
 
-  // Ad spend per client. Tyson comes from Meta API (mozi_meta_ad_spend table).
-  // Keith comes from the ad-tracker Google Sheet (Meta token for Keith's
-  // ad account isn't provisioned yet, so we fall back to the sheet).
-  const metaAdSpendByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+  // Ad spend per client
+  const adSpendByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
   for (const r of (adSpendRes.data ?? []) as Array<{ influencer: string; spend: number | null }>) {
-    if (r.influencer === "keith") metaAdSpendByClient.keith += r.spend ?? 0;
-    if (r.influencer === "tyson") metaAdSpendByClient.tyson += r.spend ?? 0;
+    if (r.influencer === "keith") adSpendByClient.keith += r.spend ?? 0;
+    if (r.influencer === "tyson") adSpendByClient.tyson += r.spend ?? 0;
   }
   if (keithAdSpendSheet && keithAdSpendSheet.totalCents > 0) {
-    // If Meta API already populated Keith, prefer the larger value (defensive).
-    metaAdSpendByClient.keith = Math.max(metaAdSpendByClient.keith, keithAdSpendSheet.totalCents);
+    adSpendByClient.keith = Math.max(adSpendByClient.keith, keithAdSpendSheet.totalCents);
   }
 
-  // Mercury acquisition per client
+  // Mercury acquisition per client (SaaS + ManyChat)
   const mercuryAcquisitionByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
   if (acquisitionBreakdown) {
-    mercuryAcquisitionByClient.keith =
-      acquisitionBreakdown.acquisitionTotalPerClient.keith + acquisitionBreakdown.manychatPerClient.keith;
-    mercuryAcquisitionByClient.tyson =
-      acquisitionBreakdown.acquisitionTotalPerClient.tyson + acquisitionBreakdown.manychatPerClient.tyson;
+    mercuryAcquisitionByClient.keith = acquisitionBreakdown.acquisitionTotalPerClient.keith + acquisitionBreakdown.manychatPerClient.keith;
+    mercuryAcquisitionByClient.tyson = acquisitionBreakdown.acquisitionTotalPerClient.tyson + acquisitionBreakdown.manychatPerClient.tyson;
   }
 
-  // Commissions per client
-  const salesCommissionsByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
-  if (commissionsResult) {
-    salesCommissionsByClient.keith = commissionsResult.perClient.keith.totalCents;
-    salesCommissionsByClient.tyson = commissionsResult.perClient.tyson.totalCents;
-  }
+  // Per-end-client coaching+software cost per month (month 1 share for GP30).
+  const perEndClientCoachingMonthly =
+    totalActive > 0
+      ? Math.round(
+          ((payrollBreakdown?.totalCents ?? 0) + (acquisitionBreakdown?.fulfillmentSoftwareCents ?? 0)) /
+            totalActive,
+        )
+      : 0;
 
-  // Run engine
-  const engineResult = runCohortEngine({
-    allCharges: allCharges.map((c) => ({
-      customer_id: c.customer_id,
-      customer_email: c.customer_email,
-      influencer: c.influencer,
-      amount: c.amount ?? 0,
-      refund_amount: c.refund_amount ?? 0,
-      created_at: c.created_at ?? new Date().toISOString(),
-    })),
-    activeClientsByInfluencer: activeByClient,
-    totalActiveClients: totalActive,
-    fulfillmentPayrollMonthlyCents: payrollBreakdown?.totalCents ?? 0,
-    fulfillmentSoftwareMonthlyCents: acquisitionBreakdown?.fulfillmentSoftwareCents ?? 0,
-    paymentFeePct: costs.payment_fee_pct ?? 2.9,
-    chargebackPct: costs.chargeback_rate_pct ?? 1,
-    refundPct: costs.refund_rate_pct ?? 5,
-    metaAdSpendByClient,
-    mercuryAcquisitionByClient,
-    salesCommissionsByClient,
-    avgProgramMonths,
-    totalMaxClientSeats: 0,    // wait on coach safe-max from PM
-  });
+  function buildCard(clientKey: ClientKey | "total", opts?: { label?: string; ready?: { revenue: boolean; adSpend: boolean } }): HomeBusinessMetricsCard {
+    const cohort = salesCohort
+      ? clientKey === "total"
+        ? {
+            count: salesCohort.total.count,
+            cashCollectedCents: salesCohort.total.cashCollectedCents,
+            setterCommissionsCents: salesCohort.perClient.keith.setterCommissionsCents + salesCohort.perClient.tyson.setterCommissionsCents,
+            closerCommissionsCents: salesCohort.perClient.keith.closerCommissionsCents + salesCohort.perClient.tyson.closerCommissionsCents,
+          }
+        : {
+            count: salesCohort.perClient[clientKey].count,
+            cashCollectedCents: salesCohort.perClient[clientKey].cashCollectedCents,
+            setterCommissionsCents: salesCohort.perClient[clientKey].setterCommissionsCents,
+            closerCommissionsCents: salesCohort.perClient[clientKey].closerCommissionsCents,
+          }
+      : { count: 0, cashCollectedCents: 0, setterCommissionsCents: 0, closerCommissionsCents: 0 };
 
-  const clientConfig = getClientConfig();
+    const aov = cohort.count > 0 ? Math.round(cohort.cashCollectedCents / cohort.count) : 0;
 
-  // Build cards
-  function clientCard(key: ClientKey, cfg: ReturnType<typeof getClientConfig>[number]): HomeBusinessMetricsCard {
-    const r = engineResult.perClient[key];
+    // Direct costs per new client
+    const feeDragPct = (paymentFeePct + chargebackPct) / 100;
+    const feeDragPerClient = Math.round(aov * feeDragPct);
+    const setterComm = cohort.count > 0 ? Math.round(cohort.setterCommissionsCents / cohort.count) : 0;
+    const closerComm = cohort.count > 0 ? Math.round(cohort.closerCommissionsCents / cohort.count) : 0;
+    const directCosts = perEndClientCoachingMonthly + feeDragPerClient + setterComm + closerComm;
+    const gp30 = aov - directCosts;
+
+    // CAC
+    const adSpend = clientKey === "total" ? adSpendByClient.keith + adSpendByClient.tyson : adSpendByClient[clientKey];
+    const mercuryAcq = clientKey === "total" ? mercuryAcquisitionByClient.keith + mercuryAcquisitionByClient.tyson : mercuryAcquisitionByClient[clientKey];
+    const cacTotal = adSpend + mercuryAcq;
+    const cacPerClient = cohort.count > 0 ? Math.round(cacTotal / cohort.count) : 0;
+
+    // LTGP from Stripe observation
+    const { ltgpCents, ltvCents, monthlyGpPerActiveCents } = computeLtgp(
+      allCharges,
+      clientKey,
+      perEndClientCoachingMonthly,
+      paymentFeePct,
+      chargebackPct,
+    );
+
+    const activeClients = clientKey === "total" ? totalActive : activeByClient[clientKey];
+
+    const label = opts?.label ?? (clientKey === "total" ? "Total" : CLIENTS[clientKey].name);
     const notes: string[] = [];
-    if (!cfg.revenueReady) notes.push("Stripe not connected.");
-    // Keith's ads come from the Google Sheet tracker when Meta isn't wired.
-    const adSourceNote = !cfg.adSpendReady && r.cacAdSpendCents === 0 ? "Meta ad account not connected — CAC excludes ads." : null;
-    if (adSourceNote) notes.push(adSourceNote);
-    if (r.newClientCount === 0) notes.push("No new clients detected in the last 30 days.");
-    notes.push("Capacity shown on Total card only.");
+    if (opts?.ready && !opts.ready.revenue) notes.push("Stripe not connected.");
+    if (opts?.ready && !opts.ready.adSpend) notes.push("Ad source not connected — CAC excludes ads.");
+    if (cohort.count === 0) notes.push("No sales in the last 30 days on the sales tracker.");
+    if (clientKey !== "total") notes.push("Capacity shown on Total card only.");
+    if (clientKey === "total") notes.push("Coach safe-max still needed from PM — capacity unknown.");
+
+    const state: CardState = cohort.count > 0 ? "live" : "needs_setup";
+
     return {
-      key,
-      label: cfg.label,
-      state: r.newClientCount > 0 || r.cacTotalCents > 0 ? "live" : "needs_setup",
+      key: clientKey,
+      label,
+      state,
       metrics: {
-        gp30: r.newClientCount > 0 ? r.gp30Cents : null,
-        cac: r.newClientCount > 0 ? r.cacPerNewClientCents : null,
-        ltgp: r.ltgpCents > 0 ? r.ltgpCents : null,
-        capacityPct: null,
+        gp30: cohort.count > 0 ? gp30 : null,
+        cac: cohort.count > 0 ? cacPerClient : null,
+        ltgp: ltgpCents > 0 ? ltgpCents : null,
+        capacityPct: null, // pending coach safe-max
       },
       notes,
-      breakdown: resultToBreakdown(r, activeByClient[key]),
+      breakdown: {
+        newClientCount: cohort.count,
+        aovCents: aov,
+        cohortRevenueCents: cohort.cashCollectedCents,
+        coachingCostPerNewClientCents: perEndClientCoachingMonthly,
+        feeDragPerNewClientCents: feeDragPerClient,
+        setterCommissionsPerNewClientCents: setterComm,
+        closerCommissionsPerNewClientCents: closerComm,
+        directCostsPerNewClientCents: directCosts,
+        gp30Cents: gp30,
+        cacAdSpendCents: adSpend,
+        cacMercurySoftwareCents: mercuryAcq,
+        cacTotalCents: cacTotal,
+        monthlyGpPerActiveClientCents: monthlyGpPerActiveCents,
+        ltvPerCustomerCents: ltvCents,
+        activeClients,
+      },
     };
   }
 
-  const keithCard = clientCard("keith", clientConfig[0]);
-  const tysonCard = clientCard("tyson", clientConfig[1]);
-
-  const totalNotes: string[] = [];
-  if (engineResult.total.newClientCount === 0) totalNotes.push("No new clients detected in last 30 days.");
-  if (engineResult.total.capacity === undefined) totalNotes.push("Coach safe-max still needed from PM — capacity unknown.");
-
-  const totalCard: HomeBusinessMetricsCard = {
-    key: "total",
-    label: "Total",
-    state: engineResult.total.newClientCount > 0 ? "live" : "needs_setup",
-    metrics: {
-      gp30: engineResult.total.newClientCount > 0 ? engineResult.total.gp30Cents : null,
-      cac: engineResult.total.newClientCount > 0 ? engineResult.total.cacPerNewClientCents : null,
-      ltgp: engineResult.total.ltgpCents > 0 ? engineResult.total.ltgpCents : null,
-      capacityPct: engineResult.total.capacity?.pct ?? null,
-    },
-    notes: totalNotes,
-    breakdown: resultToBreakdown(engineResult.total, totalActive),
-  };
+  const clientConfig = getClientConfig();
+  const keithCard = buildCard("keith", { ready: { revenue: clientConfig[0].revenueReady, adSpend: clientConfig[0].adSpendReady } });
+  const tysonCard = buildCard("tyson", { ready: { revenue: clientConfig[1].revenueReady, adSpend: clientConfig[1].adSpendReady } });
+  const totalCard = buildCard("total");
 
   const syncedAt =
     syncStatuses
@@ -381,10 +394,10 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     missingSetup,
     sourceStatus: syncStatuses,
     report:
-      acquisitionBreakdown && payrollBreakdown && commissionsResult
+      acquisitionBreakdown && payrollBreakdown && salesCohort && commissionsResult
         ? {
-            window: { start: engineResult.windowStart, end: engineResult.windowEnd },
-            avgProgramMonths,
+            window: { start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), end: new Date().toISOString() },
+            salesCohort,
             acquisitionBreakdown,
             payrollBreakdown,
             commissions: commissionsResult,

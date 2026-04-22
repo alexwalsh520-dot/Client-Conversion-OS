@@ -64,17 +64,19 @@ interface BusinessMetricValues {
 
 interface BusinessMetricBreakdown {
   newClientCount: number;
+  aovCents: number;
   cohortRevenueCents: number;
   coachingCostPerNewClientCents: number;
   feeDragPerNewClientCents: number;
-  commissionsPerNewClientCents: number;
+  setterCommissionsPerNewClientCents: number;
+  closerCommissionsPerNewClientCents: number;
   directCostsPerNewClientCents: number;
   gp30Cents: number;
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
   cacTotalCents: number;
-  salesCommissionsWindowCents: number;
   monthlyGpPerActiveClientCents: number;
+  ltvPerCustomerCents: number;
   activeClients: number;
 }
 
@@ -771,17 +773,16 @@ function BusinessMetricsCard({
             fontSize: 13,
           }}
         >
-          <BreakdownRow label="New clients (last 30d)" value={String(card.breakdown.newClientCount)} />
-          <BreakdownRow
-            label="Cohort first-30d revenue (per new client)"
-            value={fmtCentsMetric(card.breakdown.newClientCount > 0 ? Math.round(card.breakdown.cohortRevenueCents / card.breakdown.newClientCount) : 0)}
-          />
+          <BreakdownRow label="New clients (last 30d, sales tracker)" value={String(card.breakdown.newClientCount)} />
+          <BreakdownRow label="Total cash collected" value={fmtCentsMetric(card.breakdown.cohortRevenueCents)} />
+          <BreakdownRow label="AOV per sale" value={fmtCentsMetric(card.breakdown.aovCents)} />
           <BreakdownRow label="− Coaching cost / client (month 1)" value={fmtCentsMetric(-card.breakdown.coachingCostPerNewClientCents)} />
-          <BreakdownRow label="− Payment fees / refunds / chargebacks" value={fmtCentsMetric(-card.breakdown.feeDragPerNewClientCents)} />
-          <BreakdownRow label="− Setter + closer commissions / client" value={fmtCentsMetric(-card.breakdown.commissionsPerNewClientCents)} />
+          <BreakdownRow label="− Payment fees + chargebacks (3.9%)" value={fmtCentsMetric(-card.breakdown.feeDragPerNewClientCents)} />
+          <BreakdownRow label="− Setter commissions (avg per sale)" value={fmtCentsMetric(-card.breakdown.setterCommissionsPerNewClientCents)} />
+          <BreakdownRow label="− Closer commissions (10% per sale)" value={fmtCentsMetric(-card.breakdown.closerCommissionsPerNewClientCents)} />
           <BreakdownRow label="→ 30-Day GP per new client" value={fmtCentsMetric(card.breakdown.gp30Cents)} bold />
           <div style={{ height: 4 }} />
-          <BreakdownRow label="CAC — Meta ad spend (30d total)" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
+          <BreakdownRow label="CAC — Ad spend (30d total)" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
           <BreakdownRow label="CAC — Acquisition SaaS (30d total)" value={fmtCentsMetric(card.breakdown.cacMercurySoftwareCents)} />
           <BreakdownRow label="CAC — Total (30d)" value={fmtCentsMetric(card.breakdown.cacTotalCents)} />
           <BreakdownRow
@@ -790,8 +791,9 @@ function BusinessMetricsCard({
             bold
           />
           <div style={{ height: 4 }} />
-          <BreakdownRow label="Active clients" value={String(card.breakdown.activeClients)} />
-          <BreakdownRow label="Monthly GP per active client" value={fmtCentsMetric(card.breakdown.monthlyGpPerActiveClientCents)} />
+          <BreakdownRow label="Active end-clients" value={String(card.breakdown.activeClients)} />
+          <BreakdownRow label="Observed lifetime revenue / customer" value={fmtCentsMetric(card.breakdown.ltvPerCustomerCents)} />
+          <BreakdownRow label="Monthly GP per active" value={fmtCentsMetric(card.breakdown.monthlyGpPerActiveClientCents)} />
           <BreakdownRow label="→ LTGP" value={fmtCentsMetric(card.metrics.ltgp)} bold />
         </div>
       )}
