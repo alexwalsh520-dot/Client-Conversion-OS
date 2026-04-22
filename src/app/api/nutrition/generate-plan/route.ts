@@ -248,6 +248,7 @@ export async function POST(req: NextRequest) {
           hasHypertension: medical.hasHypertension,
           hasDiabetes: medical.hasDiabetes,
           hasKidneyIssues: medical.hasKidneyIssues,
+          onStimulant: medical.onStimulantADHD,
         },
       },
       directives.macroOverrides
@@ -400,15 +401,23 @@ export async function POST(req: NextRequest) {
         preferredProteins,
         avoidProteins: rotateAvoid(i),
         formatHints: formatHintsFor(i),
-        hbpContext: medical.hasHypertension
+        // Sodium context populated whenever the client has a below-universal
+        // target (HBP → 1,800; stimulant → 2,000). Gives Claude a per-meal
+        // running-budget to work with as it builds the day.
+        sodiumContext: targets.sodiumCapMg < 2300
           ? {
               sodiumCapMg: targets.sodiumCapMg,
               dayNumber: i + 1,
-              // On the initial parallel fire every day sees the full budget;
-              // retries recompute these from the current plan state below.
-              allowedCheeseDaysLeft: 3,
-              allowedSourdoughDaysLeft: 2,
-              allowedFlourTortillaDaysLeft: 3,
+              reason: medical.hasHypertension ? ("hbp" as const) : ("stimulant" as const),
+              hbpWeeklyCaps: medical.hasHypertension
+                ? {
+                    // On the initial parallel fire every day sees the full budget;
+                    // retries recompute these from the current plan state below.
+                    allowedCheeseDaysLeft: 3,
+                    allowedSourdoughDaysLeft: 2,
+                    allowedFlourTortillaDaysLeft: 3,
+                  }
+                : undefined,
             }
           : undefined,
       });
@@ -492,37 +501,39 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Sodium — two-tier for HBP clients so clinically-safe over-target days
-      // don't block shipping. For non-HBP, the universal 2,300 mg AHA ceiling
-      // is a straight hard-block.
+      // Sodium — two-tier for any client with a below-universal target
+      // (HBP: 1,800; stimulant users: 2,000; default: 2,300).
       //
-      //   HBP client (e.g., cap 1800):
-      //     target    = 1800           (Tier 2 threshold — aspirational)
-      //     safety    = max(cap+200, cap×1.15), capped at 2300
-      //                = max(2000, 2070) = 2070
-      //     Days under 1800                  → clean
-      //     Days 1800-2070                   → Tier 2 quality note (ships)
-      //     Days over 2070 (or over 2300)    → Tier 1 hard block
+      //   Reduced-target client (cap < 2300):
+      //     target    = targets.sodiumCapMg  (Tier 2 aspirational)
+      //     safety    = min( max(cap+200, cap×1.15), 2300 )
+      //     Days under target            → clean
+      //     Days target to safety ceiling → Tier 2 quality note (ships)
+      //     Days over safety ceiling      → Tier 1 hard block
       //
-      //   Non-HBP:
-      //     safety = 2300 (universal AHA). Anything over → Tier 1.
-      //     No Tier 2 sodium warning.
+      //   Default (cap === 2300):
+      //     Anything over 2300 → Tier 1. No Tier 2 sodium warning.
       const sodium = computeDailySodium(d, byslug);
-      if (medical.hasHypertension) {
-        const cap = targets.sodiumCapMg; // aspirational target (1800 default)
-        const tier2Ceiling = Math.max(cap + 200, Math.round(cap * 1.15));
+      const capMg = targets.sodiumCapMg;
+      if (capMg < 2300) {
+        const tier2Ceiling = Math.max(capMg + 200, Math.round(capMg * 1.15));
         const tier1Ceiling = Math.min(tier2Ceiling, 2300);
+        const reasonSuffix = medical.hasHypertension
+          ? " for HBP"
+          : medical.onStimulantADHD
+          ? " (soft target for stimulant medication)"
+          : "";
         if (sodium > tier1Ceiling) {
           v.push({
             tier: 1,
             kind: "sodium_safety",
-            message: `SODIUM is ${sodium} mg — exceeds the ${tier1Ceiling} mg HBP safety ceiling (${cap} mg target + buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
+            message: `SODIUM is ${sodium} mg — exceeds the ${tier1Ceiling} mg safety ceiling (${capMg} mg target${reasonSuffix} + buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
           });
-        } else if (sodium > cap) {
+        } else if (sodium > capMg) {
           v.push({
             tier: 2,
             kind: "sodium_over_target",
-            message: `SODIUM is ${sodium} mg — over the ${cap} mg HBP target by ${sodium - cap} mg (within the ${tier1Ceiling} mg safety ceiling). Trim added salt where possible.`,
+            message: `SODIUM is ${sodium} mg — over the ${capMg} mg target${reasonSuffix} by ${sodium - capMg} mg (within the ${tier1Ceiling} mg safety ceiling). Trim added salt where possible.`,
           });
         }
       } else {
@@ -774,25 +785,30 @@ export async function POST(req: NextRequest) {
 
         // Refresh HBP cap budget: what's left AFTER subtracting the days
         // we're KEEPING (other days in the week that aren't this retry).
-        let refreshedHbp = dayInputs[idx].hbpContext;
-        if (refreshedHbp && medical.hasHypertension) {
+        // Stimulant-only clients have a daily sodium target but no weekly
+        // cheese/sourdough/tortilla caps, so the hbpWeeklyCaps sub-object
+        // stays undefined for them.
+        let refreshedSodium = dayInputs[idx].sodiumContext;
+        if (refreshedSodium && medical.hasHypertension) {
           const excludeIdx = new Set([idx]);
           const cheeseUsed = computeCapUsage("cheese", excludeIdx);
           const sourdoughUsed = computeCapUsage("sourdough", excludeIdx);
           const flourTortillaUsed = computeCapUsage("tortilla_flour", excludeIdx) +
                                     computeCapUsage("flour tortilla", excludeIdx);
-          refreshedHbp = {
-            ...refreshedHbp,
-            allowedCheeseDaysLeft: Math.max(0, 3 - cheeseUsed),
-            allowedSourdoughDaysLeft: Math.max(0, 2 - sourdoughUsed),
-            allowedFlourTortillaDaysLeft: Math.max(0, 3 - flourTortillaUsed),
+          refreshedSodium = {
+            ...refreshedSodium,
+            hbpWeeklyCaps: {
+              allowedCheeseDaysLeft: Math.max(0, 3 - cheeseUsed),
+              allowedSourdoughDaysLeft: Math.max(0, 2 - sourdoughUsed),
+              allowedFlourTortillaDaysLeft: Math.max(0, 3 - flourTortillaUsed),
+            },
           };
         }
 
         return {
           ...dayInputs[idx],
           priorAttemptError: sections.join("\n\n"),
-          hbpContext: refreshedHbp,
+          sodiumContext: refreshedSodium,
         };
       });
 

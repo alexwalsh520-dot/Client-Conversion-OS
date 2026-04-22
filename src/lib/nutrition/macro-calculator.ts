@@ -33,6 +33,7 @@ export interface MacroInputs {
     hasHypertension?: boolean;
     hasDiabetes?: boolean;           // shifts carbs→35%, fat→40% of calories
     hasKidneyIssues?: boolean;       // caps protein at 0.6 g/lb
+    onStimulant?: boolean;           // soft sodium pref 2,000 mg (stimulants raise BP)
   };
 }
 
@@ -153,7 +154,7 @@ export function calculateMacros(
       goal: inputs.goal,
       proteinPerKg: Math.round((proteinG / inputs.weightKg) * 10) / 10,
       proteinPerLb: Math.round((proteinG / weightLb) * 100) / 100,
-      sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : 2300,
+      sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : inputs.medical?.onStimulant ? 2000 : 2300,
       notes,
     };
     return applyOverrides(target, overrides);
@@ -173,7 +174,7 @@ export function calculateMacros(
     goal: inputs.goal,
     proteinPerKg: Math.round((proteinG / inputs.weightKg) * 10) / 10,
     proteinPerLb: Math.round((proteinG / weightLb) * 100) / 100,
-    sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : 2300,
+    sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : inputs.medical?.onStimulant ? 2000 : 2300,
     notes,
   };
   return applyOverrides(target, overrides);

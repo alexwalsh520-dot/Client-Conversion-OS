@@ -323,6 +323,18 @@ export function medicalTips(flags: MedicalFlags): MedicalTip[] {
     });
   }
 
+  if (flags.onStimulantADHD) {
+    tips.push({
+      title: "Stimulant Medication — Caffeine & Hydration",
+      body:
+        "Stimulants raise heart rate and blood pressure. Cap caffeine at 200 mg/day (one moderate coffee) — stacking caffeine " +
+        "on top of the medication compounds the cardiovascular load. Drink an extra 0.5 L of water beyond your usual target; " +
+        "stimulants are mildly diuretic. Avoid orange juice, other citrus juices, and vitamin C supplements within 30 minutes " +
+        "of your dose — the acid reduces absorption. If you notice elevated resting heart rate, chest tightness, or headaches, " +
+        "talk to your prescriber about meal composition and caffeine intake.",
+    });
+  }
+
   if (flags.onStatin) {
     tips.push({
       title: "Statins & Grapefruit",
