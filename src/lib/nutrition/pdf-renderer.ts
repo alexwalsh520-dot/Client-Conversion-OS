@@ -88,6 +88,16 @@ export interface PdfInput {
   days: PdfDay[];
   grocery: PdfGroceryItem[];
   tips: PdfTip[];
+  /**
+   * If non-empty, a red "Review Required" banner renders at the top of the
+   * cover page with the listed violations. Damanjeet reviews these and
+   * decides whether to regenerate or edit before sending to the client.
+   */
+  reviewRequired?: {
+    day: number;
+    weekday: string;
+    violations: string[];
+  }[];
 }
 
 // ============================================================================
@@ -201,7 +211,44 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
   // ============================================================================
   {
     drawTopHeader();
-    let y = 140;
+    let y = 55;
+
+    // "Review Required" banner at the very top if any residual violations.
+    if (input.reviewRequired && input.reviewRequired.length > 0) {
+      const bannerX = marginX;
+      const bannerW = contentWidth;
+      const lines: string[] = [];
+      lines.push("REVIEW REQUIRED — the following days have unresolved violations:");
+      for (const r of input.reviewRequired) {
+        lines.push(`Day ${r.day} (${r.weekday}):`);
+        for (const v of r.violations) lines.push(`  • ${v}`);
+      }
+      // Estimate height (1 header + N lines)
+      const wrapped: string[] = [];
+      for (const l of lines) {
+        const sized = doc.splitTextToSize(l, bannerW - 24);
+        wrapped.push(...sized);
+      }
+      const lineH = 11;
+      const bannerH = 18 + wrapped.length * lineH + 10;
+      // Light-red fill + dark-red border
+      doc.setFillColor("#fdecea");
+      doc.setDrawColor("#b91c1c");
+      doc.setLineWidth(1);
+      doc.roundedRect(bannerX, y, bannerW, bannerH, 4, 4, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor("#991b1b");
+      doc.text(wrapped[0], bannerX + 12, y + 16);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      for (let li = 1; li < wrapped.length; li++) {
+        doc.text(wrapped[li], bannerX + 12, y + 16 + li * lineH);
+      }
+      y += bannerH + 16;
+    } else {
+      y = 140;
+    }
 
     // Top gold rule
     doc.setDrawColor(GOLD);

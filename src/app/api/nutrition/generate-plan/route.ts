@@ -51,6 +51,7 @@ import {
   medicalSoftAvoidTokens,
   medicalTips,
 } from "@/lib/nutrition/medical";
+import { computeDailySodium, dailySodiumTargetMg } from "@/lib/nutrition/sodium";
 
 export const maxDuration = 60;
 
@@ -372,10 +373,13 @@ export async function POST(req: NextRequest) {
     // --- Fire all 7 Claude calls in parallel ---
     let days = await generateAllDays(dayInputs, apiKey);
 
-    // ---------- MACRO VALIDATION + SELECTIVE SINGLE RETRY ----------
-    // Recompute day totals from DB macros; any day significantly out of spec
-    // (>10% over calories OR >15% over/under fat OR >10% under protein) gets
-    // one corrective retry in parallel — only if we still have time budget.
+    // ---------- ITERATIVE VALIDATE → CORRECT LOOP ----------
+    // Up to MAX_ITER iterations. Each iteration: compute per-day violations,
+    // retry JUST the violating days in parallel (with specific fix instructions),
+    // merge the better of each pair, re-validate. Stops when clean, time-bounded,
+    // or iteration cap reached.
+    const sodiumCap = dailySodiumTargetMg(medical.hasHypertension);
+
     const computeTotals = (d: (typeof days)[number]) => {
       let cal = 0, p = 0, c = 0, f = 0;
       for (const meal of d.meals) {
@@ -392,24 +396,37 @@ export async function POST(req: NextRequest) {
       return { cal, p, c, f };
     };
 
-    // Symmetric validation — retry if ANY macro is outside ±10% in either direction.
-    // Also retries on per-meal fat violations (>40% of daily fat in one meal).
-    const outOfSpec: { idx: number; errMsg: string }[] = [];
-    days.forEach((d, idx) => {
+    const findViolationsForDay = (d: (typeof days)[number]): string[] => {
+      const v: string[] = [];
       const t = computeTotals(d);
       const calPct = (t.cal - targets.calories) / targets.calories;
       const pPct   = (t.p   - targets.proteinG) / targets.proteinG;
       const cPct   = (t.c   - targets.carbsG)   / targets.carbsG;
       const fPct   = (t.f   - targets.fatG)     / targets.fatG;
 
-      const calBad   = Math.abs(calPct) > 0.08;  // tightened: retry if >8% off
-      const protBad  = Math.abs(pPct)   > 0.10;
-      const carbBad  = Math.abs(cPct)   > 0.12;  // new: retry if carbs are off
-      const fatBad   = Math.abs(fPct)   > 0.12;  // tightened from 15% to 12%
-
-      // Check if any single meal exceeds 40% of daily fat target
-      let worstMealFat = 0;
-      let worstMealName = "";
+      if (Math.abs(calPct) > 0.05) {
+        v.push(calPct > 0
+          ? `CALORIES are ${Math.round(calPct * 100)}% OVER (${Math.round(t.cal)} vs ${targets.calories}) — reduce added fats and starch portions.`
+          : `CALORIES are ${Math.round(-calPct * 100)}% UNDER (${Math.round(t.cal)} vs ${targets.calories}) — increase protein and carb portions.`);
+      }
+      // Protein is a FLOOR for muscle goals: under is bad, slight over is fine
+      if (pPct < -0.05) {
+        v.push(`PROTEIN is ${Math.round(-pPct * 100)}% UNDER (${t.p.toFixed(0)}g vs ${targets.proteinG}g) — bump the main protein's grams.`);
+      } else if (pPct > 0.15) {
+        v.push(`PROTEIN is ${Math.round(pPct * 100)}% OVER (${t.p.toFixed(0)}g vs ${targets.proteinG}g) — reduce protein portions and shift calories to carbs 1:1.`);
+      }
+      if (Math.abs(cPct) > 0.08) {
+        v.push(cPct > 0
+          ? `CARBS are ${Math.round(cPct * 100)}% OVER (${t.c.toFixed(0)}g vs ${targets.carbsG}g) — trim rice/bread/pasta portions.`
+          : `CARBS are ${Math.round(-cPct * 100)}% UNDER (${t.c.toFixed(0)}g vs ${targets.carbsG}g) — increase rice/potato/oats/bread by 30-50g.`);
+      }
+      if (Math.abs(fPct) > 0.08) {
+        v.push(fPct > 0
+          ? `FAT is ${Math.round(fPct * 100)}% OVER (${t.f.toFixed(0)}g vs ${targets.fatG}g) — halve butter/oil/cheese/nut portions.`
+          : `FAT is ${Math.round(-fPct * 100)}% UNDER (${t.f.toFixed(0)}g vs ${targets.fatG}g) — add 5-10g olive oil or a small cheese portion.`);
+      }
+      // Per-meal fat cap
+      let worstMealFat = 0, worstMealName = "";
       for (const meal of d.meals) {
         let mFat = 0;
         for (const ing of meal.ingredients) {
@@ -417,56 +434,59 @@ export async function POST(req: NextRequest) {
           if (!row) continue;
           mFat += Number(row.fat_g_per_100g) * (ing.grams / 100);
         }
-        if (mFat > worstMealFat) {
-          worstMealFat = mFat;
-          worstMealName = meal.dishName || meal.name;
-        }
+        if (mFat > worstMealFat) { worstMealFat = mFat; worstMealName = meal.dishName || meal.name; }
       }
-      const mealFatBad = worstMealFat > targets.fatG * 0.40;
-
-      if (calBad || protBad || carbBad || fatBad || mealFatBad) {
-        const pieces: string[] = [];
-        pieces.push(`Your prior attempt hit: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat.`);
-        pieces.push(`Targets: ${targets.calories} kcal, ${targets.proteinG}g protein, ${targets.carbsG}g carbs, ${targets.fatG}g fat.`);
-        if (calBad && calPct > 0)  pieces.push(`CALORIES are ${Math.round(calPct * 100)}% OVER — reduce added fats (butter, oil, cheese, nuts) and starch portions.`);
-        if (calBad && calPct < 0)  pieces.push(`CALORIES are ${Math.round(-calPct * 100)}% UNDER — increase protein and carb portions; add 10-15g oil if fat is low.`);
-        if (fatBad && fPct > 0)    pieces.push(`FAT is ${Math.round(fPct * 100)}% OVER — cut butter/oil/cheese/nut portions in half.`);
-        if (fatBad && fPct < 0)    pieces.push(`FAT is ${Math.round(-fPct * 100)}% UNDER — add 5-10g oil, avocado, or a small cheese portion.`);
-        if (protBad && pPct > 0)   pieces.push(`PROTEIN is ${Math.round(pPct * 100)}% OVER — reduce protein portions by 10-15g each and move the calories into carbs (rice, potato, oats, bread). Protein and carbs both cost 4 kcal/g, so swap them 1:1.`);
-        if (protBad && pPct < 0)   pieces.push(`PROTEIN is ${Math.round(-pPct * 100)}% UNDER — bump the main protein's grams (aim for 30-40g protein per main meal).`);
-        if (carbBad && cPct > 0)   pieces.push(`CARBS are ${Math.round(cPct * 100)}% OVER — trim starch portions (rice, bread, pasta) by 20-30%.`);
-        if (carbBad && cPct < 0)   pieces.push(`CARBS are ${Math.round(-cPct * 100)}% UNDER — increase rice/potato/oats/bread portions by 30-50g. Don't add more protein to fill the calorie gap — swap into carbs.`);
-        if (mealFatBad)            pieces.push(`"${worstMealName}" has ${Math.round(worstMealFat)}g fat — that's more than 40% of the daily target. Spread fats across meals; no single meal should exceed ${Math.round(targets.fatG * 0.4)}g fat.`);
-        outOfSpec.push({ idx, errMsg: pieces.join(" ") });
+      if (worstMealFat > targets.fatG * 0.40) {
+        v.push(`"${worstMealName}" has ${Math.round(worstMealFat)}g fat — over 40% of daily target. Max ${Math.round(targets.fatG * 0.4)}g per meal.`);
       }
-    });
+      // Sodium cap (HBP-aware)
+      const sodium = computeDailySodium(d, byslug);
+      if (sodium > sodiumCap) {
+        v.push(`SODIUM is ${sodium} mg (cap ${sodiumCap} mg${medical.hasHypertension ? ", AHA limit for HBP" : ""}) — reduce cheese, soy sauce, dressings, cured meats, salted butter.`);
+      }
+      return v;
+    };
 
-    // Only retry if time budget allows (stay under 45s total so PDF render + upload fits)
-    const elapsedSoFar = Date.now() - startTime;
-    if (outOfSpec.length > 0 && elapsedSoFar < 35_000) {
-      console.log(`[generate-plan] Retrying ${outOfSpec.length} out-of-spec day(s)`);
-      const retryInputs = outOfSpec.map(({ idx, errMsg }) => ({
-        ...dayInputs[idx],
-        priorAttemptError: errMsg,
-      }));
+    const scoreDay = (t: { cal: number; p: number; c: number; f: number }) =>
+      Math.abs(t.cal - targets.calories) +
+      Math.abs(t.p - targets.proteinG) * 4 +
+      Math.abs(t.c - targets.carbsG) * 4 +
+      Math.abs(t.f - targets.fatG) * 9;
+
+    const MAX_ITER = 4;
+    const TIME_CEILING_MS = 38_000;
+    const convergenceLog: string[] = [];
+
+    for (let iter = 1; iter <= MAX_ITER; iter++) {
+      const violating: { idx: number; violations: string[] }[] = [];
+      days.forEach((d, idx) => {
+        const v = findViolationsForDay(d);
+        if (v.length > 0) violating.push({ idx, violations: v });
+      });
+      convergenceLog.push(`iter ${iter - 1}: ${violating.length} day(s) with violations`);
+
+      if (violating.length === 0) break;
+      if (Date.now() - startTime > TIME_CEILING_MS) {
+        convergenceLog.push(`aborted — time budget reached`);
+        break;
+      }
+
+      const retryInputs = violating.map(({ idx, violations }) => {
+        const t = computeTotals(days[idx]);
+        const header = `Prior attempt: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat. Targets: ${targets.calories}/${targets.proteinG}P/${targets.carbsG}C/${targets.fatG}F.`;
+        return {
+          ...dayInputs[idx],
+          priorAttemptError: [header, ...violations].join(" "),
+        };
+      });
+
       const retryDays = await generateAllDays(retryInputs, apiKey);
-      // Merge retry results back into days array — score compares ALL four macros
-      // (not just calories+fat, so protein/carb corrections aren't rejected).
-      // Each macro contributes its own kcal-equivalent distance from target.
-      const scoreDay = (t: { cal: number; p: number; c: number; f: number }) =>
-        Math.abs(t.cal - targets.calories) +
-        Math.abs(t.p - targets.proteinG) * 4 +
-        Math.abs(t.c - targets.carbsG) * 4 +
-        Math.abs(t.f - targets.fatG) * 9;
-
-      retryDays.forEach((rd) => {
+      for (const rd of retryDays) {
         const idx = rd.day - 1;
-        const before = computeTotals(days[idx]);
-        const after  = computeTotals(rd);
-        if (scoreDay(after) < scoreDay(before)) {
+        if (scoreDay(computeTotals(rd)) < scoreDay(computeTotals(days[idx]))) {
           days[idx] = rd;
         }
-      });
+      }
     }
 
     // ---------- DETERMINISTIC PORTION OPTIMIZATION ----------
@@ -522,6 +542,19 @@ export async function POST(req: NextRequest) {
     if (Object.keys(hardSwaps).length > 0 || Object.keys(freqCaps).length > 0) {
       optimizeAllDays(days, byslug, targets);
     }
+
+    // ---------- FINAL VALIDATION (after optimizer + medical) ----------
+    // Collect any unresolved violations for the "Review Required" banner.
+    const unresolvedByDay: { day: number; weekday: string; violations: string[] }[] = [];
+    days.forEach((d, idx) => {
+      const v = findViolationsForDay(d);
+      if (v.length > 0) {
+        unresolvedByDay.push({ day: d.day, weekday: WEEKDAYS[idx], violations: v });
+      }
+    });
+    convergenceLog.push(
+      `post-optimizer: ${unresolvedByDay.length} day(s) with residual violations`
+    );
 
     // ---------- ENJOYED-FOODS COVERAGE CHECK ----------
     // Source 1: the foods_enjoy list.
@@ -690,7 +723,18 @@ export async function POST(req: NextRequest) {
       days: pdfDays,
       grocery,
       tips,
+      reviewRequired: unresolvedByDay.length > 0 ? unresolvedByDay : undefined,
     };
+
+    // Push convergence summary into targets.notes so it appears in API response
+    if (convergenceLog.length > 0) {
+      targets.notes.push(`Convergence: ${convergenceLog.join(" → ")}.`);
+    }
+    if (unresolvedByDay.length > 0) {
+      targets.notes.push(
+        `⚠️ REVIEW REQUIRED — ${unresolvedByDay.length} day(s) have unresolved violations, shown on page 1 of the PDF.`
+      );
+    }
 
     // --- Version number ---
     const { data: priorVersions } = await db
