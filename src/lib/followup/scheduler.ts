@@ -141,10 +141,9 @@ export async function drainDueJobs(limit = 100) {
 }
 
 // =============================================================
-// Add the AI-CLOSED tag in ManyChat when a close job fires.
-// ManyChat-side, a rule on this tag archives the conversation.
+// ManyChat helpers: resolve the per-client API key, add/remove tags.
 // =============================================================
-async function addManyChatCloseTag(client: string, subscriberId: string) {
+function getManyChatKey(client: string): string {
   const keyMap: Record<string, string | undefined> = {
     tyson_sonnek: process.env.MANYCHAT_API_KEY_TYSON,
     keith_holland: process.env.MANYCHAT_API_KEY_KEITH,
@@ -154,8 +153,17 @@ async function addManyChatCloseTag(client: string, subscriberId: string) {
   if (!key) {
     throw new Error(`No ManyChat API key configured for client "${client}"`);
   }
+  return key;
+}
 
-  const res = await fetch('https://api.manychat.com/fb/subscriber/addTagByName', {
+async function manyChatTagCall(
+  endpoint: 'addTagByName' | 'removeTagByName',
+  client: string,
+  subscriberId: string,
+  tagName: string,
+): Promise<void> {
+  const key = getManyChatKey(client);
+  const res = await fetch(`https://api.manychat.com/fb/subscriber/${endpoint}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
@@ -163,14 +171,25 @@ async function addManyChatCloseTag(client: string, subscriberId: string) {
     },
     body: JSON.stringify({
       subscriber_id: subscriberId,
-      tag_name: 'AI-CLOSED',
+      tag_name: tagName,
     }),
   });
-
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`ManyChat addTag AI-CLOSED failed (${res.status}): ${text}`);
+    throw new Error(`ManyChat ${endpoint} "${tagName}" failed (${res.status}): ${text}`);
   }
+}
+
+// Add the AI-CLOSED tag in ManyChat when a close job fires.
+// ManyChat-side, a rule on this tag archives the conversation.
+async function addManyChatCloseTag(client: string, subscriberId: string) {
+  return manyChatTagCall('addTagByName', client, subscriberId, 'AI-CLOSED');
+}
+
+// Remove the AI-FOLLOWUP tag when a lead replies. Exported so the
+// reply-received webhook can call it directly.
+export async function removeManyChatFollowupTag(client: string, subscriberId: string) {
+  return manyChatTagCall('removeTagByName', client, subscriberId, 'AI-FOLLOWUP');
 }
 
 // =============================================================
