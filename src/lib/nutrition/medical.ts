@@ -17,6 +17,7 @@ export interface MedicalFlags {
   onGLP1: boolean;
   onBloodThinner: boolean;
   onSGLT2: boolean;
+  onMAOI: boolean;
   hasDiabetes: boolean;
   hasHighCholesterol: boolean;
   hasKidneyIssues: boolean;
@@ -62,6 +63,7 @@ export function detectMedicalFlags(
   const lactoseTerms = ["lactose intolerance", "lactose intolerant", "dairy free", "dairy-free", "lactose"];
   const bloodThinners = ["warfarin", "coumadin", "eliquis", "apixaban", "xarelto", "rivaroxaban", "pradaxa", "dabigatran"];
   const sglt2 = ["jardiance", "empagliflozin", "farxiga", "dapagliflozin", "invokana", "canagliflozin", "steglatro"];
+  const maois = ["phenelzine", "nardil", "tranylcypromine", "parnate", "isocarboxazid", "marplan", "selegiline", "emsam", "rasagiline", "azilect"];
 
   const hit = (terms: string[]) => terms.some((t) => combined.includes(t));
 
@@ -72,6 +74,7 @@ export function detectMedicalFlags(
     onGLP1: hit(glp1),
     onBloodThinner: hit(bloodThinners),
     onSGLT2: hit(sglt2),
+    onMAOI: hit(maois),
     hasDiabetes: hit(diabetesTerms),
     hasHighCholesterol: hit(cholesterolTerms),
     hasKidneyIssues: hit(kidneyTerms),
@@ -91,12 +94,30 @@ export function detectMedicalFlags(
 export function medicalSoftAvoidTokens(flags: MedicalFlags): string[] {
   const tokens: string[] = [];
   if (flags.hasHypertension) {
-    // High-sodium items — soft-avoid so they don't appear daily.
-    // Hard-avoid only for the very worst (salted butter, bacon).
     tokens.push("bacon", "salami", "ham", "hot dog", "sausage", "pickle", "soy sauce");
   }
   if (flags.hasHighCholesterol) {
     tokens.push("butter_salted", "bacon", "sausage", "heavy_cream");
+  }
+  return tokens;
+}
+
+/**
+ * HARD-avoid tokens (added to the allergy/avoid block list).
+ * Unlike softAvoid, these items are excluded entirely.
+ * Used for MAOI tyramine-rich foods and other safety-critical conflicts.
+ */
+export function medicalHardAvoidTokens(flags: MedicalFlags): string[] {
+  const tokens: string[] = [];
+  if (flags.onMAOI) {
+    // Tyramine-rich foods interact dangerously with MAOIs — can cause
+    // hypertensive crisis. Strict exclusion required.
+    tokens.push(
+      "aged cheese", "parmesan", "cheddar", "blue cheese", "provolone",
+      "bacon", "salami", "pepperoni", "prosciutto", "cured ham", "sausage",
+      "soy sauce", "tofu fermented", "kimchi", "sauerkraut",
+      "draft beer", "red wine"
+    );
   }
   return tokens;
 }
@@ -256,6 +277,17 @@ export function medicalTips(flags: MedicalFlags): MedicalTip[] {
         "Your plan excludes wheat, barley, rye, and common gluten sources. Safe substitutes are rice, quinoa, corn tortillas, " +
         "gluten-free bread, and certified gluten-free oats (regular oats are often cross-contaminated). Always read labels — " +
         "soy sauce, marinades, and processed meats frequently contain hidden gluten.",
+    });
+  }
+
+  if (flags.onMAOI) {
+    tips.push({
+      title: "MAOI Medication & Tyramine",
+      body:
+        "Your medication interacts dangerously with tyramine-rich foods — they can trigger a hypertensive crisis. This plan excludes " +
+        "aged cheeses, cured meats (salami, prosciutto, pepperoni), fermented soy, draft beer, and red wine. Also avoid overripe " +
+        "bananas, broad beans, and smoked/pickled fish. When eating out, tell your server about your medication so they can flag " +
+        "aged-cheese dishes. This is the single most important dietary rule for you — please talk to your prescriber if unclear.",
     });
   }
 

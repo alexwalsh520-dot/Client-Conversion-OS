@@ -34,14 +34,23 @@ export function isBlocked(ingredient: IngredientRow, blocked: string[]): boolean
     const t = token.trim().toLowerCase();
     if (!t || t.length < 2) continue;
 
-    // Exact word match using word boundaries where possible,
-    // or substring match for multi-word tokens.
+    // Multi-word tokens / underscored slugs → substring match (covers compounds).
     if (t.includes(" ") || t.includes("_")) {
       if (searchHaystack.includes(t)) return true;
-    } else {
+      continue;
+    }
+
+    // Short tokens (2-4 chars like "oat", "soy") use word boundaries so we
+    // don't match "coat" → "oat" or "soybean" → "soy" in a benign word.
+    if (t.length <= 4) {
       const wordBoundary = new RegExp(`\\b${escapeRegex(t)}\\b`);
       if (wordBoundary.test(searchHaystack)) return true;
+      continue;
     }
+
+    // Longer tokens (5+) use substring match so "peanut" catches "peanuts",
+    // "peanut butter", "peanut oil" — critical for allergy safety.
+    if (searchHaystack.includes(t)) return true;
   }
   return false;
 }
