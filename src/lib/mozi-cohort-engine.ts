@@ -264,11 +264,22 @@ function computeClient(
         )
       : 0;
   const extraMonthly = inputs.extraMonthlyCostPerClientCents ?? 0;
-  const percentageDrag = (inputs.paymentFeePct + inputs.chargebackPct + inputs.refundPct) / 100;
+
+  // Fee drag = Stripe payment fee + chargeback estimate ONLY. Actual refunds
+  // are already netted out of cohort revenue via centsNet() using Stripe's
+  // amount_refunded on each charge — don't apply a refund_pct on top or we
+  // double-count refunds.
+  const percentageDrag = (inputs.paymentFeePct + inputs.chargebackPct) / 100;
   const feeDragPerClient = Math.round(perNewClientGross * percentageDrag);
-  const commissionsPerNewClient = newClientCount > 0
-    ? Math.round(salesCommissions / newClientCount)
-    : 0;
+
+  // Commissions: flat blended rate on cohort revenue. Every sale pays a
+  // closer (10% of cash collected) and a setter (3% for Kelechi/Gideon/Debbie,
+  // 5% for Amara). Using 13% as the conservative blended average — the
+  // sales-tracker-per-row approach misses commissions for self-serve
+  // installment rebills and under-reports the real payroll impact.
+  const COMMISSION_PCT = 0.13;
+  const commissionsPerNewClient = Math.round(perNewClientGross * COMMISSION_PCT);
+
   const directCostsPerNewClient =
     perEndClientCoachingMonthly + extraMonthly + feeDragPerClient + commissionsPerNewClient;
 
@@ -344,7 +355,8 @@ function computeClient(
     cacTotalCents: cacTotal,
     cacPerNewClientCents: cacPerNewClient,
 
-    salesCommissionsWindowCents: salesCommissions,
+    // Total commissions over the window = per-client × count (13% of cohort rev).
+    salesCommissionsWindowCents: commissionsPerNewClient * newClientCount,
 
     monthlyGpPerActiveClientCents: monthlyGpPerActive,
     ltgpCents: ltgp,
