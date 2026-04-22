@@ -13,7 +13,7 @@ export interface TipsContext {
   sleepHours: string;
   waterIntake: string;
   allergies: string;
-  goal: "fat_loss" | "muscle_gain" | "maintain" | "recomp";
+  goal: "fat_loss" | "muscle_gain" | "maintain" | "recomp" | "endurance";
   proteinG: number;
   caloriesPerDay: number;
   onAppetiteSuppressant: boolean;
@@ -145,6 +145,8 @@ export function generateTips(ctx: TipsContext): Tip[] {
         ? "Muscle gain is slow — plan on ~0.5-1 lb per month. Hitting targets 85-90% of the time is plenty. If scale weight isn't moving after 2-3 weeks, bump calories by 100-150."
         : ctx.goal === "recomp"
         ? "Body recomposition is slow and non-linear — expect scale weight to stay roughly flat for weeks at a time while body composition shifts. Judge progress by the mirror, strength numbers, and how clothes fit, not daily scale weight. Hit your targets 85-90% of the time."
+        : ctx.goal === "endurance"
+        ? "Fuel for the session, not for the scale. Prioritize hitting your carb target on training days — that's your performance fuel. Protein matters too but the biggest performance lever is carbohydrate availability. Don't undereat."
         : "Hitting your targets 85-90% of the time will get results. One off-plan meal won't ruin progress — but a pattern of skipping will. Focus on the weekly average, not each individual day.",
   });
 
