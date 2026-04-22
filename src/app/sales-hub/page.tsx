@@ -5,11 +5,6 @@ import {
   BarChart3,
   Users,
   Phone,
-  MessageSquareText,
-  Shield,
-  FileText,
-  Calendar,
-  History,
   ChevronDown,
   Loader2,
   Sparkles,
@@ -20,12 +15,6 @@ import FilterBar, { getEffectiveDates } from "./components/FilterBar";
 import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
-import CallReview from "./components/CallReview";
-import DMReview from "./components/DMReview";
-import LeadIntelligence from "./components/LeadIntelligence";
-import WeeklyReport from "./components/WeeklyReport";
-import DailyBriefs from "./components/DailyBriefs";
-import ReportHistory from "./components/ReportHistory";
 import AlexTesting from "./components/AlexTesting";
 import FollowupHub from "./components/FollowupHub";
 
@@ -37,13 +26,7 @@ const SECTIONS = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "closers", label: "Closers", icon: Phone },
   { id: "setters", label: "Setters", icon: Users },
-  { id: "call-reviews", label: "Call Reviews", icon: Phone },
-  { id: "dm-reviews", label: "DM Reviews", icon: MessageSquareText },
   { id: "followups", label: "AI Follow-ups", icon: Zap },
-  { id: "intelligence", label: "Lead Intelligence", icon: Shield },
-  { id: "reports", label: "Reports", icon: FileText },
-  { id: "daily-briefs", label: "Briefs", icon: Calendar },
-  { id: "report-history", label: "History", icon: History },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -342,8 +325,7 @@ export default function SalesHubPage() {
         <div>
           <h1 className="page-title">Sales Hub</h1>
           <p className="page-subtitle">
-            Unified intelligence dashboard &mdash; DM performance, closer analytics, AI
-            reviews, and lead intervention
+            Client comparisons, closer performance, setter performance, and AI follow-ups
           </p>
         </div>
         <GoldShimmerButton active={alexOpen} onClick={() => setAlexOpen((o) => !o)} />
@@ -500,67 +482,13 @@ export default function SalesHubPage() {
         <SetterPerformance filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 4: Call Reviews */}
-      <CollapsibleSection
-        id="call-reviews"
-        title="Call Reviews"
-        icon={<Phone size={18} />}
-      >
-        <CallReview filters={filters} />
-      </CollapsibleSection>
-
-      {/* Section 5: DM Reviews */}
-      <CollapsibleSection
-        id="dm-reviews"
-        title="DM Reviews"
-        icon={<MessageSquareText size={18} />}
-      >
-        <DMReview filters={filters} />
-      </CollapsibleSection>
-
-      {/* Section 6: AI Follow-ups */}
+      {/* Section 4: AI Follow-ups */}
       <CollapsibleSection
         id="followups"
         title="AI Follow-ups"
         icon={<Zap size={18} />}
       >
         <FollowupHub selectedClient={filters.client} />
-      </CollapsibleSection>
-
-      {/* Section 7: Lead Intelligence */}
-      <CollapsibleSection
-        id="intelligence"
-        title="Lead Intelligence & Intervention"
-        icon={<Shield size={18} />}
-      >
-        <LeadIntelligence filters={filters} sheetData={sheetData} />
-      </CollapsibleSection>
-
-      {/* Section 7: Weekly Reports */}
-      <CollapsibleSection
-        id="reports"
-        title="Weekly Reports"
-        icon={<FileText size={18} />}
-      >
-        <WeeklyReport filters={filters} />
-      </CollapsibleSection>
-
-      {/* Section 8: Daily Briefs */}
-      <CollapsibleSection
-        id="daily-briefs"
-        title="Daily Closer Briefs"
-        icon={<Calendar size={18} />}
-      >
-        <DailyBriefs filters={filters} />
-      </CollapsibleSection>
-
-      {/* Section 9: Report History */}
-      <CollapsibleSection
-        id="report-history"
-        title="Report History"
-        icon={<History size={18} />}
-      >
-        <ReportHistory />
       </CollapsibleSection>
     </div>
   );

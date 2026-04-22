@@ -22,10 +22,10 @@ import {
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/coaching", label: "Coaching", icon: Users },
+  { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/ads", label: "Ads", icon: Megaphone },
-  { href: "/outreach-runs", label: "Outreach", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
+  { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/accountant", label: "Accountant", icon: Calculator },
 ];
 

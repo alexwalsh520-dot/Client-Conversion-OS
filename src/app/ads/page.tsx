@@ -32,6 +32,8 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import AdsHeader from "./components/AdsHeader";
+import AdTrackerMetrics from "./components/AdTrackerMetrics";
 
 /* ──────────────────────── FONT OPTIONS ──────────────────────── */
 const FONT_OPTIONS = [
@@ -3079,6 +3081,8 @@ export default function AdsPage() {
   if (view === "setup") {
     return (
       <div className="fade-up">
+        <AdsHeader />
+
         <div className="page-header">
           <h1 className="page-title">Ad Studio</h1>
           <p className="page-subtitle">
@@ -3725,6 +3729,8 @@ export default function AdsPage() {
             </div>
           </div>
         )}
+
+        <AdTrackerMetrics />
       </div>
     );
   }

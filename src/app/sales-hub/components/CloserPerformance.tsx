@@ -1,7 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
-import { Loader2, Trophy, Users } from "lucide-react";
+import {
+  Loader2,
+  Trophy,
+  Users,
+  Banknote,
+  BarChart3,
+  TrendingUp,
+  Phone,
+  PhoneCall,
+  XCircle,
+} from "lucide-react";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 import type { Filters, SheetRow } from "../types";
 
@@ -181,6 +191,23 @@ export default function CloserPerformance({
     );
   }, [sheetData]);
 
+  const aggregated = useMemo(() => {
+    if (!sheetData) return null;
+    const callsBooked = sheetData.length;
+    const takenRows = sheetData.filter((r) => r.callTakenStatus === "yes");
+    const callsTaken = takenRows.length;
+    const noShows = sheetData.filter((r) => r.callTakenStatus === "no").length;
+    const showDenominator = callsTaken + noShows;
+    const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
+    const winRows = takenRows.filter((r) => r.outcome === "WIN");
+    const wins = winRows.length;
+    const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
+    const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
+    const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
+    const aov = wins > 0 ? cashCollected / wins : 0;
+    return { callsBooked, callsTaken, showRate, wins, losses, closeRate, cashCollected, aov };
+  }, [sheetData]);
+
   const topPerformers = useMemo(() => {
     if (closerStats.length === 0) return {} as Record<string, string | null>;
     return {
@@ -278,6 +305,23 @@ export default function CloserPerformance({
         <Trophy size={16} />
         Closer Performance
       </h2>
+
+      {aggregated && (
+        <>
+          <div className="metric-grid metric-grid-4" style={{ marginBottom: 12 }}>
+            <SummaryStat icon={<Banknote size={12} style={{ color: "var(--success)" }} />} label="Cash on Calls" value={fmtDollars(aggregated.cashCollected)} color="var(--success)" />
+            <SummaryStat icon={<BarChart3 size={12} style={{ color: "var(--success)" }} />} label="AOV" value={fmtDollars(aggregated.aov)} color="var(--success)" />
+            <SummaryStat icon={<TrendingUp size={12} style={{ color: "var(--accent)" }} />} label="Close Rate" value={fmtPercent(aggregated.closeRate)} />
+            <SummaryStat icon={<TrendingUp size={12} style={{ color: "var(--accent)" }} />} label="Show Rate" value={fmtPercent(aggregated.showRate)} />
+          </div>
+          <div className="metric-grid metric-grid-4" style={{ marginBottom: 20 }}>
+            <SummaryStat icon={<Phone size={12} style={{ color: "var(--accent)" }} />} label="Calls Booked" value={fmtNumber(aggregated.callsBooked)} />
+            <SummaryStat icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />} label="Calls Taken" value={fmtNumber(aggregated.callsTaken)} />
+            <SummaryStat icon={<Trophy size={12} style={{ color: "var(--success)" }} />} label="Wins" value={fmtNumber(aggregated.wins)} color="var(--success)" />
+            <SummaryStat icon={<XCircle size={12} style={{ color: "var(--danger)" }} />} label="Losses" value={fmtNumber(aggregated.losses)} color="var(--danger)" />
+          </div>
+        </>
+      )}
 
       {/* Main performance table */}
       <div className="glass-static" style={{ overflow: "auto" }}>
@@ -425,6 +469,33 @@ export default function CloserPerformance({
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryStat({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div className="glass-static metric-card">
+      <div
+        className="metric-card-label"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        {icon}
+        {label}
+      </div>
+      <div className="metric-card-value" style={color ? { color } : undefined}>
+        {value}
       </div>
     </div>
   );

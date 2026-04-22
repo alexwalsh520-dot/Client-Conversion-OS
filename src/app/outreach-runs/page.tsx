@@ -31,6 +31,7 @@ import {
   mergeColdDmsRows,
 } from "@/lib/outreach-export";
 import OutreachDashboard from "@/components/outreach/OutreachDashboard";
+import { AgencyBusinessMetrics } from "@/app/components/BusinessMetrics";
 
 // ── CSV Parsing ────────────────────────────────────────────────
 
@@ -446,12 +447,14 @@ export default function OutreachRunsPage() {
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">
-          <span className="gradient-text">Outreach</span>
+          <span className="gradient-text">Client Acquisition</span>
         </h1>
         <p className="page-subtitle">
-          Live outreach analytics plus CSV import, Smartlead pushes, and ColdDM downloads
+          Agency business metrics plus outreach analytics, CSV import, Smartlead pushes, and ColdDM downloads
         </p>
       </div>
+
+      <AgencyBusinessMetrics />
 
       <OutreachDashboard />
 

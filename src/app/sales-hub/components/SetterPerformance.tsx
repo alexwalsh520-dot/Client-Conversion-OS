@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import {
+  Loader2,
+  Users,
+  MessageCircle,
+  Link2,
+  CreditCard,
+  PhoneCall,
+} from "lucide-react";
 import { fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, ManychatMetrics, ManychatDashboard } from "../types";
+import DMFunnels from "./DMFunnels";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -128,6 +136,24 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     fetchData();
   }, [fetchData]);
 
+  /* ── Aggregated DM dashboard across all visible clients ─────────── */
+  const aggregatedDashboard = useMemo((): ManychatDashboard | null => {
+    const keys = filters.client === "all" ? ["tyson", "keith", "zoeEmily"] : [filters.client];
+    const dashboards = keys
+      .map((k) => metricsMap[k]?.dashboard)
+      .filter((d): d is ManychatDashboard => Boolean(d));
+    if (dashboards.length === 0) return null;
+    return dashboards.reduce(
+      (sum, d) => ({
+        newLeads: sum.newLeads + d.newLeads,
+        leadsEngaged: sum.leadsEngaged + d.leadsEngaged,
+        callLinksSent: sum.callLinksSent + d.callLinksSent,
+        subLinksSent: sum.subLinksSent + d.subLinksSent,
+      }),
+      { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 },
+    );
+  }, [filters.client, metricsMap]);
+
   /* ── Build setter rows from metrics ─────────────────────────────── */
   const setterRows = useMemo((): SetterRow[] => {
     const relevant = getRelevantSetters(filters.client);
@@ -172,41 +198,138 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     });
   }, [filters.client, metricsMap, sheetRows]);
 
-  /* ── Loading / Error / Empty states ────────────────────────────── */
-  if (loading) {
-    return (
-      <div className="glass-static" style={{
-        padding: 40, display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="glass-static" style={{
-        padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13,
-      }}>
-        Failed to load setter data: {error}
-      </div>
-    );
-  }
-
-  if (setterRows.length === 0) {
-    return (
-      <div className="glass-static" style={{
-        padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13,
-      }}>
-        No setter data available for this period.
-      </div>
-    );
-  }
-
   /* ── Render ─────────────────────────────────────────────────────── */
   return (
+    <div>
+      {/* ── DM Metrics (aggregated) ─────────────────────────────── */}
+      <div className="section" style={{ marginBottom: 20 }}>
+        <h2 className="section-title">
+          <MessageCircle size={16} />
+          DM Metrics
+        </h2>
+        <div className="metric-grid metric-grid-4">
+          {renderDmKpi(
+            <Users size={12} style={{ color: "var(--accent)" }} />,
+            "New Leads",
+            aggregatedDashboard ? fmtNumber(aggregatedDashboard.newLeads) : "—",
+            loading,
+            error,
+          )}
+          {renderDmKpi(
+            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
+            "Leads Engaged",
+            aggregatedDashboard ? fmtNumber(aggregatedDashboard.leadsEngaged) : "—",
+            loading,
+            error,
+          )}
+          {renderDmKpi(
+            <Link2 size={12} style={{ color: "var(--accent)" }} />,
+            "Call Links Sent",
+            aggregatedDashboard ? fmtNumber(aggregatedDashboard.callLinksSent) : "—",
+            loading,
+            error,
+          )}
+          {renderDmKpi(
+            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
+            "Sub Links Sent",
+            aggregatedDashboard ? fmtNumber(aggregatedDashboard.subLinksSent) : "—",
+            loading,
+            error,
+          )}
+        </div>
+        <div className="metric-grid metric-grid-3" style={{ marginTop: 12 }}>
+          {renderDmKpi(
+            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
+            "Engagement Rate",
+            aggregatedDashboard && aggregatedDashboard.newLeads > 0
+              ? `${((aggregatedDashboard.leadsEngaged / aggregatedDashboard.newLeads) * 100).toFixed(1)}%`
+              : "—",
+            loading,
+            error,
+          )}
+          {renderDmKpi(
+            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
+            "Booking Rate",
+            aggregatedDashboard && aggregatedDashboard.newLeads > 0
+              ? `${((aggregatedDashboard.callLinksSent / aggregatedDashboard.newLeads) * 100).toFixed(1)}%`
+              : "—",
+            loading,
+            error,
+          )}
+          {renderDmKpi(
+            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
+            "Subscription Rate",
+            aggregatedDashboard && aggregatedDashboard.leadsEngaged > 0
+              ? `${((aggregatedDashboard.subLinksSent / aggregatedDashboard.leadsEngaged) * 100).toFixed(1)}%`
+              : "—",
+            loading,
+            error,
+          )}
+        </div>
+        <DMFunnels
+          selectedClient={filters.client}
+          metricsMap={metricsMap}
+          loading={loading}
+          error={error}
+        />
+      </div>
+
+      {/* ── Per-setter breakdown ─────────────────────────────────── */}
+      {loading ? (
+        <div className="glass-static" style={{
+          padding: 40, display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+        </div>
+      ) : error ? (
+        <div className="glass-static" style={{
+          padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13,
+        }}>
+          Failed to load setter data: {error}
+        </div>
+      ) : setterRows.length === 0 ? (
+        <div className="glass-static" style={{
+          padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13,
+        }}>
+          No setter data available for this period.
+        </div>
+      ) : (
+        <SetterGrid rows={setterRows} />
+      )}
+    </div>
+  );
+}
+
+function renderDmKpi(
+  icon: ReactNode,
+  label: string,
+  value: string | number,
+  loading: boolean,
+  error: string,
+) {
+  return (
+    <div className="glass-static metric-card">
+      <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {icon}
+        {label}
+      </div>
+      {loading ? (
+        <div style={{ paddingTop: 4 }}>
+          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+        </div>
+      ) : error ? (
+        <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
+      ) : (
+        <div className="metric-card-value">{value}</div>
+      )}
+    </div>
+  );
+}
+
+function SetterGrid({ rows }: { rows: SetterRow[] }) {
+  return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-      {setterRows.map((s) => {
+      {rows.map((s) => {
         const engagementRate = s.newLeads > 0 ? (s.leadsEngaged / s.newLeads) * 100 : 0;
         const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
         const showRate = s.callsBooked > 0 ? (s.callsTaken / s.callsBooked) * 100 : 0;
