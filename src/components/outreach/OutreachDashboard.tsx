@@ -22,6 +22,8 @@ import type {
   OutreachRangePreset,
 } from "@/lib/outreach-dashboard-types";
 
+type ChartKey = "emailMessages" | "emailReplies" | "dmMessages" | "dmReplies";
+
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -66,55 +68,89 @@ function formatDateLabel(dateValue: string) {
   });
 }
 
-function MetricCard(props: {
+const CHANNEL_COLORS = {
+  email: "#c9a96e",
+  dm: "#82c5c5",
+} as const;
+
+interface MetricCardProps {
   label: string;
   value: string;
   detail: string;
-  tone?: "default" | "email" | "dm" | "warning";
-}) {
-  const toneStyles = {
-    default: {
-      border: "1px solid var(--border-primary)",
-      background: "rgba(255,255,255,0.03)",
-    },
-    email: {
-      border: "1px solid rgba(201,169,110,0.22)",
-      background: "rgba(201,169,110,0.08)",
-    },
-    dm: {
-      border: "1px solid rgba(130,197,197,0.22)",
-      background: "rgba(130,197,197,0.08)",
-    },
-    warning: {
-      border: "1px solid rgba(217,142,142,0.22)",
-      background: "rgba(217,142,142,0.08)",
-    },
-  } as const;
+  channel: "email" | "dm";
+  chartKey: ChartKey;
+  selectedKey: ChartKey;
+  disabled?: boolean;
+  onSelect: (key: ChartKey) => void;
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  channel,
+  chartKey,
+  selectedKey,
+  disabled = false,
+  onSelect,
+}: MetricCardProps) {
+  const active = selectedKey === chartKey;
+  const accent = CHANNEL_COLORS[channel];
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => !disabled && onSelect(chartKey)}
+      disabled={disabled}
       style={{
-        ...toneStyles[props.tone || "default"],
-        borderRadius: 16,
-        padding: 18,
+        textAlign: "left",
+        border: `1px solid ${active ? accent : "var(--border-primary)"}`,
+        background: active
+          ? channel === "email"
+            ? "rgba(201,169,110,0.12)"
+            : "rgba(130,197,197,0.12)"
+          : "rgba(255,255,255,0.03)",
+        borderRadius: 14,
+        padding: 16,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.55 : 1,
         display: "flex",
         flexDirection: "column",
-        gap: 10,
-        minHeight: 142,
+        gap: 8,
+        minHeight: 120,
+        transition: "all 0.15s ease",
+        boxShadow: active ? `0 0 0 1px ${accent} inset` : "none",
+        color: "inherit",
+        font: "inherit",
       }}
     >
-      <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.7, color: "var(--text-muted)" }}>
-        {props.label}
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: 0.7,
+          color: active ? accent : "var(--text-muted)",
+          fontWeight: 600,
+        }}
+      >
+        {label}
       </div>
-      <div style={{ fontSize: props.value.length > 14 ? 24 : 32, fontWeight: 700, letterSpacing: -0.8 }}>
-        {props.value}
+      <div style={{ fontSize: value.length > 10 ? 24 : 30, fontWeight: 700, letterSpacing: -0.6 }}>
+        {value}
       </div>
-      <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.45 }}>
-        {props.detail}
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+        {detail}
       </div>
-    </div>
+    </button>
   );
 }
+
+const CHART_TITLES: Record<ChartKey, string> = {
+  emailMessages: "Emails sent per day",
+  emailReplies: "Email replies per day",
+  dmMessages: "DMs sent per day",
+  dmReplies: "DM replies per day",
+};
 
 export default function OutreachDashboard() {
   const defaultRange = getPresetDates("mtd");
@@ -125,6 +161,7 @@ export default function OutreachDashboard() {
   const [data, setData] = useState<OutreachDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedKey, setSelectedKey] = useState<ChartKey>("emailMessages");
 
   useEffect(() => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -192,7 +229,8 @@ export default function OutreachDashboard() {
   };
 
   const dmConnected = Boolean(data?.sources.dm.connected);
-  const chartTitle = dmConnected ? "Messages sent per day" : "Emails sent per day";
+  const selectedChannel: "email" | "dm" = selectedKey.startsWith("dm") ? "dm" : "email";
+  const chartColor = CHANNEL_COLORS[selectedChannel];
 
   return (
     <div className="section">
@@ -205,15 +243,33 @@ export default function OutreachDashboard() {
           gap: 20,
         }}
       >
+        {/* Header: left = title + range, right = date controls */}
         <div
           style={{
             display: "flex",
-            justifyContent: "flex-end",
+            justifyContent: "space-between",
             gap: 16,
             alignItems: "flex-start",
             flexWrap: "wrap",
           }}
         >
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.4 }}>
+              Outreach
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", flexWrap: "wrap" }}>
+              <CalendarRange size={12} />
+              {rangeLabel}
+              {generatedAtLabel && (
+                <>
+                  <span style={{ color: "var(--border-hover)" }}>•</span>
+                  <RefreshCw size={12} />
+                  Updated {generatedAtLabel}
+                </>
+              )}
+            </div>
+          </div>
+
           <div
             style={{
               display: "flex",
@@ -293,18 +349,6 @@ export default function OutreachDashboard() {
                 />
               </label>
             </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", flexWrap: "wrap" }}>
-              <CalendarRange size={12} />
-              {rangeLabel}
-              {generatedAtLabel && (
-                <>
-                  <span style={{ color: "var(--border-hover)" }}>•</span>
-                  <RefreshCw size={12} />
-                  Updated {generatedAtLabel}
-                </>
-              )}
-            </div>
           </div>
         </div>
 
@@ -347,63 +391,103 @@ export default function OutreachDashboard() {
 
         {!loading && !error && data && (
           <>
+            {/* Email cards */}
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 12,
               }}
             >
               <MetricCard
                 label="People emailed"
                 value={fmtNumber(data.email.reachedInRange)}
                 detail={`All time: ${fmtNumber(data.email.reachedAllTime)}`}
+                channel="email"
+                chartKey="emailMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
               />
               <MetricCard
                 label="Emails sent"
                 value={fmtNumber(data.email.messagesInRange)}
                 detail="Includes follow-ups"
+                channel="email"
+                chartKey="emailMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
               />
               <MetricCard
                 label="Email reply rate"
                 value={fmtPercent(data.email.replyRateInRange)}
                 detail={`${fmtNumber(data.email.repliesInRange)} replies`}
+                channel="email"
+                chartKey="emailReplies"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
               />
               <MetricCard
                 label="Interested replies"
                 value={fmtPercent(data.email.interestedReplyRateInRange)}
                 detail={`${fmtNumber(data.email.interestedRepliesInRange)} interested`}
+                channel="email"
+                chartKey="emailReplies"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
               />
-              {dmConnected && (
-                <>
-                  <MetricCard
-                    label="People DM'd"
-                    value={fmtNumber(data.dm.reachedInRange)}
-                    detail={`All time: ${fmtNumber(data.dm.reachedAllTime)}`}
-                    tone="dm"
-                  />
-                  <MetricCard
-                    label="DMs sent"
-                    value={fmtNumber(data.dm.messagesInRange)}
-                    detail="Includes follow-ups"
-                    tone="dm"
-                  />
-                  <MetricCard
-                    label="DM reply rate"
-                    value={fmtPercent(data.dm.replyRateInRange)}
-                    detail={`${fmtNumber(data.dm.repliesInRange)} replies`}
-                    tone="dm"
-                  />
-                  <MetricCard
-                    label="Positive DM replies"
-                    value={fmtPercent(data.dm.interestedReplyRateInRange)}
-                    detail={`${fmtNumber(data.dm.interestedRepliesInRange)} positive`}
-                    tone="dm"
-                  />
-                </>
-              )}
             </div>
 
+            {/* DM cards — always visible */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <MetricCard
+                label="People DM'd"
+                value={dmConnected ? fmtNumber(data.dm.reachedInRange) : "—"}
+                detail={dmConnected ? `All time: ${fmtNumber(data.dm.reachedAllTime)}` : "Not tracked yet"}
+                channel="dm"
+                chartKey="dmMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                disabled={!dmConnected}
+              />
+              <MetricCard
+                label="DMs sent"
+                value={dmConnected ? fmtNumber(data.dm.messagesInRange) : "—"}
+                detail={dmConnected ? "Includes follow-ups" : "Not tracked yet"}
+                channel="dm"
+                chartKey="dmMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                disabled={!dmConnected}
+              />
+              <MetricCard
+                label="DM reply rate"
+                value={dmConnected ? fmtPercent(data.dm.replyRateInRange) : "—"}
+                detail={dmConnected ? `${fmtNumber(data.dm.repliesInRange)} replies` : "Not tracked yet"}
+                channel="dm"
+                chartKey="dmReplies"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                disabled={!dmConnected}
+              />
+              <MetricCard
+                label="Positive DM replies"
+                value={dmConnected ? fmtPercent(data.dm.interestedReplyRateInRange) : "—"}
+                detail={dmConnected ? `${fmtNumber(data.dm.interestedRepliesInRange)} positive` : "Not tracked yet"}
+                channel="dm"
+                chartKey="dmReplies"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+                disabled={!dmConnected}
+              />
+            </div>
+
+            {/* Chart */}
             <div
               style={{
                 border: "1px solid var(--border-primary)",
@@ -414,7 +498,7 @@ export default function OutreachDashboard() {
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>
-                {chartTitle}
+                {CHART_TITLES[selectedKey]}
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.chart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -429,6 +513,7 @@ export default function OutreachDashboard() {
                     tick={{ fill: "#787884", fontSize: 11 }}
                     axisLine={false}
                     tickLine={false}
+                    allowDecimals={false}
                   />
                   <Tooltip
                     contentStyle={{
@@ -438,10 +523,7 @@ export default function OutreachDashboard() {
                       color: "#f0f0f2",
                     }}
                   />
-                  <Bar dataKey="emailMessages" name="Emails" fill="#c9a96e" radius={[4, 4, 0, 0]} />
-                  {dmConnected && (
-                    <Bar dataKey="dmMessages" name="DMs" fill="#82c5c5" radius={[4, 4, 0, 0]} />
-                  )}
+                  <Bar dataKey={selectedKey} fill={chartColor} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
