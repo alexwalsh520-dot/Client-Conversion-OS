@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Loader2,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
 import FilterBar, { getEffectiveDates } from "./components/FilterBar";
@@ -26,6 +27,7 @@ import WeeklyReport from "./components/WeeklyReport";
 import DailyBriefs from "./components/DailyBriefs";
 import ReportHistory from "./components/ReportHistory";
 import AlexTesting from "./components/AlexTesting";
+import FollowupHub from "./components/FollowupHub";
 
 /* ------------------------------------------------------------------ */
 /*  Section nav items                                                  */
@@ -37,6 +39,7 @@ const SECTIONS = [
   { id: "setters", label: "Setters", icon: Users },
   { id: "call-reviews", label: "Call Reviews", icon: Phone },
   { id: "dm-reviews", label: "DM Reviews", icon: MessageSquareText },
+  { id: "followups", label: "AI Follow-ups", icon: Zap },
   { id: "intelligence", label: "Lead Intelligence", icon: Shield },
   { id: "reports", label: "Reports", icon: FileText },
   { id: "daily-briefs", label: "Briefs", icon: Calendar },
@@ -515,7 +518,16 @@ export default function SalesHubPage() {
         <DMReview filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 6: Lead Intelligence */}
+      {/* Section 6: AI Follow-ups */}
+      <CollapsibleSection
+        id="followups"
+        title="AI Follow-ups"
+        icon={<Zap size={18} />}
+      >
+        <FollowupHub selectedClient={filters.client} />
+      </CollapsibleSection>
+
+      {/* Section 7: Lead Intelligence */}
       <CollapsibleSection
         id="intelligence"
         title="Lead Intelligence & Intervention"
