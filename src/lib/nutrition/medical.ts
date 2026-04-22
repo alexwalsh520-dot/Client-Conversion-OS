@@ -18,6 +18,11 @@ export interface MedicalFlags {
   onBloodThinner: boolean;
   onSGLT2: boolean;
   onMAOI: boolean;
+  onStatin: boolean;
+  onLithium: boolean;
+  onLevothyroxine: boolean;
+  onTetracycline: boolean;
+  onBisphosphonate: boolean;
   hasDiabetes: boolean;
   hasHighCholesterol: boolean;
   hasKidneyIssues: boolean;
@@ -64,6 +69,11 @@ export function detectMedicalFlags(
   const bloodThinners = ["warfarin", "coumadin", "eliquis", "apixaban", "xarelto", "rivaroxaban", "pradaxa", "dabigatran"];
   const sglt2 = ["jardiance", "empagliflozin", "farxiga", "dapagliflozin", "invokana", "canagliflozin", "steglatro"];
   const maois = ["phenelzine", "nardil", "tranylcypromine", "parnate", "isocarboxazid", "marplan", "selegiline", "emsam", "rasagiline", "azilect"];
+  const statins = ["atorvastatin", "lipitor", "simvastatin", "zocor", "rosuvastatin", "crestor", "pravastatin", "pravachol", "lovastatin", "mevacor", "fluvastatin", "lescol", "pitavastatin", "livalo"];
+  const lithium = ["lithium", "eskalith", "lithobid"];
+  const levothyroxine = ["levothyroxine", "synthroid", "levoxyl", "tirosint", "unithroid"];
+  const tetracyclines = ["tetracycline", "doxycycline", "minocycline", "demeclocycline"];
+  const bisphosphonates = ["alendronate", "fosamax", "risedronate", "actonel", "ibandronate", "boniva", "zoledronic acid", "reclast"];
 
   const hit = (terms: string[]) => terms.some((t) => combined.includes(t));
 
@@ -75,6 +85,11 @@ export function detectMedicalFlags(
     onBloodThinner: hit(bloodThinners),
     onSGLT2: hit(sglt2),
     onMAOI: hit(maois),
+    onStatin: hit(statins),
+    onLithium: hit(lithium),
+    onLevothyroxine: hit(levothyroxine),
+    onTetracycline: hit(tetracyclines),
+    onBisphosphonate: hit(bisphosphonates),
     hasDiabetes: hit(diabetesTerms),
     hasHighCholesterol: hit(cholesterolTerms),
     hasKidneyIssues: hit(kidneyTerms),
@@ -109,16 +124,32 @@ export function medicalSoftAvoidTokens(flags: MedicalFlags): string[] {
  */
 export function medicalHardAvoidTokens(flags: MedicalFlags): string[] {
   const tokens: string[] = [];
+
   if (flags.onMAOI) {
-    // Tyramine-rich foods interact dangerously with MAOIs — can cause
-    // hypertensive crisis. Strict exclusion required.
+    // Tyramine-rich foods — potentially FATAL interaction with MAOIs.
+    // Strict zero-instance safety rule.
     tokens.push(
-      "aged cheese", "parmesan", "cheddar", "blue cheese", "provolone",
-      "bacon", "salami", "pepperoni", "prosciutto", "cured ham", "sausage",
-      "soy sauce", "tofu fermented", "kimchi", "sauerkraut",
-      "draft beer", "red wine"
+      // Aged cheeses by name
+      "aged cheese", "parmesan", "cheddar", "aged cheddar", "blue cheese",
+      "gorgonzola", "roquefort", "provolone", "swiss", "gruyere", "feta aged",
+      // Cured and aged meats
+      "bacon", "salami", "pepperoni", "prosciutto", "aged ham", "sausage",
+      "soppressata", "chorizo",
+      // Fermented foods
+      "soy sauce", "miso", "tempeh", "tofu fermented", "kimchi", "sauerkraut",
+      // Alcohol
+      "draft beer", "red wine", "aged wine", "vermouth",
     );
   }
+
+  if (flags.onStatin) {
+    // Grapefruit and related citrus inhibit CYP3A4, driving statin levels
+    // to potentially toxic concentrations. Zero-instance rule.
+    tokens.push(
+      "grapefruit", "grapefruit juice", "seville orange", "pomelo", "tangelo"
+    );
+  }
+
   return tokens;
 }
 
@@ -282,12 +313,63 @@ export function medicalTips(flags: MedicalFlags): MedicalTip[] {
 
   if (flags.onMAOI) {
     tips.push({
-      title: "MAOI Medication & Tyramine",
+      title: "MAOI Medication & Tyramine — CRITICAL",
       body:
-        "Your medication interacts dangerously with tyramine-rich foods — they can trigger a hypertensive crisis. This plan excludes " +
-        "aged cheeses, cured meats (salami, prosciutto, pepperoni), fermented soy, draft beer, and red wine. Also avoid overripe " +
-        "bananas, broad beans, and smoked/pickled fish. When eating out, tell your server about your medication so they can flag " +
-        "aged-cheese dishes. This is the single most important dietary rule for you — please talk to your prescriber if unclear.",
+        "Your medication can have a FATAL interaction with tyramine-rich foods — a hypertensive crisis is a real risk. This plan " +
+        "excludes all aged cheeses (parmesan, aged cheddar, blue cheese, gorgonzola, roquefort), cured/aged meats (salami, " +
+        "prosciutto, pepperoni, soppressata, aged ham), fermented foods (soy sauce, miso, tempeh, kimchi, sauerkraut), draft beer, " +
+        "aged/red wine, and vermouth. Also avoid overripe bananas, broad beans, and smoked/pickled fish. When eating out, tell your " +
+        "server about your medication so they can flag aged-cheese dishes. This is the single most important dietary rule for you.",
+    });
+  }
+
+  if (flags.onStatin) {
+    tips.push({
+      title: "Statins & Grapefruit",
+      body:
+        "Grapefruit, grapefruit juice, pomelo, tangelo, and Seville oranges interact with statins by inhibiting the enzyme that " +
+        "clears them from your system — levels can rise to toxic concentrations. Your plan excludes these. Regular oranges, " +
+        "lemons, limes, and other citrus are fine.",
+    });
+  }
+
+  if (flags.onLithium) {
+    tips.push({
+      title: "Lithium & Sodium Consistency",
+      body:
+        "Lithium levels in the blood rise when you drop sodium intake sharply (and fall when sodium spikes). Try to keep daily " +
+        "sodium roughly consistent — big swings can cause lithium toxicity or reduced effectiveness. Stay well-hydrated, and " +
+        "tell your doctor before starting any low-sodium diet.",
+    });
+  }
+
+  if (flags.onLevothyroxine) {
+    tips.push({
+      title: "Levothyroxine & Timing",
+      body:
+        "Take your medication on an empty stomach 30-60 minutes before breakfast with water only. Avoid soy products, high-calcium " +
+        "foods, iron supplements, and coffee within 30 minutes of dosing — they reduce absorption by 20-40%. Be consistent with " +
+        "timing day-to-day.",
+    });
+  }
+
+  if (flags.onTetracycline) {
+    tips.push({
+      title: "Antibiotic & Dairy Timing",
+      body:
+        "Tetracycline-class antibiotics bind to calcium and iron, dramatically reducing absorption. Avoid dairy (milk, cheese, " +
+        "yogurt), calcium supplements, iron supplements, and antacids within 2 hours of taking the medication. Fine outside that " +
+        "window.",
+    });
+  }
+
+  if (flags.onBisphosphonate) {
+    tips.push({
+      title: "Bisphosphonate Timing",
+      body:
+        "Take on an empty stomach with 6-8 oz of plain water first thing in the morning. Stay upright for at least 30 minutes " +
+        "(60 for some versions). Avoid food, other medications, calcium, and mineral water during that window — absorption is " +
+        "very sensitive.",
     });
   }
 

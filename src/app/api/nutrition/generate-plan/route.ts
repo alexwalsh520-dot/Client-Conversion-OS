@@ -452,14 +452,74 @@ export async function POST(req: NextRequest) {
 
       // ===== TIER 1 — SAFETY =====
 
-      // Sodium cap (HBP-aware). Hard limit, not per-week average.
+      // Calorie FLOOR — no day below 1,200 kcal regardless of goal.
+      if (t.cal < 1200) {
+        v.push({
+          tier: 1,
+          kind: "kcal_floor",
+          message: `CALORIES at ${Math.round(t.cal)} kcal — below the 1,200 kcal safety floor. Under-eating this severely is unsafe. Increase portions.`,
+        });
+      }
+
+      // Calorie CEILING — no day above 4,000 kcal.
+      if (t.cal > 4000) {
+        v.push({
+          tier: 1,
+          kind: "kcal_ceiling",
+          message: `CALORIES at ${Math.round(t.cal)} kcal — above the 4,000 kcal safety ceiling. This is beyond normal macro coaching range.`,
+        });
+      }
+
+      // Protein CEILING — 2.0 g/lb normally; 2.2 g/lb for muscle_gain without kidney issues.
+      const proteinCeilingPerLb = (goal === "muscle_gain" && !medical.hasKidneyIssues) ? 2.2 : 2.0;
+      const proteinCeilingG = Math.round(weightLbClient * proteinCeilingPerLb);
+      if (t.p > proteinCeilingG) {
+        v.push({
+          tier: 1,
+          kind: "protein_ceiling",
+          message: `PROTEIN at ${t.p.toFixed(0)}g — above the ${proteinCeilingG}g safety ceiling (${proteinCeilingPerLb} g/lb). Sustained intake this high stresses the kidneys.`,
+        });
+      }
+
+      // Sodium cap — reads from unified target. HBP: 1,800 mg. Default: 2,300 mg (AHA universal ceiling).
       const sodium = computeDailySodium(d, byslug);
       if (sodium > targets.sodiumCapMg) {
         v.push({
           tier: 1,
           kind: "sodium_cap",
-          message: `SODIUM is ${sodium} mg (cap ${targets.sodiumCapMg} mg${medical.hasHypertension ? " for HBP" : ""}) — reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
+          message: `SODIUM is ${sodium} mg (cap ${targets.sodiumCapMg} mg${medical.hasHypertension ? " for HBP" : " — AHA universal ceiling"}) — reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
         });
+      }
+
+      // Portion sanity — signals a pathological generation state.
+      const meatKeywords = ["chicken", "beef", "pork", "turkey", "salmon", "tuna", "cod", "shrimp", "fish"];
+      const oilKeywords = ["oil", "butter", "ghee"];
+      const cheeseKeywords = ["cheese", "mozzarella", "cheddar", "parmesan", "feta", "ricotta", "swiss"];
+      const dryGrainKeywords = ["rice", "oats", "pasta", "quinoa", "barley", "couscous"];
+      for (const meal of d.meals) {
+        for (const ing of meal.ingredients) {
+          const row = byslug.get(ing.slug);
+          if (!row) continue;
+          const hay = `${row.slug} ${row.name}`.toLowerCase();
+          const grams = ing.grams;
+          const isRaw = /raw|dry|uncooked/.test(hay);
+          // 350g meat
+          if (grams > 350 && meatKeywords.some((k) => hay.includes(k)) && !hay.includes("broth") && !hay.includes("stock")) {
+            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 350g meat portion sanity limit. Pick a different protein anchor or split the meal.` });
+          }
+          // 50g oil/butter
+          if (grams > 50 && oilKeywords.some((k) => hay.includes(k))) {
+            v.push({ tier: 1, kind: "portion_sanity_oil", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 50g oil/butter per meal. Reduce.` });
+          }
+          // 200g cheese
+          if (grams > 200 && cheeseKeywords.some((k) => hay.includes(k))) {
+            v.push({ tier: 1, kind: "portion_sanity_cheese", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 200g cheese per meal.` });
+          }
+          // 150g dry grain (only flag if clearly dry — cooked grains triple in weight)
+          if (grams > 150 && dryGrainKeywords.some((k) => hay.includes(k)) && isRaw) {
+            v.push({ tier: 1, kind: "portion_sanity_grain", message: `"${meal.dishName || meal.name}" contains ${grams}g of dry ${row.name} — exceeds 150g dry grain per meal. Reduce or split.` });
+          }
+        }
       }
 
       // Kidney disease: protein ≤ 0.6 g/lb, strict per-day cap
@@ -548,6 +608,32 @@ export async function POST(req: NextRequest) {
       if (worstMealFat > targets.fatG * 0.40) {
         v.push({ tier: 2, kind: "per_meal_fat", message: `"${worstMealName}" has ${Math.round(worstMealFat)}g fat — over 40% of daily target. Max ${Math.round(targets.fatG * 0.4)}g per meal.` });
       }
+
+      // Per-meal protein FLOOR — breakfast 25%, lunch/dinner 30% of daily target.
+      // Surgical correction pattern: flag just the undershooting meal(s), not the whole day.
+      for (const meal of d.meals) {
+        let mP = 0;
+        for (const ing of meal.ingredients) {
+          const row = byslug.get(ing.slug);
+          if (!row) continue;
+          mP += Number(row.protein_g_per_100g) * (ing.grams / 100);
+        }
+        const mealName = meal.name || "";
+        const isBreakfast = /breakfast/i.test(mealName);
+        const isLunch = /lunch/i.test(mealName);
+        const isDinner = /dinner/i.test(mealName);
+        const floorPct = isBreakfast ? 0.25 : (isLunch || isDinner) ? 0.30 : 0;
+        if (floorPct === 0) continue; // snacks fill the remainder — no floor
+        const floorG = Math.round(targets.proteinG * floorPct);
+        if (mP < floorG * 0.90) {
+          v.push({
+            tier: 2,
+            kind: "per_meal_protein_floor",
+            message: `"${meal.dishName || meal.name}" has ${Math.round(mP)}g protein — below the ${floorG}g floor (${Math.round(floorPct * 100)}% of daily ${targets.proteinG}g target). Add or increase the protein anchor (chicken/beef/fish/eggs/Greek yogurt/cottage cheese/whey).`,
+          });
+        }
+      }
+
       return v;
     };
 
@@ -700,10 +786,18 @@ export async function POST(req: NextRequest) {
     // Source 1: the foods_enjoy list.
     // Source 2: items mentioned in the client's daily_meals_description —
     // stuff they already eat regularly and would expect to see on the plan.
-    const enjoyedTokens = [
-      ...parsePreferredFoods(intake.foods_enjoy, ""),
-      ...extractFoodsFromDailyMealsDescription(intake.daily_meals_description || ""),
-    ].filter((t) => t && t.length >= 3);
+    const enjoyedFromList = parsePreferredFoods(intake.foods_enjoy || "", "");
+    const enjoyedFromDaily = extractFoodsFromDailyMealsDescription(intake.daily_meals_description || "");
+    const enjoyedTokens = [...enjoyedFromList, ...enjoyedFromDaily].filter((t) => t && t.length >= 3);
+
+    // MANDATORY enjoyed foods = intersection of foods_enjoy AND daily_meals.
+    // These are items the client SAID they enjoy AND already eats day-to-day.
+    // Missing one = a Tier-2 violation (at least once/week is required).
+    const enjoyedFromDailyLower = enjoyedFromDaily.map((t) => t.toLowerCase());
+    const mandatoryFoods = enjoyedFromList.filter((t) =>
+      enjoyedFromDailyLower.some((d) => d.includes(t.toLowerCase()) || t.toLowerCase().includes(d))
+    );
+
     const allSlugsUsed = new Set<string>();
     const allNamesUsed: string[] = [];
     for (const d of days) {
@@ -717,15 +811,59 @@ export async function POST(req: NextRequest) {
     }
     const haystack = [...allSlugsUsed, ...allNamesUsed].join(" ").toLowerCase();
     const missingEnjoyed: string[] = [];
+    const missingMandatory: string[] = [];
     for (const token of enjoyedTokens) {
-      if (!haystack.includes(token.toLowerCase())) {
-        missingEnjoyed.push(token);
-      }
+      if (!haystack.includes(token.toLowerCase())) missingEnjoyed.push(token);
+    }
+    for (const token of mandatoryFoods) {
+      if (!haystack.includes(token.toLowerCase())) missingMandatory.push(token);
     }
     if (missingEnjoyed.length > 0) {
       targets.notes.push(
         `Note for reviewer: couldn't slot these enjoyed foods into the plan (likely composite dishes or not in ingredient DB): ${missingEnjoyed.join(", ")}.`
       );
+    }
+
+    // ---------- WEEKLY CAP VIOLATIONS (Tier 2) ----------
+    // Surface cheese/sourdough frequency caps for HBP clients as visible
+    // Tier-2 violations + mandatory-enjoyed misses.
+    const weeklyTier2Violations: { kind: string; message: string }[] = [];
+    if (medical.hasHypertension) {
+      const countSlugAppearances = (slugMatch: string): number => {
+        let count = 0;
+        for (const d of days) {
+          let inDay = false;
+          for (const m of d.meals) {
+            for (const ing of m.ingredients) {
+              const name = (byslug.get(ing.slug)?.name || "").toLowerCase();
+              if (ing.slug.includes(slugMatch) || name.includes(slugMatch)) { inDay = true; break; }
+            }
+            if (inDay) break;
+          }
+          if (inDay) count++;
+        }
+        return count;
+      };
+      const cheeseDays = countSlugAppearances("cheese");
+      const sourdoughDays = countSlugAppearances("sourdough");
+      if (cheeseDays > 3) {
+        weeklyTier2Violations.push({
+          kind: "hbp_cheese_cap",
+          message: `Cheese appears on ${cheeseDays} days — HBP cap is 3/week to manage sodium.`,
+        });
+      }
+      if (sourdoughDays > 2) {
+        weeklyTier2Violations.push({
+          kind: "hbp_sourdough_cap",
+          message: `Sourdough appears on ${sourdoughDays} days — HBP cap is 2/week. Default to whole-wheat bread.`,
+        });
+      }
+    }
+    if (missingMandatory.length > 0) {
+      weeklyTier2Violations.push({
+        kind: "mandatory_enjoyed_missing",
+        message: `Mandatory enjoyed foods missing: ${missingMandatory.join(", ")}. These appeared in BOTH the enjoyed list AND daily meals description.`,
+      });
     }
 
     // --- Compute macros from DB, assemble PdfDay[] ---
@@ -770,6 +908,7 @@ export async function POST(req: NextRequest) {
       const dP   = pdfMeals.reduce((s, m) => s + m.totalP, 0);
       const dC   = pdfMeals.reduce((s, m) => s + m.totalC, 0);
       const dF   = pdfMeals.reduce((s, m) => s + m.totalF, 0);
+      const dNa  = computeDailySodium(d, byslug);
 
       return {
         dayNumber: d.day,
@@ -779,6 +918,7 @@ export async function POST(req: NextRequest) {
         totalP: dP,
         totalC: dC,
         totalF: dF,
+        totalSodiumMg: dNa,
       };
     });
 
@@ -869,11 +1009,11 @@ export async function POST(req: NextRequest) {
           `Muscle gain is slow — plan on ~0.5 lb/week. At this pace, ${deltaR} lbs takes roughly ${weeks} weeks. ` +
           `Judge by the mirror, strength numbers, and how clothes fit — not just the scale.`;
       } else if (goal === "recomp") {
-        const monthsLow = Math.max(3, Math.round(deltaLbs * 2));
-        const monthsHigh = Math.max(6, Math.round(deltaLbs * 4));
+        const weeksLow = Math.max(8, Math.round(deltaLbs * 2));   // 0.5 lb/week
+        const weeksHigh = Math.max(16, Math.round(deltaLbs * 4)); // 0.25 lb/week
         timelineNote =
           `Recomp progresses slowly — expect 0.25–0.5 lb/week of scale change while body composition shifts. ` +
-          `At this pace, ${deltaR} lbs of net change takes roughly ${monthsLow}–${monthsHigh} months. ` +
+          `At this pace, ${deltaR} lbs of net change takes roughly ${weeksLow}–${weeksHigh} weeks. ` +
           `Track the mirror and strength numbers alongside the scale.`;
       } else if (goal === "endurance") {
         timelineNote =
@@ -982,11 +1122,23 @@ export async function POST(req: NextRequest) {
       targets,
       generationTimeMs,
       notes: targets.notes,
-      // Convergence + tiered status (consumed by UI badges, never rendered on the PDF).
-      //   RED    — any Tier 1 (safety) violation. Shipping is hard-blocked.
-      //   YELLOW — all Tier 1 clean, but medical review required OR Tier 2 misses on 3+ days.
-      //   GREEN  — clean across both tiers; no medical flags.
+      // Convergence + binary ship status. No YELLOW middle state — the
+      // nutritionist review layer was removed, so every plan ships directly
+      // to the client and must self-enforce safety.
+      //   SHIP (green)       — all Tier 1 safety passes AND Tier 2 misses ≤ 2 days
+      //   DO-NOT-SHIP (red)  — ANY Tier 1 violation OR 3+ Tier 2 day misses
       status: (() => {
+        // Fold weekly Tier 2 violations (cheese/sourdough caps, mandatory
+        // enjoyed foods missing) into the combined Tier 2 list so they show
+        // up in the admin debug output and block shipping if the count is high.
+        const combinedTier2: typeof tier2Violations = [
+          ...tier2Violations,
+          ...weeklyTier2Violations.map((v) => ({ day: 0, weekday: "weekly", tier: 2 as const, kind: v.kind, message: v.message })),
+        ];
+        // Weekly violations count as extra "day-equivalent misses" for the
+        // ship decision (each distinct weekly violation adds 1 to the count).
+        const effectiveT2DayCount = tier2DayCount + weeklyTier2Violations.length;
+
         const medicalReviewRequired =
           medical.hasHypertension ||
           medical.hasDiabetes ||
@@ -997,24 +1149,25 @@ export async function POST(req: NextRequest) {
           medical.onBloodThinner ||
           medical.onSGLT2 ||
           medical.onGLP1 ||
-          medical.onMAOI;
+          medical.onMAOI ||
+          medical.onStatin ||
+          medical.onLithium ||
+          medical.onLevothyroxine;
 
-        let badge: "green" | "yellow" | "red";
-        if (tier1Violations.length > 0) badge = "red";
-        else if (medicalReviewRequired || tier2DayCount >= 3) badge = "yellow";
-        else badge = "green";
+        const canShip = tier1Violations.length === 0 && effectiveT2DayCount <= 2;
+        const badge: "green" | "red" = canShip ? "green" : "red";
 
         return {
           badge,
-          canShipToClient: badge !== "red",
-          converged: tier1Violations.length === 0 && tier2DayCount <= 2,
+          canShipToClient: canShip,
+          converged: canShip,
           iterationsRun: Math.max(0, convergenceLog.length - 1),
           medicalReviewRequired,
           tier1Violations,
-          tier2Violations,
-          tier2DayCount,
+          tier2Violations: combinedTier2,
+          tier2DayCount: effectiveT2DayCount,
           convergenceLog,
-          // Legacy field for backwards compatibility — same data, old shape
+          // Legacy field for backwards compat — flattened string messages
           unresolvedViolations: unresolvedByDay.map((u) => ({
             day: u.day,
             weekday: u.weekday,

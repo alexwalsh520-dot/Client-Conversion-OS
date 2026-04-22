@@ -145,6 +145,13 @@ function MealPlanTaskPanel({
   const [error, setError] = useState<string | null>(null);
   const [newComment, setNewComment] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [lastStatus, setLastStatus] = useState<{
+    badge?: "green" | "red";
+    canShipToClient?: boolean;
+    tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+    tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+    medicalReviewRequired?: boolean;
+  } | null>(null);
   const [checklist, setChecklist] = useState({ allergies: false, delivered: false, tipsReviewed: false });
   const [completing, setCompleting] = useState(false);
 
@@ -180,7 +187,18 @@ function MealPlanTaskPanel({
         body: JSON.stringify({ clientId: client.id }),
       });
       const raw = await res.text();
-      let data: { success?: boolean; error?: string; pdfUrl?: string } = {};
+      let data: {
+        success?: boolean;
+        error?: string;
+        pdfUrl?: string;
+        status?: {
+          badge?: "green" | "red";
+          canShipToClient?: boolean;
+          tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+          tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+          medicalReviewRequired?: boolean;
+        };
+      } = {};
       try {
         data = JSON.parse(raw);
       } catch {
@@ -197,6 +215,7 @@ function MealPlanTaskPanel({
       }
       await load();
       setPreviewUrl(data.pdfUrl ?? null);
+      setLastStatus(data.status ?? null);
       if (onRefreshClients) onRefreshClients();
     } catch (err) {
       setError((err as Error).message);
@@ -420,6 +439,44 @@ function MealPlanTaskPanel({
         </div>
       </div>
 
+      {/* Status badge + safety violations — only shown when a plan was just generated */}
+      {lastStatus && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            background: lastStatus.canShipToClient ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.10)",
+            border: `1px solid ${lastStatus.canShipToClient ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.45)"}`,
+            borderRadius: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
+            <span style={{ fontSize: 18 }}>{lastStatus.canShipToClient ? "🟢" : "🔴"}</span>
+            <span style={{ color: lastStatus.canShipToClient ? "#22c55e" : "#ef4444" }}>
+              {lastStatus.canShipToClient ? "Ready to send" : "Safety check failed — regenerate before sending"}
+            </span>
+          </div>
+          {!lastStatus.canShipToClient && lastStatus.tier1Violations && lastStatus.tier1Violations.length > 0 && (
+            <div style={{ marginTop: 10, paddingLeft: 28, fontSize: 12, color: "var(--text-primary)" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Safety violations:</div>
+              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
+                {lastStatus.tier1Violations.slice(0, 8).map((v, i) => (
+                  <li key={i}>
+                    {v.weekday && v.weekday !== "weekly" ? `${v.weekday}: ` : ""}
+                    {v.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {lastStatus.medicalReviewRequired && lastStatus.canShipToClient && (
+            <div style={{ marginTop: 8, paddingLeft: 28, fontSize: 11, color: "var(--text-muted)" }}>
+              Medical conditions / medications detected — plan includes the relevant safety rules and tips.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Completion checklist — only in Pending section (not Done) */}
       {!isDoneSection && latestPlan && (
         <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10 }}>
@@ -430,17 +487,33 @@ function MealPlanTaskPanel({
             { key: "allergies" as const, label: "Confirmed no allergic items are in the meal plan" },
             { key: "delivered" as const, label: "Meal plan delivered to the customer" },
             { key: "tipsReviewed" as const, label: "Tips section reviewed and appropriate for client" },
-          ].map(({ key, label }) => (
-            <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
-              <input
-                type="checkbox"
-                checked={checklist[key]}
-                onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
-                style={{ accentColor: "var(--accent)" }}
-              />
-              {label}
-            </label>
-          ))}
+          ].map(({ key, label }) => {
+            // Block the "delivered" checkbox when the last generation flagged a safety violation
+            const deliveryBlocked = key === "delivered" && lastStatus?.canShipToClient === false;
+            return (
+              <label
+                key={key}
+                title={deliveryBlocked ? "This plan has safety violations. Regenerate before sending." : ""}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
+                  cursor: deliveryBlocked ? "not-allowed" : "pointer",
+                  fontSize: 13,
+                  color: deliveryBlocked ? "var(--text-muted)" : "var(--text-primary)",
+                  opacity: deliveryBlocked ? 0.55 : 1,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checklist[key]}
+                  disabled={deliveryBlocked}
+                  onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                {label}
+                {deliveryBlocked && <span style={{ marginLeft: 6, fontSize: 11, color: "#ef4444" }}>(blocked — regenerate first)</span>}
+              </label>
+            );
+          })}
           <button
             onClick={handleComplete}
             disabled={!checklist.allergies || !checklist.delivered || !checklist.tipsReviewed || completing}

@@ -89,6 +89,25 @@ MEAL COMPOSITION:
   tomato, and lettuce belong in those dishes.
 - Most meals should have 4-6 ingredients, not 2-3.
 
+PER-MEAL PROTEIN FLOORS (mandatory):
+- Breakfast must provide at least 25% of the daily protein target.
+- Lunch    must provide at least 30% of the daily protein target.
+- Dinner   must provide at least 30% of the daily protein target.
+- Snacks fill the remainder.
+- Start EVERY meal by choosing a protein anchor that can mathematically support
+  these grams at a reasonable portion (chicken breast 150-220g, beef 150-200g,
+  salmon 150-200g, eggs 150g + cottage cheese 100g, Greek yogurt 200-300g, whey
+  25-35g, tofu 150-200g, etc.). Do not try to squeeze protein out of a base that
+  can't carry it (a bowl of oats + fruit + nut butter will NOT hit 50g protein).
+
+PORTION SANITY (these signal a structural mistake, not a valid plan):
+- No single meal may contain more than 350g of any single meat (chicken, beef, pork, fish).
+- No single meal may contain more than 50g of any single oil/butter.
+- No single meal may contain more than 200g of any single cheese type.
+- No single meal may contain more than 150g of dry grains (pre-cook weight).
+- If hitting the day's macros SEEMS to require exceeding these, the protein anchor
+  is wrong — pick a different ingredient or combine two proteins.
+
 VARIETY — applies to EVERY meal slot, not just lunch:
 - Follow the per-meal "format hint" when one is provided; it exists so your meal doesn't
   look identical to the other days of the week.

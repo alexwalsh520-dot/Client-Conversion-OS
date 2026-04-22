@@ -53,6 +53,7 @@ export interface PdfDay {
   totalP: number;
   totalC: number;
   totalF: number;
+  totalSodiumMg?: number;  // optional — rendered in the Day Total band when present
 }
 
 export interface PdfGroceryItem {
@@ -140,6 +141,49 @@ export function mapDbCategoryToDisplay(dbCategory: string): string {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * The intake form collapses allergies and medical conditions into a single
+ * free-text "Allergies / Medical" field. This splits the string on commas/
+ * semicolons/newlines and classifies each piece by keyword so the cover page
+ * can render "Allergies" and "Medical Conditions" as separate rows.
+ * This is a PDF-display workaround. The proper fix is separating the fields
+ * on the intake form + DB schema (separate ticket).
+ */
+function splitAllergiesMedical(raw: string): { allergies: string; medical: string } {
+  if (!raw) return { allergies: "", medical: "" };
+  const parts = raw
+    .split(/[,;\n]+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  const medicalKeywords = [
+    "high blood pressure", "hbp", "hypertension",
+    "diabetes", "type 1", "type 2", "t1d", "t2d", "pre-diabetes", "prediabetes",
+    "celiac", "coeliac", "gluten", "lactose", "dairy intolerance",
+    "kidney", "renal", "ckd",
+    "high cholesterol", "hyperlipidemia",
+    "thyroid", "hypothyroid", "hyperthyroid",
+    "pcos", "endometriosis",
+    "ibs", "crohn", "colitis", "ibd",
+    "heart disease", "cardiac", "arrhythmia",
+    "cancer", "autoimmune",
+  ];
+  const allergyBuckets: string[] = [];
+  const medicalBuckets: string[] = [];
+  for (const p of parts) {
+    const low = p.toLowerCase();
+    if (medicalKeywords.some((k) => low.includes(k))) {
+      medicalBuckets.push(p);
+    } else {
+      allergyBuckets.push(p);
+    }
+  }
+  return {
+    allergies: allergyBuckets.join(", "),
+    medical: medicalBuckets.join(", "),
+  };
+}
 
 function fmtNum(n: number, decimals = 0): string {
   if (!isFinite(n)) return "0";
@@ -252,11 +296,17 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
     if (input.client.goalWeightLbs && input.client.goalWeightLbs > 0) {
       detailRows.push(["Goal Weight", `${fmtNum(input.client.goalWeightLbs)} lbs`]);
     }
-    detailRows.push(
-      ["Meals / Day", String(input.client.mealsPerDay)],
-      ["Allergies", input.client.allergies || "None"]
-    );
-    // Medications row — only render if a non-empty, non-"none" string is supplied
+    detailRows.push(["Meals / Day", String(input.client.mealsPerDay)]);
+
+    // The intake form conflates allergies and medical conditions into one
+    // "Allergies / Medical" field. This split detects common condition keywords
+    // and displays them under "Medical Conditions", while everything else
+    // stays under "Allergies". Real fix is an intake-form schema change.
+    const { allergies: allergiesPart, medical: medicalPart } = splitAllergiesMedical(input.client.allergies || "");
+    detailRows.push(["Allergies", allergiesPart || "None"]);
+    if (medicalPart) {
+      detailRows.push(["Medical Conditions", medicalPart]);
+    }
     const medsStr = (input.client.medications || "").trim();
     if (medsStr && !/^(n\/?a|none|no)$/i.test(medsStr)) {
       detailRows.push(["Medications", medsStr]);
@@ -473,6 +523,9 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
       `${fmtMacro(day.totalC)}g carbs`,
       `${fmtMacro(day.totalF)}g fat`,
     ];
+    if (typeof day.totalSodiumMg === "number" && day.totalSodiumMg > 0) {
+      bandSegments.push(`${fmtNum(day.totalSodiumMg)} mg sodium`);
+    }
     let segX = marginX + 130;
     const segW = (TABLE_TOTAL_WIDTH - 140) / bandSegments.length;
     for (const seg of bandSegments) {
@@ -490,6 +543,24 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
     doc.addPage();
     drawTopHeader();
     let y = marginTop + 30;
+
+    // Weekly sodium average — small summary row above the grocery list title.
+    // Helps clients (and operators) verify HBP sodium cap is respected.
+    const sodiumDays = input.days.filter((d) => typeof d.totalSodiumMg === "number");
+    if (sodiumDays.length > 0) {
+      const weeklyAvgSodium = Math.round(
+        sodiumDays.reduce((s, d) => s + (d.totalSodiumMg || 0), 0) / sodiumDays.length
+      );
+      const weeklyMaxSodium = Math.max(...sodiumDays.map((d) => d.totalSodiumMg || 0));
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(GRAY);
+      doc.text(
+        `Weekly sodium: avg ${weeklyAvgSodium} mg/day · max ${weeklyMaxSodium} mg`,
+        marginX, y
+      );
+      y += 16;
+    }
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
