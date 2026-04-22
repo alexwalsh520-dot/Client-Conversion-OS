@@ -405,13 +405,13 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, subValue }: KpiCardProps) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-white/5 bg-[#0f0f12]/80 backdrop-blur px-5 py-4 min-w-[140px]">
-      <span className="text-xs font-medium tracking-wide uppercase" style={{ color: "#a1a1aa" }}>
+    <div className="flex flex-col gap-1 rounded-xl border border-white/5 bg-[#121212]/80 backdrop-blur px-5 py-4 min-w-[140px]">
+      <span className="text-xs font-medium tracking-wide uppercase" style={{ color: "#e2e2e2" }}>
         {label}
       </span>
       <span className="text-xl font-semibold text-white">{value}</span>
       {subValue && (
-        <span className="text-xs" style={{ color: "#a1a1aa" }}>
+        <span className="text-xs" style={{ color: "#e2e2e2" }}>
           {subValue}
         </span>
       )}
@@ -422,12 +422,12 @@ function KpiCard({ label, value, subValue }: KpiCardProps) {
 /* ──────────────────────── SALES CALL ROW ──────────────────────── */
 
 function SalesCallRow({ call }: { call: SalesCall }) {
-  const outcomeColor = OUTCOME_COLORS[call.outcome?.toUpperCase()] ?? "#a1a1aa";
+  const outcomeColor = OUTCOME_COLORS[call.outcome?.toUpperCase()] ?? "#e2e2e2";
 
   return (
     <tr className="border-t border-white/5">
       <td
-        className="sticky left-0 z-10 bg-[#131318] px-4 py-2.5 text-sm text-white pl-10"
+        className="sticky left-0 z-10 bg-[#121212] px-4 py-2.5 text-sm text-white pl-10"
         colSpan={1}
       >
         {call.name || "—"}
@@ -655,9 +655,9 @@ export default function MediaBuyerPage() {
   }, [data]);
 
   return (
-    <div className="flex flex-col h-full min-h-screen" style={{ backgroundColor: "#09090b" }}>
+    <div className="flex flex-col h-full min-h-screen" style={{ backgroundColor: "#0c0c0c" }}>
       {/* ── Sticky Header Section ── */}
-      <div className="sticky top-0 z-30" style={{ backgroundColor: "#09090b" }}>
+      <div className="sticky top-0 z-30" style={{ backgroundColor: "#0c0c0c" }}>
 
       {/* ── Header Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b border-white/5">
@@ -676,7 +676,7 @@ export default function MediaBuyerPage() {
                 className="px-3 py-1.5 text-xs font-medium transition-colors"
                 style={{
                   backgroundColor: datePreset === p.value ? "#c9a96e" : "transparent",
-                  color: datePreset === p.value ? "#09090b" : "#a1a1aa",
+                  color: datePreset === p.value ? "#0c0c0c" : "#e2e2e2",
                 }}
               >
                 {p.label}
@@ -689,7 +689,7 @@ export default function MediaBuyerPage() {
             onClick={fetchData}
             disabled={loading}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium transition-colors hover:border-white/20 disabled:opacity-50"
-            style={{ color: "#a1a1aa" }}
+            style={{ color: "#e2e2e2" }}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
@@ -734,7 +734,7 @@ export default function MediaBuyerPage() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h4v4H2V2zm0 6h4v4H2V8zm6-6h4v4H8V2zm6 0h2v4h-2V2zM8 8h4v4H8V8zm6 0h2v4h-2V8z" opacity="0.8"/></svg>
             Campaigns
             {level !== "campaign" && breadcrumbs.length > 1 && (
-              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#09090b" }}>
+              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#0c0c0c" }}>
                 1 selected
               </span>
             )}
@@ -751,7 +751,7 @@ export default function MediaBuyerPage() {
             onClick={() => breadcrumbs.length > 1 ? handleBreadcrumbClick(1) : undefined}
             className="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-all"
             style={{
-              color: level === "adset" ? "#fff" : breadcrumbs.length > 1 ? "#a1a1aa" : "#3f3f46",
+              color: level === "adset" ? "#fff" : breadcrumbs.length > 1 ? "#e2e2e2" : "#3f3f46",
               backgroundColor: level === "adset" ? "#1a1a2e" : "transparent",
               cursor: breadcrumbs.length > 1 ? "pointer" : "default",
             }}
@@ -759,7 +759,7 @@ export default function MediaBuyerPage() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm2 4h10v2H3V7zm2 4h6v2H5v-2z" opacity="0.8"/></svg>
             Ad Sets
             {level === "ad" && breadcrumbs.length > 2 && (
-              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#09090b" }}>
+              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#0c0c0c" }}>
                 1 selected
               </span>
             )}
@@ -776,7 +776,7 @@ export default function MediaBuyerPage() {
             onClick={() => breadcrumbs.length > 2 ? undefined : undefined}
             className="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-all"
             style={{
-              color: level === "ad" ? "#fff" : breadcrumbs.length > 2 ? "#a1a1aa" : "#3f3f46",
+              color: level === "ad" ? "#fff" : breadcrumbs.length > 2 ? "#e2e2e2" : "#3f3f46",
               backgroundColor: level === "ad" ? "#1a1a2e" : "transparent",
               cursor: breadcrumbs.length > 2 ? "pointer" : "default",
             }}
@@ -797,7 +797,7 @@ export default function MediaBuyerPage() {
                   key={i}
                   onClick={() => handleBreadcrumbClick(i + 1)}
                   className="text-xs px-2 py-1 rounded border transition-colors hover:border-[#c9a96e]/40"
-                  style={{ borderColor: "#27272a", color: "#a1a1aa" }}
+                  style={{ borderColor: "#27272a", color: "#e2e2e2" }}
                 >
                   {crumb.name?.substring(0, 25)}{crumb.name && crumb.name.length > 25 ? "..." : ""} ✕
                 </button>
@@ -844,7 +844,7 @@ export default function MediaBuyerPage() {
       {/* ── Data Table ── */}
       {!loading && !error && displayRows.length > 0 && (
         <div className="flex-1 px-6 pb-6">
-          <div className="rounded-xl border border-white/5 bg-[#0f0f12]/80 backdrop-blur overflow-hidden">
+          <div className="rounded-xl border border-white/5 bg-[#121212]/80 backdrop-blur overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse min-w-[1400px]">
                 {/* Header */}
@@ -854,15 +854,15 @@ export default function MediaBuyerPage() {
                     {level !== "ad" && (
                       <th
                         className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[90px]"
-                        style={{ color: "#a1a1aa" }}
+                        style={{ color: "#e2e2e2" }}
                       >
                         Delivery
                       </th>
                     )}
                     {/* Name column */}
                     <th
-                      className="sticky left-0 z-20 bg-[#0f0f12] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[280px] cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
-                      style={{ color: sortKey === "name" ? "#c9a96e" : "#a1a1aa" }}
+                      className="sticky left-0 z-20 bg-[#121212] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[280px] cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
+                      style={{ color: sortKey === "name" ? "#c9a96e" : "#e2e2e2" }}
                       onClick={() => handleSort("name")}
                     >
                       <div className="flex items-center gap-1">
@@ -880,7 +880,7 @@ export default function MediaBuyerPage() {
                           key={col.key}
                           className="px-4 py-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
                           style={{
-                            color: isSorted ? "#c9a96e" : "#a1a1aa",
+                            color: isSorted ? "#c9a96e" : "#e2e2e2",
                             textAlign: col.align,
                             minWidth: col.minWidth,
                           }}
@@ -938,7 +938,7 @@ export default function MediaBuyerPage() {
                             </td>
                           )}
                           {/* Name / Date column */}
-                          <td className="sticky left-0 z-10 bg-[#0f0f12] px-4 py-3 text-sm min-w-[280px]">
+                          <td className="sticky left-0 z-10 bg-[#121212] px-4 py-3 text-sm min-w-[280px]">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
                                 {isAdDaily && hasCallsToShow && (
@@ -983,9 +983,9 @@ export default function MediaBuyerPage() {
                         {/* Expanded Sales Calls */}
                         {isAdDaily && isExpanded && callsForDate.length > 0 && (
                           <>
-                            <tr className="border-t border-white/5 bg-[#131318]">
+                            <tr className="border-t border-white/5 bg-[#121212]">
                               <td
-                                className="sticky left-0 z-10 bg-[#131318] px-4 py-2 text-xs font-semibold uppercase tracking-wider"
+                                className="sticky left-0 z-10 bg-[#121212] px-4 py-2 text-xs font-semibold uppercase tracking-wider"
                                 style={{ color: "#c9a96e" }}
                               >
                                 Sales Calls
@@ -1032,9 +1032,9 @@ export default function MediaBuyerPage() {
                 {/* Totals Row */}
                 {totalsRow && (
                   <tfoot>
-                    <tr className="border-t-2 border-white/10 bg-[#0f0f12]">
+                    <tr className="border-t-2 border-white/10 bg-[#121212]">
                       {level !== "ad" && <td className="px-3 py-3" />}
-                      <td className="sticky left-0 z-10 bg-[#0f0f12] px-4 py-3 text-sm font-bold text-white">
+                      <td className="sticky left-0 z-10 bg-[#121212] px-4 py-3 text-sm font-bold text-white">
                         Total
                       </td>
                       {COLUMNS.map((col) => {

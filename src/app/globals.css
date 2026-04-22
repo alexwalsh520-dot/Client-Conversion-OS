@@ -2,10 +2,10 @@
 
 :root {
   /* ── Deep black / charcoal base ────────────────────── */
-  --bg-primary: #09090b;
-  --bg-secondary: #0f0f12;
-  --bg-card: rgba(16, 16, 20, 0.75);
-  --bg-card-hover: rgba(24, 24, 30, 0.85);
+  --bg-primary: #0c0c0c;
+  --bg-secondary: #121212;
+  --bg-card: rgba(18, 18, 18, 0.75);
+  --bg-card-hover: rgba(26, 26, 26, 0.85);
   --bg-glass: rgba(255, 255, 255, 0.025);
   --bg-glass-hover: rgba(255, 255, 255, 0.055);
 
@@ -13,8 +13,8 @@
   --border-hover: rgba(255, 255, 255, 0.14);
   --border-glass: rgba(255, 255, 255, 0.05);
 
-  --text-primary: #f0f0f2;
-  --text-secondary: #a1a1aa;
+  --text-primary: #ffffff;
+  --text-secondary: #e2e2e2;
   --text-muted: #52525b;
 
   /* ── Accent palette: warm gold + sage ──────────────── */
@@ -44,12 +44,12 @@
   /* ═══════════════════════════════════════════════════════════════════
      MOZI METRICS — CSS variables used by mozi components
      ═══════════════════════════════════════════════════════════════════ */
-  --bg: #07070a;
-  --surface: rgba(14,14,18,0.92);
+  --bg: #0c0c0c;
+  --surface: rgba(18,18,18,0.92);
   --border: rgba(255,255,255,0.06);
-  --text: #f2f2f4;
-  --text-2: rgba(242,242,244,0.7);
-  --text-3: rgba(242,242,244,0.38);
+  --text: #ffffff;
+  --text-2: #e2e2e2;
+  --text-3: rgba(255,255,255,0.55);
   --gold: #c9a96e;
   --gold-bg: rgba(201,169,110,0.08);
   --green: #5fdb8e;
@@ -827,7 +827,7 @@ select.form-input option {
   border-radius: 10px;
   border: none;
   background: linear-gradient(135deg, var(--accent) 0%, #b89550 100%);
-  color: #0a0a0c;
+  color: #0c0c0c;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;

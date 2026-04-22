@@ -133,7 +133,7 @@ function Section({
           className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-150"
           style={{
             background: saving ? 'rgba(201,169,110,0.3)' : GOLD,
-            color: '#07070a',
+            color: '#0c0c0c',
             opacity: saving ? 0.7 : 1,
           }}
         >
@@ -345,7 +345,7 @@ export default function MoziSettingsPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: '#07070a' }}
+        style={{ background: '#0c0c0c' }}
       >
         <div
           className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
@@ -356,12 +356,12 @@ export default function MoziSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ color: '#f2f2f4' }}>
+    <div className="min-h-screen" style={{ color: '#ffffff' }}>
       {/* ── Toast ───────────────────────────────────────────────────── */}
       {toast && (
         <div
           className="fixed top-4 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium animate-fade-in"
-          style={{ background: GOLD, color: '#07070a' }}
+          style={{ background: GOLD, color: '#0c0c0c' }}
         >
           {toast}
         </div>
@@ -784,14 +784,14 @@ export default function MoziSettingsPage() {
               className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-2"
               style={{
                 background: syncing ? 'rgba(201,169,110,0.3)' : GOLD,
-                color: '#07070a',
+                color: '#0c0c0c',
                 opacity: syncing ? 0.7 : 1,
               }}
             >
               {syncing && (
                 <div
                   className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin"
-                  style={{ borderColor: '#07070a transparent #07070a #07070a' }}
+                  style={{ borderColor: '#0c0c0c transparent #0c0c0c #0c0c0c' }}
                 />
               )}
               {syncing ? 'Syncing...' : 'Sync Now'}

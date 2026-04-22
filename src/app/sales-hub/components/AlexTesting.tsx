@@ -505,7 +505,7 @@ function CashChart({
             cx={p.x}
             cy={p.y}
             r={hoverIdx === i ? 6 : 3}
-            fill={hoverIdx === i ? "#c9a96e" : "#0f0f12"}
+            fill={hoverIdx === i ? "#c9a96e" : "#121212"}
             stroke="#c9a96e"
             strokeWidth={hoverIdx === i ? 2.5 : 1.5}
             style={{ transition: "r 0.15s ease, fill 0.15s ease, stroke-width 0.15s ease" }}
@@ -1544,7 +1544,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
               background: "#7ec9a0",
               bottom: -1,
               right: -1,
-              border: "1.5px solid #0f0f12",
+              border: "1.5px solid #121212",
             }}
           />
         </div>
