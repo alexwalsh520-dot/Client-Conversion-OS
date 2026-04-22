@@ -1,0 +1,27 @@
+name: Follow-up scheduler cron
+
+# GitHub Actions scheduled workflow replaces Vercel cron on Hobby plan.
+# Minimum interval is 5 minutes — acceptable since our shortest cadence gap
+# is 15 minutes, so worst-case delay is 20 minutes (imperceptible to the lead).
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # every 5 minutes
+  workflow_dispatch:         # also allow manual trigger from the Actions tab
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit /api/cron/followup-drain
+        run: |
+          response=$(curl -sS -o /tmp/body.txt -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://client-conversion-os.vercel.app/api/cron/followup-drain")
+          echo "HTTP $response"
+          cat /tmp/body.txt
+          if [ "$response" != "200" ]; then
+            echo "::error::cron drain returned non-200"
+            exit 1
+          fi
