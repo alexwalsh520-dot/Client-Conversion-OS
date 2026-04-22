@@ -1,42 +1,68 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 const MODEL = "claude-sonnet-4-20250514";
-const ANALYSIS_VERSION = "dm-stage-v1";
+// Bumped when the prompt changes so webhook re-classifies stale conversations.
+const ANALYSIS_VERSION = "dm-stage-v2";
 
+// The funnel on the client dashboard no longer uses goal/gap/stakes/qualified.
+// Only `in_discovery` matters: after the `lead_engaged` tag, did the lead
+// respond substantively to the next setter message (usually a discovery
+// voice note)?
+//
+// `booking_readiness_score` is kept as a coarse 0–100 signal for the sales
+// manager agent. `ai_confidence` is kept so we can down-weight uncertain
+// calls. `stage_evidence` returns one short quote explaining the in_discovery
+// verdict.
 export interface DmStageClassification {
-  goal_clear: boolean;
-  gap_clear: boolean;
-  stakes_clear: boolean;
-  qualified: boolean;
+  in_discovery: boolean;
   booking_readiness_score: number;
   ai_confidence: number;
   stage_evidence: {
-    goal_clear?: string;
-    gap_clear?: string;
-    stakes_clear?: string;
-    qualified?: string;
+    in_discovery?: string;
   };
 }
 
-const SYSTEM_PROMPT = `You are classifying fitness sales DM conversations into funnel stages.
+const SYSTEM_PROMPT = `You are classifying a fitness sales DM conversation.
 
-Be conservative. Accuracy matters more than optimism.
+You return a single yes/no on whether the prospect has entered the DISCOVERY
+phase of the conversation.
 
-Return TRUE only when the conversation contains explicit evidence.
-If the stage is implied, weak, or ambiguous, return FALSE.
+Definition of IN_DISCOVERY:
+The prospect has moved past a one-word acknowledgement and has started
+opening up. They say something with real content about any of these:
+- their goal (what result they want)
+- their current situation (where they are now, what they've tried)
+- what is holding them back or frustrating them
+- why they are reaching out now
 
-Stage definitions:
-- goal_clear: The prospect clearly states the result they want.
-- gap_clear: The prospect clearly explains both where they are now OR what is missing/holding them back.
-- stakes_clear: The prospect clearly states the cost of staying stuck, why now matters, or what happens if nothing changes.
-- qualified: The conversation clearly shows both fit for the coaching call and real ability/willingness to invest beyond a low-ticket freebie mindset.
+Examples that are IN_DISCOVERY (return true):
+- "I want to lose 20 lbs before summer and I keep falling off on weekends."
+- "Honestly I've been stuck for a year and my energy is shot."
+- "My main goal is getting lean. I work out but my diet is garbage."
+
+Examples that are NOT in_discovery (return false):
+- "yeah"
+- "ok"
+- "k"
+- "thanks"
+- "👍"
+- "interested"
+- A single emoji or sticker
+- "sounds good"
+- One-word replies with no content
+- The prospect has not replied at all after the setter's follow-up
+
+Be strict. The bar is: "could a setter actually run discovery off this reply?"
+If the reply is a bare acknowledgement, return false.
 
 Also return:
-- booking_readiness_score: integer 0-100
-- ai_confidence: number 0-1
-- stage_evidence: one short quote/paraphrase per TRUE stage
+- booking_readiness_score: integer 0–100 (rough feel for how close to booking)
+- ai_confidence: number 0–1
+- stage_evidence.in_discovery: one short quote/paraphrase justifying true,
+  or a short reason for false.
 
-Output JSON only. No markdown.`;
+Output JSON only. No markdown. Shape:
+{"in_discovery": boolean, "booking_readiness_score": integer, "ai_confidence": number, "stage_evidence": {"in_discovery": string}}`;
 
 function stripCodeFence(text: string): string {
   return text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -56,22 +82,17 @@ function parseClassification(text: string): DmStageClassification {
   }
 
   const parsed = JSON.parse(match[0]);
+  const evidence =
+    typeof parsed.stage_evidence?.in_discovery === "string"
+      ? parsed.stage_evidence.in_discovery
+      : undefined;
+
   return {
-    goal_clear: Boolean(parsed.goal_clear),
-    gap_clear: Boolean(parsed.gap_clear),
-    stakes_clear: Boolean(parsed.stakes_clear),
-    qualified: Boolean(parsed.qualified),
+    in_discovery: Boolean(parsed.in_discovery),
     booking_readiness_score: clampScore(parsed.booking_readiness_score, 0, 100, 0),
     ai_confidence: clampScore(parsed.ai_confidence, 0, 1, 0),
     stage_evidence: {
-      goal_clear:
-        typeof parsed.stage_evidence?.goal_clear === "string" ? parsed.stage_evidence.goal_clear : undefined,
-      gap_clear:
-        typeof parsed.stage_evidence?.gap_clear === "string" ? parsed.stage_evidence.gap_clear : undefined,
-      stakes_clear:
-        typeof parsed.stage_evidence?.stakes_clear === "string" ? parsed.stage_evidence.stakes_clear : undefined,
-      qualified:
-        typeof parsed.stage_evidence?.qualified === "string" ? parsed.stage_evidence.qualified : undefined,
+      in_discovery: evidence,
     },
   };
 }
@@ -91,7 +112,7 @@ export async function analyzeDmStages(
 
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 700,
+    max_tokens: 500,
     system: SYSTEM_PROMPT,
     messages: [
       {

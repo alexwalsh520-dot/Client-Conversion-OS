@@ -2,7 +2,7 @@ import { syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
 import type { GhlConversationMessage } from "@/lib/ghl-conversations";
 import { getServiceSupabase } from "@/lib/supabase";
 
-type DetectedLinkTag = "call_link_sent" | "sub_link_sent";
+type DetectedLinkTag = "call_link_sent" | "sub_link_sent" | "challenge_link_sent";
 
 interface DetectedLinkEvent {
   tagName: DetectedLinkTag;
@@ -26,6 +26,13 @@ const DEFAULT_SUB_LINK_PATTERNS = [
   "checkout.stripe.com",
   "billing.stripe.com",
   "stripe.link",
+];
+
+// Challenge link = the free-challenge school link we drop early in the funnel.
+// URL-only match (no text-hint fallback) so the word "challenge" in chat never
+// tags the stage by itself.
+const DEFAULT_CHALLENGE_LINK_PATTERNS = [
+  "skool.com",
 ];
 
 const BOOKING_TEXT_HINTS = [
@@ -125,6 +132,10 @@ function classifyMessage(message: GhlConversationMessage): DetectedLinkEvent | n
   const body = normalizeText(message.body);
   const bookingPatterns = getPatterns("DM_BOOKING_LINK_PATTERNS", DEFAULT_BOOKING_LINK_PATTERNS);
   const subPatterns = getPatterns("DM_SUBSCRIPTION_LINK_PATTERNS", DEFAULT_SUB_LINK_PATTERNS);
+  const challengePatterns = getPatterns(
+    "DM_CHALLENGE_LINK_PATTERNS",
+    DEFAULT_CHALLENGE_LINK_PATTERNS,
+  );
 
   const matchedSubUrl = urls.find((url) => matchesPattern(url, subPatterns)) || null;
   if (matchedSubUrl || hasAnyHint(body, SUBSCRIPTION_TEXT_HINTS)) {
@@ -133,6 +144,19 @@ function classifyMessage(message: GhlConversationMessage): DetectedLinkEvent | n
       messageId: message.messageId,
       eventAt: message.sentAt || null,
       matchedUrl: matchedSubUrl || urls[0] || null,
+    };
+  }
+
+  // Challenge link comes before booking in the funnel, so prefer it when
+  // the message carries a skool.com URL. URL-only match, no text hints.
+  const matchedChallengeUrl =
+    urls.find((url) => matchesPattern(url, challengePatterns)) || null;
+  if (matchedChallengeUrl) {
+    return {
+      tagName: "challenge_link_sent",
+      messageId: message.messageId,
+      eventAt: message.sentAt || null,
+      matchedUrl: matchedChallengeUrl,
     };
   }
 

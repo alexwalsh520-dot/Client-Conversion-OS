@@ -171,6 +171,11 @@ async function upsertStageState(params: {
   if (!classification) return;
 
   const sb = getServiceSupabase();
+  // NOTE: the funnel now uses a single `in_discovery` stage (see
+  // src/lib/dm-stage-ai.ts). We reuse the legacy `goal_clear` column as the
+  // storage slot for that boolean so we don't need a migration. The other
+  // legacy columns (gap_clear, stakes_clear, qualified) are written as false
+  // and are no longer read by the dashboard.
   const { error } = await sb.from("dm_conversation_stage_state").upsert(
     {
       client,
@@ -178,10 +183,10 @@ async function upsertStageState(params: {
       setter_name: setterName,
       contact_id: contactId,
       conversation_id: conversationId,
-      goal_clear: classification.goal_clear,
-      gap_clear: classification.gap_clear,
-      stakes_clear: classification.stakes_clear,
-      qualified: classification.qualified,
+      goal_clear: classification.in_discovery,
+      gap_clear: false,
+      stakes_clear: false,
+      qualified: false,
       booking_readiness_score: classification.booking_readiness_score,
       ai_confidence: classification.ai_confidence,
       stage_evidence: classification.stage_evidence,

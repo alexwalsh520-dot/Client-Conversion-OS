@@ -1,7 +1,16 @@
 // DM metrics + funnel data
 //
-// Hard events come from manychat_tag_events.
-// Middle funnel stages come from dm_conversation_stage_state (AI classification of live GHL conversations).
+// 6-stage funnel (in order):
+//   1. new_lead          — ManyChat `new_lead` tag (hard event)
+//   2. challenge_sent    — outbound Skool link detected → `challenge_link_sent` tag
+//                          (auto-created by src/lib/dm-link-tracking.ts)
+//   3. replied           — ManyChat `lead_engaged` tag (hard event)
+//   4. in_discovery      — AI read: lead opened up substantively after lead_engaged.
+//                          Stored in dm_conversation_stage_state.goal_clear
+//                          (legacy column reused, see src/lib/dm-stage-ai.ts).
+//   5. call_link_sent    — ManyChat `call_link_sent` tag (hard event)
+//   6. booked            — GHL appointment OR sales tracker row (hybrid)
+//
 // NEVER falls back to dm_transcripts — those are for setter reviews only.
 
 import { fetchSheetData } from "./google-sheets";
@@ -44,15 +53,14 @@ const CLIENT_SETTERS: Record<Client, string[]> = {
 
 const FUNNEL_STAGE_DEFS = [
   { id: "new_lead", label: "New lead" },
-  { id: "lead_engaged", label: "Engaged" },
-  { id: "goal_clear", label: "Goal clear" },
-  { id: "gap_clear", label: "Gap clear" },
-  { id: "stakes_clear", label: "Stakes clear" },
-  { id: "qualified", label: "Qualified" },
-  { id: "call_link_sent", label: "Link sent" },
+  { id: "challenge_sent", label: "Challenge sent" },
+  { id: "replied", label: "Replied" },
+  { id: "in_discovery", label: "In discovery" },
+  { id: "call_link_sent", label: "Call link sent" },
   { id: "booked", label: "Booked" },
 ] as const;
 
+// Every stage in the new 6-stage funnel is tracked with real data.
 const LIVE_STAGE_TAGS = new Set(FUNNEL_STAGE_DEFS.map((stage) => stage.id));
 
 interface CohortLead {
@@ -219,6 +227,7 @@ export async function getMetrics(
     }
 
     const stageSubscribers = {
+      challenge_link_sent: new Set<string>(),
       lead_engaged: new Set<string>(),
       call_link_sent: new Set<string>(),
       sub_link_sent: new Set<string>(),
@@ -231,6 +240,7 @@ export async function getMetrics(
       for (const event of events) {
         const eventTime = new Date(event.event_at).getTime();
         if (eventTime < newLeadTime) continue;
+        if (event.tag_name === "challenge_link_sent") stageSubscribers.challenge_link_sent.add(lead.subscriberId);
         if (event.tag_name === "lead_engaged") stageSubscribers.lead_engaged.add(lead.subscriberId);
         if (event.tag_name === "call_link_sent") stageSubscribers.call_link_sent.add(lead.subscriberId);
         if (event.tag_name === "sub_link_sent") stageSubscribers.sub_link_sent.add(lead.subscriberId);
@@ -348,33 +358,34 @@ export async function getMetrics(
     }
 
     const funnelStageCounts = {
-      lead_engaged: 0,
-      goal_clear: 0,
-      gap_clear: 0,
-      stakes_clear: 0,
-      qualified: 0,
+      challenge_sent: 0,
+      replied: 0,
+      in_discovery: 0,
       call_link_sent: 0,
       booked: 0,
     };
 
+    // Monotone funnel: each stage subsumes the next. Later stages imply earlier
+    // ones — e.g. if a lead booked, they reached every step before booked even
+    // if an earlier tag got missed upstream.
     for (const lead of cohort.values()) {
       const state = stageStateMap.get(lead.subscriberId);
+      const hasChallengeTag = stageSubscribers.challenge_link_sent.has(lead.subscriberId);
       const engaged = stageSubscribers.lead_engaged.has(lead.subscriberId);
       const linkSent = stageSubscribers.call_link_sent.has(lead.subscriberId);
       const booked = bookedSubscribers.has(lead.subscriberId);
+      // `state.goal_clear` is the legacy column; the AI now stores in_discovery there.
+      const inDiscoveryAi = Boolean(state?.goal_clear);
 
-      const goalClear = engaged && Boolean(state?.goal_clear || linkSent || booked);
-      const gapClear = goalClear && Boolean(state?.gap_clear || linkSent || booked);
-      const stakesClear = gapClear && Boolean(state?.stakes_clear || linkSent || booked);
-      const qualified = stakesClear && Boolean(state?.qualified || linkSent || booked);
-      const callLinkSent = qualified && (linkSent || booked);
+      const replied = engaged || inDiscoveryAi || linkSent || booked;
+      const challengeSent = hasChallengeTag || replied;
+      const inDiscovery = replied && (inDiscoveryAi || linkSent || booked);
+      const callLinkSent = inDiscovery && (linkSent || booked);
       const bookedStage = callLinkSent && booked;
 
-      if (engaged) funnelStageCounts.lead_engaged += 1;
-      if (goalClear) funnelStageCounts.goal_clear += 1;
-      if (gapClear) funnelStageCounts.gap_clear += 1;
-      if (stakesClear) funnelStageCounts.stakes_clear += 1;
-      if (qualified) funnelStageCounts.qualified += 1;
+      if (challengeSent) funnelStageCounts.challenge_sent += 1;
+      if (replied) funnelStageCounts.replied += 1;
+      if (inDiscovery) funnelStageCounts.in_discovery += 1;
       if (callLinkSent) funnelStageCounts.call_link_sent += 1;
       if (bookedStage) funnelStageCounts.booked += 1;
     }
@@ -388,11 +399,9 @@ export async function getMetrics(
 
     for (const stage of funnel) {
       if (stage.id === "new_lead") stage.count = dashboard.newLeads;
-      if (stage.id === "lead_engaged") stage.count = funnelStageCounts.lead_engaged;
-      if (stage.id === "goal_clear") stage.count = funnelStageCounts.goal_clear;
-      if (stage.id === "gap_clear") stage.count = funnelStageCounts.gap_clear;
-      if (stage.id === "stakes_clear") stage.count = funnelStageCounts.stakes_clear;
-      if (stage.id === "qualified") stage.count = funnelStageCounts.qualified;
+      if (stage.id === "challenge_sent") stage.count = funnelStageCounts.challenge_sent;
+      if (stage.id === "replied") stage.count = funnelStageCounts.replied;
+      if (stage.id === "in_discovery") stage.count = funnelStageCounts.in_discovery;
       if (stage.id === "call_link_sent") stage.count = funnelStageCounts.call_link_sent;
       if (stage.id === "booked") stage.count = funnelStageCounts.booked;
     }

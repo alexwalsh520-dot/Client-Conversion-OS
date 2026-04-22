@@ -108,3 +108,28 @@ Notes:
 - If audio does not generate, check `ELEVENLABS_API_KEY`.
 - If the page says no creator voices exist, make sure the SQL table was created.
 - If send fails for a username, that person may not have messaged the connected Instagram account yet.
+
+## DM funnel script phases
+
+The client dashboard funnel on the sales hub tracks six stages, in this exact order. Every voice note and text the setter sends should map to one of these phases.
+
+1. **New lead** — a fresh DM came in. ManyChat applies the `new_lead` tag.
+2. **Challenge sent** — the lead confirms they want the free challenge and we send the Skool link. Any outbound message with a `skool.com` URL moves the lead here automatically. No manual tag needed.
+3. **Replied** — the lead answers the first open-ended question ("What made you interested in the challenge?"). ManyChat applies the `lead_engaged` tag.
+4. **In discovery** — the setter sends the discovery opener (voice note or text) and the lead responds with real content — their goal, current situation, or what's holding them back. One-word replies like "yeah", "ok", emoji, or "interested" do **not** count. AI reads the conversation and decides. See `src/lib/dm-stage-ai.ts`.
+5. **Call link sent** — the setter sends the booking link. ManyChat applies the `call_link_sent` tag, and any outbound booking URL is also auto-detected.
+6. **Booked** — the lead booked a call. Confirmed from GHL calendar or the sales tracker.
+
+### Rules for writing messages in each phase
+
+- **Challenge sent**: keep the delivery message short. One line, the link, then the open-ended question in a separate bubble. Do not stack.
+- **Replied → In discovery**: when the lead answers "what made you interested", the very next message should be the discovery voice note. That note asks for goal + what keeps them stuck, one question each. No stacked questions.
+- **In discovery → Call link sent**: do not send the booking link until the AI-detected `in_discovery` is true. If the lead is one-word replying, you have not earned the call yet — ask a better question.
+
+### How to read drop-offs
+
+- **New lead → Challenge sent** low: your initial confirmation script is dying. Either the first "are you here for the challenge" line is unclear or people are ghosting before answering.
+- **Challenge sent → Replied** low: the challenge was sent but the open-ended question did not pull a reply. Rewrite the question.
+- **Replied → In discovery** low: they answered the easy question but not the real one. The voice note is too broad, too long, or too robotic. This is the biggest lever on revenue.
+- **In discovery → Call link sent** low: setter is earning the conversation but not asking for the call. Script the bridge.
+- **Call link sent → Booked** low: the link copy or landing page is the problem, not the DM.

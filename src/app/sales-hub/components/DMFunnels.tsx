@@ -315,7 +315,7 @@ export default function DMFunnels({
       {selectedClient === "all" && (
         <ConnectedFunnel
           title="All Clients"
-          subtitle="Updates from live events and AI reads."
+          subtitle="New lead → challenge sent → replied → in discovery → call link sent → booked"
           stages={allClientStages}
           color="#2f6fff"
         />
@@ -346,8 +346,9 @@ export default function DMFunnels({
       >
         <Link2 size={14} style={{ color: "var(--accent)", marginTop: 1 }} />
         <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.55 }}>
-          The page now checks for fresh numbers on its own. Hard events come from the live system.
-          Middle steps come from AI reading the latest Instagram conversation.
+          New lead, Replied, Call link sent, and Booked come from live ManyChat and GHL events.
+          Challenge sent is detected from outbound Skool links in the DM. In discovery is an AI
+          read of whether the lead opened up substantively after the discovery voice note.
         </div>
       </div>
     </div>
