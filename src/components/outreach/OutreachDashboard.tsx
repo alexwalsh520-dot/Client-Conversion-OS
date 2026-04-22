@@ -17,12 +17,77 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { fmtNumber, fmtPercent } from "@/lib/formatters";
+import { getRuns } from "@/lib/outreach-store";
 import type {
   OutreachDashboardResponse,
   OutreachRangePreset,
+  OutreachChartPoint,
 } from "@/lib/outreach-dashboard-types";
 
 type ChartKey = "emailMessages" | "emailReplies" | "dmMessages" | "dmReplies";
+
+interface LocalDmTotals {
+  reachedInRange: number;
+  messagesInRange: number;
+  reachedAllTime: number;
+  byDate: Map<string, number>;
+}
+
+function isoDateFromRunTimestamp(ts: string, timeZone: string): string {
+  try {
+    const d = new Date(ts);
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return ts.slice(0, 10);
+  }
+}
+
+function computeLocalDmTotals(
+  startDate: string,
+  endDate: string,
+  timeZone: string,
+): LocalDmTotals {
+  const runs = getRuns();
+  const inRangeUsernames = new Set<string>();
+  const allTimeUsernames = new Set<string>();
+  const byDate = new Map<string, number>();
+  let messagesInRange = 0;
+
+  for (const run of runs) {
+    const usernames = run.colddms_usernames || [];
+    for (const u of usernames) {
+      if (u) allTimeUsernames.add(u.toLowerCase());
+    }
+
+    const runDate = isoDateFromRunTimestamp(run.timestamp, timeZone);
+    const inRange = runDate >= startDate && runDate <= endDate;
+    if (!inRange) continue;
+
+    let runAdded = 0;
+    for (const u of usernames) {
+      if (!u) continue;
+      const norm = u.toLowerCase();
+      if (!inRangeUsernames.has(norm)) {
+        inRangeUsernames.add(norm);
+        runAdded += 1;
+      }
+    }
+    messagesInRange += run.dms_queued || usernames.length;
+    byDate.set(runDate, (byDate.get(runDate) || 0) + (run.dms_queued || runAdded));
+  }
+
+  return {
+    reachedInRange: inRangeUsernames.size,
+    messagesInRange,
+    reachedAllTime: allTimeUsernames.size,
+    byDate,
+  };
+}
 
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
@@ -162,11 +227,16 @@ export default function OutreachDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedKey, setSelectedKey] = useState<ChartKey>("emailMessages");
+  const [localDm, setLocalDm] = useState<LocalDmTotals | null>(null);
 
   useEffect(() => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     setTimeZone(zone);
   }, []);
+
+  useEffect(() => {
+    setLocalDm(computeLocalDmTotals(startDate, endDate, timeZone));
+  }, [startDate, endDate, timeZone]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -228,9 +298,38 @@ export default function OutreachDashboard() {
     }
   };
 
-  const dmConnected = Boolean(data?.sources.dm.connected);
+  const ghlDmConnected = Boolean(data?.sources.dm.connected);
+  const dmSendsAvailable = ghlDmConnected || (localDm?.messagesInRange ?? 0) > 0 || (localDm?.reachedAllTime ?? 0) > 0;
+  const dmRepliesAvailable = ghlDmConnected; // replies still need a live source
   const selectedChannel: "email" | "dm" = selectedKey.startsWith("dm") ? "dm" : "email";
   const chartColor = CHANNEL_COLORS[selectedChannel];
+
+  // Effective DM values (GHL overrides local if connected, else local fills in)
+  const dmReachedInRange = ghlDmConnected
+    ? data?.dm.reachedInRange ?? 0
+    : localDm?.reachedInRange ?? 0;
+  const dmReachedAllTime = ghlDmConnected
+    ? data?.dm.reachedAllTime ?? 0
+    : localDm?.reachedAllTime ?? 0;
+  const dmMessagesInRange = ghlDmConnected
+    ? data?.dm.messagesInRange ?? 0
+    : localDm?.messagesInRange ?? 0;
+
+  // Merge local DM sends into chart if GHL isn't connected
+  const mergedChart: OutreachChartPoint[] = useMemo(() => {
+    if (!data) return [];
+    if (ghlDmConnected || !localDm) return data.chart;
+    return data.chart.map((p) => ({
+      ...p,
+      dmMessages: localDm.byDate.get(p.date) ?? 0,
+    }));
+  }, [data, ghlDmConnected, localDm]);
+
+  const dmSentSourceLabel = ghlDmConnected
+    ? "Live from GHL"
+    : (localDm?.messagesInRange ?? 0) > 0
+      ? "From saved Outreach Runs"
+      : "Run outreach below to populate";
 
   return (
     <div className="section">
@@ -447,43 +546,43 @@ export default function OutreachDashboard() {
             >
               <MetricCard
                 label="People DM'd"
-                value={dmConnected ? fmtNumber(data.dm.reachedInRange) : "—"}
-                detail={dmConnected ? `All time: ${fmtNumber(data.dm.reachedAllTime)}` : "Not tracked yet"}
+                value={dmSendsAvailable ? fmtNumber(dmReachedInRange) : "—"}
+                detail={dmSendsAvailable ? `All time: ${fmtNumber(dmReachedAllTime)}` : dmSentSourceLabel}
                 channel="dm"
                 chartKey="dmMessages"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
-                disabled={!dmConnected}
+                disabled={!dmSendsAvailable}
               />
               <MetricCard
                 label="DMs sent"
-                value={dmConnected ? fmtNumber(data.dm.messagesInRange) : "—"}
-                detail={dmConnected ? "Includes follow-ups" : "Not tracked yet"}
+                value={dmSendsAvailable ? fmtNumber(dmMessagesInRange) : "—"}
+                detail={dmSentSourceLabel}
                 channel="dm"
                 chartKey="dmMessages"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
-                disabled={!dmConnected}
+                disabled={!dmSendsAvailable}
               />
               <MetricCard
                 label="DM reply rate"
-                value={dmConnected ? fmtPercent(data.dm.replyRateInRange) : "—"}
-                detail={dmConnected ? `${fmtNumber(data.dm.repliesInRange)} replies` : "Not tracked yet"}
+                value={dmRepliesAvailable ? fmtPercent(data.dm.replyRateInRange) : "—"}
+                detail={dmRepliesAvailable ? `${fmtNumber(data.dm.repliesInRange)} replies` : "Replies need a live source"}
                 channel="dm"
                 chartKey="dmReplies"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
-                disabled={!dmConnected}
+                disabled={!dmRepliesAvailable}
               />
               <MetricCard
                 label="Positive DM replies"
-                value={dmConnected ? fmtPercent(data.dm.interestedReplyRateInRange) : "—"}
-                detail={dmConnected ? `${fmtNumber(data.dm.interestedRepliesInRange)} positive` : "Not tracked yet"}
+                value={dmRepliesAvailable ? fmtPercent(data.dm.interestedReplyRateInRange) : "—"}
+                detail={dmRepliesAvailable ? `${fmtNumber(data.dm.interestedRepliesInRange)} positive` : "Replies need a live source"}
                 channel="dm"
                 chartKey="dmReplies"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
-                disabled={!dmConnected}
+                disabled={!dmRepliesAvailable}
               />
             </div>
 
@@ -501,7 +600,7 @@ export default function OutreachDashboard() {
                 {CHART_TITLES[selectedKey]}
               </div>
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={data.chart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                <BarChart data={mergedChart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis
                     dataKey="label"
@@ -528,9 +627,18 @@ export default function OutreachDashboard() {
               </ResponsiveContainer>
             </div>
 
-            {!dmConnected && (
-              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                DM tracking not connected. {data.sources.dm.description}
+            {!ghlDmConnected && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                {dmSendsAvailable ? (
+                  <>
+                    DM sends are pulled from your Outreach Runs history on this browser (colddms.com queue).
+                    Reply rates need {" "}
+                    <span style={{ color: "var(--text-secondary)" }}>@matthew_conder</span> connected as
+                    an Instagram integration in GHL, or a separate data source, before they can be tracked.
+                  </>
+                ) : (
+                  <>DM tracking not connected. {data.sources.dm.description}</>
+                )}
               </div>
             )}
           </>
