@@ -86,14 +86,15 @@ function calculateProtein(weightKg: number, goal: GoalType): { grams: number; pe
   switch (goal) {
     case "fat_loss":
     case "recomp":
-      perKg = 2.2; // Higher in deficit to preserve lean mass (recomp behaves like a cut)
-      break;
     case "muscle_gain":
-      perKg = 1.8; // Sufficient for hypertrophy in surplus
+      // 2.2 g/kg = 1.0 g/lb minimum — matches coaching standard for any goal
+      // that involves muscle preservation or growth. Underfeeding protein
+      // during a bulk leaves gains on the table.
+      perKg = 2.2;
       break;
     case "maintain":
     default:
-      perKg = 1.6; // General health/performance
+      perKg = 1.8; // bumped from 1.6 → still covers general health/performance
       break;
   }
   return { grams: Math.round(weightKg * perKg), perKg };

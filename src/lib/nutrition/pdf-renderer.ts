@@ -316,9 +316,15 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
     doc.text(`Day ${day.dayNumber} — ${day.weekday}`, marginX, y);
     y += 30;
 
-    for (const meal of day.meals) {
-      // Ensure room; otherwise new page
-      const neededHeight = 20 + 22 + meal.ingredients.length * 18 + 22 + 20;
+    for (let mi = 0; mi < day.meals.length; mi++) {
+      const meal = day.meals[mi];
+      // Ensure room; otherwise new page.
+      // For the LAST meal, include the day-total band (~28pt) + its 20pt
+      // top spacing so the meal + day total never get split across pages.
+      const isLastMeal = mi === day.meals.length - 1;
+      const dayTotalBandRoom = isLastMeal ? 28 + 20 : 0;
+      const neededHeight =
+        20 + 22 + meal.ingredients.length * 18 + 22 + 20 + dayTotalBandRoom;
       if (y + neededHeight > pageHeight - marginBottom - 30) {
         doc.addPage();
         drawTopHeader();

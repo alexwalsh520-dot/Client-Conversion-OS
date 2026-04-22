@@ -30,18 +30,16 @@ export interface Tip {
 export function generateTips(ctx: TipsContext): Tip[] {
   const tips: Tip[] = [];
 
-  // 1. Hydration — personalized if water intake looks low
-  const waterLower = (ctx.waterIntake || "").toLowerCase();
-  const lowWater =
-    waterLower.includes("less than") ||
-    waterLower.includes("not enough") ||
-    waterLower.includes("hardly") ||
-    waterLower.includes("little") ||
-    /^\s*\d+\s*(cup|oz)/.test(waterLower);
+  // 1. Hydration — parse the intake field into an approximate daily liters
+  // figure, then only surface the "scolding" variant if they're actually below
+  // ~2.5 L/day. A phrase like "a little less than a gallon" is ~3.4 L and
+  // should NOT trigger the drink-more tip.
+  const liters = estimateDailyLiters(ctx.waterIntake);
+  const actuallyLow = liters !== null && liters < 2.5;
   tips.push({
     title: "Stay Hydrated",
-    body: lowWater
-      ? "Your intake form suggests water intake is on the low side. Aim for at least 3-4 liters per day and more on training days. Carry a water bottle and refill it 3-4 times throughout the day."
+    body: actuallyLow
+      ? `Your intake suggests about ${liters.toFixed(1)} L/day, which is on the low side. Aim for at least 3 L per day and more on training days — carry a water bottle and refill it 3 times through the day.`
       : "Drink at least 3-4 liters of water daily. Increase intake on training days or in hot weather. Carry a water bottle and aim to finish it 3-4 times throughout the day.",
   });
 
@@ -149,4 +147,46 @@ export function generateTips(ctx: TipsContext): Tip[] {
   });
 
   return tips;
+}
+
+/**
+ * Parse free-text water intake into an approximate L/day figure.
+ * Handles: "a gallon" (3.8 L), "half a gallon" (1.9 L), "3 liters", "100 oz",
+ * "8 cups", "a little less than a gallon" (~3.4 L), etc.
+ * Returns null if unparseable.
+ */
+function estimateDailyLiters(raw: string): number | null {
+  if (!raw) return null;
+  const s = raw.toLowerCase();
+
+  // Explicit numeric + unit
+  const litersMatch = s.match(/(\d+(?:\.\d+)?)\s*(l|liter|litre)/);
+  if (litersMatch) return parseFloat(litersMatch[1]);
+
+  const mlMatch = s.match(/(\d+(?:\.\d+)?)\s*ml/);
+  if (mlMatch) return parseFloat(mlMatch[1]) / 1000;
+
+  const ozMatch = s.match(/(\d+(?:\.\d+)?)\s*(oz|ounce|ounces|fl\s*oz)/);
+  if (ozMatch) return parseFloat(ozMatch[1]) * 0.0295735;
+
+  const cupsMatch = s.match(/(\d+(?:\.\d+)?)\s*(cup|cups)/);
+  if (cupsMatch) return parseFloat(cupsMatch[1]) * 0.2366; // 8 oz cup
+
+  // Range "40-50 oz" → take the midpoint
+  const rangeOzMatch = s.match(/(\d+)\s*[-–—to]+\s*(\d+)\s*(oz|ounce|ounces|fl\s*oz)/);
+  if (rangeOzMatch) {
+    const mid = (parseInt(rangeOzMatch[1], 10) + parseInt(rangeOzMatch[2], 10)) / 2;
+    return mid * 0.0295735;
+  }
+
+  // "a gallon" / "1 gallon" (3.785 L)
+  if (/\ba?\s*gallon\b/.test(s)) {
+    if (/half\s+a?\s*gallon|1\/2\s*gallon|0\.5\s*gallon/.test(s)) return 1.9;
+    if (/(?:less than|under|below).*gallon/.test(s)) return 3.4; // a bit under
+    if (/(?:more than|over|above).*gallon/.test(s)) return 4.2;
+    return 3.8;
+  }
+
+  // Nothing recognized
+  return null;
 }

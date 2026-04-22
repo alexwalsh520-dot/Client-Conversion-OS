@@ -393,6 +393,37 @@ export async function POST(req: NextRequest) {
     // deterministic and guaranteed to land within ±5% on nearly every day.
     optimizeAllDays(days, byslug, targets);
 
+    // ---------- ENJOYED-FOODS COVERAGE CHECK ----------
+    // For each token the client listed in foods_enjoy / protein_preferences,
+    // check whether any ingredient across the 7 days matches. Surface misses
+    // to the reviewing nutritionist via the response notes.
+    const enjoyedTokens = [
+      ...parsePreferredFoods(intake.foods_enjoy, ""), // foods only, proteins handled via preferredProteins separately
+    ].filter((t) => t && t.length >= 3);
+    const allSlugsUsed = new Set<string>();
+    const allNamesUsed: string[] = [];
+    for (const d of days) {
+      for (const m of d.meals) {
+        for (const ing of m.ingredients) {
+          allSlugsUsed.add(ing.slug);
+          const row = byslug.get(ing.slug);
+          if (row) allNamesUsed.push(row.name.toLowerCase(), ...(row.aliases || []).map((a) => a.toLowerCase()));
+        }
+      }
+    }
+    const haystack = [...allSlugsUsed, ...allNamesUsed].join(" ").toLowerCase();
+    const missingEnjoyed: string[] = [];
+    for (const token of enjoyedTokens) {
+      if (!haystack.includes(token.toLowerCase())) {
+        missingEnjoyed.push(token);
+      }
+    }
+    if (missingEnjoyed.length > 0) {
+      targets.notes.push(
+        `Note for reviewer: couldn't slot these enjoyed foods into the plan (likely composite dishes or not in ingredient DB): ${missingEnjoyed.join(", ")}.`
+      );
+    }
+
     // --- Compute macros from DB, assemble PdfDay[] ---
     const pdfDays: PdfDay[] = days.map((d) => {
       const pdfMeals: PdfMeal[] = d.meals.map((m) => {
