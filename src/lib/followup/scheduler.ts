@@ -60,8 +60,37 @@ export async function drainDueJobs(limit = 100) {
 
   let sent = 0, failed = 0, closed = 0, cancelled = 0;
 
+  // Per-subscriber cache of "does this lead still have the AI-FOLLOWUP tag?".
+  // Checked once per unique (client, subscriber) at the start of each loop
+  // iteration. If the tag has been removed (by the setter's reply rule,
+  // a manual untag, or anything else), we cancel every pending job for that
+  // lead and skip the rest of their jobs in this drain.
+  const tagActiveCache = new Map<string, boolean>();
+
   for (const job of due ?? []) {
     try {
+      const cacheKey = `${job.client}:${job.subscriber_id}`;
+      let stillActive = tagActiveCache.get(cacheKey);
+      if (stillActive === undefined) {
+        try {
+          stillActive = await hasFollowupTag(job.client, job.subscriber_id);
+        } catch (err) {
+          // Fail open: if ManyChat's API is down we'd rather send one extra
+          // follow-up than silently stop a whole campaign.
+          // eslint-disable-next-line no-console
+          console.error(`[followup] tag check failed for ${cacheKey}:`, err);
+          stillActive = true;
+        }
+        tagActiveCache.set(cacheKey, stillActive);
+        if (!stillActive) {
+          await sb.rpc('followup_cancel_pending', { p_subscriber_id: job.subscriber_id });
+        }
+      }
+      if (!stillActive) {
+        cancelled++;
+        continue;
+      }
+
       // Claim the job atomically
       const { data: claimed, error: claimErr } = await sb
         .from('followup_jobs')
@@ -190,6 +219,24 @@ async function addManyChatCloseTag(client: string, subscriberId: string) {
 // reply-received webhook can call it directly.
 export async function removeManyChatFollowupTag(client: string, subscriberId: string) {
   return manyChatTagCall('removeTagByName', client, subscriberId, 'AI-FOLLOWUP');
+}
+
+// Check whether a ManyChat subscriber still has the AI-FOLLOWUP tag.
+// Returns true if present, false if not. Throws on network/API error.
+async function hasFollowupTag(client: string, subscriberId: string): Promise<boolean> {
+  const key = getManyChatKey(client);
+  const url = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`ManyChat getInfo failed (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as {
+    status?: string;
+    data?: { tags?: Array<{ name: string }> };
+  };
+  const tags = data.data?.tags ?? [];
+  return tags.some((t) => t.name === 'AI-FOLLOWUP');
 }
 
 // =============================================================
