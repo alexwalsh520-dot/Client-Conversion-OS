@@ -14,6 +14,7 @@ import {
   ChevronRight,
   LogOut,
   BarChart3,
+  Calculator,
   Menu,
   X,
   Monitor,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/outreach-runs", label: "Outreach", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
+  { href: "/accountant", label: "Accountant", icon: Calculator },
 ];
 
 export default function Sidebar() {
