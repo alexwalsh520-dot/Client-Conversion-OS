@@ -76,9 +76,10 @@ export async function drainDueJobs(limit = 100) {
       }
 
       if (job.type === 'close') {
-        // Close job: just mark the jobs table. Downstream close tagging
-        // happens via a separate ManyChat flow once we pass subscriber_id.
-        // For now we record the event and rely on ManyChat's own close flow.
+        // Close job: add the `AI-CLOSED` tag in ManyChat so their archive
+        // rule fires. subscriber_id is ManyChat's Contact Id (same value
+        // we use for sends), so this is a direct API call.
+        await addManyChatCloseTag(job.client, job.subscriber_id);
         await sb.from('followup_jobs').update({ status: 'sent', updated_at: new Date().toISOString() }).eq('id', job.id);
         closed++;
         continue;
@@ -137,6 +138,39 @@ export async function drainDueJobs(limit = 100) {
   }
 
   return { processed: (due ?? []).length, sent, failed, closed, cancelled };
+}
+
+// =============================================================
+// Add the AI-CLOSED tag in ManyChat when a close job fires.
+// ManyChat-side, a rule on this tag archives the conversation.
+// =============================================================
+async function addManyChatCloseTag(client: string, subscriberId: string) {
+  const keyMap: Record<string, string | undefined> = {
+    tyson_sonnek: process.env.MANYCHAT_API_KEY_TYSON,
+    keith_holland: process.env.MANYCHAT_API_KEY_KEITH,
+    zoe_and_emily: process.env.MANYCHAT_API_KEY_ZOE_EMILY,
+  };
+  const key = keyMap[client]?.trim();
+  if (!key) {
+    throw new Error(`No ManyChat API key configured for client "${client}"`);
+  }
+
+  const res = await fetch('https://api.manychat.com/fb/subscriber/addTagByName', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      subscriber_id: subscriberId,
+      tag_name: 'AI-CLOSED',
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`ManyChat addTag AI-CLOSED failed (${res.status}): ${text}`);
+  }
 }
 
 // =============================================================
