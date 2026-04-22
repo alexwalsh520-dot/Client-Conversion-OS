@@ -145,8 +145,11 @@ export async function POST(_req: NextRequest) {
     return { ...r, brokenReason: reasons.join(" + ") };
   });
 
-  // Concurrency-limited batched USDA search calls.
-  const concurrency = 5;
+  // Concurrency-limited batched USDA search calls with inter-batch delay.
+  // Lower concurrency + small delay avoids USDA per-second burst throttling
+  // that returned empty results on the first run.
+  const concurrency = 2;
+  const interBatchDelayMs = 150;
   const rows: Array<
     typeof targets[number] & {
       candidates: {
@@ -166,6 +169,9 @@ export async function POST(_req: NextRequest) {
       }))
     );
     rows.push(...results);
+    if (i + concurrency < targets.length) {
+      await new Promise((r) => setTimeout(r, interBatchDelayMs));
+    }
   }
 
   return NextResponse.json({
