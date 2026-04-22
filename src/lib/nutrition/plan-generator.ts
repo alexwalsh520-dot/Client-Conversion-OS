@@ -82,6 +82,22 @@ in the list. If the allowed list contains \`tomato_roma_raw\` but not
 use isn't in the list, pick the closest semantic match from the list instead.
 Slugs not in the list will cause the plan to fail validation and be rejected.
 
+CRITICAL — exact slug match required (these are the most common mistakes —
+do not make them):
+- Do NOT use \`bell_pepper_raw\` → use \`bell_pepper_red_raw\` or
+  \`bell_pepper_green_raw\`. The allowed list does not contain a generic
+  "bell_pepper_raw" — you must pick a color variant.
+- Do NOT use \`tomato_raw\` → use \`tomato_roma_raw\` or \`tomato_red_raw\`.
+- Do NOT drop color, variety, or cooking-state modifiers from the allowed
+  list (e.g. "chicken_breast" is wrong if the list has
+  "chicken_breast_cooked_skinless").
+- If unsure which variant to pick, default to the most common one:
+  red bell pepper over green, Roma tomato over generic red, skinless
+  cooked over raw for meats.
+- The rule applies to EVERY slug you write. Before emitting JSON, scan your
+  ingredient list and verify each slug appears VERBATIM in the allowed list
+  above. If any slug doesn't match, replace it.
+
 MACRO HIERARCHY — strictness applies top-down:
 1. CALORIES must be within ±5% of target, in BOTH directions. Do not undershoot OR overshoot.
    Plans that run 10%+ under target leave the client hungry and under-fueled.
