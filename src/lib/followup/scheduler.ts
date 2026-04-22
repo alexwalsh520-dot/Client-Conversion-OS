@@ -193,7 +193,8 @@ export async function removeManyChatFollowupTag(client: string, subscriberId: st
 }
 
 // =============================================================
-// Cancel all pending jobs for a subscriber + attribute reply.
+// Cancel all pending jobs for a subscriber + attribute reply
+// + remove the AI-FOLLOWUP tag in ManyChat.
 // Called from the Instagram webhook when an inbound message arrives.
 // =============================================================
 export async function cancelPendingAndAttributeReply(params: {
@@ -212,6 +213,25 @@ export async function cancelPendingAndAttributeReply(params: {
     p_reply_text: params.replyText,
     p_received_at: params.receivedAt,
   });
+
+  // Best-effort: derive client from the most recent followup_job for this
+  // subscriber, then strip the AI-FOLLOWUP tag in ManyChat so the setter UI
+  // reflects that this lead has exited AI management. Non-fatal if it fails.
+  try {
+    const { data: recentJob } = await sb
+      .from('followup_jobs')
+      .select('client')
+      .eq('subscriber_id', params.subscriberId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentJob?.client) {
+      await removeManyChatFollowupTag(recentJob.client, params.subscriberId);
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[followup] remove AI-FOLLOWUP tag failed:', err);
+  }
 
   return {
     cancelled: cancelled ?? 0,
