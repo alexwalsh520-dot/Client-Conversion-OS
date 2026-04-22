@@ -29,26 +29,29 @@ export async function POST() {
       const accountLabel = SOURCE_ACCOUNT;
       const { accounts } = await getMercuryAccounts(apiToken);
 
+      // Mercury returns one entry per sub-account (checking, savings, treasury, etc).
+      // Sum balances across ALL sub-accounts so the saved row is the org total,
+      // not just the last sub-account's balance.
+      let totalBalanceDollars = 0;
       for (const acct of accounts) {
-        const currentBalance = (acct as Record<string, unknown>).currentBalance as
+        const cb = (acct as Record<string, unknown>).currentBalance as
           | number
           | undefined;
+        if (typeof cb === "number") totalBalanceDollars += cb;
+      }
 
-        if (currentBalance !== undefined) {
-          const balanceCents = Math.round(currentBalance * 100);
-          await sb
-            .from("mozi_mercury_balances")
-            .upsert(
-              {
-                account: accountLabel,
-                balance: balanceCents,
-                snapshot_date: today,
-                synced_at: new Date().toISOString(),
-              },
-              { onConflict: "account,snapshot_date" }
-            );
-        }
+      await sb.from("mozi_mercury_balances").upsert(
+        {
+          account: accountLabel,
+          balance: Math.round(totalBalanceDollars * 100),
+          snapshot_date: today,
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "account,snapshot_date" }
+      );
 
+      // Pull transactions per sub-account (each has its own transaction list).
+      for (const acct of accounts) {
         const { transactions } = await getMercuryTransactions(apiToken, acct.id, {
           start: startDate,
           end: today,

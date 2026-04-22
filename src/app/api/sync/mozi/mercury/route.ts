@@ -44,37 +44,39 @@ export async function POST(request: Request) {
       // 1. Get all accounts for this org
       const { accounts } = await getMercuryAccounts(apiToken);
 
+      // 2. Sum balances across all sub-accounts (checking + savings + treasury +
+      // any sub-accounts). A single upsert per org per day.
+      let totalBalanceDollars = 0;
       for (const acct of accounts) {
-        // 2. Upsert current balance
-        const currentBalance = (acct as Record<string, unknown>)
-          .currentBalance as number | undefined;
+        const cb = (acct as Record<string, unknown>).currentBalance as
+          | number
+          | undefined;
+        if (typeof cb === "number") totalBalanceDollars += cb;
+      }
 
-        if (currentBalance !== undefined) {
-          const balanceCents = Math.round(currentBalance * 100);
+      const { error: balanceError } = await supabase
+        .from("mozi_mercury_balances")
+        .upsert(
+          {
+            account: accountLabel,
+            balance: Math.round(totalBalanceDollars * 100),
+            snapshot_date: today,
+            synced_at: new Date().toISOString(),
+          },
+          { onConflict: "account,snapshot_date" }
+        );
 
-          const { error: balanceError } = await supabase
-            .from("mozi_mercury_balances")
-            .upsert(
-              {
-                account: accountLabel,
-                balance: balanceCents,
-                snapshot_date: today,
-                synced_at: new Date().toISOString(),
-              },
-              { onConflict: "account,snapshot_date" }
-            );
+      if (balanceError) {
+        console.error(
+          `Failed to upsert balance for ${accountLabel}:`,
+          balanceError.message
+        );
+      } else {
+        totalSynced++;
+      }
 
-          if (balanceError) {
-            console.error(
-              `Failed to upsert balance for ${accountLabel}:`,
-              balanceError.message
-            );
-          } else {
-            totalSynced++;
-          }
-        }
-
-        // 3. Get transactions from last 30 days
+      // 3. Pull transactions from each sub-account (each has its own tx list).
+      for (const acct of accounts) {
         const { transactions } = await getMercuryTransactions(
           apiToken,
           acct.id,
