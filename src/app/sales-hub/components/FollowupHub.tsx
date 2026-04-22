@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2, Zap, MessageSquare, TrendingUp, Pencil, Check, X,
-  Play, Pause, Trash2, Plus, RefreshCw,
+  Play, Pause, Trash2, Plus, RefreshCw, ImagePlus, Type,
 } from "lucide-react";
 import type { Client } from "../types";
 
@@ -87,6 +87,15 @@ function slotLabel(slot: number | null) {
     5: "Slot 5 (+120h)",
   };
   return labels[slot] ?? `Slot ${slot}`;
+}
+
+async function uploadMediaFile(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/followup/media/upload", { method: "POST", body: fd });
+  const json = await res.json();
+  if (!res.ok || !json.url) throw new Error(json.error ?? "upload failed");
+  return json.url as string;
 }
 
 /* --------------------------- component --------------------------- */
@@ -351,14 +360,17 @@ function SplitTestTab({ variants }: { variants: Variant[] }) {
                   {list.map((v, i) => (
                     <tr key={v.id} style={rowStyle}>
                       <Td>
-                        <div style={{ maxWidth: 480 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: 480 }}>
                           {i === 0 && v.sends >= 15 && v.reply_rate > 0 && (
-                            <span style={{ marginRight: 6, color: "#d4ae5a", fontWeight: 700 }}>★</span>
+                            <span style={{ color: "#d4ae5a", fontWeight: 700 }}>★</span>
                           )}
-                          <span style={{ color: "var(--text-primary)" }}>{v.body ?? `[${v.type}]`}</span>
-                          {v.note && (
-                            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{v.note}</div>
-                          )}
+                          <MediaPreview variant={v} />
+                          <span style={{
+                            color: "var(--text-primary)",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {v.body ?? (v.type === "meme" ? "[image]" : v.type === "voicenote" ? "[voice note]" : `[${v.type}]`)}
+                          </span>
                         </div>
                       </Td>
                       <Td align="right">{v.sends}</Td>
@@ -398,9 +410,16 @@ function VariantEditorTab({
   onChange: () => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState<{ body: string; note: string }>({ body: "", note: "" });
+  const [draftBody, setDraftBody] = useState("");
+
   const [creatingSlot, setCreatingSlot] = useState<number | null>(null);
-  const [newVariant, setNewVariant] = useState({ body: "", note: "" });
+  const [newType, setNewType] = useState<"text" | "meme">("text");
+  const [newBody, setNewBody] = useState("");
+  const [newMediaUrl, setNewMediaUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
   const [busy, setBusy] = useState(false);
 
   const bySlot = useMemo(() => {
@@ -413,9 +432,31 @@ function VariantEditorTab({
     return m;
   }, [variants]);
 
+  const resetCreateForm = () => {
+    setCreatingSlot(null);
+    setNewType("text");
+    setNewBody("");
+    setNewMediaUrl(null);
+    setUploadErr("");
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleFilePicked = async (file: File) => {
+    setUploading(true);
+    setUploadErr("");
+    try {
+      const url = await uploadMediaFile(file);
+      setNewMediaUrl(url);
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : "upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const startEdit = (v: Variant) => {
     setEditingId(v.id);
-    setDraft({ body: v.body ?? "", note: v.note ?? "" });
+    setDraftBody(v.body ?? "");
   };
 
   const saveEdit = async (id: number) => {
@@ -424,7 +465,7 @@ function VariantEditorTab({
       await fetch(`/api/followup/variants/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: draft.body, note: draft.note }),
+        body: JSON.stringify({ body: draftBody }),
       });
       setEditingId(null);
       onChange();
@@ -454,20 +495,21 @@ function VariantEditorTab({
   };
 
   const createVariant = async (slot: number) => {
-    if (!newVariant.body.trim()) return;
+    if (newType === "text" && !newBody.trim()) return;
+    if (newType === "meme" && !newMediaUrl) return;
     setBusy(true);
     try {
       await fetch(`/api/followup/variants`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client, slot, type: "text",
-          body: newVariant.body.trim(),
-          note: newVariant.note.trim() || null,
+          client, slot,
+          type: newType,
+          body: newBody.trim() || null,
+          media_url: newType === "meme" ? newMediaUrl : null,
         }),
       });
-      setCreatingSlot(null);
-      setNewVariant({ body: "", note: "" });
+      resetCreateForm();
       onChange();
     } finally { setBusy(false); }
   };
@@ -490,28 +532,22 @@ function VariantEditorTab({
                     opacity: v.status === "paused" ? 0.55 : 1,
                   }}
                 >
+                  <MediaPreview variant={v} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {editingId === v.id ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <textarea
-                          value={draft.body}
-                          onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                          rows={2}
-                          style={textareaStyle}
-                        />
-                        <input
-                          value={draft.note}
-                          onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-                          placeholder="note (optional)"
-                          style={inputStyle}
-                        />
-                      </div>
+                      <textarea
+                        value={draftBody}
+                        onChange={(e) => setDraftBody(e.target.value)}
+                        rows={2}
+                        style={textareaStyle}
+                      />
                     ) : (
                       <div>
-                        <div style={{ fontSize: 13, color: "var(--text-primary)" }}>{v.body ?? `[${v.type}]`}</div>
-                        <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                          {v.note && <span>{v.note}</span>}
-                          <span>{v.sends} sends · {fmtPct(v.reply_rate)} reply</span>
+                        <div style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                          {v.body ?? (v.type === "meme" ? "[image — no caption]" : v.type === "voicenote" ? "[voice note]" : `[${v.type}]`)}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                          {v.sends} sends · {fmtPct(v.reply_rate)} reply
                         </div>
                       </div>
                     )}
@@ -524,7 +560,7 @@ function VariantEditorTab({
                       </>
                     ) : (
                       <>
-                        <IconBtn onClick={() => startEdit(v)} title="Edit"><Pencil size={12} /></IconBtn>
+                        <IconBtn onClick={() => startEdit(v)} title="Edit caption/body"><Pencil size={12} /></IconBtn>
                         <IconBtn onClick={() => toggleStatus(v)} disabled={busy} title={v.status === "active" ? "Pause" : "Activate"}>
                           {v.status === "active" ? <Pause size={12} /> : <Play size={12} />}
                         </IconBtn>
@@ -536,28 +572,74 @@ function VariantEditorTab({
               ))}
 
               {creatingSlot === slot ? (
-                <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px dashed var(--border-subtle)", background: "rgba(201,169,110,0.05)", display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px dashed var(--border-subtle)", background: "rgba(201,169,110,0.05)", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* Type selector */}
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <TypeBtn active={newType === "text"} onClick={() => setNewType("text")}>
+                      <Type size={11} /> Text
+                    </TypeBtn>
+                    <TypeBtn active={newType === "meme"} onClick={() => setNewType("meme")}>
+                      <ImagePlus size={11} /> Meme
+                    </TypeBtn>
+                  </div>
+
+                  {/* Meme uploader */}
+                  {newType === "meme" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {newMediaUrl ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <img src={newMediaUrl} alt="preview" style={{ width: 60, height: 60, borderRadius: 6, objectFit: "cover", border: "1px solid var(--border-subtle)" }} />
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {newMediaUrl}
+                          </div>
+                          <button onClick={() => setNewMediaUrl(null)} style={{ ...btnStyle, padding: "4px 8px" }}>
+                            <X size={11} /> Change
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            ref={fileRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/gif,image/webp"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handleFilePicked(f);
+                            }}
+                            style={{ display: "none" }}
+                          />
+                          <button
+                            onClick={() => fileRef.current?.click()}
+                            disabled={uploading}
+                            style={{ ...btnStyle, borderStyle: "dashed", padding: "14px", justifyContent: "center" }}
+                          >
+                            {uploading ? <Loader2 size={12} className="spin" /> : <ImagePlus size={12} />}
+                            {uploading ? "Uploading…" : "Pick an image (jpg, png, gif, webp · max 5MB)"}
+                          </button>
+                        </>
+                      )}
+                      {uploadErr && <div style={{ fontSize: 10, color: "var(--danger)" }}>{uploadErr}</div>}
+                    </div>
+                  )}
+
+                  {/* Body / caption textarea (optional for memes) */}
                   <textarea
-                    autoFocus
-                    placeholder="Variant message body…"
-                    value={newVariant.body}
-                    onChange={(e) => setNewVariant({ ...newVariant, body: e.target.value })}
+                    placeholder={newType === "meme" ? "Optional caption…" : "Variant message body…"}
+                    value={newBody}
+                    onChange={(e) => setNewBody(e.target.value)}
                     rows={2}
                     style={textareaStyle}
                   />
-                  <input
-                    placeholder="note (optional, e.g. 'name ping', 'scarcity')"
-                    value={newVariant.note}
-                    onChange={(e) => setNewVariant({ ...newVariant, note: e.target.value })}
-                    style={inputStyle}
-                  />
+
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => createVariant(slot)} disabled={busy || !newVariant.body.trim()}
-                      style={{ ...btnStyle, background: "var(--accent)", color: "#111" }}>
+                    <button
+                      onClick={() => createVariant(slot)}
+                      disabled={busy || uploading || (newType === "text" && !newBody.trim()) || (newType === "meme" && !newMediaUrl)}
+                      style={{ ...btnStyle, background: "var(--accent)", color: "#111", opacity: (busy || uploading) ? 0.6 : 1 }}
+                    >
                       <Check size={12} /> Add
                     </button>
-                    <button onClick={() => { setCreatingSlot(null); setNewVariant({ body: "", note: "" }); }}
-                      style={btnStyle}>
+                    <button onClick={resetCreateForm} style={btnStyle}>
                       <X size={12} /> Cancel
                     </button>
                   </div>
@@ -585,6 +667,32 @@ function VariantEditorTab({
 
 /* --------------------------- primitives --------------------------- */
 
+function MediaPreview({ variant }: { variant: Variant }) {
+  if (variant.type === "meme" && variant.media_url) {
+    return (
+      <img
+        src={variant.media_url}
+        alt=""
+        style={{
+          width: 36, height: 36, borderRadius: 6, objectFit: "cover",
+          border: "1px solid var(--border-subtle)", flexShrink: 0,
+        }}
+      />
+    );
+  }
+  if (variant.type === "voicenote" && variant.media_url) {
+    return (
+      <div style={{
+        width: 36, height: 36, borderRadius: 6,
+        background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--text-muted)", fontSize: 10, flexShrink: 0,
+      }}>🎙️</div>
+    );
+  }
+  return null;
+}
+
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -600,6 +708,21 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
     >
       {children}
     </button>
+  );
+}
+
+function TypeBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+        borderRadius: 5, border: `1px solid ${active ? "var(--accent)" : "var(--border-subtle)"}`,
+        background: active ? "var(--accent-soft)" : "transparent",
+        color: active ? "var(--accent)" : "var(--text-muted)",
+        fontSize: 10, fontWeight: 500, cursor: "pointer",
+      }}
+    >{children}</button>
   );
 }
 
@@ -680,11 +803,6 @@ const textareaStyle: React.CSSProperties = {
   width: "100%", padding: "8px 10px", borderRadius: 6,
   border: "1px solid var(--border-subtle)", background: "var(--bg-elevated)",
   color: "var(--text-primary)", fontSize: 13, resize: "vertical", fontFamily: "inherit",
-};
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "6px 10px", borderRadius: 6,
-  border: "1px solid var(--border-subtle)", background: "var(--bg-elevated)",
-  color: "var(--text-primary)", fontSize: 11,
 };
 const btnStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 5,
