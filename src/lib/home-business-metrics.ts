@@ -14,7 +14,7 @@ import { CLIENTS } from "@/lib/mock-data";
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchAcquisitionCostsBreakdown, type AcquisitionCostsBreakdown } from "@/lib/mozi-acquisition-costs";
 import { fetchFulfillmentPayroll, type FulfillmentPayrollBreakdown } from "@/lib/mozi-coach-payroll";
-import { fetchSalesCohort, type SalesCohort, fetchSalesCommissions, type CommissionBreakdown } from "@/lib/mozi-sales-commissions";
+import { fetchSalesCohort, type SalesCohort, fetchSalesCommissions, type CommissionBreakdown, fetchSalesLtgpData, type SalesLtgp } from "@/lib/mozi-sales-commissions";
 import { fetchKeithAdSpendLast30d } from "@/lib/mozi-keith-ads";
 import type { ClientKey } from "@/lib/mozi-costs-config";
 
@@ -80,12 +80,23 @@ export interface ClientBreakdown {
   cacAcquisitionLines: AcquisitionSoftwareLine[]; // itemized per-client software
   cacManychatPerClientCents: number;
 
-  // LTGP math
+  // LTGP from sales tracker (source of truth)
+  ltgpSalesTrackerCents: number;                  // final LTGP number used
+  ltgpWindowStart: string;
+  ltgpWindowEnd: string;
+  ltgpUniqueCustomers: number;
+  ltgpTotalPurchases: number;
+  ltgpAvgPurchasesPerCustomer: number;
+  ltgpAovCents: number;                           // AOV across whole LTGP window
+  ltgpGrossMarginPct: number;                     // 0-100
+  ltgpDirectCostPerSaleCents: number;             // coaching + fees + commissions per sale
+
+  // Stripe cross-reference for LTGP
   monthlyGpPerActiveClientCents: number;
-  ltvPerCustomerCents: number;                    // mean realized lifetime revenue
-  ltvMedianCents: number;                         // median lifetime revenue
-  ltvCustomerCount: number;                       // how many customers went into mean
-  avgTenureMonths: number;                        // avg observed tenure in months
+  ltvPerCustomerCents: number;                    // Stripe observed mean
+  ltvMedianCents: number;                         // Stripe observed median
+  ltvCustomerCount: number;                       // Stripe paying-customer count
+  avgTenureMonths: number;                        // Stripe avg observed tenure
 
   // Capacity context
   activeClients: number;
@@ -275,6 +286,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     salesCohort,
     commissionsResult,
     keithAdSpendSheet,
+    salesLtgpData,
   ] = await Promise.all([
     loadAllCharges(),
     sb.from("mozi_meta_ad_spend").select("influencer, spend, date").gte("date", thirtyDaysAgoYmd),
@@ -286,6 +298,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     fetchSalesCohort({ dateFrom: thirtyDaysAgoYmd, dateTo: nowYmd }).catch((e) => { console.error("[mozi] sales cohort failed:", e); return null; }),
     fetchSalesCommissions({ dateFrom: thirtyDaysAgoYmd, dateTo: nowYmd }).catch((e) => { console.error("[mozi] commissions failed:", e); return null; }),
     fetchKeithAdSpendLast30d().catch((e) => { console.error("[mozi] Keith ad sheet failed:", e); return null; }),
+    fetchSalesLtgpData().catch((e) => { console.error("[mozi] sales LTGP data failed:", e); return null; }),
   ]);
 
   if (adSpendRes.error) throw adSpendRes.error;
@@ -373,7 +386,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     const cacTotal = adSpend + mercuryAcq;
     const cacPerClient = cohort.count > 0 ? Math.round(cacTotal / cohort.count) : 0;
 
-    // LTGP from Stripe observation
+    // LTGP from Stripe observation — retained as a cross-reference signal.
     const ltgpOut = computeLtgp(
       allCharges,
       clientKey,
@@ -381,7 +394,53 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
       paymentFeePct,
       chargebackPct,
     );
-    const { ltgpCents, ltvCents, ltvMedianCents, ltvCount, avgTenureMonths, monthlyGpPerActiveCents } = ltgpOut;
+    const { ltvCents, ltvMedianCents, ltvCount, avgTenureMonths, monthlyGpPerActiveCents } = ltgpOut;
+
+    // LTGP PRIMARY: sales tracker (Hormozi shortcut).
+    //   LTGP = AOV × gross_margin × avg_purchases_per_customer
+    //   - AOV, total purchases, unique customers: from sales tracker (YTD)
+    //   - Direct costs per sale: coaching (month 1) + fees (3.9% × AOV) + real commissions
+    //   - Gross margin = 1 - direct_costs / AOV
+    const wideBucket = salesLtgpData
+      ? clientKey === "total"
+        ? {
+            uniqueCustomers: salesLtgpData.keith.uniqueCustomers + salesLtgpData.tyson.uniqueCustomers,
+            totalPurchases: salesLtgpData.keith.totalPurchases + salesLtgpData.tyson.totalPurchases,
+            totalRevenueCents: salesLtgpData.keith.totalRevenueCents + salesLtgpData.tyson.totalRevenueCents,
+            totalSetterCommissionsCents:
+              salesLtgpData.keith.totalSetterCommissionsCents + salesLtgpData.tyson.totalSetterCommissionsCents,
+            totalCloserCommissionsCents:
+              salesLtgpData.keith.totalCloserCommissionsCents + salesLtgpData.tyson.totalCloserCommissionsCents,
+            windowStart: salesLtgpData.keith.windowStart,
+            windowEnd: salesLtgpData.keith.windowEnd,
+          }
+        : {
+            uniqueCustomers: salesLtgpData[clientKey].uniqueCustomers,
+            totalPurchases: salesLtgpData[clientKey].totalPurchases,
+            totalRevenueCents: salesLtgpData[clientKey].totalRevenueCents,
+            totalSetterCommissionsCents: salesLtgpData[clientKey].totalSetterCommissionsCents,
+            totalCloserCommissionsCents: salesLtgpData[clientKey].totalCloserCommissionsCents,
+            windowStart: salesLtgpData[clientKey].windowStart,
+            windowEnd: salesLtgpData[clientKey].windowEnd,
+          }
+      : null;
+    const wideAov = wideBucket && wideBucket.totalPurchases > 0
+      ? Math.round(wideBucket.totalRevenueCents / wideBucket.totalPurchases)
+      : 0;
+    const avgPurchases = wideBucket && wideBucket.uniqueCustomers > 0
+      ? wideBucket.totalPurchases / wideBucket.uniqueCustomers
+      : 0;
+    const wideFeeDrag = Math.round(wideAov * feeDragPct);
+    const wideSetterPerSale = wideBucket && wideBucket.totalPurchases > 0
+      ? Math.round(wideBucket.totalSetterCommissionsCents / wideBucket.totalPurchases)
+      : 0;
+    const wideCloserPerSale = wideBucket && wideBucket.totalPurchases > 0
+      ? Math.round(wideBucket.totalCloserCommissionsCents / wideBucket.totalPurchases)
+      : 0;
+    const ltgpDirectCostPerSale = perEndClientCoachingMonthly + wideFeeDrag + wideSetterPerSale + wideCloserPerSale;
+    const grossMarginCents = Math.max(0, wideAov - ltgpDirectCostPerSale);
+    const grossMarginPct = wideAov > 0 ? Math.round((grossMarginCents / wideAov) * 100) : 0;
+    const ltgpSalesTracker = Math.round(grossMarginCents * avgPurchases);
 
     const activeClients = clientKey === "total" ? totalActive : activeByClient[clientKey];
 
@@ -440,7 +499,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
       metrics: {
         gp30: cohort.count > 0 ? gp30 : null,
         cac: cohort.count > 0 ? cacPerClient : null,
-        ltgp: ltgpCents > 0 ? ltgpCents : null,
+        ltgp: ltgpSalesTracker > 0 ? ltgpSalesTracker : null,     // source of truth: sales tracker
         capacityPct: null, // pending coach safe-max
       },
       notes,
@@ -467,6 +526,18 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
         cacAcquisitionLines,
         cacManychatPerClientCents: manychatPerClient,
 
+        // LTGP primary (sales tracker)
+        ltgpSalesTrackerCents: ltgpSalesTracker,
+        ltgpWindowStart: wideBucket?.windowStart ?? "",
+        ltgpWindowEnd: wideBucket?.windowEnd ?? "",
+        ltgpUniqueCustomers: wideBucket?.uniqueCustomers ?? 0,
+        ltgpTotalPurchases: wideBucket?.totalPurchases ?? 0,
+        ltgpAvgPurchasesPerCustomer: avgPurchases,
+        ltgpAovCents: wideAov,
+        ltgpGrossMarginPct: grossMarginPct,
+        ltgpDirectCostPerSaleCents: ltgpDirectCostPerSale,
+
+        // Stripe cross-reference
         monthlyGpPerActiveClientCents: monthlyGpPerActiveCents,
         ltvPerCustomerCents: ltvCents,
         ltvMedianCents,

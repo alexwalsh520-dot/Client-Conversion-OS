@@ -162,3 +162,88 @@ export async function fetchSalesCommissions(options?: {
 
 // Re-export the CommissionBreakdown type for backwards compat.
 export type CommissionBreakdown = Awaited<ReturnType<typeof fetchSalesCommissions>>;
+
+// ── LTGP data from sales tracker (wide window for repeat-purchase detection) ──
+// Per-client: unique customers, total sales rows, AOV, revenue, and
+// commission subtotals so we can derive the gross margin needed for
+// LTGP = AOV × margin × avg_purchases_per_customer.
+export interface SalesLtgpBucket {
+  uniqueCustomers: number;            // distinct customer names
+  totalPurchases: number;             // total cash-collected rows
+  avgPurchasesPerCustomer: number;    // = totalPurchases / uniqueCustomers
+  aovCents: number;                   // avg cash per row
+  totalRevenueCents: number;
+  totalSetterCommissionsCents: number;
+  totalCloserCommissionsCents: number;
+  windowStart: string;
+  windowEnd: string;
+}
+export type SalesLtgp = Record<ClientKey, SalesLtgpBucket>;
+
+function normalizeCustomerName(raw: string | undefined): string {
+  return (raw || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+export async function fetchSalesLtgpData(options?: {
+  dateFrom?: string;    // default: start of current calendar year
+  dateTo?: string;      // default: today
+}): Promise<SalesLtgp> {
+  const to = options?.dateTo ?? ymd(new Date());
+  const from = options?.dateFrom ?? `${new Date().getFullYear()}-01-01`;
+
+  const rows: SheetRow[] = await fetchSheetData(from, to);
+
+  const customers: Record<ClientKey, Map<string, number>> = {
+    keith: new Map(),
+    tyson: new Map(),
+  };
+  const totals: Record<ClientKey, {
+    totalPurchases: number;
+    totalRevenueCents: number;
+    totalSetterCommissionsCents: number;
+    totalCloserCommissionsCents: number;
+  }> = {
+    keith: { totalPurchases: 0, totalRevenueCents: 0, totalSetterCommissionsCents: 0, totalCloserCommissionsCents: 0 },
+    tyson: { totalPurchases: 0, totalRevenueCents: 0, totalSetterCommissionsCents: 0, totalCloserCommissionsCents: 0 },
+  };
+
+  for (const row of rows) {
+    const cashCents = Math.round(row.cashCollected * 100);
+    if (cashCents <= 0) continue;
+    const client = offerToClient(row.offer);
+    if (!client) continue;
+    const name = normalizeCustomerName(row.name);
+    if (!name) continue;
+
+    const setterCents = Math.round((cashCents * setterRateFor(row.setter)) / 100);
+    const closerCents = row.closer ? Math.round((cashCents * CLOSER_COMMISSION_PCT) / 100) : 0;
+
+    const t = totals[client];
+    t.totalPurchases += 1;
+    t.totalRevenueCents += cashCents;
+    t.totalSetterCommissionsCents += setterCents;
+    t.totalCloserCommissionsCents += closerCents;
+
+    customers[client].set(name, (customers[client].get(name) ?? 0) + 1);
+  }
+
+  const result = {} as SalesLtgp;
+  for (const client of ["keith", "tyson"] as ClientKey[]) {
+    const unique = customers[client].size;
+    const t = totals[client];
+    const avgPurchases = unique > 0 ? t.totalPurchases / unique : 0;
+    const aov = t.totalPurchases > 0 ? Math.round(t.totalRevenueCents / t.totalPurchases) : 0;
+    result[client] = {
+      uniqueCustomers: unique,
+      totalPurchases: t.totalPurchases,
+      avgPurchasesPerCustomer: avgPurchases,
+      aovCents: aov,
+      totalRevenueCents: t.totalRevenueCents,
+      totalSetterCommissionsCents: t.totalSetterCommissionsCents,
+      totalCloserCommissionsCents: t.totalCloserCommissionsCents,
+      windowStart: from,
+      windowEnd: to,
+    };
+  }
+  return result;
+}

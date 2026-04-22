@@ -78,6 +78,18 @@ interface BusinessMetricBreakdown {
   cacAcquisitionLines: AcquisitionSoftwareLine[];
   cacManychatPerClientCents: number;
 
+  // LTGP (sales tracker primary)
+  ltgpSalesTrackerCents: number;
+  ltgpWindowStart: string;
+  ltgpWindowEnd: string;
+  ltgpUniqueCustomers: number;
+  ltgpTotalPurchases: number;
+  ltgpAvgPurchasesPerCustomer: number;
+  ltgpAovCents: number;
+  ltgpGrossMarginPct: number;
+  ltgpDirectCostPerSaleCents: number;
+
+  // Stripe cross-reference
   monthlyGpPerActiveClientCents: number;
   ltvPerCustomerCents: number;
   ltvMedianCents: number;
@@ -771,26 +783,38 @@ function CacDrilldown({ b }: { b: BusinessMetricBreakdown }) {
 }
 
 function LtgpDrilldown({ b, ltgpCents }: { b: BusinessMetricBreakdown; ltgpCents: number | null }) {
-  const coachingOverTenure = Math.round(b.coachingCostPerNewClientCents * b.avgTenureMonths);
-  const feeDragOverLtv = Math.round(b.ltvPerCustomerCents * 0.039);
+  const grossMarginPerSale = b.ltgpAovCents - b.ltgpDirectCostPerSaleCents;
   return (
     <>
       <DrillHeader
         title="LTGP per customer"
-        formula="mean(lifetime revenue) − coaching × avg tenure − fee drag"
-        source={`Stripe (only status='succeeded' charges) · ${b.ltvCustomerCount} paying customers with ≥$200 lifetime`}
+        formula="AOV × gross margin % × avg purchases per customer"
+        source={`Sales tracker, ${b.ltgpWindowStart} → ${b.ltgpWindowEnd} (source of truth) · Stripe used for cross-check below`}
       />
-      <BreakdownRow label={`Paying customers in scope`} value={String(b.ltvCustomerCount)} />
-      <BreakdownRow label="Mean lifetime revenue (LTV)" value={fmtCentsMetric(b.ltvPerCustomerCents)} />
-      <BreakdownRow label="Median lifetime revenue" value={fmtCentsMetric(b.ltvMedianCents)} />
-      <BreakdownRow label="Avg observed tenure" value={`${b.avgTenureMonths.toFixed(1)} months`} />
+      <BreakdownRow label="AOV (cash collected ÷ sales)" value={fmtCentsMetric(b.ltgpAovCents)} />
+      <BreakdownRow label="− Direct costs per sale (coaching + fees + commissions)" value={fmtCentsMetric(-b.ltgpDirectCostPerSaleCents)} />
+      <BreakdownRow label="= Gross profit per sale" value={fmtCentsMetric(grossMarginPerSale)} />
+      <BreakdownRow label="Gross margin %" value={`${b.ltgpGrossMarginPct}%`} />
       <div style={{ height: 4 }} />
-      <BreakdownRow label={`− Coaching × ${b.avgTenureMonths.toFixed(1)} months`} value={fmtCentsMetric(-coachingOverTenure)} />
-      <BreakdownRow label="− Fee drag (3.9% × LTV)" value={fmtCentsMetric(-feeDragOverLtv)} />
+      <BreakdownRow label="Total sales in window" value={String(b.ltgpTotalPurchases)} />
+      <BreakdownRow label="Unique customers in window" value={String(b.ltgpUniqueCustomers)} />
+      <BreakdownRow label="Avg purchases per customer" value={b.ltgpAvgPurchasesPerCustomer.toFixed(2)} />
       <div style={{ height: 2 }} />
-      <BreakdownRow label="→ LTGP" value={fmtCentsMetric(ltgpCents)} bold />
+      <BreakdownRow
+        label={`→ LTGP = ${fmtCentsMetric(grossMarginPerSale)} × ${b.ltgpAvgPurchasesPerCustomer.toFixed(2)}`}
+        value={fmtCentsMetric(ltgpCents)}
+        bold
+      />
+      <div style={{ height: 10 }} />
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--text-muted)" }}>
+        Stripe cross-check
+      </div>
+      <BreakdownRow label="Paying customers in Stripe (succeeded, ≥$200)" value={String(b.ltvCustomerCount)} />
+      <BreakdownRow label="Mean Stripe lifetime revenue" value={fmtCentsMetric(b.ltvPerCustomerCents)} />
+      <BreakdownRow label="Median Stripe lifetime revenue" value={fmtCentsMetric(b.ltvMedianCents)} />
+      <BreakdownRow label="Avg observed tenure" value={`${b.avgTenureMonths.toFixed(1)} months`} />
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, fontStyle: "italic" }}>
-        Note: if LTGP &gt; AOV, it means some customers buy again (mean gets pulled up by repeat buyers).
+        Sales tracker is source of truth. Stripe shown as sanity check — should be in the same ballpark. If they diverge a lot, a sales or a Stripe sync is off.
       </div>
     </>
   );
