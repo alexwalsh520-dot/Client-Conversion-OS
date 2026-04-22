@@ -119,9 +119,12 @@ function ConnectedFunnel({
   compact?: boolean;
 }) {
   const baseline = stages.find((stage) => stage.tracked && stage.count > 0)?.count || 0;
-  const minWidth = compact ? 980 : 1220;
+  // Scale width to the actual stage count so 6 stages fit without horizontal
+  // scroll. Keeps per-column width comfortable at any stage count.
+  const perColumn = compact ? 96 : 112;
   const graphHeight = compact ? 118 : 150;
   const paddingX = compact ? 10 : 12;
+  const minWidth = stages.length * perColumn + paddingX * 2;
   const slot = (minWidth - paddingX * 2) / stages.length;
   const centerY = graphHeight * 0.62;
   const polygonPoints = buildPolygonPoints(stages, baseline, minWidth, graphHeight, compact);
@@ -144,7 +147,7 @@ function ConnectedFunnel({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${stages.length}, minmax(${compact ? 100 : 118}px, 1fr))`,
+            gridTemplateColumns: `repeat(${stages.length}, minmax(${perColumn}px, 1fr))`,
             gap: 0,
             marginBottom: 8,
           }}
