@@ -1,4 +1,3 @@
-import { searchDuplicateContact } from "@/lib/ghl";
 import { fetchConversationMessages } from "@/lib/ghl-conversations";
 import type {
   OutreachDashboardResponse,
@@ -10,8 +9,6 @@ const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
 const EMAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const DM_CACHE_TTL_MS = 2 * 60 * 1000;
-const EMAIL_CONTACT_CACHE_TTL_MS = 30 * 60 * 1000;
-const EMAIL_CONTACT_LOOKUP_CONCURRENCY = 10;
 const DM_MESSAGE_FETCH_CONCURRENCY = 8;
 const DM_CONV_PAGE_SIZE = 100;
 const DM_MAX_CONVERSATIONS_IN_RANGE = 1500;
@@ -107,11 +104,6 @@ let dmDatasetCache:
     }
   | null = null;
 let dmDatasetPromise: Promise<DmDataset> | null = null;
-
-const emailContactCache = new Map<
-  string,
-  { expiresAt: number; contactId: string | null }
->();
 
 const SYSTEM_REPLY_PATTERNS = [
   "message blocked",
@@ -630,63 +622,8 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function resolveContactIdForEmail(email: string) {
-  const normalized = email.trim().toLowerCase();
-  const cached = emailContactCache.get(normalized);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.contactId;
-  }
-
-  try {
-    const data = await searchDuplicateContact(normalized);
-    const contactId =
-      data?.contact?.id ||
-      data?.contact?.contactId ||
-      data?.id ||
-      null;
-
-    emailContactCache.set(normalized, {
-      expiresAt: Date.now() + EMAIL_CONTACT_CACHE_TTL_MS,
-      contactId,
-    });
-
-    return contactId;
-  } catch {
-    emailContactCache.set(normalized, {
-      expiresAt: Date.now() + EMAIL_CONTACT_CACHE_TTL_MS,
-      contactId: null,
-    });
-    return null;
-  }
-}
-
-async function resolveEmailContactIds(emails: string[]) {
-  const uniqueEmails = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
-  const missingEmails = uniqueEmails.filter((email) => {
-    const cached = emailContactCache.get(email);
-    return !cached || cached.expiresAt <= Date.now();
-  });
-
-  await mapWithConcurrency(
-    missingEmails,
-    EMAIL_CONTACT_LOOKUP_CONCURRENCY,
-    async (email) => resolveContactIdForEmail(email),
-  );
-
-  const mapping = new Map<string, string | null>();
-  for (const email of uniqueEmails) {
-    mapping.set(email, emailContactCache.get(email)?.contactId || null);
-  }
-  return mapping;
-}
-
 async function buildEmailSummaries() {
   const emailRows = await getEmailDataset();
-  const emails = emailRows
-    .map((row) => row.to?.trim().toLowerCase() || "")
-    .filter(Boolean);
-  const contactMap = await resolveEmailContactIds(emails);
-
   const leads: EmailLeadSummary[] = [];
 
   for (const row of emailRows) {
@@ -735,11 +672,9 @@ async function buildEmailSummaries() {
           ? "neutral"
           : "neutral";
 
-    const contactId = contactMap.get(email) || null;
-
     leads.push({
       email,
-      personId: contactId ? `contact:${contactId}` : `email:${email}`,
+      personId: `email:${email}`,
       sentTimes,
       humanReplyTimes,
       classification,
