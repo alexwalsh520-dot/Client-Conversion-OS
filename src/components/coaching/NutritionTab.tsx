@@ -146,7 +146,7 @@ function MealPlanTaskPanel({
   const [newComment, setNewComment] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lastStatus, setLastStatus] = useState<{
-    badge?: "green" | "red";
+    badge?: "green" | "yellow" | "red";
     canShipToClient?: boolean;
     tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
     tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
@@ -192,7 +192,7 @@ function MealPlanTaskPanel({
         error?: string;
         pdfUrl?: string;
         status?: {
-          badge?: "green" | "red";
+          badge?: "green" | "yellow" | "red";
           canShipToClient?: boolean;
           tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
           tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
@@ -439,41 +439,58 @@ function MealPlanTaskPanel({
         </div>
       </div>
 
-      {/* Status badge + safety violations — only shown when a plan was just generated */}
-      {lastStatus && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 14,
-            background: lastStatus.canShipToClient ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.10)",
-            border: `1px solid ${lastStatus.canShipToClient ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.45)"}`,
-            borderRadius: 10,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
-            <span style={{ fontSize: 18 }}>{lastStatus.canShipToClient ? "🟢" : "🔴"}</span>
-            <span style={{ color: lastStatus.canShipToClient ? "#22c55e" : "#ef4444" }}>
-              {lastStatus.canShipToClient ? "Ready to send" : "Safety check failed — regenerate before sending"}
-            </span>
+      {/* Status badge + safety violations — 3-tier RED/YELLOW/GREEN.
+          RED: hard block, regenerate required.
+          YELLOW: soft warning, coach can review and ship.
+          GREEN: clean (no banner rendered). */}
+      {lastStatus && lastStatus.badge !== "green" && (() => {
+        const isRed = lastStatus.badge === "red";
+        const isYellow = lastStatus.badge === "yellow";
+        const bg = isRed
+          ? "rgba(239,68,68,0.10)"
+          : "rgba(234,179,8,0.10)"; // amber/yellow
+        const border = isRed
+          ? "rgba(239,68,68,0.45)"
+          : "rgba(234,179,8,0.45)";
+        const fg = isRed ? "#ef4444" : "#eab308";
+        const icon = isRed ? "🔴" : "🟡";
+        const heading = isRed
+          ? "Safety check failed — regenerate before sending"
+          : "Review before sending — minor issues flagged";
+        const listHeading = isRed ? "Safety violations:" : "Items to review:";
+        const items = isRed
+          ? (lastStatus.tier1Violations || [])
+          : (lastStatus.tier2Violations || []);
+        return (
+          <div style={{ marginTop: 16, padding: 14, background: bg, border: `1px solid ${border}`, borderRadius: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
+              <span style={{ fontSize: 18 }}>{icon}</span>
+              <span style={{ color: fg }}>{heading}</span>
+            </div>
+            {items.length > 0 && (
+              <div style={{ marginTop: 10, paddingLeft: 28, fontSize: 12, color: "var(--text-primary)" }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{listHeading}</div>
+                <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
+                  {items.slice(0, 8).map((v, i) => (
+                    <li key={i}>
+                      {v.weekday && v.weekday !== "weekly" ? `${v.weekday}: ` : ""}
+                      {v.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {isYellow && lastStatus.medicalReviewRequired && (
+              <div style={{ marginTop: 8, paddingLeft: 28, fontSize: 11, color: "var(--text-muted)" }}>
+                Medical conditions / medications detected — plan includes the relevant safety rules and tips.
+              </div>
+            )}
           </div>
-          {!lastStatus.canShipToClient && lastStatus.tier1Violations && lastStatus.tier1Violations.length > 0 && (
-            <div style={{ marginTop: 10, paddingLeft: 28, fontSize: 12, color: "var(--text-primary)" }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Safety violations:</div>
-              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
-                {lastStatus.tier1Violations.slice(0, 8).map((v, i) => (
-                  <li key={i}>
-                    {v.weekday && v.weekday !== "weekly" ? `${v.weekday}: ` : ""}
-                    {v.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {lastStatus.medicalReviewRequired && lastStatus.canShipToClient && (
-            <div style={{ marginTop: 8, paddingLeft: 28, fontSize: 11, color: "var(--text-muted)" }}>
-              Medical conditions / medications detected — plan includes the relevant safety rules and tips.
-            </div>
-          )}
+        );
+      })()}
+      {lastStatus && lastStatus.badge === "green" && lastStatus.medicalReviewRequired && (
+        <div style={{ marginTop: 16, padding: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 10, fontSize: 12, color: "var(--text-muted)" }}>
+          🟢 Ready to ship. Medical conditions / medications detected — plan includes the relevant safety rules and tips.
         </div>
       )}
 

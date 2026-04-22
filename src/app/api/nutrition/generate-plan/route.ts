@@ -614,79 +614,76 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Null-sodium gate — any ingredient in this day whose DB row lacks a
-      // sodium value (or whose slug doesn't resolve to a DB row at all)
-      // means we cannot deterministically compute the day's sodium total,
-      // and therefore cannot validate for HBP/stim safety. Tier 1 block.
-      // Under normal operation this never fires (DB is 279/279 populated),
-      // but it protects against newly-added-but-unsynced ingredients or
-      // typos from Claude.
-      {
-        const nullSodiumSlugs = new Set<string>();
-        for (const meal of d.meals) {
-          for (const ing of meal.ingredients) {
-            const row = byslug.get(ing.slug);
-            if (!row) {
-              nullSodiumSlugs.add(`${ing.slug} (unknown slug)`);
-              continue;
-            }
-            if (row.sodium_mg_per_100g === null || row.sodium_mg_per_100g === undefined) {
-              nullSodiumSlugs.add(ing.slug);
-            }
+      // ---------- SODIUM — uniform 3-tier severity ----------
+      //   Day sodium ≤ ceiling              → GREEN (no violation)
+      //   Day sodium in (ceiling, 1.15×]    → YELLOW (tier 2, ships with note)
+      //   Day sodium > 1.15× ceiling        → RED    (tier 1, hard block)
+      // Same rule for every client — HBP, stimulant, universal default.
+      // Ceiling values themselves come from targets.sodiumCapMg (unchanged).
+      //
+      // Unknown / null-sodium slugs are handled separately below: we estimate
+      // their contribution at 300 mg/100g and re-decide severity based on
+      // whether the estimated total breaches the ceiling.
+      const knownSodium = computeDailySodium(d, byslug);
+      const capMg = targets.sodiumCapMg;
+      const reasonSuffix = medical.hasHypertension
+        ? " for HBP"
+        : medical.onStimulantADHD
+        ? " (soft target for stimulant medication)"
+        : "";
+
+      // Gather slugs whose sodium we cannot look up (unknown slug or null
+      // DB value). These need an estimated contribution before we can grade
+      // the day's sodium.
+      const unknownGramsBySlug = new Map<string, number>();
+      for (const meal of d.meals) {
+        for (const ing of meal.ingredients) {
+          const row = byslug.get(ing.slug);
+          const hasSodium = row && row.sodium_mg_per_100g !== null && row.sodium_mg_per_100g !== undefined;
+          if (!hasSodium) {
+            const label = row ? ing.slug : `${ing.slug} (unknown slug)`;
+            unknownGramsBySlug.set(label, (unknownGramsBySlug.get(label) || 0) + ing.grams);
           }
         }
-        if (nullSodiumSlugs.size > 0) {
-          v.push({
-            tier: 1,
-            kind: "sodium_safety",
-            message: `Cannot validate Day Total sodium — incomplete ingredient data for: ${Array.from(nullSodiumSlugs).join(", ")}. Swap these for ingredients with known sodium before shipping.`,
-          });
-        }
       }
+      const unknownTotalGrams = Array.from(unknownGramsBySlug.values()).reduce((s, g) => s + g, 0);
+      const UNKNOWN_SODIUM_DEFAULT_MG_PER_100G = 300;
+      const estUnknownSodiumMg = Math.round(
+        (unknownTotalGrams / 100) * UNKNOWN_SODIUM_DEFAULT_MG_PER_100G
+      );
+      const totalEstSodium = knownSodium + estUnknownSodiumMg;
 
-      // Sodium — two-tier for any client with a below-universal target
-      // (HBP: 1,800; stimulant users: 2,000; default: 2,300).
-      //
-      //   Reduced-target client (cap < 2300):
-      //     target    = targets.sodiumCapMg  (Tier 2 aspirational)
-      //     safety    = min( max(cap+200, cap×1.15), 2300 )
-      //     Days under target            → clean
-      //     Days target to safety ceiling → Tier 2 quality note (ships)
-      //     Days over safety ceiling      → Tier 1 hard block
-      //
-      //   Default (cap === 2300):
-      //     Anything over 2300 → Tier 1. No Tier 2 sodium warning.
-      const sodium = computeDailySodium(d, byslug);
-      const capMg = targets.sodiumCapMg;
-      if (capMg < 2300) {
-        const tier2Ceiling = Math.max(capMg + 200, Math.round(capMg * 1.15));
-        const tier1Ceiling = Math.min(tier2Ceiling, 2300);
-        const reasonSuffix = medical.hasHypertension
-          ? " for HBP"
-          : medical.onStimulantADHD
-          ? " (soft target for stimulant medication)"
-          : "";
-        if (sodium > tier1Ceiling) {
-          v.push({
-            tier: 1,
-            kind: "sodium_safety",
-            message: `SODIUM is ${sodium} mg — exceeds the ${tier1Ceiling} mg safety ceiling (${capMg} mg target${reasonSuffix} + buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
-          });
-        } else if (sodium > capMg) {
-          v.push({
-            tier: 2,
-            kind: "sodium_over_target",
-            message: `SODIUM is ${sodium} mg — over the ${capMg} mg target${reasonSuffix} by ${sodium - capMg} mg (within the ${tier1Ceiling} mg safety ceiling). Trim added salt where possible.`,
-          });
-        }
-      } else {
-        if (sodium > 2300) {
-          v.push({
-            tier: 1,
-            kind: "sodium_safety",
-            message: `SODIUM is ${sodium} mg — exceeds the 2,300 mg universal AHA ceiling.`,
-          });
-        }
+      const yellowCeiling = Math.round(capMg * 1.15);
+      const totalForGrading = unknownTotalGrams > 0 ? totalEstSodium : knownSodium;
+
+      if (totalForGrading > yellowCeiling) {
+        const base = `SODIUM is ${totalForGrading} mg — exceeds the ${yellowCeiling} mg safety ceiling (${capMg} mg target${reasonSuffix} + 15% buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`;
+        v.push({
+          tier: 1,
+          kind: "sodium_safety",
+          message: unknownTotalGrams > 0
+            ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
+            : base,
+        });
+      } else if (totalForGrading > capMg) {
+        const overBy = totalForGrading - capMg;
+        const base = `SODIUM is ${totalForGrading} mg — over the ${capMg} mg target${reasonSuffix} by ${overBy} mg (within the ${yellowCeiling} mg safety ceiling). Trim added salt where possible.`;
+        v.push({
+          tier: 2,
+          kind: "sodium_over_target",
+          message: unknownTotalGrams > 0
+            ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
+            : base,
+        });
+      } else if (unknownTotalGrams > 0) {
+        // Under-ceiling estimated total but the day still has unknown-sodium
+        // ingredients — flag as Yellow with a footnote so the coach knows
+        // the number isn't fully trusted.
+        v.push({
+          tier: 2,
+          kind: "sodium_estimate_note",
+          message: `Day Total sodium partially estimated — ${Array.from(unknownGramsBySlug.keys()).join(", ")} lack DB sodium (assumed ${UNKNOWN_SODIUM_DEFAULT_MG_PER_100G} mg/100g). Estimated day total ${totalEstSodium} mg is under the ${capMg} mg target, so plan is shippable pending review.`,
+        });
       }
 
       // Portion sanity — signals a pathological generation state.
@@ -705,11 +702,17 @@ export async function POST(req: NextRequest) {
           const hay = `${row.slug.replace(/_/g, " ")} ${(row.name || "").toLowerCase()}`.toLowerCase();
           const grams = ing.grams;
 
-          // --- 350g meat ---
+          // --- Meat portion sanity (3-tier severity) ---
+          //   ≤350g  → clean
+          //   351–400g → YELLOW (tier 2, soft warning)
+          //   >400g  → RED    (tier 1, hard block)
           const meatWords = ["chicken", "beef", "pork", "turkey", "salmon", "tuna", "cod", "shrimp", "sirloin", "ribeye", "tenderloin", "thigh", "breast"];
           const isBrothOrStock = /\bbroth\b|\bstock\b/.test(hay);
-          if (grams > 350 && !isBrothOrStock && meatWords.some((w) => wbHas(hay, w))) {
-            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 350g meat portion sanity limit.` });
+          const isMeat = !isBrothOrStock && meatWords.some((w) => wbHas(hay, w));
+          if (isMeat && grams > 400) {
+            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds the 400g hard cap on single-meal meat portions.` });
+          } else if (isMeat && grams > 350) {
+            v.push({ tier: 2, kind: "portion_sanity_meat_soft", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — over the 350g recommended limit but under the 400g safety cap. Coach review.` });
           }
 
           // --- 50g oil/butter (cooking fats only) ---
@@ -754,21 +757,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Goal-direction kcal rule: fat_loss can't go >110%, muscle_gain can't go <90%
-      if (goal === "fat_loss" && calPct > 0.10) {
-        v.push({
-          tier: 1,
-          kind: "goal_direction_kcal",
-          message: `FAT LOSS goal but day is ${Math.round(calPct * 100)}% OVER calorie target (${Math.round(t.cal)} vs ${targets.calories}). Must land ≤ +10%.`,
-        });
-      }
-      if (goal === "muscle_gain" && calPct < -0.10) {
-        v.push({
-          tier: 1,
-          kind: "goal_direction_kcal",
-          message: `MUSCLE GAIN goal but day is ${Math.round(-calPct * 100)}% UNDER calorie target (${Math.round(t.cal)} vs ${targets.calories}). Must land ≥ −10%.`,
-        });
-      }
+      // (Goal-direction kcal bands are now subsumed by the uniform macro-drift
+      // rule below — any macro >10% off target is RED regardless of goal.)
 
       // Diabetic: no single meal >50% of daily carbs (prevents blood-sugar spikes)
       if (medical.hasDiabetes) {
@@ -791,30 +781,45 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ===== TIER 2 — QUALITY (loosened bands) =====
+      // ===== MACRO DRIFT — uniform 3-tier severity =====
+      //   |drift| ≤ 5%       → clean
+      //   5% < |drift| ≤ 10% → YELLOW (tier 2)
+      //   |drift| > 10%      → RED    (tier 1)
+      // Applied uniformly to calories, protein, carbs, and fat.
+      const gradeMacro = (
+        kind: string,
+        pct: number,
+        actualLabel: string,
+        targetLabel: string,
+        overHint: string,
+        underHint: string
+      ) => {
+        const abs = Math.abs(pct);
+        if (abs <= 0.05) return; // GREEN
+        const direction = pct > 0 ? "OVER" : "UNDER";
+        const pctInt = Math.round(abs * 100);
+        const hint = pct > 0 ? overHint : underHint;
+        const msg = `${kind.toUpperCase()} ${pctInt}% ${direction} (${actualLabel} vs ${targetLabel}) — ${hint}`;
+        if (abs > 0.10) {
+          v.push({ tier: 1, kind: `macro_${kind}`, message: msg });
+        } else {
+          v.push({ tier: 2, kind: `macro_${kind}`, message: msg });
+        }
+      };
+      gradeMacro("kcal",    calPct, `${Math.round(t.cal)} kcal`, `${targets.calories} kcal`,
+        "reduce added fats and starch portions.",
+        "increase protein and carb portions.");
+      gradeMacro("protein", pPct,   `${t.p.toFixed(0)}g`,         `${targets.proteinG}g`,
+        "reduce protein and shift calories to carbs 1:1.",
+        "bump the main protein's grams.");
+      gradeMacro("carbs",   cPct,   `${t.c.toFixed(0)}g`,         `${targets.carbsG}g`,
+        "trim rice/bread/pasta.",
+        "increase rice/potato/oats/bread by 30-50g.");
+      gradeMacro("fat",     fPct,   `${t.f.toFixed(0)}g`,         `${targets.fatG}g`,
+        "halve butter/oil/cheese/nut portions.",
+        "add 5-10g olive oil or a small cheese portion.");
 
-      if (Math.abs(calPct) > 0.10) {
-        v.push({ tier: 2, kind: "kcal", message: calPct > 0
-          ? `CALORIES ${Math.round(calPct * 100)}% OVER (${Math.round(t.cal)} vs ${targets.calories}) — reduce added fats and starch portions.`
-          : `CALORIES ${Math.round(-calPct * 100)}% UNDER (${Math.round(t.cal)} vs ${targets.calories}) — increase protein and carb portions.`});
-      }
-      // Protein band: −15% (floor) to +30% (ceiling)
-      if (pPct < -0.15) {
-        v.push({ tier: 2, kind: "protein", message: `PROTEIN ${Math.round(-pPct * 100)}% UNDER (${t.p.toFixed(0)}g vs ${targets.proteinG}g floor) — bump the main protein's grams.` });
-      } else if (pPct > 0.30) {
-        v.push({ tier: 2, kind: "protein", message: `PROTEIN ${Math.round(pPct * 100)}% OVER (${t.p.toFixed(0)}g vs ${targets.proteinG}g) — reduce protein and shift calories to carbs 1:1.` });
-      }
-      if (Math.abs(cPct) > 0.15) {
-        v.push({ tier: 2, kind: "carbs", message: cPct > 0
-          ? `CARBS ${Math.round(cPct * 100)}% OVER (${t.c.toFixed(0)}g vs ${targets.carbsG}g) — trim rice/bread/pasta.`
-          : `CARBS ${Math.round(-cPct * 100)}% UNDER (${t.c.toFixed(0)}g vs ${targets.carbsG}g) — increase rice/potato/oats/bread by 30-50g.` });
-      }
-      if (Math.abs(fPct) > 0.15) {
-        v.push({ tier: 2, kind: "fat", message: fPct > 0
-          ? `FAT ${Math.round(fPct * 100)}% OVER (${t.f.toFixed(0)}g vs ${targets.fatG}g) — halve butter/oil/cheese/nut portions.`
-          : `FAT ${Math.round(-fPct * 100)}% UNDER (${t.f.toFixed(0)}g vs ${targets.fatG}g) — add 5-10g olive oil or a small cheese portion.` });
-      }
-      // Per-meal fat cap (Tier 2 — realism)
+      // Per-meal fat cap (realism) — stays Tier 2 yellow.
       let worstMealFat = 0, worstMealName = "";
       for (const meal of d.meals) {
         let mFat = 0;
@@ -829,8 +834,11 @@ export async function POST(req: NextRequest) {
         v.push({ tier: 2, kind: "per_meal_fat", message: `"${worstMealName}" has ${Math.round(worstMealFat)}g fat — over 40% of daily target. Max ${Math.round(targets.fatG * 0.4)}g per meal.` });
       }
 
-      // Per-meal protein FLOOR — breakfast 25%, lunch/dinner 30% of daily target.
-      // Surgical correction pattern: flag just the undershooting meal(s), not the whole day.
+      // ===== PER-MEAL PROTEIN FLOOR — 3-tier severity =====
+      //   mP ≥ floor          → clean
+      //   0.80 ≤ mP/floor < 1 → YELLOW (tier 2)
+      //   mP/floor < 0.80     → RED    (tier 1)
+      // Breakfast floor = 25% of daily; lunch/dinner = 30%; snacks have no floor.
       for (const meal of d.meals) {
         let mP = 0;
         for (const ing of meal.ingredients) {
@@ -843,14 +851,17 @@ export async function POST(req: NextRequest) {
         const isLunch = /lunch/i.test(mealName);
         const isDinner = /dinner/i.test(mealName);
         const floorPct = isBreakfast ? 0.25 : (isLunch || isDinner) ? 0.30 : 0;
-        if (floorPct === 0) continue; // snacks fill the remainder — no floor
+        if (floorPct === 0) continue; // snacks fill the remainder
         const floorG = Math.round(targets.proteinG * floorPct);
-        if (mP < floorG * 0.90) {
-          v.push({
-            tier: 2,
-            kind: "per_meal_protein_floor",
-            message: `"${meal.dishName || meal.name}" has ${Math.round(mP)}g protein — below the ${floorG}g floor (${Math.round(floorPct * 100)}% of daily ${targets.proteinG}g target). Add or increase the protein anchor (chicken/beef/fish/eggs/Greek yogurt/cottage cheese/whey).`,
-          });
+        if (floorG <= 0) continue;
+        const ratio = mP / floorG;
+        if (ratio >= 1.0) continue; // GREEN
+        const pctBelow = Math.round((1 - ratio) * 100);
+        const baseMsg = `"${meal.dishName || meal.name}" has ${Math.round(mP)}g protein — ${pctBelow}% below the ${floorG}g floor (${Math.round(floorPct * 100)}% of daily ${targets.proteinG}g target). Add or increase the protein anchor (chicken/beef/fish/eggs/Greek yogurt/cottage cheese/whey).`;
+        if (ratio < 0.80) {
+          v.push({ tier: 1, kind: "per_meal_protein_floor", message: baseMsg });
+        } else {
+          v.push({ tier: 2, kind: "per_meal_protein_floor", message: baseMsg });
         }
       }
 
@@ -1384,21 +1395,21 @@ export async function POST(req: NextRequest) {
       targets,
       generationTimeMs,
       notes: targets.notes,
-      // Convergence + binary ship status. No YELLOW middle state — the
-      // nutritionist review layer was removed, so every plan ships directly
-      // to the client and must self-enforce safety.
-      //   SHIP (green)       — all Tier 1 safety passes AND Tier 2 misses ≤ 2 days
-      //   DO-NOT-SHIP (red)  — ANY Tier 1 violation OR 3+ Tier 2 day misses
+      // Convergence + 3-tier RED/YELLOW/GREEN ship status.
+      //   GREEN  — clean plan, ship directly
+      //   YELLOW — soft warnings only (tier 2), coach can review and ship
+      //   RED    — any tier 1 violation, regenerate before sending
+      // YELLOW plans still set canShipToClient = true so the delivery
+      // checkbox isn't blocked; the UI banner communicates the review ask.
       status: (() => {
         // Fold weekly Tier 2 violations (cheese/sourdough caps, mandatory
-        // enjoyed foods missing) into the combined Tier 2 list so they show
-        // up in the admin debug output and block shipping if the count is high.
+        // enjoyed foods missing) into the combined Tier 2 list so they
+        // show up in the admin debug output AND contribute to the YELLOW
+        // banner decision.
         const combinedTier2: typeof tier2Violations = [
           ...tier2Violations,
           ...weeklyTier2Violations.map((v) => ({ day: 0, weekday: "weekly", tier: 2 as const, kind: v.kind, message: v.message })),
         ];
-        // Weekly violations count as extra "day-equivalent misses" for the
-        // ship decision (each distinct weekly violation adds 1 to the count).
         const effectiveT2DayCount = tier2DayCount + weeklyTier2Violations.length;
 
         const medicalReviewRequired =
@@ -1416,13 +1427,20 @@ export async function POST(req: NextRequest) {
           medical.onLithium ||
           medical.onLevothyroxine;
 
-        const canShip = tier1Violations.length === 0 && effectiveT2DayCount <= 2;
-        const badge: "green" | "red" = canShip ? "green" : "red";
+        const hasRed = tier1Violations.length > 0;
+        const hasYellow = combinedTier2.length > 0;
+        const badge: "green" | "yellow" | "red" = hasRed
+          ? "red"
+          : hasYellow
+          ? "yellow"
+          : "green";
+        // Only RED blocks shipping. YELLOW is a review flag, not a hard gate.
+        const canShip = !hasRed;
 
         return {
           badge,
           canShipToClient: canShip,
-          converged: canShip,
+          converged: !hasRed && effectiveT2DayCount === 0,
           iterationsRun: Math.max(0, convergenceLog.length - 1),
           medicalReviewRequired,
           tier1Violations,
