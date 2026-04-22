@@ -1,11 +1,14 @@
 /**
  * Sodium estimator.
  *
- * The ingredients table doesn't include sodium_mg_per_100g. Rather than
- * migrate the schema + re-sync USDA, we maintain a hardcoded lookup of
- * realistic sodium values for the most relevant ingredients, with
- * category-based fallback for the rest. Numbers are USDA FoodData
- * Central values for the most commonly-used form of each food.
+ * PRIMARY SOURCE: `row.sodium_mg_per_100g` from Supabase — populated
+ * 279/279 from the USDA FoodData Central backfill. Any row with a
+ * non-null DB value wins.
+ *
+ * FALLBACK: the hardcoded SODIUM_BY_SLUG / SODIUM_BY_CATEGORY lookup
+ * below, kept for backwards compatibility if/when a new ingredient is
+ * added that hasn't been synced yet. Under normal operation the fallback
+ * path should not fire.
  */
 
 import type { IngredientRow } from "./ingredient-filter";
@@ -206,7 +209,11 @@ const SODIUM_BY_CATEGORY: Record<string, number> = {
 };
 
 export function estimateSodiumMgPer100g(row: IngredientRow): number {
-  // Exact slug override first
+  // Prefer the DB-sourced USDA value when present
+  if (row.sodium_mg_per_100g !== null && row.sodium_mg_per_100g !== undefined) {
+    return Number(row.sodium_mg_per_100g);
+  }
+  // Exact slug override first (fallback path)
   if (row.slug in SODIUM_BY_SLUG) return SODIUM_BY_SLUG[row.slug];
   // Partial slug match for common patterns
   const s = row.slug.toLowerCase();
@@ -245,6 +252,37 @@ export function computeDailySodium(
     }
   }
   return Math.round(total);
+}
+
+/**
+ * Returns the list of unique ingredient slugs referenced in the plan whose
+ * DB row has null sodium_mg_per_100g. Used by the validator: any plan
+ * referencing unknown-sodium ingredients cannot be validated for HBP
+ * safety and must be blocked from shipping.
+ *
+ * Slugs that don't resolve to a DB row at all (typo/unsynced) are ALSO
+ * returned — from a safety standpoint "unknown" is the same as "null".
+ */
+export function findIngredientsWithNullSodium(
+  plan: { meals: { ingredients: { slug: string }[] }[] }[],
+  byslug: Map<string, IngredientRow>
+): string[] {
+  const unknown = new Set<string>();
+  for (const day of plan) {
+    for (const meal of day.meals) {
+      for (const ing of meal.ingredients) {
+        const row = byslug.get(ing.slug);
+        if (!row) {
+          unknown.add(ing.slug);
+          continue;
+        }
+        if (row.sodium_mg_per_100g === null || row.sodium_mg_per_100g === undefined) {
+          unknown.add(ing.slug);
+        }
+      }
+    }
+  }
+  return Array.from(unknown).sort();
 }
 
 /**

@@ -154,9 +154,21 @@ function buildUserPrompt(input: DayGenerationInput): string {
     prefersQuickPrep, prefersSpicy, preferredProteins,
   } = input;
 
-  // Compact ingredient list
+  // Compact ingredient list. When the client has a sodium cap in play
+  // (HBP target <1800 or stimulant 2000), append real sodium mg/100g to
+  // each row so Claude picks against actual USDA values instead of
+  // guessing. DB is 279/279 populated, so every row has a number.
+  const showSodium = !!input.sodiumContext;
   const ingredientList = allowedIngredients
-    .map((i) => `${i.slug}|${i.name}|${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`)
+    .map((i) => {
+      const base = `${i.slug}|${i.name}|${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`;
+      if (!showSodium) return base;
+      const na =
+        i.sodium_mg_per_100g === null || i.sodium_mg_per_100g === undefined
+          ? "?"
+          : `${Math.round(Number(i.sodium_mg_per_100g))}`;
+      return `${base}|${na}mg Na`;
+    })
     .join("\n");
 
   const commentsBlock =
@@ -232,6 +244,8 @@ HOW TO USE THE BUDGET (meal-by-meal, not end-of-day):
   highest-sodium ingredient in that meal before finalizing (e.g., corn tortilla
   for flour, olive oil + lemon for ranch/Italian, unsalted butter for salted,
   dry-cooked beans for canned, no-salt-added tuna for salted).
+
+PRIMARY SOURCE: the allowed-ingredients list above shows real USDA sodium (mg per 100g) as the LAST pipe-delimited column (e.g. "|627mg Na"). Use THOSE numbers to build running_total. The table below is only for quick sanity checks when comparing swap candidates.
 
 SODIUM REFERENCE TABLE (approximate):
   Breads:      sourdough ~340mg/slice, whole-wheat ~130mg/slice, white ~150mg/slice, English muffin ~200mg each

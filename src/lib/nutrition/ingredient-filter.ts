@@ -13,6 +13,9 @@ export interface IngredientRow {
   protein_g_per_100g: number;
   carbs_g_per_100g: number;
   fat_g_per_100g: number;
+  // Populated from Supabase; kept optional for backwards compatibility
+  // with callers that construct an IngredientRow by hand.
+  sodium_mg_per_100g?: number | null;
 }
 
 /**

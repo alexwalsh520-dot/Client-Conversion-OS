@@ -260,7 +260,9 @@ export async function POST(req: NextRequest) {
     // --- Ingredients ---
     const { data: ingredients } = await db
       .from("ingredients")
-      .select("id, slug, name, aliases, category, calories_per_100g, protein_g_per_100g, carbs_g_per_100g, fat_g_per_100g");
+      .select(
+        "id, slug, name, aliases, category, calories_per_100g, protein_g_per_100g, carbs_g_per_100g, fat_g_per_100g, sodium_mg_per_100g"
+      );
     if (!ingredients || ingredients.length === 0) {
       return NextResponse.json({ error: "Ingredient database empty" }, { status: 500 });
     }
@@ -499,6 +501,36 @@ export async function POST(req: NextRequest) {
           kind: "protein_ceiling",
           message: `PROTEIN at ${t.p.toFixed(0)}g — above the ${proteinCeilingG}g safety ceiling (${proteinCeilingPerLb} g/lb). Sustained intake this high stresses the kidneys.`,
         });
+      }
+
+      // Null-sodium gate — any ingredient in this day whose DB row lacks a
+      // sodium value (or whose slug doesn't resolve to a DB row at all)
+      // means we cannot deterministically compute the day's sodium total,
+      // and therefore cannot validate for HBP/stim safety. Tier 1 block.
+      // Under normal operation this never fires (DB is 279/279 populated),
+      // but it protects against newly-added-but-unsynced ingredients or
+      // typos from Claude.
+      {
+        const nullSodiumSlugs = new Set<string>();
+        for (const meal of d.meals) {
+          for (const ing of meal.ingredients) {
+            const row = byslug.get(ing.slug);
+            if (!row) {
+              nullSodiumSlugs.add(`${ing.slug} (unknown slug)`);
+              continue;
+            }
+            if (row.sodium_mg_per_100g === null || row.sodium_mg_per_100g === undefined) {
+              nullSodiumSlugs.add(ing.slug);
+            }
+          }
+        }
+        if (nullSodiumSlugs.size > 0) {
+          v.push({
+            tier: 1,
+            kind: "sodium_safety",
+            message: `Cannot validate Day Total sodium — incomplete ingredient data for: ${Array.from(nullSodiumSlugs).join(", ")}. Swap these for ingredients with known sodium before shipping.`,
+          });
+        }
       }
 
       // Sodium — two-tier for any client with a below-universal target
