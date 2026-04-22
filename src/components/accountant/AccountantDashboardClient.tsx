@@ -3,27 +3,11 @@
 import { useEffect, useState } from "react";
 import AccountantDashboard from "./AccountantDashboard";
 import {
-  Balance,
-  Transaction,
-  PeriodSummary,
-  MonthlyReport,
+  AccountantDashboardData,
 } from "@/lib/accountant-types";
 
-interface DashboardData {
-  balances: Balance[];
-  currentMonth: {
-    start: string;
-    end: string;
-    label: string;
-    transactions: Transaction[];
-    summary: PeriodSummary;
-  };
-  trend: Array<{ month: string; income: number; expenses: number; net: number }>;
-  storedReports: MonthlyReport[];
-}
-
 export default function AccountantDashboardClient() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<AccountantDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,7 +19,7 @@ export default function AccountantDashboardClient() {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || `HTTP ${res.status}`);
         }
-        const json = (await res.json()) as DashboardData;
+        const json = (await res.json()) as AccountantDashboardData;
         if (!cancelled) setData(json);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");

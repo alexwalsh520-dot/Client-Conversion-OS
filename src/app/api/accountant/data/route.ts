@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import type { AccountantDashboardData } from "@/lib/accountant-types";
 import {
   getCurrentBalances,
   getTransactions,
@@ -8,6 +9,7 @@ import {
   summarize,
   monthBounds,
 } from "@/lib/accountant-data";
+import { getFinanceOverview } from "@/lib/accountant-planning";
 
 export async function GET() {
   const session = await auth();
@@ -27,8 +29,10 @@ export async function GET() {
 
   const summary = summarize(transactions);
   const label = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const cashOnHandCents = balances.reduce((sum, balance) => sum + balance.balance, 0);
+  const finance = await getFinanceOverview(cashOnHandCents, now);
 
-  return NextResponse.json({
+  const payload: AccountantDashboardData = {
     balances,
     currentMonth: {
       start: mb.startDate,
@@ -39,5 +43,8 @@ export async function GET() {
     },
     trend,
     storedReports,
-  });
+    finance,
+  };
+
+  return NextResponse.json(payload);
 }

@@ -52,24 +52,34 @@ export interface KeithAdSpendBreakdown {
   dailyLines: Array<{ date: string; cents: number }>;
 }
 
-export async function fetchKeithAdSpendLast30d(now: Date = new Date()): Promise<KeithAdSpendBreakdown> {
+export async function fetchKeithAdSpendRange(
+  startYmd: string,
+  endYmd: string,
+): Promise<KeithAdSpendBreakdown> {
   const apiKey = process.env.GOOGLE_SHEETS_API_KEY;
   if (!apiKey) return { totalCents: 0, daysCovered: 0, dailyLines: [] };
 
-  const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  // Figure out which month tabs we need (current + possibly previous + possibly one before that if window crosses)
-  const neededTabs = new Set<{ month: number; year: number }>();
+  const windowStart = new Date(`${startYmd}T00:00:00`);
+  const windowEnd = new Date(`${endYmd}T23:59:59`);
+  if (Number.isNaN(windowStart.getTime()) || Number.isNaN(windowEnd.getTime()) || windowStart > windowEnd) {
+    return { totalCents: 0, daysCovered: 0, dailyLines: [] };
+  }
+
+  const neededTabs = new Set<string>();
   const cursor = new Date(windowStart);
   cursor.setDate(1);
-  while (cursor <= now) {
-    neededTabs.add({ month: cursor.getMonth(), year: cursor.getFullYear() });
+  while (cursor <= windowEnd) {
+    neededTabs.add(`${cursor.getFullYear()}-${cursor.getMonth()}`);
     cursor.setMonth(cursor.getMonth() + 1);
   }
 
   const dailyLines: KeithAdSpendBreakdown["dailyLines"] = [];
   let totalCents = 0;
 
-  for (const { month, year } of neededTabs) {
+  for (const key of neededTabs) {
+    const [yearRaw, monthRaw] = key.split("-");
+    const year = Number.parseInt(yearRaw, 10);
+    const month = Number.parseInt(monthRaw, 10);
     const tabName = MONTHS_SHORT[month];
     const rows = await fetchTabRows(tabName, apiKey);
     if (rows.length === 0) continue;
@@ -80,7 +90,7 @@ export async function fetchKeithAdSpendLast30d(now: Date = new Date()): Promise<
       if (dateCell.toLowerCase().includes("targets")) continue; // skip header row
       const d = parseDateCell(dateCell, month, year);
       if (!d) continue;
-      if (d < windowStart || d > now) continue;
+      if (d < windowStart || d > windowEnd) continue;
       const cents = parseDollarsToCents(spendCell);
       if (cents <= 0) continue;
       dailyLines.push({ date: d.toISOString().slice(0, 10), cents });
@@ -89,4 +99,12 @@ export async function fetchKeithAdSpendLast30d(now: Date = new Date()): Promise<
   }
 
   return { totalCents, daysCovered: dailyLines.length, dailyLines };
+}
+
+export async function fetchKeithAdSpendLast30d(now: Date = new Date()): Promise<KeithAdSpendBreakdown> {
+  const endYmd = now.toISOString().slice(0, 10);
+  const startYmd = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return fetchKeithAdSpendRange(startYmd, endYmd);
 }
