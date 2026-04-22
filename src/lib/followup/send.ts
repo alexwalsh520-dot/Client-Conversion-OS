@@ -1,29 +1,40 @@
-// Send a follow-up message via Instagram Graph API + log to dm_conversation_messages.
-// Mirrors patterns from src/lib/instagram-dm-send.ts.
+// Send a follow-up message via ManyChat's API + log to dm_conversation_messages.
+//
+// Why ManyChat instead of Meta Graph API directly?
+// ManyChat already owns the Instagram connection for each creator's account,
+// holds the right Page Access Token, and handles the IG messaging window
+// rules internally. Using ManyChat's /fb/sending/sendContent endpoint means:
+//   - No Meta Dev App setup needed for The Forge
+//   - subscriber_id we get from the tag-added webhook (ManyChat Contact Id)
+//     is the exact id this endpoint expects — no lookup needed
+//   - Token rotation, message-tag policy, etc. all handled by ManyChat
+// The endpoint works for both Messenger and Instagram subscribers on Pro plans.
 
 import { getServiceSupabase } from '@/lib/supabase';
 import type { EligibleVariant } from './variants';
 
 const INSTAGRAM_CHANNEL = 'Instagram DM';
-const DEFAULT_API_VERSION = 'v24.0';
+const MANYCHAT_API_BASE = 'https://api.manychat.com';
 
-interface SendConfig {
-  accessToken: string;
-  accountId: string;
-  apiVersion: string;
+// Resolve which ManyChat API key to use for this client.
+// Each creator has their own ManyChat account, each with its own API key.
+function getManyChatKey(client: string): string {
+  const keyMap: Record<string, string | undefined> = {
+    tyson_sonnek: process.env.MANYCHAT_API_KEY_TYSON,
+    keith_holland: process.env.MANYCHAT_API_KEY_KEITH,
+    zoe_and_emily: process.env.MANYCHAT_API_KEY_ZOE_EMILY,
+  };
+  const key = keyMap[client]?.trim();
+  if (!key) {
+    throw new Error(`No ManyChat API key configured for client "${client}"`);
+  }
+  return key;
 }
 
-function getConfig(): SendConfig {
-  const accessToken = process.env.INSTAGRAM_DM_ACCESS_TOKEN?.trim();
-  const accountId = process.env.INSTAGRAM_DM_ACCOUNT_ID?.trim();
-  if (!accessToken || !accountId) {
-    throw new Error('INSTAGRAM_DM_ACCESS_TOKEN or INSTAGRAM_DM_ACCOUNT_ID not set');
-  }
-  return {
-    accessToken,
-    accountId,
-    apiVersion: process.env.INSTAGRAM_DM_API_VERSION?.trim() || DEFAULT_API_VERSION,
-  };
+interface ManyChatSendContentResponse {
+  status: 'success' | 'error';
+  message?: string;
+  data?: { message_id?: string };
 }
 
 export async function sendVariantAsDM(params: {
@@ -32,57 +43,59 @@ export async function sendVariantAsDM(params: {
   variant: EligibleVariant;
   setterName: string;
 }): Promise<{ messageId: string }> {
-  const cfg = getConfig();
-  const endpoint = `https://graph.instagram.com/${cfg.apiVersion}/${cfg.accountId}/messages`;
+  const key = getManyChatKey(params.client);
 
-  let messageBody: Record<string, unknown>;
+  // Build the ManyChat message content block. ManyChat expects an array of
+  // messages; each has a type (text | image | audio) and the payload.
+  let message: Record<string, unknown>;
   if (params.variant.type === 'text' && params.variant.body) {
-    messageBody = { text: params.variant.body };
-  } else if (
-    (params.variant.type === 'meme' || params.variant.type === 'voicenote') &&
-    params.variant.media_url
-  ) {
-    const attachmentType = params.variant.type === 'voicenote' ? 'audio' : 'image';
-    messageBody = { attachment: { type: attachmentType, payload: { url: params.variant.media_url } } };
+    message = { type: 'text', text: params.variant.body };
+  } else if (params.variant.type === 'meme' && params.variant.media_url) {
+    message = { type: 'image', url: params.variant.media_url };
+  } else if (params.variant.type === 'voicenote' && params.variant.media_url) {
+    message = { type: 'audio', url: params.variant.media_url };
   } else {
     throw new Error(`Variant ${params.variant.id} is misconfigured`);
   }
 
-  const res = await fetch(endpoint, {
+  const res = await fetch(`${MANYCHAT_API_BASE}/fb/sending/sendContent`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${cfg.accessToken}`,
+      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      recipient: { id: params.subscriberId },
-      message: messageBody,
+      subscriber_id: params.subscriberId,
+      data: {
+        version: 'v2',
+        content: { messages: [message] },
+      },
     }),
   });
 
-  const data = (await res.json().catch(() => ({}))) as {
-    message_id?: string;
-    error?: { message?: string; error_subcode?: number };
-  };
+  const payload = (await res.json().catch(() => ({}))) as ManyChatSendContentResponse;
 
-  if (!res.ok || !data.message_id) {
+  if (!res.ok || payload.status !== 'success') {
     throw new Error(
-      data.error?.message || `Instagram send failed (${res.status}) — check access token + message window`,
+      `ManyChat send failed (${res.status}): ${payload.message || 'unknown error'}`,
     );
   }
 
-  // Log to dm_conversation_messages so this message shows up in transcripts + analytics
+  // ManyChat doesn't always return a message_id; synthesize one for attribution
+  // if missing. Our followup_sends table doesn't depend on message_id uniqueness.
+  const messageId = payload.data?.message_id || `manychat_${Date.now()}_${params.variant.id}`;
+
   await logOutboundMessage({
     client: params.client,
     subscriberId: params.subscriberId,
     setterName: params.setterName,
-    messageId: data.message_id,
+    messageId,
     variantBody: params.variant.body ?? `[${params.variant.type}]`,
     variantType: params.variant.type,
     mediaUrl: params.variant.media_url,
   });
 
-  return { messageId: data.message_id };
+  return { messageId };
 }
 
 async function logOutboundMessage(params: {
@@ -110,7 +123,7 @@ async function logOutboundMessage(params: {
       body: params.variantBody,
       sent_at: new Date().toISOString(),
       raw_payload: {
-        source: 'ai-followup',
+        source: 'ai-followup-manychat',
         variant_type: params.variantType,
         media_url: params.mediaUrl,
       },
