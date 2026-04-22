@@ -202,15 +202,16 @@ async function tryInternalTokenAuth(req: NextRequest): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   const internalOk = await tryInternalTokenAuth(req);
-  // Always resolve session when not internal — we use it later for created_by.
-  // When internal-token path is taken, session stays null and created_by
-  // defaults to "internal".
-  let session: Awaited<ReturnType<typeof auth>> = null;
+  // Resolve the session only when we need it (non-internal). Stored as a
+  // loose object so we don't wrestle with NextAuth's overloaded auth()
+  // return type. We only ever read .user?.email off of it downstream.
+  let sessionUserEmail: string | null = null;
   if (!internalOk) {
-    session = await auth();
+    const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    sessionUserEmail = session.user.email ?? null;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -1288,7 +1289,7 @@ export async function POST(req: NextRequest) {
         plan_data: { days: pdfDays, grocery, tips },
         comments_snapshot: commentList,
         generation_time_ms: generationTimeMs,
-        created_by: session?.user?.email || "internal",
+        created_by: sessionUserEmail || "internal",
       })
       .select()
       .single();
