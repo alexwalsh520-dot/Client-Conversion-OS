@@ -28,6 +28,10 @@ interface CategoryRule {
   kind: "income" | "expense" | "transfer";
 }
 
+// Source of truth for the Accountant tab is CoreShift LLC only.
+// Forge data (if it exists in Supabase) is ignored here by design.
+export const SOURCE_ACCOUNT = "coreshift";
+
 // Hard-coded fallback rules so the tab works even before the
 // accountant_categories table exists. DB rows override/extend these.
 const FALLBACK_RULES: CategoryRule[] = [
@@ -93,18 +97,13 @@ export function categorizeTransaction(
 
 export async function getCurrentBalances(): Promise<Balance[]> {
   const sb = getServiceSupabase();
-  // Latest snapshot per account.
   const { data } = await sb
     .from("mozi_mercury_balances")
     .select("account, balance, snapshot_date")
+    .eq("account", SOURCE_ACCOUNT)
     .order("snapshot_date", { ascending: false })
-    .limit(30);
-
-  const latest = new Map<string, Balance>();
-  for (const row of (data ?? []) as Balance[]) {
-    if (!latest.has(row.account)) latest.set(row.account, row);
-  }
-  return Array.from(latest.values());
+    .limit(1);
+  return (data ?? []) as Balance[];
 }
 
 export async function getTransactions(params: {
@@ -114,16 +113,16 @@ export async function getTransactions(params: {
   limit?: number;
 }): Promise<Transaction[]> {
   const sb = getServiceSupabase();
+  // Accountant tab is locked to CoreShift. The `account` param is
+  // accepted for API compatibility but ignored.
   let q = sb
     .from("mozi_mercury_transactions")
     .select("mercury_id, account, amount, counterparty, description, posted_at")
+    .eq("account", SOURCE_ACCOUNT)
     .gte("posted_at", params.start)
     .lte("posted_at", params.end)
     .order("posted_at", { ascending: false });
 
-  if (params.account && params.account !== "combined") {
-    q = q.eq("account", params.account);
-  }
   if (params.limit) q = q.limit(params.limit);
 
   const { data } = await q;

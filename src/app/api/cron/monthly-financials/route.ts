@@ -22,12 +22,8 @@ export async function GET(request: Request) {
   const generated: string[] = [];
 
   try {
-    // Generate per-account AND combined reports.
-    const accounts: Array<"coreshift" | "forge" | "combined"> = [
-      "coreshift",
-      "forge",
-      "combined",
-    ];
+    // CoreShift LLC only — Accountant tab ignores Forge.
+    const accounts: Array<"coreshift"> = ["coreshift"];
 
     for (const acct of accounts) {
       const txs = await getTransactions({

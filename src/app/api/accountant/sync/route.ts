@@ -6,6 +6,7 @@ import {
   getMercuryTransactions,
   mercuryTokens,
 } from "@/lib/mozi-mercury";
+import { SOURCE_ACCOUNT } from "@/lib/accountant-data";
 
 export async function POST() {
   const session = await auth();
@@ -22,9 +23,10 @@ export async function POST() {
   let synced = 0;
 
   try {
-    for (const [accountLabel, apiToken] of Object.entries(mercuryTokens)) {
-      if (!apiToken) continue;
-
+    // CoreShift LLC only — Forge is intentionally excluded from the Accountant tab.
+    const apiToken = mercuryTokens[SOURCE_ACCOUNT];
+    if (apiToken) {
+      const accountLabel = SOURCE_ACCOUNT;
       const { accounts } = await getMercuryAccounts(apiToken);
 
       for (const acct of accounts) {

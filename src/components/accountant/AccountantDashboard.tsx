@@ -29,17 +29,15 @@ export default function AccountantDashboard({
   trend,
   storedReports,
 }: Props) {
-  const [accountFilter, setAccountFilter] = useState<"all" | "coreshift" | "forge">("all");
   const [kindFilter, setKindFilter] = useState<"all" | "income" | "expense">("all");
   const [syncing, setSyncing] = useState(false);
 
   const filteredTxs = useMemo(() => {
     return currentMonth.transactions.filter((tx) => {
-      if (accountFilter !== "all" && tx.account !== accountFilter) return false;
       if (kindFilter !== "all" && tx.kind !== kindFilter) return false;
       return true;
     });
-  }, [currentMonth.transactions, accountFilter, kindFilter]);
+  }, [currentMonth.transactions, kindFilter]);
 
   const totalBalance = balances.reduce((acc, b) => acc + b.balance, 0);
   const maxTrendValue = Math.max(
@@ -80,7 +78,7 @@ export default function AccountantDashboard({
             Accountant
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-            Live Mercury data · Current period: {currentMonth.label}
+            Live CoreShift LLC (Mercury) · Current period: {currentMonth.label}
           </p>
         </div>
         <button
@@ -104,10 +102,10 @@ export default function AccountantDashboard({
         }}
       >
         <StatCard
-          label="Total Cash on Hand"
+          label="CoreShift Cash on Hand"
           value={formatCents(totalBalance)}
           icon={<Wallet size={16} />}
-          sub={`${balances.length} account${balances.length === 1 ? "" : "s"}`}
+          sub={balances[0]?.snapshot_date ? `As of ${balances[0].snapshot_date}` : undefined}
         />
         <StatCard
           label="Income (MTD)"
@@ -137,53 +135,6 @@ export default function AccountantDashboard({
           }
         />
       </div>
-
-      {/* Account balances */}
-      <Section title="Account Balances">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {balances.map((b) => (
-            <div
-              key={b.account}
-              style={{
-                padding: 16,
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-primary)",
-                borderRadius: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                }}
-              >
-                {b.account}
-              </div>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 700,
-                  color: "var(--text-primary)",
-                  marginTop: 6,
-                }}
-              >
-                {formatCents(b.balance)}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                As of {b.snapshot_date}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
 
       {/* 12-month trend */}
       <Section title="12-Month Trend">
@@ -326,18 +277,6 @@ export default function AccountantDashboard({
       <Section title="Transactions">
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <select
-            value={accountFilter}
-            onChange={(e) =>
-              setAccountFilter(e.target.value as "all" | "coreshift" | "forge")
-            }
-            className="form-input"
-            style={{ width: 160 }}
-          >
-            <option value="all">All accounts</option>
-            <option value="coreshift">CoreShift</option>
-            <option value="forge">Forge</option>
-          </select>
-          <select
             value={kindFilter}
             onChange={(e) =>
               setKindFilter(e.target.value as "all" | "income" | "expense")
@@ -362,7 +301,6 @@ export default function AccountantDashboard({
             <thead>
               <tr style={{ background: "var(--bg-primary)" }}>
                 <Th>Date</Th>
-                <Th>Account</Th>
                 <Th>Counterparty</Th>
                 <Th>Category</Th>
                 <Th align="right">Amount</Th>
@@ -375,7 +313,6 @@ export default function AccountantDashboard({
                   style={{ borderTop: "1px solid var(--border-primary)" }}
                 >
                   <Td>{tx.posted_at ? tx.posted_at.slice(0, 10) : "—"}</Td>
-                  <Td>{tx.account}</Td>
                   <Td>{tx.counterparty ?? tx.description ?? "—"}</Td>
                   <Td>{tx.category}</Td>
                   <Td
@@ -393,7 +330,7 @@ export default function AccountantDashboard({
               ))}
               {filteredTxs.length === 0 && (
                 <tr>
-                  <Td colSpan={5} align="center" color="var(--text-muted)">
+                  <Td colSpan={4} align="center" color="var(--text-muted)">
                     No transactions match filters.
                   </Td>
                 </tr>
