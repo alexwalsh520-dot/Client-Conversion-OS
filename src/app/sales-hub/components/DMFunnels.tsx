@@ -74,33 +74,41 @@ function getStageRatio(stage: RenderStage, baseline: number) {
   if (!stage.tracked) return 0.08;
   if (baseline <= 0) return stage.count > 0 ? 0.14 : 0.08;
   if (stage.count <= 0) return 0.08;
-  return Math.max(0.12, Math.min(1, stage.count / baseline));
+  return Math.max(0.08, Math.min(1, stage.count / baseline));
 }
 
+// Build a smooth tapering funnel in a 0–100 percentage viewBox so the polygon
+// scales with its container and stays aligned with the label columns above it.
+// Each stage is anchored at the center of its slot, with straight taper lines
+// between centers and a flat extension to each outer edge.
 function buildPolygonPoints(
   stages: RenderStage[],
   baseline: number,
-  width: number,
   height: number,
   compact: boolean,
 ) {
-  const paddingX = compact ? 10 : 12;
-  const slot = (width - paddingX * 2) / stages.length;
-  const centerY = height * 0.62;
-  const minHalf = compact ? 10 : 14;
-  const maxHalf = compact ? 30 : 44;
-  const top: string[] = [];
-  const bottom: string[] = [];
+  const centerY = height / 2;
+  const minHalf = compact ? 8 : 10;
+  const maxHalf = compact ? centerY - 10 : centerY - 12;
+  const slotPct = 100 / stages.length;
 
-  stages.forEach((stage, index) => {
+  const halves = stages.map((stage) => {
     const ratio = getStageRatio(stage, baseline);
-    const half = minHalf + (maxHalf - minHalf) * ratio;
-    const left = paddingX + index * slot;
-    const right = paddingX + (index + 1) * slot;
-
-    top.push(`${left},${centerY - half}`, `${right},${centerY - half}`);
-    bottom.unshift(`${right},${centerY + half}`, `${left},${centerY + half}`);
+    return minHalf + (maxHalf - minHalf) * ratio;
   });
+
+  // Anchor points for the top edge (left edge, each stage center, right edge).
+  const anchors: Array<[number, number]> = [];
+  anchors.push([0, halves[0]]);
+  stages.forEach((_, index) => {
+    anchors.push([(index + 0.5) * slotPct, halves[index]]);
+  });
+  anchors.push([100, halves[halves.length - 1]]);
+
+  const top = anchors.map(([x, half]) => `${x},${centerY - half}`);
+  const bottom = [...anchors]
+    .reverse()
+    .map(([x, half]) => `${x},${centerY + half}`);
 
   return top.concat(bottom).join(" ");
 }
@@ -119,19 +127,14 @@ function ConnectedFunnel({
   compact?: boolean;
 }) {
   const baseline = stages.find((stage) => stage.tracked && stage.count > 0)?.count || 0;
-  // Scale width to the actual stage count so 6 stages fit without horizontal
-  // scroll. Keeps per-column width comfortable at any stage count.
-  const perColumn = compact ? 96 : 112;
-  const graphHeight = compact ? 118 : 150;
-  const paddingX = compact ? 10 : 12;
-  const minWidth = stages.length * perColumn + paddingX * 2;
-  const slot = (minWidth - paddingX * 2) / stages.length;
-  const centerY = graphHeight * 0.62;
-  const polygonPoints = buildPolygonPoints(stages, baseline, minWidth, graphHeight, compact);
+  const graphHeight = compact ? 108 : 140;
+  const centerY = graphHeight / 2;
+  const slotPct = 100 / stages.length;
+  const polygonPoints = buildPolygonPoints(stages, baseline, graphHeight, compact);
   const gradientId = `${title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${compact ? "compact" : "full"}`;
 
   return (
-    <div className="glass-static" style={{ padding: compact ? 14 : 18, overflowX: "auto" }}>
+    <div className="glass-static" style={{ padding: compact ? 14 : 18 }}>
       <div style={{ marginBottom: compact ? 12 : 14 }}>
         <div style={{ fontSize: compact ? 13 : 15, fontWeight: 700, color: "var(--text-primary)" }}>
           {title}
@@ -143,140 +146,137 @@ function ConnectedFunnel({
         ) : null}
       </div>
 
-      <div style={{ minWidth }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${stages.length}, minmax(${perColumn}px, 1fr))`,
-            gap: 0,
-            marginBottom: 8,
-          }}
-        >
-          {stages.map((stage) => (
-            <div key={stage.id} style={{ paddingRight: compact ? 8 : 10 }}>
-              <div
-                style={{
-                  fontSize: compact ? 11 : 12,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  marginBottom: 4,
-                }}
-              >
-                {stage.label}
-              </div>
-              <div
-                style={{
-                  fontSize: compact ? 20 : 24,
-                  fontWeight: 800,
-                  color: stage.tracked ? "var(--text-primary)" : "var(--text-muted)",
-                  lineHeight: 1,
-                }}
-              >
-                {stage.tracked ? fmtNumber(stage.count) : "—"}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div
-          style={{
-            position: "relative",
-            height: graphHeight,
-            borderRadius: 14,
-            overflow: "hidden",
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <svg
-            width={minWidth}
-            height={graphHeight}
-            viewBox={`0 0 ${minWidth} ${graphHeight}`}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-            aria-hidden="true"
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${stages.length}, 1fr)`,
+          gap: 0,
+          marginBottom: 10,
+        }}
+      >
+        {stages.map((stage) => (
+          <div
+            key={stage.id}
+            style={{
+              padding: compact ? "0 6px" : "0 8px",
+              textAlign: "center",
+              minWidth: 0,
+            }}
           >
-            <defs>
-              <linearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="0%">
-                <stop offset="0%" stopColor={color} stopOpacity="0.65" />
-                <stop offset="55%" stopColor={color} stopOpacity="0.92" />
-                <stop offset="100%" stopColor={color} stopOpacity="0.75" />
-              </linearGradient>
-            </defs>
+            <div
+              style={{
+                fontSize: compact ? 10 : 11,
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                marginBottom: 4,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {stage.label}
+            </div>
+            <div
+              style={{
+                fontSize: compact ? 20 : 24,
+                fontWeight: 800,
+                color: stage.tracked ? "var(--text-primary)" : "var(--text-muted)",
+                lineHeight: 1,
+              }}
+            >
+              {stage.tracked ? fmtNumber(stage.count) : "—"}
+            </div>
+          </div>
+        ))}
+      </div>
 
-            {stages.map((_, index) => {
-              if (index === 0) return null;
-              const x = paddingX + index * slot;
-              return (
-                <line
-                  key={`divider-${index}`}
-                  x1={x}
-                  x2={x}
-                  y1={8}
-                  y2={graphHeight - 8}
-                  stroke="rgba(255,255,255,0.08)"
-                  strokeWidth="1"
-                />
-              );
-            })}
+      <div
+        style={{
+          position: "relative",
+          height: graphHeight,
+          borderRadius: 14,
+          overflow: "hidden",
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <svg
+          viewBox={`0 0 100 ${graphHeight}`}
+          preserveAspectRatio="none"
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="0%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+              <stop offset="55%" stopColor={color} stopOpacity="0.92" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.75" />
+            </linearGradient>
+          </defs>
 
-            <line
-              x1={paddingX}
-              x2={minWidth - paddingX}
-              y1={centerY}
-              y2={centerY}
-              stroke="rgba(255,255,255,0.08)"
-              strokeWidth="1"
-            />
-
-            <polygon points={polygonPoints} fill={`url(#${gradientId})`} />
-          </svg>
-
-          {stages.map((stage, index) => {
-            const previous = index > 0 ? stages[index - 1] : undefined;
-            const retention = getRetention(stage, previous);
-            const label =
-              retention !== null
-                ? fmtPercent(retention, 0)
-                : index === 0
-                  ? "Start"
-                  : stage.tracked
-                    ? "—"
-                    : "—";
-
+          {/* Slot dividers are drawn with vector-effect so they stay 1px wide
+              even though the viewBox is stretched horizontally. */}
+          {stages.map((_, index) => {
+            if (index === 0) return null;
+            const x = index * slotPct;
             return (
-              <div
-                key={`badge-${stage.id}`}
-                style={{
-                  position: "absolute",
-                  left: paddingX + index * slot,
-                  width: slot,
-                  top: centerY - (compact ? 14 : 16),
-                  display: "flex",
-                  justifyContent: "center",
-                  pointerEvents: "none",
-                }}
-              >
-                <div
-                  style={{
-                    padding: compact ? "4px 8px" : "5px 10px",
-                    borderRadius: 999,
-                    background: "rgba(12,12,16,0.78)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    boxShadow: "0 6px 20px rgba(0,0,0,0.22)",
-                    color: "white",
-                    fontSize: compact ? 10 : 11,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  {label}
-                </div>
-              </div>
+              <line
+                key={`divider-${index}`}
+                x1={x}
+                x2={x}
+                y1={6}
+                y2={graphHeight - 6}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+              />
             );
           })}
-        </div>
+
+          <polygon points={polygonPoints} fill={`url(#${gradientId})`} />
+        </svg>
+
+        {/* Retention badges sit over each stage's slot using percentage
+            positioning, so they line up with the polygon at any width. */}
+        {stages.map((stage, index) => {
+          const previous = index > 0 ? stages[index - 1] : undefined;
+          const retention = getRetention(stage, previous);
+          if (retention === null) return null;
+
+          return (
+            <div
+              key={`badge-${stage.id}`}
+              style={{
+                position: "absolute",
+                left: `${index * slotPct}%`,
+                width: `${slotPct}%`,
+                top: centerY - (compact ? 12 : 14),
+                display: "flex",
+                justifyContent: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <div
+                style={{
+                  padding: compact ? "4px 9px" : "5px 11px",
+                  borderRadius: 999,
+                  background: "rgba(12,12,16,0.82)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.28)",
+                  color: "white",
+                  fontSize: compact ? 10 : 11,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {fmtPercent(retention, 0)}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -318,7 +318,6 @@ export default function DMFunnels({
       {selectedClient === "all" && (
         <ConnectedFunnel
           title="All Clients"
-          subtitle="New lead → challenge sent → replied → in discovery → call link sent → booked"
           stages={allClientStages}
           color="#2f6fff"
         />
@@ -329,7 +328,6 @@ export default function DMFunnels({
           <ConnectedFunnel
             key={funnel.key}
             title={funnel.label}
-            subtitle="Compact client funnel"
             stages={funnel.stages}
             color={funnel.color}
             compact
