@@ -48,6 +48,15 @@ export interface DayGenerationInput {
   priorAttemptError?: string;
   // Structural format hint to rotate meal formats across the week (bowl, wrap, salad, plate, etc.)
   formatHints?: Partial<Record<string, string>>;
+  // HBP-specific context — weekly cap rules + sodium budget guidance for today.
+  // Only populated when the client has hypertension; undefined otherwise.
+  hbpContext?: {
+    sodiumCapMg: number;        // daily cap (e.g. 1800 for HBP)
+    dayNumber: number;          // 1..7 — helps Claude reason about weekly running totals
+    allowedCheeseDaysLeft: number;    // out of 3 for the whole week
+    allowedSourdoughDaysLeft: number; // out of 2
+    allowedFlourTortillaDaysLeft: number; // out of 3
+  };
 }
 
 function buildSystemPrompt(): string {
@@ -182,6 +191,31 @@ function buildUserPrompt(input: DayGenerationInput): string {
   }
   const directivesBlock = directives.length > 0 ? `\n\nCLIENT DIRECTIVES:\n${directives.map((d) => `- ${d}`).join("\n")}` : "";
 
+  // HBP-specific sodium management block — high-leverage because HBP clients
+  // have a 1,800 mg/day cap and the biggest offenders are bread, cheese,
+  // tortillas, and sauces. Running weekly caps on cheese/sourdough/flour
+  // tortillas are surfaced here so Claude can decide whether TODAY is the
+  // day to use one or skip.
+  const hbp = input.hbpContext;
+  const hbpBlock = hbp
+    ? `\n\nHIGH BLOOD PRESSURE — SODIUM MANAGEMENT:
+- This client's daily sodium cap is ${hbp.sodiumCapMg} mg. Keep today's total BELOW that number.
+- High-sodium offenders to watch (approximate):
+    bread: sourdough ~340mg/slice, whole wheat ~130mg/slice, white ~150mg/slice
+    cheese: ~180mg per 30g serving (varies; parmesan much higher)
+    tortillas: flour ~400mg each (large), corn ~15mg each (prefer corn when possible)
+    deli meats: ~700mg per 100g — avoid where possible
+    marinara/pasta sauce: ~450mg per 120g serving
+    soy sauce: ~900mg per tbsp — use sparingly or low-sodium
+    salted butter: ~90mg per 10g — prefer unsalted
+    salted canned tuna: ~300mg per 100g — prefer no-salt-added varieties
+- Weekly caps (this client has ${hbp.allowedCheeseDaysLeft}/3 cheese days, ${hbp.allowedSourdoughDaysLeft}/2 sourdough days, ${hbp.allowedFlourTortillaDaysLeft}/3 flour-tortilla days REMAINING before you decide today's meals):
+    • Cheese appears in at most 3 meals across the full 7-day week (all forms: cheddar, mozzarella, parmesan, cottage cheese, feta, cream cheese, etc.).
+    • Sourdough bread appears in at most 2 meals across the week. Default to whole wheat, whole grain, or oat-based breads instead.
+    • Flour tortillas appear in at most 3 meals across the week. Prefer corn tortillas (~15mg sodium vs ~400mg for flour).
+- Before finalizing this day, estimate the sodium load. If the day's estimated sodium exceeds ${hbp.sodiumCapMg} mg, swap the highest-sodium offender for a lower-sodium alternative (corn tortilla for flour, olive oil + lemon for salad dressing, unsalted butter for salted, etc.).`
+    : "";
+
   const retryBlock = priorAttemptError
     ? `\n\nCORRECTIVE FEEDBACK — your previous attempt for this day failed validation:\n${priorAttemptError}\nFix by adjusting portion sizes (smaller oil/butter/cheese/nut portions are the usual culprits). Do not change the set of ingredients dramatically.`
     : "";
@@ -204,7 +238,7 @@ Carbs:    ${targets.carbsG}g
 Fat:      ${targets.fatG}g           (max ${Math.round(targets.fatG * 1.10)} — DO NOT OVERSHOOT)
 
 MEAL STRUCTURE (produce exactly these meals, in this order):
-${mealSlotsBlock}${directivesBlock}${commentsBlock}${retryBlock}
+${mealSlotsBlock}${directivesBlock}${hbpBlock}${commentsBlock}${retryBlock}
 
 ALLOWED INGREDIENTS (format: slug|name|category|macros per 100g):
 ${ingredientList}

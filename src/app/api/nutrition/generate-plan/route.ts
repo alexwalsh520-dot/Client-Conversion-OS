@@ -400,6 +400,17 @@ export async function POST(req: NextRequest) {
         preferredProteins,
         avoidProteins: rotateAvoid(i),
         formatHints: formatHintsFor(i),
+        hbpContext: medical.hasHypertension
+          ? {
+              sodiumCapMg: targets.sodiumCapMg,
+              dayNumber: i + 1,
+              // On the initial parallel fire every day sees the full budget;
+              // retries recompute these from the current plan state below.
+              allowedCheeseDaysLeft: 3,
+              allowedSourdoughDaysLeft: 2,
+              allowedFlourTortillaDaysLeft: 3,
+            }
+          : undefined,
       });
     }
 
@@ -492,32 +503,54 @@ export async function POST(req: NextRequest) {
       }
 
       // Portion sanity — signals a pathological generation state.
-      const meatKeywords = ["chicken", "beef", "pork", "turkey", "salmon", "tuna", "cod", "shrimp", "fish"];
-      const oilKeywords = ["oil", "butter", "ghee"];
-      const cheeseKeywords = ["cheese", "mozzarella", "cheddar", "parmesan", "feta", "ricotta", "swiss"];
-      const dryGrainKeywords = ["rice", "oats", "pasta", "quinoa", "barley", "couscous"];
+      // IMPORTANT: Use WORD-BOUNDARY matching on a normalized haystack (slug
+      // underscores replaced with spaces) so "b\boil\bed" in "potato boiled"
+      // doesn't false-match /oil/. Also exclude nut butters from the fat cap
+      // (peanut/almond/cashew butter are high-fat foods but not cooking fats).
+      const wbHas = (hay: string, word: string): boolean =>
+        new RegExp(`\\b${word}\\b`).test(hay);
+
       for (const meal of d.meals) {
         for (const ing of meal.ingredients) {
           const row = byslug.get(ing.slug);
           if (!row) continue;
-          const hay = `${row.slug} ${row.name}`.toLowerCase();
+          // Normalize: "butter_unsalted" → "butter unsalted", "olive_oil" → "olive oil"
+          const hay = `${row.slug.replace(/_/g, " ")} ${(row.name || "").toLowerCase()}`.toLowerCase();
           const grams = ing.grams;
-          const isRaw = /raw|dry|uncooked/.test(hay);
-          // 350g meat
-          if (grams > 350 && meatKeywords.some((k) => hay.includes(k)) && !hay.includes("broth") && !hay.includes("stock")) {
-            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 350g meat portion sanity limit. Pick a different protein anchor or split the meal.` });
+
+          // --- 350g meat ---
+          const meatWords = ["chicken", "beef", "pork", "turkey", "salmon", "tuna", "cod", "shrimp", "sirloin", "ribeye", "tenderloin", "thigh", "breast"];
+          const isBrothOrStock = /\bbroth\b|\bstock\b/.test(hay);
+          if (grams > 350 && !isBrothOrStock && meatWords.some((w) => wbHas(hay, w))) {
+            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 350g meat portion sanity limit.` });
           }
-          // 50g oil/butter
-          if (grams > 50 && oilKeywords.some((k) => hay.includes(k))) {
-            v.push({ tier: 1, kind: "portion_sanity_oil", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 50g oil/butter per meal. Reduce.` });
+
+          // --- 50g oil/butter (cooking fats only) ---
+          // Exclude nut butters and seed butters — they're fat-dense but not cooking fats.
+          const isNutButter = /\b(peanut|almond|cashew|sunflower|pumpkin|tahini|sesame seed)\b.*\bbutter\b/.test(hay);
+          const isCookingFat =
+            !isNutButter &&
+            (wbHas(hay, "butter") || wbHas(hay, "oil") || wbHas(hay, "ghee") ||
+             wbHas(hay, "lard") || wbHas(hay, "tallow") || wbHas(hay, "margarine"));
+          if (grams > 50 && isCookingFat) {
+            v.push({ tier: 1, kind: "portion_sanity_oil", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 50g oil/butter per meal.` });
           }
-          // 200g cheese
-          if (grams > 200 && cheeseKeywords.some((k) => hay.includes(k))) {
+
+          // --- 200g cheese ---
+          const cheeseWords = ["cheese", "mozzarella", "cheddar", "parmesan", "feta", "ricotta", "swiss", "provolone", "gouda", "brie"];
+          const isCottage = /\bcottage cheese\b/.test(hay); // cottage cheese is lighter — use a higher bar
+          if (!isCottage && grams > 200 && cheeseWords.some((w) => wbHas(hay, w))) {
             v.push({ tier: 1, kind: "portion_sanity_cheese", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 200g cheese per meal.` });
           }
-          // 150g dry grain (only flag if clearly dry — cooked grains triple in weight)
-          if (grams > 150 && dryGrainKeywords.some((k) => hay.includes(k)) && isRaw) {
-            v.push({ tier: 1, kind: "portion_sanity_grain", message: `"${meal.dishName || meal.name}" contains ${grams}g of dry ${row.name} — exceeds 150g dry grain per meal. Reduce or split.` });
+          if (isCottage && grams > 300) {
+            v.push({ tier: 1, kind: "portion_sanity_cheese", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 300g cottage cheese per meal.` });
+          }
+
+          // --- 150g dry grain (only when clearly pre-cooked/dry) ---
+          const grainWords = ["rice", "oats", "oatmeal", "pasta", "quinoa", "barley", "couscous", "millet"];
+          const isRawOrDry = /\b(raw|dry|uncooked)\b/.test(hay);
+          if (grams > 150 && isRawOrDry && grainWords.some((w) => wbHas(hay, w))) {
+            v.push({ tier: 1, kind: "portion_sanity_grain", message: `"${meal.dishName || meal.name}" contains ${grams}g of dry ${row.name} — exceeds 150g dry grain per meal.` });
           }
         }
       }
@@ -678,6 +711,24 @@ export async function POST(req: NextRequest) {
         ? violating.filter(({ violations }) => violations.some((x) => x.tier === 1))
         : violating;
 
+      // For HBP retries: compute running weekly cap counts from the days
+      // NOT being retried, so each retry knows how much budget it has left.
+      const computeCapUsage = (slugMatch: string, excludeIdx: Set<number>): number => {
+        let dayCount = 0;
+        days.forEach((d, di) => {
+          if (excludeIdx.has(di)) return;
+          const usedInDay = d.meals.some((m) =>
+            m.ingredients.some((ing) => {
+              const row = byslug.get(ing.slug);
+              const name = (row?.name || "").toLowerCase();
+              return ing.slug.includes(slugMatch) || name.includes(slugMatch);
+            })
+          );
+          if (usedInDay) dayCount++;
+        });
+        return dayCount;
+      };
+
       const retryInputs = targetDays.map(({ idx, violations }) => {
         const t = computeTotals(days[idx]);
         const header = `Prior attempt: ${Math.round(t.cal)} kcal, ${t.p.toFixed(0)}g protein, ${t.c.toFixed(0)}g carbs, ${t.f.toFixed(0)}g fat. Targets: ${targets.calories}/${targets.proteinG}P/${targets.carbsG}C/${targets.fatG}F.`;
@@ -687,9 +738,28 @@ export async function POST(req: NextRequest) {
         if (t1.length > 0) sections.push(`PRIORITY 1 (must fix — safety):\n${t1.join("\n")}`);
         if (t2.length > 0) sections.push(`PRIORITY 2 (nice to fix — quality):\n${t2.join("\n")}`);
         sections.push(`Fix PRIORITY 1 first. Only touch PRIORITY 2 if it doesn't create new PRIORITY 1 violations.`);
+
+        // Refresh HBP cap budget: what's left AFTER subtracting the days
+        // we're KEEPING (other days in the week that aren't this retry).
+        let refreshedHbp = dayInputs[idx].hbpContext;
+        if (refreshedHbp && medical.hasHypertension) {
+          const excludeIdx = new Set([idx]);
+          const cheeseUsed = computeCapUsage("cheese", excludeIdx);
+          const sourdoughUsed = computeCapUsage("sourdough", excludeIdx);
+          const flourTortillaUsed = computeCapUsage("tortilla_flour", excludeIdx) +
+                                    computeCapUsage("flour tortilla", excludeIdx);
+          refreshedHbp = {
+            ...refreshedHbp,
+            allowedCheeseDaysLeft: Math.max(0, 3 - cheeseUsed),
+            allowedSourdoughDaysLeft: Math.max(0, 2 - sourdoughUsed),
+            allowedFlourTortillaDaysLeft: Math.max(0, 3 - flourTortillaUsed),
+          };
+        }
+
         return {
           ...dayInputs[idx],
           priorAttemptError: sections.join("\n\n"),
+          hbpContext: refreshedHbp,
         };
       });
 
