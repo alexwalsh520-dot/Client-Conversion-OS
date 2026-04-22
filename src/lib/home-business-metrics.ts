@@ -47,21 +47,47 @@ interface MetricValueSet {
   capacityPct: number | null;   // integer percent
 }
 
+export interface AcquisitionSoftwareLine {
+  label: string;                                  // "SendBlue", "Skool", ...
+  perClientCents: number;                         // this client's share in last 30d
+  totalCents: number;                             // total 30d spend before split
+  splitNote: string;                              // "50/50 split", "100% Keith", etc.
+}
+
 export interface ClientBreakdown {
   newClientCount: number;
-  aovCents: number;                              // avg cash collected per sale
-  cohortRevenueCents: number;                    // sum of cash_collected in window
-  coachingCostPerNewClientCents: number;         // ~$38
-  feeDragPerNewClientCents: number;              // 3.9% × AOV
-  setterCommissionsPerNewClientCents: number;    // real per-row average
-  closerCommissionsPerNewClientCents: number;    // real per-row average
+  aovCents: number;                               // avg cash collected per sale
+  cohortRevenueCents: number;                     // sum of cash_collected in window
+
+  // GP30 math
+  coachingCostPerNewClientCents: number;          // ~$38
+  feeDragPerNewClientCents: number;               // 3.9% × AOV
+  setterCommissionsPerNewClientCents: number;     // real per-row average
+  closerCommissionsPerNewClientCents: number;     // real per-row average
   directCostsPerNewClientCents: number;
   gp30Cents: number;
+
+  // Drill-down for GP30 coaching cost
+  fulfillmentPayrollMonthlyCents: number;         // total Mercury coach+PM+nutrition last 30d
+  fulfillmentSoftwareMonthlyCents: number;        // Everfit last 30d
+  totalActiveEndClients: number;                  // denominator used to get per-client
+
+  // CAC math
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
   cacTotalCents: number;
+  cacAdSpendSource: "Meta API" | "Keith Ad Tracker Sheet" | "none";
+  cacAcquisitionLines: AcquisitionSoftwareLine[]; // itemized per-client software
+  cacManychatPerClientCents: number;
+
+  // LTGP math
   monthlyGpPerActiveClientCents: number;
-  ltvPerCustomerCents: number;                   // realized lifetime revenue
+  ltvPerCustomerCents: number;                    // mean realized lifetime revenue
+  ltvMedianCents: number;                         // median lifetime revenue
+  ltvCustomerCount: number;                       // how many customers went into mean
+  avgTenureMonths: number;                        // avg observed tenure in months
+
+  // Capacity context
   activeClients: number;
 }
 
@@ -158,7 +184,14 @@ function computeLtgp(
   perEndClientCoachingMonthly: number,
   paymentFeePct: number,
   chargebackPct: number,
-): { ltgpCents: number; ltvCents: number; monthlyGpPerActiveCents: number } {
+): {
+  ltgpCents: number;
+  ltvCents: number;
+  ltvMedianCents: number;
+  ltvCount: number;
+  avgTenureMonths: number;
+  monthlyGpPerActiveCents: number;
+} {
   const nowMs = Date.now();
   const byCust = new Map<string, { firstAt: number; totalCents: number }>();
   for (const c of charges) {
@@ -178,24 +211,38 @@ function computeLtgp(
     }
   }
 
+  const perCustomerTotals: number[] = [];
   let revenueSum = 0;
-  let count = 0;
   let tenureMonthsSum = 0;
   for (const cust of byCust.values()) {
     if (cust.totalCents < 20000) continue;            // $200 floor (ignore micro-buys)
+    perCustomerTotals.push(cust.totalCents);
     revenueSum += cust.totalCents;
-    count += 1;
     tenureMonthsSum += Math.max(0.5, (nowMs - cust.firstAt) / (1000 * 60 * 60 * 24 * 30));
   }
+  const count = perCustomerTotals.length;
   const ltv = count > 0 ? Math.round(revenueSum / count) : 0;
   const tenureMonths = count > 0 ? tenureMonthsSum / count : 0;
+  perCustomerTotals.sort((a, b) => a - b);
+  const median = count > 0
+    ? (count % 2 === 1
+        ? perCustomerTotals[(count - 1) / 2]
+        : Math.round((perCustomerTotals[count / 2 - 1] + perCustomerTotals[count / 2]) / 2))
+    : 0;
   const feeDrag = Math.round(ltv * ((paymentFeePct + chargebackPct) / 100));
   const coachingOverTenure = Math.round(perEndClientCoachingMonthly * tenureMonths);
   const ltgp = Math.max(0, ltv - feeDrag - coachingOverTenure);
   const monthlyGpPerActive = tenureMonths > 0
     ? Math.round((ltv - feeDrag) / tenureMonths) - perEndClientCoachingMonthly
     : 0;
-  return { ltgpCents: ltgp, ltvCents: ltv, monthlyGpPerActiveCents: monthlyGpPerActive };
+  return {
+    ltgpCents: ltgp,
+    ltvCents: ltv,
+    ltvMedianCents: median,
+    ltvCount: count,
+    avgTenureMonths: tenureMonths,
+    monthlyGpPerActiveCents: monthlyGpPerActive,
+  };
 }
 
 export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsResponse> {
@@ -327,15 +374,54 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     const cacPerClient = cohort.count > 0 ? Math.round(cacTotal / cohort.count) : 0;
 
     // LTGP from Stripe observation
-    const { ltgpCents, ltvCents, monthlyGpPerActiveCents } = computeLtgp(
+    const ltgpOut = computeLtgp(
       allCharges,
       clientKey,
       perEndClientCoachingMonthly,
       paymentFeePct,
       chargebackPct,
     );
+    const { ltgpCents, ltvCents, ltvMedianCents, ltvCount, avgTenureMonths, monthlyGpPerActiveCents } = ltgpOut;
 
     const activeClients = clientKey === "total" ? totalActive : activeByClient[clientKey];
+
+    // Itemized CAC acquisition-software lines for this client
+    const cacAcquisitionLines: AcquisitionSoftwareLine[] = [];
+    if (acquisitionBreakdown) {
+      for (const line of acquisitionBreakdown.acquisitionByLabel) {
+        const perClient = clientKey === "total"
+          ? line.totalCents
+          : (line.perClientCents[clientKey] ?? 0);
+        if (perClient <= 0) continue;
+        const splitNote = (line.perClientCents.keith > 0 && line.perClientCents.tyson > 0)
+          ? "50/50 split"
+          : line.perClientCents.keith > 0 ? "100% Keith" : "100% Tyson";
+        cacAcquisitionLines.push({
+          label: line.label,
+          perClientCents: perClient,
+          totalCents: line.totalCents,
+          splitNote,
+        });
+      }
+    }
+    const manychatPerClient = acquisitionBreakdown
+      ? (clientKey === "total"
+          ? acquisitionBreakdown.manychatPerClient.keith + acquisitionBreakdown.manychatPerClient.tyson
+          : acquisitionBreakdown.manychatPerClient[clientKey])
+      : 0;
+    if (manychatPerClient > 0) {
+      cacAcquisitionLines.push({
+        label: "ManyChat",
+        perClientCents: manychatPerClient,
+        totalCents: manychatPerClient,
+        splitNote: clientKey === "total" ? "Keith + Tyson" : `100% ${clientKey === "keith" ? "Keith" : "Tyson"}`,
+      });
+    }
+
+    const cacAdSpendSource: "Meta API" | "Keith Ad Tracker Sheet" | "none" =
+      clientKey === "keith" && keithAdSpendSheet && keithAdSpendSheet.totalCents > 0
+        ? "Keith Ad Tracker Sheet"
+        : adSpend > 0 ? "Meta API" : "none";
 
     const label = opts?.label ?? (clientKey === "total" ? "Total" : CLIENTS[clientKey].name);
     const notes: string[] = [];
@@ -362,17 +448,31 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
         newClientCount: cohort.count,
         aovCents: aov,
         cohortRevenueCents: cohort.cashCollectedCents,
+
         coachingCostPerNewClientCents: perEndClientCoachingMonthly,
         feeDragPerNewClientCents: feeDragPerClient,
         setterCommissionsPerNewClientCents: setterComm,
         closerCommissionsPerNewClientCents: closerComm,
         directCostsPerNewClientCents: directCosts,
         gp30Cents: gp30,
+
+        fulfillmentPayrollMonthlyCents: payrollBreakdown?.totalCents ?? 0,
+        fulfillmentSoftwareMonthlyCents: acquisitionBreakdown?.fulfillmentSoftwareCents ?? 0,
+        totalActiveEndClients: totalActive,
+
         cacAdSpendCents: adSpend,
         cacMercurySoftwareCents: mercuryAcq,
         cacTotalCents: cacTotal,
+        cacAdSpendSource,
+        cacAcquisitionLines,
+        cacManychatPerClientCents: manychatPerClient,
+
         monthlyGpPerActiveClientCents: monthlyGpPerActiveCents,
         ltvPerCustomerCents: ltvCents,
+        ltvMedianCents,
+        ltvCustomerCount: ltvCount,
+        avgTenureMonths,
+
         activeClients,
       },
     };

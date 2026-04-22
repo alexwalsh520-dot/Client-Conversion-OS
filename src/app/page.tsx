@@ -48,21 +48,42 @@ interface BusinessMetricValues {
   capacityPct: number | null;
 }
 
+interface AcquisitionSoftwareLine {
+  label: string;
+  perClientCents: number;
+  totalCents: number;
+  splitNote: string;
+}
+
 interface BusinessMetricBreakdown {
   newClientCount: number;
   aovCents: number;
   cohortRevenueCents: number;
+
   coachingCostPerNewClientCents: number;
   feeDragPerNewClientCents: number;
   setterCommissionsPerNewClientCents: number;
   closerCommissionsPerNewClientCents: number;
   directCostsPerNewClientCents: number;
   gp30Cents: number;
+
+  fulfillmentPayrollMonthlyCents: number;
+  fulfillmentSoftwareMonthlyCents: number;
+  totalActiveEndClients: number;
+
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
   cacTotalCents: number;
+  cacAdSpendSource: "Meta API" | "Keith Ad Tracker Sheet" | "none";
+  cacAcquisitionLines: AcquisitionSoftwareLine[];
+  cacManychatPerClientCents: number;
+
   monthlyGpPerActiveClientCents: number;
   ltvPerCustomerCents: number;
+  ltvMedianCents: number;
+  ltvCustomerCount: number;
+  avgTenureMonths: number;
+
   activeClients: number;
 }
 
@@ -592,8 +613,10 @@ function BusinessMetricsCard({
   accent: string;
   style?: CSSProperties;
 }) {
-  const [reportOpen, setReportOpen] = useState(false);
+  const [openMetric, setOpenMetric] = useState<"gp30" | "cac" | "ltgp" | "capacity" | null>(null);
   const noteLines = Array.from(new Set(card.notes)).filter(Boolean);
+  const b = card.breakdown;
+  const toggle = (m: "gp30" | "cac" | "ltgp" | "capacity") => setOpenMetric((v) => (v === m ? null : m));
 
   return (
     <div className="glass-static" style={{ padding: 18, ...style }}>
@@ -618,45 +641,25 @@ function BusinessMetricsCard({
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div
-            style={{
-              padding: "4px 8px",
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 600,
-              background: card.state === "live" ? "rgba(34,197,94,0.14)" : "rgba(245,158,11,0.14)",
-              color: card.state === "live" ? "var(--success)" : "var(--warning)",
-            }}
-          >
-            {card.state === "live" ? "Live" : "Needs setup"}
-          </div>
-          {card.breakdown && (
-            <button
-              onClick={() => setReportOpen((v) => !v)}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 600,
-                background: "rgba(255,255,255,0.04)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-primary)",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              {reportOpen ? "Hide report" : "Generate report"}
-            </button>
-          )}
+        <div
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 600,
+            background: card.state === "live" ? "rgba(34,197,94,0.14)" : "rgba(245,158,11,0.14)",
+            color: card.state === "live" ? "var(--success)" : "var(--warning)",
+          }}
+        >
+          {card.state === "live" ? "Live" : "Needs setup"}
         </div>
       </div>
 
       <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-        <BusinessMetricStat label="30-Day GP" value={fmtCentsMetric(card.metrics.gp30)} />
-        <BusinessMetricStat label="CAC" value={fmtCentsMetric(card.metrics.cac)} />
-        <BusinessMetricStat label="LTGP" value={fmtCentsMetric(card.metrics.ltgp)} />
-        <BusinessMetricStat label="Capacity" value={fmtCapacityMetric(card.metrics.capacityPct)} />
+        <BusinessMetricStat label="30-Day GP" value={fmtCentsMetric(card.metrics.gp30)} active={openMetric === "gp30"} onClick={() => toggle("gp30")} />
+        <BusinessMetricStat label="CAC" value={fmtCentsMetric(card.metrics.cac)} active={openMetric === "cac"} onClick={() => toggle("cac")} />
+        <BusinessMetricStat label="LTGP" value={fmtCentsMetric(card.metrics.ltgp)} active={openMetric === "ltgp"} onClick={() => toggle("ltgp")} />
+        <BusinessMetricStat label="Capacity" value={fmtCapacityMetric(card.metrics.capacityPct)} active={openMetric === "capacity"} onClick={() => toggle("capacity")} />
       </div>
 
       {noteLines.length > 0 && (
@@ -669,7 +672,7 @@ function BusinessMetricsCard({
         </div>
       )}
 
-      {reportOpen && card.breakdown && (
+      {openMetric && b && (
         <div
           style={{
             marginTop: 14,
@@ -682,31 +685,135 @@ function BusinessMetricsCard({
             fontSize: 13,
           }}
         >
-          <BreakdownRow label="New clients (last 30d, sales tracker)" value={String(card.breakdown.newClientCount)} />
-          <BreakdownRow label="Total cash collected" value={fmtCentsMetric(card.breakdown.cohortRevenueCents)} />
-          <BreakdownRow label="AOV per sale" value={fmtCentsMetric(card.breakdown.aovCents)} />
-          <BreakdownRow label="− Coaching cost / client (month 1)" value={fmtCentsMetric(-card.breakdown.coachingCostPerNewClientCents)} />
-          <BreakdownRow label="− Payment fees + chargebacks (3.9%)" value={fmtCentsMetric(-card.breakdown.feeDragPerNewClientCents)} />
-          <BreakdownRow label="− Setter commissions (avg per sale)" value={fmtCentsMetric(-card.breakdown.setterCommissionsPerNewClientCents)} />
-          <BreakdownRow label="− Closer commissions (10% per sale)" value={fmtCentsMetric(-card.breakdown.closerCommissionsPerNewClientCents)} />
-          <BreakdownRow label="→ 30-Day GP per new client" value={fmtCentsMetric(card.breakdown.gp30Cents)} bold />
-          <div style={{ height: 4 }} />
-          <BreakdownRow label="CAC — Ad spend (30d total)" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
-          <BreakdownRow label="CAC — Acquisition SaaS (30d total)" value={fmtCentsMetric(card.breakdown.cacMercurySoftwareCents)} />
-          <BreakdownRow label="CAC — Total (30d)" value={fmtCentsMetric(card.breakdown.cacTotalCents)} />
-          <BreakdownRow
-            label="→ CAC per new client"
-            value={fmtCentsMetric(card.breakdown.newClientCount > 0 ? Math.round(card.breakdown.cacTotalCents / card.breakdown.newClientCount) : 0)}
-            bold
-          />
-          <div style={{ height: 4 }} />
-          <BreakdownRow label="Active end-clients" value={String(card.breakdown.activeClients)} />
-          <BreakdownRow label="Observed lifetime revenue / customer" value={fmtCentsMetric(card.breakdown.ltvPerCustomerCents)} />
-          <BreakdownRow label="Monthly GP per active" value={fmtCentsMetric(card.breakdown.monthlyGpPerActiveClientCents)} />
-          <BreakdownRow label="→ LTGP" value={fmtCentsMetric(card.metrics.ltgp)} bold />
+          {openMetric === "gp30" && <Gp30Drilldown b={b} />}
+          {openMetric === "cac" && <CacDrilldown b={b} />}
+          {openMetric === "ltgp" && <LtgpDrilldown b={b} ltgpCents={card.metrics.ltgp} />}
+          {openMetric === "capacity" && <CapacityDrilldown b={b} capacityPct={card.metrics.capacityPct} />}
         </div>
       )}
     </div>
+  );
+}
+
+// ── Drill-down panels ────────────────────────────────────────────────
+
+function DrillHeader({ title, formula, source }: { title: string; formula: string; source: string }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--text-primary)" }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, fontFamily: "var(--font-mono, ui-monospace), monospace" }}>
+        {formula}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+        Source: {source}
+      </div>
+    </div>
+  );
+}
+
+function Gp30Drilldown({ b }: { b: BusinessMetricBreakdown }) {
+  const coachingCalc = b.totalActiveEndClients > 0
+    ? `$${Math.round((b.fulfillmentPayrollMonthlyCents + b.fulfillmentSoftwareMonthlyCents) / 100).toLocaleString()} ÷ ${b.totalActiveEndClients} active = $${Math.round(b.coachingCostPerNewClientCents / 100).toLocaleString()}/client/mo`
+    : "—";
+  return (
+    <>
+      <DrillHeader
+        title="30-Day GP per new client"
+        formula="AOV − coaching − fees − setter comm − closer comm"
+        source="Sales tracker (AOV, commissions) · Mercury (coaching cost) · settings (fee %)"
+      />
+      <BreakdownRow label={`Sales this window (from sales tracker)`} value={`${b.newClientCount} sales totaling ${fmtCentsMetric(b.cohortRevenueCents)}`} />
+      <BreakdownRow label="AOV (cash collected ÷ sales)" value={fmtCentsMetric(b.aovCents)} />
+      <BreakdownRow label={`− Coaching cost per client / month 1`} value={fmtCentsMetric(-b.coachingCostPerNewClientCents)} />
+      <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 12 }}>{coachingCalc}</div>
+      <BreakdownRow label="− Payment fees (2.9% Stripe + 1% chargeback = 3.9%)" value={fmtCentsMetric(-b.feeDragPerNewClientCents)} />
+      <BreakdownRow label="− Setter commission (per-row actual: 3% others, 5% Amara)" value={fmtCentsMetric(-b.setterCommissionsPerNewClientCents)} />
+      <BreakdownRow label="− Closer commission (10% of cash collected)" value={fmtCentsMetric(-b.closerCommissionsPerNewClientCents)} />
+      <BreakdownRow label="= Direct costs per new client" value={fmtCentsMetric(b.directCostsPerNewClientCents)} />
+      <div style={{ height: 2 }} />
+      <BreakdownRow label="→ 30-Day GP per new client" value={fmtCentsMetric(b.gp30Cents)} bold />
+    </>
+  );
+}
+
+function CacDrilldown({ b }: { b: BusinessMetricBreakdown }) {
+  const cacPerClient = b.newClientCount > 0 ? Math.round(b.cacTotalCents / b.newClientCount) : 0;
+  return (
+    <>
+      <DrillHeader
+        title="CAC per new client"
+        formula="(ad spend + acquisition software) ÷ new clients"
+        source={`Ad spend: ${b.cacAdSpendSource} · Software: Mercury API (allowlist) · Denominator: sales tracker rows`}
+      />
+      <BreakdownRow label={`Ad spend (30d)`} value={fmtCentsMetric(b.cacAdSpendCents)} />
+      <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 12 }}>From {b.cacAdSpendSource}</div>
+      <div style={{ height: 4 }} />
+      <BreakdownRow label="Acquisition software lines (30d)" value={fmtCentsMetric(b.cacMercurySoftwareCents)} />
+      {b.cacAcquisitionLines.map((line) => (
+        <div key={line.label} style={{ display: "flex", justifyContent: "space-between", paddingLeft: 16, fontSize: 12 }}>
+          <span style={{ color: "var(--text-muted)" }}>
+            {line.label} <span style={{ opacity: 0.7 }}>({line.splitNote})</span>
+          </span>
+          <span style={{ color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+            {fmtCentsMetric(line.perClientCents)}
+          </span>
+        </div>
+      ))}
+      <div style={{ height: 4 }} />
+      <BreakdownRow label="= Total CAC spend (30d)" value={fmtCentsMetric(b.cacTotalCents)} />
+      <BreakdownRow label={`÷ New clients (from sales tracker)`} value={String(b.newClientCount)} />
+      <div style={{ height: 2 }} />
+      <BreakdownRow label="→ CAC per new client" value={fmtCentsMetric(cacPerClient)} bold />
+    </>
+  );
+}
+
+function LtgpDrilldown({ b, ltgpCents }: { b: BusinessMetricBreakdown; ltgpCents: number | null }) {
+  const coachingOverTenure = Math.round(b.coachingCostPerNewClientCents * b.avgTenureMonths);
+  const feeDragOverLtv = Math.round(b.ltvPerCustomerCents * 0.039);
+  return (
+    <>
+      <DrillHeader
+        title="LTGP per customer"
+        formula="mean(lifetime revenue) − coaching × avg tenure − fee drag"
+        source={`Stripe (only status='succeeded' charges) · ${b.ltvCustomerCount} paying customers with ≥$200 lifetime`}
+      />
+      <BreakdownRow label={`Paying customers in scope`} value={String(b.ltvCustomerCount)} />
+      <BreakdownRow label="Mean lifetime revenue (LTV)" value={fmtCentsMetric(b.ltvPerCustomerCents)} />
+      <BreakdownRow label="Median lifetime revenue" value={fmtCentsMetric(b.ltvMedianCents)} />
+      <BreakdownRow label="Avg observed tenure" value={`${b.avgTenureMonths.toFixed(1)} months`} />
+      <div style={{ height: 4 }} />
+      <BreakdownRow label={`− Coaching × ${b.avgTenureMonths.toFixed(1)} months`} value={fmtCentsMetric(-coachingOverTenure)} />
+      <BreakdownRow label="− Fee drag (3.9% × LTV)" value={fmtCentsMetric(-feeDragOverLtv)} />
+      <div style={{ height: 2 }} />
+      <BreakdownRow label="→ LTGP" value={fmtCentsMetric(ltgpCents)} bold />
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, fontStyle: "italic" }}>
+        Note: if LTGP &gt; AOV, it means some customers buy again (mean gets pulled up by repeat buyers).
+      </div>
+    </>
+  );
+}
+
+function CapacityDrilldown({ b, capacityPct }: { b: BusinessMetricBreakdown; capacityPct: number | null }) {
+  return (
+    <>
+      <DrillHeader
+        title="Fulfillment capacity"
+        formula="active end-clients ÷ total coach seats"
+        source="Supabase clients table (active count) · coaches.max_clients (pending from PM)"
+      />
+      <BreakdownRow label="Active end-clients" value={String(b.activeClients)} />
+      <BreakdownRow label="Max coach seats" value={capacityPct === null ? "— (waiting on PM)" : "—"} />
+      <div style={{ height: 2 }} />
+      <BreakdownRow label="→ Capacity %" value={capacityPct === null ? "—" : `${capacityPct}%`} bold />
+      {capacityPct === null && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, fontStyle: "italic" }}>
+          Waiting on per-coach safe-max numbers from PM. Once provided, this shows current/max as a fraction + percentage.
+        </div>
+      )}
+    </>
   );
 }
 
@@ -722,17 +829,27 @@ function BreakdownRow({ label, value, bold }: { label: string; value: string; bo
 function BusinessMetricStat({
   label,
   value,
+  active,
+  onClick,
 }: {
   label: string;
   value: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       style={{
         padding: "12px 14px",
         borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(255,255,255,0.02)",
+        border: active ? "1px solid var(--accent)" : "1px solid rgba(255,255,255,0.06)",
+        background: active ? "rgba(124,92,252,0.08)" : "rgba(255,255,255,0.02)",
+        cursor: onClick ? "pointer" : "default",
+        textAlign: "left",
+        fontFamily: "inherit",
+        transition: "border-color 0.15s ease, background 0.15s ease",
       }}
     >
       <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--text-muted)" }}>
@@ -741,7 +858,7 @@ function BusinessMetricStat({
       <div style={{ marginTop: 6, fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>
         {value}
       </div>
-    </div>
+    </button>
   );
 }
 
