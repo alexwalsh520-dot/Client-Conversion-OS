@@ -492,14 +492,47 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Sodium cap — reads from unified target. HBP: 1,800 mg. Default: 2,300 mg (AHA universal ceiling).
+      // Sodium — two-tier for HBP clients so clinically-safe over-target days
+      // don't block shipping. For non-HBP, the universal 2,300 mg AHA ceiling
+      // is a straight hard-block.
+      //
+      //   HBP client (e.g., cap 1800):
+      //     target    = 1800           (Tier 2 threshold — aspirational)
+      //     safety    = max(cap+200, cap×1.15), capped at 2300
+      //                = max(2000, 2070) = 2070
+      //     Days under 1800                  → clean
+      //     Days 1800-2070                   → Tier 2 quality note (ships)
+      //     Days over 2070 (or over 2300)    → Tier 1 hard block
+      //
+      //   Non-HBP:
+      //     safety = 2300 (universal AHA). Anything over → Tier 1.
+      //     No Tier 2 sodium warning.
       const sodium = computeDailySodium(d, byslug);
-      if (sodium > targets.sodiumCapMg) {
-        v.push({
-          tier: 1,
-          kind: "sodium_cap",
-          message: `SODIUM is ${sodium} mg (cap ${targets.sodiumCapMg} mg${medical.hasHypertension ? " for HBP" : " — AHA universal ceiling"}) — reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
-        });
+      if (medical.hasHypertension) {
+        const cap = targets.sodiumCapMg; // aspirational target (1800 default)
+        const tier2Ceiling = Math.max(cap + 200, Math.round(cap * 1.15));
+        const tier1Ceiling = Math.min(tier2Ceiling, 2300);
+        if (sodium > tier1Ceiling) {
+          v.push({
+            tier: 1,
+            kind: "sodium_safety",
+            message: `SODIUM is ${sodium} mg — exceeds the ${tier1Ceiling} mg HBP safety ceiling (${cap} mg target + buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`,
+          });
+        } else if (sodium > cap) {
+          v.push({
+            tier: 2,
+            kind: "sodium_over_target",
+            message: `SODIUM is ${sodium} mg — over the ${cap} mg HBP target by ${sodium - cap} mg (within the ${tier1Ceiling} mg safety ceiling). Trim added salt where possible.`,
+          });
+        }
+      } else {
+        if (sodium > 2300) {
+          v.push({
+            tier: 1,
+            kind: "sodium_safety",
+            message: `SODIUM is ${sodium} mg — exceeds the 2,300 mg universal AHA ceiling.`,
+          });
+        }
       }
 
       // Portion sanity — signals a pathological generation state.
