@@ -118,11 +118,25 @@ PER-MEAL PROTEIN FLOORS (mandatory):
 - Lunch    must provide at least 30% of the daily protein target.
 - Dinner   must provide at least 30% of the daily protein target.
 - Snacks fill the remainder.
+- Concrete floors by daily target:
+    Daily 150g → breakfast ≥ 38g, lunch ≥ 45g, dinner ≥ 45g
+    Daily 180g → breakfast ≥ 45g, lunch ≥ 54g, dinner ≥ 54g
+    Daily 200g → breakfast ≥ 50g, lunch ≥ 60g, dinner ≥ 60g
+    Daily 220g → breakfast ≥ 55g, lunch ≥ 66g, dinner ≥ 66g
+  NOTE: recomp clients with high daily protein targets (200g+) will NOT be
+  able to hit a 50g+ breakfast floor with oats + fruit + nut butter — that
+  base tops out around 15-20g. Use Greek yogurt 300g (≈30g) + whey 30g
+  (≈25g) + eggs, or cottage cheese 200g (≈25g) + eggs 150g (≈20g) + whey,
+  or similar multi-anchor combinations.
 - Start EVERY meal by choosing a protein anchor that can mathematically support
   these grams at a reasonable portion (chicken breast 150-220g, beef 150-200g,
   salmon 150-200g, eggs 150g + cottage cheese 100g, Greek yogurt 200-300g, whey
   25-35g, tofu 150-200g, etc.). Do not try to squeeze protein out of a base that
   can't carry it (a bowl of oats + fruit + nut butter will NOT hit 50g protein).
+- BEFORE FINALIZING the day, re-check each meal's protein grams against its
+  floor. If breakfast is under floor, add or increase the protein anchor
+  (don't ship with "close enough" — re-compute grams). This check is the last
+  thing you do before returning the JSON.
 
 PORTION SANITY (these signal a structural mistake, not a valid plan):
 - No single meal may contain more than 350g of any single meat (chicken, beef, pork, fish).
@@ -131,6 +145,22 @@ PORTION SANITY (these signal a structural mistake, not a valid plan):
 - No single meal may contain more than 150g of dry grains (pre-cook weight).
 - If hitting the day's macros SEEMS to require exceeding these, the protein anchor
   is wrong — pick a different ingredient or combine two proteins.
+
+UNIVERSAL SODIUM AWARENESS (applies to EVERY client, every day,
+regardless of medical flags — this prevents stacking moderate-sodium
+items into days that breach the 2300 mg AHA ceiling):
+- No single day may combine ALL THREE of these three categories:
+    (a) flour tortilla OR corn tortilla
+    (b) cheese (mozzarella, cheddar, parmesan, cottage cheese, feta, etc.)
+    (c) salted butter OR jarred salsa OR marinara sauce
+  Pick at most 2 of these 3 categories on any given day. If a day already
+  uses (a) + (b), keep (c) off the plate — cook with olive oil, skip the
+  jarred salsa, skip the marinara.
+- Default to UNSALTED butter whenever butter is used. Only use salted butter
+  when the dish specifically requires it (rare).
+- Weekly cheese cap for non-medical clients: at most 5 meals across the
+  7-day week contain cheese. HBP clients have a stricter 3-meal cap (see
+  medical sodium block below when present).
 
 VARIETY — applies to EVERY meal slot, not just lunch:
 - Follow the per-meal "format hint" when one is provided; it exists so your meal doesn't
@@ -239,6 +269,20 @@ function buildUserPrompt(input: DayGenerationInput): string {
     • Sourdough bread: ${sc.hbpWeeklyCaps.allowedSourdoughDaysLeft}/2 days left — default to whole wheat / whole grain / oat-based
     • Flour tortillas: ${sc.hbpWeeklyCaps.allowedFlourTortillaDaysLeft}/3 days left — corn tortillas preferred (~15mg vs ~400mg)`
       : "";
+    // Stimulant per-day stacking cap — prevents days like Anthony's Saturday
+    // where moderate-sodium items (salsa + cheese + tortilla) stack to 2800+ mg
+    // even though each item individually looks fine.
+    const stimulantPerDayLine =
+      sc.reason === "stimulant"
+        ? `
+- STIMULANT PER-DAY CAP (in addition to weekly caps):
+    On any single day, pick AT MOST ONE of: salsa, hot sauce, cheese,
+    flour tortilla, marinara sauce. Stacking two or more of these on the
+    same day reliably pushes the day over the ${cap} mg sodium budget even
+    when portions look reasonable. Swap the extras for no-sodium
+    alternatives (fresh pico de gallo, fresh herbs, corn tortilla, plain
+    tomato sauce + fresh basil).`
+        : "";
     sodiumBlock = `\n\nSODIUM MANAGEMENT (DAILY BUDGET):
 ${reasonLine}
 - Daily sodium budget: ${cap} mg. Today's total MUST land at or below ${cap}.
@@ -264,7 +308,7 @@ SODIUM REFERENCE TABLE (approximate):
   Canned:      black beans canned ~400mg/100g vs cooked from dry ~2mg/100g   [prefer DRY-COOKED or "no salt added"]
   Beef:        chuck/ground 80/20 has ~50% more sodium than sirloin/tenderloin (more connective tissue)
   Salsa:       commercial ~200mg/60g, fresh pico de gallo ~60mg/60g
-  Fresh basics: plain rice ~0mg, oats ~0mg, fresh meats ~50-80mg/100g, fresh vegetables ~5-40mg/100g, fresh fruits <5mg/100g${weeklyCapsLine}`;
+  Fresh basics: plain rice ~0mg, oats ~0mg, fresh meats ~50-80mg/100g, fresh vegetables ~5-40mg/100g, fresh fruits <5mg/100g${weeklyCapsLine}${stimulantPerDayLine}`;
   }
 
   const retryBlock = priorAttemptError
