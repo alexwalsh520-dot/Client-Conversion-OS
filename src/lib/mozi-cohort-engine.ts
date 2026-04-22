@@ -16,7 +16,11 @@
 
 import type { ClientKey } from "./mozi-costs-config";
 
-export const NEW_CLIENT_MIN_CENTS = 2000;   // $20 — ignore ebook/test micro-sales
+// Raised to $200 so $50/wk Forge Enforcement Challenge + similar low-ticket
+// subscription rebills don't count as "new coaching clients" — they dilute
+// both AOV and CAC/new in a way that hides the real coaching-program economics.
+// Real coaching programs always enter at $200+.
+export const NEW_CLIENT_MIN_CENTS = 20000;  // $200 floor for a "new client"
 export const DEFAULT_WINDOW_DAYS = 30;
 export const COHORT_DAYS = 30;
 
@@ -215,34 +219,47 @@ function computeClient(
   const cacTotal = adSpend + mercuryAcq + salesCommissions;
   const cacPerNewClient = newClientCount > 0 ? Math.round(cacTotal / newClientCount) : 0;
 
-  // 5. LTGP — monthly GP per active client × avg program months.
-  //    monthly GP per active = (ongoing monthly revenue per client) − per-client monthly costs.
-  //    We approximate "ongoing monthly revenue per active client" as total last-30d revenue
-  //    for this client / active clients for this client.
-  let monthlyRevenuePerActive = 0;
-  let activeCount = 0;
-  if (clientKey === "total") {
-    activeCount = (inputs.activeClientsByInfluencer.keith ?? 0) + (inputs.activeClientsByInfluencer.tyson ?? 0);
-  } else {
-    activeCount = inputs.activeClientsByInfluencer[clientKey] ?? 0;
-  }
-  // Compute last-30d total revenue for this client scope.
-  let revenue30 = 0;
+  // 5. LTGP — REALIZED observed lifetime revenue per paying customer, minus
+  //    direct costs incurred over that tenure.
+  //
+  //    Old formula (monthly_revenue × program_months) was wrong for this
+  //    business: most revenue is one-time program sales, so multiplying
+  //    again by program months counted the same dollars 4×. That inflated
+  //    Keith's LTGP to $10k when his real AOV is $1,610.
+  //
+  //    New formula: for every paying customer we've seen, sum their total
+  //    charges; average across customers = LTV; subtract coaching +
+  //    software cost over their observed tenure, and fee drag on their
+  //    revenue. That's LTGP.
+  let revenueSum = 0;
+  let customerCountForLtv = 0;
+  let tenureMonthsSum = 0;
+  const nowMs = windowEnd.getTime();
   for (const [, cust] of customerIndex) {
     if (clientKey !== "total" && cust.influencer !== clientKey) continue;
+    let custRevenue = 0;
     for (const c of cust.charges) {
-      const d = new Date(c.created_at);
-      if (d < windowStart || d > windowEnd) continue;
-      revenue30 += centsNet(c);
+      custRevenue += centsNet(c);
     }
+    if (custRevenue <= 0) continue;
+    revenueSum += custRevenue;
+    customerCountForLtv += 1;
+    tenureMonthsSum += Math.max(0.5, (nowMs - cust.firstAt.getTime()) / (1000 * 60 * 60 * 24 * 30));
   }
-  monthlyRevenuePerActive = activeCount > 0 ? Math.round(revenue30 / activeCount) : 0;
-  const monthlyGpPerActive =
-    monthlyRevenuePerActive -
-    perEndClientCoachingMonthly -
-    extraMonthly -
-    Math.round(monthlyRevenuePerActive * percentageDrag);
-  const ltgp = Math.round(monthlyGpPerActive * inputs.avgProgramMonths);
+  const avgObservedLtv = customerCountForLtv > 0 ? Math.round(revenueSum / customerCountForLtv) : 0;
+  const avgObservedTenureMonths = customerCountForLtv > 0 ? tenureMonthsSum / customerCountForLtv : 0;
+  const coachingCostOverTenure = Math.round(perEndClientCoachingMonthly * avgObservedTenureMonths);
+  const feeDragOverLtv = Math.round(avgObservedLtv * percentageDrag);
+  const ltgp = Math.max(0, avgObservedLtv - coachingCostOverTenure - feeDragOverLtv);
+
+  // monthlyGpPerActive kept for the breakdown report (useful signal).
+  const monthlyGpPerActive = avgObservedTenureMonths > 0
+    ? Math.round((avgObservedLtv - feeDragOverLtv) / avgObservedTenureMonths) - perEndClientCoachingMonthly
+    : 0;
+
+  const activeCount = clientKey === "total"
+    ? (inputs.activeClientsByInfluencer.keith ?? 0) + (inputs.activeClientsByInfluencer.tyson ?? 0)
+    : (inputs.activeClientsByInfluencer[clientKey] ?? 0);
 
   // 6. Capacity (Total only in the UI, but we compute it generically).
   let capacity: ClientCohortResult["capacity"] | undefined;
