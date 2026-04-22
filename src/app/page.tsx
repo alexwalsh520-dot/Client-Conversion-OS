@@ -4,15 +4,6 @@ import { useState, useEffect, useCallback, useMemo, type CSSProperties } from "r
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import {
   TrendingUp,
   Phone,
   Dumbbell,
@@ -48,11 +39,6 @@ interface ClientRevenue {
   thisMonth: number;
   lastMonth: number;
   subscriptions?: number;
-}
-
-interface MonthlyChartEntry {
-  month: string;
-  [key: string]: string | number; // client keys + total
 }
 
 interface BusinessMetricValues {
@@ -112,7 +98,6 @@ export default function HomePage() {
   const [totalSubscriptions, setTotalSubscriptions] = useState(0);
   const [totalRetention, setTotalRetention] = useState(0);
   const [totalLastMonth, setTotalLastMonth] = useState(0);
-  const [monthlyData, setMonthlyData] = useState<MonthlyChartEntry[]>([]);
 
   // Date range state
   const now = useMemo(() => new Date(), []);
@@ -165,29 +150,22 @@ export default function HomePage() {
       const lastMonthStart = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
       const lastMonthEndStr = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(lastMonthEnd.getDate()).padStart(2, "0")}`;
 
-      // Fetch last 6 months for chart (from 5 months ago to today)
-      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      const chartStart = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
-
       // Determine which month index to use for retention (based on dateFrom)
       const fromDate = new Date(dateFrom + "T00:00:00");
       const retentionMonthIndex = fromDate.getMonth();
 
-      const [thisMonthRes, lastMonthRes, chartRes, retentionRes] = await Promise.all([
+      const [thisMonthRes, lastMonthRes, retentionRes] = await Promise.all([
         fetch(`/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`),
         fetch(`/api/sales-hub/sheet-data?dateFrom=${lastMonthStart}&dateTo=${lastMonthEndStr}`),
-        fetch(`/api/sales-hub/sheet-data?dateFrom=${chartStart}&dateTo=${todayStr}`),
         fetch(`/api/coaching/financials?month=${retentionMonthIndex}`),
       ]);
 
       const thisMonthData = await thisMonthRes.json();
       const lastMonthData = await lastMonthRes.json();
-      const chartData = await chartRes.json();
       const retentionData = await retentionRes.json();
 
       const thisMonthRows = thisMonthData.rows || [];
       const lastMonthRows = lastMonthData.rows || [];
-      const chartRows = chartData.rows || [];
       const subscriptionsSold = thisMonthData.subscriptionsSold || 0;
 
       // Sum retention payments
@@ -230,39 +208,6 @@ export default function HomePage() {
       setTotalSubscriptions(subscriptionsSold);
       setTotalRetention(retentionTotal);
       setTotalLastMonth(totalLast);
-
-      // Build monthly chart data
-      const monthMap: Record<string, Record<string, number>> = {};
-      for (const row of chartRows) {
-        const cash = row.cashCollected || 0;
-        if (cash === 0) continue;
-        const monthKey = (row.date || "").substring(0, 7);
-        if (!monthKey) continue;
-        if (!monthMap[monthKey]) {
-          monthMap[monthKey] = {};
-          for (const k of clientKeys) monthMap[monthKey][k] = 0;
-          monthMap[monthKey].total = 0;
-        }
-        const clientKey = offerToClientKey(row.offer || "");
-        monthMap[monthKey].total = (monthMap[monthKey].total || 0) + cash;
-        if (clientKey) {
-          monthMap[monthKey][clientKey] = (monthMap[monthKey][clientKey] || 0) + cash;
-        }
-      }
-
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const chartEntries: MonthlyChartEntry[] = Object.keys(monthMap)
-        .sort()
-        .map((key) => {
-          const [, m] = key.split("-");
-          const monthIdx = parseInt(m, 10) - 1;
-          return {
-            month: monthNames[monthIdx] || key,
-            ...monthMap[key],
-          };
-        });
-
-      setMonthlyData(chartEntries);
     } catch (err) {
       console.error("Failed to fetch revenue data:", err);
     } finally {
@@ -552,42 +497,6 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Revenue Chart */}
-      {!loading && monthlyData.length > 0 && (
-        <div className="section">
-          <div className="glass-static" style={{ padding: 20 }}>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
-                <Tooltip
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={((value: number) => [fmtDollars(value), ""]) as any}
-                  contentStyle={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-primary)",
-                    borderRadius: 8,
-                    color: "var(--text-primary)",
-                  }}
-                />
-                {Object.entries(CLIENTS).map(([key, client]) => (
-                  <Area
-                    key={key}
-                    type="monotone"
-                    dataKey={key}
-                    stackId="1"
-                    stroke={client.color}
-                    fill={client.color + "30"}
-                    name={client.name}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
       {/* Quick Actions */}
       <div className="section">
         <h2 className="section-title">Quick Actions</h2>
@@ -744,10 +653,10 @@ function BusinessMetricsCard({
       </div>
 
       <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
-        <BusinessMetricStat label="30-Day GP" value={fmtCentsMetric(card.metrics.gp30)} hint="Per new client" />
-        <BusinessMetricStat label="CAC" value={fmtCentsMetric(card.metrics.cac)} hint="Cost to acquire" />
-        <BusinessMetricStat label="LTGP" value={fmtCentsMetric(card.metrics.ltgp)} hint="Per client" />
-        <BusinessMetricStat label="Capacity" value={fmtCapacityMetric(card.metrics.capacityPct)} hint="Fulfillment room" />
+        <BusinessMetricStat label="30-Day GP" value={fmtCentsMetric(card.metrics.gp30)} />
+        <BusinessMetricStat label="CAC" value={fmtCentsMetric(card.metrics.cac)} />
+        <BusinessMetricStat label="LTGP" value={fmtCentsMetric(card.metrics.ltgp)} />
+        <BusinessMetricStat label="Capacity" value={fmtCapacityMetric(card.metrics.capacityPct)} />
       </div>
 
       {noteLines.length > 0 && (
@@ -813,11 +722,9 @@ function BreakdownRow({ label, value, bold }: { label: string; value: string; bo
 function BusinessMetricStat({
   label,
   value,
-  hint,
 }: {
   label: string;
   value: string;
-  hint: string;
 }) {
   return (
     <div
@@ -833,9 +740,6 @@ function BusinessMetricStat({
       </div>
       <div style={{ marginTop: 6, fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>
         {value}
-      </div>
-      <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
-        {hint}
       </div>
     </div>
   );
