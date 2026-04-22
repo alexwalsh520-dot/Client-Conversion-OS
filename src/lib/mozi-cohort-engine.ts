@@ -80,11 +80,20 @@ export interface ClientCohortResult {
   directCostsPerNewClientCents: number;
   gp30Cents: number;                              // per new client, post-costs
 
+  // GP30 direct-cost breakdown (all per new client)
+  coachingCostPerNewClientCents: number;
+  feeDragPerNewClientCents: number;
+  commissionsPerNewClientCents: number;
+
+  // CAC = marketing-side only (ads + acquisition SaaS)
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
-  cacSalesCommissionsCents: number;
   cacTotalCents: number;
   cacPerNewClientCents: number;
+
+  // Sales commissions are now in GP30, but we keep the window total here
+  // for the report view (lets user see commission $$ separately).
+  salesCommissionsWindowCents: number;
 
   monthlyGpPerActiveClientCents: number;
   ltgpCents: number;
@@ -119,6 +128,41 @@ function centsNet(c: Charge): number {
   const gross = c.amount ?? 0;
   const refund = c.refund_amount ?? 0;
   return Math.max(0, gross - refund);
+}
+
+// Collapse duplicate big-ticket charges from the same customer that are almost
+// certainly a card-change / payment-plan swap / accidental double charge.
+// Rule (user-confirmed 2026-04-22): if two or more charges >= $500 from the same
+// customer occur within 7 days AND their amounts are within ~30% of each other,
+// treat them as one purchase and keep only the first one. Unrelated charges
+// (micro-sales, genuine upgrade from $500 to $2,000) pass through.
+const DUP_MIN_CENTS = 50000;             // $500 threshold
+const DUP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DUP_PRICE_RATIO_MIN = 0.7;         // within ~30% price band
+
+function dedupeDoubleCharges(charges: Charge[]): Charge[] {
+  const sorted = [...charges].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+  const kept: Charge[] = [];
+  for (const c of sorted) {
+    const amount = centsNet(c);
+    if (amount < DUP_MIN_CENTS) {
+      kept.push(c);
+      continue;
+    }
+    const cDate = new Date(c.created_at).getTime();
+    const isDupe = kept.some((k) => {
+      const kAmount = centsNet(k);
+      if (kAmount < DUP_MIN_CENTS) return false;
+      const dt = cDate - new Date(k.created_at).getTime();
+      if (dt < 0 || dt > DUP_WINDOW_MS) return false;
+      const ratio = Math.min(amount, kAmount) / Math.max(amount, kAmount);
+      return ratio >= DUP_PRICE_RATIO_MIN;
+    });
+    if (!isDupe) kept.push(c);
+  }
+  return kept;
 }
 
 /** Build: customerKey → { firstChargeAt, firstCharge, influencer, charges[] }. */
@@ -175,12 +219,15 @@ function computeClient(
   }
   const newClientCount = cohortCustomers.length;
 
-  // 2. Cohort first-30-day revenue (per cohort customer: sum their charges within first 30d).
+  // 2. Cohort first-30-day revenue per new client, with duplicate-charge dedupe
+  //    (card-change / accidental-double / payment-plan swap). Refunds are
+  //    already netted inside centsNet() via Stripe's refund_amount field.
   const cohortCutoffMs = COHORT_DAYS * 24 * 60 * 60 * 1000;
   let cohortGrossCents = 0;
   for (const cust of cohortCustomers) {
+    const deduped = dedupeDoubleCharges(cust.charges);
     const cutoff = new Date(cust.firstAt.getTime() + cohortCutoffMs);
-    for (const c of cust.charges) {
+    for (const c of deduped) {
       const d = new Date(c.created_at);
       if (d > cutoff) continue;
       cohortGrossCents += centsNet(c);
@@ -189,23 +236,9 @@ function computeClient(
 
   const perNewClientGross = newClientCount > 0 ? Math.round(cohortGrossCents / newClientCount) : 0;
 
-  // 3. Direct costs per new client per month.
-  //    Coaching cost per end-client per month = (payroll + software) / total active end-clients
-  const perEndClientCoachingMonthly =
-    inputs.totalActiveClients > 0
-      ? Math.round(
-          (inputs.fulfillmentPayrollMonthlyCents + inputs.fulfillmentSoftwareMonthlyCents) /
-            inputs.totalActiveClients,
-        )
-      : 0;
-  const extraMonthly = inputs.extraMonthlyCostPerClientCents ?? 0;
-  const percentageDrag = (inputs.paymentFeePct + inputs.chargebackPct + inputs.refundPct) / 100;
-  const feeDragPerClient = Math.round(perNewClientGross * percentageDrag);
-  const directCostsPerNewClient = perEndClientCoachingMonthly + extraMonthly + feeDragPerClient;
-
-  const gp30 = perNewClientGross - directCostsPerNewClient;
-
-  // 4. CAC inputs (window-level totals; divided by new client count).
+  // 3. CAC = marketing-side only. Ad spend + acquisition SaaS. Commissions are
+  //    a COST OF THE SALE, not a customer-acquisition cost, so they belong in
+  //    GP30 direct costs below (user-confirmed 2026-04-22).
   let adSpend = 0, mercuryAcq = 0, salesCommissions = 0;
   if (clientKey === "total") {
     adSpend = (inputs.metaAdSpendByClient.keith ?? 0) + (inputs.metaAdSpendByClient.tyson ?? 0);
@@ -216,8 +249,30 @@ function computeClient(
     mercuryAcq = inputs.mercuryAcquisitionByClient[clientKey] ?? 0;
     salesCommissions = inputs.salesCommissionsByClient[clientKey] ?? 0;
   }
-  const cacTotal = adSpend + mercuryAcq + salesCommissions;
+  const cacTotal = adSpend + mercuryAcq;
   const cacPerNewClient = newClientCount > 0 ? Math.round(cacTotal / newClientCount) : 0;
+
+  // 4. Direct costs per new client — deducted from cohort revenue to get GP30.
+  //    Coaching+software share (fulfillment cost over month 1),
+  //    payment fees (Stripe + chargeback + refund drag),
+  //    sales-team commissions (paid immediately on sale, ~10% closer + 3-5% setter).
+  const perEndClientCoachingMonthly =
+    inputs.totalActiveClients > 0
+      ? Math.round(
+          (inputs.fulfillmentPayrollMonthlyCents + inputs.fulfillmentSoftwareMonthlyCents) /
+            inputs.totalActiveClients,
+        )
+      : 0;
+  const extraMonthly = inputs.extraMonthlyCostPerClientCents ?? 0;
+  const percentageDrag = (inputs.paymentFeePct + inputs.chargebackPct + inputs.refundPct) / 100;
+  const feeDragPerClient = Math.round(perNewClientGross * percentageDrag);
+  const commissionsPerNewClient = newClientCount > 0
+    ? Math.round(salesCommissions / newClientCount)
+    : 0;
+  const directCostsPerNewClient =
+    perEndClientCoachingMonthly + extraMonthly + feeDragPerClient + commissionsPerNewClient;
+
+  const gp30 = perNewClientGross - directCostsPerNewClient;
 
   // 5. LTGP — REALIZED observed lifetime revenue per paying customer, minus
   //    direct costs incurred over that tenure.
@@ -280,11 +335,16 @@ function computeClient(
     directCostsPerNewClientCents: directCostsPerNewClient,
     gp30Cents: gp30,
 
+    coachingCostPerNewClientCents: perEndClientCoachingMonthly + extraMonthly,
+    feeDragPerNewClientCents: feeDragPerClient,
+    commissionsPerNewClientCents: commissionsPerNewClient,
+
     cacAdSpendCents: adSpend,
     cacMercurySoftwareCents: mercuryAcq,
-    cacSalesCommissionsCents: salesCommissions,
     cacTotalCents: cacTotal,
     cacPerNewClientCents: cacPerNewClient,
+
+    salesCommissionsWindowCents: salesCommissions,
 
     monthlyGpPerActiveClientCents: monthlyGpPerActive,
     ltgpCents: ltgp,

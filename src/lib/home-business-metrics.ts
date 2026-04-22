@@ -44,12 +44,19 @@ interface MetricValueSet {
 export interface ClientBreakdown {
   newClientCount: number;
   cohortRevenueCents: number;
+  // GP30 direct-cost lines
+  coachingCostPerNewClientCents: number;
+  feeDragPerNewClientCents: number;
+  commissionsPerNewClientCents: number;
   directCostsPerNewClientCents: number;
   gp30Cents: number;
+  // CAC = ads + acquisition SaaS only
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
-  cacSalesCommissionsCents: number;
   cacTotalCents: number;
+  // Window-total commissions (already rolled into GP30 per-client) — shown so
+  // the report makes the flow obvious.
+  salesCommissionsWindowCents: number;
   monthlyGpPerActiveClientCents: number;
   activeClients: number;
 }
@@ -161,12 +168,15 @@ function resultToBreakdown(r: ClientCohortResult, activeClients: number): Client
   return {
     newClientCount: r.newClientCount,
     cohortRevenueCents: r.cohortRevenueCents,
+    coachingCostPerNewClientCents: r.coachingCostPerNewClientCents,
+    feeDragPerNewClientCents: r.feeDragPerNewClientCents,
+    commissionsPerNewClientCents: r.commissionsPerNewClientCents,
     directCostsPerNewClientCents: r.directCostsPerNewClientCents,
     gp30Cents: r.gp30Cents,
     cacAdSpendCents: r.cacAdSpendCents,
     cacMercurySoftwareCents: r.cacMercurySoftwareCents,
-    cacSalesCommissionsCents: r.cacSalesCommissionsCents,
     cacTotalCents: r.cacTotalCents,
+    salesCommissionsWindowCents: r.salesCommissionsWindowCents,
     monthlyGpPerActiveClientCents: r.monthlyGpPerActiveClientCents,
     activeClients,
   };

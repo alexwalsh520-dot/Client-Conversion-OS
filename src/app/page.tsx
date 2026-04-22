@@ -65,12 +65,15 @@ interface BusinessMetricValues {
 interface BusinessMetricBreakdown {
   newClientCount: number;
   cohortRevenueCents: number;
+  coachingCostPerNewClientCents: number;
+  feeDragPerNewClientCents: number;
+  commissionsPerNewClientCents: number;
   directCostsPerNewClientCents: number;
   gp30Cents: number;
   cacAdSpendCents: number;
   cacMercurySoftwareCents: number;
-  cacSalesCommissionsCents: number;
   cacTotalCents: number;
+  salesCommissionsWindowCents: number;
   monthlyGpPerActiveClientCents: number;
   activeClients: number;
 }
@@ -769,13 +772,17 @@ function BusinessMetricsCard({
           }}
         >
           <BreakdownRow label="New clients (last 30d)" value={String(card.breakdown.newClientCount)} />
-          <BreakdownRow label="Cohort first-30-day revenue" value={fmtCentsMetric(card.breakdown.cohortRevenueCents)} />
-          <BreakdownRow label="Direct costs per new client" value={fmtCentsMetric(card.breakdown.directCostsPerNewClientCents)} />
+          <BreakdownRow
+            label="Cohort first-30d revenue (per new client)"
+            value={fmtCentsMetric(card.breakdown.newClientCount > 0 ? Math.round(card.breakdown.cohortRevenueCents / card.breakdown.newClientCount) : 0)}
+          />
+          <BreakdownRow label="− Coaching cost / client (month 1)" value={fmtCentsMetric(-card.breakdown.coachingCostPerNewClientCents)} />
+          <BreakdownRow label="− Payment fees / refunds / chargebacks" value={fmtCentsMetric(-card.breakdown.feeDragPerNewClientCents)} />
+          <BreakdownRow label="− Setter + closer commissions / client" value={fmtCentsMetric(-card.breakdown.commissionsPerNewClientCents)} />
           <BreakdownRow label="→ 30-Day GP per new client" value={fmtCentsMetric(card.breakdown.gp30Cents)} bold />
           <div style={{ height: 4 }} />
-          <BreakdownRow label="CAC — Meta ad spend" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
-          <BreakdownRow label="CAC — Mercury acquisition SaaS" value={fmtCentsMetric(card.breakdown.cacMercurySoftwareCents)} />
-          <BreakdownRow label="CAC — Setter + closer commissions" value={fmtCentsMetric(card.breakdown.cacSalesCommissionsCents)} />
+          <BreakdownRow label="CAC — Meta ad spend (30d total)" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
+          <BreakdownRow label="CAC — Acquisition SaaS (30d total)" value={fmtCentsMetric(card.breakdown.cacMercurySoftwareCents)} />
           <BreakdownRow label="CAC — Total (30d)" value={fmtCentsMetric(card.breakdown.cacTotalCents)} />
           <BreakdownRow
             label="→ CAC per new client"
