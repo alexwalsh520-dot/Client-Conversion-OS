@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { getAdAccountInsights, metaConfig } from "@/lib/mozi-meta";
+import { getServiceSupabase } from "@/lib/supabase";
+import { getAdAccountInsights, metaAdAccounts } from "@/lib/mozi-meta";
 
 export async function POST(req: NextRequest) {
+  const supabase = getServiceSupabase();
+
   try {
     // Validate CRON_SECRET
     const { searchParams } = new URL(req.url);
@@ -30,38 +32,37 @@ export async function POST(req: NextRequest) {
     const sinceStr = since.toISOString().split("T")[0];
     const untilStr = now.toISOString().split("T")[0];
 
-    // Fetch insights from Tyson's ad account
-    const adAccountId = metaConfig.tysonAdAccount;
-    if (!adAccountId) {
-      throw new Error("META_AD_ACCOUNT_TYSON env var not set");
+    if (metaAdAccounts.length === 0) {
+      throw new Error("No Meta ad accounts are configured");
     }
 
-    const insights = await getAdAccountInsights(adAccountId, sinceStr, untilStr);
-
-    // Upsert each day's data into meta_ad_spend
     let recordsSynced = 0;
-    for (const day of insights) {
-      const spendCents = Math.round(parseFloat(day.spend) * 100);
+    for (const { influencer, adAccountId } of metaAdAccounts) {
+      const insights = await getAdAccountInsights(adAccountId, sinceStr, untilStr);
 
-      const { error: upsertError } = await supabase
-        .from("mozi_meta_ad_spend")
-        .upsert(
-          {
-            influencer: "tyson",
-            ad_account_id: adAccountId,
-            date: day.date_start,
-            spend: spendCents,
-            impressions: parseInt(day.impressions, 10),
-            clicks: parseInt(day.clicks, 10),
-            synced_at: new Date().toISOString(),
-          },
-          { onConflict: "influencer,date" }
-        );
+      for (const day of insights) {
+        const spendCents = Math.round(parseFloat(day.spend) * 100);
 
-      if (upsertError) {
-        throw new Error(`Upsert failed for ${day.date_start}: ${upsertError.message}`);
+        const { error: upsertError } = await supabase
+          .from("mozi_meta_ad_spend")
+          .upsert(
+            {
+              influencer,
+              ad_account_id: adAccountId,
+              date: day.date_start,
+              spend: spendCents,
+              impressions: parseInt(day.impressions, 10),
+              clicks: parseInt(day.clicks, 10),
+              synced_at: new Date().toISOString(),
+            },
+            { onConflict: "influencer,date" }
+          );
+
+        if (upsertError) {
+          throw new Error(`Upsert failed for ${influencer}/${day.date_start}: ${upsertError.message}`);
+        }
+        recordsSynced++;
       }
-      recordsSynced++;
     }
 
     // Update sync_log with success

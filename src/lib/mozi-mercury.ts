@@ -55,7 +55,13 @@ export async function getMercuryTransactions(
   return mercuryFetch<MercuryTransactionsResponse>(path, token);
 }
 
+// Evaluated at call time (not module load) so env vars loaded via --env-file
+// or late dotenv() calls still work.
 export const mercuryTokens = {
-  coreshift: process.env.MERCURY_TOKEN_CORESHIFT!,
-  forge: process.env.MERCURY_TOKEN_FORGE!,
+  get coreshift() {
+    return process.env.MERCURY_TOKEN_CORESHIFT ?? "";
+  },
+  get forge() {
+    return process.env.MERCURY_TOKEN_FORGE ?? "";
+  },
 };

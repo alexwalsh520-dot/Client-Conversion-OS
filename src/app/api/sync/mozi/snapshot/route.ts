@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getServiceSupabase } from '@/lib/supabase';
 import { computeKPIs } from '@/lib/mozi-engine';
 
 export async function POST(req: NextRequest) {
+  const supabase = getServiceSupabase();
   // ── Auth ────────────────────────────────────────────────────────
   const secret = req.headers.get('authorization')?.replace('Bearer ', '');
   if (secret !== process.env.CRON_SECRET) {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ── Compute per-influencer KPIs ───────────────────────────────
-    const influencers = ['keith', 'tyson'];
+    const influencers = ['keith', 'tyson', 'zoeEmily'];
     const byInfluencer: Record<string, ReturnType<typeof computeKPIs>> = {};
 
     for (const inf of influencers) {

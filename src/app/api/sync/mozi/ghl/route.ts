@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase";
 import { searchContacts, getOpportunities, getPipelines } from "@/lib/mozi-ghl";
 
 export async function POST(req: NextRequest) {
+  const supabase = getServiceSupabase();
   try {
     // Validate CRON_SECRET
     const { searchParams } = new URL(req.url);

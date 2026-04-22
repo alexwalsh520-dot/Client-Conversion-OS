@@ -2,8 +2,20 @@ const BASE_URL = "https://graph.facebook.com/v21.0";
 
 export const metaConfig = {
   accessToken: process.env.META_ACCESS_TOKEN,
-  tysonAdAccount: process.env.META_AD_ACCOUNT_TYSON,
 };
+
+export const metaAdAccounts = [
+  { influencer: "keith" as const, adAccountId: process.env.META_AD_ACCOUNT_KEITH },
+  { influencer: "tyson" as const, adAccountId: process.env.META_AD_ACCOUNT_TYSON },
+  { influencer: "zoeEmily" as const, adAccountId: process.env.META_AD_ACCOUNT_ZOE_EMILY },
+].filter(
+  (
+    account
+  ): account is {
+    influencer: "keith" | "tyson" | "zoeEmily";
+    adAccountId: string;
+  } => Boolean(account.adAccountId),
+);
 
 interface MetaInsight {
   date_start: string;

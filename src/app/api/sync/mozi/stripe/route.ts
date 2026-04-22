@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase";
 import { getClients, fetchCharges } from "@/lib/mozi-stripe";
 
 export async function POST(request: Request) {
+  const supabase = getServiceSupabase();
   // Validate CRON_SECRET
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
@@ -28,8 +29,12 @@ export async function POST(request: Request) {
   const logId = logEntry.id;
 
   try {
+    // 180-day lookback so cohort math (first-ever charge detection) is accurate.
+    // Caller can pass ?lookbackDays=N to override (e.g. 365 for annual memberships).
+    const url = new URL(request.url);
+    const lookbackDays = Number(url.searchParams.get("lookbackDays") ?? 180);
     const since = new Date();
-    since.setDate(since.getDate() - 30);
+    since.setDate(since.getDate() - lookbackDays);
 
     let totalSynced = 0;
 
@@ -48,7 +53,13 @@ export async function POST(request: Request) {
             typeof charge.customer === "string"
               ? charge.customer
               : charge.customer?.id ?? null,
-          customer_email: charge.receipt_email ?? null,
+          // Payment-Link / Checkout charges (py_*) have no Stripe Customer and
+          // no receipt_email — fall back to billing_details.email so cohort
+          // detection can still key off the buyer.
+          customer_email:
+            charge.receipt_email ??
+            charge.billing_details?.email ??
+            null,
           refunded: charge.refunded,
           refund_amount: charge.amount_refunded,
           disputed: charge.disputed,

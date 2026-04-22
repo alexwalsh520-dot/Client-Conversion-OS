@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase";
 import { whopClients, getAllWhopPayments } from "@/lib/mozi-whop";
 
 export async function POST(request: Request) {
+  const supabase = getServiceSupabase();
   // Validate CRON_SECRET
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");

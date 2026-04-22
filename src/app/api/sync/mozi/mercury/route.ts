@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase";
 import {
   getMercuryAccounts,
   getMercuryTransactions,
@@ -7,6 +7,7 @@ import {
 } from "@/lib/mozi-mercury";
 
 export async function POST(request: Request) {
+  const supabase = getServiceSupabase();
   // Validate CRON_SECRET
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");

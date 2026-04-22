@@ -2,22 +2,43 @@ import Stripe from "stripe";
 
 const API_VERSION = "2025-02-24.acacia" as const;
 
-function getStripeClients() {
-  const keithClient = new Stripe(process.env.STRIPE_KEY_KEITH!, {
-    apiVersion: API_VERSION,
-  });
-  const tysonLlpClient = new Stripe(process.env.STRIPE_KEY_TYSON_LLP!, {
-    apiVersion: API_VERSION,
-  });
-  const tysonSubsClient = new Stripe(process.env.STRIPE_KEY_TYSON_SUBS!, {
-    apiVersion: API_VERSION,
-  });
+type StripeInfluencer = "keith" | "tyson";
+type StripeAccountName = "keith" | "tyson_llp" | "tyson_subs";
 
-  return [
-    { client: keithClient, influencer: "keith" as const, account: "keith" as const },
-    { client: tysonLlpClient, influencer: "tyson" as const, account: "tyson_llp" as const },
-    { client: tysonSubsClient, influencer: "tyson" as const, account: "tyson_subs" as const },
+interface StripeClientConfig {
+  secretKey?: string;
+  influencer: StripeInfluencer;
+  account: StripeAccountName;
+}
+
+function getStripeClients() {
+  const configs: StripeClientConfig[] = [
+    {
+      secretKey: process.env.STRIPE_KEY_KEITH,
+      influencer: "keith",
+      account: "keith",
+    },
+    {
+      secretKey: process.env.STRIPE_KEY_TYSON_LLP,
+      influencer: "tyson",
+      account: "tyson_llp",
+    },
+    {
+      secretKey: process.env.STRIPE_KEY_TYSON_SUBS,
+      influencer: "tyson",
+      account: "tyson_subs",
+    },
   ];
+
+  return configs
+    .filter((config): config is StripeClientConfig & { secretKey: string } => Boolean(config.secretKey))
+    .map((config) => ({
+      client: new Stripe(config.secretKey, {
+        apiVersion: API_VERSION,
+      }),
+      influencer: config.influencer,
+      account: config.account,
+    }));
 }
 
 export { getStripeClients as stripeClients };

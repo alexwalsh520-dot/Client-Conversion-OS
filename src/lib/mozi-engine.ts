@@ -19,6 +19,9 @@ export interface EngineResult {
   gp30: number;
   cac: number;
   ltgp: number;
+  revenue30: number;      // cents
+  clients30: number;
+  roas: number;
   capacityPct: number;
   runwayMonths: number;
   requiredRatio: number;
@@ -55,6 +58,7 @@ interface CostSettings {
 
 interface TargetSettings {
   new_clients_monthly?: number;
+  churn_rate?: number;
 }
 
 interface CoachRow {
@@ -64,7 +68,7 @@ interface CoachRow {
 }
 
 interface SettingsMap {
-  business_type: string;            // 'coaching' | 'ecommerce' | 'saas'
+  business_type: string | { required_ratio?: number } | null;
   costs: CostSettings;
   targets: TargetSettings;
   coaches: CoachRow[];
@@ -138,7 +142,8 @@ export function computeKPIs(
       .map((r) => r.customer_id ?? r.customer_email?.toLowerCase())
       .filter(Boolean),
   );
-  const payingClients30 = Math.max(uniqueClients.size, 1); // avoid /0
+  const actualClients30 = uniqueClients.size;
+  const payingClients30 = Math.max(actualClients30, 1); // avoid /0
 
   const revenuePerClient = Math.round(totalRevenue30 / payingClients30);
 
@@ -179,7 +184,10 @@ export function computeKPIs(
   // Use explicit churn setting, or avg_program_months, or default 3 months
   // For coaching: avg_program_months is more intuitive than churn %
   const avgProgramMonths = costs.avg_program_months ?? 0;
-  const monthlyChurnPct = costs.monthly_churn_pct ?? 0;
+  const monthlyChurnPct =
+    costs.monthly_churn_pct ??
+    settings.targets?.churn_rate ??
+    0;
 
   let ltgp: number;
   if (avgProgramMonths > 0) {
@@ -213,11 +221,20 @@ export function computeKPIs(
     : 99;
 
   // ── Required ratio ─────────────────────────────────────────────
-  const bizType =
-    typeof settings.business_type === 'string'
-      ? settings.business_type.replace(/"/g, '')
-      : 'coaching';
-  const requiredRatio = REQUIRED_RATIOS[bizType] ?? 3;
+  let requiredRatio = 3;
+  if (
+    settings.business_type &&
+    typeof settings.business_type === 'object' &&
+    typeof settings.business_type.required_ratio === 'number'
+  ) {
+    requiredRatio = settings.business_type.required_ratio;
+  } else {
+    const bizType =
+      typeof settings.business_type === 'string'
+        ? settings.business_type.replace(/"/g, '')
+        : 'coaching';
+    requiredRatio = REQUIRED_RATIOS[bizType] ?? 3;
+  }
 
   // ── Status ──────────────────────────────────────────────────────
   const status = getStatus({
@@ -231,6 +248,10 @@ export function computeKPIs(
 
   const ratio = cac > 0 ? parseFloat((ltgp / cac).toFixed(2)) : 0;
   const payback30 = gp30 - cac;
+  const roas =
+    totalAdSpend30 > 0
+      ? parseFloat((totalRevenue30 / totalAdSpend30).toFixed(2))
+      : 0;
 
   // ── Safe budget & headroom ──────────────────────────────────────
   const targetNewClients = settings.targets?.new_clients_monthly ?? 10;
@@ -244,6 +265,9 @@ export function computeKPIs(
     gp30,
     cac,
     ltgp,
+    revenue30: totalRevenue30,
+    clients30: actualClients30,
+    roas,
     capacityPct,
     runwayMonths,
     requiredRatio,

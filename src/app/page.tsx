@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -55,10 +55,53 @@ interface MonthlyChartEntry {
   [key: string]: string | number; // client keys + total
 }
 
+interface BusinessMetricValues {
+  gp30: number | null;
+  cac: number | null;
+  ltgp: number | null;
+  capacityPct: number | null;
+}
+
+interface BusinessMetricBreakdown {
+  newClientCount: number;
+  cohortRevenueCents: number;
+  directCostsPerNewClientCents: number;
+  gp30Cents: number;
+  cacAdSpendCents: number;
+  cacMercurySoftwareCents: number;
+  cacSalesCommissionsCents: number;
+  cacTotalCents: number;
+  monthlyGpPerActiveClientCents: number;
+  activeClients: number;
+}
+
+interface BusinessMetricsCardData {
+  key: "total" | keyof typeof CLIENTS;
+  label: string;
+  state: "live" | "needs_setup";
+  metrics: BusinessMetricValues;
+  notes: string[];
+  breakdown?: BusinessMetricBreakdown;
+}
+
+interface BusinessMetricsResponse {
+  cards: BusinessMetricsCardData[];
+  syncedAt: string | null;
+  missingSetup: string[];
+}
+
+function isClientBusinessCard(
+  card: BusinessMetricsCardData,
+): card is BusinessMetricsCardData & { key: keyof typeof CLIENTS } {
+  return card.key !== "total";
+}
+
 export default function HomePage() {
   const { data: session } = useSession();
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [businessMetricsLoading, setBusinessMetricsLoading] = useState(true);
+  const [businessMetrics, setBusinessMetrics] = useState<BusinessMetricsResponse | null>(null);
   const [clientRevenue, setClientRevenue] = useState<Record<string, ClientRevenue>>({});
   const [totalCashCollected, setTotalCashCollected] = useState(0);
   const [totalSubscriptions, setTotalSubscriptions] = useState(0);
@@ -227,11 +270,36 @@ export default function HomePage() {
     fetchRevenue();
   }, [fetchRevenue]);
 
+  const fetchBusinessMetrics = useCallback(async () => {
+    try {
+      setBusinessMetricsLoading(true);
+      const res = await fetch("/api/home/business-metrics");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load business metrics");
+      }
+      setBusinessMetrics(data);
+    } catch (err) {
+      console.error("Failed to fetch business metrics:", err);
+      setBusinessMetrics(null);
+    } finally {
+      setBusinessMetricsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBusinessMetrics();
+  }, [fetchBusinessMetrics]);
+
   const totalRevenue = totalCashCollected + totalSubscriptions + totalRetention;
   const growthPercent = totalLastMonth > 0
     ? (((totalCashCollected - totalLastMonth) / totalLastMonth) * 100).toFixed(1)
     : "0.0";
   const isGrowthPositive = totalCashCollected >= totalLastMonth;
+  const totalBusinessMetrics = businessMetrics?.cards.find((card) => card.key === "total");
+  const perClientBusinessMetrics: Array<
+    BusinessMetricsCardData & { key: keyof typeof CLIENTS }
+  > = businessMetrics?.cards.filter(isClientBusinessCard) ?? [];
 
   return (
     <div className="fade-up">
@@ -398,6 +466,87 @@ export default function HomePage() {
         )}
       </div>
 
+      <div className="section">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 12,
+          }}
+        >
+          <h2 className="section-title" style={{ marginBottom: 0 }}>
+            <TrendingUp size={16} />
+            Client Business Metrics
+          </h2>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            {businessMetrics?.syncedAt
+              ? `Last sync ${new Date(businessMetrics.syncedAt).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}`
+              : "Last 30 days"}
+            {" · "}
+            <Link href="/mozi-metrics/settings" style={{ color: "var(--accent)" }}>
+              Setup
+            </Link>
+          </div>
+        </div>
+
+        {businessMetricsLoading ? (
+          <div className="glass-static metric-card" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+            <Loader2 size={24} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
+            <span style={{ marginLeft: 10, color: "var(--text-muted)", fontSize: 14 }}>Loading business metrics...</span>
+          </div>
+        ) : (
+          <>
+            {totalBusinessMetrics && (
+              <BusinessMetricsCard
+                card={totalBusinessMetrics}
+                accent="var(--accent)"
+                style={{ marginBottom: 12 }}
+              />
+            )}
+
+            <div className="metric-grid metric-grid-3">
+              {perClientBusinessMetrics.map((card) => {
+                const accent = CLIENTS[card.key].color;
+
+                return (
+                  <BusinessMetricsCard
+                    key={card.key}
+                    card={card}
+                    accent={accent}
+                  />
+                );
+              })}
+            </div>
+
+            {businessMetrics && businessMetrics.missingSetup.length > 0 && (
+              <div
+                className="glass-static"
+                style={{
+                  marginTop: 12,
+                  padding: "14px 16px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--text-muted)" }}>
+                  Still Needed
+                </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+                  {businessMetrics.missingSetup.join(" • ")}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Revenue Chart */}
       {!loading && monthlyData.length > 0 && (
         <div className="section">
@@ -518,4 +667,177 @@ export default function HomePage() {
       </div>
     </div>
   );
+}
+
+function BusinessMetricsCard({
+  card,
+  accent,
+  style,
+}: {
+  card: BusinessMetricsCardData;
+  accent: string;
+  style?: CSSProperties;
+}) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const noteLines = Array.from(new Set(card.notes)).filter(Boolean);
+
+  return (
+    <div className="glass-static" style={{ padding: 18, ...style }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: accent,
+              display: "inline-block",
+            }}
+          />
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>
+              {card.label}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Last 30 days
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              padding: "4px 8px",
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 600,
+              background: card.state === "live" ? "rgba(34,197,94,0.14)" : "rgba(245,158,11,0.14)",
+              color: card.state === "live" ? "var(--success)" : "var(--warning)",
+            }}
+          >
+            {card.state === "live" ? "Live" : "Needs setup"}
+          </div>
+          {card.breakdown && (
+            <button
+              onClick={() => setReportOpen((v) => !v)}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 600,
+                background: "rgba(255,255,255,0.04)",
+                color: "var(--text-secondary)",
+                border: "1px solid var(--border-primary)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {reportOpen ? "Hide report" : "Generate report"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="metric-grid metric-grid-4" style={{ marginTop: 16 }}>
+        <BusinessMetricStat label="30-Day GP" value={fmtCentsMetric(card.metrics.gp30)} hint="Per new client" />
+        <BusinessMetricStat label="CAC" value={fmtCentsMetric(card.metrics.cac)} hint="Cost to acquire" />
+        <BusinessMetricStat label="LTGP" value={fmtCentsMetric(card.metrics.ltgp)} hint="Per client" />
+        <BusinessMetricStat label="Capacity" value={fmtCapacityMetric(card.metrics.capacityPct)} hint="Fulfillment room" />
+      </div>
+
+      {noteLines.length > 0 && (
+        <div style={{ marginTop: 12, display: "grid", gap: 4 }}>
+          {noteLines.map((note) => (
+            <div key={note} style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {note}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reportOpen && card.breakdown && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.02)",
+            display: "grid",
+            gap: 6,
+            fontSize: 13,
+          }}
+        >
+          <BreakdownRow label="New clients (last 30d)" value={String(card.breakdown.newClientCount)} />
+          <BreakdownRow label="Cohort first-30-day revenue" value={fmtCentsMetric(card.breakdown.cohortRevenueCents)} />
+          <BreakdownRow label="Direct costs per new client" value={fmtCentsMetric(card.breakdown.directCostsPerNewClientCents)} />
+          <BreakdownRow label="→ 30-Day GP per new client" value={fmtCentsMetric(card.breakdown.gp30Cents)} bold />
+          <div style={{ height: 4 }} />
+          <BreakdownRow label="CAC — Meta ad spend" value={fmtCentsMetric(card.breakdown.cacAdSpendCents)} />
+          <BreakdownRow label="CAC — Mercury acquisition SaaS" value={fmtCentsMetric(card.breakdown.cacMercurySoftwareCents)} />
+          <BreakdownRow label="CAC — Setter + closer commissions" value={fmtCentsMetric(card.breakdown.cacSalesCommissionsCents)} />
+          <BreakdownRow label="CAC — Total (30d)" value={fmtCentsMetric(card.breakdown.cacTotalCents)} />
+          <BreakdownRow
+            label="→ CAC per new client"
+            value={fmtCentsMetric(card.breakdown.newClientCount > 0 ? Math.round(card.breakdown.cacTotalCents / card.breakdown.newClientCount) : 0)}
+            bold
+          />
+          <div style={{ height: 4 }} />
+          <BreakdownRow label="Active clients" value={String(card.breakdown.activeClients)} />
+          <BreakdownRow label="Monthly GP per active client" value={fmtCentsMetric(card.breakdown.monthlyGpPerActiveClientCents)} />
+          <BreakdownRow label="→ LTGP" value={fmtCentsMetric(card.metrics.ltgp)} bold />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ color: bold ? "var(--text-primary)" : "var(--text-muted)", fontWeight: bold ? 600 : 400 }}>{label}</span>
+      <span style={{ color: "var(--text-primary)", fontWeight: bold ? 700 : 500, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </div>
+  );
+}
+
+function BusinessMetricStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        borderRadius: 12,
+        border: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.02)",
+      }}
+    >
+      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--text-muted)" }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>
+        {value}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
+        {hint}
+      </div>
+    </div>
+  );
+}
+
+function fmtCentsMetric(value: number | null): string {
+  if (value === null) return "—";
+  return fmtDollars(Math.round(value / 100));
+}
+
+function fmtCapacityMetric(value: number | null): string {
+  if (value === null) return "—";
+  return `${value}%`;
 }

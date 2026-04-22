@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getServiceSupabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
  * Returns the latest sync_log entry per source.
  */
 export async function GET() {
+  const supabase = getServiceSupabase();
   const { data, error } = await supabase
     .from('mozi_sync_log')
     .select('source, status, records_synced, error_message, started_at, completed_at')

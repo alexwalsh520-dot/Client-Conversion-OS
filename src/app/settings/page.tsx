@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import {
   Settings,
   Users,
-  Shield,
   MessageSquare,
   Dumbbell,
   FileSpreadsheet,
@@ -44,7 +44,7 @@ const TAB_LABELS: Record<string, string> = {
   "/ads": "Ads",
   "/outreach": "Outreach",
   "/leads": "Lead Gen",
-  "/outreach-runs": "Outreach Runs",
+  "/outreach-runs": "Outreach",
   "/sales-hub": "Sales Hub",
   "/media-buyer": "Media Buyer",
   "/intelligence": "Intelligence",
@@ -286,6 +286,35 @@ export default function SettingsPage() {
         <p className="page-subtitle">
           User management and integrations
         </p>
+      </div>
+
+      <div
+        className="glass-static"
+        style={{
+          padding: 20,
+          marginBottom: 20,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 16,
+          borderLeft: "3px solid var(--tyson)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
+            Voice Notes
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Set up Tyson once, then let setters make custom ElevenLabs voice notes.
+          </div>
+        </div>
+        <Link
+          href="/settings/voice-notes"
+          className="btn-secondary"
+          style={{ whiteSpace: "nowrap" }}
+        >
+          Open Voice Notes
+        </Link>
       </div>
 
       {/* User Management — Admin only */}
