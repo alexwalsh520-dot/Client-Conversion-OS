@@ -170,10 +170,43 @@ function amountLabel(grams: number, category: string): string {
   return `${Math.round(grams)}g`;
 }
 
+/**
+ * Server-side bearer-token auth path for internal automated regens
+ * (triggering from Supabase pg_net without a NextAuth session cookie).
+ * The token is a short-lived single-use row in internal_trigger_tokens;
+ * consumed_at is set atomically via UPDATE so each token fires exactly
+ * once. Used by operator tooling to regen plans for test clients after
+ * generator/validator changes.
+ */
+async function tryInternalTokenAuth(req: NextRequest): Promise<boolean> {
+  const h = req.headers.get("authorization");
+  if (!h || !h.startsWith("Bearer ")) return false;
+  const token = h.slice("Bearer ".length).trim();
+  if (!token) return false;
+  try {
+    const db = getServiceSupabase();
+    const { data, error } = await db
+      .from("internal_trigger_tokens")
+      .update({ consumed_at: new Date().toISOString() })
+      .eq("token", token)
+      .is("consumed_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .select("token")
+      .maybeSingle();
+    if (error || !data) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const internalOk = await tryInternalTokenAuth(req);
+  if (!internalOk) {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
