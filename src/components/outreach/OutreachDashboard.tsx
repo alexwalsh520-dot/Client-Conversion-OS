@@ -13,12 +13,8 @@ import {
 import {
   AlertCircle,
   CalendarRange,
-  CheckCircle2,
   Loader2,
-  Mail,
-  MessageCircle,
   RefreshCw,
-  Users,
 } from "lucide-react";
 import { fmtNumber, fmtPercent } from "@/lib/formatters";
 import type {
@@ -196,30 +192,7 @@ export default function OutreachDashboard() {
   };
 
   const dmConnected = Boolean(data?.sources.dm.connected);
-  const peopleReachedValue = data
-    ? dmConnected
-      ? fmtNumber(data.combined.reachedInRange)
-      : fmtNumber(data.email.reachedInRange)
-    : "—";
-  const peopleReachedDetail = data
-    ? dmConnected
-      ? `All time: ${fmtNumber(data.combined.reachedAllTime)}`
-      : `Email only right now. All time email reached: ${fmtNumber(data.email.reachedAllTime)}`
-    : "";
-  const totalMessagesValue = data
-    ? dmConnected
-      ? fmtNumber(data.email.messagesInRange + data.dm.messagesInRange)
-      : fmtNumber(data.email.messagesInRange)
-    : "—";
-  const totalMessagesDetail = data
-    ? dmConnected
-      ? `${fmtNumber(data.email.messagesInRange)} email + ${fmtNumber(data.dm.messagesInRange)} DM`
-      : "Email only right now. DM source is not connected yet."
-    : "";
-  const chartTitle = dmConnected ? "Messages Sent By Day" : "Email Sent By Day";
-  const chartSubtitle = dmConnected
-    ? "Email and DM sends in the selected range."
-    : "Showing email sends until Matthew's DM source is connected.";
+  const chartTitle = dmConnected ? "Messages sent per day" : "Emails sent per day";
 
   return (
     <div className="section">
@@ -230,43 +203,17 @@ export default function OutreachDashboard() {
           display: "flex",
           flexDirection: "column",
           gap: 20,
-          background:
-            "linear-gradient(180deg, rgba(201,169,110,0.06) 0%, rgba(16,16,20,0.84) 24%, rgba(16,16,20,0.9) 100%)",
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "flex-end",
             gap: 16,
             alignItems: "flex-start",
             flexWrap: "wrap",
           }}
         >
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontSize: 12,
-                letterSpacing: 0.8,
-                textTransform: "uppercase",
-                color: "var(--accent)",
-                marginBottom: 10,
-              }}
-            >
-              <Users size={14} />
-              Outreach Metrics
-            </div>
-            <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.9 }}>
-              The numbers that matter
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8 }}>
-              Simple view of reach, sends, and replies.
-            </div>
-          </div>
-
           <div
             style={{
               display: "flex",
@@ -408,191 +355,102 @@ export default function OutreachDashboard() {
               }}
             >
               <MetricCard
-                label="People reached"
-                value={peopleReachedValue}
-                detail={peopleReachedDetail}
-              />
-              <MetricCard
-                label="Total messages sent"
-                value={totalMessagesValue}
-                detail={totalMessagesDetail}
+                label="People emailed"
+                value={fmtNumber(data.email.reachedInRange)}
+                detail={`All time: ${fmtNumber(data.email.reachedAllTime)}`}
               />
               <MetricCard
                 label="Emails sent"
                 value={fmtNumber(data.email.messagesInRange)}
-                detail={`People emailed: ${fmtNumber(data.email.reachedInRange)}`}
-                tone="email"
-              />
-              <MetricCard
-                label="DMs sent"
-                value={dmConnected ? fmtNumber(data.dm.messagesInRange) : "Need source"}
-                detail={
-                  dmConnected
-                    ? `People messaged: ${fmtNumber(data.dm.reachedInRange)}`
-                    : data.sources.dm.description
-                }
-                tone={dmConnected ? "dm" : "warning"}
+                detail="Includes follow-ups"
               />
               <MetricCard
                 label="Email reply rate"
                 value={fmtPercent(data.email.replyRateInRange)}
-                detail={`${fmtNumber(data.email.repliesInRange)} people replied`}
-                tone="email"
+                detail={`${fmtNumber(data.email.repliesInRange)} replies`}
               />
               <MetricCard
-                label="Interested email reply rate"
+                label="Interested replies"
                 value={fmtPercent(data.email.interestedReplyRateInRange)}
-                detail={`${fmtNumber(data.email.interestedRepliesInRange)} interested replies`}
-                tone="email"
+                detail={`${fmtNumber(data.email.interestedRepliesInRange)} interested`}
               />
-              <MetricCard
-                label="DM reply rate"
-                value={dmConnected ? fmtPercent(data.dm.replyRateInRange) : "Need source"}
-                detail={
-                  dmConnected
-                    ? `${fmtNumber(data.dm.repliesInRange)} people replied`
-                    : "We need Matthew's real DM inbox data for this."
-                }
-                tone={dmConnected ? "dm" : "warning"}
-              />
-              <MetricCard
-                label="Positive DM reply rate"
-                value={dmConnected ? fmtPercent(data.dm.interestedReplyRateInRange) : "Need source"}
-                detail={
-                  dmConnected
-                    ? `${fmtNumber(data.dm.interestedRepliesInRange)} positive replies`
-                    : "This stays off until the DM source is connected."
-                }
-                tone={dmConnected ? "dm" : "warning"}
-              />
+              {dmConnected && (
+                <>
+                  <MetricCard
+                    label="People DM'd"
+                    value={fmtNumber(data.dm.reachedInRange)}
+                    detail={`All time: ${fmtNumber(data.dm.reachedAllTime)}`}
+                    tone="dm"
+                  />
+                  <MetricCard
+                    label="DMs sent"
+                    value={fmtNumber(data.dm.messagesInRange)}
+                    detail="Includes follow-ups"
+                    tone="dm"
+                  />
+                  <MetricCard
+                    label="DM reply rate"
+                    value={fmtPercent(data.dm.replyRateInRange)}
+                    detail={`${fmtNumber(data.dm.repliesInRange)} replies`}
+                    tone="dm"
+                  />
+                  <MetricCard
+                    label="Positive DM replies"
+                    value={fmtPercent(data.dm.interestedReplyRateInRange)}
+                    detail={`${fmtNumber(data.dm.interestedRepliesInRange)} positive`}
+                    tone="dm"
+                  />
+                </>
+              )}
             </div>
 
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1.6fr) minmax(320px, 1fr)",
-                gap: 16,
+                border: "1px solid var(--border-primary)",
+                borderRadius: 16,
+                padding: 18,
+                background: "rgba(255,255,255,0.02)",
+                minHeight: 320,
               }}
             >
-              <div
-                style={{
-                  border: "1px solid var(--border-primary)",
-                  borderRadius: 16,
-                  padding: 18,
-                  background: "rgba(255,255,255,0.02)",
-                  minHeight: 320,
-                }}
-              >
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                  {chartTitle}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
-                  {chartSubtitle}
-                </div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={data.chart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fill: "#787884", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: "#787884", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(12,12,16,0.96)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 12,
-                        color: "#f0f0f2",
-                      }}
-                    />
-                    <Bar dataKey="emailMessages" name="Emails" fill="#c9a96e" radius={[4, 4, 0, 0]} />
-                    {dmConnected && (
-                      <Bar dataKey="dmMessages" name="DMs" fill="#82c5c5" radius={[4, 4, 0, 0]} />
-                    )}
-                  </BarChart>
-                </ResponsiveContainer>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>
+                {chartTitle}
               </div>
-
-              <div
-                style={{
-                  border: "1px solid var(--border-primary)",
-                  borderRadius: 16,
-                  padding: 18,
-                  background: "rgba(255,255,255,0.02)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Data status</div>
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div
-                      style={{
-                        borderRadius: 12,
-                        padding: 14,
-                        background: "rgba(201,169,110,0.08)",
-                        border: "1px solid rgba(201,169,110,0.18)",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
-                        <Mail size={14} />
-                        Email
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
-                        {data.sources.email.description}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        borderRadius: 12,
-                        padding: 14,
-                        background: dmConnected ? "rgba(130,197,197,0.08)" : "rgba(217,142,142,0.08)",
-                        border: dmConnected
-                          ? "1px solid rgba(130,197,197,0.18)"
-                          : "1px solid rgba(217,142,142,0.18)",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
-                        {dmConnected ? <CheckCircle2 size={14} /> : <MessageCircle size={14} />}
-                        DM
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
-                        {data.sources.dm.description}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    borderRadius: 12,
-                    padding: 14,
-                    background: "rgba(255,255,255,0.03)",
-                    fontSize: 12,
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
-                    How this is counted
-                  </div>
-                  <div>One person counts once, even if they got follow-ups.</div>
-                  <div>Messages sent includes follow-ups.</div>
-                  <div>Reply rate means people who replied divided by people reached.</div>
-                  {data.notes.map((note) => (
-                    <div key={note}>{note}</div>
-                  ))}
-                </div>
-              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={data.chart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: "#787884", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#787884", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "rgba(12,12,16,0.96)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 12,
+                      color: "#f0f0f2",
+                    }}
+                  />
+                  <Bar dataKey="emailMessages" name="Emails" fill="#c9a96e" radius={[4, 4, 0, 0]} />
+                  {dmConnected && (
+                    <Bar dataKey="dmMessages" name="DMs" fill="#82c5c5" radius={[4, 4, 0, 0]} />
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
+
+            {!dmConnected && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                DM tracking not connected. {data.sources.dm.description}
+              </div>
+            )}
           </>
         )}
       </div>

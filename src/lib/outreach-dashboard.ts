@@ -313,13 +313,13 @@ function getDmSourceConfig(): DmSourceConfig {
     process.env.OUTREACH_DM_IG_HANDLE?.trim().replace(/^@/, "").toLowerCase() ||
     "matthew_conder";
   const igPageId = process.env.OUTREACH_DM_IG_PAGE_ID?.trim() || null;
+  const ghlEnabled = process.env.OUTREACH_DM_GHL_ENABLED === "true";
 
-  if (!locationId || !apiKey) {
+  if (!ghlEnabled || !locationId || !apiKey) {
     return {
       enabled: false,
-      label: "DM source not connected",
-      description:
-        "GHL_API_KEY and GHL_LOCATION_ID (or OUTREACH_DM_LOCATION_ID) must be set for live Instagram DM numbers.",
+      label: "DM tracking not connected",
+      description: `@${igHandle} isn't connected to a GHL Instagram integration yet, so DM numbers aren't being tracked. Set OUTREACH_DM_GHL_ENABLED=true once @${igHandle} is wired into a GHL sub-account.`,
       locationId: null,
       igHandle,
       igPageId,
