@@ -34,6 +34,42 @@ export async function GET() {
 
   const results: Record<string, unknown> = { locationId };
 
+  // Search GHL by @matthew_conder across every accessible integration
+  const handleAttempts = [
+    `/conversations/search?locationId=${locationId}&query=matthew_conder&limit=5`,
+    `/contacts/search/duplicate?locationId=${locationId}&instagramUsername=matthew_conder`,
+  ];
+  const handleResults: Record<string, unknown> = {};
+  for (const path of handleAttempts) {
+    const r = await ghlGet(path);
+    const body = r.body;
+    handleResults[path] = {
+      status: r.status,
+      totalFound: body && typeof body === "object" && "total" in body ? (body as Record<string, unknown>).total : null,
+      sampleKeys: body && typeof body === "object"
+        ? Object.keys(body as Record<string, unknown>).slice(0, 8)
+        : null,
+    };
+  }
+  results.matthewHandleSearch = handleResults;
+
+  // List other IG integrations / pages known to this sub-account
+  const integrationProbes = [
+    `/locations/${locationId}/integrations`,
+    `/social-media-posting/${locationId}/accounts`,
+    `/conversations/providers/locations/${locationId}`,
+  ];
+  const integrationResults: Record<string, unknown> = {};
+  for (const path of integrationProbes) {
+    const r = await ghlGet(path);
+    integrationResults[path] = {
+      status: r.status,
+      body: r.status === 200 ? r.body : null,
+      errorSnippet: r.status !== 200 && typeof r.body === "string" ? (r.body as string).slice(0, 200) : null,
+    };
+  }
+  results.integrationProbes = integrationResults;
+
   const nowMs = Date.now();
   const tenDaysAgo = nowMs - 10 * 24 * 60 * 60 * 1000;
 
