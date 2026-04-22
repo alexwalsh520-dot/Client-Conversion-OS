@@ -117,6 +117,14 @@ async function fetchFood(apiKey: string, fdcId: number): Promise<UsdaFood | null
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// GET is aliased to POST so the endpoint can be triggered with a single
+// browser-tab click while logged into the CCOS app. The handler is
+// idempotent (it fetches fresh USDA data and overwrites per approved
+// policy), so accidental refreshes are safe.
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user && process.env.NODE_ENV === "production") {

@@ -131,6 +131,11 @@ const csvEscape = (v: unknown): string => {
   return s;
 };
 
+// GET alias so the audit can be triggered from a browser click.
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user && process.env.NODE_ENV === "production") {
