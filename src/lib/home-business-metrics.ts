@@ -36,6 +36,7 @@ interface StripeChargeRow {
   influencer: string | null;
   amount: number | null;
   refund_amount: number | null;
+  status: string | null;            // "succeeded" | "failed" | "pending" | ...
   created_at: string | null;
 }
 
@@ -136,7 +137,8 @@ async function loadAllCharges(): Promise<StripeChargeRow[]> {
   while (true) {
     const { data, error } = await sb
       .from("mozi_stripe_charges")
-      .select("customer_id, customer_email, influencer, amount, refund_amount, created_at")
+      .select("customer_id, customer_email, influencer, amount, refund_amount, status, created_at")
+      .eq("status", "succeeded")                // ignore failed / pending — only real collected revenue
       .order("created_at", { ascending: true })
       .range(pageStart, pageStart + 999);
     if (error) throw error;
