@@ -11,6 +11,8 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import {
   calculateMacros,
+  goalLabelFor,
+  parseActivityLevel,
   parseHeightToCm,
   parseWeightToKg,
 } from "@/lib/nutrition/macro-calculator";
@@ -51,7 +53,7 @@ import {
   medicalSoftAvoidTokens,
   medicalTips,
 } from "@/lib/nutrition/medical";
-import { computeDailySodium, dailySodiumTargetMg } from "@/lib/nutrition/sodium";
+import { computeDailySodium } from "@/lib/nutrition/sodium";
 
 export const maxDuration = 60;
 
@@ -99,12 +101,6 @@ function mealSlotsFor(mealsPerDay: number): { name: string; time: string }[] {
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-function goalLabel(goal: "fat_loss" | "muscle_gain" | "maintain" | "recomp"): string {
-  if (goal === "fat_loss") return "Fat Loss";
-  if (goal === "muscle_gain") return "Muscle Gain";
-  if (goal === "recomp") return "Body Recomposition";
-  return "Maintenance";
-}
 
 /**
  * Split a "Protein Preferences" free-text field (e.g., "Chicken, Beef, Fish, Eggs, Dairy")
@@ -230,7 +226,31 @@ export async function POST(req: NextRequest) {
     const reconciled = reconcileGoalWithWeights(textGoal, weightKg, goalKg);
     const goal = reconciled.goal;
     const mealsPerDay = parseMealCount(intake.meal_count);
-    const targets = calculateMacros({ sex, weightKg, heightCm, age, goal }, directives.macroOverrides);
+
+    // Medical flags must be detected BEFORE target calculation because
+    // Diabetes shifts the carb/fat split and Kidney issues cap protein.
+    // This preserves the "single source of truth" guarantee: calculateMacros
+    // already reflects medical modifiers, so PDF and validator read the
+    // same numbers.
+    const medical = detectMedicalFlags(intake.allergies || "", intake.medications || "");
+    const activityLevel = parseActivityLevel(intake.activity_level || intake.fitness_goal || "");
+
+    const targets = calculateMacros(
+      {
+        sex,
+        weightKg,
+        heightCm,
+        age,
+        goal,
+        activityLevel,
+        medical: {
+          hasHypertension: medical.hasHypertension,
+          hasDiabetes: medical.hasDiabetes,
+          hasKidneyIssues: medical.hasKidneyIssues,
+        },
+      },
+      directives.macroOverrides
+    );
     if (reconciled.overrodeText && reconciled.note) {
       targets.notes.push(reconciled.note);
     }
@@ -242,11 +262,22 @@ export async function POST(req: NextRequest) {
     if (!ingredients || ingredients.length === 0) {
       return NextResponse.json({ error: "Ingredient database empty" }, { status: 500 });
     }
-    const blocked = parseBlockedFoods(intake.allergies, intake.foods_avoid);
+    // Medical flags → auto-append Celiac/Lactose avoid tokens to the hard block list
+    const celiacAutoAvoid = medical.hasCeliacOrGluten
+      ? ["wheat", "barley", "rye", "spelt", "kamut", "seitan", "couscous", "regular pasta"]
+      : [];
+    const lactoseAutoAvoid = medical.hasLactoseIntolerance
+      ? ["milk", "cheese", "yogurt", "cream", "ice cream", "salted butter", "unsalted butter", "butter"]
+      : [];
+
+    const blocked = [
+      ...parseBlockedFoods(intake.allergies, intake.foods_avoid),
+      ...celiacAutoAvoid,
+      ...lactoseAutoAvoid,
+    ];
     const preferred = parsePreferredFoods(intake.foods_enjoy, intake.protein_preferences);
 
-    // Medical flags → soft-avoid tokens feed into the ranker (deprioritize, not exclude)
-    const medical = detectMedicalFlags(intake.allergies || "", intake.medications || "");
+    // Soft-avoid tokens (HBP pushes high-sodium items down in ranking)
     const medSoftAvoid = medicalSoftAvoidTokens(medical);
 
     const rankedIngredients = filterAndRankIngredients(
@@ -378,7 +409,8 @@ export async function POST(req: NextRequest) {
     // retry JUST the violating days in parallel (with specific fix instructions),
     // merge the better of each pair, re-validate. Stops when clean, time-bounded,
     // or iteration cap reached.
-    const sodiumCap = dailySodiumTargetMg(medical.hasHypertension);
+    // Single source of truth: read sodium cap from the unified targets object
+    const sodiumCap = targets.sodiumCapMg;
 
     const computeTotals = (d: (typeof days)[number]) => {
       let cal = 0, p = 0, c = 0, f = 0;
@@ -712,7 +744,7 @@ export async function POST(req: NextRequest) {
         weightLbs: kgToLbs(weightKg),
         heightCm,
         heightFtIn: cmToFtIn(heightCm),
-        goalLabel: goalLabel(goal),
+        goalLabel: goalLabelFor(goal),
         goalWeightLbs: goalLbs ? Math.round(goalLbs) : undefined,
         mealsPerDay,
         allergies: intake.allergies || "None",
@@ -723,7 +755,6 @@ export async function POST(req: NextRequest) {
       days: pdfDays,
       grocery,
       tips,
-      reviewRequired: unresolvedByDay.length > 0 ? unresolvedByDay : undefined,
     };
 
     // Push convergence summary into targets.notes so it appears in API response
@@ -796,6 +827,21 @@ export async function POST(req: NextRequest) {
       targets,
       generationTimeMs,
       notes: targets.notes,
+      // Convergence + review status (consumed by the UI badges, never rendered on the PDF)
+      status: {
+        converged: unresolvedByDay.length === 0,
+        iterationsRun: Math.max(0, convergenceLog.length - 1),
+        medicalReviewRequired:
+          medical.hasHypertension ||
+          medical.hasDiabetes ||
+          medical.hasKidneyIssues ||
+          medical.onACEInhibitor ||
+          medical.onBloodThinner ||
+          medical.onSGLT2 ||
+          medical.onGLP1,
+        unresolvedViolations: unresolvedByDay,
+        convergenceLog,
+      },
     });
   } catch (err) {
     console.error("[generate-plan] Failed:", err);

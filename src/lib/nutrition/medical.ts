@@ -15,9 +15,13 @@ export interface MedicalFlags {
   onACEInhibitor: boolean;
   onStimulantADHD: boolean;
   onGLP1: boolean;
+  onBloodThinner: boolean;
+  onSGLT2: boolean;
   hasDiabetes: boolean;
   hasHighCholesterol: boolean;
   hasKidneyIssues: boolean;
+  hasCeliacOrGluten: boolean;
+  hasLactoseIntolerance: boolean;
   medicationsRaw: string;
   conditionsRaw: string;
 }
@@ -51,9 +55,13 @@ export function detectMedicalFlags(
     "strattera", "atomoxetine",
   ];
   const glp1 = ["ozempic", "wegovy", "mounjaro", "zepbound", "rybelsus", "saxenda", "semaglutide", "tirzepatide", "liraglutide"];
-  const diabetesTerms = ["diabetes", "type 1", "type 2", "t1d", "t2d", "insulin", "metformin"];
+  const diabetesTerms = ["diabetes", "type 1", "type 2", "t1d", "t2d", "insulin", "metformin", "pre-diabetes", "prediabetes"];
   const cholesterolTerms = ["high cholesterol", "hyperlipidemia", "statin", "atorvastatin", "rosuvastatin", "simvastatin", "crestor", "lipitor"];
-  const kidneyTerms = ["kidney disease", "ckd", "renal", "dialysis"];
+  const kidneyTerms = ["kidney disease", "ckd", "renal", "dialysis", "kidney failure"];
+  const celiacTerms = ["celiac", "coeliac", "gluten intolerance", "gluten free", "gluten-free", "gluten sensitivity"];
+  const lactoseTerms = ["lactose intolerance", "lactose intolerant", "dairy free", "dairy-free", "lactose"];
+  const bloodThinners = ["warfarin", "coumadin", "eliquis", "apixaban", "xarelto", "rivaroxaban", "pradaxa", "dabigatran"];
+  const sglt2 = ["jardiance", "empagliflozin", "farxiga", "dapagliflozin", "invokana", "canagliflozin", "steglatro"];
 
   const hit = (terms: string[]) => terms.some((t) => combined.includes(t));
 
@@ -62,9 +70,13 @@ export function detectMedicalFlags(
     onACEInhibitor: hit(aceInhibitors) || hit(arbs),
     onStimulantADHD: hit(stimulants),
     onGLP1: hit(glp1),
+    onBloodThinner: hit(bloodThinners),
+    onSGLT2: hit(sglt2),
     hasDiabetes: hit(diabetesTerms),
     hasHighCholesterol: hit(cholesterolTerms),
     hasKidneyIssues: hit(kidneyTerms),
+    hasCeliacOrGluten: hit(celiacTerms),
+    hasLactoseIntolerance: hit(lactoseTerms),
     medicationsRaw: (medications || "").trim(),
     conditionsRaw: (allergiesMedical || "").trim(),
   };
@@ -213,6 +225,47 @@ export function medicalTips(flags: MedicalFlags): MedicalTip[] {
         "Your medication suppresses appetite significantly. You may not feel hungry at mealtimes — eat anyway, in smaller " +
         "portions if needed, and prioritize protein (aim for at least 25-30g per meal) to protect muscle. Slow, gentle meals " +
         "reduce nausea. Hydration is especially important — under-hydration worsens side effects.",
+    });
+  }
+
+  if (flags.onBloodThinner) {
+    tips.push({
+      title: "Blood Thinners & Vitamin K",
+      body:
+        "Your medication is affected by vitamin K, which is highest in leafy greens (kale, spinach, broccoli). You don't need " +
+        "to avoid them — consistency matters more than quantity. Keep your weekly intake of greens roughly the same from week " +
+        "to week. Sudden large increases or decreases can shift how your medication works. Tell your doctor before any big " +
+        "dietary change.",
+    });
+  }
+
+  if (flags.onSGLT2) {
+    tips.push({
+      title: "SGLT2 Inhibitors & Hydration",
+      body:
+        "Your medication increases fluid loss. Drink water consistently throughout the day — aim for 3 L minimum, more on " +
+        "training days and in warm weather. Watch for signs of dehydration (dry mouth, dizziness, dark urine). Don't wait " +
+        "until you're thirsty.",
+    });
+  }
+
+  if (flags.hasCeliacOrGluten) {
+    tips.push({
+      title: "Gluten-Free Living",
+      body:
+        "Your plan excludes wheat, barley, rye, and common gluten sources. Safe substitutes are rice, quinoa, corn tortillas, " +
+        "gluten-free bread, and certified gluten-free oats (regular oats are often cross-contaminated). Always read labels — " +
+        "soy sauce, marinades, and processed meats frequently contain hidden gluten.",
+    });
+  }
+
+  if (flags.hasLactoseIntolerance) {
+    tips.push({
+      title: "Dairy-Free Substitutes",
+      body:
+        "Your plan excludes dairy. Good substitutes: oat milk or almond milk (unless nut-allergic), coconut milk for richer " +
+        "recipes, and nutritional yeast as a savory replacement for parmesan. Hard-aged cheeses and Greek yogurt are low in " +
+        "lactose if your tolerance allows small amounts — discuss with your doctor.",
     });
   }
 

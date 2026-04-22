@@ -1,17 +1,25 @@
 /**
- * Deterministic macro target calculator.
+ * SINGLE SOURCE OF TRUTH for macro target calculation.
  *
- * Uses:
- *  - Mifflin-St Jeor (1990) for BMR (gold standard, used by ACSM)
- *  - Activity factor 1.55 (moderately active, clients are training 3-5x/week)
- *  - ISSN 2017 position stand for protein recommendations
- *  - ACSM minimum 20% fat (we use 25% for satiety)
+ * Every downstream consumer (PDF cover page, day-level validator,
+ * portion optimizer, solver feedback messages) reads the same MacroTargets
+ * object — there is no duplicate logic anywhere else in the codebase.
  *
- * No AI is involved in macro calculation — only the code in this file.
+ * Pipeline:
+ *   1. BMR via Mifflin-St Jeor (1990).
+ *   2. TDEE = BMR × activity factor.
+ *   3. Goal offset → target calories.
+ *   4. Per-goal protein and fat per-lb bodyweight → gram targets.
+ *   5. Carbs = (calories - protein×4 - fat×9) / 4   (exact balance).
+ *   6. Medical modifiers (Diabetes shifts carbs→35%, fat→40%; Kidney caps protein).
+ *   7. Comment overrides from nutritionist notes (applied last).
+ *
+ * Changing any macro target requires changing only this file.
  */
 
 export type Sex = "male" | "female";
-export type GoalType = "fat_loss" | "muscle_gain" | "maintain" | "recomp";
+export type GoalType = "fat_loss" | "muscle_gain" | "maintain" | "recomp" | "endurance";
+export type ActivityLevel = "sedentary" | "light" | "moderate" | "high" | "very_high";
 
 export interface MacroInputs {
   sex: Sex;
@@ -19,15 +27,21 @@ export interface MacroInputs {
   heightCm: number;
   age: number;
   goal: GoalType;
+  activityLevel?: ActivityLevel;
+  // Medical flags that modify macros at the target stage
+  medical?: {
+    hasHypertension?: boolean;
+    hasDiabetes?: boolean;           // shifts carbs→35%, fat→40% of calories
+    hasKidneyIssues?: boolean;       // caps protein at 0.6 g/lb
+  };
 }
 
 export interface MacroOverrides {
-  // Explicit target adjustments from comments
-  caloriesDelta?: number;        // +200 / -300 added to final calories
-  caloriesAbsolute?: number;     // Hard override "2500 kcal"
-  proteinG?: number;              // Hard override in grams
+  caloriesDelta?: number;
+  caloriesAbsolute?: number;
+  proteinG?: number;
   fatG?: number;
-  fatPct?: number;                // 25% → 0.25
+  fatPct?: number;
   carbsG?: number;
 }
 
@@ -36,194 +50,228 @@ export interface MacroTargets {
   proteinG: number;
   carbsG: number;
   fatG: number;
-  // Breakdown for transparency
   bmr: number;
   tdee: number;
   activityFactor: number;
   goal: GoalType;
   proteinPerKg: number;
+  proteinPerLb: number;
+  sodiumCapMg: number;
   notes: string[];
 }
 
-const ACTIVITY_FACTOR = 1.55; // Moderately active (clients train 3-5x/week per program)
+// ----- constants -----
+const LB_PER_KG = 2.20462;
+const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  high: 1.725,
+  very_high: 1.9,
+};
+const DEFAULT_ACTIVITY: ActivityLevel = "moderate";
 
-/**
- * Mifflin-St Jeor BMR formula (1990).
- */
-function calculateBMR(sex: Sex, weightKg: number, heightCm: number, age: number): number {
+// Goal-specific formulas — per the approved spec.
+// Protein and fat are grams per POUND of bodyweight.
+const GOAL_FORMULAS: Record<
+  GoalType,
+  { kcalOffset: number; proteinPerLb: number; fatPerLb: number; label: string }
+> = {
+  fat_loss:    { kcalOffset: -500, proteinPerLb: 1.1,  fatPerLb: 0.35, label: "Fat Loss" },
+  muscle_gain: { kcalOffset: +300, proteinPerLb: 1.0,  fatPerLb: 0.35, label: "Muscle Gain" },
+  recomp:      { kcalOffset: -150, proteinPerLb: 1.15, fatPerLb: 0.35, label: "Body Recomposition" },
+  maintain:    { kcalOffset: 0,    proteinPerLb: 0.9,  fatPerLb: 0.35, label: "Maintenance" },
+  endurance:   { kcalOffset: +250, proteinPerLb: 0.8,  fatPerLb: 0.30, label: "Endurance" },
+};
+
+function mifflinStJeor(sex: Sex, weightKg: number, heightCm: number, age: number): number {
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
   return sex === "male" ? base + 5 : base - 161;
 }
 
 /**
- * Caloric target based on goal.
- * - Fat loss: -20% of TDEE
- * - Muscle gain: +10% of TDEE
- * - Recomp (build + lose fat simultaneously): -10% (slight deficit; gains are possible
- *   for intermediate trainees at a small deficit with high protein)
- * - Maintain: 0
- */
-function calculateGoalCalories(tdee: number, goal: GoalType): number {
-  switch (goal) {
-    case "fat_loss":
-      return tdee * 0.80;
-    case "muscle_gain":
-      return tdee * 1.10;
-    case "recomp":
-      return tdee * 0.90;
-    case "maintain":
-    default:
-      return tdee;
-  }
-}
-
-/**
- * Protein grams based on bodyweight and goal.
- * Per ISSN 2017 position stand.
- */
-function calculateProtein(weightKg: number, goal: GoalType): { grams: number; perKg: number } {
-  let perKg: number;
-  switch (goal) {
-    case "fat_loss":
-    case "recomp":
-    case "muscle_gain":
-      // 2.2 g/kg = 1.0 g/lb minimum — matches coaching standard for any goal
-      // that involves muscle preservation or growth. Underfeeding protein
-      // during a bulk leaves gains on the table.
-      perKg = 2.2;
-      break;
-    case "maintain":
-    default:
-      perKg = 1.8; // bumped from 1.6 → still covers general health/performance
-      break;
-  }
-  return { grams: Math.round(weightKg * perKg), perKg };
-}
-
-/**
- * Main calculator. Applies overrides from comments AFTER calculating defaults.
+ * THE function. Every caller uses this.
  */
 export function calculateMacros(
   inputs: MacroInputs,
   overrides: MacroOverrides = {}
 ): MacroTargets {
   const notes: string[] = [];
+  const weightLb = inputs.weightKg * LB_PER_KG;
 
-  // Step 1: BMR (Mifflin-St Jeor)
-  const bmr = calculateBMR(inputs.sex, inputs.weightKg, inputs.heightCm, inputs.age);
+  // 1. BMR
+  const bmr = mifflinStJeor(inputs.sex, inputs.weightKg, inputs.heightCm, inputs.age);
 
-  // Step 2: TDEE
-  const tdee = bmr * ACTIVITY_FACTOR;
+  // 2. TDEE
+  const activityLevel = inputs.activityLevel ?? DEFAULT_ACTIVITY;
+  const activityFactor = ACTIVITY_FACTORS[activityLevel];
+  const tdee = bmr * activityFactor;
 
-  // Step 3: Caloric target
-  let calories = calculateGoalCalories(tdee, inputs.goal);
+  // 3. Goal calories
+  const formula = GOAL_FORMULAS[inputs.goal];
+  let calories = tdee + formula.kcalOffset;
+
+  // 4. Protein + fat per g/lb, then carbs as the remainder (exact balance)
+  let proteinG = Math.round(weightLb * formula.proteinPerLb);
+  let fatG = Math.round(weightLb * formula.fatPerLb);
+
+  // 5. Medical modifiers BEFORE comment overrides
+  if (inputs.medical?.hasKidneyIssues) {
+    const kidneyCapG = Math.round(weightLb * 0.6);
+    if (proteinG > kidneyCapG) {
+      proteinG = kidneyCapG;
+      notes.push(
+        `Protein capped at ${kidneyCapG}g (0.6 g/lb) due to kidney issues — overrides the ${formula.label} default.`
+      );
+    }
+  }
+
+  if (inputs.medical?.hasDiabetes) {
+    // Shift macro split: carbs down to ~35% of kcal, fat up to ~40%.
+    // Protein stays at the goal's g/lb; calories re-derive to keep the split consistent.
+    const carbKcal = calories * 0.35;
+    const fatKcal = calories * 0.40;
+    const newCarbG = Math.round(carbKcal / 4);
+    const newFatG = Math.round(fatKcal / 9);
+    // Protein is still proteinG; total kcal remains `calories`.
+    // If protein*4 + newFat*9 + newCarb*4 differs from calories by >50 kcal,
+    // trim carbs to restore balance.
+    const recalc = proteinG * 4 + newFatG * 9 + newCarbG * 4;
+    const diff = calories - recalc;
+    fatG = newFatG;
+    const carbsG_diabetic = newCarbG + Math.round(diff / 4);
+    notes.push(`Diabetic macro split applied: ~35% carbs / ~40% fat. Distribute carbs evenly across meals and prefer low-glycemic sources.`);
+    // Temporarily stash carbs; balance below will recalc if no overrides hit.
+    const target: MacroTargets = {
+      calories: Math.round(calories),
+      proteinG,
+      carbsG: carbsG_diabetic,
+      fatG,
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      activityFactor,
+      goal: inputs.goal,
+      proteinPerKg: Math.round((proteinG / inputs.weightKg) * 10) / 10,
+      proteinPerLb: Math.round((proteinG / weightLb) * 100) / 100,
+      sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : 2300,
+      notes,
+    };
+    return applyOverrides(target, overrides);
+  }
+
+  // 6. Apply comment overrides (calories first, then protein, then fat)
+  // Non-diabetic path: carbs are pure remainder.
+  const target: MacroTargets = {
+    calories: Math.round(calories),
+    proteinG,
+    // Placeholder: we compute carbs in applyOverrides after all macros settled.
+    carbsG: 0,
+    fatG,
+    bmr: Math.round(bmr),
+    tdee: Math.round(tdee),
+    activityFactor,
+    goal: inputs.goal,
+    proteinPerKg: Math.round((proteinG / inputs.weightKg) * 10) / 10,
+    proteinPerLb: Math.round((proteinG / weightLb) * 100) / 100,
+    sodiumCapMg: inputs.medical?.hasHypertension ? 1800 : 2300,
+    notes,
+  };
+  return applyOverrides(target, overrides);
+}
+
+/**
+ * Apply comment-driven overrides on top of the goal- and medical-derived targets,
+ * then balance carbs so the macro gram totals multiply out to the stated kcal.
+ */
+function applyOverrides(t: MacroTargets, overrides: MacroOverrides): MacroTargets {
+  const notes = [...t.notes];
 
   if (overrides.caloriesAbsolute !== undefined) {
-    calories = overrides.caloriesAbsolute;
-    notes.push(`Calories overridden from comment: ${overrides.caloriesAbsolute} kcal`);
+    t.calories = overrides.caloriesAbsolute;
+    notes.push(`Calories overridden: ${overrides.caloriesAbsolute} kcal.`);
   } else if (overrides.caloriesDelta !== undefined) {
-    calories += overrides.caloriesDelta;
+    t.calories += overrides.caloriesDelta;
     const sign = overrides.caloriesDelta >= 0 ? "+" : "";
-    notes.push(`Calories adjusted from comment: ${sign}${overrides.caloriesDelta} kcal`);
+    notes.push(`Calories adjusted: ${sign}${overrides.caloriesDelta} kcal.`);
   }
 
-  // Step 4: Protein (can be overridden)
-  let proteinG: number;
-  let proteinPerKg: number;
   if (overrides.proteinG !== undefined) {
-    proteinG = overrides.proteinG;
-    proteinPerKg = proteinG / inputs.weightKg;
-    notes.push(`Protein overridden from comment: ${proteinG}g`);
-  } else {
-    const p = calculateProtein(inputs.weightKg, inputs.goal);
-    proteinG = p.grams;
-    proteinPerKg = p.perKg;
+    t.proteinG = overrides.proteinG;
+    notes.push(`Protein overridden: ${t.proteinG}g.`);
   }
 
-  // Step 5: Fat
-  let fatG: number;
   if (overrides.fatG !== undefined) {
-    fatG = overrides.fatG;
-    notes.push(`Fat overridden from comment: ${fatG}g`);
+    t.fatG = overrides.fatG;
+    notes.push(`Fat overridden: ${t.fatG}g.`);
   } else if (overrides.fatPct !== undefined) {
-    fatG = Math.round((calories * overrides.fatPct) / 9);
-    notes.push(`Fat set from comment: ${Math.round(overrides.fatPct * 100)}% of calories`);
-  } else {
-    fatG = Math.round((calories * 0.25) / 9); // default 25% of calories
+    t.fatG = Math.round((t.calories * overrides.fatPct) / 9);
+    notes.push(`Fat set from comment: ${Math.round(overrides.fatPct * 100)}% of calories.`);
   }
 
-  // Step 6: Carbs (remainder, unless overridden)
-  let carbsG: number;
   if (overrides.carbsG !== undefined) {
-    carbsG = overrides.carbsG;
-    notes.push(`Carbs overridden from comment: ${carbsG}g`);
-    // Recalculate calories to match if carbs are hard-set
-    const recalcCalories = proteinG * 4 + carbsG * 4 + fatG * 9;
-    if (Math.abs(recalcCalories - calories) > 50) {
-      notes.push(`Note: carbs override changes total calories to ~${recalcCalories} kcal`);
-    }
+    t.carbsG = overrides.carbsG;
+    notes.push(`Carbs overridden: ${t.carbsG}g.`);
   } else {
-    const proteinCals = proteinG * 4;
-    const fatCals = fatG * 9;
-    const carbCals = Math.max(calories - proteinCals - fatCals, 0);
-    carbsG = Math.round(carbCals / 4);
+    // Balance: carbs fill the remaining kcal
+    const proteinKcal = t.proteinG * 4;
+    const fatKcal = t.fatG * 9;
+    t.carbsG = Math.max(0, Math.round((t.calories - proteinKcal - fatKcal) / 4));
   }
 
   return {
-    calories: Math.round(calories),
-    proteinG: Math.round(proteinG),
-    carbsG: Math.round(carbsG),
-    fatG: Math.round(fatG),
-    bmr: Math.round(bmr),
-    tdee: Math.round(tdee),
-    activityFactor: ACTIVITY_FACTOR,
-    goal: inputs.goal,
-    proteinPerKg: Math.round(proteinPerKg * 10) / 10,
+    ...t,
     notes,
   };
 }
 
 /**
- * Convert height string (e.g. "5'10", "70", "5 ft 10 in") to cm.
- * Falls back to null if unparseable.
+ * Map common intake phrases to ActivityLevel. Falls back to moderate.
  */
+export function parseActivityLevel(raw: string): ActivityLevel {
+  const s = (raw || "").toLowerCase();
+  if (/sedentary|desk job|no exercise|no training/.test(s)) return "sedentary";
+  if (/light|1-2 (times|x)\/week|1-2 workouts/.test(s)) return "light";
+  if (/very high|athlete|pro|twice a day|2x\/day|high volume/.test(s)) return "very_high";
+  if (/high|intense|5-6|6 days|6x\/week|daily training/.test(s)) return "high";
+  return "moderate";
+}
+
+/**
+ * Human-readable label for the current goal. Used on the PDF cover.
+ */
+export function goalLabelFor(goal: GoalType): string {
+  return GOAL_FORMULAS[goal].label;
+}
+
+// ============================================================================
+// Height / weight parsers (unchanged from prior version)
+// ============================================================================
+
 export function parseHeightToCm(heightStr: string): number | null {
   if (!heightStr) return null;
   const s = heightStr.trim().toLowerCase();
-
-  // Try "5'10"", "5 10", "5ft10in"
   const ftInMatch = s.match(/(\d+)\s*(?:'|ft|feet|ft\.)\s*(\d+)?/);
   if (ftInMatch) {
     const ft = parseInt(ftInMatch[1], 10);
     const inches = ftInMatch[2] ? parseInt(ftInMatch[2], 10) : 0;
     return Math.round((ft * 12 + inches) * 2.54);
   }
-
-  // Try just a number (inches)
   const numMatch = s.match(/^(\d+(?:\.\d+)?)$/);
   if (numMatch) {
     const n = parseFloat(numMatch[1]);
-    // If > 100 assume cm; if between 48-84 assume inches
     if (n > 100) return Math.round(n);
     if (n >= 48 && n <= 84) return Math.round(n * 2.54);
   }
-
   return null;
 }
 
-/**
- * Convert weight string (e.g. "180", "180 lbs", "82 kg") to kg.
- */
 export function parseWeightToKg(weightStr: string): number | null {
   if (!weightStr) return null;
   const s = weightStr.trim().toLowerCase();
-
   if (s.includes("kg")) {
     const n = parseFloat(s.replace(/[^\d.]/g, ""));
     return isNaN(n) ? null : n;
   }
-
-  // Default to lbs
   const n = parseFloat(s.replace(/[^\d.]/g, ""));
   if (isNaN(n)) return null;
   return Math.round(n * 0.453592 * 10) / 10;
