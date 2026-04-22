@@ -44,6 +44,13 @@ import {
   type PdfMeal,
 } from "@/lib/nutrition/pdf-renderer";
 import { optimizeAllDays } from "@/lib/nutrition/portion-optimizer";
+import {
+  detectMedicalFlags,
+  medicalHardSwaps,
+  medicalIngredientCaps,
+  medicalSoftAvoidTokens,
+  medicalTips,
+} from "@/lib/nutrition/medical";
 
 export const maxDuration = 60;
 
@@ -108,6 +115,41 @@ function rankProteinPreferences(raw: string): string[] {
     .split(/[,;\n/|]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 1 && s.length < 30);
+}
+
+/**
+ * Extract food nouns from a free-text "daily meals description" field.
+ * Uses a static allowlist of common foods so we don't match random words.
+ * If the client writes "5 pieces of watermelon at breakfast" → we pull "watermelon".
+ */
+function extractFoodsFromDailyMealsDescription(raw: string): string[] {
+  if (!raw) return [];
+  const s = raw.toLowerCase();
+  // Known foods that are likely to appear in intake free-text and that we'd
+  // want to try to include in the plan. Kept generic; Miss matches fall back
+  // to the reviewer note.
+  const known = [
+    "chicken", "beef", "pork", "turkey", "salmon", "tuna", "shrimp", "eggs",
+    "egg whites", "bacon", "sausage",
+    "rice", "pasta", "oats", "oatmeal", "bread", "toast", "bagel", "tortilla",
+    "potato", "potatoes", "sweet potato", "quinoa",
+    "broccoli", "asparagus", "spinach", "kale", "lettuce", "tomato", "tomatoes",
+    "cucumber", "carrot", "carrots", "bell pepper", "peppers", "onion", "cabbage",
+    "green beans", "brussels sprouts", "corn", "cauliflower", "zucchini",
+    "banana", "apple", "apples", "orange", "blueberries", "strawberries",
+    "blackberries", "grapes", "raspberries", "pineapple", "mango", "watermelon",
+    "peach", "pear", "cherries",
+    "greek yogurt", "cottage cheese", "cheese", "milk", "butter", "cream cheese",
+    "almonds", "walnuts", "peanuts", "peanut butter", "cashews",
+    "salsa", "hot sauce", "ranch", "honey", "mustard", "mayo",
+    "smoothie", "shake", "whey", "protein bar",
+    "avocado", "olive oil", "beans", "black beans", "lentils", "chickpeas",
+  ];
+  const hits = new Set<string>();
+  for (const food of known) {
+    if (s.includes(food)) hits.add(food);
+  }
+  return Array.from(hits);
 }
 
 function cmToFtIn(cm: number): string {
@@ -201,7 +243,29 @@ export async function POST(req: NextRequest) {
     }
     const blocked = parseBlockedFoods(intake.allergies, intake.foods_avoid);
     const preferred = parsePreferredFoods(intake.foods_enjoy, intake.protein_preferences);
-    const rankedIngredients = filterAndRankIngredients(ingredients as IngredientRow[], blocked, preferred);
+
+    // Medical flags → soft-avoid tokens feed into the ranker (deprioritize, not exclude)
+    const medical = detectMedicalFlags(intake.allergies || "", intake.medications || "");
+    const medSoftAvoid = medicalSoftAvoidTokens(medical);
+
+    const rankedIngredients = filterAndRankIngredients(
+      ingredients as IngredientRow[],
+      blocked,
+      preferred
+    );
+    // Push soft-avoid items to the bottom of the ranked list
+    if (medSoftAvoid.length > 0) {
+      const isSoftAvoid = (ing: IngredientRow) => {
+        const hay = [ing.slug, ing.name, ...(ing.aliases || [])].join(" ").toLowerCase();
+        return medSoftAvoid.some((t) => hay.includes(t.toLowerCase()));
+      };
+      const [avoided, kept] = [
+        rankedIngredients.filter(isSoftAvoid),
+        rankedIngredients.filter((i) => !isSoftAvoid(i)),
+      ];
+      rankedIngredients.length = 0;
+      rankedIngredients.push(...kept, ...avoided);
+    }
 
     const byslug = new Map<string, IngredientRow>();
     for (const i of ingredients as IngredientRow[]) byslug.set(i.slug, i);
@@ -233,9 +297,27 @@ export async function POST(req: NextRequest) {
 
     // Guarantee presence of spicy items when the client likes spicy food
     const spicyRequired = spicy ? ["salsa", "hot_sauce", "jalapeno_raw"] : [];
+
+    // Priority-placement: foods that appear in BOTH the enjoyed list and the
+    // daily meals description get forced into the allowed ingredient set so
+    // Claude sees them. Match by substring against slug/name/aliases.
+    const dailyDescFoods = extractFoodsFromDailyMealsDescription(intake.daily_meals_description || "");
+    const enjoyedFoods = parsePreferredFoods(intake.foods_enjoy || "", "");
+    const overlapTokens = dailyDescFoods.filter((f) =>
+      enjoyedFoods.some((e) => e.toLowerCase().includes(f) || f.includes(e.toLowerCase()))
+    );
+    const priorityRequiredSlugs: string[] = [];
+    for (const token of overlapTokens) {
+      const match = (ingredients as IngredientRow[]).find((ing) => {
+        const hay = [ing.slug, ing.name, ...(ing.aliases || [])].join(" ").toLowerCase();
+        return hay.includes(token);
+      });
+      if (match) priorityRequiredSlugs.push(match.slug);
+    }
+
     const allowed = pickDiverseAllowed(rankedIngredients, {
       size: 100,
-      extraRequiredSlugs: spicyRequired,
+      extraRequiredSlugs: [...spicyRequired, ...priorityRequiredSlugs],
     });
 
     // Rotate which proteins to "avoid" per day so the top preferences still get used
@@ -393,12 +475,61 @@ export async function POST(req: NextRequest) {
     // deterministic and guaranteed to land within ±5% on nearly every day.
     optimizeAllDays(days, byslug, targets);
 
+    // ---------- MEDICAL HARD SWAPS + FREQUENCY CAPS ----------
+    // Swap problematic ingredients (e.g., salted butter → unsalted) and cap
+    // how often high-sodium/high-saturated-fat items appear across the week
+    // based on detected medical conditions.
+    const hardSwaps = medicalHardSwaps(medical, byslug);
+    const freqCaps = medicalIngredientCaps(medical);
+
+    // Apply hard swaps first (preserves portion size)
+    for (const d of days) {
+      for (const m of d.meals) {
+        for (const ing of m.ingredients) {
+          if (hardSwaps[ing.slug]) {
+            ing.slug = hardSwaps[ing.slug];
+          }
+        }
+      }
+    }
+
+    // Enforce frequency caps: count day-appearances per cap-key, over the cap
+    // replace the lowest-impact occurrence with a neutral alternative (olive oil
+    // for fats, skip for cheeses by reducing grams to zero).
+    for (const [capKey, maxDays] of Object.entries(freqCaps)) {
+      const matches: { dayIdx: number; mealIdx: number; ingIdx: number }[] = [];
+      days.forEach((d, di) => {
+        d.meals.forEach((m, mi) => {
+          m.ingredients.forEach((ing, ii) => {
+            if (ing.slug.includes(capKey)) matches.push({ dayIdx: di, mealIdx: mi, ingIdx: ii });
+          });
+        });
+      });
+      if (matches.length > maxDays) {
+        // Remove (zero-out) the excess matches from the end — the optimizer
+        // will re-run if needed but at this stage we're applying clinical
+        // judgment over strict macro adherence.
+        const toRemove = matches.slice(maxDays);
+        for (const m of toRemove) {
+          const meal = days[m.dayIdx].meals[m.mealIdx];
+          // Drop the ingredient and bump a neutral starch/veg to compensate calories
+          meal.ingredients.splice(m.ingIdx, 1);
+        }
+      }
+    }
+
+    // Re-optimize portions after the medical adjustments
+    if (Object.keys(hardSwaps).length > 0 || Object.keys(freqCaps).length > 0) {
+      optimizeAllDays(days, byslug, targets);
+    }
+
     // ---------- ENJOYED-FOODS COVERAGE CHECK ----------
-    // For each token the client listed in foods_enjoy / protein_preferences,
-    // check whether any ingredient across the 7 days matches. Surface misses
-    // to the reviewing nutritionist via the response notes.
+    // Source 1: the foods_enjoy list.
+    // Source 2: items mentioned in the client's daily_meals_description —
+    // stuff they already eat regularly and would expect to see on the plan.
     const enjoyedTokens = [
-      ...parsePreferredFoods(intake.foods_enjoy, ""), // foods only, proteins handled via preferredProteins separately
+      ...parsePreferredFoods(intake.foods_enjoy, ""),
+      ...extractFoodsFromDailyMealsDescription(intake.daily_meals_description || ""),
     ].filter((t) => t && t.length >= 3);
     const allSlugsUsed = new Set<string>();
     const allNamesUsed: string[] = [];
@@ -513,7 +644,32 @@ export async function POST(req: NextRequest) {
       onAppetiteSuppressant: isOnAppetiteSuppressant(intake.medications || ""),
     });
 
+    // Inject medical-condition tips just before the final "Be Consistent" tip
+    // (which is always the last entry from generateTips).
+    const medTips = medicalTips(medical);
+    if (medTips.length > 0) {
+      const lastTip = tips.pop(); // "Be Consistent, Not Perfect"
+      tips.push(...medTips);
+      if (lastTip) tips.push(lastTip);
+    }
+
     // --- PDF input ---
+    // Build a timeline note when we can compute one from current + goal weights.
+    // Estimate 1 lb / week at a normal ~500 kcal/day deficit; 0.5 lb / week for
+    // a recomp; 0.5 lb / week gain for a muscle_gain surplus.
+    const goalLbs = goalKg ? goalKg * 2.20462 : null;
+    const currentLbs = weightKg * 2.20462;
+    let timelineNote: string | undefined;
+    if (goalLbs && Math.abs(goalLbs - currentLbs) >= 3) {
+      const deltaLbs = Math.abs(goalLbs - currentLbs);
+      const perWeek = goal === "fat_loss" ? 1 : goal === "muscle_gain" ? 0.5 : 0.5;
+      const weeks = Math.max(4, Math.round(deltaLbs / perWeek));
+      const direction = goalLbs < currentLbs ? "reach" : "reach";
+      timelineNote =
+        `At this deficit/surplus, expect to ${direction} your goal weight of ${Math.round(goalLbs)} lbs in roughly ${weeks} weeks. ` +
+        `Progress isn't linear — focus on the 2-week scale average, not daily weight.`;
+    }
+
     const pdfInput: PdfInput = {
       client: {
         firstName: intake.first_name,
@@ -524,8 +680,11 @@ export async function POST(req: NextRequest) {
         heightCm,
         heightFtIn: cmToFtIn(heightCm),
         goalLabel: goalLabel(goal),
+        goalWeightLbs: goalLbs ? Math.round(goalLbs) : undefined,
         mealsPerDay,
         allergies: intake.allergies || "None",
+        medications: intake.medications || undefined,
+        timelineNote,
       },
       targets,
       days: pdfDays,

@@ -18,15 +18,33 @@ export function parseGoalFromText(text: string): GoalType {
     "lean", "leaner", "get lean", "more defined", "definition",
     "lose weight", "slim down", "shred", "drop weight",
     "reduce body fat", "tone",
+    "body fat", "bf%", "% bf", "bf from", "bf to",
+    "shirt off", // "look good with my shirt off" is a recomp signal
   ];
   const muscleGainKeywords = [
     "build muscle", "gain muscle", "bulk", "bulking",
     "mass", "gain weight", "put on size", "add size",
-    "hypertrophy", "bigger", "grow muscle",
+    "hypertrophy", "bigger", "grow muscle", "lean mass",
+    "build lean", "build size", "muscle mass",
   ];
 
   const fatLossHit = fatLossKeywords.some((k) => s.includes(k));
   const muscleGainHit = muscleGainKeywords.some((k) => s.includes(k));
+
+  // Body-fat-percentage reduction language: "get to 18% BF from 25%" or
+  // "from 25% to 18%" — any pattern where a smaller percentage follows a
+  // larger one is a fat-loss signal even without explicit "lose" wording.
+  const bfPctPattern = /(\d{1,2})\s*%?[^%]{0,20}(\d{1,2})\s*%/;
+  const bfMatch = s.match(bfPctPattern);
+  if (bfMatch) {
+    const a = parseInt(bfMatch[1], 10);
+    const b = parseInt(bfMatch[2], 10);
+    if (a > b && a <= 50 && b >= 5) {
+      // larger → smaller = fat loss direction
+      if (muscleGainHit) return "recomp";
+      return "fat_loss";
+    }
+  }
 
   // Both mentioned → body recomposition (slight deficit, high protein)
   if (fatLossHit && muscleGainHit) return "recomp";

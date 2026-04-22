@@ -75,8 +75,11 @@ export interface PdfClient {
   heightCm: number;
   heightFtIn: string;   // e.g. "5'11""
   goalLabel: string;    // "Fat Loss", "Muscle Gain", "Maintenance"
+  goalWeightLbs?: number; // optional — shown in "Your Timeline" line if present
   mealsPerDay: number;
   allergies: string;    // free text (e.g. "Tree nuts" or "None")
+  medications?: string; // free text (e.g. "Lisinopril") — hidden if empty/none
+  timelineNote?: string; // e.g. "~12 weeks to reach your goal weight of 170 lbs"
 }
 
 export interface PdfInput {
@@ -242,9 +245,19 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
       ["Weight", `${fmtNum(input.client.weightKg)} kg  (${fmtNum(input.client.weightLbs)} lbs)`],
       ["Height", `${fmtNum(input.client.heightCm)} cm  (${input.client.heightFtIn})`],
       ["Goal", input.client.goalLabel],
-      ["Meals / Day", String(input.client.mealsPerDay)],
-      ["Allergies", input.client.allergies || "None"],
     ];
+    if (input.client.goalWeightLbs && input.client.goalWeightLbs > 0) {
+      detailRows.push(["Goal Weight", `${fmtNum(input.client.goalWeightLbs)} lbs`]);
+    }
+    detailRows.push(
+      ["Meals / Day", String(input.client.mealsPerDay)],
+      ["Allergies", input.client.allergies || "None"]
+    );
+    // Medications row — only render if a non-empty, non-"none" string is supplied
+    const medsStr = (input.client.medications || "").trim();
+    if (medsStr && !/^(n\/?a|none|no)$/i.test(medsStr)) {
+      detailRows.push(["Medications", medsStr]);
+    }
     const labelX = pageWidth / 2 - 20;
     const valueX = pageWidth / 2 - 5;
     doc.setFontSize(10);
@@ -296,6 +309,20 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
       doc.setFontSize(10);
       doc.setTextColor(INK);
       doc.text(cells[i].small, cx, y + 44, { align: "center" });
+    }
+
+    // "Your Timeline" note under the macro box — only rendered if supplied
+    if (input.client.timelineNote) {
+      const noteY = y + boxH + 20;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(INK);
+      doc.text("Your Timeline", marginX, noteY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(GRAY);
+      const lines = doc.splitTextToSize(input.client.timelineNote, contentWidth);
+      doc.text(lines, marginX, noteY + 14);
     }
 
     drawFooter();
