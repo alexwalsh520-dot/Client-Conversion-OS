@@ -694,6 +694,23 @@ export async function POST(req: NextRequest) {
     }));
 
     // --- Tips ---
+    // Pull top proteins/grains from the actual grocery list so the batch-prep
+    // tip reflects what the client will really cook, not hardcoded defaults.
+    const proteinGroceryItems = grocery.filter((item) => {
+      const cat = item.category;
+      return cat === "protein" || cat === "seafood";
+    });
+    const grainGroceryItems = grocery.filter((item) => {
+      const cat = item.category;
+      return cat === "grain" || cat === "carb";
+    });
+    // Sort by gram amount descending (most-used first)
+    const parseGrams = (s: string) => parseFloat(s) || 0;
+    proteinGroceryItems.sort((a, b) => parseGrams(b.amount) - parseGrams(a.amount));
+    grainGroceryItems.sort((a, b) => parseGrams(b.amount) - parseGrams(a.amount));
+    const topProteinNames = proteinGroceryItems.slice(0, 3).map((p) => p.name);
+    const topGrainNames = grainGroceryItems.slice(0, 2).map((g) => g.name);
+
     const tips = generateTips({
       fitnessGoal: intake.fitness_goal,
       canCook: intake.can_cook,
@@ -707,6 +724,10 @@ export async function POST(req: NextRequest) {
       proteinG: targets.proteinG,
       caloriesPerDay: targets.calories,
       onAppetiteSuppressant: isOnAppetiteSuppressant(intake.medications || ""),
+      topProteins: topProteinNames,
+      topGrains: topGrainNames,
+      hasHypertension: medical.hasHypertension,
+      hasKidneyIssues: medical.hasKidneyIssues,
     });
 
     // Inject medical-condition tips just before the final "Be Consistent" tip
@@ -727,12 +748,34 @@ export async function POST(req: NextRequest) {
     let timelineNote: string | undefined;
     if (goalLbs && Math.abs(goalLbs - currentLbs) >= 3) {
       const deltaLbs = Math.abs(goalLbs - currentLbs);
-      const perWeek = goal === "fat_loss" ? 1 : goal === "muscle_gain" ? 0.5 : 0.5;
-      const weeks = Math.max(4, Math.round(deltaLbs / perWeek));
-      const direction = goalLbs < currentLbs ? "reach" : "reach";
-      timelineNote =
-        `At this deficit/surplus, expect to ${direction} your goal weight of ${Math.round(goalLbs)} lbs in roughly ${weeks} weeks. ` +
-        `Progress isn't linear — focus on the 2-week scale average, not daily weight.`;
+      const goalLbsR = Math.round(goalLbs);
+      const deltaR = Math.round(deltaLbs);
+      if (goal === "fat_loss") {
+        const weeks = Math.max(4, Math.round(deltaLbs));
+        timelineNote =
+          `At a ~1 lb/week pace, expect to reach your goal weight of ${goalLbsR} lbs in roughly ${weeks} weeks. ` +
+          `Progress isn't linear — focus on the 2-week scale average, not daily weight.`;
+      } else if (goal === "muscle_gain") {
+        const weeks = Math.max(4, Math.round(deltaLbs * 2));
+        timelineNote =
+          `Muscle gain is slow — plan on ~0.5 lb/week. At this pace, ${deltaR} lbs takes roughly ${weeks} weeks. ` +
+          `Judge by the mirror, strength numbers, and how clothes fit — not just the scale.`;
+      } else if (goal === "recomp") {
+        const monthsLow = Math.max(3, Math.round(deltaLbs * 2));
+        const monthsHigh = Math.max(6, Math.round(deltaLbs * 4));
+        timelineNote =
+          `Recomp progresses slowly — expect 0.25–0.5 lb/week of scale change while body composition shifts. ` +
+          `At this pace, ${deltaR} lbs of net change takes roughly ${monthsLow}–${monthsHigh} months. ` +
+          `Track the mirror and strength numbers alongside the scale.`;
+      } else if (goal === "endurance") {
+        timelineNote =
+          `Fuel the session, not the scale. Aim to hold weight with a small surplus and track performance metrics ` +
+          `(pace, power, recovery) alongside bodyweight.`;
+      } else {
+        const weeks = Math.max(4, Math.round(deltaLbs * 2));
+        timelineNote =
+          `At a ~0.5 lb/week pace, expect to reach your goal weight of ${goalLbsR} lbs in roughly ${weeks} weeks.`;
+      }
     }
 
     const pdfInput: PdfInput = {

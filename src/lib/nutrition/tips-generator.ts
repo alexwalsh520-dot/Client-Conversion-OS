@@ -17,6 +17,12 @@ export interface TipsContext {
   proteinG: number;
   caloriesPerDay: number;
   onAppetiteSuppressant: boolean;
+  // Dynamic hints pulled from the actual plan's grocery list
+  topProteins?: string[]; // up to 3, display-name strings
+  topGrains?: string[];   // up to 2
+  // Medical flags that affect supplements recommendations
+  hasHypertension?: boolean;
+  hasKidneyIssues?: boolean;
 }
 
 export interface Tip {
@@ -51,14 +57,20 @@ export function generateTips(ctx: TipsContext): Tip[] {
     body: "Have a meal with both protein and carbs 1.5-2 hours before your workout. After training, eat a protein-rich meal within 60 minutes to maximize recovery.",
   });
 
-  // 3. Prep in batches — phrased differently based on canCook
+  // 3. Prep in batches — dynamically references the plan's actual proteins/grains
   const canCookLower = (ctx.canCook || "").toLowerCase();
   const cannotCook = canCookLower.includes("no") || canCookLower.includes("limited") || canCookLower.includes("can't");
+  const proteinList = (ctx.topProteins && ctx.topProteins.length > 0)
+    ? ctx.topProteins.slice(0, 3).join(", ")
+    : "chicken, beef, eggs";
+  const grainList = (ctx.topGrains && ctx.topGrains.length > 0)
+    ? ctx.topGrains.slice(0, 2).join(", ")
+    : "rice, potato";
   tips.push({
     title: "Prep in Batches",
     body: cannotCook
       ? "If full cooking isn't feasible for you, lean on microwaveable rice packets, pre-cooked rotisserie chicken, and bagged salad greens. Even one batch-prep session on Sunday cuts weekday stress dramatically."
-      : "Cook proteins (chicken, beef, eggs) and grains (rice, quinoa) in bulk on Sundays and Wednesdays. Store in portioned containers — this saves time and keeps you on track during busy days.",
+      : `Cook proteins (${proteinList}) and grains (${grainList}) in bulk on Sundays and Wednesdays. Store in portioned containers — this saves time and keeps you on track during busy days.`,
   });
 
   // 4. Weighing food
@@ -92,16 +104,21 @@ export function generateTips(ctx: TipsContext): Tip[] {
     body: "Shop the perimeter of the store first — produce, meats, dairy. Use the consolidated grocery list in this plan to stay focused. Buy frozen vegetables as a backup for weeks when fresh ones go bad.",
   });
 
-  // 8. Supplements — personalized based on supplements listed
+  // 8. Supplements — personalized based on supplements listed AND goal + medical
   const supplementsLower = (ctx.supplements || "").toLowerCase();
-  const hasSupplements =
+  const alreadyTaking =
     supplementsLower &&
     !/^\s*(n\/?a|none|no)\s*$/.test(supplementsLower) &&
     (supplementsLower.includes("creatine") ||
       supplementsLower.includes("whey") ||
-      supplementsLower.includes("protein") ||
+      supplementsLower.includes("protein powder") ||
       supplementsLower.includes("multi"));
-  if (hasSupplements) {
+  // Intent signals — client says "no but want to" / "interested" / "open to"
+  const interested =
+    /\b(want to|want too|interested|open to|thinking about|considering|would like|possibly)\b/.test(supplementsLower) ||
+    /\bno\b.*\b(but|yet|want|maybe)\b/.test(supplementsLower);
+
+  if (alreadyTaking) {
     const pieces: string[] = [];
     if (supplementsLower.includes("whey") || supplementsLower.includes("protein powder")) {
       pieces.push("whey around training for convenient protein");
@@ -115,6 +132,31 @@ export function generateTips(ctx: TipsContext): Tip[] {
     tips.push({
       title: "Supplements",
       body: `Based on what you listed: ${pieces.join("; ")}. Consistency matters more than timing with most supplements.`,
+    });
+  } else if (interested) {
+    // Build a goal- and medical-aware suggestion list
+    const recs: string[] = [];
+    // Creatine — universally useful, but skip if kidney issues
+    if (!ctx.hasKidneyIssues && (ctx.goal === "muscle_gain" || ctx.goal === "recomp" || ctx.goal === "fat_loss")) {
+      recs.push("creatine monohydrate 5g/day (most-studied supplement — supports strength and recovery; take any time with water)");
+    }
+    // Omega-3 — especially beneficial for HBP
+    if (ctx.hasHypertension) {
+      recs.push("omega-3 fish oil 2g EPA+DHA/day (modest blood-pressure benefit + supports heart health)");
+    } else {
+      recs.push("omega-3 fish oil 1-2g EPA+DHA/day (general cardiovascular and recovery support)");
+    }
+    // Vitamin D — ubiquitous deficiency
+    recs.push("vitamin D3 2000 IU/day (most people are insufficient; supports testosterone, bone health, immunity)");
+    // Whey if protein intake is tough to hit
+    if (ctx.proteinG >= 150) {
+      recs.push("whey protein 25-30g post-workout (makes hitting the daily protein target easier — food-first is always better)");
+    }
+    tips.push({
+      title: "Supplements To Consider",
+      body:
+        `You mentioned openness to supplements — here are evidence-backed options for your goal${ctx.hasHypertension ? " and HBP" : ""}: ${recs.join("; ")}. ` +
+        `Always talk to your doctor before starting something new, especially with existing medications.`,
     });
   } else {
     tips.push({

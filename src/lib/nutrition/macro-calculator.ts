@@ -227,12 +227,19 @@ function applyOverrides(t: MacroTargets, overrides: MacroOverrides): MacroTarget
 /**
  * Map common intake phrases to ActivityLevel. Falls back to moderate.
  */
+/**
+ * Parse activity-level from intake. Critical: all tokens use word boundaries
+ * so substrings inside unrelated words don't false-match.
+ * Brandon bug 2026-04-23: "be proud of how I look" matched bare /pro/
+ * and pushed activity to very_high (1.9×), producing 3296 kcal for a
+ * 182 lb recomp target instead of the correct 2661 kcal.
+ */
 export function parseActivityLevel(raw: string): ActivityLevel {
   const s = (raw || "").toLowerCase();
-  if (/sedentary|desk job|no exercise|no training/.test(s)) return "sedentary";
-  if (/light|1-2 (times|x)\/week|1-2 workouts/.test(s)) return "light";
-  if (/very high|athlete|pro|twice a day|2x\/day|high volume/.test(s)) return "very_high";
-  if (/high|intense|5-6|6 days|6x\/week|daily training/.test(s)) return "high";
+  if (/\b(sedentary|desk job)\b|no exercise|no training/.test(s)) return "sedentary";
+  if (/\blight\b|1-2\s*(times|x)\s*\/?\s*week|1-2 workouts/.test(s)) return "light";
+  if (/\b(very high|very active|athlete|pro athlete|elite|twice a day|two a day|2x\/day|high volume)\b/.test(s)) return "very_high";
+  if (/\b(high(?:\s+activity)?|intense|intensive|5-6 (?:days|times)|6 days|6x\s*\/?\s*week|daily training)\b/.test(s)) return "high";
   return "moderate";
 }
 
