@@ -176,16 +176,19 @@ export function optimizeDayPortions(
 
     // Bounds: allow aggressive reduction of "added fats" when the worst macro
     // is fat and we're significantly over. Small-portion cooking fats can go
-    // to near-zero without ruining the meal.
+    // to near-zero without ruining the meal. Also, when any macro is stubbornly
+    // off by >15%, widen the bound on core ingredients so we can close the gap.
     const getChangeFrac = (h: IngredientHandle): number => {
       const aggressiveFatCut =
         worst.macro === "f" && worst.d < 0 && worst.err > 0.15 && isAddedFat(h.row);
-      return aggressiveFatCut ? 0.85 : maxChangeFrac;
+      if (aggressiveFatCut) return 0.85;
+      // Stubborn macro gap → widen the bound on core ingredients too
+      if (worst.err > 0.15) return 0.50;
+      return maxChangeFrac; // 0.35 default
     };
     const getLowerBound = (h: IngredientHandle): number => {
       const aggressiveFatCut =
         worst.macro === "f" && worst.d < 0 && worst.err > 0.15 && isAddedFat(h.row);
-      // Allow added fats to drop nearly to zero when fat is way over.
       const floor = aggressiveFatCut ? 1 : 5;
       return Math.max(floor, h.originalGrams * (1 - getChangeFrac(h)));
     };

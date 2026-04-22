@@ -71,11 +71,16 @@ MACRO HIERARCHY — strictness applies top-down:
      or Greek yogurt instead of cream cheese. Stacking fatty fish on top of an eggs+beef+
      butter breakfast will blow the daily fat budget.
 3. PROTEIN must be within ±7% of target. Spread 20-40g per meal.
-   → Do NOT overshoot protein. Protein and carbs both cost 4 kcal/g, so 30g extra
-     protein means 30g less carbs. High-protein meals feel like "more food" but they
-     cannibalize the carb budget and leave clients underfueled.
-4. CARBS must be within ±10% of target. Starches (rice, oats, potato, bread, pasta,
+   → AIM AT the target, not above it. Hitting the protein NUMBER exactly matters —
+     overshooting by 10-15g per meal stacks to +70-105g/day, which starves carbs
+     and underfuels the client. If you're unsure, err on the low side of protein
+     and let carbs fill the remaining calories.
+   → Protein and carbs both cost 4 kcal/g — an extra 30g protein = 30g less carbs
+     for the same calorie budget.
+4. CARBS must be within ±7% of target. Starches (rice, oats, potato, bread, pasta,
    tortilla) fill the remaining calorie budget after protein and fat are set.
+   → Generous carb portions are expected — 120-180g cooked rice, 80-100g dry oats,
+     250-300g potato are normal serving sizes for a full meal.
 
 MEAL COMPOSITION:
 - LUNCH AND DINNER must each include at least ONE vegetable ingredient

@@ -54,6 +54,15 @@ export function reconcileGoalWithWeights(
   currentKg: number | null,
   goalKg: number | null
 ): { goal: GoalType; overrodeText: boolean; note?: string } {
+  // If the TEXT explicitly signaled recomp (both fat-loss AND muscle-gain
+  // language present), trust that intent — someone saying "lose body fat
+  // while building lean mass" means recomp even if their goal_weight is a
+  // few lbs higher than current (recomp can coexist with modest weight gain
+  // because muscle is denser than fat).
+  if (textGoal === "recomp") {
+    return { goal: "recomp", overrodeText: false };
+  }
+
   if (currentKg == null || goalKg == null || !isFinite(currentKg) || !isFinite(goalKg)) {
     return { goal: textGoal, overrodeText: false };
   }
@@ -81,12 +90,11 @@ export function reconcileGoalWithWeights(
         note: `Goal weight is ${absDiffLbs.toFixed(0)} lbs lighter than current — calorie DEFICIT applied despite "muscle_gain" text.`,
       };
     }
-    // If text already says fat_loss or recomp, keep it
     return { goal: textGoal === "maintain" ? "fat_loss" : textGoal, overrodeText: textGoal === "maintain" };
   }
 
-  // goal ≈ current (within ~5 lbs): client wants body recomp or maintenance
-  // If text said fat_loss or muscle_gain but weight barely changes → recomp
+  // goal ≈ current (within ~5 lbs): recomp is the natural fit when the client
+  // has said either fat-loss or muscle-gain directionally.
   if (textGoal === "fat_loss" || textGoal === "muscle_gain") {
     return {
       goal: "recomp",

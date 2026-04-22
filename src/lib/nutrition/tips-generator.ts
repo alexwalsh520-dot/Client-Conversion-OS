@@ -30,18 +30,20 @@ export interface Tip {
 export function generateTips(ctx: TipsContext): Tip[] {
   const tips: Tip[] = [];
 
-  // 1. Hydration — parse the intake field into an approximate daily liters
-  // figure, then only surface the "scolding" variant if they're actually below
-  // ~2.5 L/day. A phrase like "a little less than a gallon" is ~3.4 L and
-  // should NOT trigger the drink-more tip.
+  // 1. Hydration — parse intake into L/day and cite the number back.
   const liters = estimateDailyLiters(ctx.waterIntake);
-  const actuallyLow = liters !== null && liters < 2.5;
-  tips.push({
-    title: "Stay Hydrated",
-    body: actuallyLow
-      ? `Your intake suggests about ${liters.toFixed(1)} L/day, which is on the low side. Aim for at least 3 L per day and more on training days — carry a water bottle and refill it 3 times through the day.`
-      : "Drink at least 3-4 liters of water daily. Increase intake on training days or in hot weather. Carry a water bottle and aim to finish it 3-4 times throughout the day.",
-  });
+  let hydrationBody: string;
+  if (liters === null) {
+    hydrationBody =
+      "Drink at least 3-4 liters of water daily. Increase intake on training days or in hot weather. Carry a water bottle and aim to finish it 3-4 times throughout the day.";
+  } else if (liters < 2.5) {
+    hydrationBody = `Your intake suggests about ${liters.toFixed(1)} L/day, which is on the low side. Aim for at least 3 L per day and more on training days — carry a water bottle and refill it 3 times through the day.`;
+  } else if (liters < 4) {
+    hydrationBody = `You're hitting a solid baseline at about ${liters.toFixed(1)} L/day. On training days, push toward 4 L total — an extra bottle before and after your session does it.`;
+  } else {
+    hydrationBody = `You're already at ${liters.toFixed(1)} L/day — that's dialed in. Keep it there; going much higher doesn't add benefit unless you're in heat or training hard outdoors.`;
+  }
+  tips.push({ title: "Stay Hydrated", body: hydrationBody });
 
   // 2. Meal timing around training
   tips.push({
