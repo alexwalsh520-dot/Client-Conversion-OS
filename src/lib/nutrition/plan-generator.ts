@@ -71,8 +71,16 @@ function buildSystemPrompt(): string {
 
 OUTPUT FORMAT (non-negotiable):
 - Return ONLY valid JSON. No markdown fences. No prose.
-- Use ONLY ingredient slugs from the allowed list provided.
 - All quantities are integer grams.
+
+INGREDIENT CONSTRAINT (HARD RULE):
+You may only use ingredient slugs from the ALLOWED INGREDIENTS list provided
+in the user message below. Do not invent new slugs, do not pluralize, do not
+add modifiers (e.g. "raw", "cooked", "diced") unless that exact slug appears
+in the list. If the allowed list contains \`tomato_roma_raw\` but not
+\`roma_tomato_raw\`, use \`tomato_roma_raw\`. If an ingredient you want to
+use isn't in the list, pick the closest semantic match from the list instead.
+Slugs not in the list will cause the plan to fail validation and be rejected.
 
 MACRO HIERARCHY — strictness applies top-down:
 1. CALORIES must be within ±5% of target, in BOTH directions. Do not undershoot OR overshoot.
@@ -283,7 +291,9 @@ Fat:      ${targets.fatG}g           (max ${Math.round(targets.fatG * 1.10)} —
 MEAL STRUCTURE (produce exactly these meals, in this order):
 ${mealSlotsBlock}${directivesBlock}${sodiumBlock}${commentsBlock}${retryBlock}
 
-ALLOWED INGREDIENTS (format: slug|name|category|macros per 100g):
+ALLOWED INGREDIENTS — DO NOT INVENT
+(format: slug|name|category|macros per 100g${showSodium ? "|sodium mg" : ""})
+Pick ONLY from these slugs. Do not pluralize, reorder tokens, or add/drop modifiers.
 ${ingredientList}
 
 RESPOND WITH JSON ONLY. No markdown fences, no prose. Schema:

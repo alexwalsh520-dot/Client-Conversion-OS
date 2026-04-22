@@ -300,7 +300,13 @@ export async function POST(req: NextRequest) {
       .from("ingredients")
       .select(
         "id, slug, name, aliases, category, calories_per_100g, protein_g_per_100g, carbs_g_per_100g, fat_g_per_100g, sodium_mg_per_100g"
-      );
+      )
+      // Only expose slugs with known sodium to the generator. Any row with a
+      // null sodium value is unusable for validator correctness (HBP/stim
+      // day-total sodium would be wrong), so keep it out of the allowed list
+      // entirely rather than letting the generator pick it and hard-block
+      // the plan at validation.
+      .not("sodium_mg_per_100g", "is", null);
     if (!ingredients || ingredients.length === 0) {
       return NextResponse.json({ error: "Ingredient database empty" }, { status: 500 });
     }
@@ -465,6 +471,73 @@ export async function POST(req: NextRequest) {
 
     // --- Fire all 7 Claude calls in parallel ---
     let days = await generateAllDays(dayInputs, apiKey);
+
+    // ---------- PRE-VALIDATION: INVALID-SLUG SCAN + SINGLE RETRY ----------
+    // The generator system prompt already says "pick only from ALLOWED
+    // INGREDIENTS" as a hard rule, but Claude occasionally invents slugs
+    // (e.g. roma_tomato_raw vs the canonical tomato_roma_raw). Catch those
+    // here before the validator's deterministic computations run, and give
+    // Claude one chance to fix the offending days. If the retry still
+    // contains invalid slugs, proceed to validation anyway — the Day
+    // validator's null-sodium Tier 1 block will RED-flag it.
+    {
+      const allowedSlugs = new Set(ingredients.map((i) => i.slug));
+      const invalidByDay = new Map<number, Set<string>>();
+      for (const d of days) {
+        const bad = new Set<string>();
+        for (const meal of d.meals) {
+          for (const ing of meal.ingredients) {
+            if (!allowedSlugs.has(ing.slug)) bad.add(ing.slug);
+          }
+        }
+        if (bad.size > 0) invalidByDay.set(d.day, bad);
+      }
+
+      if (invalidByDay.size > 0) {
+        const summary = Array.from(invalidByDay.entries())
+          .map(([day, slugs]) => `day ${day}: ${Array.from(slugs).join(", ")}`)
+          .join(" | ");
+        console.warn(`[generate-plan] invalid slugs after initial gen → retrying: ${summary}`);
+
+        const retryInputs: DayGenerationInput[] = Array.from(invalidByDay.entries()).map(
+          ([dayNumber, bad]) => {
+            const baseInput = dayInputs[dayNumber - 1];
+            const badList = Array.from(bad).join(", ");
+            return {
+              ...baseInput,
+              priorAttemptError:
+                `INGREDIENT CONSTRAINT VIOLATION — your previous attempt used slugs ` +
+                `not in the ALLOWED INGREDIENTS list: ${badList}. ` +
+                `Pick the closest semantic match from the allowed list instead ` +
+                `(e.g. if you wanted a generic raw tomato, use 'tomato_raw' or ` +
+                `'tomato_red_raw' if present, not 'red_tomato_raw'). Every slug ` +
+                `in your next response MUST appear verbatim in the allowed list.`,
+            };
+          }
+        );
+        const retryDays = await generateAllDays(retryInputs, apiKey);
+        for (const rd of retryDays) days[rd.day - 1] = rd;
+
+        // Log the after-state so a downstream eyeball knows if the retry
+        // landed clean or if we're proceeding to validation with stragglers.
+        const stillBad: string[] = [];
+        for (const d of days) {
+          for (const meal of d.meals) {
+            for (const ing of meal.ingredients) {
+              if (!allowedSlugs.has(ing.slug)) stillBad.push(`day ${d.day}:${ing.slug}`);
+            }
+          }
+        }
+        if (stillBad.length > 0) {
+          console.warn(
+            `[generate-plan] invalid slugs persist after single retry → ` +
+              `validator will hard-block: ${stillBad.join(", ")}`
+          );
+        } else {
+          console.log(`[generate-plan] invalid-slug retry resolved cleanly`);
+        }
+      }
+    }
 
     // ---------- ITERATIVE VALIDATE → CORRECT LOOP ----------
     // Up to MAX_ITER iterations. Each iteration: compute per-day violations,
