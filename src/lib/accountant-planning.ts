@@ -7,8 +7,11 @@ import type {
   CoachingBudgetSnapshot,
   CurrentPeriodFinance,
   FinanceLegendItem,
+  FinancePlanningData,
   FinanceOverview,
   FinanceRecommendation,
+  ManualClientPeriodEntry,
+  ManualObligationEntry,
   UpcomingPayoutRow,
   UpcomingPayoutsSummary,
 } from "@/lib/accountant-types";
@@ -43,6 +46,7 @@ interface MoziCostSettings {
 }
 
 interface ManualClientPeriodRow {
+  id: string | null;
   client_key: string;
   client_name: string;
   period_start: string;
@@ -63,6 +67,7 @@ interface ManualClientPeriodRow {
 }
 
 interface ManualObligationRow {
+  id: string;
   label: string;
   obligation_type: string;
   payee_name: string | null;
@@ -246,6 +251,18 @@ function pushMoneyNote(notes: string[], condition: boolean, message: string) {
   if (condition && !notes.includes(message)) notes.push(message);
 }
 
+function normalizePeriodStatus(status: string | null | undefined): ManualClientPeriodEntry["status"] {
+  if (status === "ready" || status === "sent" || status === "paid") return status;
+  return "draft";
+}
+
+function normalizeObligationStatus(
+  status: string | null | undefined,
+): ManualObligationEntry["status"] {
+  if (status === "scheduled" || status === "paid") return status;
+  return "owed";
+}
+
 async function loadAccountantSettings(): Promise<AccountantSettings> {
   const sb = getServiceSupabase();
   const settings = { ...DEFAULT_SETTINGS };
@@ -358,7 +375,7 @@ async function loadManualObligations(): Promise<ManualObligationRow[]> {
   try {
     const { data, error } = await sb
       .from("accountant_manual_obligations")
-      .select("label, obligation_type, payee_name, client_name, due_date, amount_cents, status, notes")
+      .select("id, label, obligation_type, payee_name, client_name, due_date, amount_cents, status, notes")
       .neq("status", "paid")
       .order("due_date", { ascending: true });
     if (error) throw error;
@@ -730,6 +747,53 @@ function buildClientProfitRows(clients: ClientPeriodPlan[]): ClientProfitRow[] {
     .sort((a, b) => b.estimated_company_keep - a.estimated_company_keep);
 }
 
+function buildPlanningData(
+  manualClientPeriods: Map<string, ManualClientPeriodRow>,
+  manualObligations: ManualObligationRow[],
+): FinancePlanningData {
+  const currentPeriodEntries = Array.from(manualClientPeriods.values())
+    .map<ManualClientPeriodEntry>((row) => ({
+      id: row.id,
+      client_key: row.client_key,
+      client_name: row.client_name,
+      period_start: row.period_start,
+      period_end: row.period_end,
+      status: normalizePeriodStatus(row.status),
+      cash_collected_cents: row.cash_collected_cents,
+      net_cash_cents: row.net_cash_cents,
+      ad_spend_cents: row.ad_spend_cents,
+      sales_team_line_cents: row.sales_team_line_cents,
+      program_months_sold: row.program_months_sold,
+      coaching_line_cents: row.coaching_line_cents,
+      coaching_reserve_cents: row.coaching_reserve_cents,
+      forecast_fulfillment_cents: row.forecast_fulfillment_cents,
+      software_fee_cents: row.software_fee_cents,
+      profit_share_cents: row.profit_share_cents,
+      invoice_total_cents: row.invoice_total_cents,
+      notes: row.notes,
+    }))
+    .sort((a, b) => a.client_name.localeCompare(b.client_name));
+
+  const unpaidManualObligations = manualObligations
+    .map<ManualObligationEntry>((row) => ({
+      id: row.id,
+      label: row.label,
+      obligation_type: row.obligation_type,
+      payee_name: row.payee_name,
+      client_name: row.client_name,
+      due_date: row.due_date,
+      amount_cents: row.amount_cents,
+      status: normalizeObligationStatus(row.status),
+      notes: row.notes,
+    }))
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+  return {
+    current_period_entries: currentPeriodEntries,
+    unpaid_manual_obligations: unpaidManualObligations,
+  };
+}
+
 function buildCoachingBudget(
   activeClientCounts: Record<string, number>,
   coachPayrollLast30d: number,
@@ -1000,5 +1064,6 @@ export async function getFinanceOverview(
     coaching_budget: coachingBudget,
     recommendations,
     legend: buildLegend(),
+    planning: buildPlanningData(manualClientPeriods, manualObligations),
   };
 }

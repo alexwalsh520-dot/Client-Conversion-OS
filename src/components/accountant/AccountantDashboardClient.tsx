@@ -10,20 +10,27 @@ export default function AccountantDashboardClient() {
   const [data, setData] = useState<AccountantDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  async function loadData(cancelled = false) {
+    try {
+      setError(null);
+      const res = await fetch("/api/accountant/data", { cache: "no-store" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as AccountantDashboardData;
+      if (!cancelled) setData(json);
+    } catch (e) {
+      if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/accountant/data", { cache: "no-store" });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `HTTP ${res.status}`);
-        }
-        const json = (await res.json()) as AccountantDashboardData;
-        if (!cancelled) setData(json);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      }
+        await loadData(cancelled);
+      } catch {}
     })();
     return () => {
       cancelled = true;
@@ -46,5 +53,5 @@ export default function AccountantDashboardClient() {
     );
   }
 
-  return <AccountantDashboard {...data} />;
+  return <AccountantDashboard {...data} onRefreshData={() => loadData(false)} />;
 }

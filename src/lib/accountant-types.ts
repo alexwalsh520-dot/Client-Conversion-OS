@@ -52,6 +52,8 @@ export interface MonthlyReport {
 }
 
 export type FinanceValueSource = "live" | "estimate" | "manual";
+export type ManualPeriodStatus = "draft" | "ready" | "sent" | "paid";
+export type ManualObligationStatus = "owed" | "scheduled" | "paid";
 
 export interface BillingPeriod {
   start: string;
@@ -167,6 +169,44 @@ export interface FinanceLegendItem {
   formula: string;
 }
 
+export interface ManualClientPeriodEntry {
+  id: string | null;
+  client_key: string;
+  client_name: string;
+  period_start: string;
+  period_end: string;
+  status: ManualPeriodStatus;
+  cash_collected_cents: number | null;
+  net_cash_cents: number | null;
+  ad_spend_cents: number | null;
+  sales_team_line_cents: number | null;
+  program_months_sold: number | null;
+  coaching_line_cents: number | null;
+  coaching_reserve_cents: number | null;
+  forecast_fulfillment_cents: number | null;
+  software_fee_cents: number | null;
+  profit_share_cents: number | null;
+  invoice_total_cents: number | null;
+  notes: string | null;
+}
+
+export interface ManualObligationEntry {
+  id: string;
+  label: string;
+  obligation_type: string;
+  payee_name: string | null;
+  client_name: string | null;
+  due_date: string;
+  amount_cents: number;
+  status: ManualObligationStatus;
+  notes: string | null;
+}
+
+export interface FinancePlanningData {
+  current_period_entries: ManualClientPeriodEntry[];
+  unpaid_manual_obligations: ManualObligationEntry[];
+}
+
 export interface FinanceOverview {
   safe_cash: number;
   focus_period: CurrentPeriodFinance;
@@ -175,6 +215,7 @@ export interface FinanceOverview {
   coaching_budget: CoachingBudgetSnapshot;
   recommendations: FinanceRecommendation[];
   legend: FinanceLegendItem[];
+  planning: FinancePlanningData;
 }
 
 export interface AccountantDashboardData {
