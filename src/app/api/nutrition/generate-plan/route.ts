@@ -650,7 +650,60 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Run semantic diff to catch silent changes
+      // ---------- SCOPE ENFORCEMENT (EDIT mode) ----------
+      // The model claims which meals it modified via `modified_meals`, but
+      // even with the "untouched days must be IDENTICAL" system-prompt rule
+      // it sometimes silently rewrites meals on days the user didn't ask
+      // about (observed: Jeffrey v9 silently re-ran Mon + Tue while
+      // claiming edits only on Days 3/6/7). The semantic-diff pass caught
+      // those as warnings but didn't prevent them, and the downstream
+      // validator then RED-flagged Mon/Tue macros that were fine in v8.
+      //
+      // Policy: if NO meal on a given day is listed in modified_meals,
+      // every meal on that day is overwritten byte-for-byte from the
+      // prior plan. If AT LEAST ONE meal on a day is listed, the whole
+      // day is left as the model returned it — this preserves the
+      // spec's "rebalance only that day's meals" allowance for
+      // intra-day compensation (e.g. model added a protein anchor and
+      // labeled Breakfast as modified, but the Lunch portion change
+      // needed to keep the day's macros in range wasn't claimed).
+      const daysWithClaimedEdit = new Set<number>(
+        editModifiedMeals.map((m) => m.day)
+      );
+      const inputByDay = new Map<number, typeof existingPlanForEdit[number]>();
+      for (const d of existingPlanForEdit) inputByDay.set(d.day, d);
+      let enforcedDayCount = 0;
+      for (let i = 0; i < days.length; i++) {
+        const dayNum = days[i].day;
+        if (!daysWithClaimedEdit.has(dayNum)) {
+          const inputDay = inputByDay.get(dayNum);
+          if (inputDay) {
+            days[i] = {
+              day: inputDay.day,
+              meals: inputDay.meals.map((m) => ({
+                name: m.name,
+                time: m.time,
+                dishName: m.dishName,
+                ingredients: m.ingredients.map((ing) => ({
+                  slug: ing.slug,
+                  grams: ing.grams,
+                })),
+              })),
+            };
+            enforcedDayCount++;
+          }
+        }
+      }
+      if (enforcedDayCount > 0) {
+        console.log(
+          `[generate-plan] EDIT scope enforcement: restored ${enforcedDayCount} day(s) from prior plan (model touched but did not claim)`
+        );
+      }
+
+      // Run semantic diff AFTER enforcement — any remaining warnings are
+      // within claimed-edit days only (intra-day changes the model made
+      // while editing a day the user did ask about). Cross-day silent
+      // edits are already neutralized above, so they never show up here.
       const weekdayByDay = new Map<number, string>();
       for (const pd of priorPlanPdfDays) weekdayByDay.set(pd.dayNumber, pd.weekday);
       editWarnings = computeEditWarnings(
