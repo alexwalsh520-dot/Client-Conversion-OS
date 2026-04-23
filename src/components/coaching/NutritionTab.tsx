@@ -148,8 +148,8 @@ function MealPlanTaskPanel({
   const [lastStatus, setLastStatus] = useState<{
     badge?: "green" | "yellow" | "red";
     canShipToClient?: boolean;
-    tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
-    tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+    tier1Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
+    tier2Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
     medicalReviewRequired?: boolean;
   } | null>(null);
   const [checklist, setChecklist] = useState({ allergies: false, delivered: false, tipsReviewed: false });
@@ -194,8 +194,8 @@ function MealPlanTaskPanel({
         status?: {
           badge?: "green" | "yellow" | "red";
           canShipToClient?: boolean;
-          tier1Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
-          tier2Violations?: { day?: number; weekday?: string; kind: string; message: string }[];
+          tier1Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
+          tier2Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
           medicalReviewRequired?: boolean;
         };
       } = {};
@@ -472,9 +472,39 @@ function MealPlanTaskPanel({
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>{listHeading}</div>
                 <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
                   {items.slice(0, 8).map((v, i) => (
-                    <li key={i}>
-                      {v.weekday && v.weekday !== "weekly" ? `${v.weekday}: ` : ""}
-                      {v.message}
+                    <li key={i} style={{ marginBottom: 6 }}>
+                      <div>
+                        {v.weekday && v.weekday !== "weekly" ? `${v.weekday}: ` : ""}
+                        {v.message}
+                      </div>
+                      {v.instruction && (
+                        <details style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                          <summary style={{ cursor: "pointer", userSelect: "none" }}>
+                            View fix instruction
+                          </summary>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              padding: "8px 10px",
+                              background: "rgba(255,255,255,0.04)",
+                              borderLeft: `2px solid ${fg}`,
+                              borderRadius: 4,
+                              lineHeight: 1.5,
+                              whiteSpace: "pre-wrap",
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            {v.instruction}
+                            {(v.action || v.constraint) && (
+                              <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-muted)" }}>
+                                {v.action && <span>action: <code>{v.action}</code></span>}
+                                {v.action && v.constraint && <span> · </span>}
+                                {v.constraint && <span>constraint: {v.constraint}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
                     </li>
                   ))}
                 </ul>

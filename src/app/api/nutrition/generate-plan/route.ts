@@ -565,17 +565,48 @@ export async function POST(req: NextRequest) {
 
     const weightLbClient = weightKg * 2.20462;
 
+    // ---------- EDIT-READY ALERT SCHEMA ----------
+    // Every violation carries structured fields so downstream tooling
+    // (editor generator, UI, automated retry) can act without parsing a
+    // human-readable string. Legacy consumers still see tier/kind/message.
+    type AlertSeverity = "RED" | "YELLOW" | "GREEN";
+    type AlertAction =
+      | "reduce_sodium"
+      | "swap_slug"
+      | "reduce_portion"
+      | "increase_protein"
+      | "reduce_protein"
+      | "reduce_calories"
+      | "increase_calories"
+      | "reduce_fat"
+      | "rebalance_macro"
+      | "redistribute_carbs"
+      | "remove_ingredient"
+      | "review_only";
     interface TierViolation {
       tier: 1 | 2;
       kind: string;
       message: string;
+      severity: AlertSeverity;
+      day: string;                 // weekday name or "all_days"
+      meal: string | null;          // meal name (Breakfast/Lunch/...) or null
+      action: AlertAction;
+      constraint: string;           // short human bound description
+      instruction: string;          // edit-ready command to the generator
     }
+
+    // Boilerplate shared across every instruction — keeps the "don't touch
+    // anything else + preserve macros/allergies" clause consistent.
+    const preserveClause = `Do NOT modify any other day or meal. Preserve daily macros within ±5% of target (CAL ${targets.calories}, P ${targets.proteinG}g, C ${targets.carbsG}g, F ${targets.fatG}g). Preserve per-meal protein floors (breakfast ≥25%, lunch/dinner ≥30% of daily protein). Respect all allergy and avoid-list exclusions unchanged.`;
 
     /**
      * Tier 1 = SAFETY (must pass; any failure → RED, no ship).
      * Tier 2 = QUALITY (target ~90%, 1-2 day misses OK → still ships YELLOW).
      */
-    const findViolationsForDay = (d: (typeof days)[number]): TierViolation[] => {
+    const findViolationsForDay = (
+      d: (typeof days)[number],
+      weekday: string
+    ): TierViolation[] => {
       const v: TierViolation[] = [];
       const t = computeTotals(d);
       const calPct = (t.cal - targets.calories) / targets.calories;
@@ -583,35 +614,71 @@ export async function POST(req: NextRequest) {
       const cPct   = (t.c   - targets.carbsG)   / targets.carbsG;
       const fPct   = (t.f   - targets.fatG)     / targets.fatG;
 
+      // Helper: build a fully-populated alert with sensible defaults.
+      const mkAlert = (opts: {
+        tier: 1 | 2;
+        kind: string;
+        message: string;
+        meal: string | null;
+        action: AlertAction;
+        constraint: string;
+        instruction: string;
+      }): TierViolation => ({
+        tier: opts.tier,
+        kind: opts.kind,
+        message: opts.message,
+        severity: opts.tier === 1 ? "RED" : "YELLOW",
+        day: weekday,
+        meal: opts.meal,
+        action: opts.action,
+        constraint: opts.constraint,
+        instruction: opts.instruction,
+      });
+
       // ===== TIER 1 — SAFETY =====
 
       // Calorie FLOOR — no day below 1,200 kcal regardless of goal.
       if (t.cal < 1200) {
-        v.push({
+        const actual = Math.round(t.cal);
+        v.push(mkAlert({
           tier: 1,
           kind: "kcal_floor",
-          message: `CALORIES at ${Math.round(t.cal)} kcal — below the 1,200 kcal safety floor. Under-eating this severely is unsafe. Increase portions.`,
-        });
+          message: `CALORIES at ${actual} kcal — below the 1,200 kcal safety floor. Under-eating this severely is unsafe. Increase portions.`,
+          meal: null,
+          action: "increase_calories",
+          constraint: "day calories ≥ 1200",
+          instruction: `In ${weekday}, increase total calories from ${actual} to at least ${targets.calories} kcal by growing carb and protein portions across breakfast, lunch, and dinner. Aim for the daily target ${targets.calories} kcal, not just the 1,200 floor. ${preserveClause}`,
+        }));
       }
 
       // Calorie CEILING — no day above 4,000 kcal.
       if (t.cal > 4000) {
-        v.push({
+        const actual = Math.round(t.cal);
+        v.push(mkAlert({
           tier: 1,
           kind: "kcal_ceiling",
-          message: `CALORIES at ${Math.round(t.cal)} kcal — above the 4,000 kcal safety ceiling. This is beyond normal macro coaching range.`,
-        });
+          message: `CALORIES at ${actual} kcal — above the 4,000 kcal safety ceiling. This is beyond normal macro coaching range.`,
+          meal: null,
+          action: "reduce_calories",
+          constraint: "day calories ≤ 4000",
+          instruction: `In ${weekday}, reduce total calories from ${actual} to below 4000 kcal by trimming added fats (butter/oil/cheese/nuts), starches (rice/bread/pasta), and oversized protein portions. Land at the ${targets.calories} kcal daily target. ${preserveClause}`,
+        }));
       }
 
       // Protein CEILING — 2.0 g/lb normally; 2.2 g/lb for muscle_gain without kidney issues.
       const proteinCeilingPerLb = (goal === "muscle_gain" && !medical.hasKidneyIssues) ? 2.2 : 2.0;
       const proteinCeilingG = Math.round(weightLbClient * proteinCeilingPerLb);
       if (t.p > proteinCeilingG) {
-        v.push({
+        const actual = Math.round(t.p);
+        v.push(mkAlert({
           tier: 1,
           kind: "protein_ceiling",
           message: `PROTEIN at ${t.p.toFixed(0)}g — above the ${proteinCeilingG}g safety ceiling (${proteinCeilingPerLb} g/lb). Sustained intake this high stresses the kidneys.`,
-        });
+          meal: null,
+          action: "reduce_protein",
+          constraint: `day protein ≤ ${proteinCeilingG}g (${proteinCeilingPerLb} g/lb)`,
+          instruction: `In ${weekday}, reduce total protein from ${actual}g to at or below ${proteinCeilingG}g by trimming the largest single-meal protein portions. Backfill the freed calories with carbs 1:1 (30g protein removed ≈ 30g carbs added) so daily calories stay within ±5% of ${targets.calories} kcal. ${preserveClause}`,
+        }));
       }
 
       // ---------- SODIUM — uniform 3-tier severity ----------
@@ -658,32 +725,47 @@ export async function POST(req: NextRequest) {
 
       if (totalForGrading > yellowCeiling) {
         const base = `SODIUM is ${totalForGrading} mg — exceeds the ${yellowCeiling} mg safety ceiling (${capMg} mg target${reasonSuffix} + 15% buffer). Reduce cheese, soy sauce, dressings, cured meats, salted butter.`;
-        v.push({
+        const msg = unknownTotalGrams > 0
+          ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
+          : base;
+        v.push(mkAlert({
           tier: 1,
           kind: "sodium_safety",
-          message: unknownTotalGrams > 0
-            ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
-            : base,
-        });
+          message: msg,
+          meal: null,
+          action: "reduce_sodium",
+          constraint: `day sodium ≤ ${yellowCeiling} mg (1.15× ${capMg} mg target)`,
+          instruction: `In ${weekday}, reduce total sodium from ${totalForGrading} mg to below ${capMg} mg. Target the 1-2 meals containing the highest-sodium ingredients (cheese, salted butter, jarred salsa, marinara, soy sauce, cured meats, flour tortillas) and either swap for lower-sodium alternatives (unsalted butter, fresh pico de gallo, plain tomato sauce + fresh basil, corn tortilla, no-salt-added canned goods) or reduce portion size. ${preserveClause}`,
+        }));
       } else if (totalForGrading > capMg) {
         const overBy = totalForGrading - capMg;
         const base = `SODIUM is ${totalForGrading} mg — over the ${capMg} mg target${reasonSuffix} by ${overBy} mg (within the ${yellowCeiling} mg safety ceiling). Trim added salt where possible.`;
-        v.push({
+        const msg = unknownTotalGrams > 0
+          ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
+          : base;
+        v.push(mkAlert({
           tier: 2,
           kind: "sodium_over_target",
-          message: unknownTotalGrams > 0
-            ? `${base} Estimate includes ${estUnknownSodiumMg} mg from ingredients with unknown sodium: ${Array.from(unknownGramsBySlug.keys()).join(", ")}.`
-            : base,
-        });
+          message: msg,
+          meal: null,
+          action: "reduce_sodium",
+          constraint: `day sodium ≤ ${capMg} mg target${reasonSuffix}`,
+          instruction: `In ${weekday}, trim added salt to bring total sodium from ${totalForGrading} mg down toward ${capMg} mg (currently ${overBy} mg over target). Small swaps are usually enough: switch salted butter to unsalted, halve the cheese portion, replace jarred salsa with fresh pico de gallo, or use plain tomato sauce + fresh basil in place of marinara. Do not regenerate the day from scratch. ${preserveClause}`,
+        }));
       } else if (unknownTotalGrams > 0) {
         // Under-ceiling estimated total but the day still has unknown-sodium
         // ingredients — flag as Yellow with a footnote so the coach knows
         // the number isn't fully trusted.
-        v.push({
+        const unknownList = Array.from(unknownGramsBySlug.keys()).join(", ");
+        v.push(mkAlert({
           tier: 2,
           kind: "sodium_estimate_note",
-          message: `Day Total sodium partially estimated — ${Array.from(unknownGramsBySlug.keys()).join(", ")} lack DB sodium (assumed ${UNKNOWN_SODIUM_DEFAULT_MG_PER_100G} mg/100g). Estimated day total ${totalEstSodium} mg is under the ${capMg} mg target, so plan is shippable pending review.`,
-        });
+          message: `Day Total sodium partially estimated — ${unknownList} lack DB sodium (assumed ${UNKNOWN_SODIUM_DEFAULT_MG_PER_100G} mg/100g). Estimated day total ${totalEstSodium} mg is under the ${capMg} mg target, so plan is shippable pending review.`,
+          meal: null,
+          action: "review_only",
+          constraint: `day sodium estimated (unknown-sodium ingredients in use)`,
+          instruction: `In ${weekday}, the sodium total is partially estimated because these ingredients lack DB values: ${unknownList}. The estimated day total is ${totalEstSodium} mg (under the ${capMg} mg target, so shippable), but have a coach review the real-world sodium for accuracy. If actual values differ materially from the assumed ${UNKNOWN_SODIUM_DEFAULT_MG_PER_100G} mg/100g default, consider swapping for known alternatives. No macro changes required.`,
+        }));
       }
 
       // Portion sanity — signals a pathological generation state.
@@ -710,9 +792,25 @@ export async function POST(req: NextRequest) {
           const isBrothOrStock = /\bbroth\b|\bstock\b/.test(hay);
           const isMeat = !isBrothOrStock && meatWords.some((w) => wbHas(hay, w));
           if (isMeat && grams > 400) {
-            v.push({ tier: 1, kind: "portion_sanity_meat", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds the 400g hard cap on single-meal meat portions.` });
+            v.push(mkAlert({
+              tier: 1,
+              kind: "portion_sanity_meat",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds the 400g hard cap on single-meal meat portions.`,
+              meal: meal.name,
+              action: "reduce_portion",
+              constraint: `single-meal meat ≤ 400g`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), reduce ${row.name} (slug: ${row.slug}) from ${grams}g to 350g. If reducing the meat drops this meal's protein below the ≥30% (lunch/dinner) or ≥25% (breakfast) of daily floor, add a complementary protein anchor in the same meal (whey 25-35g, Greek yogurt 200g, cottage cheese 100-150g, or egg whites 100-150g) to maintain the floor. ${preserveClause}`,
+            }));
           } else if (isMeat && grams > 350) {
-            v.push({ tier: 2, kind: "portion_sanity_meat_soft", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — over the 350g recommended limit but under the 400g safety cap. Coach review.` });
+            v.push(mkAlert({
+              tier: 2,
+              kind: "portion_sanity_meat_soft",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — over the 350g recommended limit but under the 400g safety cap. Coach review.`,
+              meal: meal.name,
+              action: "review_only",
+              constraint: `single-meal meat recommended ≤ 350g (soft)`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), consider reducing ${row.name} (slug: ${row.slug}) from ${grams}g to 350g. This is a soft recommendation, not a safety cap — coach review before changing. If reduced, compensate with a secondary protein to keep this meal's protein floor intact. ${preserveClause}`,
+            }));
           }
 
           // --- 50g oil/butter (cooking fats only) ---
@@ -723,24 +821,56 @@ export async function POST(req: NextRequest) {
             (wbHas(hay, "butter") || wbHas(hay, "oil") || wbHas(hay, "ghee") ||
              wbHas(hay, "lard") || wbHas(hay, "tallow") || wbHas(hay, "margarine"));
           if (grams > 50 && isCookingFat) {
-            v.push({ tier: 1, kind: "portion_sanity_oil", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 50g oil/butter per meal.` });
+            v.push(mkAlert({
+              tier: 1,
+              kind: "portion_sanity_oil",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 50g oil/butter per meal.`,
+              meal: meal.name,
+              action: "reduce_portion",
+              constraint: `single-meal oil/butter ≤ 50g`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), reduce ${row.name} (slug: ${row.slug}) from ${grams}g to 50g or less. 50g of cooking fat is already generous — aim for 5-10g if the meal's macros allow. Rebalance the lost calories by bumping a starch or protein portion in the same meal. ${preserveClause}`,
+            }));
           }
 
           // --- 200g cheese ---
           const cheeseWords = ["cheese", "mozzarella", "cheddar", "parmesan", "feta", "ricotta", "swiss", "provolone", "gouda", "brie"];
           const isCottage = /\bcottage cheese\b/.test(hay); // cottage cheese is lighter — use a higher bar
           if (!isCottage && grams > 200 && cheeseWords.some((w) => wbHas(hay, w))) {
-            v.push({ tier: 1, kind: "portion_sanity_cheese", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 200g cheese per meal.` });
+            v.push(mkAlert({
+              tier: 1,
+              kind: "portion_sanity_cheese",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 200g cheese per meal.`,
+              meal: meal.name,
+              action: "reduce_portion",
+              constraint: `single-meal cheese ≤ 200g`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), reduce ${row.name} (slug: ${row.slug}) from ${grams}g to 200g or less. Typical realistic portions are 15-40g. If reducing cheese drops this meal's protein or calorie target, compensate with a leaner protein anchor (chicken breast, cottage cheese, Greek yogurt) or a small starch bump. ${preserveClause}`,
+            }));
           }
           if (isCottage && grams > 300) {
-            v.push({ tier: 1, kind: "portion_sanity_cheese", message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 300g cottage cheese per meal.` });
+            v.push(mkAlert({
+              tier: 1,
+              kind: "portion_sanity_cheese",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of ${row.name} — exceeds 300g cottage cheese per meal.`,
+              meal: meal.name,
+              action: "reduce_portion",
+              constraint: `single-meal cottage cheese ≤ 300g`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), reduce ${row.name} (slug: ${row.slug}) from ${grams}g to 300g or less. Cottage cheese is lighter than hard cheeses so the cap is higher, but 300g is already a full bowl. ${preserveClause}`,
+            }));
           }
 
           // --- 150g dry grain (only when clearly pre-cooked/dry) ---
           const grainWords = ["rice", "oats", "oatmeal", "pasta", "quinoa", "barley", "couscous", "millet"];
           const isRawOrDry = /\b(raw|dry|uncooked)\b/.test(hay);
           if (grams > 150 && isRawOrDry && grainWords.some((w) => wbHas(hay, w))) {
-            v.push({ tier: 1, kind: "portion_sanity_grain", message: `"${meal.dishName || meal.name}" contains ${grams}g of dry ${row.name} — exceeds 150g dry grain per meal.` });
+            v.push(mkAlert({
+              tier: 1,
+              kind: "portion_sanity_grain",
+              message: `"${meal.dishName || meal.name}" contains ${grams}g of dry ${row.name} — exceeds 150g dry grain per meal.`,
+              meal: meal.name,
+              action: "reduce_portion",
+              constraint: `single-meal dry grain ≤ 150g (pre-cook)`,
+              instruction: `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), reduce DRY ${row.name} (slug: ${row.slug}) from ${grams}g to 150g or less (pre-cook weight). Typical realistic dry portions are 60-100g. If cooked weight is needed, 150g dry ≈ 450g cooked — verify whether the intended value was pre-cook or post-cook. ${preserveClause}`,
+            }));
           }
         }
       }
@@ -749,11 +879,16 @@ export async function POST(req: NextRequest) {
       if (medical.hasKidneyIssues) {
         const kidneyCapG = Math.round(weightLbClient * 0.6);
         if (t.p > kidneyCapG * 1.05) { // 5% slack for rounding
-          v.push({
+          const actual = Math.round(t.p);
+          v.push(mkAlert({
             tier: 1,
             kind: "kidney_protein_cap",
             message: `PROTEIN is ${t.p.toFixed(0)}g exceeding kidney cap of ${kidneyCapG}g (0.6 g/lb). Reduce main protein portion.`,
-          });
+            meal: null,
+            action: "reduce_protein",
+            constraint: `day protein ≤ ${kidneyCapG}g (0.6 g/lb, kidney flag)`,
+            instruction: `In ${weekday}, reduce total protein from ${actual}g to at or below ${kidneyCapG}g (this client has a kidney flag — 0.6 g/lb is a hard clinical cap). Trim the day's largest protein portion first. Replace removed protein with carb grams 1:1 so daily calories stay within ±5% of ${targets.calories} kcal. Do NOT add more protein anywhere else in this day, and do NOT modify any other day.`,
+          }));
         }
       }
 
@@ -773,11 +908,17 @@ export async function POST(req: NextRequest) {
           if (mC > worstMealCarbs) { worstMealCarbs = mC; worstMealName = meal.dishName || meal.name; }
         }
         if (worstMealCarbs > t.c * 0.50 && t.c > 0) {
-          v.push({
+          const worstC = Math.round(worstMealCarbs);
+          const totalC = Math.round(t.c);
+          v.push(mkAlert({
             tier: 1,
             kind: "diabetic_carb_spike",
-            message: `"${worstMealName}" has ${Math.round(worstMealCarbs)}g carbs — more than 50% of the day's ${t.c.toFixed(0)}g total. Distribute carbs more evenly across meals.`,
-          });
+            message: `"${worstMealName}" has ${worstC}g carbs — more than 50% of the day's ${t.c.toFixed(0)}g total. Distribute carbs more evenly across meals.`,
+            meal: worstMealName,
+            action: "redistribute_carbs",
+            constraint: `single-meal carbs ≤ 50% of day total (diabetes flag)`,
+            instruction: `In ${weekday} ${worstMealName} ("${worstMealName}"), redistribute carbs so no single meal exceeds 50% of the day's ${totalC}g carb total. Move ~30-50g of carb portions (rice/potato/bread/pasta/oats) from ${worstMealName} to another meal on the same day that's currently carb-light. Keep the day's total carbs at ${targets.carbsG}g ± 5%. ${preserveClause}`,
+          }));
         }
       }
 
@@ -791,6 +932,8 @@ export async function POST(req: NextRequest) {
         pct: number,
         actualLabel: string,
         targetLabel: string,
+        targetValue: number,
+        unit: string,
         overHint: string,
         underHint: string
       ) => {
@@ -800,24 +943,36 @@ export async function POST(req: NextRequest) {
         const pctInt = Math.round(abs * 100);
         const hint = pct > 0 ? overHint : underHint;
         const msg = `${kind.toUpperCase()} ${pctInt}% ${direction} (${actualLabel} vs ${targetLabel}) — ${hint}`;
-        if (abs > 0.10) {
-          v.push({ tier: 1, kind: `macro_${kind}`, message: msg });
-        } else {
-          v.push({ tier: 2, kind: `macro_${kind}`, message: msg });
-        }
+        const tier: 1 | 2 = abs > 0.10 ? 1 : 2;
+        const lowG = Math.round(targetValue * 0.95);
+        const highG = Math.round(targetValue * 1.05);
+        const tightLandingBand = `land inside ${lowG}${unit}–${highG}${unit} (the ±5% band around the ${targetValue}${unit} target)`;
+        const action: AlertAction =
+          kind === "kcal" ? (pct > 0 ? "reduce_calories" : "increase_calories") :
+          kind === "protein" ? (pct > 0 ? "reduce_protein" : "increase_protein") :
+          "rebalance_macro";
+        v.push(mkAlert({
+          tier,
+          kind: `macro_${kind}`,
+          message: msg,
+          meal: null,
+          action,
+          constraint: `day ${kind} within ±${tier === 1 ? 10 : 5}% of ${targetLabel}`,
+          instruction: `In ${weekday}, adjust ${kind.toUpperCase()} from ${actualLabel} — ${tightLandingBand}. ${hint} ${preserveClause}`,
+        }));
       };
-      gradeMacro("kcal",    calPct, `${Math.round(t.cal)} kcal`, `${targets.calories} kcal`,
-        "reduce added fats and starch portions.",
-        "increase protein and carb portions.");
-      gradeMacro("protein", pPct,   `${t.p.toFixed(0)}g`,         `${targets.proteinG}g`,
-        "reduce protein and shift calories to carbs 1:1.",
-        "bump the main protein's grams.");
-      gradeMacro("carbs",   cPct,   `${t.c.toFixed(0)}g`,         `${targets.carbsG}g`,
-        "trim rice/bread/pasta.",
-        "increase rice/potato/oats/bread by 30-50g.");
-      gradeMacro("fat",     fPct,   `${t.f.toFixed(0)}g`,         `${targets.fatG}g`,
-        "halve butter/oil/cheese/nut portions.",
-        "add 5-10g olive oil or a small cheese portion.");
+      gradeMacro("kcal",    calPct, `${Math.round(t.cal)} kcal`, `${targets.calories} kcal`, targets.calories, " kcal",
+        "Trim added fats (butter/oil/cheese/nuts) and starch portions (rice/bread/pasta).",
+        "Increase protein and carb portions — 30-50g more rice/potato/oats, or 20-30g more lean protein.");
+      gradeMacro("protein", pPct,   `${t.p.toFixed(0)}g`,         `${targets.proteinG}g`,       targets.proteinG, "g",
+        "Reduce the largest protein portion and shift those calories to carbs 1:1.",
+        "Bump the main protein anchor by 20-40g, or add a secondary (whey, Greek yogurt, cottage cheese).");
+      gradeMacro("carbs",   cPct,   `${t.c.toFixed(0)}g`,         `${targets.carbsG}g`,         targets.carbsG, "g",
+        "Trim rice/bread/pasta portions across the day.",
+        "Increase rice/potato/oats/bread by 30-50g in 1-2 meals.");
+      gradeMacro("fat",     fPct,   `${t.f.toFixed(0)}g`,         `${targets.fatG}g`,           targets.fatG, "g",
+        "Halve butter/oil/cheese/nut portions in the highest-fat meals.",
+        "Add 5-10g olive oil at cooking or a small cheese portion in 1-2 meals.");
 
       // Per-meal fat cap (realism) — stays Tier 2 yellow.
       let worstMealFat = 0, worstMealName = "";
@@ -831,7 +986,17 @@ export async function POST(req: NextRequest) {
         if (mFat > worstMealFat) { worstMealFat = mFat; worstMealName = meal.dishName || meal.name; }
       }
       if (worstMealFat > targets.fatG * 0.40) {
-        v.push({ tier: 2, kind: "per_meal_fat", message: `"${worstMealName}" has ${Math.round(worstMealFat)}g fat — over 40% of daily target. Max ${Math.round(targets.fatG * 0.4)}g per meal.` });
+        const actualF = Math.round(worstMealFat);
+        const capF = Math.round(targets.fatG * 0.4);
+        v.push(mkAlert({
+          tier: 2,
+          kind: "per_meal_fat",
+          message: `"${worstMealName}" has ${actualF}g fat — over 40% of daily target. Max ${capF}g per meal.`,
+          meal: worstMealName,
+          action: "reduce_fat",
+          constraint: `single-meal fat ≤ 40% of daily ${targets.fatG}g target`,
+          instruction: `In ${weekday} ${worstMealName} ("${worstMealName}"), reduce total fat from ${actualF}g to at most ${capF}g (40% of the day's ${targets.fatG}g target). Halve butter/oil portions, drop cheese by 50%, or swap full-fat dairy for 2% / nonfat. Keep this meal's protein floor intact (≥30% of daily for lunch/dinner, ≥25% for breakfast). ${preserveClause}`,
+        }));
       }
 
       // ===== PER-MEAL PROTEIN FLOOR — 3-tier severity =====
@@ -857,11 +1022,57 @@ export async function POST(req: NextRequest) {
         const ratio = mP / floorG;
         if (ratio >= 1.0) continue; // GREEN
         const pctBelow = Math.round((1 - ratio) * 100);
-        const baseMsg = `"${meal.dishName || meal.name}" has ${Math.round(mP)}g protein — ${pctBelow}% below the ${floorG}g floor (${Math.round(floorPct * 100)}% of daily ${targets.proteinG}g target). Add or increase the protein anchor (chicken/beef/fish/eggs/Greek yogurt/cottage cheese/whey).`;
-        if (ratio < 0.80) {
-          v.push({ tier: 1, kind: "per_meal_protein_floor", message: baseMsg });
-        } else {
-          v.push({ tier: 2, kind: "per_meal_protein_floor", message: baseMsg });
+        const actualP = Math.round(mP);
+        const gapG = Math.max(1, floorG - actualP);
+        const baseMsg = `"${meal.dishName || meal.name}" has ${actualP}g protein — ${pctBelow}% below the ${floorG}g floor (${Math.round(floorPct * 100)}% of daily ${targets.proteinG}g target). Add or increase the protein anchor (chicken/beef/fish/eggs/Greek yogurt/cottage cheese/whey).`;
+        const instruction = `In ${weekday} ${meal.name} ("${meal.dishName || meal.name}"), increase protein from ${actualP}g to at least ${floorG}g (need +${gapG}g). Bump the primary protein anchor (chicken breast +40-60g, beef +40-60g, salmon +40-60g) OR add a secondary protein (whey 25-35g ≈ 22-29g protein, Greek yogurt 200g ≈ 20g, cottage cheese 100-150g ≈ 10-16g, egg whites 100-150g ≈ 11-16g). If the added protein raises this meal's calories above target, trim starch or fat portions in the same meal to rebalance. ${preserveClause}`;
+        const tier: 1 | 2 = ratio < 0.80 ? 1 : 2;
+        v.push(mkAlert({
+          tier,
+          kind: "per_meal_protein_floor",
+          message: baseMsg,
+          meal: meal.name,
+          action: "increase_protein",
+          constraint: `meal protein ≥ ${floorG}g (${Math.round(floorPct * 100)}% of daily)`,
+          instruction,
+        }));
+      }
+
+      // ---------- COMBINE PAIRED VIOLATIONS ----------
+      // When the same meal has BOTH a portion-sanity reduction (meat/cheese/
+      // grain) AND a per-meal-protein-floor miss, collapse into one
+      // instruction that tells the generator to reduce the portion AND
+      // add compensating protein in the same edit. Keeps the editor from
+      // making two sequential passes that oscillate (reduce meat → hit
+      // floor; add protein → re-trip portion cap).
+      const combinedMealKeys = new Set<string>();
+      for (const a of v) {
+        if (a.meal && (
+          a.kind === "portion_sanity_meat" ||
+          a.kind === "portion_sanity_cheese" ||
+          a.kind === "portion_sanity_meat_soft"
+        )) {
+          const pairedFloor = v.find(
+            (b) => b.meal === a.meal && b.kind === "per_meal_protein_floor"
+          );
+          if (pairedFloor) {
+            // Annotate the portion-sanity alert with an explicit floor target.
+            const floorDetail = ` PAIRED CONSTRAINT: this meal also fails its per-meal protein floor — after reducing the portion, you MUST add enough secondary protein (whey 25-35g / Greek yogurt 200-300g / cottage cheese 150-200g / egg whites 100-150g) so the meal lands at or above its per-meal protein floor in a single edit. Do not reduce the portion first and leave the floor unmet.`;
+            a.instruction = a.instruction + floorDetail;
+            a.message = a.message + " (also fails per-meal protein floor — combined fix required)";
+            combinedMealKeys.add(a.meal);
+          }
+        }
+      }
+      // Drop the per_meal_protein_floor alerts that were folded into a
+      // portion-sanity instruction. The protein-floor check is now part
+      // of the combined edit-ready instruction.
+      if (combinedMealKeys.size > 0) {
+        for (let i = v.length - 1; i >= 0; i--) {
+          const a = v[i];
+          if (a.kind === "per_meal_protein_floor" && a.meal && combinedMealKeys.has(a.meal)) {
+            v.splice(i, 1);
+          }
         }
       }
 
@@ -882,7 +1093,7 @@ export async function POST(req: NextRequest) {
       const violating: { idx: number; violations: TierViolation[] }[] = [];
       let tier1Count = 0, tier2DayCount = 0;
       days.forEach((d, idx) => {
-        const v = findViolationsForDay(d);
+        const v = findViolationsForDay(d, WEEKDAYS[idx] ?? `Day ${d.day}`);
         const hasT1 = v.some((x) => x.tier === 1);
         const hasT2 = v.some((x) => x.tier === 2);
         if (hasT1) tier1Count++;
@@ -1035,16 +1246,21 @@ export async function POST(req: NextRequest) {
     // single blob count.
     const unresolvedByDay: { day: number; weekday: string; violations: TierViolation[] }[] = [];
     days.forEach((d, idx) => {
-      const v = findViolationsForDay(d);
+      const v = findViolationsForDay(d, WEEKDAYS[idx] ?? `Day ${d.day}`);
       if (v.length > 0) {
         unresolvedByDay.push({ day: d.day, weekday: WEEKDAYS[idx], violations: v });
       }
     });
 
+    // NOTE on field shape: each alert spreads the structured TierViolation
+    // (which carries its own `day: string` weekday-name field from mkAlert)
+    // LAST, so x.day wins over any outer numeric day. We expose a separate
+    // `dayNumber` for consumers that still want the 1-7 index and keep the
+    // legacy `weekday` field for the UI's existing "${weekday}: ..." render.
     const tier1Violations = unresolvedByDay
-      .flatMap((u) => u.violations.filter((x) => x.tier === 1).map((x) => ({ day: u.day, weekday: u.weekday, ...x })));
+      .flatMap((u) => u.violations.filter((x) => x.tier === 1).map((x) => ({ dayNumber: u.day, weekday: u.weekday, ...x })));
     const tier2Violations = unresolvedByDay
-      .flatMap((u) => u.violations.filter((x) => x.tier === 2).map((x) => ({ day: u.day, weekday: u.weekday, ...x })));
+      .flatMap((u) => u.violations.filter((x) => x.tier === 2).map((x) => ({ dayNumber: u.day, weekday: u.weekday, ...x })));
     const tier2DayCount = new Set(
       unresolvedByDay
         .filter((u) => u.violations.some((x) => x.tier === 2))
@@ -1099,8 +1315,16 @@ export async function POST(req: NextRequest) {
 
     // ---------- WEEKLY CAP VIOLATIONS (Tier 2) ----------
     // Surface cheese/sourdough frequency caps for HBP clients as visible
-    // Tier-2 violations + mandatory-enjoyed misses.
-    const weeklyTier2Violations: { kind: string; message: string }[] = [];
+    // Tier-2 violations + mandatory-enjoyed misses. Same structured-alert
+    // shape as per-day violations, with day="all_days" and meal=null.
+    interface WeeklyAlert {
+      kind: string;
+      message: string;
+      action: AlertAction;
+      constraint: string;
+      instruction: string;
+    }
+    const weeklyTier2Violations: WeeklyAlert[] = [];
     if (medical.hasHypertension) {
       const countSlugAppearances = (slugMatch: string): number => {
         let count = 0;
@@ -1120,15 +1344,23 @@ export async function POST(req: NextRequest) {
       const cheeseDays = countSlugAppearances("cheese");
       const sourdoughDays = countSlugAppearances("sourdough");
       if (cheeseDays > 3) {
+        const excess = cheeseDays - 3;
         weeklyTier2Violations.push({
           kind: "hbp_cheese_cap",
           message: `Cheese appears on ${cheeseDays} days — HBP cap is 3/week to manage sodium.`,
+          action: "remove_ingredient",
+          constraint: `HBP cheese ≤ 3 days/week`,
+          instruction: `Across the 7-day plan, remove cheese from ${excess} day(s) where it appears. Pick the ${excess} day(s) where cheese contributes least to macro balance (e.g. optional cheese garnish on a burrito bowl) and swap for a zero-sodium alternative (nutritional yeast, fresh herbs, extra lean protein, or a sauce without cheese). Do NOT add cheese to any day that currently lacks it. Preserve each affected day's daily macros within ±5% of target — compensate any calorie loss with a starch bump in the same meal.`,
         });
       }
       if (sourdoughDays > 2) {
+        const excess = sourdoughDays - 2;
         weeklyTier2Violations.push({
           kind: "hbp_sourdough_cap",
           message: `Sourdough appears on ${sourdoughDays} days — HBP cap is 2/week. Default to whole-wheat bread.`,
+          action: "swap_slug",
+          constraint: `HBP sourdough ≤ 2 days/week`,
+          instruction: `Across the 7-day plan, swap sourdough for whole-wheat bread on ${excess} day(s). Pick the days with the highest total sodium first — the sourdough → whole-wheat swap saves ~200 mg sodium per slice. Do NOT replace with white bread (sodium-similar) or with a low-sodium carb that materially changes the meal's macros. Preserve each affected day's macros within ±5% of target.`,
         });
       }
     }
@@ -1136,6 +1368,9 @@ export async function POST(req: NextRequest) {
       weeklyTier2Violations.push({
         kind: "mandatory_enjoyed_missing",
         message: `Mandatory enjoyed foods missing: ${missingMandatory.join(", ")}. These appeared in BOTH the enjoyed list AND daily meals description.`,
+        action: "swap_slug",
+        constraint: `each mandatory enjoyed food appears ≥ 1 day/week`,
+        instruction: `Across the 7-day plan, slot these client-requested foods into at least one meal each: ${missingMandatory.join(", ")}. The client mentioned them in both the enjoyed-foods list AND the daily-meals description, so they should appear at least once. Pick days and meals where the existing protein/carb structure accommodates the addition with minimal macro shift. Preserve each affected day's macros within ±5% of target, respect all allergy/avoid-list exclusions unchanged.`,
       });
     }
 
@@ -1408,7 +1643,21 @@ export async function POST(req: NextRequest) {
         // banner decision.
         const combinedTier2: typeof tier2Violations = [
           ...tier2Violations,
-          ...weeklyTier2Violations.map((v) => ({ day: 0, weekday: "weekly", tier: 2 as const, kind: v.kind, message: v.message })),
+          ...weeklyTier2Violations.map((v) => ({
+            dayNumber: 0,
+            weekday: "weekly",
+            tier: 2 as const,
+            kind: v.kind,
+            message: v.message,
+            severity: "YELLOW" as const,
+            // Structured edit-ready fields (same shape as per-day alerts).
+            // day === "all_days" signals a cross-day edit per the task spec.
+            day: "all_days",
+            meal: null,
+            action: v.action,
+            constraint: v.constraint,
+            instruction: v.instruction,
+          })),
         ];
         const effectiveT2DayCount = tier2DayCount + weeklyTier2Violations.length;
 
