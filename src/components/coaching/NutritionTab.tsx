@@ -151,6 +151,11 @@ function MealPlanTaskPanel({
     tier1Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
     tier2Violations?: { dayNumber?: number; day?: string; weekday?: string; meal?: string | null; action?: string; constraint?: string; instruction?: string; kind: string; message: string }[];
     medicalReviewRequired?: boolean;
+    // EDIT mode metadata — populated when the last generation was an
+    // incremental edit of a prior plan rather than a full regenerate.
+    generationMode?: "scratch" | "edit";
+    editModifiedMeals?: { day: number; meal: string }[];
+    editWarnings?: string[];
   } | null>(null);
   const [checklist, setChecklist] = useState({ allergies: false, delivered: false, tipsReviewed: false });
   const [completing, setCompleting] = useState(false);
@@ -191,6 +196,9 @@ function MealPlanTaskPanel({
         success?: boolean;
         error?: string;
         pdfUrl?: string;
+        generationMode?: "scratch" | "edit";
+        editModifiedMeals?: { day: number; meal: string }[];
+        editWarnings?: string[];
         status?: {
           badge?: "green" | "yellow" | "red";
           canShipToClient?: boolean;
@@ -215,7 +223,19 @@ function MealPlanTaskPanel({
       }
       await load();
       setPreviewUrl(data.pdfUrl ?? null);
-      setLastStatus(data.status ?? null);
+      // Merge the top-level EDIT-mode fields into lastStatus so the
+      // banner renderer has a single source of truth for "what happened
+      // on the last generation".
+      setLastStatus(
+        data.status
+          ? {
+              ...data.status,
+              generationMode: data.generationMode,
+              editModifiedMeals: data.editModifiedMeals,
+              editWarnings: data.editWarnings,
+            }
+          : null
+      );
       if (onRefreshClients) onRefreshClients();
     } catch (err) {
       setError((err as Error).message);
@@ -521,6 +541,40 @@ function MealPlanTaskPanel({
       {lastStatus && lastStatus.badge === "green" && lastStatus.medicalReviewRequired && (
         <div style={{ marginTop: 16, padding: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 10, fontSize: 12, color: "var(--text-muted)" }}>
           🟢 Ready to ship. Medical conditions / medications detected — plan includes the relevant safety rules and tips.
+        </div>
+      )}
+
+      {/* EDIT-mode badge — appears when the last regen was incremental
+          (comments + prior plan existed). Shows what the model reported
+          it edited and any semantic-diff warnings from meals that changed
+          unexpectedly. Does NOT block shipping — informational only. */}
+      {lastStatus && lastStatus.generationMode === "edit" && (
+        <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.30)", borderRadius: 10, fontSize: 12, color: "var(--text-primary)" }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            ✏️ EDIT mode — {lastStatus.editModifiedMeals?.length ?? 0} meal(s) modified from prior version
+          </div>
+          {lastStatus.editModifiedMeals && lastStatus.editModifiedMeals.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+              Modified: {lastStatus.editModifiedMeals.map((m) => `Day ${m.day} ${m.meal}`).join(", ")}
+            </div>
+          )}
+          {lastStatus.editWarnings && lastStatus.editWarnings.length > 0 && (
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer", userSelect: "none", color: "#eab308" }}>
+                ⚠️ {lastStatus.editWarnings.length} unexpected diff warning(s) — review
+              </summary>
+              <ul style={{ margin: "6px 0 0 16px", padding: 0, fontSize: 11, lineHeight: 1.5, color: "var(--text-primary)" }}>
+                {lastStatus.editWarnings.slice(0, 12).map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+                {lastStatus.editWarnings.length > 12 && (
+                  <li style={{ color: "var(--text-muted)" }}>
+                    +{lastStatus.editWarnings.length - 12} more (see admin notes)
+                  </li>
+                )}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 

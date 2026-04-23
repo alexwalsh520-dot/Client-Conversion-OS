@@ -445,3 +445,284 @@ export async function generateAllDays(
   results.sort((a, b) => a.day - b.day);
   return results;
 }
+
+// =====================================================================
+// EDIT MODE — modify an existing plan based on comment instructions
+// =====================================================================
+
+/**
+ * Input to editPlan. Unlike SCRATCH mode (7 parallel per-day calls),
+ * EDIT mode sends ONE Claude call with the full existing plan + the
+ * comments and asks for the full 7-day plan back with edits applied.
+ * Untouched days must come back bit-for-bit identical.
+ */
+export interface EditPlanInput {
+  existingPlan: DayPlan[];                 // 7-day input plan to edit
+  existingPlanMacrosByDay: {                // optional macro snapshot per day
+    dayNumber: number;
+    weekday: string;
+    totalCal: number;
+    totalP: number;
+    totalC: number;
+    totalF: number;
+    totalSodiumMg?: number;
+  }[];
+  commentsText: string;                    // raw comments field (newest first)
+  intake: ClientIntakeSummary;
+  targets: MacroTargets;
+  allowedIngredients: IngredientRow[];
+  // Sodium budget context — passed through identically to SCRATCH mode
+  // so the edited days respect the HBP/stimulant daily budget.
+  sodiumContext?: DayGenerationInput["sodiumContext"];
+}
+
+export interface EditPlanResult {
+  days: DayPlan[];                         // full 7-day plan after edits
+  modifiedMeals: { day: number; meal: string }[]; // model's self-declared edits
+}
+
+/**
+ * System prompt for EDIT mode — different framing from SCRATCH but same
+ * safety rules. We explicitly tell the model: this is NOT a fresh plan,
+ * preserve untouched days exactly, only modify what's called out.
+ */
+function buildEditSystemPrompt(): string {
+  return `You are editing an existing meal plan. Do NOT regenerate from scratch.
+
+OUTPUT FORMAT (non-negotiable):
+- Return ONLY valid JSON. No markdown fences. No prose.
+- All quantities are integer grams.
+- Return ALL 7 DAYS in the response, even the unmodified ones. Untouched
+  days must have IDENTICAL ingredients, quantities, meal name, time, and
+  dish name to the input plan (JSON field ordering and whitespace may
+  differ; semantic content may NOT).
+
+EDIT SCOPE (hard rule):
+- Only modify days and meals that are explicitly called out in the edit
+  instructions. "Change Tuesday lunch" means: modify Day 2 Lunch and
+  nothing else. If the instructions are ambiguous about which day, apply
+  the change to the smallest plausible scope (a single meal on a single
+  day, not the full week).
+- If an instruction says "replace jasmine rice with brown rice across
+  the week", that IS a full-week scope — apply to every meal containing
+  jasmine rice.
+- If you think an instruction would cause macros to drift on the edited
+  day, rebalance WITHIN that day's meals only (trim a starch portion,
+  bump a protein portion). Do NOT touch any other day's meals.
+
+SELF-REPORTING:
+  In addition to returning the full 7-day plan, return a
+  \`modified_meals\` array listing every (day, meal) you changed. Use
+  the weekday number 1-7 matching the input order and the meal name
+  exactly as it appears (e.g. "Breakfast", "Lunch", "Dinner", "Snack").
+  This is how the system will verify your edits stayed in scope — any
+  meal you changed that's NOT in this list will trigger an operator
+  warning.
+
+INGREDIENT CONSTRAINT (HARD RULE):
+You may only use ingredient slugs from the ALLOWED INGREDIENTS list
+provided in the user message below. Do not invent new slugs, do not
+pluralize, do not add modifiers (e.g. "raw", "cooked", "diced") unless
+that exact slug appears in the list. If the allowed list contains
+\`tomato_roma_raw\` but not \`roma_tomato_raw\`, use
+\`tomato_roma_raw\`. Slugs not in the list will cause the plan to fail
+validation and be rejected.
+
+SAFETY RULES (still apply to edited meals):
+- All allergy exclusions from the client intake MUST be respected.
+- Medical caps (kidney protein ≤0.6 g/lb if kidney flag, diabetic
+  carbs ≤50% of day total in any single meal, HBP sodium ≤1800 mg/day)
+  apply to any edited day.
+- Per-meal protein floors: breakfast ≥25%, lunch/dinner ≥30% of the
+  daily protein target (${/* filled at runtime */ ""}).
+- Portion sanity: no single meal >350g meat, >50g oil/butter, >200g
+  cheese, >150g dry grain.
+- Universal sodium awareness: no single day may combine ALL THREE of
+  (tortilla + cheese + salted butter/jarred salsa/marinara). Default
+  to unsalted butter.
+
+If the edit instructions conflict with a safety rule (e.g. "add more
+cheese to Tuesday" on an HBP client already at 3 cheese days that
+week), honor the safety rule and explain the tradeoff via a separate
+mechanism (not in the JSON output — the validator will catch it). Do
+not silently violate safety rules just because a comment asked for it.`;
+}
+
+function buildEditUserPrompt(input: EditPlanInput): string {
+  const { existingPlan, existingPlanMacrosByDay, commentsText, intake, targets, allowedIngredients, sodiumContext } = input;
+
+  // Render the existing plan compactly — one meal per line so the
+  // model can edit without getting lost in whitespace.
+  const existingPlanLines: string[] = [];
+  for (let i = 0; i < existingPlan.length; i++) {
+    const d = existingPlan[i];
+    const macro = existingPlanMacrosByDay.find((m) => m.dayNumber === d.day);
+    const weekday = macro?.weekday || `Day ${d.day}`;
+    const macroSummary = macro
+      ? ` — day total: ${Math.round(macro.totalCal)} kcal / ${Math.round(macro.totalP)}P / ${Math.round(macro.totalC)}C / ${Math.round(macro.totalF)}F${
+          typeof macro.totalSodiumMg === "number" ? ` / ${macro.totalSodiumMg} mg Na` : ""
+        }`
+      : "";
+    existingPlanLines.push(`\n=== Day ${d.day} (${weekday})${macroSummary} ===`);
+    for (const meal of d.meals) {
+      const ings = meal.ingredients.map((ing) => `${ing.slug} ${ing.grams}g`).join(", ");
+      existingPlanLines.push(`${meal.name} (${meal.time}) "${meal.dishName || meal.name}": ${ings}`);
+    }
+  }
+
+  // Same compact ingredient list as SCRATCH mode. Append sodium when
+  // the client has a sodium cap active so the model can pick swaps.
+  const showSodium = !!sodiumContext;
+  const ingredientList = allowedIngredients
+    .map((i) => {
+      const base = `${i.slug}|${i.name}|${i.category}|${i.calories_per_100g}kc/${i.protein_g_per_100g}p/${i.carbs_g_per_100g}c/${i.fat_g_per_100g}f per 100g`;
+      if (!showSodium) return base;
+      const na =
+        i.sodium_mg_per_100g === null || i.sodium_mg_per_100g === undefined
+          ? "?"
+          : `${Math.round(Number(i.sodium_mg_per_100g))}`;
+      return `${base}|${na}mg Na`;
+    })
+    .join("\n");
+
+  const sodiumLine = sodiumContext
+    ? `\n\nDAILY SODIUM BUDGET: ${sodiumContext.sodiumCapMg} mg (${sodiumContext.reason === "hbp" ? "HBP" : "stimulant medication"}). Edited days must land at or below this budget.`
+    : "";
+
+  const breakfastFloor = Math.round(targets.proteinG * 0.25);
+  const lunchFloor = Math.round(targets.proteinG * 0.30);
+
+  return `CLIENT INTAKE
+Name: ${intake.firstName} ${intake.lastName}
+Goal: ${intake.fitnessGoal}
+Foods to avoid: ${intake.foodsAvoid || "none"}
+Allergies: ${intake.allergies || "none"}
+
+DAILY MACRO TARGETS (preserve within ±5% of target on every day):
+Calories: ${targets.calories} kcal   Protein: ${targets.proteinG}g   Carbs: ${targets.carbsG}g   Fat: ${targets.fatG}g
+Per-meal protein floors: breakfast ≥${breakfastFloor}g, lunch/dinner ≥${lunchFloor}g.${sodiumLine}
+
+EXISTING PLAN (this is your input — edit this, don't regenerate):${existingPlanLines.join("\n")}
+
+EDIT INSTRUCTIONS (apply these, and ONLY these):
+${commentsText.trim()}
+
+ALLOWED INGREDIENTS — DO NOT INVENT
+(format: slug|name|category|macros per 100g${showSodium ? "|sodium mg" : ""})
+${ingredientList}
+
+RESPOND WITH JSON ONLY. No markdown fences, no prose. Schema:
+{
+  "modified_meals": [
+    { "day": 3, "meal": "Lunch" }
+  ],
+  "days": [
+    {
+      "day": 1,
+      "meals": [
+        {
+          "name": "Breakfast",
+          "time": "7:30 AM",
+          "dishName": "Oats with Berries and Whey",
+          "ingredients": [
+            { "slug": "oats_rolled_dry", "grams": 80 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Include all 7 days. Days not listed in modified_meals MUST match the
+input plan's meals for that day byte-for-byte semantically (same
+ingredient slugs, same grams, same meal names, same times, same dish
+names). Return the modified_meals list accurately — this is how the
+operator verifies your edits stayed in scope.`;
+}
+
+const EDIT_CALL_MAX_TOKENS = 16000; // 7 days ≈ 10-14k tokens of JSON
+
+export async function editPlan(
+  input: EditPlanInput,
+  apiKey: string
+): Promise<EditPlanResult> {
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: EDIT_CALL_MAX_TOKENS,
+    system: buildEditSystemPrompt(),
+    messages: [{ role: "user", content: buildEditUserPrompt(input) }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error(`EDIT mode: no text response from Claude`);
+  }
+  let jsonStr = textBlock.text.trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) jsonStr = fenceMatch[1].trim();
+
+  let parsed: {
+    modified_meals?: { day: number; meal: string }[];
+    days: {
+      day: number;
+      meals: {
+        name: string;
+        time: string;
+        dishName?: string;
+        ingredients: { slug: string; grams: number }[];
+      }[];
+    }[];
+  };
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (err) {
+    throw new Error(
+      `EDIT mode: failed to parse Claude JSON: ${(err as Error).message} | raw: ${textBlock.text.slice(0, 400)}`
+    );
+  }
+
+  if (!parsed.days || !Array.isArray(parsed.days) || parsed.days.length === 0) {
+    throw new Error(`EDIT mode: Claude response missing 'days' array`);
+  }
+
+  // Normalize + fill missing days from the input plan. If Claude drops a
+  // day (rare but possible on long responses), we keep the input version
+  // so the validator gets a full 7-day plan to check.
+  const byDay = new Map<number, DayPlan>();
+  for (const d of parsed.days) {
+    byDay.set(d.day, {
+      day: d.day,
+      meals: (d.meals || []).map((m) => ({
+        name: m.name,
+        time: m.time,
+        dishName: m.dishName,
+        ingredients: (m.ingredients || []).map((i) => ({
+          slug: i.slug,
+          grams: Math.round(Number(i.grams) || 0),
+        })),
+      })),
+    });
+  }
+  const outDays: DayPlan[] = [];
+  for (const inD of input.existingPlan) {
+    const outD = byDay.get(inD.day);
+    if (outD && outD.meals.length > 0) {
+      outDays.push(outD);
+    } else {
+      console.warn(
+        `[editPlan] Day ${inD.day} missing from Claude response — keeping input plan's version`
+      );
+      outDays.push(inD);
+    }
+  }
+
+  return {
+    days: outDays,
+    modifiedMeals: (parsed.modified_meals || []).map((m) => ({
+      day: Number(m.day) || 0,
+      meal: String(m.meal || ""),
+    })),
+  };
+}

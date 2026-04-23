@@ -34,8 +34,10 @@ import {
 } from "@/lib/nutrition/ingredient-filter";
 import {
   generateAllDays,
+  editPlan,
   type DayGenerationInput,
   type ClientIntakeSummary,
+  type EditPlanInput,
 } from "@/lib/nutrition/plan-generator";
 import { generateTips } from "@/lib/nutrition/tips-generator";
 import {
@@ -469,8 +471,199 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // --- Fire all 7 Claude calls in parallel ---
-    let days = await generateAllDays(dayInputs, apiKey);
+    // ---------- MODE SELECTION: SCRATCH vs EDIT ----------
+    // SCRATCH — no comments provided, or no prior plan exists → fresh 7-day plan
+    // EDIT   — comments AND prior plan exist → modify the prior plan in place
+    // The iterative validate→correct loop and the deterministic portion
+    // optimizer both run in SCRATCH but are SKIPPED in EDIT, because both
+    // would silently modify days/meals the user didn't ask to change.
+    // Medical hard-swaps + final validation still run in EDIT.
+    let priorPlanPdfDays: PdfDay[] | null = null;
+    if (commentList.length > 0) {
+      const { data: priorPlanRow } = await db
+        .from("nutrition_meal_plans")
+        .select("plan_data")
+        .eq("client_id", clientId)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const pd = priorPlanRow?.plan_data as { days?: PdfDay[] } | null | undefined;
+      if (pd?.days && Array.isArray(pd.days) && pd.days.length > 0) {
+        priorPlanPdfDays = pd.days;
+      }
+    }
+    const generationMode: "scratch" | "edit" =
+      commentList.length > 0 && priorPlanPdfDays ? "edit" : "scratch";
+    if (commentList.length > 0 && !priorPlanPdfDays) {
+      console.warn(
+        `[generate-plan] comments provided but no prior plan found for client ${clientId} — falling back to SCRATCH mode`
+      );
+    }
+
+    // Semantic-diff helper: compare the input plan to the output plan,
+    // ignoring JSON field ordering, whitespace, and float-precision noise
+    // on gram amounts. Returns a list of human-readable diff summaries
+    // for meals that changed. Used only in EDIT mode.
+    type SimpleMeal = {
+      name: string; time: string; dishName?: string;
+      ingredients: { slug: string; grams: number }[];
+    };
+    type SimpleDay = { day: number; meals: SimpleMeal[] };
+    const normMeal = (m: SimpleMeal) => ({
+      name: (m.name || "").trim(),
+      time: (m.time || "").trim(),
+      dishName: (m.dishName || "").trim(),
+      ingredients: [...(m.ingredients || [])]
+        .map((i) => ({ slug: i.slug, grams: Math.round(Number(i.grams) || 0) }))
+        .sort((a, b) => a.slug.localeCompare(b.slug)),
+    });
+    const diffMeal = (before: SimpleMeal, after: SimpleMeal): string | null => {
+      const a = normMeal(before);
+      const b = normMeal(after);
+      const changes: string[] = [];
+      if (a.dishName !== b.dishName) changes.push(`dish name "${a.dishName}" → "${b.dishName}"`);
+      if (a.time !== b.time) changes.push(`time ${a.time} → ${b.time}`);
+      // Ingredient-level diff (swaps, portion changes, additions, removals)
+      const bySlugA = new Map(a.ingredients.map((i) => [i.slug, i.grams]));
+      const bySlugB = new Map(b.ingredients.map((i) => [i.slug, i.grams]));
+      for (const [slug, gA] of bySlugA) {
+        const gB = bySlugB.get(slug);
+        if (gB === undefined) changes.push(`removed ${slug} (${gA}g)`);
+        else if (gB !== gA) changes.push(`${slug} ${gA}g → ${gB}g`);
+      }
+      for (const [slug, gB] of bySlugB) {
+        if (!bySlugA.has(slug)) changes.push(`added ${slug} (${gB}g)`);
+      }
+      return changes.length > 0 ? changes.join(", ") : null;
+    };
+    const computeEditWarnings = (
+      before: SimpleDay[],
+      after: SimpleDay[],
+      expectedEdits: { day: number; meal: string }[],
+      weekdayByDay: Map<number, string>
+    ): string[] => {
+      const expectedKey = (day: number, meal: string) =>
+        `${day}|${meal.trim().toLowerCase()}`;
+      const expected = new Set(expectedEdits.map((e) => expectedKey(e.day, e.meal)));
+      const warnings: string[] = [];
+      for (const dayBefore of before) {
+        const dayAfter = after.find((d) => d.day === dayBefore.day);
+        if (!dayAfter) {
+          warnings.push(`Day ${dayBefore.day} missing from output — skipped`);
+          continue;
+        }
+        const byNameBefore = new Map(dayBefore.meals.map((m) => [m.name.toLowerCase(), m]));
+        const byNameAfter = new Map(dayAfter.meals.map((m) => [m.name.toLowerCase(), m]));
+        const allMealNames = new Set([...byNameBefore.keys(), ...byNameAfter.keys()]);
+        for (const mealName of allMealNames) {
+          const mBefore = byNameBefore.get(mealName);
+          const mAfter = byNameAfter.get(mealName);
+          if (!mBefore || !mAfter) {
+            const wd = weekdayByDay.get(dayBefore.day) || `Day ${dayBefore.day}`;
+            warnings.push(
+              `Unexpected ${mBefore ? "removed" : "added"} meal — ${wd} ${mealName}`
+            );
+            continue;
+          }
+          const summary = diffMeal(mBefore, mAfter);
+          if (summary) {
+            const wd = weekdayByDay.get(dayBefore.day) || `Day ${dayBefore.day}`;
+            const key = expectedKey(dayBefore.day, mAfter.name);
+            if (!expected.has(key)) {
+              warnings.push(
+                `${wd} ${mAfter.name} changed despite no instruction — ${summary}`
+              );
+            }
+          }
+        }
+      }
+      return warnings;
+    };
+
+    let days: Awaited<ReturnType<typeof generateAllDays>>;
+    let editWarnings: string[] = [];
+    let editModifiedMeals: { day: number; meal: string }[] = [];
+    if (generationMode === "edit" && priorPlanPdfDays) {
+      // Shape PdfDay[] → DayPlan[] (drop the per-meal macro fields, keep
+      // ingredients and meal structure). Feed this back to Claude as the
+      // input plan to modify.
+      const existingPlanForEdit: { day: number; meals: SimpleMeal[] }[] =
+        priorPlanPdfDays.map((pd) => ({
+          day: pd.dayNumber,
+          meals: pd.meals.map((m) => ({
+            name: m.name,
+            time: m.time,
+            dishName: m.dishName,
+            ingredients: m.ingredients
+              .map((ing) => ({
+                slug: (ing as { slug?: string }).slug || "",
+                grams: Math.round(Number((ing as { grams?: number }).grams) || 0),
+              }))
+              .filter((i) => i.slug),
+          })),
+        }));
+      const existingPlanMacrosByDay = priorPlanPdfDays.map((pd) => ({
+        dayNumber: pd.dayNumber,
+        weekday: pd.weekday,
+        totalCal: pd.totalCal,
+        totalP: pd.totalP,
+        totalC: pd.totalC,
+        totalF: pd.totalF,
+        totalSodiumMg: pd.totalSodiumMg,
+      }));
+      const commentsText = commentList
+        .slice(0, 10)
+        .map((c, i) => `${i + 1}. ${c.comment}`)
+        .join("\n");
+      const editInput: EditPlanInput = {
+        existingPlan: existingPlanForEdit,
+        existingPlanMacrosByDay,
+        commentsText,
+        intake: intakeSummary,
+        targets,
+        allowedIngredients: rankedIngredients,
+        sodiumContext:
+          targets.sodiumCapMg < 2300
+            ? {
+                sodiumCapMg: targets.sodiumCapMg,
+                dayNumber: 0,
+                reason: medical.hasHypertension ? "hbp" : "stimulant",
+              }
+            : undefined,
+      };
+      const editResult = await editPlan(editInput, apiKey);
+      days = editResult.days;
+      editModifiedMeals = editResult.modifiedMeals;
+
+      // Log what the model claims it changed
+      if (editModifiedMeals.length > 0) {
+        console.log(
+          `[generate-plan] EDIT mode: model reported ${editModifiedMeals.length} meal edits — ${editModifiedMeals
+            .map((m) => `day ${m.day} ${m.meal}`)
+            .join(", ")}`
+        );
+      } else {
+        console.warn(
+          `[generate-plan] EDIT mode: model reported 0 meal edits despite comments — inspect output`
+        );
+      }
+
+      // Run semantic diff to catch silent changes
+      const weekdayByDay = new Map<number, string>();
+      for (const pd of priorPlanPdfDays) weekdayByDay.set(pd.dayNumber, pd.weekday);
+      editWarnings = computeEditWarnings(
+        existingPlanForEdit,
+        days,
+        editModifiedMeals,
+        weekdayByDay
+      );
+      for (const w of editWarnings) {
+        console.warn(`[generate-plan] EDIT diff warning: ${w}`);
+      }
+    } else {
+      // --- SCRATCH MODE: Fire all 7 Claude calls in parallel ---
+      days = await generateAllDays(dayInputs, apiKey);
+    }
 
     // ---------- PRE-VALIDATION: INVALID-SLUG SCAN + SINGLE RETRY ----------
     // The generator system prompt already says "pick only from ALLOWED
@@ -1089,7 +1282,13 @@ export async function POST(req: NextRequest) {
     const TIME_CEILING_MS = 38_000;
     const convergenceLog: string[] = [];
 
-    for (let iter = 1; iter <= MAX_ITER; iter++) {
+    // EDIT mode skips the iterative validate→correct loop entirely — the
+    // loop would silently re-generate violating days from the SCRATCH
+    // prompt, destroying the user's targeted edits and touching days they
+    // didn't ask about. The final validation pass still runs below; any
+    // violations in EDIT output become RED/YELLOW banner items and the
+    // user iterates with another comment round.
+    for (let iter = 1; iter <= MAX_ITER && generationMode === "scratch"; iter++) {
       const violating: { idx: number; violations: TierViolation[] }[] = [];
       let tier1Count = 0, tier2DayCount = 0;
       days.forEach((d, idx) => {
@@ -1190,7 +1389,12 @@ export async function POST(req: NextRequest) {
     // After Claude retries, any remaining macro drift is pure arithmetic —
     // nudging gram amounts on ingredients Claude already selected. This is
     // deterministic and guaranteed to land within ±5% on nearly every day.
-    optimizeAllDays(days, byslug, targets);
+    // EDIT mode SKIPS this: the optimizer nudges gram amounts on every
+    // day, which would modify meals the user didn't ask to change. In EDIT
+    // mode any macro drift shows up as a validator warning instead.
+    if (generationMode === "scratch") {
+      optimizeAllDays(days, byslug, targets);
+    }
 
     // ---------- MEDICAL HARD SWAPS + FREQUENCY CAPS ----------
     // Swap problematic ingredients (e.g., salted butter → unsalted) and cap
@@ -1235,8 +1439,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Re-optimize portions after the medical adjustments
-    if (Object.keys(hardSwaps).length > 0 || Object.keys(freqCaps).length > 0) {
+    // Re-optimize portions after the medical adjustments.
+    // EDIT mode skips — see comment on the first optimizer call above.
+    if (
+      generationMode === "scratch" &&
+      (Object.keys(hardSwaps).length > 0 || Object.keys(freqCaps).length > 0)
+    ) {
       optimizeAllDays(days, byslug, targets);
     }
 
@@ -1622,6 +1830,19 @@ export async function POST(req: NextRequest) {
       .from("nutrition-plans")
       .createSignedUrl(pdfPath, 60 * 60 * 2);
 
+    // Fold EDIT-mode warnings into targets.notes so they surface in the
+    // existing admin notes row without any UI rewiring.
+    if (generationMode === "edit") {
+      targets.notes.push(
+        `EDIT mode: regenerated from v${nextVersion - 1} against ${commentList.length} comment(s). Model reported ${editModifiedMeals.length} meal edit(s).`
+      );
+      if (editWarnings.length > 0) {
+        targets.notes.push(
+          `⚠️ EDIT diff warnings (${editWarnings.length}): ${editWarnings.slice(0, 6).join(" · ")}${editWarnings.length > 6 ? ` · +${editWarnings.length - 6} more` : ""}`
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
       version: nextVersion,
@@ -1630,6 +1851,12 @@ export async function POST(req: NextRequest) {
       targets,
       generationTimeMs,
       notes: targets.notes,
+      // EDIT-mode metadata — surfaced so the UI can show a subtle
+      // "edited from vN" badge and an optional warnings list without
+      // any additional API round-trip.
+      generationMode,
+      editModifiedMeals: generationMode === "edit" ? editModifiedMeals : undefined,
+      editWarnings: generationMode === "edit" ? editWarnings : undefined,
       // Convergence + 3-tier RED/YELLOW/GREEN ship status.
       //   GREEN  — clean plan, ship directly
       //   YELLOW — soft warnings only (tier 2), coach can review and ship
