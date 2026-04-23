@@ -1,21 +1,14 @@
 "use client";
 
-import {
-  Fragment,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AccountantDashboardData,
   ClientPeriodPlan,
   FinanceLegendItem,
-  FinanceRecommendation,
   ManualClientPeriodEntry,
   ManualPeriodStatus,
-  formatCents,
   UpcomingPayoutRow,
+  formatCents,
 } from "@/lib/accountant-types";
 import {
   Calculator,
@@ -148,10 +141,6 @@ function buildEmptyObligationDraft(defaultDueDate: string): ObligationDraft {
   };
 }
 
-function hasSavedOverride(entry: ManualClientPeriodEntry | undefined): boolean {
-  return Boolean(entry);
-}
-
 function formatTrendLabel(month: string): string {
   const date = new Date(`${month}-01T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return month;
@@ -187,7 +176,12 @@ export default function AccountantDashboard({
   );
 
   useEffect(() => {
-    setPeriodDrafts(buildPeriodDrafts(finance.focus_period.clients, finance.planning.current_period_entries));
+    setPeriodDrafts(
+      buildPeriodDrafts(
+        finance.focus_period.clients,
+        finance.planning.current_period_entries,
+      ),
+    );
     setObligationDraft(buildEmptyObligationDraft(finance.focus_period.period.billing_date));
   }, [
     finance.focus_period.clients,
@@ -212,8 +206,14 @@ export default function AccountantDashboard({
     return grouped;
   }, [currentMonth.transactions]);
 
-  const totalBalance = balances.reduce((acc, b) => acc + b.balance, 0);
+  const totalBalance = balances.reduce((sum, balance) => sum + balance.balance, 0);
   const maxTrendValue = Math.max(...trend.map((m) => Math.max(m.income, m.expenses)), 1);
+  const clientRows = finance.client_profit;
+  const bestClient = clientRows[0] ?? null;
+  const worstClient =
+    clientRows.length > 0
+      ? [...clientRows].sort((a, b) => a.estimated_company_keep - b.estimated_company_keep)[0]
+      : null;
 
   const refreshData = async () => {
     if (onRefreshData) {
@@ -285,7 +285,9 @@ export default function AccountantDashboard({
   };
 
   const handleSavePeriod = async (client: ClientPeriodPlan) => {
-    const draft = periodDrafts[client.client_key] ?? buildPeriodDraft(manualEntriesByClient.get(client.client_key));
+    const draft =
+      periodDrafts[client.client_key] ??
+      buildPeriodDraft(manualEntriesByClient.get(client.client_key));
 
     setActionError(null);
     setActionNote(null);
@@ -355,7 +357,12 @@ export default function AccountantDashboard({
 
   const handleAddObligation = async () => {
     const amountCents = parseMoneyInput(obligationDraft.amount);
-    if (!obligationDraft.label.trim() || !obligationDraft.due_date || amountCents === null || amountCents <= 0) {
+    if (
+      !obligationDraft.label.trim() ||
+      !obligationDraft.due_date ||
+      amountCents === null ||
+      amountCents <= 0
+    ) {
       setActionError("Add a label, due date, and amount first.");
       setActionNote(null);
       return;
@@ -400,7 +407,11 @@ export default function AccountantDashboard({
           : { action, id },
       );
       await refreshData();
-      setActionNote(action === "delete_obligation" ? "Manual item deleted." : "Manual item marked paid.");
+      setActionNote(
+        action === "delete_obligation"
+          ? "Manual item deleted."
+          : "Manual item marked paid.",
+      );
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Update failed.");
     } finally {
@@ -409,7 +420,7 @@ export default function AccountantDashboard({
   };
 
   return (
-    <div style={{ padding: "24px 24px 40px", maxWidth: 1320, margin: "0 auto" }}>
+    <div style={{ padding: "24px 24px 40px", maxWidth: 1260, margin: "0 auto" }}>
       <div
         style={{
           display: "flex",
@@ -425,46 +436,28 @@ export default function AccountantDashboard({
             Accountant
           </h1>
           <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0, maxWidth: 620 }}>
-            CoreShift cash, invoices, team payouts, and coaching budget in one place.
+            The simple owner view. Cash, payouts, profit, and what needs attention.
           </p>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <ActionButton
-            onClick={handleBackfill}
-            disabled={backfilling || syncing}
-            variant="secondary"
-            icon={<Calculator size={14} />}
-          >
-            {backfilling ? "Backfilling…" : "Backfill 12M"}
-          </ActionButton>
-          <ActionButton
-            onClick={handleSync}
-            disabled={syncing || backfilling}
-            variant="secondary"
-            icon={<RefreshCw size={14} className={syncing ? "spin" : ""} />}
-          >
-            {syncing ? "Syncing…" : "Sync Now"}
-          </ActionButton>
         </div>
       </div>
 
       {actionError && <MessageBox tone="error">{actionError}</MessageBox>}
       {actionNote && <MessageBox tone="success">{actionNote}</MessageBox>}
 
-      <Section title="Overview" description="The few numbers that matter first.">
+      <Section title="Overview" description="The few numbers to watch first.">
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 12,
+            marginBottom: 12,
           }}
         >
           <StatCard
-            label="Cash on Hand"
+            label="Cash in Bank"
             value={formatCents(totalBalance)}
             icon={<Wallet size={16} />}
-            sub={balances[0]?.snapshot_date ? `As of ${balances[0].snapshot_date}` : undefined}
+            sub={balances[0]?.snapshot_date ? `As of ${balances[0].snapshot_date}` : "CoreShift Mercury total"}
           />
           <StatCard
             label="Safe Cash"
@@ -474,506 +467,76 @@ export default function AccountantDashboard({
             color={finance.safe_cash >= 0 ? "var(--text-primary)" : "var(--danger, #ef4444)"}
           />
           <StatCard
-            label="Next Invoice"
+            label="Next Invoice Total"
             value={formatCents(finance.focus_period.totals.invoice_total)}
             icon={<FileText size={16} />}
             sub={`${finance.focus_period.period.label} · Bills ${finance.focus_period.period.billing_date}`}
           />
           <StatCard
-            label="Due Next 30 Days"
+            label="Upcoming Payouts"
             value={formatCents(finance.payouts.due_next_30d)}
             icon={<Landmark size={16} />}
-            sub="Closers, setters, and manual items"
+            sub="Due in the next 30 days"
           />
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 10,
-            marginTop: 12,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
           }}
         >
-          <MiniCard label="Commission Zone" value={formatCents(finance.payouts.commission_zone)} />
-          <MiniCard label="Billing Window" value={finance.focus_period.period.label} />
-          <MiniCard
+          <StatCard
+            label="Company Keep"
+            value={formatCents(finance.focus_period.totals.estimated_company_keep)}
+            icon={<TrendingUp size={16} />}
+            sub={finance.focus_period.period.label}
+            color={
+              finance.focus_period.totals.estimated_company_keep >= 0
+                ? "var(--success, #10b981)"
+                : "var(--danger, #ef4444)"
+            }
+          />
+          <StatCard
             label="Coaching Cost / Client"
             value={formatCents(finance.coaching_budget.cost_per_active_client)}
+            icon={<PiggyBank size={16} />}
+            sub={`Goal ${formatCents(finance.coaching_budget.hard_cap_cost_per_active_client)} · Ceiling ${formatCents(finance.coaching_budget.target_cost_per_active_client)}`}
             color={coachingStatusColor(finance.coaching_budget.status)}
-            sub={coachingStatusCopy(finance.coaching_budget.status)}
+          />
+          <StatCard
+            label="Best Client"
+            value={bestClient?.client_name ?? "—"}
+            icon={<Users size={16} />}
+            sub={bestClient ? `Keep ${formatCents(bestClient.estimated_company_keep)}` : "No client rows yet"}
+            color={bestClient ? "var(--success, #10b981)" : undefined}
+          />
+          <StatCard
+            label="Worst Client"
+            value={worstClient?.client_name ?? "—"}
+            icon={<TrendingDown size={16} />}
+            sub={worstClient ? `Keep ${formatCents(worstClient.estimated_company_keep)}` : "No client rows yet"}
+            color={
+              worstClient
+                ? worstClient.estimated_company_keep >= 0
+                  ? "var(--text-primary)"
+                  : "var(--danger, #ef4444)"
+                : undefined
+            }
           />
         </div>
       </Section>
 
       <Section
-        title="Current Billing Plan"
-        description="Blank fields stay on auto. Fill only what needs help."
+        title="Clients"
+        description="Which clients are helping and which ones need attention."
       >
-        <Panel>
-          {finance.focus_period.clients.length === 0 ? (
-            <EmptyState
-              icon={<Calculator size={18} />}
-              text="No client rows yet for this billing window."
-            />
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-                gap: 12,
-              }}
-            >
-              {finance.focus_period.clients.map((client) => {
-                const draft = periodDrafts[client.client_key] ?? buildPeriodDraft(manualEntriesByClient.get(client.client_key));
-                const savedEntry = manualEntriesByClient.get(client.client_key);
-                const busy = savingClientKey === client.client_key;
-
-                return (
-                  <div
-                    key={client.client_key}
-                    style={{
-                      border: "1px solid var(--border-primary)",
-                      borderRadius: 12,
-                      background: "var(--bg-primary)",
-                      padding: 16,
-                      display: "grid",
-                      gap: 12,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        alignItems: "flex-start",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div style={{ display: "grid", gap: 4 }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
-                          {client.client_name}
-                        </div>
-                        <InlineMeta>
-                          Auto invoice {formatCents(client.invoice_total)} · Keep {formatCents(client.estimated_company_keep)}
-                        </InlineMeta>
-                      </div>
-                      <SourceBadge source={savedEntry ? "manual" : client.invoice_source} />
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 10,
-                      }}
-                    >
-                      <FormField label="Net cash" hint={`Auto ${formatCents(client.estimated_net_cash)}`}>
-                        <TextInput
-                          value={draft.net_cash}
-                          onChange={(value) => setPeriodField(client.client_key, "net_cash", value)}
-                          placeholder={String(client.estimated_net_cash / 100)}
-                        />
-                      </FormField>
-                      <FormField label="Ad spend" hint={`Auto ${formatCents(client.ad_spend)}`}>
-                        <TextInput
-                          value={draft.ad_spend}
-                          onChange={(value) => setPeriodField(client.client_key, "ad_spend", value)}
-                          placeholder={String(client.ad_spend / 100)}
-                        />
-                      </FormField>
-                      <FormField
-                        label="Fulfillment"
-                        hint={
-                          client.forecast_fulfillment > 0
-                            ? `Saved ${formatCents(client.forecast_fulfillment)}`
-                            : "Add if you know the real forecast"
-                        }
-                      >
-                        <TextInput
-                          value={draft.forecast_fulfillment}
-                          onChange={(value) =>
-                            setPeriodField(client.client_key, "forecast_fulfillment", value)
-                          }
-                          placeholder={client.forecast_fulfillment > 0 ? String(client.forecast_fulfillment / 100) : "0"}
-                        />
-                      </FormField>
-                      <FormField label="Software line" hint={`Auto ${formatCents(client.software_line)}`}>
-                        <TextInput
-                          value={draft.software_fee}
-                          onChange={(value) => setPeriodField(client.client_key, "software_fee", value)}
-                          placeholder={String(client.software_line / 100)}
-                        />
-                      </FormField>
-                    </div>
-
-                    <FormField label="Status">
-                      <SelectInput
-                        value={draft.status}
-                        onChange={(value) => setPeriodField(client.client_key, "status", value)}
-                        options={[
-                          { value: "draft", label: "Draft" },
-                          { value: "ready", label: "Ready" },
-                          { value: "sent", label: "Sent" },
-                          { value: "paid", label: "Paid" },
-                        ]}
-                      />
-                    </FormField>
-
-                    <FormField label="Notes">
-                      <TextAreaInput
-                        value={draft.notes}
-                        onChange={(value) => setPeriodField(client.client_key, "notes", value)}
-                        placeholder="Anything you want to remember about this client period"
-                      />
-                    </FormField>
-
-                    <details>
-                      <summary
-                        style={{
-                          cursor: "pointer",
-                          fontSize: 13,
-                          color: "var(--text-secondary)",
-                          fontWeight: 600,
-                        }}
-                      >
-                        More overrides
-                      </summary>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                          gap: 10,
-                          marginTop: 10,
-                        }}
-                      >
-                        <FormField label="Cash collected">
-                          <TextInput
-                            value={draft.cash_collected}
-                            onChange={(value) => setPeriodField(client.client_key, "cash_collected", value)}
-                            placeholder={String(client.cash_collected / 100)}
-                          />
-                        </FormField>
-                        <FormField label="Sales line">
-                          <TextInput
-                            value={draft.sales_team_line}
-                            onChange={(value) => setPeriodField(client.client_key, "sales_team_line", value)}
-                            placeholder={String(client.sales_team_line / 100)}
-                          />
-                        </FormField>
-                        <FormField label="Program months">
-                          <TextInput
-                            value={draft.program_months_sold}
-                            onChange={(value) => setPeriodField(client.client_key, "program_months_sold", value)}
-                            placeholder={String(client.program_months_sold)}
-                          />
-                        </FormField>
-                        <FormField label="Coaching line">
-                          <TextInput
-                            value={draft.coaching_line}
-                            onChange={(value) => setPeriodField(client.client_key, "coaching_line", value)}
-                            placeholder={String(client.coaching_line / 100)}
-                          />
-                        </FormField>
-                        <FormField label="Coaching reserve">
-                          <TextInput
-                            value={draft.coaching_reserve}
-                            onChange={(value) => setPeriodField(client.client_key, "coaching_reserve", value)}
-                            placeholder={String(client.coaching_reserve / 100)}
-                          />
-                        </FormField>
-                        <FormField label="Profit share">
-                          <TextInput
-                            value={draft.profit_share}
-                            onChange={(value) => setPeriodField(client.client_key, "profit_share", value)}
-                            placeholder={String(client.profit_share_line / 100)}
-                          />
-                        </FormField>
-                        <FormField label="Final invoice">
-                          <TextInput
-                            value={draft.invoice_total}
-                            onChange={(value) => setPeriodField(client.client_key, "invoice_total", value)}
-                            placeholder={String(client.invoice_total / 100)}
-                          />
-                        </FormField>
-                      </div>
-                    </details>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <ActionButton
-                        onClick={() => handleSavePeriod(client)}
-                        disabled={busy}
-                        icon={<Save size={14} />}
-                      >
-                        {busy ? "Saving…" : "Save"}
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() => handleClearPeriod(client)}
-                        disabled={busy}
-                        variant="secondary"
-                        icon={<Trash2 size={14} />}
-                      >
-                        {hasSavedOverride(savedEntry) ? "Reset to Auto" : "Clear Draft"}
-                      </ActionButton>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        <div style={{ height: 12 }} />
-
         <TableWrap>
-          {finance.focus_period.clients.length === 0 ? (
-            <EmptyState
-              icon={<Calculator size={18} />}
-              text="No invoice rows yet for this window."
-            />
-          ) : (
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "var(--bg-primary)" }}>
-                  <Th>Client</Th>
-                  <Th align="right">Invoice</Th>
-                  <Th align="right">Net Cash</Th>
-                  <Th align="right">Ads</Th>
-                  <Th align="right">Commissions</Th>
-                  <Th align="right">Fulfillment</Th>
-                  <Th align="right">Keep</Th>
-                  <Th>Source</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {finance.focus_period.clients.map((client) => (
-                  <tr key={client.client_key} style={{ borderTop: "1px solid var(--border-primary)" }}>
-                    <Td>
-                      <div style={{ display: "grid", gap: 4 }}>
-                        <span>{client.client_name}</span>
-                        <InlineMeta>
-                          {client.programs_sold} sales · {client.program_months_sold} program months
-                        </InlineMeta>
-                        {client.notes.length > 0 && <InlineMeta>{client.notes.join(" ")}</InlineMeta>}
-                      </div>
-                    </Td>
-                    <Td align="right">{formatCents(client.invoice_total)}</Td>
-                    <Td align="right">{formatCents(client.estimated_net_cash)}</Td>
-                    <Td align="right">{formatCents(client.ad_spend)}</Td>
-                    <Td align="right">{formatCents(client.actual_sales_commissions)}</Td>
-                    <Td align="right">{formatCents(client.forecast_fulfillment)}</Td>
-                    <Td
-                      align="right"
-                      color={
-                        client.estimated_company_keep >= 0
-                          ? "var(--success, #10b981)"
-                          : "var(--danger, #ef4444)"
-                      }
-                    >
-                      {formatCents(client.estimated_company_keep)}
-                    </Td>
-                    <Td>
-                      <SourceBadge source={client.invoice_source} />
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </TableWrap>
-      </Section>
-
-      <Section title="Upcoming Payouts" description="What is owed next, plus quick manual adds.">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 10,
-            marginBottom: 12,
-          }}
-        >
-          <MiniCard label="Total Accrued" value={formatCents(finance.payouts.total_accrued)} />
-          <MiniCard label="Commission Zone" value={formatCents(finance.payouts.commission_zone)} />
-          <MiniCard label="Manual Items" value={formatCents(finance.payouts.manual_obligations)} />
-          <MiniCard label="Due Next 14 Days" value={formatCents(finance.payouts.due_next_14d)} />
-        </div>
-
-        <Panel title="Manual Items" sub="Add anything that should reduce safe cash but is not coming from the sales sheet.">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 10,
-            }}
-          >
-            <FormField label="Label">
-              <TextInput
-                value={obligationDraft.label}
-                onChange={(value) => setObligationDraft((current) => ({ ...current, label: value }))}
-                placeholder="Coach payout"
-              />
-            </FormField>
-            <FormField label="Amount">
-              <TextInput
-                value={obligationDraft.amount}
-                onChange={(value) => setObligationDraft((current) => ({ ...current, amount: value }))}
-                placeholder="500"
-              />
-            </FormField>
-            <FormField label="Due date">
-              <DateInput
-                value={obligationDraft.due_date}
-                onChange={(value) => setObligationDraft((current) => ({ ...current, due_date: value }))}
-              />
-            </FormField>
-            <FormField label="Type">
-              <SelectInput
-                value={obligationDraft.obligation_type}
-                onChange={(value) =>
-                  setObligationDraft((current) => ({ ...current, obligation_type: value }))
-                }
-                options={[
-                  { value: "other", label: "Other" },
-                  { value: "coach_pay", label: "Coach Pay" },
-                  { value: "fulfillment", label: "Fulfillment" },
-                  { value: "software", label: "Software" },
-                  { value: "tax", label: "Tax" },
-                  { value: "commission_adjustment", label: "Commission Adjustment" },
-                ]}
-              />
-            </FormField>
-            <FormField label="Payee">
-              <TextInput
-                value={obligationDraft.payee_name}
-                onChange={(value) =>
-                  setObligationDraft((current) => ({ ...current, payee_name: value }))
-                }
-                placeholder="Name"
-              />
-            </FormField>
-            <FormField label="Client">
-              <TextInput
-                value={obligationDraft.client_name}
-                onChange={(value) =>
-                  setObligationDraft((current) => ({ ...current, client_name: value }))
-                }
-                placeholder="Optional"
-              />
-            </FormField>
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <FormField label="Notes">
-              <TextAreaInput
-                value={obligationDraft.notes}
-                onChange={(value) => setObligationDraft((current) => ({ ...current, notes: value }))}
-                placeholder="Why this item is owed"
-              />
-            </FormField>
-          </div>
-
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <ActionButton
-              onClick={handleAddObligation}
-              disabled={savingObligation}
-              icon={<Plus size={14} />}
-            >
-              {savingObligation ? "Adding…" : "Add Manual Item"}
-            </ActionButton>
-          </div>
-
-          {finance.planning.unpaid_manual_obligations.length > 0 && (
-            <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
-              {finance.planning.unpaid_manual_obligations.map((item) => {
-                const busy = workingObligationId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto",
-                      gap: 12,
-                      alignItems: "center",
-                      padding: 12,
-                      borderRadius: 10,
-                      background: "var(--bg-primary)",
-                      border: "1px solid var(--border-primary)",
-                    }}
-                  >
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                        {item.label}
-                      </div>
-                      <InlineMeta>
-                        Due {item.due_date}
-                        {item.payee_name ? ` · ${item.payee_name}` : ""}
-                        {item.client_name ? ` · ${item.client_name}` : ""}
-                      </InlineMeta>
-                      {(item.notes || item.obligation_type) && (
-                        <InlineMeta>{item.notes || item.obligation_type.replace(/_/g, " ")}</InlineMeta>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <strong style={{ color: "var(--text-primary)" }}>{formatCents(item.amount_cents)}</strong>
-                      <ActionButton
-                        onClick={() => handleObligationAction(item.id, "update_obligation_status")}
-                        disabled={busy}
-                        variant="secondary"
-                      >
-                        Paid
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() => handleObligationAction(item.id, "delete_obligation")}
-                        disabled={busy}
-                        variant="secondary"
-                        icon={<Trash2 size={14} />}
-                      >
-                        Delete
-                      </ActionButton>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        <div style={{ height: 12 }} />
-
-        <TableWrap>
-          {finance.payouts.rows.length === 0 ? (
+          {clientRows.length === 0 ? (
             <EmptyState
               icon={<Users size={18} />}
-              text="No unpaid payout rows are showing right now."
-            />
-          ) : (
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "var(--bg-primary)" }}>
-                  <Th>Due</Th>
-                  <Th>Type</Th>
-                  <Th>Payee</Th>
-                  <Th>Client</Th>
-                  <Th align="right">Amount</Th>
-                  <Th>Source</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {finance.payouts.rows.map((row) => (
-                  <PayoutRowView key={payoutKey(row)} row={row} />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </TableWrap>
-      </Section>
-
-      <Section title="Client Profit" description="Which clients are really helping the business.">
-        <TableWrap>
-          {finance.client_profit.length === 0 ? (
-            <EmptyState
-              icon={<TrendingUp size={18} />}
-              text="Profit rows will show here once a billing period has sales or manual inputs."
+              text="Client profit will show here once the billing period has data."
             />
           ) : (
             <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
@@ -981,25 +544,15 @@ export default function AccountantDashboard({
                 <tr style={{ background: "var(--bg-primary)" }}>
                   <Th>Client</Th>
                   <Th align="right">Invoice</Th>
-                  <Th align="right">Ads</Th>
-                  <Th align="right">Commissions</Th>
-                  <Th align="right">Coaching</Th>
-                  <Th align="right">Fulfillment</Th>
-                  <Th align="right">Software</Th>
                   <Th align="right">Keep</Th>
                   <Th align="right">Margin</Th>
                 </tr>
               </thead>
               <tbody>
-                {finance.client_profit.map((row) => (
+                {clientRows.map((row) => (
                   <tr key={row.client_key} style={{ borderTop: "1px solid var(--border-primary)" }}>
                     <Td>{row.client_name}</Td>
                     <Td align="right">{formatCents(row.invoice_total)}</Td>
-                    <Td align="right">{formatCents(row.ad_spend)}</Td>
-                    <Td align="right">{formatCents(row.actual_sales_commissions)}</Td>
-                    <Td align="right">{formatCents(row.coaching_reserve)}</Td>
-                    <Td align="right">{formatCents(row.forecast_fulfillment)}</Td>
-                    <Td align="right">{formatCents(row.software_cost_allocated)}</Td>
                     <Td
                       align="right"
                       color={
@@ -1010,7 +563,9 @@ export default function AccountantDashboard({
                     >
                       {formatCents(row.estimated_company_keep)}
                     </Td>
-                    <Td align="right">{row.margin_pct === null ? "—" : `${row.margin_pct}%`}</Td>
+                    <Td align="right">
+                      {row.margin_pct === null ? "—" : `${row.margin_pct}%`}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -1019,65 +574,565 @@ export default function AccountantDashboard({
         </TableWrap>
       </Section>
 
-      <Section title="Coaching Budget" description="Keep coaching under the target and hard cap.">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <StatCard
-            label="Active Clients"
-            value={String(finance.coaching_budget.active_clients)}
-            icon={<Users size={16} />}
-            sub="Clients marked active right now"
-          />
-          <StatCard
-            label="Coach Payroll (30d)"
-            value={formatCents(finance.coaching_budget.coach_payroll_last_30d)}
-            icon={<Wallet size={16} />}
-            sub="From CoreShift Mercury"
-          />
-          <StatCard
-            label="PM Base Pay"
-            value={formatCents(finance.coaching_budget.product_manager_base_monthly)}
-            icon={<Calculator size={16} />}
-            sub="Base pay only for now"
-          />
-          <StatCard
-            label="Cost / Active Client"
-            value={formatCents(finance.coaching_budget.cost_per_active_client)}
-            icon={<PiggyBank size={16} />}
-            sub={coachingStatusCopy(finance.coaching_budget.status)}
-            color={coachingStatusColor(finance.coaching_budget.status)}
-          />
-        </div>
-
+      <Section
+        title="Upcoming Payouts"
+        description="What money is going out next, and to who."
+      >
         <TableWrap>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-            <tbody>
-              <BudgetRow label="Total cost last 30 days" value={formatCents(finance.coaching_budget.total_cost_last_30d)} />
-              <BudgetRow label="Budget room to $24 ceiling" value={formatCents(finance.coaching_budget.headroom_to_target)} color={finance.coaching_budget.headroom_to_target >= 0 ? "var(--success, #10b981)" : "var(--danger, #ef4444)"} />
-              <BudgetRow label="Budget room to $21 goal" value={formatCents(finance.coaching_budget.headroom_to_hard_cap)} color={finance.coaching_budget.headroom_to_hard_cap >= 0 ? "var(--success, #10b981)" : "var(--danger, #ef4444)"} />
-              <BudgetRow label="Revenue capacity at $30 each" value={formatCents(finance.coaching_budget.coaching_revenue_capacity)} />
-            </tbody>
-          </table>
+          {finance.payouts.rows.length === 0 ? (
+            <EmptyState
+              icon={<Landmark size={18} />}
+              text="No unpaid payout rows are showing right now."
+            />
+          ) : (
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--bg-primary)" }}>
+                  <Th>Due</Th>
+                  <Th>Payee</Th>
+                  <Th>Client</Th>
+                  <Th>Type</Th>
+                  <Th align="right">Amount</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {finance.payouts.rows.map((row) => (
+                  <tr key={payoutKey(row)} style={{ borderTop: "1px solid var(--border-primary)" }}>
+                    <Td>{row.due_date}</Td>
+                    <Td>
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <span>{row.payee}</span>
+                        {row.notes.length > 0 && <InlineMeta>{row.notes.join(" ")}</InlineMeta>}
+                      </div>
+                    </Td>
+                    <Td>{row.client_name ?? "—"}</Td>
+                    <Td>{row.category.replace("_", " ")}</Td>
+                    <Td align="right">{formatCents(row.amount)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </TableWrap>
       </Section>
 
-      <Section title="Recommended Moves" description="What to watch next.">
-        <div style={{ display: "grid", gap: 10 }}>
-          {finance.recommendations.map((item) => (
-            <RecommendationCard key={item.title} item={item} />
-          ))}
-        </div>
+      <Section
+        title="Alerts"
+        description="The short list of things that need your attention."
+      >
+        <TableWrap>
+          {finance.recommendations.length === 0 ? (
+            <EmptyState
+              icon={<Shield size={18} />}
+              text="No alerts are showing right now."
+            />
+          ) : (
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--bg-primary)" }}>
+                  <Th>Priority</Th>
+                  <Th>Alert</Th>
+                  <Th>Why It Matters</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {finance.recommendations.map((item) => (
+                  <tr key={item.title} style={{ borderTop: "1px solid var(--border-primary)" }}>
+                    <Td color={priorityColor(item.priority)}>
+                      {item.priority}
+                    </Td>
+                    <Td>{item.title}</Td>
+                    <Td>{item.body}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </TableWrap>
       </Section>
 
-      <DetailsPanel title={`Mercury Detail - ${currentMonth.label}`} defaultOpen={false}>
+      <DetailsPanel
+        title="Advanced"
+        description="Manual edits, sync controls, transactions, reports, and the full legend."
+        defaultOpen={false}
+      >
         <div style={{ display: "grid", gap: 12 }}>
-          <Panel>
+          <Panel
+            title="Controls"
+            sub="Use these when you need to refresh Mercury or fill older history."
+          >
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <ActionButton
+                onClick={handleSync}
+                disabled={syncing || backfilling}
+                variant="secondary"
+                icon={<RefreshCw size={14} className={syncing ? "spin" : ""} />}
+              >
+                {syncing ? "Syncing…" : "Sync Now"}
+              </ActionButton>
+              <ActionButton
+                onClick={handleBackfill}
+                disabled={backfilling || syncing}
+                variant="secondary"
+                icon={<Calculator size={14} />}
+              >
+                {backfilling ? "Backfilling…" : "Backfill 12M"}
+              </ActionButton>
+            </div>
+          </Panel>
+
+          <Panel
+            title="Manual Billing Overrides"
+            sub="Only open this if the auto invoice math needs help."
+          >
+            {finance.focus_period.clients.length === 0 ? (
+              <EmptyState
+                icon={<FileText size={18} />}
+                text="No client rows yet for this billing window."
+              />
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {finance.focus_period.clients.map((client) => {
+                  const draft =
+                    periodDrafts[client.client_key] ??
+                    buildPeriodDraft(manualEntriesByClient.get(client.client_key));
+                  const savedEntry = manualEntriesByClient.get(client.client_key);
+                  const busy = savingClientKey === client.client_key;
+
+                  return (
+                    <details
+                      key={client.client_key}
+                      style={{
+                        border: "1px solid var(--border-primary)",
+                        borderRadius: 12,
+                        background: "var(--bg-primary)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <summary
+                        style={{
+                          cursor: "pointer",
+                          listStyle: "none",
+                          padding: "14px 16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <strong style={{ color: "var(--text-primary)" }}>
+                              {client.client_name}
+                            </strong>
+                            <InlineMeta>
+                              Auto invoice {formatCents(client.invoice_total)} · Keep{" "}
+                              {formatCents(client.estimated_company_keep)}
+                            </InlineMeta>
+                          </div>
+                          <SourceBadge
+                            source={savedEntry ? "manual" : client.invoice_source}
+                          />
+                        </div>
+                      </summary>
+
+                      <div
+                        style={{
+                          padding: "0 16px 16px",
+                          display: "grid",
+                          gap: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 10,
+                          }}
+                        >
+                          <FormField
+                            label="Net cash"
+                            hint={`Auto ${formatCents(client.estimated_net_cash)}`}
+                          >
+                            <TextInput
+                              value={draft.net_cash}
+                              onChange={(value) =>
+                                setPeriodField(client.client_key, "net_cash", value)
+                              }
+                              placeholder={String(client.estimated_net_cash / 100)}
+                            />
+                          </FormField>
+                          <FormField
+                            label="Ad spend"
+                            hint={`Auto ${formatCents(client.ad_spend)}`}
+                          >
+                            <TextInput
+                              value={draft.ad_spend}
+                              onChange={(value) =>
+                                setPeriodField(client.client_key, "ad_spend", value)
+                              }
+                              placeholder={String(client.ad_spend / 100)}
+                            />
+                          </FormField>
+                          <FormField
+                            label="Fulfillment"
+                            hint={
+                              client.forecast_fulfillment > 0
+                                ? `Auto ${formatCents(client.forecast_fulfillment)}`
+                                : "Add the real forecast if you know it"
+                            }
+                          >
+                            <TextInput
+                              value={draft.forecast_fulfillment}
+                              onChange={(value) =>
+                                setPeriodField(
+                                  client.client_key,
+                                  "forecast_fulfillment",
+                                  value,
+                                )
+                              }
+                              placeholder={
+                                client.forecast_fulfillment > 0
+                                  ? String(client.forecast_fulfillment / 100)
+                                  : "0"
+                              }
+                            />
+                          </FormField>
+                          <FormField
+                            label="Software line"
+                            hint={`Auto ${formatCents(client.software_line)}`}
+                          >
+                            <TextInput
+                              value={draft.software_fee}
+                              onChange={(value) =>
+                                setPeriodField(client.client_key, "software_fee", value)
+                              }
+                              placeholder={String(client.software_line / 100)}
+                            />
+                          </FormField>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 10,
+                          }}
+                        >
+                          <FormField label="Status">
+                            <SelectInput
+                              value={draft.status}
+                              onChange={(value) =>
+                                setPeriodField(client.client_key, "status", value)
+                              }
+                              options={[
+                                { value: "draft", label: "Draft" },
+                                { value: "ready", label: "Ready" },
+                                { value: "sent", label: "Sent" },
+                                { value: "paid", label: "Paid" },
+                              ]}
+                            />
+                          </FormField>
+                        </div>
+
+                        <FormField label="Notes">
+                          <TextAreaInput
+                            value={draft.notes}
+                            onChange={(value) =>
+                              setPeriodField(client.client_key, "notes", value)
+                            }
+                            placeholder="Anything you want to remember"
+                          />
+                        </FormField>
+
+                        <details>
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            More override fields
+                          </summary>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                              gap: 10,
+                              marginTop: 10,
+                            }}
+                          >
+                            <FormField label="Cash collected">
+                              <TextInput
+                                value={draft.cash_collected}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "cash_collected", value)
+                                }
+                                placeholder={String(client.cash_collected / 100)}
+                              />
+                            </FormField>
+                            <FormField label="Sales line">
+                              <TextInput
+                                value={draft.sales_team_line}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "sales_team_line", value)
+                                }
+                                placeholder={String(client.sales_team_line / 100)}
+                              />
+                            </FormField>
+                            <FormField label="Program months">
+                              <TextInput
+                                value={draft.program_months_sold}
+                                onChange={(value) =>
+                                  setPeriodField(
+                                    client.client_key,
+                                    "program_months_sold",
+                                    value,
+                                  )
+                                }
+                                placeholder={String(client.program_months_sold)}
+                              />
+                            </FormField>
+                            <FormField label="Coaching line">
+                              <TextInput
+                                value={draft.coaching_line}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "coaching_line", value)
+                                }
+                                placeholder={String(client.coaching_line / 100)}
+                              />
+                            </FormField>
+                            <FormField label="Coaching reserve">
+                              <TextInput
+                                value={draft.coaching_reserve}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "coaching_reserve", value)
+                                }
+                                placeholder={String(client.coaching_reserve / 100)}
+                              />
+                            </FormField>
+                            <FormField label="Profit share">
+                              <TextInput
+                                value={draft.profit_share}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "profit_share", value)
+                                }
+                                placeholder={String(client.profit_share_line / 100)}
+                              />
+                            </FormField>
+                            <FormField label="Final invoice">
+                              <TextInput
+                                value={draft.invoice_total}
+                                onChange={(value) =>
+                                  setPeriodField(client.client_key, "invoice_total", value)
+                                }
+                                placeholder={String(client.invoice_total / 100)}
+                              />
+                            </FormField>
+                          </div>
+                        </details>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <ActionButton
+                            onClick={() => handleSavePeriod(client)}
+                            disabled={busy}
+                            icon={<Save size={14} />}
+                          >
+                            {busy ? "Saving…" : "Save"}
+                          </ActionButton>
+                          <ActionButton
+                            onClick={() => handleClearPeriod(client)}
+                            disabled={busy}
+                            variant="secondary"
+                            icon={<Trash2 size={14} />}
+                          >
+                            {savedEntry ? "Reset to Auto" : "Clear Draft"}
+                          </ActionButton>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            title="Manual Cash Items"
+            sub="Add anything that should reduce safe cash but is not coming from the sales sheet."
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <FormField label="Label">
+                <TextInput
+                  value={obligationDraft.label}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, label: value }))
+                  }
+                  placeholder="Coach payout"
+                />
+              </FormField>
+              <FormField label="Amount">
+                <TextInput
+                  value={obligationDraft.amount}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, amount: value }))
+                  }
+                  placeholder="500"
+                />
+              </FormField>
+              <FormField label="Due date">
+                <DateInput
+                  value={obligationDraft.due_date}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, due_date: value }))
+                  }
+                />
+              </FormField>
+              <FormField label="Type">
+                <SelectInput
+                  value={obligationDraft.obligation_type}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({
+                      ...current,
+                      obligation_type: value,
+                    }))
+                  }
+                  options={[
+                    { value: "other", label: "Other" },
+                    { value: "coach_pay", label: "Coach Pay" },
+                    { value: "fulfillment", label: "Fulfillment" },
+                    { value: "software", label: "Software" },
+                    { value: "tax", label: "Tax" },
+                    { value: "commission_adjustment", label: "Commission Adjustment" },
+                  ]}
+                />
+              </FormField>
+              <FormField label="Payee">
+                <TextInput
+                  value={obligationDraft.payee_name}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, payee_name: value }))
+                  }
+                  placeholder="Name"
+                />
+              </FormField>
+              <FormField label="Client">
+                <TextInput
+                  value={obligationDraft.client_name}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, client_name: value }))
+                  }
+                  placeholder="Optional"
+                />
+              </FormField>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <FormField label="Notes">
+                <TextAreaInput
+                  value={obligationDraft.notes}
+                  onChange={(value) =>
+                    setObligationDraft((current) => ({ ...current, notes: value }))
+                  }
+                  placeholder="Why this item is owed"
+                />
+              </FormField>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <ActionButton
+                onClick={handleAddObligation}
+                disabled={savingObligation}
+                icon={<Plus size={14} />}
+              >
+                {savingObligation ? "Adding…" : "Add Manual Item"}
+              </ActionButton>
+            </div>
+
+            {finance.planning.unpaid_manual_obligations.length > 0 && (
+              <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
+                {finance.planning.unpaid_manual_obligations.map((item) => {
+                  const busy = workingObligationId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                        gap: 12,
+                        alignItems: "center",
+                        padding: 12,
+                        borderRadius: 10,
+                        background: "var(--bg-primary)",
+                        border: "1px solid var(--border-primary)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                          {item.label}
+                        </div>
+                        <InlineMeta>
+                          Due {item.due_date}
+                          {item.payee_name ? ` · ${item.payee_name}` : ""}
+                          {item.client_name ? ` · ${item.client_name}` : ""}
+                        </InlineMeta>
+                        {(item.notes || item.obligation_type) && (
+                          <InlineMeta>
+                            {item.notes || item.obligation_type.replace(/_/g, " ")}
+                          </InlineMeta>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <strong style={{ color: "var(--text-primary)" }}>
+                          {formatCents(item.amount_cents)}
+                        </strong>
+                        <ActionButton
+                          onClick={() =>
+                            handleObligationAction(item.id, "update_obligation_status")
+                          }
+                          disabled={busy}
+                          variant="secondary"
+                        >
+                          Paid
+                        </ActionButton>
+                        <ActionButton
+                          onClick={() =>
+                            handleObligationAction(item.id, "delete_obligation")
+                          }
+                          disabled={busy}
+                          variant="secondary"
+                          icon={<Trash2 size={14} />}
+                        >
+                          Delete
+                        </ActionButton>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+
+          <Panel title={`Mercury Month - ${currentMonth.label}`}>
             <div
               style={{
                 display: "grid",
@@ -1136,7 +1191,14 @@ export default function AccountantDashboard({
                     justifyContent: "flex-end",
                   }}
                 >
-                  <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: "100%" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 2,
+                      alignItems: "flex-end",
+                      height: "100%",
+                    }}
+                  >
                     <div
                       title={`Income: ${formatCents(month.income)}`}
                       style={{
@@ -1178,7 +1240,10 @@ export default function AccountantDashboard({
             </div>
           </Panel>
 
-          <Panel title="Spending by Category" sub="Click a row to see the charges inside it.">
+          <Panel
+            title="Spending by Category"
+            sub="Click a row to see the charges inside it."
+          >
             <TableWrap>
               <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
                 <thead>
@@ -1220,7 +1285,9 @@ export default function AccountantDashboard({
                           <Td align="right" color="var(--danger, #ef4444)">
                             {category.expenses > 0 ? formatCents(category.expenses) : "—"}
                           </Td>
-                          <Td align="right">{formatCents(category.income - category.expenses)}</Td>
+                          <Td align="right">
+                            {formatCents(category.income - category.expenses)}
+                          </Td>
                           <Td align="right">{category.count}</Td>
                         </tr>
                         {isOpen && (
@@ -1235,7 +1302,8 @@ export default function AccountantDashboard({
                                       key={tx.mercury_id}
                                       style={{
                                         display: "grid",
-                                        gridTemplateColumns: "110px minmax(0, 1fr) 120px",
+                                        gridTemplateColumns:
+                                          "110px minmax(0, 1fr) 120px",
                                         gap: 12,
                                         alignItems: "center",
                                         padding: "8px 10px",
@@ -1243,7 +1311,12 @@ export default function AccountantDashboard({
                                         background: "var(--bg-primary)",
                                       }}
                                     >
-                                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                      <span
+                                        style={{
+                                          fontSize: 12,
+                                          color: "var(--text-muted)",
+                                        }}
+                                      >
                                         {tx.posted_at ? tx.posted_at.slice(0, 10) : "—"}
                                       </span>
                                       <span style={{ color: "var(--text-secondary)" }}>
@@ -1373,7 +1446,10 @@ export default function AccountantDashboard({
                   </thead>
                   <tbody>
                     {storedReports.map((report) => (
-                      <tr key={`${report.account}-${report.period_start}`} style={{ borderTop: "1px solid var(--border-primary)" }}>
+                      <tr
+                        key={`${report.account}-${report.period_start}`}
+                        style={{ borderTop: "1px solid var(--border-primary)" }}
+                      >
                         <Td>{report.period_start.slice(0, 7)}</Td>
                         <Td>{report.account}</Td>
                         <Td align="right">{formatCents(report.opening_balance)}</Td>
@@ -1387,7 +1463,9 @@ export default function AccountantDashboard({
                         <Td
                           align="right"
                           color={
-                            report.net >= 0 ? "var(--success, #10b981)" : "var(--danger, #ef4444)"
+                            report.net >= 0
+                              ? "var(--success, #10b981)"
+                              : "var(--danger, #ef4444)"
                           }
                         >
                           {formatCents(report.net)}
@@ -1399,14 +1477,14 @@ export default function AccountantDashboard({
               )}
             </TableWrap>
           </Panel>
-        </div>
-      </DetailsPanel>
 
-      <DetailsPanel title="Legend" defaultOpen={false}>
-        <div style={{ display: "grid", gap: 10 }}>
-          {finance.legend.map((item) => (
-            <LegendItemView key={item.term} item={item} />
-          ))}
+          <Panel title="Legend">
+            <div style={{ display: "grid", gap: 10 }}>
+              {finance.legend.map((item) => (
+                <LegendItemView key={item.term} item={item} />
+              ))}
+            </div>
+          </Panel>
         </div>
       </DetailsPanel>
 
@@ -1428,16 +1506,16 @@ function payoutKey(row: UpcomingPayoutRow): string {
   return `${row.due_date}-${row.category}-${row.payee}-${row.client_name ?? "none"}`;
 }
 
+function priorityColor(priority: "high" | "medium" | "low") {
+  if (priority === "high") return "var(--danger, #ef4444)";
+  if (priority === "medium") return "var(--warning, #f59e0b)";
+  return "var(--accent, #3b82f6)";
+}
+
 function coachingStatusColor(status: "on_target" | "above_target" | "above_hard_cap") {
   if (status === "on_target") return "var(--success, #10b981)";
   if (status === "above_target") return "var(--warning, #f59e0b)";
   return "var(--danger, #ef4444)";
-}
-
-function coachingStatusCopy(status: "on_target" | "above_target" | "above_hard_cap") {
-  if (status === "on_target") return "Under the $21 goal";
-  if (status === "above_target") return "Under $24, above $21";
-  return "Above the $24 ceiling";
 }
 
 function Section({
@@ -1468,10 +1546,12 @@ function Section({
 
 function DetailsPanel({
   title,
+  description,
   defaultOpen = false,
   children,
 }: {
   title: string;
+  description?: string;
   defaultOpen?: boolean;
   children: ReactNode;
 }) {
@@ -1491,12 +1571,16 @@ function DetailsPanel({
           cursor: "pointer",
           listStyle: "none",
           padding: "16px 18px",
-          fontSize: 15,
-          fontWeight: 700,
-          color: "var(--text-primary)",
         }}
       >
-        {title}
+        <div style={{ display: "grid", gap: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>
+            {title}
+          </div>
+          {description && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{description}</div>
+          )}
+        </div>
       </summary>
       <div style={{ padding: "0 18px 18px" }}>{children}</div>
     </details>
@@ -1524,7 +1608,9 @@ function Panel({
       {(title || sub) && (
         <div style={{ marginBottom: 12 }}>
           {title && (
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{title}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>
+              {title}
+            </div>
           )}
           {sub && <InlineMeta>{sub}</InlineMeta>}
         </div>
@@ -1621,40 +1707,13 @@ function StatCard({
           fontWeight: 700,
           color: color ?? "var(--text-primary)",
           marginTop: 8,
+          lineHeight: 1.15,
+          wordBreak: "break-word",
         }}
       >
         {value}
       </div>
       {sub && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{sub}</div>}
-    </div>
-  );
-}
-
-function MiniCard({
-  label,
-  value,
-  sub,
-  color,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  color?: string;
-}) {
-  return (
-    <div
-      style={{
-        padding: "12px 14px",
-        borderRadius: 12,
-        border: "1px solid var(--border-primary)",
-        background: "var(--bg-surface)",
-      }}
-    >
-      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}</div>
-      <div style={{ marginTop: 6, fontSize: 18, fontWeight: 700, color: color ?? "var(--text-primary)" }}>
-        {value}
-      </div>
-      {sub && <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>{sub}</div>}
     </div>
   );
 }
@@ -1716,7 +1775,9 @@ function FormField({
 }) {
   return (
     <label style={{ display: "grid", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+        {label}
+      </span>
       {children}
       {hint && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{hint}</span>}
     </label>
@@ -1824,62 +1885,6 @@ function TableWrap({ children }: { children: ReactNode }) {
   );
 }
 
-function PayoutRowView({ row }: { row: UpcomingPayoutRow }) {
-  return (
-    <tr style={{ borderTop: "1px solid var(--border-primary)" }}>
-      <Td>{row.due_date}</Td>
-      <Td>{row.category.replace("_", " ")}</Td>
-      <Td>
-        <div style={{ display: "grid", gap: 4 }}>
-          <span>{row.payee}</span>
-          {row.notes.length > 0 && <InlineMeta>{row.notes.join(" ")}</InlineMeta>}
-        </div>
-      </Td>
-      <Td>{row.client_name ?? "—"}</Td>
-      <Td align="right">{formatCents(row.amount)}</Td>
-      <Td>
-        <SourceBadge source={row.source} />
-      </Td>
-    </tr>
-  );
-}
-
-function RecommendationCard({ item }: { item: FinanceRecommendation }) {
-  const color =
-    item.priority === "high"
-      ? "var(--danger, #ef4444)"
-      : item.priority === "medium"
-        ? "var(--warning, #f59e0b)"
-        : "var(--accent, #3b82f6)";
-
-  return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 12,
-        border: "1px solid var(--border-primary)",
-        background: "var(--bg-surface)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span
-          style={{
-            display: "inline-block",
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            background: color,
-          }}
-        />
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-          {item.title}
-        </span>
-      </div>
-      <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{item.body}</div>
-    </div>
-  );
-}
-
 function LegendItemView({ item }: { item: FinanceLegendItem }) {
   return (
     <div
@@ -1890,7 +1895,9 @@ function LegendItemView({ item }: { item: FinanceLegendItem }) {
         background: "var(--bg-primary)",
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{item.term}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+        {item.term}
+      </div>
       <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6 }}>
         {item.definition}
       </div>
@@ -1932,25 +1939,6 @@ function SourceBadge({ source }: { source: ClientPeriodPlan["invoice_source"] })
     >
       {source}
     </span>
-  );
-}
-
-function BudgetRow({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <tr style={{ borderTop: "1px solid var(--border-primary)" }}>
-      <Td>{label}</Td>
-      <Td align="right" color={color}>
-        {value}
-      </Td>
-    </tr>
   );
 }
 
