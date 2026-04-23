@@ -47,7 +47,7 @@ import {
   type PdfInput,
   type PdfMeal,
 } from "@/lib/nutrition/pdf-renderer";
-import { optimizeAllDays } from "@/lib/nutrition/portion-optimizer";
+import { optimizeAllDays, optimizeDayPortions } from "@/lib/nutrition/portion-optimizer";
 import {
   detectMedicalFlags,
   medicalHardAvoidTokens,
@@ -794,6 +794,37 @@ export async function POST(req: NextRequest) {
       );
       for (const w of editWarnings) {
         console.warn(`[generate-plan] EDIT diff warning: ${w}`);
+      }
+
+      // ---------- DETERMINISTIC OPTIMIZER — CLAIMED-EDIT DAYS ONLY ----------
+      // Without this pass, EDIT-mode output routinely lands within a few
+      // grams of a macro target instead of actually inside the ±5% band
+      // (observed: Jeffrey v12→v14 where Sunday fat only moved 88g→87g
+      // across two regens despite comments asking for 69-77g). The model
+      // does a "token edit" rather than real math. Fix: run the existing
+      // deterministic gram-nudging optimizer on EACH claimed-edit day.
+      //
+      // Scope: only days whose number appears in `daysWithClaimedEdit`.
+      // Untouched days were already restored byte-for-byte by the scope
+      // enforcement pass above, so the optimizer cannot touch them — it
+      // literally is not called on them here. Works identically whether
+      // the model claimed 1 day, 4 days, or 0 days.
+      //
+      // The optimizer is deterministic arithmetic, no Claude call, no
+      // ingredient swaps — just gram nudges on existing ingredients
+      // within ±35% per ingredient. Guaranteed to land within ±5% of
+      // targets on days where it's fed sane starting gram amounts.
+      if (daysWithClaimedEdit.size > 0) {
+        let optimizedCount = 0;
+        for (const d of days) {
+          if (daysWithClaimedEdit.has(d.day)) {
+            optimizeDayPortions(d, byslug, targets);
+            optimizedCount++;
+          }
+        }
+        console.log(
+          `[generate-plan] EDIT optimizer: ran deterministic gram-nudge on ${optimizedCount} claimed-edit day(s)`
+        );
       }
     } else {
       // --- SCRATCH MODE: Fire all 7 Claude calls in parallel ---
