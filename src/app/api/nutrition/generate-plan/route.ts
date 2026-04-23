@@ -478,7 +478,27 @@ export async function POST(req: NextRequest) {
     // optimizer both run in SCRATCH but are SKIPPED in EDIT, because both
     // would silently modify days/meals the user didn't ask to change.
     // Medical hard-swaps + final validation still run in EDIT.
+    // Prior-plan load. Two shapes live in plan_data:
+    //   days:    PdfDay[] — display-only ingredients (name + amount string),
+    //            no slugs or numeric grams. Used by the PDF renderer.
+    //   rawDays: DayPlan[] — structural ingredients (slug + grams). Added
+    //            Apr 2026 specifically so EDIT mode can feed the exact
+    //            (slug, grams) tuples back to Claude without lossy
+    //            reconstruction. Older rows lack this field.
+    // EDIT mode prefers rawDays. When a row was written before rawDays was
+    // added, we reconstruct from PdfDay by parsing amount strings and
+    // reverse-looking-up slug via the byslug map (built further down).
+    type PriorPlanRawDay = {
+      day: number;
+      meals: {
+        name: string;
+        time?: string;
+        dishName?: string;
+        ingredients: { slug: string; grams: number }[];
+      }[];
+    };
     let priorPlanPdfDays: PdfDay[] | null = null;
+    let priorPlanRawDays: PriorPlanRawDay[] | null = null;
     if (commentList.length > 0) {
       const { data: priorPlanRow } = await db
         .from("nutrition_meal_plans")
@@ -487,9 +507,15 @@ export async function POST(req: NextRequest) {
         .order("version", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const pd = priorPlanRow?.plan_data as { days?: PdfDay[] } | null | undefined;
+      const pd = priorPlanRow?.plan_data as
+        | { days?: PdfDay[]; rawDays?: PriorPlanRawDay[] }
+        | null
+        | undefined;
       if (pd?.days && Array.isArray(pd.days) && pd.days.length > 0) {
         priorPlanPdfDays = pd.days;
+      }
+      if (pd?.rawDays && Array.isArray(pd.rawDays) && pd.rawDays.length > 0) {
+        priorPlanRawDays = pd.rawDays;
       }
     }
     const generationMode: "scratch" | "edit" =
@@ -586,24 +612,78 @@ export async function POST(req: NextRequest) {
     let editWarnings: string[] = [];
     let editModifiedMeals: { day: number; meal: string }[] = [];
     if (generationMode === "edit" && priorPlanPdfDays) {
-      // Shape PdfDay[] → DayPlan[] (drop the per-meal macro fields, keep
-      // ingredients and meal structure). Feed this back to Claude as the
-      // input plan to modify.
+      // Build existingPlanForEdit with REAL (slug, grams) pairs. Two paths:
+      //  A) Prefer priorPlanRawDays if the prior plan row has it (written
+      //     by the fix below — newly generated plans from here on).
+      //  B) Reconstruct from PdfDay by parsing amount strings + reverse
+      //     name→slug lookup against byslug. Legacy rows written before
+      //     rawDays was added hit this path.
+      // Without this, EDIT mode was sending Claude empty ingredient arrays
+      // for every meal (slug was always "" from the "as {slug?}" cast) —
+      // Claude then free-handed the week while claiming scoped edits, and
+      // the scope-enforcement pass overwrote untouched days with empty
+      // meals (→ 0 kcal Monday on Jeffrey v9 regen).
+      const nameToSlug = new Map<string, string>();
+      for (const [slug, row] of byslug) {
+        const key = (row.name || "").trim().toLowerCase();
+        if (key) nameToSlug.set(key, slug);
+      }
+      const parseAmountToGrams = (amount: string): number => {
+        if (!amount) return 0;
+        const m = String(amount).match(/^\s*(\d+(?:\.\d+)?)/);
+        if (!m) return 0;
+        return Math.round(Number(m[1]));
+      };
+      const reconstructLostRows: string[] = [];
+      const reconstructMealFromPdf = (m: PdfDay["meals"][number], dayNum: number): SimpleMeal => ({
+        name: m.name,
+        time: m.time,
+        dishName: m.dishName,
+        ingredients: m.ingredients
+          .map((ing) => {
+            const slug = nameToSlug.get((ing.name || "").trim().toLowerCase()) || "";
+            const grams = parseAmountToGrams(ing.amount);
+            if (!slug) {
+              reconstructLostRows.push(
+                `Day ${dayNum} ${m.name} "${ing.name}" (${ing.amount}) — no slug match`
+              );
+            }
+            return { slug, grams };
+          })
+          .filter((i) => i.slug && i.grams > 0),
+      });
+
       const existingPlanForEdit: { day: number; meals: SimpleMeal[] }[] =
-        priorPlanPdfDays.map((pd) => ({
-          day: pd.dayNumber,
-          meals: pd.meals.map((m) => ({
-            name: m.name,
-            time: m.time,
-            dishName: m.dishName,
-            ingredients: m.ingredients
-              .map((ing) => ({
-                slug: (ing as { slug?: string }).slug || "",
-                grams: Math.round(Number((ing as { grams?: number }).grams) || 0),
-              }))
-              .filter((i) => i.slug),
-          })),
-        }));
+        priorPlanRawDays
+          ? priorPlanRawDays.map((rd) => ({
+              day: rd.day,
+              meals: rd.meals.map((m) => ({
+                name: m.name,
+                time: m.time,
+                dishName: m.dishName,
+                ingredients: m.ingredients.map((ing) => ({
+                  slug: ing.slug,
+                  grams: Math.round(Number(ing.grams) || 0),
+                })),
+              })),
+            }))
+          : priorPlanPdfDays.map((pd) => ({
+              day: pd.dayNumber,
+              meals: pd.meals.map((m) => reconstructMealFromPdf(m, pd.dayNumber)),
+            }));
+
+      const totalIngredientsInInput = existingPlanForEdit.reduce(
+        (s, d) => s + d.meals.reduce((sm, m) => sm + m.ingredients.length, 0),
+        0
+      );
+      console.log(
+        `[generate-plan] EDIT input built via ${priorPlanRawDays ? "rawDays" : "pdfDays reconstruction"} — ${totalIngredientsInInput} ingredient rows across 7 days`
+      );
+      if (!priorPlanRawDays && reconstructLostRows.length > 0) {
+        console.warn(
+          `[generate-plan] EDIT reconstruction dropped ${reconstructLostRows.length} ingredient row(s) — no slug match for: ${reconstructLostRows.slice(0, 8).join("; ")}${reconstructLostRows.length > 8 ? ` (+${reconstructLostRows.length - 8} more)` : ""}`
+        );
+      }
       const existingPlanMacrosByDay = priorPlanPdfDays.map((pd) => ({
         dayNumber: pd.dayNumber,
         weekday: pd.weekday,
@@ -1868,7 +1948,26 @@ export async function POST(req: NextRequest) {
         sex,
         weight_kg: weightKg,
         meals_per_day: mealsPerDay,
-        plan_data: { days: pdfDays, grocery, tips },
+        plan_data: {
+          days: pdfDays,
+          // rawDays carries the structural (slug, grams) tuples the PDF
+          // renderer drops. Future EDIT-mode regens load this directly
+          // instead of reconstructing from display strings.
+          rawDays: days.map((d) => ({
+            day: d.day,
+            meals: d.meals.map((m) => ({
+              name: m.name,
+              time: m.time,
+              dishName: m.dishName,
+              ingredients: m.ingredients.map((ing) => ({
+                slug: ing.slug,
+                grams: ing.grams,
+              })),
+            })),
+          })),
+          grocery,
+          tips,
+        },
         comments_snapshot: commentList,
         generation_time_ms: generationTimeMs,
         created_by: sessionUserEmail || "internal",
