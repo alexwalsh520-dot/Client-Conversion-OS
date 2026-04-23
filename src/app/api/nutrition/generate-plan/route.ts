@@ -504,8 +504,10 @@ export async function POST(req: NextRequest) {
     // ignoring JSON field ordering, whitespace, and float-precision noise
     // on gram amounts. Returns a list of human-readable diff summaries
     // for meals that changed. Used only in EDIT mode.
+    // time is optional on the upstream Meal type (see macro-validator.Meal).
+    // Keep our local alias shape-compatible so DayPlan[] can flow through.
     type SimpleMeal = {
-      name: string; time: string; dishName?: string;
+      name: string; time?: string; dishName?: string;
       ingredients: { slug: string; grams: number }[];
     };
     type SimpleDay = { day: number; meals: SimpleMeal[] };
