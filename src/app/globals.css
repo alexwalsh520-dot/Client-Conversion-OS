@@ -1306,12 +1306,16 @@ textarea.input-field {
   }
 
   /* ── Sidebar: off-screen by default, slide in when open ── */
+  /* z-index must sit ABOVE the overlay (45) — otherwise tapping the
+     hamburger only reveals the blurred overlay with no tabs, because
+     the sliding drawer ends up underneath it. */
   .sidebar,
   .sidebar.sidebar-expanded,
   .sidebar.sidebar-collapsed {
     transform: translateX(-100%) !important;
     width: 280px !important;
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    z-index: 46 !important;
   }
 
   .sidebar.sidebar-mobile-open,
