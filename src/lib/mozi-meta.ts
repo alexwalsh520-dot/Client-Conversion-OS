@@ -80,7 +80,7 @@ export async function getAdAccountInsights(
 ): Promise<MetaInsight[]> {
   const fields = "spend,impressions,clicks";
   const timeRange = JSON.stringify({ since, until });
-  const initialUrl = `${BASE_URL}/${adAccountId}/insights?fields=${fields}&time_increment=1&time_range=${encodeURIComponent(timeRange)}`;
+  const initialUrl = `${BASE_URL}/${adAccountId}/insights?fields=${fields}&time_increment=1&limit=500&time_range=${encodeURIComponent(timeRange)}`;
 
   const allData: MetaInsight[] = [];
   let nextUrl: string | undefined = initialUrl;
@@ -120,7 +120,7 @@ export async function getAdLevelInsights(
     "clicks",
   ].join(",");
   const timeRange = JSON.stringify({ since, until });
-  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&time_increment=1&time_range=${encodeURIComponent(timeRange)}`;
+  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&time_increment=1&limit=500&time_range=${encodeURIComponent(timeRange)}`;
 
   const allData: MetaAdInsight[] = [];
   let nextUrl: string | undefined = initialUrl;

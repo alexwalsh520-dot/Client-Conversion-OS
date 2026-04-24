@@ -38,6 +38,10 @@ function deriveClient(calendarName: string | null | undefined): string | null {
   return null;
 }
 
+function missingColumn(error: { message?: string } | null, column: string) {
+  return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -146,6 +150,7 @@ export async function POST(req: NextRequest) {
         .upsert(
           {
             source: "ghl",
+            source_event_id: `ghl:${appointment_id}`,
             event_type: "booked_call",
             client_key: client,
             keyword_raw: keywordRaw,
@@ -160,7 +165,31 @@ export async function POST(req: NextRequest) {
         );
 
       if (keywordError) {
-        console.error("[ghl-appointment-webhook] keyword event insert error:", keywordError);
+        if (missingColumn(keywordError, "source_event_id")) {
+          const { error: fallbackError } = await supabase
+            .from("ads_keyword_events")
+            .upsert(
+              {
+                source: "ghl",
+                event_type: "booked_call",
+                client_key: client,
+                keyword_raw: keywordRaw,
+                keyword_normalized: keywordNormalized,
+                appointment_id,
+                contact_id: contact_id || null,
+                contact_name: contact_name || null,
+                event_at: start_time || new Date().toISOString(),
+                raw_payload: body,
+              },
+              { onConflict: "appointment_id" }
+            );
+
+          if (fallbackError) {
+            console.error("[ghl-appointment-webhook] keyword event fallback insert error:", fallbackError);
+          }
+        } else {
+          console.error("[ghl-appointment-webhook] keyword event insert error:", keywordError);
+        }
       }
     } else {
       const { error: exceptionError } = await supabase.from("ads_attribution_exceptions").insert({

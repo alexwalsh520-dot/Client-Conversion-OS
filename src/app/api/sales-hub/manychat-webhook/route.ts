@@ -27,6 +27,27 @@ import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
  *   "event_at": "2026-04-10T04:15:00.000Z"
  */
 
+function sourceEventId(input: {
+  explicitId?: string;
+  clientKey: string;
+  subscriberId: string;
+  tagName: string;
+  keywordNormalized: string | null;
+}) {
+  if (input.explicitId?.trim()) return `manychat:${input.explicitId.trim()}`;
+  return [
+    "manychat",
+    input.clientKey,
+    input.subscriberId,
+    input.tagName.toLowerCase().trim(),
+    input.keywordNormalized || "no-keyword",
+  ].join(":");
+}
+
+function missingColumn(error: { message?: string } | null, column: string) {
+  return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
+}
+
 export async function POST(req: NextRequest) {
   try {
     const expectedSecret = process.env.MANYCHAT_WEBHOOK_SECRET;
@@ -49,6 +70,8 @@ export async function POST(req: NextRequest) {
       keyword,
       instagram_handle,
       event_at,
+      event_id,
+      eventId,
     } = body as {
       subscriber_id?: string;
       first_name?: string;
@@ -59,6 +82,8 @@ export async function POST(req: NextRequest) {
       keyword?: string;
       instagram_handle?: string;
       event_at?: string;
+      event_id?: string;
+      eventId?: string;
     };
 
     if (!subscriber_id || !tag_name || !client) {
@@ -75,6 +100,13 @@ export async function POST(req: NextRequest) {
     const setterKey = normalizeSetterKey(setter_name);
     const keywordNormalized = normalizeKeyword(keyword);
     const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
+    const keywordSourceEventId = sourceEventId({
+      explicitId: event_id || eventId,
+      clientKey,
+      subscriberId: subscriber_id,
+      tagName: tag_name,
+      keywordNormalized,
+    });
 
     const { error } = await sb.from("manychat_tag_events").insert({
       subscriber_id,
@@ -94,21 +126,44 @@ export async function POST(req: NextRequest) {
     }
 
     if (keywordNormalized) {
-      const { error: keywordError } = await sb.from("ads_keyword_events").insert({
-        source: "manychat",
-        event_type: "dm_keyword",
-        client_key: clientKey,
-        keyword_raw: keywordRaw,
-        keyword_normalized: keywordNormalized,
-        subscriber_id,
-        subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
-        setter_name: setterKey,
-        event_at: normalizedEventAt,
-        raw_payload: body,
-      });
+      const { error: keywordError } = await sb
+        .from("ads_keyword_events")
+        .upsert(
+          {
+            source: "manychat",
+            source_event_id: keywordSourceEventId,
+            event_type: "dm_keyword",
+            client_key: clientKey,
+            keyword_raw: keywordRaw,
+            keyword_normalized: keywordNormalized,
+            subscriber_id,
+            subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+            setter_name: setterKey,
+            event_at: normalizedEventAt,
+            raw_payload: body,
+          },
+          { onConflict: "source_event_id" }
+        );
 
       if (keywordError) {
-        console.error("Manychat keyword event insert error:", keywordError);
+        if (missingColumn(keywordError, "source_event_id")) {
+          const { error: fallbackError } = await sb.from("ads_keyword_events").insert({
+            source: "manychat",
+            event_type: "dm_keyword",
+            client_key: clientKey,
+            keyword_raw: keywordRaw,
+            keyword_normalized: keywordNormalized,
+            subscriber_id,
+            subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+            setter_name: setterKey,
+            event_at: normalizedEventAt,
+            raw_payload: body,
+          });
+
+          if (fallbackError) console.error("Manychat keyword event fallback insert error:", fallbackError);
+        } else {
+          console.error("Manychat keyword event insert error:", keywordError);
+        }
       }
     }
 
