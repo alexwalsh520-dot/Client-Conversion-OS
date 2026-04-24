@@ -42,6 +42,7 @@ const TAB_LABELS: Record<string, string> = {
   "/coaching": "Coaching",
   "/onboarding": "Onboarding",
   "/ads": "Ads",
+  "/studio": "Studio",
   "/outreach": "Outreach",
   "/leads": "Lead Gen",
   "/outreach-runs": "Outreach",

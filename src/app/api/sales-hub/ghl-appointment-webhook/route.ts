@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import {
+  displayKeyword,
+  extractKeywordFromPayload,
+  normalizeKeyword,
+} from "@/lib/ads-tracker/normalize";
 
 /**
  * GHL Appointment Webhook — receives appointment events from GoHighLevel workflows.
@@ -97,6 +102,8 @@ export async function POST(req: NextRequest) {
 
     const closer_name = assigned_user_id ? (CLOSER_MAP[assigned_user_id] || null) : null;
     const client = deriveClient(calendar_name);
+    const keywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
+    const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
 
     const supabase = getServiceSupabase();
 
@@ -118,6 +125,9 @@ export async function POST(req: NextRequest) {
           status: status || null,
           event_type: event_type || null,
           client,
+          keyword_raw: keywordRaw,
+          keyword_normalized: keywordNormalized,
+          raw_payload: body,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "appointment_id" }
@@ -128,6 +138,44 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("[ghl-appointment-webhook] Supabase upsert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (client && keywordNormalized) {
+      const { error: keywordError } = await supabase
+        .from("ads_keyword_events")
+        .upsert(
+          {
+            source: "ghl",
+            event_type: "booked_call",
+            client_key: client,
+            keyword_raw: keywordRaw,
+            keyword_normalized: keywordNormalized,
+            appointment_id,
+            contact_id: contact_id || null,
+            contact_name: contact_name || null,
+            event_at: start_time || new Date().toISOString(),
+            raw_payload: body,
+          },
+          { onConflict: "appointment_id" }
+        );
+
+      if (keywordError) {
+        console.error("[ghl-appointment-webhook] keyword event insert error:", keywordError);
+      }
+    } else {
+      const { error: exceptionError } = await supabase.from("ads_attribution_exceptions").insert({
+        source: "ghl",
+        reason: !client ? "missing_client" : "missing_keyword",
+        client_key: client,
+        keyword_normalized: keywordNormalized,
+        contact_name: contact_name || null,
+        appointment_id,
+        payload: body,
+      });
+
+      if (exceptionError) {
+        console.error("[ghl-appointment-webhook] attribution exception insert error:", exceptionError);
+      }
     }
 
     return NextResponse.json({ ok: true, appointment: data });

@@ -10,6 +10,7 @@ export const ALL_TABS = [
   "/coaching",
   "/onboarding",
   "/ads",
+  "/studio",
   "/outreach",
   "/leads",
   "/outreach-runs",

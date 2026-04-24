@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { normalizeClientKey, normalizeSetterKey, syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
+import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
 
 /**
  * Manychat Webhook — receives tag events from Manychat External Requests.
@@ -19,6 +20,7 @@ import { normalizeClientKey, normalizeSetterKey, syncManychatEventToGhl } from "
  *
  * Optional fields for setter tracking:
  *   "setter_name": "amara"            // hard-coded per setter flow
+ *   "keyword": "{{custom_field.keyword}}" // ManyChat user field captured from ad keyword
  *
  * Optional fields for GHL sync:
  *   "instagram_handle": "prospect_handle"
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest) {
       tag_name,
       client,
       setter_name,
+      keyword,
       instagram_handle,
       event_at,
     } = body as {
@@ -53,6 +56,7 @@ export async function POST(req: NextRequest) {
       tag_name?: string;
       client?: string;
       setter_name?: string;
+      keyword?: string;
       instagram_handle?: string;
       event_at?: string;
     };
@@ -69,6 +73,8 @@ export async function POST(req: NextRequest) {
 
     const clientKey = normalizeClientKey(client);
     const setterKey = normalizeSetterKey(setter_name);
+    const keywordNormalized = normalizeKeyword(keyword);
+    const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
 
     const { error } = await sb.from("manychat_tag_events").insert({
       subscriber_id,
@@ -76,12 +82,34 @@ export async function POST(req: NextRequest) {
       tag_name: tag_name.toLowerCase().trim(),
       client: clientKey,
       setter_name: setterKey,
+      keyword_raw: keywordRaw,
+      keyword_normalized: keywordNormalized,
+      raw_payload: body,
       event_at: normalizedEventAt,
     });
 
     if (error) {
       console.error("Manychat webhook insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (keywordNormalized) {
+      const { error: keywordError } = await sb.from("ads_keyword_events").insert({
+        source: "manychat",
+        event_type: "dm_keyword",
+        client_key: clientKey,
+        keyword_raw: keywordRaw,
+        keyword_normalized: keywordNormalized,
+        subscriber_id,
+        subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+        setter_name: setterKey,
+        event_at: normalizedEventAt,
+        raw_payload: body,
+      });
+
+      if (keywordError) {
+        console.error("Manychat keyword event insert error:", keywordError);
+      }
     }
 
     const sync = await syncManychatEventToGhl({
@@ -117,6 +145,7 @@ export async function GET() {
       instagram_handle: "{{username}}",
       tag_name: "new_lead | lead_engaged | call_link_sent | sub_link_sent",
       client: "Tyson Sonnek | Keith Holland | Zoe and Emily",
+      keyword: "{{custom field: keyword}}",
       setter_name: "(optional) amara | kelechi | gideon | debbie",
       event_at: "optional ISO timestamp",
     },

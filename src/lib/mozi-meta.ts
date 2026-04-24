@@ -25,20 +25,40 @@ interface MetaInsight {
   clicks: string;
 }
 
+export interface MetaAdInsight {
+  date_start: string;
+  date_stop: string;
+  campaign_id?: string;
+  campaign_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
+  spend?: string;
+  impressions?: string;
+  inline_link_clicks?: string;
+  clicks?: string;
+}
+
 interface MetaPaging {
   cursors: { before: string; after: string };
   next?: string;
   previous?: string;
 }
 
-interface MetaInsightsResponse {
-  data: MetaInsight[];
+interface MetaInsightsResponse<T = MetaInsight> {
+  data: T[];
   paging?: MetaPaging;
 }
 
-async function metaFetch<T>(url: string): Promise<T> {
+async function metaFetch<T>(url: string, accessToken?: string): Promise<T> {
+  const token = accessToken ?? metaConfig.accessToken;
+  if (!token) {
+    throw new Error("Missing META access token");
+  }
+
   const separator = url.includes("?") ? "&" : "?";
-  const authedUrl = `${url}${separator}access_token=${metaConfig.accessToken}`;
+  const authedUrl = `${url}${separator}access_token=${token}`;
 
   const res = await fetch(authedUrl);
   if (!res.ok) {
@@ -55,7 +75,8 @@ async function metaFetch<T>(url: string): Promise<T> {
 export async function getAdAccountInsights(
   adAccountId: string,
   since: string,
-  until: string
+  until: string,
+  options?: { accessToken?: string }
 ): Promise<MetaInsight[]> {
   const fields = "spend,impressions,clicks";
   const timeRange = JSON.stringify({ since, until });
@@ -65,7 +86,51 @@ export async function getAdAccountInsights(
   let nextUrl: string | undefined = initialUrl;
 
   while (nextUrl) {
-    const response: MetaInsightsResponse = await metaFetch<MetaInsightsResponse>(nextUrl);
+    const response: MetaInsightsResponse = await metaFetch<MetaInsightsResponse>(
+      nextUrl,
+      options?.accessToken
+    );
+    allData.push(...response.data);
+    nextUrl = response.paging?.next;
+  }
+
+  return allData;
+}
+
+/**
+ * Fetch daily ad-level insights with the smallest field set needed by Ads Tracker.
+ * Link clicks prefer Meta's inline_link_clicks; callers can fall back to clicks.
+ */
+export async function getAdLevelInsights(
+  adAccountId: string,
+  since: string,
+  until: string,
+  options?: { accessToken?: string }
+): Promise<MetaAdInsight[]> {
+  const fields = [
+    "campaign_id",
+    "campaign_name",
+    "adset_id",
+    "adset_name",
+    "ad_id",
+    "ad_name",
+    "spend",
+    "impressions",
+    "inline_link_clicks",
+    "clicks",
+  ].join(",");
+  const timeRange = JSON.stringify({ since, until });
+  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&time_increment=1&time_range=${encodeURIComponent(timeRange)}`;
+
+  const allData: MetaAdInsight[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const response: MetaInsightsResponse<MetaAdInsight> =
+      await metaFetch<MetaInsightsResponse<MetaAdInsight>>(
+        nextUrl,
+        options?.accessToken
+      );
     allData.push(...response.data);
     nextUrl = response.paging?.next;
   }

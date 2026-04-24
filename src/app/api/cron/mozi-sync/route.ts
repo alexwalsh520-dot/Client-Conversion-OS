@@ -5,6 +5,7 @@ const SYNC_ROUTES = [
   '/api/sync/mozi/whop',
   '/api/sync/mozi/mercury',
   '/api/sync/mozi/meta',
+  '/api/sync/ads-tracker',
   '/api/sync/mozi/ghl',
   '/api/sync/mozi/sheets',
   '/api/sync/mozi/snapshot', // must run last, after all data is synced
