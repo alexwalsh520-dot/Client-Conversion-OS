@@ -158,7 +158,7 @@ Rules:
 - Include daily AND monthly patterns.
 - Include specific dollar amounts for every revenue leak.
 - NEVER blame leads in closer briefs. Lead quality issues go to CEO recap ONLY.
-- Team names: Will Rincan, Jacob Broz, Austin Richard. Setters: Amara, Kelechi (Tyson), Gideon, Debbie (Keith).`;
+- Team names: Will Rincan, Jacob Broz, Austin Richard. Setters: Amara, Kelechi, Debbie (Tyson), Gideon (Keith).`;
 
 /* ── Data Fetching (direct library call, no HTTP) ───────────────── */
 

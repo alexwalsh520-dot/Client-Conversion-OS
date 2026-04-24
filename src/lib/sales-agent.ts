@@ -520,7 +520,7 @@ Client Conversion OS manages sales for fitness coaching businesses. Current offe
 ## THE TEAM
 **Closers:** Broz, Will, Jacob
 
-**Setters:** Amara (Tyson), Gideon (Keith), Kelechi (Zoe and Emily), Debbie (Zoe and Emily)
+**Setters:** Amara (Tyson), Kelechi (Tyson), Debbie (Tyson), Gideon (Keith)
 
 ## THE SALES FUNNEL
 DM Prospect â Qualify â Book Call â Confirm â Show Up â Close â Collect Cash

@@ -46,9 +46,9 @@ export interface ManychatMetrics {
 }
 
 const CLIENT_SETTERS: Record<Client, string[]> = {
-  tyson_sonnek: ["amara"],
+  tyson_sonnek: ["amara", "kelechi", "debbie"],
   keith_holland: ["gideon"],
-  zoe_and_emily: ["kelechi", "debbie"],
+  zoe_and_emily: [],
 };
 
 const FUNNEL_STAGE_DEFS = [

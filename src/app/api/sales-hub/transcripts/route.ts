@@ -5,7 +5,7 @@ const SETTER_CLIENT_MAP: Record<string, string> = {
   amara: "tyson",
   kelechi: "tyson",
   gideon: "keith",
-  debbie: "keith",
+  debbie: "tyson",
 };
 
 // POST — setter submits a transcript (public, no auth)

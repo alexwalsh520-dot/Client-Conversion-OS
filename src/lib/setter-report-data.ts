@@ -49,13 +49,6 @@ interface MessageRow {
   sent_at: string | null;
 }
 
-interface LeadCohortRow {
-  subscriberId: string;
-  leadName: string | null;
-  newLeadAt: string;
-  setterName: string | null;
-}
-
 interface AppointmentRow {
   appointment_id: string;
   contact_id: string | null;
@@ -176,15 +169,15 @@ const SETTERS: SetterDef[] = [
   {
     key: "kelechi",
     name: "Kelechi",
-    clientKey: "zoe_and_emily",
-    clientLabel: "Zoe and Emily",
+    clientKey: "tyson_sonnek",
+    clientLabel: "Tyson Sonnek",
     sheetKeys: ["KELECHI", "KELCHI"],
   },
   {
     key: "debbie",
     name: "Debbie",
-    clientKey: "zoe_and_emily",
-    clientLabel: "Zoe and Emily",
+    clientKey: "tyson_sonnek",
+    clientLabel: "Tyson Sonnek",
     sheetKeys: ["DEBBIE"],
   },
 ];

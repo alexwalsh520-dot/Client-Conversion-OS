@@ -52,9 +52,9 @@ interface SheetRow {
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
 const CLIENT_SETTERS: Record<string, string[]> = {
-  tyson: ["Amara"],
+  tyson: ["Amara", "Kelechi", "Debbie"],
   keith: ["Gideon"],
-  zoeEmily: ["Kelechi", "Debbie"],
+  zoeEmily: [],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -63,6 +63,16 @@ const SETTER_SHEET_KEYS: Record<string, string[]> = {
   Gideon: ["GIDEON"],
   Debbie: ["DEBBIE"],
 };
+
+const CLIENT_BADGE_LABELS: Record<string, string> = {
+  tyson: "Tyson",
+  keith: "Keith",
+  zoeEmily: "Zoe & Emily",
+};
+
+function getSetterClient(name: string, client: string): string {
+  return name === "Kelechi" || name === "Debbie" ? "tyson" : client;
+}
 
 function getRelevantSetters(client: string): { name: string; client: string }[] {
   if (client === "all") {
@@ -133,7 +143,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   }, [filters.client, dateFrom, dateTo]);
 
   useEffect(() => {
-    fetchData();
+    void Promise.resolve().then(fetchData);
   }, [fetchData]);
 
   /* ── Aggregated DM dashboard across all visible clients ─────────── */
@@ -334,15 +344,16 @@ function SetterGrid({ rows }: { rows: SetterRow[] }) {
         const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
         const showRate = s.callsBooked > 0 ? (s.callsTaken / s.callsBooked) * 100 : 0;
         const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
+        const client = getSetterClient(s.name, s.client);
         const cc =
-          s.client === "keith"
+          client === "keith"
             ? "var(--keith)"
-            : s.client === "zoeEmily"
+            : client === "zoeEmily"
               ? "var(--accent)"
               : "var(--tyson)";
 
         return (
-          <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
+          <div key={`${client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
             {/* Header */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -358,7 +369,7 @@ function SetterGrid({ rows }: { rows: SetterRow[] }) {
                 fontSize: 11, color: cc, textTransform: "uppercase",
                 fontWeight: 500, letterSpacing: "0.5px",
               }}>
-                {s.client.charAt(0).toUpperCase() + s.client.slice(1)}
+                {CLIENT_BADGE_LABELS[client] ?? client}
               </span>
             </div>
 
