@@ -5,7 +5,13 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  Download,
+  Flag,
+  Plus,
   RefreshCw,
+  Search,
+  Upload,
+  X,
 } from "lucide-react";
 
 type AccountFilter = "all" | "tyson" | "keith";
@@ -102,7 +108,7 @@ const DATE_PRESETS = [
 ];
 
 const TABLE_COLUMNS = [
-  ["name", "Campaign / Date / Ad"],
+  ["name", "Campaign / Date"],
   ["adSpend", "Ad spend"],
   ["impressions", "Impressions"],
   ["cpm", "CPM"],
@@ -114,14 +120,111 @@ const TABLE_COLUMNS = [
   ["bookedCalls", "Booked calls"],
   ["costPerBookedCall", "Cost / 60-min call"],
   ["newClients", "New clients"],
-  ["contractedRevenue", "Contracted rev"],
+  ["contractedRevenue", "Contracted revenue"],
   ["callClosingRate", "Call close rate"],
   ["messagesConversionRate", "Msg -> call"],
-  ["collectedRevenue", "Collected rev"],
+  ["collectedRevenue", "Collected revenue"],
   ["costPerNewClient", "Cost / client"],
   ["contractedRoi", "Contracted ROI"],
   ["collectedRoi", "Collected ROI"],
 ] as const;
+
+const CALCULATED_COLUMNS = new Set<string>([
+  "cpm",
+  "ctr",
+  "cpc",
+  "costPerMessage",
+  "costPerBookedCall",
+  "callClosingRate",
+  "messagesConversionRate",
+  "costPerNewClient",
+  "contractedRoi",
+  "collectedRoi",
+]);
+
+type TableKey = (typeof TABLE_COLUMNS)[number][0];
+
+const DEFAULT_CAMPAIGNS = [
+  makeRow({
+    id: "tyson-campaign",
+    clientKey: "tyson",
+    name: "Tyson — Warm Spring Shred Challenge",
+    keyword: "TYSON",
+    adSpend: 2391,
+    impressions: 336050,
+    linkClicks: 7190,
+    messages: 489,
+    bookedCalls: 75,
+    newClients: 24,
+    contractedRevenue: 59200,
+    collectedRevenue: 47300,
+  }),
+  makeRow({
+    id: "keith-campaign",
+    clientKey: "keith",
+    name: "Keith — Warm Spring Shred Challenge",
+    keyword: "KEITH",
+    adSpend: 2134,
+    impressions: 282930,
+    linkClicks: 5206,
+    messages: 357,
+    bookedCalls: 49,
+    newClients: 10,
+    contractedRevenue: 30600,
+    collectedRevenue: 26500,
+  }),
+];
+
+const DEFAULT_AD_ROWS = [
+  ["BULK", "tyson", 390, 54800, 1130, 72, 12, 4, 13200],
+  ["CUT", "tyson", 420, 59200, 1265, 88, 14, 5, 12400],
+  ["RIPPED", "tyson", 365, 51500, 1110, 67, 11, 3, 10400],
+  ["LEAN", "tyson", 430, 60400, 1315, 82, 13, 4, 12300],
+  ["STRONG", "tyson", 405, 56800, 1205, 73, 11, 3, 11300],
+  ["FIT", "tyson", 381, 53600, 1165, 69, 9, 3, 10600],
+  ["SHRED", "tyson", 0, 9700, 0, 38, 5, 2, 3600],
+  ["GOAL", "keith", 430, 57100, 1050, 78, 11, 3, 8700],
+  ["DIALED", "keith", 390, 51600, 947, 62, 9, 2, 7900],
+  ["CORE", "keith", 355, 47100, 866, 51, 7, 1, 6300],
+  ["FOCUS", "keith", 342, 45300, 835, 58, 8, 2, 6100],
+  ["EASY", "keith", 310, 41100, 756, 49, 7, 1, 5400],
+  ["ACT", "keith", 307, 40730, 752, 59, 7, 1, 5200],
+].map(([keyword, clientKey, adSpend, impressions, linkClicks, messages, bookedCalls, newClients, collectedRevenue]) =>
+  makeRow({
+    id: `${clientKey}-${keyword}`.toLowerCase(),
+    clientKey: String(clientKey),
+    name: String(keyword),
+    keyword: String(keyword),
+    adSpend: Number(adSpend),
+    impressions: Number(impressions),
+    linkClicks: Number(linkClicks),
+    messages: Number(messages),
+    bookedCalls: Number(bookedCalls),
+    newClients: Number(newClients),
+    contractedRevenue: Number(collectedRevenue) * 1.12,
+    collectedRevenue: Number(collectedRevenue),
+  })
+);
+
+const DEFAULT_ROAS_BARS = [
+  { label: "BULK", clientKey: "tyson", roi: 30.0, revenue: 4400 },
+  { label: "CUT", clientKey: "tyson", roi: 29.5, revenue: 6100 },
+  { label: "RIPPED", clientKey: "tyson", roi: 28.6, revenue: 9200 },
+  { label: "LEAN", clientKey: "tyson", roi: 28.6, revenue: 8700 },
+  { label: "STRONG", clientKey: "tyson", roi: 27.9, revenue: 12900 },
+  { label: "FIT", clientKey: "tyson", roi: 27.8, revenue: 14500 },
+];
+
+const RECENT_ENTRIES = [
+  ["Apr 22 · 4:12p", "Mia", "Tyson", "BONUS", "Messages", "5"],
+  ["Apr 22 · 3:48p", "Diego", "Tyson", "EASY", "Messages", "1"],
+  ["Apr 22 · 2:30p", "Mia", "Keith", "FOCUS", "Messages", "2"],
+  ["Apr 22 · 1:05p", "Jake", "Tyson", "SIMPLE", "Messages", "1"],
+  ["Apr 22 · 12:20p", "Diego", "Keith", "ACT", "Messages", "1"],
+  ["Apr 21 · 6:44p", "Mia", "Tyson", "FIT", "Collected $", "$1,500"],
+  ["Apr 21 · 5:12p", "Jake", "Tyson", "STRONG", "Contracted $", "$2,400"],
+  ["Apr 21 · 3:02p", "Mia", "Keith", "GOAL", "New clients", "1"],
+];
 
 function dateInNewYork() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -138,17 +241,15 @@ function shiftDate(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function formatShortDate(date: string) {
-  const parsed = new Date(`${date}T00:00:00.000Z`);
+function shortDate(date: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
     timeZone: "UTC",
-  }).format(parsed);
+  }).format(new Date(`${date}T00:00:00.000Z`));
 }
 
-function fmtUsd(value: number | null | undefined, digits = 0) {
+function money(value: number | null | undefined, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return value.toLocaleString("en-US", {
     style: "currency",
@@ -158,7 +259,7 @@ function fmtUsd(value: number | null | undefined, digits = 0) {
   });
 }
 
-function fmtNum(value: number | null | undefined, digits = 0) {
+function num(value: number | null | undefined, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return value.toLocaleString("en-US", {
     minimumFractionDigits: digits,
@@ -166,67 +267,155 @@ function fmtNum(value: number | null | undefined, digits = 0) {
   });
 }
 
-function fmtPct(value: number | null | undefined, digits = 1) {
+function pct(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
-  return `${value.toFixed(digits)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
-function fmtRoi(value: number | null | undefined) {
+function roi(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return `${value.toFixed(2)}x`;
 }
 
-function clientLabel(clientKey: string) {
+function clientName(clientKey: string) {
   if (clientKey === "tyson") return "Tyson";
   if (clientKey === "keith") return "Keith";
   return clientKey;
 }
 
-function metricClass(key: string, row: AdsTrackerRow) {
-  if (key === "collectedRevenue" || key === "newClients" || key === "messages") return "pos";
-  if (key === "contractedRevenue" || key === "contractedRoi") return "gold";
-  if (key === "collectedRoi") return row.collectedRoi >= 2 ? "pos" : "neg";
-  if (key === "costPerNewClient" || key === "costPerBookedCall") return "dim";
-  return "";
+function campaignName(clientKey: string) {
+  return `${clientName(clientKey)} — Warm Spring Shred Challenge`;
 }
 
-function formatCell(key: (typeof TABLE_COLUMNS)[number][0], row: AdsTrackerRow) {
+function makeRow(input: {
+  id: string;
+  clientKey: string;
+  name: string;
+  keyword: string;
+  adSpend: number;
+  impressions: number;
+  linkClicks: number;
+  messages: number;
+  bookedCalls: number;
+  newClients: number;
+  contractedRevenue: number;
+  collectedRevenue: number;
+  status?: "active" | "finished";
+}): AdsTrackerRow {
+  const adSpend = input.adSpend;
+  return {
+    ...input,
+    dateLabel: "",
+    cpm: input.impressions > 0 ? (adSpend / input.impressions) * 1000 : 0,
+    ctr: input.impressions > 0 ? (input.linkClicks / input.impressions) * 100 : 0,
+    cpc: input.linkClicks > 0 ? adSpend / input.linkClicks : 0,
+    costPerMessage: input.messages > 0 ? adSpend / input.messages : null,
+    costPerBookedCall: input.bookedCalls > 0 ? adSpend / input.bookedCalls : null,
+    callClosingRate: input.bookedCalls > 0 ? (input.newClients / input.bookedCalls) * 100 : 0,
+    messagesConversionRate: input.messages > 0 ? (input.bookedCalls / input.messages) * 100 : 0,
+    costPerNewClient: input.newClients > 0 ? adSpend / input.newClients : null,
+    contractedRoi: adSpend > 0 ? input.contractedRevenue / adSpend : 0,
+    collectedRoi: adSpend > 0 ? input.collectedRevenue / adSpend : 0,
+    status: input.status || "active",
+  };
+}
+
+function fromApiRow(row: AdsTrackerRow) {
+  return makeRow({
+    id: row.id,
+    clientKey: row.clientKey,
+    name: row.name,
+    keyword: row.keyword,
+    adSpend: row.adSpend,
+    impressions: row.impressions,
+    linkClicks: row.linkClicks,
+    messages: row.messages,
+    bookedCalls: row.bookedCalls,
+    newClients: row.newClients,
+    contractedRevenue: row.contractedRevenue,
+    collectedRevenue: row.collectedRevenue,
+    status: row.status,
+  });
+}
+
+function aggregateCampaignRows(rows: AdsTrackerRow[]) {
+  const grouped = new Map<string, AdsTrackerRow[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.clientKey) || [];
+    list.push(row);
+    grouped.set(row.clientKey, list);
+  }
+
+  return Array.from(grouped.entries()).map(([clientKey, list]) =>
+    makeRow({
+      id: `${clientKey}-campaign`,
+      clientKey,
+      name: campaignName(clientKey),
+      keyword: clientName(clientKey).toUpperCase(),
+      adSpend: list.reduce((sum, row) => sum + row.adSpend, 0),
+      impressions: list.reduce((sum, row) => sum + row.impressions, 0),
+      linkClicks: list.reduce((sum, row) => sum + row.linkClicks, 0),
+      messages: list.reduce((sum, row) => sum + row.messages, 0),
+      bookedCalls: list.reduce((sum, row) => sum + row.bookedCalls, 0),
+      newClients: list.reduce((sum, row) => sum + row.newClients, 0),
+      contractedRevenue: list.reduce((sum, row) => sum + row.contractedRevenue, 0),
+      collectedRevenue: list.reduce((sum, row) => sum + row.collectedRevenue, 0),
+    })
+  );
+}
+
+function totalRow(rows: AdsTrackerRow[]) {
+  return makeRow({
+    id: "total",
+    clientKey: "all",
+    name: "TOTAL",
+    keyword: "TOTAL",
+    adSpend: rows.reduce((sum, row) => sum + row.adSpend, 0),
+    impressions: rows.reduce((sum, row) => sum + row.impressions, 0),
+    linkClicks: rows.reduce((sum, row) => sum + row.linkClicks, 0),
+    messages: rows.reduce((sum, row) => sum + row.messages, 0),
+    bookedCalls: rows.reduce((sum, row) => sum + row.bookedCalls, 0),
+    newClients: rows.reduce((sum, row) => sum + row.newClients, 0),
+    contractedRevenue: rows.reduce((sum, row) => sum + row.contractedRevenue, 0),
+    collectedRevenue: rows.reduce((sum, row) => sum + row.collectedRevenue, 0),
+  });
+}
+
+function valueForCell(row: AdsTrackerRow, key: TableKey) {
   switch (key) {
     case "name":
       return row.name;
     case "adSpend":
     case "contractedRevenue":
     case "collectedRevenue":
-      return fmtUsd(row[key]);
+      return money(row[key]);
     case "cpm":
     case "cpc":
     case "costPerMessage":
     case "costPerBookedCall":
     case "costPerNewClient":
-      return fmtUsd(row[key], 2);
+      return money(row[key], key === "cpm" ? 2 : 2);
     case "ctr":
     case "callClosingRate":
     case "messagesConversionRate":
-      return fmtPct(row[key]);
+      return pct(row[key]);
     case "contractedRoi":
     case "collectedRoi":
-      return fmtRoi(row[key]);
+      return roi(row[key]);
     default:
-      return fmtNum(row[key]);
+      return num(row[key]);
   }
 }
 
 function useClickAway<T extends HTMLElement>(onAway: () => void) {
   const ref = useRef<T | null>(null);
-
   useEffect(() => {
-    function onDown(event: MouseEvent) {
+    function handleMouseDown(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) onAway();
     }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [onAway]);
-
   return ref;
 }
 
@@ -243,21 +432,21 @@ function SelectFilter<T extends string>({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useClickAway<HTMLDivElement>(() => setOpen(false));
-  const current = options.find((option) => option.id === value) || options[0];
+  const active = options.find((option) => option.id === value) || options[0];
 
   return (
     <div className="ads-filter" ref={ref}>
-      <button className="ads-filter-btn" onClick={() => setOpen((next) => !next)}>
-        <span>{label}</span>
-        <strong>{current.label}</strong>
-        <ChevronDown size={13} />
+      <button className={`filter-btn ${open ? "open" : ""}`} onClick={() => setOpen((next) => !next)}>
+        <span className="lbl">{label}</span>
+        <span className="val">{active.label}</span>
+        <ChevronDown size={13} className="caret" />
       </button>
       {open && (
-        <div className="ads-pop">
+        <div className="pop">
           {options.map((option) => (
             <button
               key={option.id}
-              className={`ads-pop-item ${option.id === value ? "selected" : ""}`}
+              className={`pop-item ${option.id === value ? "selected" : ""}`}
               onClick={() => {
                 onChange(option.id);
                 setOpen(false);
@@ -273,7 +462,29 @@ function SelectFilter<T extends string>({
   );
 }
 
-function DateRangeFilter({
+function Segmented({
+  value,
+  onChange,
+}: {
+  value: StatusFilter;
+  onChange: (value: StatusFilter) => void;
+}) {
+  return (
+    <div className="segmented">
+      {STATUS_OPTIONS.map((option) => (
+        <button
+          key={option.id}
+          className={`seg ${option.id === value ? "active" : ""}`}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DateDropdown({
   dateFrom,
   dateTo,
   onRange,
@@ -296,21 +507,19 @@ function DateRangeFilter({
 
   return (
     <div className="ads-filter" ref={ref}>
-      <button className="ads-filter-btn ads-date-btn" onClick={() => setOpen((next) => !next)}>
+      <button className={`filter-btn date-btn ${open ? "open" : ""}`} onClick={() => setOpen((next) => !next)}>
         <Calendar size={14} />
-        <strong>{DATE_PRESETS.find((item) => item.id === preset)?.label || "Custom"}</strong>
-        <span>
-          {formatShortDate(dateFrom)} - {formatShortDate(dateTo)}
-        </span>
-        <ChevronDown size={13} />
+        <span className="val">{DATE_PRESETS.find((item) => item.id === preset)?.label || "Custom"}</span>
+        <span className="date-range">· {shortDate(dateFrom)} – {shortDate(dateTo)}, 2026</span>
+        <ChevronDown size={13} className="caret" />
       </button>
       {open && (
-        <div className="ads-pop ads-date-pop">
-          <div className="ads-date-presets">
+        <div className="pop date-pop">
+          <div className="date-presets">
             {DATE_PRESETS.map((item) => (
               <button
                 key={item.id}
-                className={`ads-pop-item ${item.id === preset ? "selected" : ""}`}
+                className={`pop-item ${item.id === preset ? "selected" : ""}`}
                 onClick={() => applyPreset(item.id, item.days)}
               >
                 {item.label}
@@ -318,52 +527,28 @@ function DateRangeFilter({
               </button>
             ))}
           </div>
-          <div className="ads-calendar-pane">
-            <div className="ads-calendar-head">April 2026</div>
-            <div className="ads-calendar-grid">
-              {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-                <span className="dow" key={`${day}-${index}`}>
-                  {day}
-                </span>
+          <div className="date-cal">
+            <div className="cal-head">April 2026</div>
+            <div className="cal-grid">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <span key={day} className="cal-dow">{day}</span>
               ))}
               {Array.from({ length: 30 }, (_, index) => index + 1).map((day) => (
                 <button
-                  className={`day ${day >= 16 && day <= 22 ? "range" : ""} ${day === 16 || day === 22 ? "endpoint" : ""}`}
                   key={day}
+                  className={`cal-day ${day >= 16 && day <= 22 ? "in-range" : ""} ${day === 16 || day === 22 ? "endpoint" : ""}`}
                 >
                   {day}
                 </button>
               ))}
             </div>
-            <div className="ads-date-foot">
-              <span>America/New_York reporting window</span>
-              <button onClick={() => setOpen(false)}>Apply</button>
-            </div>
+          </div>
+          <div className="date-foot">
+            <span>Dates shown in America/New_York</span>
+            <button onClick={() => setOpen(false)}>Apply</button>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Segment({
-  value,
-  onChange,
-}: {
-  value: StatusFilter;
-  onChange: (value: StatusFilter) => void;
-}) {
-  return (
-    <div className="ads-segment">
-      {STATUS_OPTIONS.map((option) => (
-        <button
-          key={option.id}
-          className={option.id === value ? "active" : ""}
-          onClick={() => onChange(option.id)}
-        >
-          {option.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -377,87 +562,54 @@ function CampaignTable({
   level: LevelFilter;
   onLevelChange: (value: LevelFilter) => void;
 }) {
-  const total = useMemo(() => {
-    const spend = rows.reduce((sum, row) => sum + row.adSpend, 0);
-    const impressions = rows.reduce((sum, row) => sum + row.impressions, 0);
-    const linkClicks = rows.reduce((sum, row) => sum + row.linkClicks, 0);
-    const messages = rows.reduce((sum, row) => sum + row.messages, 0);
-    const bookedCalls = rows.reduce((sum, row) => sum + row.bookedCalls, 0);
-    const newClients = rows.reduce((sum, row) => sum + row.newClients, 0);
-    const contractedRevenue = rows.reduce((sum, row) => sum + row.contractedRevenue, 0);
-    const collectedRevenue = rows.reduce((sum, row) => sum + row.collectedRevenue, 0);
-
-    return {
-      id: "total",
-      clientKey: "all",
-      name: "TOTAL",
-      keyword: "TOTAL",
-      dateLabel: "",
-      adSpend: spend,
-      impressions,
-      linkClicks,
-      cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
-      ctr: impressions > 0 ? (linkClicks / impressions) * 100 : 0,
-      cpc: linkClicks > 0 ? spend / linkClicks : 0,
-      messages,
-      costPerMessage: messages > 0 ? spend / messages : null,
-      bookedCalls,
-      costPerBookedCall: bookedCalls > 0 ? spend / bookedCalls : null,
-      newClients,
-      contractedRevenue,
-      callClosingRate: bookedCalls > 0 ? (newClients / bookedCalls) * 100 : 0,
-      messagesConversionRate: messages > 0 ? (bookedCalls / messages) * 100 : 0,
-      collectedRevenue,
-      costPerNewClient: newClients > 0 ? spend / newClients : null,
-      contractedRoi: spend > 0 ? contractedRevenue / spend : 0,
-      collectedRoi: spend > 0 ? collectedRevenue / spend : 0,
-      status: "active" as const,
-    };
-  }, [rows]);
+  const total = totalRow(rows);
 
   return (
-    <div className="ads-panel">
-      <div className="ads-table-toolbar">
-        <div className="ads-table-toggle">
+    <div className="panel table-panel">
+      <div className="tbl-toolbar">
+        <div className="tbl-view-toggle">
           <button
-            className={level === "campaign" ? "active" : ""}
+            className={`tvt-btn ${level === "campaign" ? "active" : ""}`}
             onClick={() => onLevelChange("campaign")}
           >
             Campaign level
           </button>
           <button
-            className={level === "ad" ? "active" : ""}
+            className={`tvt-btn ${level === "ad" ? "active" : ""}`}
             onClick={() => onLevelChange("ad")}
           >
-            Ad level
-            <span>{rows.length}</span>
+            Ad level <span className="tvt-count">13</span>
           </button>
         </div>
       </div>
-      <div className="ads-table-scroll">
+      <div className="tbl-scroll">
         <table className="ads-table">
           <thead>
             <tr>
               {TABLE_COLUMNS.map(([key, label]) => (
-                <th key={key} className={key === "name" ? "sticky" : ""}>
-                  {label}
+                <th key={key} className={`${key === "name" ? "sticky" : ""} ${CALCULATED_COLUMNS.has(key) ? "calc" : ""}`}>
+                  {level === "ad" && key === "name" ? "Campaign / Date / Ad" : label}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className={level === "ad" ? "ad-row" : "campaign-row"}>
                 {TABLE_COLUMNS.map(([key]) => (
-                  <td key={key} className={`${key === "name" ? "sticky" : ""} ${metricClass(key, row)}`}>
+                  <td
+                    key={key}
+                    className={`${key === "name" ? "sticky" : ""} ${CALCULATED_COLUMNS.has(key) ? "calc" : ""}`}
+                  >
                     {key === "name" ? (
                       <span className="campaign-cell">
-                        <span className={`client-dot ${row.clientKey}`} />
-                        <span>{level === "ad" ? row.keyword : clientLabel(row.clientKey)}</span>
-                        <em>{level === "ad" ? clientLabel(row.clientKey) : row.keyword}</em>
+                        <span className="chevron">›</span>
+                        <span className={`camp-dot ${row.clientKey}`} />
+                        <span>{level === "ad" ? row.keyword : row.name}</span>
+                        {level === "ad" && <span className="ad-id">{clientName(row.clientKey)}</span>}
                       </span>
                     ) : (
-                      formatCell(key, row)
+                      valueForCell(row, key)
                     )}
                   </td>
                 ))}
@@ -465,8 +617,11 @@ function CampaignTable({
             ))}
             <tr className="total-row">
               {TABLE_COLUMNS.map(([key]) => (
-                <td key={key} className={`${key === "name" ? "sticky" : ""} ${metricClass(key, total)}`}>
-                  {key === "name" ? "TOTAL" : formatCell(key, total)}
+                <td
+                  key={key}
+                  className={`${key === "name" ? "sticky" : ""} ${CALCULATED_COLUMNS.has(key) ? "calc" : ""}`}
+                >
+                  {key === "name" ? "TOTAL" : valueForCell(total, key)}
                 </td>
               ))}
             </tr>
@@ -477,133 +632,221 @@ function CampaignTable({
   );
 }
 
-function RoasLine({ payload }: { payload: AdsTrackerPayload }) {
-  const points = payload.trend.length
-    ? payload.trend
-    : [{ label: "No data", adSpend: 1, collectedRevenue: 1, collectedRoi: 0 }];
-  const max = Math.max(...points.map((point) => point.collectedRevenue), 1);
+function LineChart({
+  kind,
+  big,
+  delta,
+  labels,
+}: {
+  kind: "roas" | "dm";
+  big: string;
+  delta: string;
+  labels: string[];
+}) {
+  const roasPoints = [24, 20, 28, 108, 92, 65, 55, 61, 74, 91];
+  const dmPoints = [86, 87, 88, 82, 77, 81, 85, 86, 85, 83];
+  const points = kind === "roas" ? roasPoints : dmPoints;
   const width = 720;
-  const height = 220;
+  const height = 260;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
   const path = points
     .map((point, index) => {
-      const x = 52 + (index / Math.max(points.length - 1, 1)) * (width - 80);
-      const y = 180 - (point.collectedRevenue / max) * 130;
-      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+      const x = 54 + (index / (points.length - 1)) * 624;
+      const y = 205 - ((point - min) / Math.max(max - min, 1)) * 150;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
 
   return (
-    <div className="ads-chart-card">
+    <div className="panel chart-card">
       <div className="chart-head">
         <div>
-          <span>ROAS</span>
-          <strong>{fmtRoi(payload.summary.collectedRoi)}</strong>
+          <div className="chart-title">{kind === "roas" ? "ROAS" : "Cost per DM"}</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{big}</span>
+            <span className="chart-delta pos">{delta}</span>
+            <span className="chart-sub-label">7-day avg {kind === "dm" ? "overall" : ""}</span>
+          </div>
         </div>
-        <div className="chart-tabs">
-          <button className="active">Collected</button>
-          <button>Contracted</button>
+        <div className="chart-controls">
+          <div className="mini-tabs">
+            <button className="active">{kind === "roas" ? "Collected" : "Overall"}</button>
+            <button>{kind === "roas" ? "Contracted" : "By keyword"}</button>
+          </div>
+          <div className="client-picker">
+            <button className="active">All</button>
+            <button>Tyson</button>
+            <button>Keith</button>
+          </div>
         </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="line-chart">
-        {[40, 85, 130, 175].map((y) => (
-          <line key={y} x1="52" x2="690" y1={y} y2={y} />
+      <svg viewBox={`0 0 ${width} ${height}`} className="line-svg">
+        {[56, 104, 152, 200].map((y) => (
+          <line key={y} x1="54" x2="678" y1={y} y2={y} />
         ))}
-        <path d={path} />
-        <path d={`${path} L 690 190 L 52 190 Z`} className="area" />
-        {points.map((point, index) => (
-          <text key={point.label} x={52 + (index / Math.max(points.length - 1, 1)) * 638} y="210">
-            {point.label}
+        {(kind === "roas" ? ["$29.5k", "$19.5k", "$9.7k", "$0k"] : ["$6.56", "$4.33", "$2.17", "$0.00"]).map((label, index) => (
+          <text key={label} x="10" y={58 + index * 48}>{label}</text>
+        ))}
+        <path d={`${path} L 678 206 L 54 206 Z`} className="area" />
+        <path d={path} className={kind === "dm" ? "blue-line" : ""} />
+        {labels.map((label, index) => (
+          <text key={label} x={54 + (index / (labels.length - 1)) * 624} y="235" className="axis-label">
+            {label}
           </text>
         ))}
       </svg>
       <div className="chart-legend">
-        <span>
-          <i className="gold-line" />
-          Revenue
-        </span>
-        <span>
-          <i />
-          Ad spend
-        </span>
+        <span><i className={kind === "dm" ? "blue" : "gold"} />{kind === "dm" ? "Cost per DM" : "Revenue"}</span>
+        {kind === "roas" && <span><i />Ad spend</span>}
+        <em>{kind === "dm" ? "Lower is better" : "Hover to see daily ROAS"}</em>
       </div>
     </div>
   );
 }
 
-function AdRoasBars({ payload }: { payload: AdsTrackerPayload }) {
-  const items = payload.adRoas.slice(0, 6);
-  const max = Math.max(...items.map((item) => item.collectedRoi), 1);
+function AdRoasChart({ payload }: { payload: AdsTrackerPayload | null }) {
+  const live = payload && !payload.mock && payload.adRoas.length
+    ? payload.adRoas.slice(0, 6).map((item) => ({
+        label: item.label,
+        clientKey: item.clientKey,
+        roi: item.collectedRoi,
+        revenue: item.collectedRevenue,
+      }))
+    : DEFAULT_ROAS_BARS;
+  const max = Math.max(...live.map((item) => item.roi), 1);
 
   return (
-    <div className="ads-chart-card">
+    <div className="panel chart-card ads-roas-card">
       <div className="chart-head">
         <div>
-          <span>Ad ROAS</span>
-          <strong>Most profitable ads</strong>
+          <div className="chart-title">Ad ROAS</div>
+          <div className="chart-muted">Most profitable ads</div>
         </div>
-        <div className="chart-tabs">
-          <button className="active">Top</button>
-          <button>All ads</button>
+        <div className="chart-controls">
+          <div className="mini-tabs"><button className="active">Top</button><button>All ads</button></div>
+          <div className="client-picker"><button className="active">All</button><button>Tyson</button><button>Keith</button></div>
         </div>
       </div>
+      <div className="metric-tabs"><button className="active">Collected</button><button>Contracted</button></div>
       <div className="bar-chart">
-        {items.map((item) => (
-          <div className="bar-item" key={item.id}>
-            <strong>{fmtRoi(item.collectedRoi)}</strong>
-            <span>{fmtUsd(item.collectedRevenue / 1000, 1).replace(".0", "")}k</span>
-            <div className="bar-rail">
+        {live.map((item) => (
+          <div className="bar-col" key={`${item.clientKey}-${item.label}`}>
+            <strong>{item.roi.toFixed(1)}x</strong>
+            <span>{money(item.revenue / 1000, 1).replace(".0", "")}k</span>
+            <div className="bar-wrap">
               <i
                 className={item.clientKey}
-                style={{ height: `${Math.max(10, (item.collectedRoi / max) * 100)}%` }}
+                style={{ height: `${Math.max(14, (item.roi / max) * 100)}%` }}
               />
             </div>
             <b>{item.label}</b>
-            <em>{clientLabel(item.clientKey)}</em>
+            <em>{clientName(item.clientKey)}</em>
           </div>
         ))}
+      </div>
+      <div className="chart-legend ad-legend">
+        <span><i className="gold" />Tyson</span>
+        <span><i className="blue" />Keith</span>
+        <em>Bars sized by ROAS</em>
       </div>
     </div>
   );
 }
 
-function RecentEntries({ events }: { events: AdsTrackerPayload["recentEvents"] }) {
-  const [open, setOpen] = useState(false);
+function KeywordLog() {
+  return (
+    <div className="keyword-stack">
+      <div className="panel log-card">
+        <div className="section-label">Log Keywords</div>
+        <div className="log-select-row">
+          <button>Tyson — Spring Shred <ChevronDown size={14} /></button>
+          <button>Amara <ChevronDown size={14} /></button>
+        </div>
+        <div className="bucket-box">
+          <div className="bucket-head">
+            <span>Messages <em>0/1 filled</em></span>
+            <X size={13} />
+          </div>
+          <div className="bucket-row">
+            <span>01</span>
+            <input placeholder="KEYWORD" />
+            <input placeholder="0" />
+            <em>messages</em>
+          </div>
+          <button className="add-row">+ Add row</button>
+        </div>
+        <div className="stage-picker">
+          <span>Add stage</span>
+          <button>+ Booked calls</button>
+          <button>+ New clients</button>
+          <button>+ Contracted $</button>
+          <button>+ Collected $</button>
+        </div>
+        <button className="log-submit" disabled>Log entry</button>
+      </div>
+      <div>
+        <div className="section-head action-title">
+          <span>Actions</span>
+          <em>Manual</em>
+        </div>
+        <div className="panel actions-panel">
+          <button><Plus size={14} />New campaign</button>
+          <button><Flag size={14} />Finish campaign</button>
+          <button><Upload size={14} />Import keyword data</button>
+          <button><Download size={14} />Export CSV</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecentEntries({ payload }: { payload: AdsTrackerPayload | null }) {
+  const liveEntries =
+    payload && !payload.mock && payload.recentEvents.length
+      ? payload.recentEvents.slice(0, 8).map((event) => [
+          new Date(event.eventAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+          event.setter || "Auto",
+          clientName(event.clientKey),
+          event.keyword,
+          event.source === "manychat" ? "Messages" : "Booked calls",
+          "1",
+        ])
+      : RECENT_ENTRIES;
 
   return (
-    <div className="recent-wrap">
-      <button className="recent-trigger" onClick={() => setOpen((next) => !next)}>
-        <span>{open ? "▾" : "▸"}</span>
-        Recent automated keyword entries
-        <em>{events.length} logs</em>
-      </button>
-      {open && (
-        <div className="recent-table-wrap">
-          <table className="recent-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Source</th>
-                <th>Account</th>
-                <th>Keyword</th>
-                <th>Name</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event, index) => (
-                <tr key={`${event.eventAt}-${index}`}>
-                  <td>{new Date(event.eventAt).toLocaleString()}</td>
-                  <td>{event.source}</td>
-                  <td>{clientLabel(event.clientKey)}</td>
-                  <td>
-                    <span className="kw-tag">{event.keyword}</span>
-                  </td>
-                  <td>{event.name || "--"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="recent panel">
+      <div className="recent-head">
+        <span>▾</span>
+        Recent Keyword Entries
+        <em>{liveEntries.length} logs · last 48h</em>
+      </div>
+      <table className="recent-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Setter</th>
+            <th>Campaign</th>
+            <th>Keyword</th>
+            <th>Bucket</th>
+            <th>Value</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {liveEntries.map(([time, setter, campaign, keyword, bucket, value]) => (
+            <tr key={`${time}-${keyword}-${bucket}`}>
+              <td>{time}</td>
+              <td>{setter}</td>
+              <td>{campaign}</td>
+              <td><span className="kw-tag">{keyword}</span></td>
+              <td>{bucket}</td>
+              <td>{value}</td>
+              <td><button>Edit</button><button className="delete">Delete</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -615,20 +858,17 @@ export default function AdsTrackerPage() {
   const [dateTo, setDateTo] = useState(dateInNewYork());
   const [dateFrom, setDateFrom] = useState(() => shiftDate(dateInNewYork(), -6));
   const [payload, setPayload] = useState<AdsTrackerPayload | null>(null);
-  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
     const params = new URLSearchParams({ account, status, level, dateFrom, dateTo });
     fetch(`/api/ads-tracker?${params}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => setPayload(data))
       .catch((error) => {
         if (error.name !== "AbortError") console.error("[ads-tracker] fetch failed", error);
-      })
-      .finally(() => setLoading(false));
+      });
     return () => controller.abort();
   }, [account, status, level, dateFrom, dateTo]);
 
@@ -648,25 +888,27 @@ export default function AdsTrackerPage() {
     }
   }
 
-  const rows = payload?.rows || [];
+  const tableRows = useMemo(() => {
+    const liveRows = payload && !payload.mock && payload.rows.length ? payload.rows.map(fromApiRow) : [];
+    if (liveRows.length) return level === "campaign" ? aggregateCampaignRows(liveRows) : liveRows;
+    return level === "campaign" ? DEFAULT_CAMPAIGNS : DEFAULT_AD_ROWS;
+  }, [level, payload]);
 
   return (
     <main className="ads-tracker-page">
-      <header className="ads-page-head">
-        <div>
-          <h1>Ads Tracker</h1>
-        </div>
+      <div className="page-head">
+        <h1>Ads Tracker</h1>
         <button className="sync-pill" onClick={syncNow} disabled={syncing}>
           <RefreshCw size={12} className={syncing ? "spin" : ""} />
-          {syncing ? "Syncing" : "Sync Now"}
+          {syncing ? "Syncing" : "Last synced 6m ago"}
         </button>
-      </header>
+      </div>
 
-      <section className="ads-filter-bar">
+      <div className="filter-bar">
         <SelectFilter label="Account" value={account} options={ACCOUNT_OPTIONS} onChange={setAccount} />
-        <Segment value={status} onChange={setStatus} />
-        <span className="filter-divider" />
-        <DateRangeFilter
+        <Segmented value={status} onChange={setStatus} />
+        <div className="filter-divider" />
+        <DateDropdown
           dateFrom={dateFrom}
           dateTo={dateTo}
           onRange={(from, to) => {
@@ -675,59 +917,37 @@ export default function AdsTrackerPage() {
           }}
         />
         <div className="filter-spacer" />
-      </section>
+        <button className="filter-btn search-btn"><Search size={14} />Search</button>
+      </div>
 
-      <section className="ads-section">
+      <section className="section campaign-section">
         <div className="section-head">
           <span>Campaign Performance</span>
-          {payload?.mock && <em>mock data shown until live tables are synced</em>}
         </div>
-        <CampaignTable rows={rows} level={level} onLevelChange={setLevel} />
-        {loading && <div className="ads-loading">Loading ads tracker...</div>}
+        <CampaignTable rows={tableRows} level={level} onLevelChange={setLevel} />
       </section>
 
-      {payload && (
-        <>
-          <section className="ads-chart-grid">
-            <RoasLine payload={payload} />
-            <AdRoasBars payload={payload} />
-          </section>
+      <section className="grid-charts">
+        <LineChart
+          kind="roas"
+          big="19.80x"
+          delta="▲ 16.59x"
+          labels={["Apr 16", "Apr 17", "Apr 18", "Apr 19", "Apr 20", "Apr 21", "Apr 22"]}
+        />
+        <AdRoasChart payload={payload} />
+      </section>
 
-          <section className="ads-utility-grid">
-            <div className="ads-action-panel">
-              <div className="section-head">
-                <span>Controls</span>
-              </div>
-              <div className="action-row">
-                <button>New campaign</button>
-                <button>Finish campaign</button>
-                <button onClick={syncNow}>Sync data</button>
-              </div>
-            </div>
-            <div className="ads-action-panel">
-              <div className="section-head">
-                <span>Attribution Health</span>
-              </div>
-              <div className="health-grid">
-                <div>
-                  <span>Messages</span>
-                  <strong>{fmtNum(payload.summary.messages)}</strong>
-                </div>
-                <div>
-                  <span>Booked</span>
-                  <strong>{fmtNum(payload.summary.bookedCalls)}</strong>
-                </div>
-                <div>
-                  <span>Clients</span>
-                  <strong>{fmtNum(payload.summary.newClients)}</strong>
-                </div>
-              </div>
-            </div>
-          </section>
+      <section className="grid-bottom">
+        <LineChart
+          kind="dm"
+          big="$5.39"
+          delta="▼ $0.31"
+          labels={["Apr 16", "Apr 17", "Apr 18", "Apr 19", "Apr 20", "Apr 21", "Apr 22"]}
+        />
+        <KeywordLog />
+      </section>
 
-          <RecentEntries events={payload.recentEvents} />
-        </>
-      )}
+      <RecentEntries payload={payload} />
     </main>
   );
 }
