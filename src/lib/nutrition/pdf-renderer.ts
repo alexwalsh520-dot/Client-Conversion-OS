@@ -517,15 +517,17 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
     doc.text(`Day ${day.dayNumber} Total`, marginX + 12, y + 18);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
+    // Client-facing PDF shows kcal + macros only. Sodium is intentionally
+    // NOT rendered here or anywhere else in the PDF — the internal numbers
+    // are rough estimates and surfacing them to clients invites more
+    // confusion than clarity. Sodium still drives server-side validation
+    // (HBP/stim caps, universal stacking rule) — just not the PDF output.
     const bandSegments = [
       `${fmtNum(day.totalCal)} kcal`,
       `${fmtMacro(day.totalP)}g protein`,
       `${fmtMacro(day.totalC)}g carbs`,
       `${fmtMacro(day.totalF)}g fat`,
     ];
-    if (typeof day.totalSodiumMg === "number" && day.totalSodiumMg > 0) {
-      bandSegments.push(`${fmtNum(day.totalSodiumMg)} mg sodium`);
-    }
     let segX = marginX + 130;
     const segW = (TABLE_TOTAL_WIDTH - 140) / bandSegments.length;
     for (const seg of bandSegments) {
@@ -544,24 +546,9 @@ export function renderMealPlanPDF(input: PdfInput): Uint8Array {
     drawTopHeader();
     let y = marginTop + 30;
 
-    // Weekly sodium average — small summary row above the grocery list title.
-    // Helps clients (and operators) verify HBP sodium cap is respected.
-    const sodiumDays = input.days.filter((d) => typeof d.totalSodiumMg === "number");
-    if (sodiumDays.length > 0) {
-      const weeklyAvgSodium = Math.round(
-        sodiumDays.reduce((s, d) => s + (d.totalSodiumMg || 0), 0) / sodiumDays.length
-      );
-      const weeklyMaxSodium = Math.max(...sodiumDays.map((d) => d.totalSodiumMg || 0));
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(GRAY);
-      doc.text(
-        `Weekly sodium: avg ${weeklyAvgSodium} mg/day · max ${weeklyMaxSodium} mg`,
-        marginX, y
-      );
-      y += 16;
-    }
-
+    // Grocery page header. No weekly sodium summary — those internal
+    // estimates were confusing and not client-facing. Sodium is still
+    // checked server-side by the validator.
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
     doc.setTextColor(INK);
