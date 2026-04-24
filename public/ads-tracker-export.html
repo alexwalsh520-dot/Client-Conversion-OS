@@ -1,0 +1,2145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ads Tracker — Client Conversion OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0a0a;
+    --bg-1: #0d0d0d;
+    --panel: #111111;
+    --panel-2: #141414;
+    --row-hover: #141414;
+    --border: #1f1f1f;
+    --border-2: #262626;
+    --text: #e8e8e8;
+    --text-2: #a8a8a8;
+    --text-3: #6b6b6b;
+    --text-4: #4a4a4a;
+    --green: #7dd3a8;
+    --green-dim: #4f9b76;
+    --red: #e89a94;
+    --red-dim: #a36560;
+    --gold: #d4b27a;
+    --gold-dim: #8a7348;
+    --blue: #7aa7d4;
+    --focus: #2a2a2a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;-webkit-font-smoothing:antialiased;letter-spacing:-0.005em}
+  body{min-height:100vh}
+  button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  input, select{font-family:inherit;color:inherit;background:none;border:none;outline:none}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  /* Shell */
+  .app{min-height:100vh}
+  .page{padding:26px 28px 60px;max-width:1400px;width:100%;margin:0 auto}
+
+  /* Header */
+  .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+  .page-title{font-size:22px;font-weight:600;letter-spacing:-0.02em;margin:0 0 4px}
+  .page-sub{font-size:12px;color:var(--text-3)}
+  .sync-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--border-2);border-radius:99px;font-size:11px;color:var(--text-3);background:#0c0c0c;letter-spacing:0.01em}
+  .sync-pill:hover{background:#141414;color:var(--text-2)}
+  .sync-pill:hover .sync-ic{color:var(--gold)}
+  .sync-ic{color:var(--text-4);transition:color .2s}
+  .sync-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid var(--border-2);border-radius:6px;font-size:12px;color:var(--text-2);background:#0f0f0f}
+  .sync-btn:hover{background:#141414;color:var(--text)}
+
+  /* Filter bar */
+  .filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:22px;padding-bottom:0;flex-wrap:wrap}
+  .filter{position:relative}
+  .filter-btn{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;color:var(--text);font-size:12px;min-height:30px}
+  .filter-btn:hover{background:#141414}
+  .filter-btn.open{background:#141414;border-color:#333}
+  .filter-btn .lbl{color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;margin-right:2px}
+  .filter-btn .val{color:var(--text);font-size:12px}
+  .filter-btn .caret{color:var(--text-3);font-size:9px;margin-left:2px}
+  .filter-divider{width:1px;height:16px;background:var(--border-2);margin:0 4px}
+  .segmented{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;padding:2px;height:30px}
+  .seg{padding:4px 10px;font-size:12px;color:var(--text-3);border-radius:4px;display:flex;align-items:center}
+  .seg:hover{color:var(--text-2)}
+  .seg.active{background:#1e1e1e;color:var(--text)}
+
+  /* Dropdown panel */
+  .pop{position:absolute;top:calc(100% + 6px);left:0;background:#111;border:1px solid var(--border-2);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);z-index:50;min-width:220px;padding:6px;color:var(--text-2)}
+  .pop-item{padding:7px 10px;border-radius:5px;font-size:12px;color:var(--text-2);display:flex;justify-content:space-between;cursor:pointer;align-items:center}
+  .pop-item:hover{background:#1a1a1a;color:var(--text)}
+  .pop-item.selected{color:var(--text)}
+  .pop-item .check{color:var(--gold);font-size:10px;opacity:0}
+  .pop-item.selected .check{opacity:1}
+
+  /* Date panel */
+  .date-pop{width:520px;display:grid;grid-template-columns:170px 1fr;padding:0}
+  .date-presets{border-right:1px solid var(--border);padding:6px}
+  .date-cal{padding:12px 14px}
+  .cal-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);margin-bottom:10px}
+  .cal-nav{color:var(--text-3);padding:3px 6px;border-radius:4px}
+  .cal-nav:hover{color:var(--text);background:#1a1a1a}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:11px}
+  .cal-dow{color:var(--text-4);text-align:center;padding:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.06em}
+  .cal-day{text-align:center;padding:5px 0;color:var(--text-2);border-radius:4px;cursor:pointer}
+  .cal-day:hover{background:#1a1a1a;color:var(--text)}
+  .cal-day.muted{color:var(--text-4)}
+  .cal-day.in-range{background:#1a1a1a;color:var(--text)}
+  .cal-day.endpoint{background:var(--gold);color:#0a0a0a;font-weight:600}
+  .date-foot{border-top:1px solid var(--border);padding:10px 14px;grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-3)}
+  .apply-btn{padding:5px 12px;border-radius:5px;background:var(--gold);color:#0a0a0a;font-weight:600;font-size:11px}
+  .apply-btn:hover{filter:brightness(1.08)}
+
+  /* Sections */
+  .section{margin-top:32px}
+  .section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  .section-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500}
+  .section-meta{font-size:11px;color:var(--text-4)}
+
+  /* Table panel */
+  .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
+  .tbl-scroll{overflow-x:auto;overflow-y:visible}
+  .tbl-scroll::-webkit-scrollbar{height:8px;width:8px}
+  .tbl-scroll::-webkit-scrollbar-track{background:transparent}
+  .tbl-scroll::-webkit-scrollbar-thumb{background:#222;border-radius:4px}
+  .tbl-scroll::-webkit-scrollbar-thumb:hover{background:#333}
+
+  table.ads{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:2200px}
+  table.ads thead th{
+    position:sticky;top:0;background:var(--panel);
+    text-align:right;padding:11px 14px;
+    font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);
+    font-weight:500;white-space:nowrap;
+    border-bottom:1px solid var(--border-2);
+    z-index:2;
+  }
+  table.ads thead th:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:3;padding-left:20px}
+  table.ads thead th.num{text-align:right}
+  table.ads thead th .th-inner{display:inline-block;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.ads thead th .col-resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:4}
+  table.ads thead th .col-resize:hover,table.ads thead th .col-resize.active{background:linear-gradient(90deg,transparent,var(--gold) 50%,transparent)}
+  table.ads thead th{position:sticky;top:0;background:var(--panel);text-align:right;padding:11px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);font-weight:500;white-space:nowrap;border-bottom:1px solid var(--border-2);z-index:2;position:sticky}
+  table.ads tbody td{padding:11px 14px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);color:var(--text);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+  table.ads tbody td:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:1;padding-left:20px;color:var(--text)}
+  table.ads tbody tr:hover td{background:var(--row-hover)}
+  table.ads tbody tr:last-child td{border-bottom:none}
+  table.ads tbody tr.campaign-row td{background:#0f0f0f;border-bottom:1px solid var(--border-2);font-weight:500}
+  table.ads tbody tr.campaign-row td:first-child{background:#0f0f0f}
+  table.ads tbody tr.campaign-row:hover td{background:#121212}
+  table.ads tbody tr.campaign-row:hover td:first-child{background:#121212}
+  table.ads tbody tr.total-row td{background:#0c0c0c;font-weight:500;border-top:1px solid var(--border-2);color:var(--text-2)}
+  table.ads tbody tr.total-row td:first-child{background:#0c0c0c;color:var(--text-2);text-transform:uppercase;font-size:10px;letter-spacing:0.08em}
+
+  .campaign-cell{display:flex;align-items:center;gap:10px}
+  .camp-dot{width:6px;height:6px;border-radius:99px;flex-shrink:0}
+  .camp-dot.tyson{background:var(--gold)}
+  .camp-dot.keith{background:var(--blue)}
+  .chevron{color:var(--text-4);font-size:9px;width:10px;display:inline-block}
+  .status-pill{font-size:10px;color:var(--green-dim);letter-spacing:0.06em;text-transform:uppercase;padding-left:8px;border-left:1px solid var(--border-2);margin-left:4px}
+  .status-pill.finished{color:var(--text-4)}
+
+  .pos{color:var(--green)}
+  .neg{color:var(--red)}
+  .gold{color:var(--gold)}
+  .dim{color:var(--text-3)}
+  .muted{color:var(--text-4)}
+  /* Calculated-column tint */
+  table.ads thead th.calc{background:#0c0c0c;color:#8a7348}
+  table.ads tbody td.calc{background:#0c0c0c}
+  table.ads tbody tr.campaign-row td.calc{background:#0d0d0d}
+  table.ads tbody tr.campaign-row:hover td.calc{background:#101010}
+  table.ads tbody tr:hover td.calc{background:#101010}
+  table.ads tbody tr.total-row td.calc{background:#0a0a0a}
+
+  /* Day-row + ad-row styling (ad-level view) */
+  table.ads tbody tr.day-row td{background:#0a0a0a;border-bottom:1px solid var(--border);cursor:pointer}
+  table.ads tbody tr.day-row:hover td{background:#111}
+  table.ads tbody tr.day-row td.calc{background:#090909}
+  table.ads tbody tr.day-row:hover td.calc{background:#0f0f0f}
+  .day-chevron{color:var(--text-3);font-size:9px;width:8px;display:inline-block;text-align:center}
+  .day-ad-count{font-size:9px;color:var(--text-4);background:#151515;border:1px solid var(--border);border-radius:99px;padding:1px 6px;letter-spacing:0.02em;margin-left:4px}
+  table.ads tbody tr.ad-row td{background:#060606;border-bottom:1px solid #111;color:var(--text-2);font-size:11.5px}
+  table.ads tbody tr.ad-row:hover td{background:#0d0d0d}
+  table.ads tbody tr.ad-row td.calc{background:#050505}
+  table.ads tbody tr.ad-row:hover td.calc{background:#0c0c0c}
+  .ad-id{font-size:10px;color:var(--text-4);letter-spacing:0.02em;flex-shrink:0}
+
+  /* Table toolbar (view toggle) */
+  .tbl-toolbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);background:#0c0c0c}
+  .tbl-view-toggle{display:inline-flex;background:#0a0a0a;border:1px solid var(--border-2);border-radius:6px;padding:2px;gap:2px}
+  .tvt-btn{padding:5px 11px;font-size:11.5px;color:var(--text-3);border-radius:4px;letter-spacing:0.01em;display:inline-flex;align-items:center;gap:7px;transition:all .12s}
+  .tvt-btn:hover{color:var(--text)}
+  .tvt-btn.active{background:#181818;color:var(--text);box-shadow:inset 0 0 0 1px var(--border-2)}
+  .tvt-count{font-size:9.5px;color:var(--text-4);background:#141414;border:1px solid var(--border);border-radius:99px;padding:1px 6px;letter-spacing:0}
+  .tvt-btn.active .tvt-count{color:var(--gold);border-color:#2a2417}
+  .tbl-toolbar-meta{font-size:11px;color:var(--text-4);letter-spacing:0.01em}
+  .ad-count-chip{font-size:9.5px;color:var(--text-4);background:#141414;border:1px solid var(--border);border-radius:99px;padding:1px 7px;margin-left:4px;letter-spacing:0.02em}
+  /* Setter-logged columns — styled same as data columns (no indicator) */
+
+  /* Modals */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:100}
+  .modal{background:#0f0f0f;border:1px solid var(--border-2);border-radius:10px;width:440px;max-width:calc(100vw - 48px);box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden}
+  .modal.wide{width:560px}
+  .modal-head{padding:16px 20px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start}
+  .modal-title{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-0.01em;margin:0}
+  .modal-sub{font-size:11px;color:var(--text-3);margin-top:3px}
+  .modal-close{color:var(--text-3);padding:4px 8px;border-radius:4px;font-size:16px;line-height:1}
+  .modal-close:hover{background:#181818;color:var(--text)}
+  .modal-body{padding:16px 20px 20px}
+  .modal-foot{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:#0c0c0c}
+  .mf-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);margin-bottom:6px;font-weight:500;display:block}
+  .mf-input, .mf-select{width:100%;padding:8px 11px;background:#0a0a0a;border:1px solid var(--border-2);border-radius:5px;font-size:13px;color:var(--text)}
+  .mf-input:focus, .mf-select:focus{border-color:var(--focus);background:#111;outline:none}
+  .mf-row{display:flex;gap:10px;margin-bottom:12px}
+  .mf-row > *{flex:1}
+  .btn-primary{padding:7px 14px;background:var(--gold);color:#0a0a0a;border-radius:5px;font-size:12px;font-weight:600}
+  .btn-primary:hover{filter:brightness(1.08)}
+  .btn-secondary{padding:7px 14px;border:1px solid var(--border-2);background:#0f0f0f;color:var(--text-2);border-radius:5px;font-size:12px}
+  .btn-secondary:hover{background:#141414;color:var(--text)}
+  .btn-danger{padding:7px 14px;border:1px solid #3a1f1f;background:#1a0e0e;color:var(--red);border-radius:5px;font-size:12px}
+  .btn-danger:hover{background:#201111}
+  .campaign-pick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .cp-card{padding:12px;border:1px solid var(--border-2);border-radius:6px;background:#0c0c0c;cursor:pointer;text-align:left}
+  .cp-card:hover{border-color:#333;background:#111}
+  .cp-card.selected{border-color:var(--gold);background:#121008}
+  .cp-card .cp-name{font-size:12px;color:var(--text);font-weight:500}
+  .cp-card .cp-meta{font-size:10px;color:var(--text-3);margin-top:3px}
+  .drop-zone{border:1px dashed var(--border-2);border-radius:6px;padding:28px;text-align:center;color:var(--text-3);font-size:12px;background:#0a0a0a}
+  .drop-zone:hover{border-color:var(--gold);color:var(--text-2)}
+
+  /* Recent entries - inline edit */
+  .rec-edit-btn{color:var(--text-4);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid transparent}
+  .rec-edit-btn:hover{color:var(--gold);border-color:var(--border-2);background:#141414}
+  .rec-delete-btn{color:#ff5a52;font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid transparent;text-transform:uppercase;letter-spacing:0.08em;font-weight:600}
+  .rec-delete-btn:hover{background:rgba(255,90,82,0.14);border-color:rgba(255,90,82,0.5);color:#ff7a74}
+  .btn-danger-solid{padding:7px 14px;border:1px solid #8a1f1f;background:#c81e1e;color:#fff;border-radius:5px;font-size:12px;font-weight:600;letter-spacing:0.02em}
+  .btn-danger-solid:hover{background:#e02323;border-color:#ab2020}
+  table.recent-tbl td.actions-col{width:128px;text-align:right}
+  .rec-edit-input{padding:4px 7px;background:#0a0a0a;border:1px solid var(--border-2);border-radius:4px;font-size:11px;color:var(--text);width:70px;font-family:'JetBrains Mono',monospace}
+  .rec-edit-input.kw{text-transform:uppercase;color:var(--gold);width:90px}
+  .rec-save{color:var(--gold);font-size:11px;padding:3px 7px;border-radius:3px}
+  .rec-save:hover{background:#1a1a1a}
+  .rec-cancel{color:var(--text-3);font-size:11px;padding:3px 7px;border-radius:3px;margin-left:2px}
+  .rec-cancel:hover{background:#1a1a1a;color:var(--text)}
+  .edited-tag{color:var(--gold);font-size:9px;margin-left:6px;letter-spacing:0.04em;font-family:'JetBrains Mono',monospace}
+  table.recent-tbl tr.editing-row td{background:#0d0d0d}
+  .rec-save:disabled{opacity:0.4;cursor:not-allowed}
+
+  /* Toast */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#141414;border:1px solid var(--border-2);border-radius:6px;padding:10px 16px;font-size:12px;color:var(--text);box-shadow:0 8px 30px rgba(0,0,0,0.7);display:flex;align-items:center;gap:10px;z-index:200}
+  .toast .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+  .recent-body.open{max-height:800px;overflow-y:auto}
+
+  /* ROAS chart */
+  .roas-panel{padding:18px 20px}
+  .roas-svg-wrap{margin-top:18px;position:relative}
+  .roas-svg{width:100%;height:180px;display:block}
+  .roas-grid line{stroke:var(--border);stroke-width:1}
+  .roas-axis{fill:var(--text-4);font-size:10px;font-family:'JetBrains Mono',monospace}
+  .roas-line{fill:none;stroke-width:2.2;filter:drop-shadow(0 0 6px currentColor)}
+  .roas-line.collected{stroke:var(--green)}
+  .roas-line.contracted{stroke:var(--gold)}
+  .roas-line.clients{stroke:var(--blue)}
+  .roas-area{opacity:0.08}
+  .roas-dot{r:3;stroke-width:2;fill:#0a0a0a}
+  .roas-tooltip{position:absolute;background:#141414;border:1px solid var(--border-2);border-radius:5px;padding:6px 10px;font-size:11px;color:var(--text);pointer-events:none;transform:translate(-50%,-110%);white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.6)}
+  .roas-tooltip .t-label{color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px}
+  .roas-stat{display:flex;gap:24px;margin-top:10px}
+  .roas-stat-item .rs-label{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-4);font-weight:500}
+  .roas-stat-item .rs-val{font-size:16px;color:var(--text);font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
+  .roas-stat-item .rs-delta{font-size:10px;margin-left:6px;font-variant-numeric:tabular-nums}
+
+  .second-col{display:flex;flex-direction:column;gap:18px}
+
+  /* Bottom grid */
+  .grid-bottom{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:22px}
+  @media (max-width: 1100px){.grid-bottom{grid-template-columns:1fr}}
+  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px}
+  @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
+
+  /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
+  .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
+  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+  .chart-title{font-size:11px;color:var(--text-3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px}
+  .chart-subtitle{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .chart-big{font-size:26px;font-weight:500;color:var(--text);letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
+  .chart-delta{font-size:11px;font-weight:500;letter-spacing:0.01em}
+  .chart-delta.pos{color:var(--green)}
+  .chart-delta.neg{color:var(--red)}
+  .chart-sub-label{font-size:11px;color:var(--text-4)}
+  .chart-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .chart-select{font-size:11px;padding:5px 8px;max-width:210px}
+  .chart-legend{display:flex;gap:14px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+  .chart-legend-item{display:flex;align-items:center;gap:6px}
+  .chart-sw{width:10px;height:2px;border-radius:2px;display:inline-block}
+  .cpm-kw-legend{display:flex;flex-wrap:wrap;gap:10px 14px;flex:1}
+
+  .client-picker{display:inline-flex;background:#0a0a0a;border:1px solid var(--border-2);border-radius:99px;padding:2px;gap:2px}
+  .cpk-btn{padding:4px 11px;font-size:11px;color:var(--text-3);border-radius:99px;letter-spacing:0.01em;transition:all .12s}
+  .cpk-btn:hover{color:var(--text-2)}
+  .cpk-btn.active{background:#181818;color:var(--text);box-shadow:inset 0 0 0 1px var(--border-2)}
+
+  /* Line chart */
+  .lc-wrap{position:relative;width:100%}
+  .lc-svg{width:100%;height:auto;display:block;cursor:crosshair}
+  .lc-tooltip{position:absolute;top:0;transform:translate(-50%, -6px);background:#0f0f0f;border:1px solid var(--border-2);border-radius:6px;padding:7px 10px;font-size:11px;min-width:150px;max-width:240px;pointer-events:none;z-index:3;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+  .lc-tt-date{font-size:10px;color:var(--text-4);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:5px;font-family:'JetBrains Mono',monospace}
+  .lc-tt-row{display:flex;align-items:center;gap:7px;padding:2px 0}
+  .lc-tt-sw{width:7px;height:7px;border-radius:99px;flex-shrink:0}
+  .lc-tt-name{color:var(--text-3);font-size:10.5px;flex:1}
+  .lc-tt-val{color:var(--text);font-size:11px;font-variant-numeric:tabular-nums}
+
+  /* Ad ROAS vertical bar chart */
+  .ads-roas{min-height:360px}
+  .ar-metric-tabs{display:inline-flex;background:#0a0a0a;border:1px solid var(--border);border-radius:4px;padding:2px;gap:2px;margin-bottom:14px}
+  .ar-mt{padding:3px 10px;font-size:10px;color:var(--text-3);border-radius:3px;letter-spacing:0.06em;text-transform:uppercase}
+  .ar-mt.active{background:#161616;color:var(--text)}
+  .ar-chart-wrap{overflow:hidden;padding-bottom:4px}
+  .ar-chart-wrap.scroll-x{overflow-x:auto;overflow-y:hidden}
+  .ar-chart-wrap::-webkit-scrollbar{height:6px}
+  .ar-chart-wrap::-webkit-scrollbar-thumb{background:#222;border-radius:3px}
+  .ar-chart-wrap::-webkit-scrollbar-thumb:hover{background:#333}
+  .ar-chart{display:flex;align-items:flex-end;gap:14px;padding:4px 2px 0;min-height:230px}
+  .ar-col{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:50px}
+  .ar-val{text-align:center;min-height:30px;display:flex;flex-direction:column;justify-content:flex-end;gap:1px}
+  .ar-val-roas{font-size:12px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+  .ar-val-sub{font-size:9.5px;color:var(--text-4)}
+  .ar-bar-v-wrap{display:flex;align-items:flex-end;width:100%;min-height:150px;justify-content:center}
+  .ar-bar-v{width:100%;max-width:34px;border-radius:2px 2px 0 0;opacity:0.9;transition:opacity .15s, height .35s cubic-bezier(.4,0,.2,1)}
+  .ar-col:hover .ar-bar-v{opacity:1}
+  .ar-col-label{text-align:center;margin-top:2px}
+  .ar-col-kw{font-size:10.5px;color:var(--text-2);font-weight:500;letter-spacing:0.02em}
+  .ar-col-camp{font-size:9px;color:var(--text-4);letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;opacity:0.8}
+
+  /* Keyword chart */
+  .kw-panel{padding:18px 20px}
+  .kw-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .kw-title{font-size:13px;font-weight:500;color:var(--text)}
+  .kw-tabs{display:flex;gap:2px}
+  .kw-tab{font-size:11px;color:var(--text-3);padding:3px 9px;border-radius:4px;cursor:pointer}
+  .kw-tab:hover{color:var(--text-2)}
+  .kw-tab.active{background:#1c1c1c;color:var(--text)}
+  .kw-chart{margin-top:22px;display:grid;grid-template-columns:repeat(4,1fr);gap:20px;align-items:end;height:200px;padding:0 10px}
+  .kw-bar-wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:8px}
+  .kw-bar-val{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:32px;justify-content:flex-end}
+  .kw-roas{font-size:14px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+  .kw-dollars{font-size:10px;color:var(--text-3);font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace}
+  .kw-bar{width:48px;border-radius:3px 3px 0 0;position:relative;transition:all .2s}
+  .kw-bar:hover{filter:brightness(1.15)}
+  .kw-bar .val{position:absolute;top:-22px;left:0;right:0;text-align:center;font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .kw-label{font-size:11px;color:var(--text-2);letter-spacing:0.04em;font-family:'JetBrains Mono',monospace}
+  .kw-sub{font-size:10px;color:var(--text-4);margin-top:-4px}
+  .kw-legend{display:flex;gap:16px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+  .kw-legend-item{display:flex;align-items:center;gap:6px}
+  .kw-sw{width:8px;height:8px;border-radius:2px}
+
+  /* Right column: entry form + actions */
+  .right-col{display:flex;flex-direction:column;gap:18px}
+  .entry-panel{padding:16px 18px}
+  .entry-head{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);margin-bottom:14px;font-weight:500}
+  .entry-row{display:flex;gap:8px;margin-bottom:8px}
+  .entry-select, .entry-input{
+    flex:1;padding:7px 10px;background:#0d0d0d;border:1px solid var(--border-2);
+    border-radius:5px;font-size:12px;color:var(--text);min-width:0;
+  }
+  .entry-select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%236b6b6b' stroke-width='1.2' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:24px}
+  .entry-select:focus, .entry-input:focus{border-color:var(--focus);background:#111}
+  .entry-input::placeholder{color:var(--text-4)}
+  .bucket-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+  .bucket-chip{font-size:11px;padding:5px 9px;border:1px solid var(--border-2);border-radius:99px;color:var(--text-3);cursor:pointer;background:#0d0d0d;white-space:nowrap}
+  .bucket-chip:hover{color:var(--text-2);border-color:#333}
+  .bucket-chip.active{background:#1c1c1c;color:var(--text);border-color:#333}
+  .entry-submit-row{display:flex;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  .entry-submit{padding:7px 14px;background:var(--gold);color:#0a0a0a;border-radius:5px;font-size:12px;font-weight:600;flex:0 0 auto}
+  .entry-submit:hover{filter:brightness(1.08)}
+  .entry-submit:disabled{background:#2a2a2a;color:var(--text-4);cursor:not-allowed;filter:none}
+  .entry-hint{font-size:11px;color:var(--text-4);flex:1;text-align:right}
+
+  /* Multi-row entry */
+  .bucket-group{margin-bottom:14px;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:#0c0c0c}
+  .bucket-group-head{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;background:#101010;border-bottom:1px solid var(--border)}
+  .bucket-group-label{font-size:10px;text-transform:uppercase;letter-spacing:0.11em;color:var(--gold);font-weight:600;display:flex;align-items:center;gap:8px}
+  .bucket-group-count{color:var(--text-4);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+  .bucket-group-rem{color:var(--text-4);font-size:14px;padding:2px 6px;border-radius:4px;line-height:1}
+  .bucket-group-rem:hover{color:var(--red);background:#181818}
+  .br-row{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .br-row:last-child{border-bottom:none}
+  .br-row:hover{background:#0e0e0e}
+  .br-num{width:16px;text-align:right;color:var(--text-4);font-size:10px;font-family:'JetBrains Mono',monospace}
+  .br-input{flex:1;padding:5px 8px;background:#0a0a0a;border:1px solid transparent;border-radius:4px;font-size:12px;color:var(--text);min-width:0}
+  .br-input:hover{border-color:var(--border-2)}
+  .br-input:focus{border-color:var(--focus);background:#111;outline:none}
+  .br-input.mono{font-family:'JetBrains Mono',monospace;text-transform:uppercase;max-width:130px}
+  .br-input.val{max-width:100px;font-family:'JetBrains Mono',monospace;text-align:right}
+  .br-remove{color:var(--text-4);font-size:14px;padding:2px 6px;border-radius:4px;line-height:1;opacity:0;transition:opacity .15s}
+  .br-row:hover .br-remove{opacity:1}
+  .br-remove:hover{color:var(--red);background:#181818}
+  .br-addrow{display:flex;align-items:center;gap:6px;padding:7px 11px;font-size:11px;color:var(--text-3);background:#0a0a0a;width:100%;border-top:1px dashed var(--border-2)}
+  .br-addrow:hover{color:var(--gold);background:#101010}
+  .bucket-picker{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;padding:8px 10px;background:#0c0c0c;border:1px dashed var(--border-2);border-radius:6px}
+  .bucket-picker-label{font-size:10px;text-transform:uppercase;letter-spacing:0.11em;color:var(--text-4);margin-right:4px;align-self:center}
+  .bp-chip{font-size:11px;padding:5px 10px;border:1px solid var(--border-2);border-radius:99px;color:var(--text-2);cursor:pointer;background:#0d0d0d;display:inline-flex;align-items:center;gap:5px}
+  .bp-chip:hover{color:var(--text);border-color:#333;background:#141414}
+  .bp-chip .pl{color:var(--text-4);font-size:11px;line-height:1}
+
+  /* Actions */
+  .actions-panel{padding:14px 18px;display:flex;gap:0;align-items:center;justify-content:space-between}
+  .actions-left{display:flex;gap:4px}
+  .action-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;font-size:12px;color:var(--text-2);border-radius:5px}
+  .action-btn:hover{background:#181818;color:var(--text)}
+  .action-btn .ic{color:var(--text-3);font-size:11px;width:12px;display:inline-flex;justify-content:center}
+  .action-sep{width:1px;height:14px;background:var(--border-2);margin:0 2px;align-self:center}
+
+  /* Recent entries */
+  .recent{margin-top:22px;border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
+  .recent-head{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;cursor:pointer;user-select:none}
+  .recent-head:hover{background:#121212}
+  .recent-title{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;display:flex;align-items:center;gap:10px}
+  .recent-count{color:var(--text-4);font-size:11px;letter-spacing:0}
+  .recent-caret{color:var(--text-3);font-size:10px;transition:transform .18s}
+  .recent-caret.open{transform:rotate(90deg)}
+  .recent-body{border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .25s ease}
+  .recent-body.open{max-height:500px}
+  table.recent-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  table.recent-tbl th{padding:9px 18px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-4);font-weight:500;border-bottom:1px solid var(--border)}
+  table.recent-tbl th.r{text-align:right}
+  table.recent-tbl td{padding:9px 18px;border-bottom:1px solid var(--border);color:var(--text-2)}
+  table.recent-tbl td.r{text-align:right;font-variant-numeric:tabular-nums}
+  table.recent-tbl tr:last-child td{border-bottom:none}
+  table.recent-tbl tr:hover td{background:var(--row-hover);color:var(--text)}
+  .kw-tag{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);letter-spacing:0.04em}
+
+  /* Chips in filter */
+  .count-badge{background:#1c1c1c;color:var(--text-2);font-size:10px;padding:1px 6px;border-radius:99px;margin-left:4px}
+
+  /* Icons */
+  .i{display:inline-block;vertical-align:middle}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ------- Icons (minimal, stroke)
+const Icon = ({ d, size=14, stroke=1.4 }) => (
+  <svg className="i" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+);
+const IcSync = () => <Icon d={<><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/><path d="M21 4v4h-4"/><path d="M3 20v-4h4"/></>}/>;
+const IcPlus = () => <Icon d={<><path d="M12 5v14"/><path d="M5 12h14"/></>} />;
+const IcCheck = () => <Icon d={<path d="M20 6L9 17l-5-5"/>} />;
+const IcUpload = () => <Icon d={<><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M20 21H4"/></>} />;
+const IcFlag = () => <Icon d={<><path d="M4 21V4"/><path d="M4 4h13l-3 5 3 5H4"/></>} />;
+const IcCal = () => <Icon d={<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>} />;
+const IcCaret = () => (
+  <svg width="9" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M1 1l4 4 4-4"/></svg>
+);
+const IcDownload = () => <Icon d={<><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M20 21H4"/></>}/>;
+const IcSearch = () => <Icon d={<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>} />;
+
+// ------- Helpers
+const fmtUsd = (n, d=0) => {
+  if(n==null || isNaN(n)) return "—";
+  const neg = n<0; n = Math.abs(n);
+  const s = n.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+  return (neg?"-":"")+"$"+s;
+};
+const fmtNum = (n, d=0) => (n==null||isNaN(n))? "—" : n.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtPct = (n, d=2) => (n==null||isNaN(n))? "—" : n.toFixed(d)+"%";
+
+// ------- Data
+// Ad roster per campaign (used to synthesize ad-level rows deterministically)
+const TYSON_ADS = [
+  {id:"t-fit-01",    name:"FIT",     weight:0.22},
+  {id:"t-strong-02", name:"STRONG",  weight:0.20},
+  {id:"t-shred-04",  name:"SHRED",   weight:0.17},
+  {id:"t-ripped-01", name:"RIPPED",  weight:0.14},
+  {id:"t-lean-03",   name:"LEAN",    weight:0.12},
+  {id:"t-cut-02",    name:"CUT",     weight:0.09},
+  {id:"t-bulk-01",   name:"BULK",    weight:0.06},
+];
+const KEITH_ADS = [
+  {id:"k-goal-02",   name:"GOAL",    weight:0.26},
+  {id:"k-dialed-03", name:"DIALED",  weight:0.22},
+  {id:"k-focus-01",  name:"FOCUS",   weight:0.19},
+  {id:"k-ready-04",  name:"READY",   weight:0.15},
+  {id:"k-power-06",  name:"POWER",   weight:0.11},
+  {id:"k-drive-02",  name:"DRIVE",   weight:0.07},
+];
+
+// Deterministic pseudo-random so ad rows are stable between renders
+function seededRand(seed){
+  let s = 0;
+  for(let i=0;i<seed.length;i++) s = ((s<<5)-s + seed.charCodeAt(i))|0;
+  s = Math.abs(s);
+  return () => {
+    s = (s*9301 + 49297) % 233280;
+    return s/233280;
+  };
+}
+
+// Split a daily total across ads by weight, with small jitter
+function splitByWeight(total, ads, seedStr, rounding=0){
+  const rand = seededRand(seedStr);
+  // apply jitter to weights
+  const jittered = ads.map(a => ({...a, jw: a.weight * (0.82 + rand()*0.36)}));
+  const jSum = jittered.reduce((a,b)=>a+b.jw,0);
+  let acc = 0;
+  const out = jittered.map((a,i) => {
+    let v;
+    if(i === jittered.length-1) v = total - acc;
+    else {
+      v = total * (a.jw/jSum);
+      if(rounding === 0) v = Math.round(v);
+      else v = Math.round(v*Math.pow(10,rounding))/Math.pow(10,rounding);
+      acc += v;
+    }
+    return {id:a.id, name:a.name, v};
+  });
+  return out;
+}
+
+function buildAdRows(campaignId, dayRow, adRoster){
+  // Distribute every metric across the ad roster using weights
+  const seed = campaignId + "-" + dayRow.date;
+  const spends = splitByWeight(dayRow.spend, adRoster, seed+"-spend");
+  const imps = splitByWeight(dayRow.imp, adRoster, seed+"-imp");
+  const clicks = splitByWeight(dayRow.clicks, adRoster, seed+"-clicks");
+  const msgs = splitByWeight(dayRow.msgs, adRoster, seed+"-msgs");
+  const calls = splitByWeight(dayRow.calls, adRoster, seed+"-calls");
+  const clients = splitByWeight(dayRow.clients, adRoster, seed+"-clients");
+  const contracted = splitByWeight(dayRow.contracted, adRoster, seed+"-con");
+  const collected = splitByWeight(dayRow.collected, adRoster, seed+"-col");
+  return adRoster.map((a,i) => ({
+    adId: a.id,
+    adName: a.name,
+    spend: spends[i].v,
+    imp: imps[i].v,
+    clicks: clicks[i].v,
+    msgs: Math.max(0, msgs[i].v),
+    calls: Math.max(0, calls[i].v),
+    clients: Math.max(0, clients[i].v),
+    contracted: Math.max(0, contracted[i].v),
+    collected: Math.max(0, collected[i].v),
+  }));
+}
+
+const CAMPAIGNS = [
+  {
+    id:"tyson", name:"Tyson — Warm Spring Shred Challenge", short:"Tyson", status:"active",
+    dot:"tyson", adCount: TYSON_ADS.length,
+    ads: TYSON_ADS,
+    rows: [
+      {date:"Apr 22", spend:412, imp:58420, clicks:1240, msgs:86, calls:14, clients:6, contracted:18400, collected:14200},
+      {date:"Apr 21", spend:388, imp:54810, clicks:1180, msgs:79, calls:12, clients:5, contracted:15200, collected:10800},
+      {date:"Apr 20", spend:401, imp:56120, clicks:1215, msgs:81, calls:13, clients:4, contracted:12600, collected:9200},
+      {date:"Apr 19", spend:375, imp:52400, clicks:1098, msgs:74, calls:11, clients:5, contracted:14800, collected:11400},
+      {date:"Apr 18", spend:420, imp:59100, clicks:1302, msgs:91, calls:15, clients:7, contracted:21800, collected:16200},
+      {date:"Apr 17", spend:395, imp:55200, clicks:1155, msgs:78, calls:10, clients:3, contracted:8400, collected:5200},
+    ]
+  },
+  {
+    id:"keith", name:"Keith — Warm Spring Shred Challenge", short:"Keith", status:"active",
+    dot:"keith", adCount: KEITH_ADS.length,
+    ads: KEITH_ADS,
+    rows: [
+      {date:"Apr 22", spend:365, imp:48210, clicks:890, msgs:62, calls:9, clients:3, contracted:8400, collected:5800},
+      {date:"Apr 21", spend:352, imp:46820, clicks:864, msgs:58, calls:8, clients:2, contracted:6200, collected:4100},
+      {date:"Apr 20", spend:340, imp:45100, clicks:822, msgs:54, calls:7, clients:2, contracted:5800, collected:3400},
+      {date:"Apr 19", spend:358, imp:47400, clicks:878, msgs:61, calls:9, clients:3, contracted:9100, collected:6200},
+      {date:"Apr 18", spend:371, imp:49300, clicks:912, msgs:66, calls:10, clients:4, contracted:12400, collected:8800},
+      {date:"Apr 17", spend:348, imp:46100, clicks:840, msgs:56, calls:6, clients:1, contracted:2800, collected:1600},
+    ]
+  }
+];
+
+// Derive per-row metrics
+function deriveRow(r){
+  const cpm = (r.spend / r.imp) * 1000;  // cost per 1000 impressions
+  const ctr = (r.clicks/r.imp)*100;
+  const cpc = r.spend / r.clicks;
+  const cpMsg = r.spend / r.msgs;  // cost per message (DM)
+  const cpCall = r.calls>0 ? r.spend/r.calls : null;
+  const cpClient = r.clients>0 ? r.spend/r.clients : null;
+  const closing = r.calls>0 ? (r.clients/r.calls)*100 : 0;
+  const msgConv = r.msgs>0 ? (r.calls/r.msgs)*100 : 0;
+  const contractedRoi = (r.contracted/r.spend);
+  const collectedRoi = (r.collected/r.spend);
+  return {...r,cpm,ctr,cpc,cpMsg,cpCall,cpClient,closing,msgConv,contractedRoi,collectedRoi};
+}
+
+function aggregate(rows){
+  const sum = (k) => rows.reduce((a,r)=>a+(r[k]||0),0);
+  const spend = sum("spend"), imp=sum("imp"), clicks=sum("clicks"), msgs=sum("msgs"),
+    calls=sum("calls"), clients=sum("clients"),
+    contracted=sum("contracted"), collected=sum("collected");
+  return deriveRow({date:"Total", spend, imp, clicks, msgs, calls, clients, contracted, collected});
+}
+
+// ------- Date dropdown (Meta-style)
+const PRESETS = [
+  {id:"today",label:"Today",days:0},
+  {id:"yesterday",label:"Yesterday",days:-1},
+  {id:"last7",label:"Last 7 days",days:7},
+  {id:"last14",label:"Last 14 days",days:14},
+  {id:"last30",label:"Last 30 days",days:30},
+  {id:"mtd",label:"This month"},
+  {id:"lmtd",label:"Last month"},
+  {id:"custom",label:"Custom"},
+];
+
+function MiniCalendar({monthOffset=0, rangeStart, rangeEnd}){
+  // Static cal showing April 2026, with range 16-22 highlighted
+  const days = [];
+  // April 2026 starts Wednesday (just a reasonable mock)
+  const startBlank = 3;
+  for(let i=0;i<startBlank;i++) days.push({blank:true});
+  for(let d=1; d<=30; d++) days.push({d});
+  while(days.length % 7 !== 0) days.push({blank:true, trail:true});
+  const dow = ["S","M","T","W","T","F","S"];
+  return (
+    <div>
+      <div className="cal-head">
+        <button className="cal-nav">‹</button>
+        <span>April 2026</span>
+        <button className="cal-nav">›</button>
+      </div>
+      <div className="cal-grid">
+        {dow.map((d,i)=><div key={"h"+i} className="cal-dow">{d}</div>)}
+        {days.map((x,i)=>{
+          if(x.blank) return <div key={i} className="cal-day muted"></div>;
+          const inRange = x.d>=16 && x.d<=22;
+          const endpoint = x.d===16 || x.d===22;
+          return <div key={i} className={"cal-day "+(endpoint?"endpoint":(inRange?"in-range":""))}>{x.d}</div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DateDropdown({value, onChange}){
+  const [open, setOpen] = useState(false);
+  const [preset, setPreset] = useState("last7");
+  const ref = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+  },[]);
+  const label = PRESETS.find(p=>p.id===preset)?.label || "Custom";
+  return (
+    <div className="filter" ref={ref}>
+      <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
+        <span style={{color:'var(--text-3)',display:'inline-flex'}}><IcCal /></span>
+        <span className="val">{label}</span>
+        <span className="dim" style={{fontSize:11}}>· Apr 16 – Apr 22, 2026</span>
+        <span className="caret"><IcCaret/></span>
+      </button>
+      {open && (
+        <div className="pop date-pop" style={{minWidth:520}}>
+          <div className="date-presets">
+            {PRESETS.map(p=>(
+              <div key={p.id} className={"pop-item "+(preset===p.id?"selected":"")} onClick={()=>setPreset(p.id)}>
+                <span>{p.label}</span>
+                <span className="check"><IcCheck/></span>
+              </div>
+            ))}
+          </div>
+          <div className="date-cal">
+            <MiniCalendar/>
+          </div>
+          <div className="date-foot">
+            <span className="mono" style={{fontSize:11}}>Apr 16, 2026 → Apr 22, 2026 · 7 days</span>
+            <div style={{display:'flex',gap:6}}>
+              <button className="filter-btn" style={{padding:'4px 10px'}} onClick={()=>setOpen(false)}>Cancel</button>
+              <button className="apply-btn" onClick={()=>setOpen(false)}>Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------- Account dropdown
+function SelectFilter({label, options, value, onChange}){
+  const [open,setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+  },[]);
+  const cur = options.find(o=>o.id===value) || options[0];
+  return (
+    <div className="filter" ref={ref}>
+      <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
+        <span className="lbl">{label}</span>
+        <span className="val">{cur.label}</span>
+        <span className="caret"><IcCaret/></span>
+      </button>
+      {open && (
+        <div className="pop">
+          {options.map(o=>(
+            <div key={o.id} className={"pop-item "+(value===o.id?"selected":"")} onClick={()=>{onChange(o.id);setOpen(false);}}>
+              <span>{o.label}</span>
+              <span className="check"><IcCheck/></span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------- Status segmented
+function Segmented({options, value, onChange}){
+  return (
+    <div className="segmented">
+      {options.map(o=>(
+        <button key={o.id} className={"seg "+(value===o.id?"active":"")} onClick={()=>onChange(o.id)}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+// ------- Campaign table
+const DEFAULT_COL_WIDTHS = {
+  date: 150, spend: 110, imp: 120, cpm: 90, clicks: 110, ctr: 90, cpc: 90,
+  msgs: 110, calls: 110, cpCall: 150, clients: 110, contracted: 140, collected: 140,
+  cpMsg: 110, closing: 130, msgConv: 120, cpClient: 130, contractedRoi: 140, collectedRoi: 140,
+};
+
+// Keys that are calculated (vs logged/imported)
+const CALC_KEYS = new Set(["cpm","ctr","cpc","cpMsg","cpCall","cpClient","closing","msgConv","contractedRoi","collectedRoi"]);
+const LOGGED_KEYS = new Set(["msgs","calls","clients","contracted","collected"]);
+
+function CampaignTable({account, status, loggedTotals}){
+  const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
+  const [expanded, setExpanded] = useState({tyson:false, keith:false});
+  const [expandedDays, setExpandedDays] = useState({}); // key: "camp-date" -> bool
+  const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
+  const [resizingKey, setResizingKey] = useState(null);
+
+  const startResize = (k, e) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widths[k];
+    setResizingKey(k);
+    const onMove = (ev) => {
+      const newW = Math.max(60, startW + (ev.clientX - startX));
+      setWidths(w => ({...w, [k]: newW}));
+    };
+    const onUp = () => {
+      setResizingKey(null);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Apply loggedTotals onto campaign rows (add to latest date)
+  const augmentedCampaigns = CAMPAIGNS.map(c => {
+    const bump = loggedTotals?.[c.id] || {};
+    const rows = c.rows.map((r, idx) => {
+      if(idx !== 0) return r; // apply to newest (first in desc array)
+      return {
+        ...r,
+        msgs: r.msgs + (bump.msgs||0),
+        calls: r.calls + (bump.calls||0),
+        clients: r.clients + (bump.clients||0),
+        contracted: r.contracted + (bump.contracted||0),
+        collected: r.collected + (bump.collected||0),
+      };
+    });
+    return {...c, rows};
+  });
+
+  const visibleCampaigns = augmentedCampaigns.filter(c=>{
+    if(account!=="all" && account!==c.id) return false;
+    if(status!=="all" && status!==c.status) return false;
+    return true;
+  });
+
+  const cols = [
+    {k:"date", label:"Campaign / Date"},
+    {k:"spend", label:"Ad spend", fmt:(r)=>fmtUsd(r.spend,0), cls:()=>""},
+    {k:"imp", label:"Impressions", fmt:(r)=>fmtNum(r.imp)},
+    {k:"cpm", label:"CPM", fmt:(r)=>"$"+r.cpm.toFixed(2), cls:(r)=> r.cpm<=7?"pos":(r.cpm>=10?"neg":"dim"), calc:true},
+    {k:"clicks", label:"Link clicks", fmt:(r)=>fmtNum(r.clicks)},
+    {k:"ctr", label:"CTR", fmt:(r)=>fmtPct(r.ctr,2), cls:(r)=> r.ctr>=2.0?"pos":(r.ctr<1.7?"neg":""), calc:true},
+    {k:"cpc", label:"CPC", fmt:(r)=>"$"+r.cpc.toFixed(2), cls:(r)=> r.cpc<=0.35?"pos":(r.cpc>=0.45?"neg":""), calc:true},
+    {k:"msgs", label:"Messages", fmt:(r)=>fmtNum(r.msgs), logged:true},
+    {k:"cpMsg", label:"Cost / msg", fmt:(r)=>"$"+r.cpMsg.toFixed(2), cls:(r)=> r.cpMsg<=5?"pos":(r.cpMsg>=6.5?"neg":""), calc:true},
+    {k:"calls", label:"Booked calls", fmt:(r)=>fmtNum(r.calls), logged:true},
+    {k:"cpCall", label:"Cost / 60-min call", fmt:(r)=> r.cpCall?"$"+r.cpCall.toFixed(0):"—", cls:(r)=> r.cpCall && r.cpCall<=30?"pos":(r.cpCall && r.cpCall>=40?"neg":""), calc:true},
+    {k:"clients", label:"New clients", fmt:(r)=>fmtNum(r.clients), cls:(r)=> r.clients>=5?"pos":(r.clients<=2?"neg":""), logged:true},
+    {k:"contracted", label:"Contracted rev", fmt:(r)=>fmtUsd(r.contracted), cls:()=> "gold", logged:true},
+    {k:"closing", label:"Call close rate", fmt:(r)=>fmtPct(r.closing,0), cls:(r)=> r.closing>=40?"pos":(r.closing<=25?"neg":""), calc:true},
+    {k:"msgConv", label:"Msg → call", fmt:(r)=>fmtPct(r.msgConv,1), cls:(r)=> r.msgConv>=15?"pos":(r.msgConv<=12?"neg":""), calc:true},
+    {k:"collected", label:"Collected rev", fmt:(r)=>fmtUsd(r.collected), cls:()=>"pos", logged:true},
+    {k:"cpClient", label:"Cost / client", fmt:(r)=> r.cpClient?"$"+r.cpClient.toFixed(0):"—", cls:(r)=> r.cpClient && r.cpClient<=80?"pos":(r.cpClient && r.cpClient>=120?"neg":""), calc:true},
+    {k:"contractedRoi", label:"Contracted ROI", fmt:(r)=>r.contractedRoi.toFixed(1)+"×", cls:(r)=> r.contractedRoi>=30?"pos":(r.contractedRoi<=15?"neg":"gold"), calc:true},
+    {k:"collectedRoi", label:"Collected ROI", fmt:(r)=>r.collectedRoi.toFixed(1)+"×", cls:(r)=> r.collectedRoi>=20?"pos":(r.collectedRoi<=10?"neg":""), calc:true},
+  ];
+
+  const totalMin = cols.reduce((s,c)=>s+widths[c.k], 0);
+
+  const overall = useMemo(()=>{
+    const allRows = visibleCampaigns.flatMap(c=>c.rows);
+    return aggregate(allRows);
+  },[visibleCampaigns]);
+
+  return (
+    <div className="panel">
+      <div className="tbl-toolbar">
+        <div className="tbl-view-toggle">
+          <button className={"tvt-btn "+(view==="campaign"?"active":"")} onClick={()=>setView("campaign")}>
+            Campaign level
+          </button>
+          <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setView("ad")}>
+            Ad level
+            <span className="tvt-count">{TYSON_ADS.length + KEITH_ADS.length}</span>
+          </button>
+        </div>
+        <div className="tbl-toolbar-meta"></div>
+      </div>
+      <div className="tbl-scroll" style={{cursor: resizingKey?"col-resize":"auto"}}>
+        <table className="ads" style={{minWidth: totalMin}}>
+          <colgroup>
+            {cols.map(c => <col key={c.k} style={{width: widths[c.k]}} />)}
+          </colgroup>
+          <thead>
+            <tr>
+              {cols.map((c,i)=>(
+                <th key={c.k} className={(i===0?"":"num ")+(c.calc?"calc ":"")+(c.logged?"logged":"")} style={{position:"relative"}}>
+                  <span className="th-inner">{i===0 && view==="ad" ? "Campaign / Date / Ad" : c.label}</span>
+                  <span
+                    className={"col-resize "+(resizingKey===c.k?"active":"")}
+                    onMouseDown={(e)=>startResize(c.k, e)}
+                  ></span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleCampaigns.map(c => {
+              const agg = aggregate(c.rows);
+              const isOpen = expanded[c.id];
+              const orderedRows = [...c.rows].sort((a,b)=> a.date.localeCompare(b.date));
+              const shortName = widths.date < 200 ? c.short : c.name;
+              return (
+                <React.Fragment key={c.id}>
+                  <tr className="campaign-row" onClick={()=>setExpanded(s=>({...s,[c.id]:!s[c.id]}))} style={{cursor:'pointer'}}>
+                    <td>
+                      <div className="campaign-cell">
+                        <span className="chevron">{isOpen?"▾":"▸"}</span>
+                        <span className={"camp-dot "+c.dot}></span>
+                        <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{shortName}</span>
+                        {view==="ad" && (
+                          <span className="ad-count-chip">{c.ads.length} ads</span>
+                        )}
+                      </div>
+                    </td>
+                    {cols.slice(1).map(col=>{
+                      const cls = (col.cls? col.cls(agg):"")+(col.calc?" calc":"");
+                      return <td key={col.k} className={cls}>{col.fmt(agg)}</td>;
+                    })}
+                  </tr>
+                  {isOpen && orderedRows.map(r0=>{
+                    const r = deriveRow(r0);
+                    const dayKey = c.id+"|"+r.date;
+                    const dayOpen = !!expandedDays[dayKey];
+                    const isAdView = view === "ad";
+                    return (
+                      <React.Fragment key={c.id+r.date}>
+                        <tr
+                          className={isAdView?"day-row":""}
+                          onClick={isAdView ? ()=>setExpandedDays(s=>({...s,[dayKey]:!s[dayKey]})) : undefined}
+                          style={isAdView?{cursor:'pointer'}:undefined}
+                        >
+                          <td>
+                            <span style={{paddingLeft:30,color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:8}} className="mono">
+                              {isAdView && <span className="day-chevron">{dayOpen?"▾":"▸"}</span>}
+                              {r.date}
+                              {isAdView && <span className="day-ad-count">{c.ads.length}</span>}
+                            </span>
+                          </td>
+                          {cols.slice(1).map(col=>{
+                            const cls = (col.cls? col.cls(r):"")+(col.calc?" calc":"");
+                            return <td key={col.k} className={cls}>{col.fmt(r)}</td>;
+                          })}
+                        </tr>
+                        {isAdView && dayOpen && buildAdRows(c.id, r0, c.ads)
+                          .sort((a,b)=>b.spend-a.spend)
+                          .map(ad => {
+                            const adMetrics = deriveRow({
+                              date: ad.adName,
+                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
+                              msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
+                              contracted: ad.contracted, collected: ad.collected,
+                            });
+                            return (
+                              <tr key={c.id+r.date+ad.adId} className="ad-row">
+                                <td>
+                                  <span style={{paddingLeft:56,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
+                                    <span className="ad-id mono">{ad.adId}</span>
+                                    <span style={{color:'var(--text-3)'}}>·</span>
+                                    <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                                  </span>
+                                </td>
+                                {cols.slice(1).map(col=>{
+                                  const cls = (col.cls? col.cls(adMetrics):"")+(col.calc?" calc":"");
+                                  let val;
+                                  try { val = col.fmt(adMetrics); } catch(e){ val = "—"; }
+                                  return <td key={col.k} className={cls} style={{fontSize:11.5}}>{val}</td>;
+                                })}
+                              </tr>
+                            );
+                          })}
+                      </React.Fragment>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+            <tr className="total-row">
+              <td>Total</td>
+              {cols.slice(1).map(col=>{
+                const cls = (col.cls? col.cls(overall):"")+(col.calc?" calc":"");
+                return <td key={col.k} className={cls}>{col.fmt(overall)}</td>;
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ------- ROAS line chart
+const ROAS_HISTORY = {
+  collected: [
+    {d:"Apr 16", v:12.4}, {d:"Apr 17", v:9.1}, {d:"Apr 18", v:22.6},
+    {d:"Apr 19", v:24.3}, {d:"Apr 20", v:17.0}, {d:"Apr 21", v:20.1}, {d:"Apr 22", v:27.2}
+  ],
+  contracted: [
+    {d:"Apr 16", v:18.1}, {d:"Apr 17", v:14.6}, {d:"Apr 18", v:30.1},
+    {d:"Apr 19", v:31.2}, {d:"Apr 20", v:23.1}, {d:"Apr 21", v:28.8}, {d:"Apr 22", v:34.5}
+  ],
+  clients: [
+    {d:"Apr 16", v:5}, {d:"Apr 17", v:4}, {d:"Apr 18", v:11},
+    {d:"Apr 19", v:8}, {d:"Apr 20", v:6}, {d:"Apr 21", v:7}, {d:"Apr 22", v:9}
+  ]
+};
+
+function buildSmoothPath(points){
+  if(points.length < 2) return "";
+  let d = "M "+points[0].x+" "+points[0].y;
+  for(let i=0; i<points.length-1; i++){
+    const p0 = points[i-1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i+1];
+    const p3 = points[i+2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x)/6;
+    const cp1y = p1.y + (p2.y - p0.y)/6;
+    const cp2x = p2.x - (p3.x - p1.x)/6;
+    const cp2y = p2.y - (p3.y - p1.y)/6;
+    d += " C "+cp1x+" "+cp1y+", "+cp2x+" "+cp2y+", "+p2.x+" "+p2.y;
+  }
+  return d;
+}
+
+function RoasChart(){
+  const [metric, setMetric] = useState("collected");
+  const [preset, setPreset] = useState("last7");
+  const [dateOpen, setDateOpen] = useState(false);
+  const [hover, setHover] = useState(null);
+  const dateRef = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(dateRef.current && !dateRef.current.contains(e.target)) setDateOpen(false); };
+    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+  },[]);
+
+  const allData = ROAS_HISTORY[metric];
+  let data = allData;
+  if(preset==="today") data = allData.slice(-1);
+  else if(preset==="yesterday") data = allData.slice(-2,-1);
+  else if(preset==="last3") data = allData.slice(-3);
+  else if(preset==="last7") data = allData.slice(-7);
+
+  const W = 720, H = 180, PAD_L = 44, PAD_R = 14, PAD_T = 16, PAD_B = 28;
+  const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
+  const vals = data.map(d=>d.v);
+  const max = Math.max(...vals) * 1.15;
+  const min = 0;
+  const pts = data.map((d,i)=>({
+    x: PAD_L + (data.length===1 ? innerW/2 : (i/(data.length-1))*innerW),
+    y: PAD_T + innerH - ((d.v - min)/(max - min || 1))*innerH,
+    d: d.d, v: d.v
+  }));
+  const path = buildSmoothPath(pts);
+  const area = path + " L "+pts[pts.length-1].x+" "+(PAD_T+innerH)+" L "+pts[0].x+" "+(PAD_T+innerH)+" Z";
+
+  const latest = vals[vals.length-1];
+  const prev = vals.length>1 ? vals[vals.length-2] : latest;
+  const delta = latest - prev;
+  const pctDelta = prev ? (delta/prev)*100 : 0;
+
+  const unit = metric==="clients" ? "new clients" : "× ROAS";
+  const fmtVal = (v) => metric==="clients" ? Math.round(v)+"" : v.toFixed(1)+"×";
+  const lineClass = metric;
+
+  const ROAS_PRESETS = [
+    {id:"today",label:"Today"},
+    {id:"yesterday",label:"Yesterday"},
+    {id:"last3",label:"Last 3 days"},
+    {id:"last7",label:"Last 7 days"},
+    {id:"last14",label:"Last 14 days"},
+    {id:"last30",label:"Last 30 days"},
+    {id:"custom",label:"Custom"},
+  ];
+  const curPreset = ROAS_PRESETS.find(p=>p.id===preset);
+
+  // Tick marks (4 horizontal lines)
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => ({
+    y: PAD_T + innerH - t*innerH,
+    v: min + t*(max-min)
+  }));
+
+  return (
+    <div className="panel roas-panel">
+      <div className="kw-head">
+        <div>
+          <div className="section-label" style={{marginBottom:4}}>Return on ad spend</div>
+          <div className="kw-title">ROAS trend</div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <div className="kw-tabs">
+            <button className={"kw-tab "+(metric==="collected"?"active":"")} onClick={()=>setMetric("collected")}>Collected</button>
+            <button className={"kw-tab "+(metric==="contracted"?"active":"")} onClick={()=>setMetric("contracted")}>Contracted</button>
+            <button className={"kw-tab "+(metric==="clients"?"active":"")} onClick={()=>setMetric("clients")}>Clients</button>
+          </div>
+          <div className="filter" ref={dateRef}>
+            <button className={"filter-btn "+(dateOpen?"open":"")} onClick={()=>setDateOpen(!dateOpen)} style={{padding:'5px 10px',minHeight:26,fontSize:11}}>
+              <span style={{color:'var(--text-3)',display:'inline-flex'}}><IcCal /></span>
+              <span className="val" style={{fontSize:11}}>{curPreset.label}</span>
+              <span className="caret"><IcCaret/></span>
+            </button>
+            {dateOpen && (
+              <div className="pop" style={{right:0,left:'auto'}}>
+                {ROAS_PRESETS.map(p => (
+                  <div key={p.id} className={"pop-item "+(preset===p.id?"selected":"")} onClick={()=>{setPreset(p.id); setDateOpen(false);}}>
+                    <span>{p.label}</span>
+                    <span className="check"><IcCheck/></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="roas-stat">
+        <div className="roas-stat-item">
+          <div className="rs-label">Current</div>
+          <div className="rs-val">
+            {fmtVal(latest)}
+            <span className={"rs-delta "+(delta>=0?"pos":"neg")}>
+              {delta>=0?"▲":"▼"} {Math.abs(pctDelta).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+        <div className="roas-stat-item">
+          <div className="rs-label">Avg</div>
+          <div className="rs-val">{fmtVal(vals.reduce((a,b)=>a+b,0)/vals.length)}</div>
+        </div>
+        <div className="roas-stat-item">
+          <div className="rs-label">Peak</div>
+          <div className="rs-val gold">{fmtVal(Math.max(...vals))}</div>
+        </div>
+        <div className="roas-stat-item">
+          <div className="rs-label">Metric</div>
+          <div className="rs-val" style={{fontSize:12,color:'var(--text-3)',marginTop:6}}>{unit}</div>
+        </div>
+      </div>
+
+      <div className="roas-svg-wrap">
+        <svg className="roas-svg" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id={"roas-grad-"+metric} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"} stopOpacity="0.3"/>
+              <stop offset="100%" stopColor={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <g className="roas-grid">
+            {ticks.map((t,i)=>(
+              <g key={i}>
+                <line x1={PAD_L} y1={t.y} x2={W-PAD_R} y2={t.y} strokeDasharray={i===0||i===4?"":"2 4"}/>
+                <text x={PAD_L-8} y={t.y+3} className="roas-axis" textAnchor="end">{fmtVal(t.v)}</text>
+              </g>
+            ))}
+          </g>
+          {pts.map((p,i)=>(
+            <text key={i} x={p.x} y={H-8} className="roas-axis" textAnchor="middle">{p.d.replace("Apr ","")}</text>
+          ))}
+          <path d={area} fill={"url(#roas-grad-"+metric+")"} className="roas-area" style={{opacity:1}}/>
+          <path d={path} className={"roas-line "+lineClass}/>
+          {pts.map((p,i)=>(
+            <circle key={i} cx={p.x} cy={p.y} r={hover===i?5:3.5}
+              fill="#0a0a0a"
+              stroke={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"}
+              strokeWidth="2"
+              style={{cursor:'pointer',transition:'r .15s'}}
+              onMouseEnter={()=>setHover(i)}
+              onMouseLeave={()=>setHover(null)}
+            />
+          ))}
+        </svg>
+        {hover !== null && pts[hover] && (
+          <div className="roas-tooltip" style={{left:((pts[hover].x/W)*100)+"%", top:((pts[hover].y/H)*100)+"%"}}>
+            <div className="t-label">{pts[hover].d}</div>
+            <div>{fmtVal(pts[hover].v)}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ------- Shared line chart (curvy, 2 lines, fade, hover tooltip)
+// Catmull-Rom → cubic bezier so the curve is smooth with sparse points
+function smoothPath(points){
+  if(points.length < 2) return "";
+  const p = points;
+  let d = `M ${p[0].x} ${p[0].y}`;
+  for(let i=0; i<p.length-1; i++){
+    const p0 = p[i-1] || p[i];
+    const p1 = p[i];
+    const p2 = p[i+1];
+    const p3 = p[i+2] || p2;
+    const t = 0.18;
+    const c1x = p1.x + (p2.x - p0.x) * t;
+    const c1y = p1.y + (p2.y - p0.y) * t;
+    const c2x = p2.x - (p3.x - p1.x) * t;
+    const c2y = p2.y - (p3.y - p1.y) * t;
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+function LineChart({series, labels, height=200, width=640, fmt=(v)=>v, fmtRight, primaryColor="var(--gold)", yLabel=""}){
+  // series: [{name, values[], color, dashed?, isPrimary?, fmt?, axis?: 'left'|'right'}]
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const hasRight = series.some(s => s.axis === "right");
+  const pad = {t: hasRight ? 30 : 22, r: hasRight ? 52 : 16, b: 28, l: 46};
+  const innerW = width - pad.l - pad.r;
+  const innerH = height - pad.t - pad.b;
+  const n = labels.length;
+
+  // Build scale per axis
+  const buildScale = (vals) => {
+    const minV = Math.min(...vals, 0);
+    const maxV = Math.max(...vals);
+    const range = Math.max(maxV - minV, 1);
+    const yMax = maxV + range * 0.18;
+    const yMin = Math.max(0, minV - range * 0.12);
+    const yR = Math.max(yMax - yMin, 1);
+    return {yMin, yMax, yR};
+  };
+  const leftVals = series.filter(s => s.axis !== "right").flatMap(s => s.values);
+  const rightVals = series.filter(s => s.axis === "right").flatMap(s => s.values);
+  const leftScale = buildScale(leftVals.length ? leftVals : [0,1]);
+  const rightScale = hasRight ? buildScale(rightVals) : leftScale;
+  const scaleFor = (s) => s.axis === "right" ? rightScale : leftScale;
+
+  const xOf = (i) => pad.l + (n === 1 ? innerW/2 : (i/(n-1)) * innerW);
+  const yOfScale = (v, sc) => pad.t + innerH - ((v - sc.yMin)/sc.yR) * innerH;
+  const yOf = (v, s) => yOfScale(v, scaleFor(s));
+  const pointsFor = (s) => s.values.map((v,i)=>({x: xOf(i), y: yOf(v, s)}));
+
+  // y-axis ticks (4) for left scale; right scale gets same fractions but labeled with rightScale values
+  const tickFractions = [0, 0.33, 0.66, 1];
+  const leftTicks = tickFractions.map(t => leftScale.yMin + t*leftScale.yR);
+  const rightTicks = tickFractions.map(t => rightScale.yMin + t*rightScale.yR);
+
+  const handleMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scale = width / rect.width;
+    const x = (e.clientX - rect.left) * scale;
+    if(x < pad.l - 8 || x > pad.l + innerW + 8){ setHoverIdx(null); return; }
+    const rel = (x - pad.l) / innerW;
+    const idx = Math.max(0, Math.min(n-1, Math.round(rel*(n-1))));
+    setHoverIdx(idx);
+  };
+
+  return (
+    <div className="lc-wrap">
+      <svg className="lc-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
+        onMouseMove={handleMove} onMouseLeave={()=>setHoverIdx(null)}>
+        <defs>
+          {series.map((s,i)=> s.isPrimary && (
+            <linearGradient key={"g"+i} id={`lc-fade-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity="0.35"/>
+              <stop offset="60%" stopColor={s.color} stopOpacity="0.08"/>
+              <stop offset="100%" stopColor={s.color} stopOpacity="0"/>
+            </linearGradient>
+          ))}
+        </defs>
+        {/* grid (left axis) */}
+        {leftTicks.map((t,i)=>{
+          const y = yOfScale(t, leftScale);
+          const leftColor = series.find(s => s.axis !== "right")?.color || "var(--text-4)";
+          return (
+            <g key={"lt"+i}>
+              <line x1={pad.l} x2={pad.l+innerW} y1={y} y2={y} stroke="#181818" strokeWidth="1"/>
+              <text x={pad.l-8} y={y+3} textAnchor="end" fontSize="9.5" fill={hasRight?leftColor:"var(--text-4)"} fillOpacity={hasRight?0.7:1} fontFamily="'JetBrains Mono',monospace">{fmt(t)}</text>
+            </g>
+          );
+        })}
+        {/* right axis ticks */}
+        {hasRight && rightTicks.map((t,i)=>{
+          const y = yOfScale(t, rightScale);
+          const rightColor = series.find(s => s.axis === "right")?.color || "var(--text-4)";
+          return (
+            <text key={"rt"+i} x={pad.l+innerW+8} y={y+3} textAnchor="start" fontSize="9.5" fill={rightColor} fillOpacity="0.7" fontFamily="'JetBrains Mono',monospace">{(fmtRight||fmt)(t)}</text>
+          );
+        })}
+        {/* axis labels */}
+        {hasRight && (
+          <>
+            <text x={pad.l-8} y={pad.t-8} textAnchor="end" fontSize="8.5" fill={series.find(s=>s.axis!=="right")?.color} fillOpacity="0.8" fontFamily="'JetBrains Mono',monospace" letterSpacing="0.05em">{(series.find(s=>s.axis!=="right")?.name || "").toUpperCase()}</text>
+            <text x={pad.l+innerW+8} y={pad.t-8} textAnchor="start" fontSize="8.5" fill={series.find(s=>s.axis==="right")?.color} fillOpacity="0.8" fontFamily="'JetBrains Mono',monospace" letterSpacing="0.05em">{(series.find(s=>s.axis==="right")?.name || "").toUpperCase()}</text>
+          </>
+        )}
+        {/* x labels */}
+        {labels.map((l,i)=>{
+          const step = n > 10 ? Math.ceil(n/8) : 1;
+          if(i % step !== 0 && i !== n-1) return null;
+          return (
+            <text key={i} x={xOf(i)} y={height-10} textAnchor="middle" fontSize="9.5" fill="var(--text-4)" fontFamily="'JetBrains Mono',monospace">{l}</text>
+          );
+        })}
+        {/* fade areas (primary only) */}
+        {series.map((s,i)=>{
+          if(!s.isPrimary) return null;
+          const pts = pointsFor(s);
+          const baseline = yOfScale(scaleFor(s).yMin, scaleFor(s));
+          const d = smoothPath(pts) + ` L ${pts[pts.length-1].x} ${baseline} L ${pts[0].x} ${baseline} Z`;
+          return <path key={"f"+i} d={d} fill={`url(#lc-fade-${i})`}/>;
+        })}
+        {/* lines */}
+        {series.map((s,i)=>{
+          const d = smoothPath(pointsFor(s));
+          return <path key={"l"+i} d={d} fill="none" stroke={s.color}
+            strokeWidth={s.isPrimary ? 2 : 1.5}
+            strokeDasharray={s.dashed ? "4 4" : undefined}
+            strokeOpacity={s.isPrimary ? 1 : 0.6}
+            strokeLinecap="round" strokeLinejoin="round"/>;
+        })}
+        {/* hover guide */}
+        {hoverIdx !== null && (
+          <g>
+            <line x1={xOf(hoverIdx)} x2={xOf(hoverIdx)} y1={pad.t} y2={pad.t+innerH} stroke="#2a2a2a" strokeWidth="1" strokeDasharray="3 3"/>
+            {series.map((s,i)=>(
+              <circle key={"d"+i} cx={xOf(hoverIdx)} cy={yOf(s.values[hoverIdx], s)} r={s.isPrimary?4:3}
+                fill="#0a0a0a" stroke={s.color} strokeWidth="2"/>
+            ))}
+          </g>
+        )}
+      </svg>
+      {hoverIdx !== null && (
+        <div className="lc-tooltip" style={{
+          left: `${(xOf(hoverIdx)/width)*100}%`,
+        }}>
+          <div className="lc-tt-date">{labels[hoverIdx]}</div>
+          {series.map((s,i)=>(
+            <div key={i} className="lc-tt-row">
+              <span className="lc-tt-sw" style={{background:s.color, opacity: s.isPrimary?1:0.6}}></span>
+              <span className="lc-tt-name">{s.name}</span>
+              <span className="lc-tt-val mono">{(s.fmt||fmt)(s.values[hoverIdx])}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------- ROAS time-series card
+const DAY_LABELS = ["Apr 16","Apr 17","Apr 18","Apr 19","Apr 20","Apr 21","Apr 22"];
+// Build daily totals from CAMPAIGNS (already contains Apr 17-22). Synthesize Apr 16.
+function seriesForCampaignKey(key, filterId="all"){
+  const camps = filterId === "all" ? CAMPAIGNS : CAMPAIGNS.filter(c=>c.id===filterId);
+  // Map date -> summed value
+  const byDate = {};
+  camps.forEach(c => c.rows.forEach(r => {
+    byDate[r.date] = (byDate[r.date] || 0) + r[key];
+  }));
+  // Synth Apr 16 roughly 92% of Apr 17
+  if(!byDate["Apr 16"] && byDate["Apr 17"]) byDate["Apr 16"] = Math.round(byDate["Apr 17"] * 0.92);
+  return DAY_LABELS.map(l => byDate[l] || 0);
+}
+
+function ROASChart(){
+  const [client, setClient] = useState("all");
+  const [mode, setMode] = useState("collected"); // 'collected' | 'contracted'
+  const spend = seriesForCampaignKey("spend", client);
+  const revenue = seriesForCampaignKey(mode, client);
+  const roasVals = revenue.map((r,i)=> spend[i] ? r/spend[i] : 0);
+  const totalSpend = spend.reduce((a,b)=>a+b,0);
+  const totalRev = revenue.reduce((a,b)=>a+b,0);
+  const avgROAS = totalSpend ? totalRev/totalSpend : 0;
+  const deltaROAS = roasVals[roasVals.length-1] - roasVals[0];
+  return (
+    <div className="panel chart-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">ROAS</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{avgROAS.toFixed(2)}×</span>
+            <span className={deltaROAS>=0?"chart-delta pos":"chart-delta neg"}>
+              {deltaROAS>=0?"▲":"▼"} {Math.abs(deltaROAS).toFixed(2)}×
+            </span>
+            <span className="chart-sub-label">7-day avg</span>
+          </div>
+        </div>
+        <div className="chart-controls">
+          <div className="kw-tabs">
+            <button className={"kw-tab "+(mode==="collected"?"active":"")} onClick={()=>setMode("collected")}>Collected</button>
+            <button className={"kw-tab "+(mode==="contracted"?"active":"")} onClick={()=>setMode("contracted")}>Contracted</button>
+          </div>
+          <ClientPicker value={client} onChange={setClient}/>
+        </div>
+      </div>
+      <LineChart
+        labels={DAY_LABELS}
+        series={[
+          {name: mode==="collected"?"Revenue (collected)":"Revenue (contracted)", values: revenue, color: "var(--gold)", isPrimary:true, fmt: (v)=>"$"+Math.round(v).toLocaleString()},
+          {name: "Ad spend", values: spend, color: "#888", fmt: (v)=>"$"+Math.round(v).toLocaleString()},
+        ]}
+        fmt={(v)=>"$"+Math.round(v/1000*10)/10+"k"}
+      />
+      <div className="chart-legend">
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Revenue</span>
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'#888'}}></span>Ad spend</span>
+        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Hover to see daily ROAS</span>
+      </div>
+    </div>
+  );
+}
+
+// ------- Shared client picker (pill segmented)
+function ClientPicker({value, onChange}){
+  return (
+    <div className="client-picker">
+      <button className={"cpk-btn "+(value==="all"?"active":"")} onClick={()=>onChange("all")}>All</button>
+      <button className={"cpk-btn "+(value==="tyson"?"active":"")} onClick={()=>onChange("tyson")}>Tyson</button>
+      <button className={"cpk-btn "+(value==="keith"?"active":"")} onClick={()=>onChange("keith")}>Keith</button>
+    </div>
+  );
+}
+
+// ------- Cost per DM chart
+// Attribute cost per DM either overall (spend / msgs aggregated) or per keyword (spend of keyword / msgs count)
+function seriesCpmOverall(client){
+  const spend = seriesForCampaignKey("spend", client);
+  const msgs = seriesForCampaignKey("msgs", client);
+  return msgs.map((m,i)=> m ? spend[i]/m : 0);
+}
+// Use the same KW_DATA.collected as our keyword roster; cost per DM per keyword per day: fluctuate around spend/count
+const KW_ROSTER = [
+  {kw:"FIT",     camp:"tyson", baseSpend: 480, baseMsgs: 48},
+  {kw:"STRONG",  camp:"tyson", baseSpend: 420, baseMsgs: 38},
+  {kw:"SHRED",   camp:"tyson", baseSpend: 380, baseMsgs: 32},
+  {kw:"RIPPED",  camp:"tyson", baseSpend: 340, baseMsgs: 26},
+  {kw:"GOAL",    camp:"keith", baseSpend: 320, baseMsgs: 30},
+  {kw:"DIALED",  camp:"keith", baseSpend: 290, baseMsgs: 24},
+  {kw:"FOCUS",   camp:"keith", baseSpend: 260, baseMsgs: 20},
+];
+function seriesCpmKeyword(kw, client){
+  const def = KW_ROSTER.find(k=>k.kw===kw);
+  if(!def) return DAY_LABELS.map(()=>0);
+  const rand = (n)=>{ let x=0; for(let i=0;i<n.length;i++)x=((x<<5)-x+n.charCodeAt(i))|0; x=Math.abs(x); return ()=>{x=(x*9301+49297)%233280; return x/233280;}; };
+  const r = rand(kw+client);
+  return DAY_LABELS.map(()=> (def.baseSpend/7) / (def.baseMsgs/7 * (0.7 + r()*0.6)));
+}
+
+function CostPerDMChart(){
+  const [client, setClient] = useState("all");
+  const [mode, setMode] = useState("overall"); // 'overall' | 'keyword'
+  const availableKws = KW_ROSTER.filter(k => client==="all" || k.camp===client);
+
+  let series, avg, delta, subLabel;
+  if(mode === "overall"){
+    const vals = seriesCpmOverall(client);
+    avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+    delta = vals[vals.length-1] - vals[0];
+    subLabel = "7-day avg overall";
+    series = [
+      {name: "Cost / DM", values: vals, color: "var(--blue)", isPrimary:true, fmt: (v)=>"$"+v.toFixed(2)},
+    ];
+  } else {
+    // One line per keyword
+    const kwSeries = availableKws.map(k => ({
+      name: k.kw,
+      values: seriesCpmKeyword(k.kw, client),
+      color: k.camp === "tyson" ? "var(--gold)" : "var(--blue)",
+      camp: k.camp,
+      fmt: (v)=>"$"+v.toFixed(2),
+    }));
+    // Pick the best-performing (lowest avg) as primary for the fade
+    const withAvg = kwSeries.map(s => ({...s, _avg: s.values.reduce((a,b)=>a+b,0)/s.values.length}));
+    const best = withAvg.reduce((a,b) => a._avg < b._avg ? a : b);
+    series = kwSeries.map(s => ({...s, isPrimary: s.name === best.name}));
+    // Aggregate average = weighted average across all kw series
+    const allVals = kwSeries.flatMap(s => s.values);
+    avg = allVals.reduce((a,b)=>a+b,0) / allVals.length;
+    // Delta: overall last-vs-first (mean across all lines)
+    const firstMean = kwSeries.reduce((a,b)=>a+b.values[0],0) / kwSeries.length;
+    const lastMean  = kwSeries.reduce((a,b)=>a+b.values[b.values.length-1],0) / kwSeries.length;
+    delta = lastMean - firstMean;
+    subLabel = `Avg across ${kwSeries.length} keyword${kwSeries.length===1?"":"s"}`;
+  }
+
+  return (
+    <div className="panel chart-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">Cost per DM</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">${avg.toFixed(2)}</span>
+            <span className={delta<=0?"chart-delta pos":"chart-delta neg"}>
+              {delta<=0?"▼":"▲"} ${Math.abs(delta).toFixed(2)}
+            </span>
+            <span className="chart-sub-label">{subLabel}</span>
+          </div>
+        </div>
+        <div className="chart-controls">
+          <div className="kw-tabs">
+            <button className={"kw-tab "+(mode==="overall"?"active":"")} onClick={()=>setMode("overall")}>Overall</button>
+            <button className={"kw-tab "+(mode==="keyword"?"active":"")} onClick={()=>setMode("keyword")}>By keyword</button>
+          </div>
+          <ClientPicker value={client} onChange={setClient}/>
+        </div>
+      </div>
+      <LineChart
+        labels={DAY_LABELS}
+        series={series}
+        fmt={(v)=>"$"+v.toFixed(2)}
+      />
+      <div className="chart-legend cpm-legend">
+        {mode === "overall" ? (
+          <>
+            <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Cost per DM</span>
+            <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Lower is better</span>
+          </>
+        ) : (
+          <>
+            <div className="cpm-kw-legend">
+              {series.map(s => (
+                <span key={s.name} className="chart-legend-item">
+                  <span className="chart-sw" style={{background:s.color}}></span>{s.name}
+                </span>
+              ))}
+            </div>
+            <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Hover to compare · lower is better</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ------- Ad ROAS chart (was Keyword ROI)
+// Build aggregated per-ad metrics across the 6 known days
+function allAdsAggregated(){
+  const out = [];
+  CAMPAIGNS.forEach(c => {
+    c.ads.forEach(a => {
+      // sum across rows
+      let spend=0, collected=0, contracted=0, clients=0;
+      c.rows.forEach(r0 => {
+        const ads = buildAdRows(c.id, r0, c.ads);
+        const mine = ads.find(x=>x.adId===a.id);
+        if(mine){
+          spend += mine.spend;
+          collected += mine.collected;
+          contracted += mine.contracted;
+          clients += mine.clients;
+        }
+      });
+      out.push({
+        adId: a.id, adName: a.name, camp: c.id, campShort: c.short,
+        spend, collected, contracted, clients,
+      });
+    });
+  });
+  return out;
+}
+
+function AdROASChart(){
+  const [view, setView] = useState("top"); // 'top' | 'all'
+  const [client, setClient] = useState("all");
+  const [metric, setMetric] = useState("collected"); // collected | contracted
+  const all = useMemo(()=>allAdsAggregated(), []);
+  const filtered = all
+    .filter(a => client === "all" || a.camp === client)
+    .map(a => ({...a, roas: a.spend ? a[metric]/a.spend : 0}))
+    .sort((a,b) => b.roas - a.roas);
+  const list = view === "top" ? filtered.slice(0,6) : filtered;
+  const max = list[0]?.roas || 1;
+  return (
+    <div className="panel chart-card ads-roas">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">Ad ROAS</div>
+          <div className="chart-subtitle">
+            <span className="chart-sub-label">{view==="top" ? "Most profitable ads" : `All ads · ${list.length} running`}</span>
+          </div>
+        </div>
+        <div className="chart-controls">
+          <div className="kw-tabs">
+            <button className={"kw-tab "+(view==="top"?"active":"")} onClick={()=>setView("top")}>Top</button>
+            <button className={"kw-tab "+(view==="all"?"active":"")} onClick={()=>setView("all")}>All ads</button>
+          </div>
+          <ClientPicker value={client} onChange={setClient}/>
+        </div>
+      </div>
+      <div className="ar-metric-tabs">
+        <button className={"ar-mt "+(metric==="collected"?"active":"")} onClick={()=>setMetric("collected")}>Collected</button>
+        <button className={"ar-mt "+(metric==="contracted"?"active":"")} onClick={()=>setMetric("contracted")}>Contracted</button>
+      </div>
+      <div className={"ar-chart-wrap "+(view==="all"?"scroll-x":"")}>
+        <div className="ar-chart" style={{minWidth: Math.max(list.length * 64, 100) + "px"}}>
+          {list.map((a,i)=>{
+            const h = (a.roas/max)*150;
+            const color = a.camp==="tyson" ? "var(--gold)" : "var(--blue)";
+            return (
+              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.campShort} · $${a.spend.toLocaleString()} spend · $${a[metric].toLocaleString()} ${metric}`}>
+                <div className="ar-val">
+                  <div className="ar-val-roas">{a.roas.toFixed(1)}×</div>
+                  <div className="ar-val-sub mono">${Math.round(a[metric]/1000*10)/10}k</div>
+                </div>
+                <div className="ar-bar-v-wrap">
+                  <div className="ar-bar-v" style={{height:h+"px", background:color}}></div>
+                </div>
+                <div className="ar-col-label">
+                  <div className="ar-col-kw">{a.adName}</div>
+                  <div className="ar-col-camp" style={{color}}>{a.campShort}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="chart-legend">
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Tyson</span>
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Keith</span>
+        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>
+          {view==="all" ? "Scroll horizontally →" : "Bars sized by ROAS"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ------- Keyword entry
+const BUCKETS = [
+  {id:"msgs", label:"Messages", unit:"messages"},
+  {id:"calls", label:"Booked calls", unit:"calls"},
+  {id:"clients", label:"New clients", unit:"clients"},
+  {id:"contracted", label:"Contracted $", unit:"USD"},
+  {id:"collected", label:"Collected $", unit:"USD"},
+];
+
+const SETTERS = ["Amara"];
+
+function emptyRow(){ return {id: Math.random().toString(36).slice(2,9), keyword:"", value:""}; }
+
+function KeywordEntry({onSubmit}){
+  const [campaign, setCampaign] = useState("tyson");
+  const [setter, setSetter] = useState(SETTERS[0]);
+  // bucket groups appear in order added. Each: {id (bucket), rows: [{id,keyword,value}]}
+  const [groups, setGroups] = useState([
+    {bucket:"msgs", rows:[emptyRow()]},
+  ]);
+
+  const addBucket = (bucketId) => {
+    setGroups(g => {
+      if(g.find(x=>x.bucket===bucketId)) return g;
+      return [...g, {bucket:bucketId, rows:[emptyRow()]}];
+    });
+  };
+  const removeBucket = (bucketId) => setGroups(g => g.filter(x=>x.bucket!==bucketId));
+  const addRow = (bucketId) => setGroups(g => g.map(x => x.bucket===bucketId? {...x, rows:[...x.rows, emptyRow()]} : x));
+  const removeRow = (bucketId, rowId) => setGroups(g => g.map(x => x.bucket===bucketId? {...x, rows: x.rows.length>1 ? x.rows.filter(r=>r.id!==rowId) : x.rows} : x));
+  const updateRow = (bucketId, rowId, patch) => setGroups(g => g.map(x => x.bucket===bucketId? {...x, rows: x.rows.map(r => r.id===rowId?{...r,...patch}:r)} : x));
+
+  // Available buckets to add
+  const availableBuckets = BUCKETS.filter(b => !groups.find(g => g.bucket === b.id));
+
+  // Count valid rows
+  const validRows = groups.flatMap(g => g.rows.filter(r => r.keyword && r.value).map(r => ({bucket:g.bucket, ...r})));
+  const totalRows = groups.reduce((s,g)=>s+g.rows.length, 0);
+
+  const submit = () => {
+    if(validRows.length===0) return;
+    validRows.forEach(r => {
+      onSubmit({campaign, bucket:r.bucket, setter, keyword: r.keyword.toUpperCase(), value: parseFloat(r.value)});
+    });
+    // Reset to clean state
+    setGroups([{bucket:"msgs", rows:[emptyRow()]}]);
+  };
+
+  return (
+    <div className="panel entry-panel">
+      <div className="entry-head">Log keywords</div>
+
+      <div className="entry-row">
+        <select className="entry-select" value={campaign} onChange={e=>setCampaign(e.target.value)}>
+          <option value="tyson">Tyson — Spring Shred</option>
+          <option value="keith">Keith — Spring Shred</option>
+        </select>
+        <select className="entry-select" value={setter} onChange={e=>setSetter(e.target.value)} style={{maxWidth:140}}>
+          {SETTERS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      {groups.map(g => {
+        const bucket = BUCKETS.find(b=>b.id===g.bucket);
+        const unit = bucket?.unit || "";
+        const isUsd = unit === "USD";
+        const filled = g.rows.filter(r=>r.keyword && r.value).length;
+        return (
+          <div className="bucket-group" key={g.bucket}>
+            <div className="bucket-group-head">
+              <div className="bucket-group-label">
+                {bucket.label}
+                <span className="bucket-group-count">{filled}/{g.rows.length} filled</span>
+              </div>
+              <button className="bucket-group-rem" title="Remove section" onClick={()=>removeBucket(g.bucket)}>×</button>
+            </div>
+            {g.rows.map((r, i) => (
+              <div className="br-row" key={r.id}>
+                <span className="br-num">{String(i+1).padStart(2,"0")}</span>
+                <input
+                  className="br-input mono"
+                  placeholder="KEYWORD"
+                  value={r.keyword}
+                  onChange={e=>updateRow(g.bucket, r.id, {keyword:e.target.value.toUpperCase()})}
+                />
+                <input
+                  className="br-input val"
+                  placeholder={isUsd?"$0":"0"}
+                  value={r.value}
+                  onChange={e=>updateRow(g.bucket, r.id, {value:e.target.value.replace(/[^\d.]/g,"")})}
+                />
+                <span style={{color:'var(--text-4)',fontSize:10,minWidth:60,textAlign:'right'}}>{unit}</span>
+                <button className="br-remove" onClick={()=>removeRow(g.bucket, r.id)} title="Remove row">×</button>
+              </div>
+            ))}
+            <button className="br-addrow" onClick={()=>addRow(g.bucket)}>
+              <span style={{color:'var(--gold)',fontSize:13,lineHeight:1}}>+</span> Add row
+            </button>
+          </div>
+        );
+      })}
+
+      {availableBuckets.length > 0 && (
+        <div className="bucket-picker">
+          <span className="bucket-picker-label">Add stage</span>
+          {availableBuckets.map(b => (
+            <button key={b.id} className="bp-chip" onClick={()=>addBucket(b.id)}>
+              <span className="pl">+</span> {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="entry-submit-row">
+        <button className="entry-submit" onClick={submit} disabled={validRows.length===0}>
+          Log {validRows.length>0 ? validRows.length+" "+(validRows.length===1?"entry":"entries") : "entry"}
+        </button>
+        <span className="entry-hint">
+          {validRows.length>0 ? <span style={{color:'var(--text-3)'}}>{validRows.length} of {totalRows} rows ready</span> : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ------- Action modals
+function Modal({title, subtitle, wide, children, onClose, footer}){
+  useEffect(()=>{
+    const onKey = (e)=>{ if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return ()=> window.removeEventListener("keydown", onKey);
+  },[onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className={"modal "+(wide?"wide":"")} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="modal-title">{title}</div>
+            {subtitle && <div className="modal-sub">{subtitle}</div>}
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function NewCampaignModal({onClose, onCreate}){
+  const [account, setAccount] = useState("tyson");
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("2026-04-24");
+  const [keywords, setKeywords] = useState("");
+  const keywordList = keywords.split(/[\n,]/).map(k=>k.trim().toUpperCase()).filter(Boolean);
+  const canSubmit = name.trim() && keywordList.length > 0;
+  const submit = () => {
+    if(!canSubmit) return;
+    onCreate({account, name, start, keywords: keywordList});
+    onClose();
+  };
+  return (
+    <Modal title="New campaign" subtitle="Connects to the Meta Ads account and starts tracking from the start date" onClose={onClose} wide
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" onClick={submit} disabled={!canSubmit}>Create campaign</button>
+      </>}>
+      <div style={{marginBottom:14}}>
+        <label className="mf-label">Account</label>
+        <div className="campaign-pick">
+          <button className={"cp-card "+(account==="tyson"?"selected":"")} onClick={()=>setAccount("tyson")}>
+            <div className="cp-name">Tyson</div>
+          </button>
+          <button className={"cp-card "+(account==="keith"?"selected":"")} onClick={()=>setAccount("keith")}>
+            <div className="cp-name">Keith</div>
+          </button>
+        </div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label className="mf-label">Campaign name</label>
+        <input className="mf-input" placeholder="e.g. Summer Cut Challenge" value={name} onChange={e=>setName(e.target.value)} autoFocus/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label className="mf-label">Start date</label>
+        <input className="mf-input mono" type="date" value={start} onChange={e=>setStart(e.target.value)} style={{maxWidth:200}}/>
+      </div>
+      <div style={{marginTop:14}}>
+        <label className="mf-label">
+          Keywords to track <span style={{color:'var(--red)',marginLeft:4}}>*</span>
+          <span style={{color:'var(--text-4)',marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:10}}>One per line</span>
+        </label>
+        <textarea
+          className="mf-input mono"
+          style={{minHeight:100,resize:'vertical',padding:'10px 11px',lineHeight:1.55,color:'var(--gold)',fontSize:12,letterSpacing:'0.04em'}}
+          placeholder={"SHRED\nFIT\nRIPPED"}
+          value={keywords}
+          onChange={e=>setKeywords(e.target.value.toUpperCase())}
+        />
+        <div style={{fontSize:10,color:'var(--text-4)',marginTop:6,display:'flex',justifyContent:'space-between'}}>
+          <span>{keywordList.length} keyword{keywordList.length===1?"":"s"} parsed</span>
+          {keywordList.length > 0 && <span className="mono" style={{color:'var(--gold)'}}>{keywordList.slice(0,5).join(" · ")}{keywordList.length>5?" · …":""}</span>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function FinishCampaignModal({onClose, onFinish}){
+  const [picked, setPicked] = useState(null);
+  const submit = () => { if(picked){ onFinish(picked); onClose(); }};
+  return (
+    <Modal title="Finish campaign" subtitle="Freeze spend and mark the campaign complete. Data stays available." onClose={onClose}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-danger" onClick={submit} disabled={!picked}>Finish {picked||""}</button>
+      </>}>
+      <label className="mf-label">Select campaign</label>
+      <div className="campaign-pick">
+        {CAMPAIGNS.map(c=>(
+          <button key={c.id} className={"cp-card "+(picked===c.id?"selected":"")} onClick={()=>setPicked(c.id)}>
+            <div className="cp-name">{c.short} — Spring Shred</div>
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:11,color:'var(--text-4)',marginTop:12,padding:'10px 12px',background:'#0a0a0a',border:'1px solid var(--border)',borderRadius:5,lineHeight:1.5}}>
+        Ad spend will stop syncing. Keyword entries and revenue remain editable for 30 days.
+      </div>
+    </Modal>
+  );
+}
+
+function ImportKeywordModal({onClose, onImport}){
+  const [campaign, setCampaign] = useState("tyson");
+  const [text, setText] = useState("");
+  const keywordList = text.split(/[\n,]/).map(k=>k.trim().toUpperCase()).filter(Boolean);
+  const canSubmit = keywordList.length > 0;
+  return (
+    <Modal title="Import keyword data" subtitle="Paste one keyword per line. They’ll be added to the selected campaign." onClose={onClose} wide
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" onClick={()=>{onImport({campaign, count: keywordList.length}); onClose();}} disabled={!canSubmit}>
+          Import {keywordList.length>0 ? keywordList.length+" keyword"+(keywordList.length===1?"":"s") : ""}
+        </button>
+      </>}>
+      <div style={{marginBottom:14}}>
+        <label className="mf-label">Campaign</label>
+        <div className="campaign-pick">
+          <button className={"cp-card "+(campaign==="tyson"?"selected":"")} onClick={()=>setCampaign("tyson")}>
+            <div className="cp-name">Tyson — Spring Shred</div>
+          </button>
+          <button className={"cp-card "+(campaign==="keith"?"selected":"")} onClick={()=>setCampaign("keith")}>
+            <div className="cp-name">Keith — Spring Shred</div>
+          </button>
+        </div>
+      </div>
+      <label className="mf-label">Keywords <span style={{color:'var(--text-4)',marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:10}}>One per line</span></label>
+      <textarea
+        className="mf-input mono"
+        style={{minHeight:160,resize:'vertical',padding:'10px 11px',lineHeight:1.55,color:'var(--gold)',fontSize:12,letterSpacing:'0.04em'}}
+        placeholder={"SHRED\nFIT\nRIPPED"}
+        value={text}
+        onChange={e=>setText(e.target.value.toUpperCase())}
+        autoFocus
+      />
+      <div style={{fontSize:10,color:'var(--text-4)',marginTop:6,display:'flex',justifyContent:'space-between'}}>
+        <span>{keywordList.length} keyword{keywordList.length===1?"":"s"} parsed</span>
+        {keywordList.length > 0 && <span className="mono" style={{color:'var(--gold)'}}>{keywordList.slice(0,5).join(" · ")}{keywordList.length>5?" · …":""}</span>}
+      </div>
+    </Modal>
+  );
+}
+
+// ------- Actions bar
+function Actions({onToast}){
+  const [modal, setModal] = useState(null);
+  return (
+    <>
+      <div className="panel actions-panel">
+        <div className="actions-left">
+          <button className="action-btn" onClick={()=>setModal("new")}><span className="ic"><IcPlus/></span>New campaign</button>
+          <span className="action-sep"></span>
+          <button className="action-btn" onClick={()=>setModal("finish")}><span className="ic"><IcFlag/></span>Finish campaign</button>
+          <span className="action-sep"></span>
+          <button className="action-btn" onClick={()=>setModal("import")}><span className="ic"><IcUpload/></span>Import keyword data</button>
+        </div>
+        <button className="action-btn" style={{color:'var(--text-3)'}} onClick={()=>onToast&&onToast("Exported 14 rows to CSV")}><span className="ic"><IcDownload/></span>Export CSV</button>
+      </div>
+      {modal==="new" && <NewCampaignModal onClose={()=>setModal(null)} onCreate={(c)=>onToast&&onToast("Campaign \""+c.name+"\" created · "+c.keywords.length+" keywords")} />}
+      {modal==="finish" && <FinishCampaignModal onClose={()=>setModal(null)} onFinish={(id)=>onToast&&onToast("Campaign "+id+" marked finished")} />}
+      {modal==="import" && <ImportKeywordModal onClose={()=>setModal(null)} onImport={(r)=>onToast&&onToast("Imported "+r.count+" keywords into "+(r.campaign==="tyson"?"Tyson":"Keith"))} />}
+    </>
+  );
+}
+
+// ------- Recent entries
+const RECENT = [
+  {ts:"Apr 22 · 4:12p", setter:"Mia",   camp:"tyson", kw:"BONUS",  bucket:"msgs",  value:5},
+  {ts:"Apr 22 · 3:48p", setter:"Diego", camp:"tyson", kw:"EASY",   bucket:"msgs",  value:1},
+  {ts:"Apr 22 · 2:30p", setter:"Mia",   camp:"keith", kw:"FOCUS",  bucket:"msgs",  value:2},
+  {ts:"Apr 22 · 1:05p", setter:"Jake",  camp:"tyson", kw:"SIMPLE", bucket:"msgs",  value:1},
+  {ts:"Apr 22 · 12:20p",setter:"Diego", camp:"keith", kw:"ACT",    bucket:"msgs",  value:1},
+  {ts:"Apr 21 · 6:44p", setter:"Mia",   camp:"tyson", kw:"FIT",    bucket:"collected", value:1500},
+  {ts:"Apr 21 · 5:12p", setter:"Jake",  camp:"tyson", kw:"STRONG", bucket:"contracted",value:2400},
+  {ts:"Apr 21 · 3:02p", setter:"Mia",   camp:"keith", kw:"GOAL",   bucket:"clients", value:1},
+];
+
+function formatEntry(e){
+  const b = BUCKETS.find(x=>x.id===e.bucket);
+  if(e.bucket==="contracted" || e.bucket==="collected") return fmtUsd(e.value)+" "+(e.bucket==="contracted"?"contracted":"collected");
+  return e.value+" "+(b?.unit||"");
+}
+
+function RecentEntries({extra, onToast}){
+  const [open, setOpen] = useState(false);
+  const [entries, setEntries] = useState(null); // null → derive from extra+RECENT
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState({kw:"", value:"", bucket:"msgs", camp:"tyson"});
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  // Build a stable list with ids the first time (so state mutations are consistent)
+  const seedAll = useMemo(() => {
+    return [...extra, ...RECENT].map((e, i) => ({id: "e-"+i, ...e}));
+  }, [extra]);
+  const list = entries ?? seedAll;
+
+  const startEdit = (e) => {
+    setEditingId(e.id);
+    setDraft({kw: e.kw, value: String(e.value), bucket: e.bucket, camp: e.camp});
+    setConfirmDel(null);
+  };
+  const cancelEdit = () => { setEditingId(null); setConfirmDel(null); };
+  const saveEdit = () => {
+    if(!draft.kw || !draft.value) return;
+    const next = (entries ?? seedAll).map(e =>
+      e.id === editingId
+        ? {...e, kw: draft.kw.toUpperCase(), value: parseFloat(draft.value), bucket: draft.bucket, camp: draft.camp, edited: true}
+        : e
+    );
+    setEntries(next);
+    setEditingId(null);
+    setConfirmDel(null);
+    onToast && onToast("Entry updated");
+  };
+  const deleteEntry = (id) => {
+    const next = (entries ?? seedAll).filter(e => e.id !== id);
+    setEntries(next);
+    setEditingId(null);
+    setConfirmDel(null);
+    onToast && onToast("Entry deleted");
+  };
+
+  return (
+    <div className="recent">
+      <div className="recent-head" onClick={()=>setOpen(!open)}>
+        <div className="recent-title">
+          <span className={"recent-caret "+(open?"open":"")}>▸</span>
+          Recent keyword entries
+          <span className="recent-count">{list.length} logs · last 48h</span>
+        </div>
+        <span style={{color:'var(--text-4)',fontSize:11}}></span>
+      </div>
+      <div className={"recent-body "+(open?"open":"")}>
+        <table className="recent-tbl">
+          <thead>
+            <tr>
+              <th style={{width:130}}>Time</th>
+              <th style={{width:90}}>Setter</th>
+              <th style={{width:110}}>Campaign</th>
+              <th style={{width:150}}>Keyword</th>
+              <th style={{width:180}}>Bucket</th>
+              <th className="r" style={{width:110}}>Value</th>
+              <th className="actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((e)=>{
+              const isEditing = editingId === e.id;
+              const isDollar = e.bucket === "contracted" || e.bucket === "collected";
+              const bucketLabel = BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
+              return (
+                <tr key={e.id} className={isEditing ? "editing-row" : ""}>
+                  <td className="mono" style={{color:'var(--text-3)',fontSize:11,verticalAlign:'middle'}}>
+                    {e.ts}{e.edited && <span className="edited-tag" title="Edited">·edited</span>}
+                  </td>
+                  <td style={{verticalAlign:'middle'}}>{e.setter}</td>
+                  <td style={{color:'var(--text-3)',verticalAlign:'middle'}}>
+                    {isEditing ? (
+                      <select className="rec-edit-input" style={{width:90}} value={draft.camp} onChange={ev=>setDraft(d=>({...d, camp:ev.target.value}))}>
+                        <option value="tyson">Tyson</option>
+                        <option value="keith">Keith</option>
+                      </select>
+                    ) : (e.camp==="tyson" ? "Tyson" : "Keith")}
+                  </td>
+                  <td style={{verticalAlign:'middle'}}>
+                    {isEditing ? (
+                      <input
+                        className="rec-edit-input kw"
+                        value={draft.kw}
+                        onChange={ev=>setDraft(d=>({...d, kw:ev.target.value.toUpperCase()}))}
+                        autoFocus
+                        onKeyDown={ev=>{ if(ev.key==="Enter") saveEdit(); if(ev.key==="Escape") cancelEdit(); }}
+                      />
+                    ) : <span className="kw-tag">{e.kw}</span>}
+                  </td>
+                  <td style={{verticalAlign:'middle',fontSize:11,color:'var(--text-3)'}}>
+                    {isEditing ? (
+                      <select className="rec-edit-input" style={{width:150}} value={draft.bucket} onChange={ev=>setDraft(d=>({...d, bucket:ev.target.value}))}>
+                        {BUCKETS.map(b=><option key={b.id} value={b.id}>{b.label}</option>)}
+                      </select>
+                    ) : bucketLabel}
+                  </td>
+                  <td className="r mono" style={{color:'var(--text-2)',verticalAlign:'middle'}}>
+                    {isEditing ? (
+                      <input
+                        className="rec-edit-input"
+                        style={{textAlign:'right'}}
+                        value={draft.value}
+                        onChange={ev=>setDraft(d=>({...d, value: ev.target.value.replace(/[^\d.]/g,"")}))}
+                        placeholder={(draft.bucket==="contracted"||draft.bucket==="collected")?"$":""}
+                        onKeyDown={ev=>{ if(ev.key==="Enter") saveEdit(); if(ev.key==="Escape") cancelEdit(); }}
+                      />
+                    ) : (isDollar ? fmtUsd(e.value) : e.value)}
+                  </td>
+                  <td className="actions-col" style={{verticalAlign:'middle'}}>
+                    {isEditing ? (
+                      <>
+                        <button className="rec-save" onClick={saveEdit} disabled={!draft.kw || !draft.value}>Save</button>
+                        <button className="rec-cancel" onClick={cancelEdit}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="rec-edit-btn" onClick={()=>startEdit(e)}>Edit</button>
+                        <button className="rec-delete-btn" style={{marginLeft:4}} onClick={()=>setConfirmDel(e.id)}>Delete</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {confirmDel!==null && (() => {
+        const victim = (entries ?? seedAll).find(x=>x.id===confirmDel);
+        if(!victim) return null;
+        return (
+          <Modal title="Delete entry?" subtitle="This cannot be undone." onClose={()=>setConfirmDel(null)}
+            footer={<>
+              <button className="btn-secondary" onClick={()=>setConfirmDel(null)}>No</button>
+              <button className="btn-danger-solid" onClick={()=>deleteEntry(victim.id)}>Yes, delete</button>
+            </>}>
+            <div style={{padding:'12px 14px',background:'#0a0a0a',border:'1px solid var(--border)',borderRadius:5,fontSize:12,lineHeight:1.6}}>
+              <div style={{color:'var(--text-4)',fontSize:10,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Entry</div>
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <span className="kw-tag">{victim.kw}</span>
+                <span style={{color:'var(--text-3)'}}>{victim.setter}</span>
+                <span style={{color:'var(--text-4)'}}>·</span>
+                <span style={{color:'var(--text-3)'}}>{BUCKETS.find(b=>b.id===victim.bucket)?.label || victim.bucket}</span>
+                <span style={{color:'var(--text-4)'}}>·</span>
+                <span className="mono" style={{color:'var(--text-2)'}}>
+                  {(victim.bucket==="contracted"||victim.bucket==="collected") ? fmtUsd(victim.value) : victim.value}
+                </span>
+                <span style={{color:'var(--text-4)',marginLeft:'auto',fontSize:11}}>{victim.ts}</span>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ------- App
+function App(){
+  const [account, setAccount] = useState("all");
+  const [status, setStatus] = useState("active");
+  const [newEntries, setNewEntries] = useState([]);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>setToast(null), 2400);
+  };
+
+  const onLogEntry = (e) => {
+    const entry = {
+      ts:"Just now", setter:e.setter, camp:e.campaign, kw:e.keyword, bucket:e.bucket, value:e.value
+    };
+    setNewEntries(x=>[entry, ...x]);
+  };
+
+  return (
+    <div className="app">
+        <div className="page">
+          {/* Header */}
+          <div className="page-head">
+            <div>
+              <h1 className="page-title">Ads Tracker</h1>
+            </div>
+            <button className="sync-pill" onClick={()=>showToast("Synced · just now")}>
+              <svg className="sync-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg>
+              <span>Last synced 6m ago</span>
+            </button>
+          </div>
+
+          {/* Filter bar */}
+          <div className="filter-bar">
+            <SelectFilter
+              label="Account"
+              value={account}
+              onChange={setAccount}
+              options={[
+                {id:"all",label:"All accounts"},
+                {id:"tyson",label:"Tyson"},
+                {id:"keith",label:"Keith"},
+              ]}
+            />
+            <Segmented
+              value={status}
+              onChange={setStatus}
+              options={[
+                {id:"active",label:"Active"},
+                {id:"finished",label:"Finished"},
+                {id:"all",label:"All"},
+              ]}
+            />
+            <div className="filter-divider"></div>
+            <DateDropdown />
+            <div style={{flex:1}}></div>
+            <button className="filter-btn" style={{color:'var(--text-3)'}}>
+              <IcSearch/>
+              <span style={{fontSize:12}}>Search</span>
+            </button>
+          </div>
+
+          {/* Campaign table */}
+          <div className="section" style={{marginTop:0}}>
+            <div className="section-head">
+              <div className="section-label">Campaign performance</div>
+            </div>
+            <CampaignTable account={account} status={status} />
+          </div>
+
+          {/* Bottom grid */}
+          {/* Charts row 1: ROAS + Ad ROAS */}
+          <div className="grid-charts">
+            <ROASChart/>
+            <AdROASChart/>
+          </div>
+
+          {/* Charts row 2: Cost per DM + entry/actions */}
+          <div className="grid-bottom">
+            <div>
+              <CostPerDMChart/>
+            </div>
+            <div className="right-col">
+              <div>
+                <KeywordEntry onSubmit={onLogEntry} />
+              </div>
+              <div>
+                <div className="section-head">
+                  <div className="section-label">Actions</div>
+                  <div className="section-meta">Manual</div>
+                </div>
+                <Actions onToast={showToast}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent entries (collapsed) */}
+          <RecentEntries extra={newEntries} onToast={showToast} />
+
+          <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
+            <span>Ads Tracker v1.4 · Client Conversion OS</span>
+            <span className="mono">Fetched Apr 22, 2026 · 16:12 PT</span>
+          </div>
+        </div>
+        {toast && (
+          <div className="toast">
+            <span className="toast-dot"></span>
+            {toast}
+          </div>
+        )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
