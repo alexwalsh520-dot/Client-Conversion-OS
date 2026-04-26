@@ -408,7 +408,13 @@
   .recent-caret{color:var(--text-3);font-size:10px;transition:transform .18s}
   .recent-caret.open{transform:rotate(90deg)}
   .recent-body{border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .25s ease}
-  .recent-body.open{max-height:500px}
+  .recent-body.open{max-height:980px}
+  .manual-log-toggle{display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--border);background:#0c0c0c}
+  .manual-log-btn{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--border-2);border-radius:5px;background:#0f0f0f;color:var(--text-3);font-size:11px}
+  .manual-log-btn:hover{background:#171717;color:var(--text-2)}
+  .manual-log-btn.active{color:var(--gold);border-color:#3a301d;background:#151108}
+  .manual-log-area{padding:0 18px 14px;background:#0c0c0c;border-bottom:1px solid var(--border)}
+  .manual-log-area .entry-panel{background:#101010}
   table.recent-tbl{width:100%;border-collapse:collapse;font-size:12px}
   table.recent-tbl th{padding:9px 18px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-4);font-weight:500;border-bottom:1px solid var(--border)}
   table.recent-tbl th.r{text-align:right}
@@ -2294,8 +2300,9 @@ function formatEntry(e){
   return e.value+" "+(b?.unit||"");
 }
 
-function RecentEntries({extra, includeFallback=false, onToast}){
+function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
   const [open, setOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [entries, setEntries] = useState(null); // null → derive from extra+RECENT
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({kw:"", value:"", bucket:"msgs", camp:"tyson"});
@@ -2333,6 +2340,10 @@ function RecentEntries({extra, includeFallback=false, onToast}){
     setConfirmDel(null);
     onToast && onToast("Entry deleted");
   };
+  const submitManualEntry = (entry) => {
+    onManualSubmit && onManualSubmit(entry);
+    setManualOpen(false);
+  };
 
   return (
     <div className="recent">
@@ -2345,6 +2356,17 @@ function RecentEntries({extra, includeFallback=false, onToast}){
         <span style={{color:'var(--text-4)',fontSize:11}}></span>
       </div>
       <div className={"recent-body "+(open?"open":"")}>
+        <div className="manual-log-toggle">
+          <button className={"manual-log-btn "+(manualOpen?"active":"")} onClick={()=>setManualOpen(v=>!v)}>
+            <span style={{color:'var(--gold)',fontSize:13,lineHeight:1}}>+</span>
+            {manualOpen ? "Hide manual logger" : "Log keyword manually"}
+          </button>
+        </div>
+        {manualOpen && (
+          <div className="manual-log-area">
+            <KeywordEntry onSubmit={submitManualEntry} />
+          </div>
+        )}
         <table className="recent-tbl">
           <thead>
             <tr>
@@ -2654,9 +2676,6 @@ function App(){
             </div>
             <div className="right-col">
               <div>
-                <KeywordEntry onSubmit={onLogEntry} />
-              </div>
-              <div>
                 <div className="section-head">
                   <div className="section-label">Actions</div>
                   <div className="section-meta">Manual</div>
@@ -2667,7 +2686,7 @@ function App(){
           </div>
 
           {/* Recent entries (collapsed) */}
-          <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onToast={showToast} />
+          <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
 
           <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
             <span>Ads Tracker v1.4 · Client Conversion OS</span>
