@@ -27,6 +27,12 @@ import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
  *   "event_at": "2026-04-10T04:15:00.000Z"
  */
 
+function adsClientKeyFromDmClient(clientKey: ReturnType<typeof normalizeClientKey>) {
+  if (clientKey === "tyson_sonnek") return "tyson";
+  if (clientKey === "keith_holland") return "keith";
+  return clientKey;
+}
+
 function sourceEventId(input: {
   explicitId?: string;
   clientKey: string;
@@ -46,6 +52,10 @@ function sourceEventId(input: {
 
 function missingColumn(error: { message?: string } | null, column: string) {
   return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
+}
+
+function duplicateEvent(error: { code?: string; message?: string } | null) {
+  return error?.code === "23505" || Boolean(error?.message?.toLowerCase().includes("duplicate key"));
 }
 
 function removeColumns<T extends Record<string, unknown>>(payload: T, columns: string[]) {
@@ -103,12 +113,13 @@ export async function POST(req: NextRequest) {
     const normalizedEventAt = event_at || new Date().toISOString();
 
     const clientKey = normalizeClientKey(client);
+    const adsClientKey = adsClientKeyFromDmClient(clientKey);
     const setterKey = normalizeSetterKey(setter_name);
     const keywordNormalized = normalizeKeyword(keyword);
     const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
     const keywordSourceEventId = sourceEventId({
       explicitId: event_id || eventId,
-      clientKey,
+      clientKey: adsClientKey,
       subscriberId: subscriber_id,
       tagName: tag_name,
       keywordNormalized,
@@ -150,41 +161,35 @@ export async function POST(req: NextRequest) {
     }
 
     if (keywordNormalized) {
+      const keywordEventPayload = {
+        source: "manychat",
+        source_event_id: keywordSourceEventId,
+        event_type: "dm_keyword",
+        client_key: adsClientKey,
+        keyword_raw: keywordRaw,
+        keyword_normalized: keywordNormalized,
+        subscriber_id,
+        subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+        setter_name: setterKey,
+        event_at: normalizedEventAt,
+        raw_payload: body,
+      };
+
       const { error: keywordError } = await sb
         .from("ads_keyword_events")
-        .upsert(
-          {
-            source: "manychat",
-            source_event_id: keywordSourceEventId,
-            event_type: "dm_keyword",
-            client_key: clientKey,
-            keyword_raw: keywordRaw,
-            keyword_normalized: keywordNormalized,
-            subscriber_id,
-            subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
-            setter_name: setterKey,
-            event_at: normalizedEventAt,
-            raw_payload: body,
-          },
-          { onConflict: "source_event_id" }
-        );
+        .insert(keywordEventPayload);
 
       if (keywordError) {
-        if (missingColumn(keywordError, "source_event_id")) {
-          const { error: fallbackError } = await sb.from("ads_keyword_events").insert({
-            source: "manychat",
-            event_type: "dm_keyword",
-            client_key: clientKey,
-            keyword_raw: keywordRaw,
-            keyword_normalized: keywordNormalized,
-            subscriber_id,
-            subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
-            setter_name: setterKey,
-            event_at: normalizedEventAt,
-            raw_payload: body,
-          });
+        if (duplicateEvent(keywordError)) {
+          // ManyChat can retry webhooks. Duplicate source ids are safe to ignore.
+        } else if (missingColumn(keywordError, "source_event_id")) {
+          const { error: fallbackError } = await sb
+            .from("ads_keyword_events")
+            .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
 
-          if (fallbackError) console.error("Manychat keyword event fallback insert error:", fallbackError);
+          if (fallbackError && !duplicateEvent(fallbackError)) {
+            console.error("Manychat keyword event fallback insert error:", fallbackError);
+          }
         } else {
           console.error("Manychat keyword event insert error:", keywordError);
         }
