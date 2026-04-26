@@ -9,17 +9,25 @@ const ACCOUNTS = [
     key: "tyson",
     name: "Tyson",
     timezone: "America/Los_Angeles",
-    adAccountEnv: "META_AD_ACCOUNT_TYSON",
-    tokenEnv: "META_ACCESS_TOKEN_TYSON",
+    adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
+    tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
   },
   {
     key: "keith",
     name: "Keith",
     timezone: "America/New_York",
-    adAccountEnv: "META_AD_ACCOUNT_KEITH",
-    tokenEnv: "META_ACCESS_TOKEN_KEITH",
+    adAccountEnv: ["META_AD_ACCOUNT_KEITH", "META_ADS_ACCOUNT_KEITH"],
+    tokenEnv: ["META_ACCESS_TOKEN_KEITH", "META_ADS_TOKEN_KEITH", "META_ACCESS_TOKEN"],
   },
 ] as const;
+
+function firstEnv(names: readonly string[]) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  return null;
+}
 
 function normalizeAdAccountId(id: string) {
   return id.startsWith("act_") ? id : `act_${id}`;
@@ -99,15 +107,15 @@ export async function POST(req: NextRequest) {
   }
 
   for (const account of ACCOUNTS) {
-    const rawAdAccountId = process.env[account.adAccountEnv];
-    const token = process.env[account.tokenEnv] || process.env.META_ACCESS_TOKEN;
+    const rawAdAccountId = firstEnv(account.adAccountEnv);
+    const token = firstEnv(account.tokenEnv);
 
     if (!rawAdAccountId || !token) {
       results.push({
         account: account.key,
         fetched: 0,
         upserted: 0,
-        error: `Missing ${account.adAccountEnv} or ${account.tokenEnv}/META_ACCESS_TOKEN`,
+        error: `Missing one of ${account.adAccountEnv.join(", ")} or ${account.tokenEnv.join(", ")}`,
       });
       continue;
     }
