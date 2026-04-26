@@ -47,6 +47,27 @@ interface KeywordEvent {
   event_at: string;
 }
 
+interface SalesTrackerDbRow {
+  call_number: string | null;
+  date: string;
+  prospect_name: string | null;
+  call_taken: boolean | null;
+  call_taken_status: string | null;
+  call_length: string | null;
+  recorded: boolean | null;
+  outcome: string | null;
+  closer: string | null;
+  objection: string | null;
+  program_length: string | null;
+  contracted_revenue_cents: number | null;
+  collected_revenue_cents: number | null;
+  payment_method: string | null;
+  setter: string | null;
+  call_notes: string | null;
+  recording_link: string | null;
+  offer: string | null;
+}
+
 export interface AdsTrackerRow {
   id: string;
   clientKey: string;
@@ -161,6 +182,89 @@ function isWin(row: SheetRow): boolean {
 
 function isNoShow(row: SheetRow): boolean {
   return row.outcome.includes("NS") || row.callTakenStatus === "no";
+}
+
+function normalizeCallTakenStatus(
+  value: string | null,
+  callTaken: boolean | null
+): SheetRow["callTakenStatus"] {
+  const normalized = (value || "").toLowerCase().trim();
+  if (normalized === "yes" || normalized === "no" || normalized === "pending") {
+    return normalized;
+  }
+  if (callTaken === true) return "yes";
+  if (callTaken === false) return "no";
+  return "pending";
+}
+
+function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
+  return {
+    callNumber: row.call_number || "",
+    date: row.date,
+    name: row.prospect_name || "",
+    callTaken: row.call_taken === true,
+    callTakenStatus: normalizeCallTakenStatus(row.call_taken_status, row.call_taken),
+    callLength: row.call_length || "",
+    recorded: row.recorded === true,
+    outcome: (row.outcome || "").toUpperCase(),
+    closer: (row.closer || "").toUpperCase(),
+    objection: row.objection || "",
+    programLength: row.program_length || "",
+    revenue: (row.contracted_revenue_cents || 0) / 100,
+    cashCollected: (row.collected_revenue_cents || 0) / 100,
+    method: (row.payment_method || "").toUpperCase(),
+    setter: row.setter || "",
+    callNotes: row.call_notes || "",
+    recordingLink: row.recording_link || "",
+    offer: row.offer || "",
+  };
+}
+
+async function fetchSalesRowsFromSupabase(
+  db: ReturnType<typeof getServiceSupabase>,
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+): Promise<SheetRow[] | null> {
+  const { data, error } = await db
+    .from("sales_tracker_rows")
+    .select(
+      [
+        "call_number",
+        "date",
+        "prospect_name",
+        "call_taken",
+        "call_taken_status",
+        "call_length",
+        "recorded",
+        "outcome",
+        "closer",
+        "objection",
+        "program_length",
+        "contracted_revenue_cents",
+        "collected_revenue_cents",
+        "payment_method",
+        "setter",
+        "call_notes",
+        "recording_link",
+        "offer",
+      ].join(",")
+    )
+    .gte("date", query.dateFrom)
+    .lte("date", query.dateTo);
+
+  if (error) {
+    console.warn("[ads-tracker] Supabase sales rows unavailable; falling back to sheet", error);
+    return null;
+  }
+
+  if (!data || data.length === 0) return null;
+
+  return (data as SalesTrackerDbRow[])
+    .map(salesDbRowToSheetRow)
+    .filter((row) => {
+      const clientKey = clientFromOffer(row);
+      return !clientKey || clientFilter.includes(clientKey);
+    });
 }
 
 function applySalesToGroups(groups: Map<string, Group>, salesRows: SheetRow[], bookings: KeywordEvent[]) {
@@ -343,10 +447,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   }
 
   const bookings = events.filter((event) => event.source === "ghl");
-  const salesRows = await fetchSheetData(query.dateFrom, query.dateTo).catch((error) => {
-    console.warn("[ads-tracker] Sales sheet fetch failed", error);
-    return [] as SheetRow[];
-  });
+  const salesRows =
+    (await fetchSalesRowsFromSupabase(db, query, clientFilter)) ??
+    (await fetchSheetData(query.dateFrom, query.dateTo).catch((error) => {
+      console.warn("[ads-tracker] Sales sheet fetch failed", error);
+      return [] as SheetRow[];
+    }));
 
   applySalesToGroups(groups, salesRows, bookings);
 
