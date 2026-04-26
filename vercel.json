@@ -2,7 +2,7 @@
   "framework": "nextjs",
   "crons": [
     {
-      "path": "/api/sync",
+      "path": "/api/cron/mozi-sync",
       "schedule": "0 6 * * *"
     },
     {
