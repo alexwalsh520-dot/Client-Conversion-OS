@@ -47,6 +47,16 @@ interface KeywordEvent {
   event_at: string;
 }
 
+interface ManychatTagEvent {
+  tag_name: string | null;
+  client: string | null;
+  keyword_raw: string | null;
+  keyword_normalized: string | null;
+  subscriber_name: string | null;
+  setter_name: string | null;
+  event_at: string;
+}
+
 interface SalesTrackerDbRow {
   call_number: string | null;
   date: string;
@@ -235,6 +245,34 @@ function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
     callNotes: row.call_notes || "",
     recordingLink: row.recording_link || "",
     offer: row.offer || "",
+  };
+}
+
+function adsClientKeyFromManychatClient(client: string | null): string | null {
+  if (!client) return null;
+  const normalized = client.toLowerCase().trim();
+  if (normalized === "tyson" || normalized === "tyson_sonnek") return "tyson";
+  if (normalized === "keith" || normalized === "keith_holland") return "keith";
+  return normalized;
+}
+
+function manychatTagEventToKeywordEvent(row: ManychatTagEvent): KeywordEvent | null {
+  const clientKey = adsClientKeyFromManychatClient(row.client);
+  const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
+  if (!clientKey || !keyword) return null;
+
+  return {
+    source: "manychat",
+    event_type: row.tag_name || "dm_keyword",
+    client_key: clientKey,
+    keyword_raw: row.keyword_raw || displayKeyword(keyword),
+    keyword_normalized: keyword,
+    subscriber_name: row.subscriber_name,
+    setter_name: row.setter_name,
+    appointment_id: null,
+    contact_id: null,
+    contact_name: null,
+    event_at: row.event_at,
   };
 }
 
@@ -468,8 +506,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const clientFilter =
     query.account === "all" ? ["tyson", "keith"] : [query.account];
 
-  const [{ data: metaRows, error: metaError }, { data: keywordEvents, error: eventError }] =
-    await Promise.all([
+  const [
+    { data: metaRows, error: metaError },
+    { data: keywordEvents, error: eventError },
+    { data: manychatEvents, error: manychatError },
+  ] = await Promise.all([
       db
         .from("ads_meta_insights_daily")
         .select("*")
@@ -484,16 +525,28 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .in("client_key", clientFilter)
         .gte("event_at", `${query.dateFrom}T00:00:00.000Z`)
         .lte("event_at", `${query.dateTo}T23:59:59.999Z`),
+      db
+        .from("manychat_tag_events")
+        .select("tag_name,client,keyword_raw,keyword_normalized,subscriber_name,setter_name,event_at")
+        .gte("event_at", `${query.dateFrom}T00:00:00.000Z`)
+        .lte("event_at", `${query.dateTo}T23:59:59.999Z`),
     ]);
 
-  if (metaError || eventError) {
-    console.warn("[ads-tracker] Falling back to mock payload", metaError || eventError);
+  if (metaError || eventError || manychatError) {
+    console.warn("[ads-tracker] Falling back to mock payload", metaError || eventError || manychatError);
     return mockPayload(query);
   }
 
   const groups = new Map<string, Group>();
   const rows = (metaRows || []) as MetaRow[];
-  const events = (keywordEvents || []) as KeywordEvent[];
+  const ghlEvents = ((keywordEvents || []) as KeywordEvent[]).filter(
+    (event) => event.source !== "manychat"
+  );
+  const manychatMessageEvents = ((manychatEvents || []) as unknown as ManychatTagEvent[])
+    .map(manychatTagEventToKeywordEvent)
+    .filter((event): event is KeywordEvent => Boolean(event))
+    .filter((event) => clientFilter.includes(event.client_key));
+  const events = [...ghlEvents, ...manychatMessageEvents];
 
   addMetaRowsToGroups(
     groups,
