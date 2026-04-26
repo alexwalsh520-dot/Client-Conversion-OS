@@ -47,6 +47,19 @@ interface KeywordEvent {
   event_at: string;
 }
 
+interface KeywordBackfillRow {
+  client_key: string;
+  client_name: string;
+  date: string;
+  keyword_raw: string | null;
+  keyword_normalized: string | null;
+  messages: number | null;
+  booked_calls: number | null;
+  new_clients: number | null;
+  contracted_revenue_cents: number | null;
+  collected_revenue_cents: number | null;
+}
+
 interface ManychatTagEvent {
   tag_name: string | null;
   client: string | null;
@@ -532,6 +545,64 @@ function addKeywordEventsToGroups(
   }
 }
 
+function addKeywordBackfillRowsToGroups(
+  groups: Map<string, Group>,
+  rows: KeywordBackfillRow[],
+  query: AdsTrackerQuery,
+  groupIdForRow: (row: KeywordBackfillRow, keyword: string) => string,
+  dateLabelForRow: (row: KeywordBackfillRow) => string
+) {
+  for (const row of rows) {
+    const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
+    if (!keyword) continue;
+
+    const id = groupIdForRow(row, keyword);
+    const name = query.level === "ad" ? displayKeyword(keyword) : row.client_name || row.client_key;
+    const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
+
+    group.messages += row.messages || 0;
+    group.bookedCalls += row.booked_calls || 0;
+    group.newClients += row.new_clients || 0;
+    group.contractedRevenue += dollars(row.contracted_revenue_cents || 0);
+    group.collectedRevenue += dollars(row.collected_revenue_cents || 0);
+    group.dateLabel = dateLabelForRow(row);
+    groups.set(id, group);
+  }
+}
+
+async function fetchKeywordBackfillRows(
+  db: ReturnType<typeof getServiceSupabase>,
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+): Promise<KeywordBackfillRow[]> {
+  const { data, error } = await db
+    .from("ads_keyword_backfill_daily")
+    .select(
+      [
+        "client_key",
+        "client_name",
+        "date",
+        "keyword_raw",
+        "keyword_normalized",
+        "messages",
+        "booked_calls",
+        "new_clients",
+        "contracted_revenue_cents",
+        "collected_revenue_cents",
+      ].join(",")
+    )
+    .in("client_key", clientFilter)
+    .gte("date", query.dateFrom)
+    .lte("date", query.dateTo);
+
+  if (error) {
+    console.warn("[ads-tracker] Keyword backfill unavailable; continuing with live events only", error);
+    return [];
+  }
+
+  return (data || []) as unknown as KeywordBackfillRow[];
+}
+
 export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const db = getServiceSupabase();
 
@@ -544,6 +615,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     { data: metaRows, error: metaError },
     { data: keywordEvents, error: eventError },
     { data: manychatEvents, error: manychatError },
+    backfillRows,
   ] = await Promise.all([
       db
         .from("ads_meta_insights_daily")
@@ -564,6 +636,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .select("tag_name,client,keyword_raw,keyword_normalized,subscriber_name,setter_name,event_at")
         .gte("event_at", eventQueryFrom)
         .lte("event_at", eventQueryTo),
+      fetchKeywordBackfillRows(db, query, clientFilter),
     ]);
 
   if (metaError || eventError || manychatError) {
@@ -573,6 +646,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const groups = new Map<string, Group>();
   const rows = (metaRows || []) as MetaRow[];
+  const backfill = backfillRows as KeywordBackfillRow[];
+  const backfilledDateKeys = new Set(
+    backfill.map((row) => `${row.client_key}:${row.date}`)
+  );
   const ghlEvents = ((keywordEvents || []) as KeywordEvent[]).filter(
     (event) => event.source !== "manychat"
   );
@@ -582,6 +659,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .filter((event) => clientFilter.includes(event.client_key));
   const events = [...ghlEvents, ...manychatMessageEvents]
     .filter((event) => !isTestKeywordEvent(event))
+    .filter((event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`))
     .filter((event) => isWithinDashboardDateRange(event.event_at, query));
 
   addMetaRowsToGroups(
@@ -596,6 +674,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     groups,
     events,
     (event, keyword) => `${event.client_key}:${keyword}`,
+    () => `${query.dateFrom} - ${query.dateTo}`
+  );
+  addKeywordBackfillRowsToGroups(
+    groups,
+    backfill,
+    query,
+    (row, keyword) => `${row.client_key}:${keyword}`,
     () => `${query.dateFrom} - ${query.dateTo}`
   );
 
@@ -623,6 +708,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     events,
     (event, keyword) => `${eventDateKey(event.event_at)}:${event.client_key}:${keyword}`,
     (event) => eventDateKey(event.event_at)
+  );
+  addKeywordBackfillRowsToGroups(
+    dailyGroups,
+    backfill,
+    query,
+    (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
+    (row) => row.date
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) => `${row.date}:${match.client_key}:${match.keyword_normalized}`,
