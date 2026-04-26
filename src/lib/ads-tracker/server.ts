@@ -277,7 +277,7 @@ async function fetchSalesRowsFromSupabase(
 
   if (!data || data.length === 0) return null;
 
-  return (data as SalesTrackerDbRow[])
+  return (data as unknown as SalesTrackerDbRow[])
     .map(salesDbRowToSheetRow)
     .filter((row) => {
       const clientKey = clientFromOffer(row);
