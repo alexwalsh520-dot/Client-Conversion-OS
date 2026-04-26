@@ -226,7 +226,11 @@ function isWithinDashboardDateRange(value: string | null | undefined, query: Ads
 function looksLikeTestName(value: string | null | undefined): boolean {
   if (!value) return false;
   const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return normalized.includes("brozygaytest") || normalized.includes("brozisgay");
+  return (
+    normalized.includes("brozygaytest") ||
+    normalized.includes("brozisgay") ||
+    normalized.includes("clientconversionagencyforfitnessinfluencers")
+  );
 }
 
 function isTestKeywordEvent(event: KeywordEvent): boolean {
