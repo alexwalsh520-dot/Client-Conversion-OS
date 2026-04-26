@@ -107,6 +107,8 @@ export interface AdsTrackerRow {
   costPerMessage: number | null;
   bookedCalls: number;
   costPerBookedCall: number | null;
+  callsTaken: number;
+  costPerCallTaken: number | null;
   newClients: number;
   contractedRevenue: number;
   callClosingRate: number;
@@ -122,6 +124,7 @@ interface SalesAttributionOptions {
   groupId?: (match: KeywordEvent, row: SheetRow) => string;
   dateLabel?: (match: KeywordEvent, row: SheetRow) => string;
   groupName?: (match: KeywordEvent, row: SheetRow) => string;
+  includeOutcomeMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
 }
 
 interface Group {
@@ -186,6 +189,8 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     costPerMessage: group.messages > 0 ? adSpend / group.messages : null,
     bookedCalls: group.bookedCalls,
     costPerBookedCall: group.bookedCalls > 0 ? adSpend / group.bookedCalls : null,
+    callsTaken: group.callsTaken,
+    costPerCallTaken: group.callsTaken > 0 ? adSpend / group.callsTaken : null,
     newClients: group.newClients,
     contractedRevenue: group.contractedRevenue,
     callClosingRate: safeDiv(group.newClients, group.callsTaken || group.bookedCalls) * 100,
@@ -405,9 +410,12 @@ function applySalesToGroups(
     groups.set(groupId, group);
 
     if (row.callTaken && !isNoShow(row)) group.callsTaken += 1;
-    if (isWin(row)) group.newClients += 1;
-    group.contractedRevenue += row.revenue || 0;
-    group.collectedRevenue += row.cashCollected || 0;
+    const includeOutcomeMetrics = options.includeOutcomeMetrics?.(match, row) ?? true;
+    if (includeOutcomeMetrics) {
+      if (isWin(row)) group.newClients += 1;
+      group.contractedRevenue += row.revenue || 0;
+      group.collectedRevenue += row.cashCollected || 0;
+    }
   }
 }
 
@@ -460,11 +468,12 @@ function buildPayload(
       id: row.id,
       label: row.keyword,
       clientKey: row.clientKey,
+      adSpend: row.adSpend,
       collectedRoi: row.collectedRoi,
-      contractedRoi: row.contractedRoi,
       collectedRevenue: row.collectedRevenue,
+      newClients: row.newClients,
     }))
-    .sort((a, b) => b.collectedRoi - a.collectedRoi);
+    .sort((a, b) => b.collectedRevenue - a.collectedRevenue);
 
   return {
     mock,
@@ -477,7 +486,16 @@ function buildPayload(
       contractedRoi: safeDiv(totalContracted, totalSpend),
       messages: rows.reduce((sum, row) => sum + row.messages, 0),
       bookedCalls: rows.reduce((sum, row) => sum + row.bookedCalls, 0),
+      callsTaken: rows.reduce((sum, row) => sum + row.callsTaken, 0),
       newClients: rows.reduce((sum, row) => sum + row.newClients, 0),
+      costPerNewClient: safeDiv(
+        totalSpend,
+        rows.reduce((sum, row) => sum + row.newClients, 0)
+      ),
+      costPerCallTaken: safeDiv(
+        totalSpend,
+        rows.reduce((sum, row) => sum + row.callsTaken, 0)
+      ),
     },
     rows,
     dailyRows,
@@ -657,10 +675,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .map(manychatTagEventToKeywordEvent)
     .filter((event): event is KeywordEvent => Boolean(event))
     .filter((event) => clientFilter.includes(event.client_key));
-  const events = [...ghlEvents, ...manychatMessageEvents]
+  const allEvents = [...ghlEvents, ...manychatMessageEvents]
     .filter((event) => !isTestKeywordEvent(event))
-    .filter((event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`))
     .filter((event) => isWithinDashboardDateRange(event.event_at, query));
+  const events = allEvents.filter(
+    (event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`)
+  );
 
   addMetaRowsToGroups(
     groups,
@@ -684,7 +704,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     () => `${query.dateFrom} - ${query.dateTo}`
   );
 
-  const bookings = events.filter((event) => event.source === "ghl");
+  const bookings = allEvents.filter((event) => event.source === "ghl");
   const salesRows =
     (await fetchSalesRowsFromSupabase(db, query, clientFilter)) ??
     (await fetchSheetData(query.dateFrom, query.dateTo).catch((error) => {
@@ -693,7 +713,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     }));
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
 
-  applySalesToGroups(groups, attributionSalesRows, bookings);
+  const includeSalesOutcomeMetrics = (match: KeywordEvent, row: SheetRow) =>
+    !backfilledDateKeys.has(`${match.client_key}:${row.date}`);
+
+  applySalesToGroups(groups, attributionSalesRows, bookings, {
+    includeOutcomeMetrics: includeSalesOutcomeMetrics,
+  });
 
   const dailyGroups = new Map<string, Group>();
   addMetaRowsToGroups(
@@ -719,6 +744,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) => `${row.date}:${match.client_key}:${match.keyword_normalized}`,
     dateLabel: (_match, row) => row.date,
+    includeOutcomeMetrics: includeSalesOutcomeMetrics,
   });
 
   const finalized = Array.from(groups.values())

@@ -113,7 +113,7 @@
   .tbl-scroll::-webkit-scrollbar-thumb{background:#222;border-radius:4px}
   .tbl-scroll::-webkit-scrollbar-thumb:hover{background:#333}
 
-  table.ads{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:2200px}
+  table.ads{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:1900px}
   table.ads thead th{
     position:sticky;top:0;background:var(--panel);
     text-align:right;padding:11px 14px;
@@ -239,32 +239,14 @@
   .toast .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
   .recent-body.open{max-height:800px;overflow-y:auto}
 
-  /* ROAS chart */
-  .roas-panel{padding:18px 20px}
-  .roas-svg-wrap{margin-top:18px;position:relative}
-  .roas-svg{width:100%;height:180px;display:block}
-  .roas-grid line{stroke:var(--border);stroke-width:1}
-  .roas-axis{fill:var(--text-4);font-size:10px;font-family:'JetBrains Mono',monospace}
-  .roas-line{fill:none;stroke-width:2.2;filter:drop-shadow(0 0 6px currentColor)}
-  .roas-line.collected{stroke:var(--green)}
-  .roas-line.contracted{stroke:var(--gold)}
-  .roas-line.clients{stroke:var(--blue)}
-  .roas-area{opacity:0.08}
-  .roas-dot{r:3;stroke-width:2;fill:#0a0a0a}
-  .roas-tooltip{position:absolute;background:#141414;border:1px solid var(--border-2);border-radius:5px;padding:6px 10px;font-size:11px;color:var(--text);pointer-events:none;transform:translate(-50%,-110%);white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.6)}
-  .roas-tooltip .t-label{color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px}
-  .roas-stat{display:flex;gap:24px;margin-top:10px}
-  .roas-stat-item .rs-label{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-4);font-weight:500}
-  .roas-stat-item .rs-val{font-size:16px;color:var(--text);font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
-  .roas-stat-item .rs-delta{font-size:10px;margin-left:6px;font-variant-numeric:tabular-nums}
-
   .second-col{display:flex;flex-direction:column;gap:18px}
 
   /* Bottom grid */
   .grid-bottom{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:22px}
   @media (max-width: 1100px){.grid-bottom{grid-template-columns:1fr}}
-  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px}
+  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px;align-items:start}
   @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
+  .right-stack{display:flex;flex-direction:column;gap:18px;min-width:0}
 
   /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
   .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
@@ -300,9 +282,7 @@
 
   /* Ad ROAS vertical bar chart */
   .ads-roas{min-height:360px}
-  .ar-metric-tabs{display:inline-flex;background:#0a0a0a;border:1px solid var(--border);border-radius:4px;padding:2px;gap:2px;margin-bottom:14px}
-  .ar-mt{padding:3px 10px;font-size:10px;color:var(--text-3);border-radius:3px;letter-spacing:0.06em;text-transform:uppercase}
-  .ar-mt.active{background:#161616;color:var(--text)}
+  .cac-card{min-height:260px}
   .ar-chart-wrap{overflow:hidden;padding-bottom:4px}
   .ar-chart-wrap.scroll-x{overflow-x:auto;overflow-y:hidden}
   .ar-chart-wrap::-webkit-scrollbar{height:6px}
@@ -500,6 +480,7 @@ function seededRand(seed){
 
 // Split a daily total across ads by weight, with small jitter
 function splitByWeight(total, ads, seedStr, rounding=0){
+  total = Number(total || 0);
   const rand = seededRand(seedStr);
   // apply jitter to weights
   const jittered = ads.map(a => ({...a, jw: a.weight * (0.82 + rand()*0.36)}));
@@ -529,8 +510,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
       clicks: ad.clicks || 0,
       msgs: ad.msgs || 0,
       calls: ad.calls || 0,
+      taken: ad.taken || 0,
       clients: ad.clients || 0,
-      contracted: ad.contracted || 0,
       collected: ad.collected || 0,
     }));
   }
@@ -541,8 +522,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
   const clicks = splitByWeight(dayRow.clicks, adRoster, seed+"-clicks");
   const msgs = splitByWeight(dayRow.msgs, adRoster, seed+"-msgs");
   const calls = splitByWeight(dayRow.calls, adRoster, seed+"-calls");
+  const taken = splitByWeight(dayRow.taken, adRoster, seed+"-taken");
   const clients = splitByWeight(dayRow.clients, adRoster, seed+"-clients");
-  const contracted = splitByWeight(dayRow.contracted, adRoster, seed+"-con");
   const collected = splitByWeight(dayRow.collected, adRoster, seed+"-col");
   return adRoster.map((a,i) => ({
     adId: a.id,
@@ -552,8 +533,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
     clicks: clicks[i].v,
     msgs: Math.max(0, msgs[i].v),
     calls: Math.max(0, calls[i].v),
+    taken: Math.max(0, taken[i].v),
     clients: Math.max(0, clients[i].v),
-    contracted: Math.max(0, contracted[i].v),
     collected: Math.max(0, collected[i].v),
   }));
 }
@@ -564,12 +545,12 @@ const CAMPAIGNS = [
     dot:"tyson", adCount: TYSON_ADS.length,
     ads: TYSON_ADS,
     rows: [
-      {date:"Apr 22", spend:412, imp:58420, clicks:1240, msgs:86, calls:14, clients:6, contracted:18400, collected:14200},
-      {date:"Apr 21", spend:388, imp:54810, clicks:1180, msgs:79, calls:12, clients:5, contracted:15200, collected:10800},
-      {date:"Apr 20", spend:401, imp:56120, clicks:1215, msgs:81, calls:13, clients:4, contracted:12600, collected:9200},
-      {date:"Apr 19", spend:375, imp:52400, clicks:1098, msgs:74, calls:11, clients:5, contracted:14800, collected:11400},
-      {date:"Apr 18", spend:420, imp:59100, clicks:1302, msgs:91, calls:15, clients:7, contracted:21800, collected:16200},
-      {date:"Apr 17", spend:395, imp:55200, clicks:1155, msgs:78, calls:10, clients:3, contracted:8400, collected:5200},
+      {date:"Apr 22", spend:412, imp:58420, clicks:1240, msgs:86, calls:14, taken:12, clients:6, collected:14200},
+      {date:"Apr 21", spend:388, imp:54810, clicks:1180, msgs:79, calls:12, taken:11, clients:5, collected:10800},
+      {date:"Apr 20", spend:401, imp:56120, clicks:1215, msgs:81, calls:13, taken:10, clients:4, collected:9200},
+      {date:"Apr 19", spend:375, imp:52400, clicks:1098, msgs:74, calls:11, taken:9, clients:5, collected:11400},
+      {date:"Apr 18", spend:420, imp:59100, clicks:1302, msgs:91, calls:15, taken:13, clients:7, collected:16200},
+      {date:"Apr 17", spend:395, imp:55200, clicks:1155, msgs:78, calls:10, taken:8, clients:3, collected:5200},
     ]
   },
   {
@@ -577,12 +558,12 @@ const CAMPAIGNS = [
     dot:"keith", adCount: KEITH_ADS.length,
     ads: KEITH_ADS,
     rows: [
-      {date:"Apr 22", spend:365, imp:48210, clicks:890, msgs:62, calls:9, clients:3, contracted:8400, collected:5800},
-      {date:"Apr 21", spend:352, imp:46820, clicks:864, msgs:58, calls:8, clients:2, contracted:6200, collected:4100},
-      {date:"Apr 20", spend:340, imp:45100, clicks:822, msgs:54, calls:7, clients:2, contracted:5800, collected:3400},
-      {date:"Apr 19", spend:358, imp:47400, clicks:878, msgs:61, calls:9, clients:3, contracted:9100, collected:6200},
-      {date:"Apr 18", spend:371, imp:49300, clicks:912, msgs:66, calls:10, clients:4, contracted:12400, collected:8800},
-      {date:"Apr 17", spend:348, imp:46100, clicks:840, msgs:56, calls:6, clients:1, contracted:2800, collected:1600},
+      {date:"Apr 22", spend:365, imp:48210, clicks:890, msgs:62, calls:9, taken:8, clients:3, collected:5800},
+      {date:"Apr 21", spend:352, imp:46820, clicks:864, msgs:58, calls:8, taken:7, clients:2, collected:4100},
+      {date:"Apr 20", spend:340, imp:45100, clicks:822, msgs:54, calls:7, taken:6, clients:2, collected:3400},
+      {date:"Apr 19", spend:358, imp:47400, clicks:878, msgs:61, calls:9, taken:8, clients:3, collected:6200},
+      {date:"Apr 18", spend:371, imp:49300, clicks:912, msgs:66, calls:10, taken:9, clients:4, collected:8800},
+      {date:"Apr 17", spend:348, imp:46100, clicks:840, msgs:56, calls:6, taken:5, clients:1, collected:1600},
     ]
   }
 ];
@@ -594,20 +575,21 @@ function deriveRow(r){
   const cpc = r.clicks>0 ? r.spend / r.clicks : 0;
   const cpMsg = r.msgs>0 ? r.spend / r.msgs : 0;  // cost per message (DM)
   const cpCall = r.calls>0 ? r.spend/r.calls : null;
+  const cpTaken = r.taken>0 ? r.spend/r.taken : null;
   const cpClient = r.clients>0 ? r.spend/r.clients : null;
-  const closing = r.calls>0 ? (r.clients/r.calls)*100 : 0;
+  const closingBase = r.taken || r.calls;
+  const closing = closingBase>0 ? (r.clients/closingBase)*100 : 0;
   const msgConv = r.msgs>0 ? (r.calls/r.msgs)*100 : 0;
-  const contractedRoi = r.spend>0 ? (r.contracted/r.spend) : 0;
   const collectedRoi = r.spend>0 ? (r.collected/r.spend) : 0;
-  return {...r,cpm,ctr,cpc,cpMsg,cpCall,cpClient,closing,msgConv,contractedRoi,collectedRoi};
+  return {...r,cpm,ctr,cpc,cpMsg,cpCall,cpTaken,cpClient,closing,msgConv,collectedRoi};
 }
 
 function aggregate(rows){
   const sum = (k) => rows.reduce((a,r)=>a+(r[k]||0),0);
   const spend = sum("spend"), imp=sum("imp"), clicks=sum("clicks"), msgs=sum("msgs"),
-    calls=sum("calls"), clients=sum("clients"),
-    contracted=sum("contracted"), collected=sum("collected");
-  return deriveRow({date:"Total", spend, imp, clicks, msgs, calls, clients, contracted, collected});
+    calls=sum("calls"), taken=sum("taken"), clients=sum("clients"),
+    collected=sum("collected");
+  return deriveRow({date:"Total", spend, imp, clicks, msgs, calls, taken, clients, collected});
 }
 
 function isoDate(d){
@@ -697,8 +679,8 @@ function metricRowFromApi(row, dateLabel){
     clicks: Number(row.linkClicks || 0),
     msgs: Number(row.messages || 0),
     calls: Number(row.bookedCalls || 0),
+    taken: Number(row.callsTaken || 0),
     clients: Number(row.newClients || 0),
-    contracted: Number(row.contractedRevenue || 0),
     collected: Number(row.collectedRevenue || 0),
   };
 }
@@ -709,13 +691,13 @@ function addMetric(target, row){
   target.clicks += row.clicks || 0;
   target.msgs += row.msgs || 0;
   target.calls += row.calls || 0;
+  target.taken += row.taken || 0;
   target.clients += row.clients || 0;
-  target.contracted += row.contracted || 0;
   target.collected += row.collected || 0;
 }
 
 function emptyMetric(date){
-  return {date, spend:0, imp:0, clicks:0, msgs:0, calls:0, clients:0, contracted:0, collected:0};
+  return {date, spend:0, imp:0, clicks:0, msgs:0, calls:0, taken:0, clients:0, collected:0};
 }
 
 function campaignsFromDashboard(dashboard, range){
@@ -816,8 +798,8 @@ function filterCampaignsBySearch(campaigns, search){
         linkClicks:ad.clicks,
         messages:ad.msgs,
         bookedCalls:ad.calls,
+        callsTaken:ad.taken,
         newClients:ad.clients,
-        contractedRevenue:ad.contracted,
         collectedRevenue:ad.collected,
       }, row.date)));
       return next;
@@ -835,7 +817,7 @@ function filterCampaignsBySearch(campaigns, search){
 
 function applyLocalEntriesToCampaigns(campaigns, entries){
   if(!entries?.length) return campaigns;
-  const bucketToMetric = {msgs:"msgs", calls:"calls", clients:"clients", contracted:"contracted", collected:"collected"};
+  const bucketToMetric = {msgs:"msgs", calls:"calls", taken:"taken", clients:"clients", collected:"collected"};
   return campaigns.map(c => {
     const matching = entries.filter(e => e.camp === c.id && bucketToMetric[e.bucket]);
     if(!matching.length) return c;
@@ -1038,13 +1020,13 @@ function Segmented({options, value, onChange}){
 // ------- Campaign table
 const DEFAULT_COL_WIDTHS = {
   date: 150, spend: 110, imp: 120, cpm: 90, clicks: 110, ctr: 90, cpc: 90,
-  msgs: 110, calls: 110, cpCall: 150, clients: 110, contracted: 140, collected: 140,
-  cpMsg: 110, closing: 130, msgConv: 120, cpClient: 130, contractedRoi: 140, collectedRoi: 140,
+  msgs: 110, calls: 120, cpCall: 145, taken: 110, cpTaken: 145, clients: 110, collected: 140,
+  cpMsg: 110, closing: 130, msgConv: 120, cpClient: 130, collectedRoi: 140,
 };
 
 // Keys that are calculated (vs logged/imported)
-const CALC_KEYS = new Set(["cpm","ctr","cpc","cpMsg","cpCall","cpClient","closing","msgConv","contractedRoi","collectedRoi"]);
-const LOGGED_KEYS = new Set(["msgs","calls","clients","contracted","collected"]);
+const CALC_KEYS = new Set(["cpm","ctr","cpc","cpMsg","cpCall","cpTaken","cpClient","closing","msgConv","collectedRoi"]);
+const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
@@ -1080,8 +1062,8 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
         ...r,
         msgs: r.msgs + (bump.msgs||0),
         calls: r.calls + (bump.calls||0),
+        taken: (r.taken||0) + (bump.taken||0),
         clients: r.clients + (bump.clients||0),
-        contracted: r.contracted + (bump.contracted||0),
         collected: r.collected + (bump.collected||0),
       };
     });
@@ -1115,15 +1097,15 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     {k:"cpc", label:"CPC", fmt:(r)=>"$"+r.cpc.toFixed(2), cls:(r)=> r.cpc<=0.35?"pos":(r.cpc>=0.45?"neg":""), calc:true},
     {k:"msgs", label:"Messages", fmt:(r)=>fmtNum(r.msgs), logged:true},
     {k:"cpMsg", label:"Cost / msg", fmt:(r)=>"$"+r.cpMsg.toFixed(2), cls:(r)=> r.cpMsg<=5?"pos":(r.cpMsg>=6.5?"neg":""), calc:true},
-    {k:"calls", label:"Booked calls", fmt:(r)=>fmtNum(r.calls), logged:true},
-    {k:"cpCall", label:"Cost / 60-min call", fmt:(r)=> r.cpCall?"$"+r.cpCall.toFixed(0):"—", cls:(r)=> r.cpCall && r.cpCall<=30?"pos":(r.cpCall && r.cpCall>=40?"neg":""), calc:true},
+    {k:"calls", label:"45-min calls booked", fmt:(r)=>fmtNum(r.calls), logged:true},
+    {k:"cpCall", label:"Cost / 45-min booked", fmt:(r)=> r.cpCall?"$"+r.cpCall.toFixed(0):"—", cls:(r)=> r.cpCall && r.cpCall<=30?"pos":(r.cpCall && r.cpCall>=40?"neg":""), calc:true},
+    {k:"taken", label:"45-min calls taken", fmt:(r)=>fmtNum(r.taken), logged:true},
+    {k:"cpTaken", label:"Cost / call taken", fmt:(r)=> r.cpTaken?"$"+r.cpTaken.toFixed(0):"—", cls:(r)=> r.cpTaken && r.cpTaken<=45?"pos":(r.cpTaken && r.cpTaken>=70?"neg":""), calc:true},
     {k:"clients", label:"New clients", fmt:(r)=>fmtNum(r.clients), cls:(r)=> r.clients>=5?"pos":(r.clients<=2?"neg":""), logged:true},
-    {k:"contracted", label:"Contracted rev", fmt:(r)=>fmtUsd(r.contracted), cls:()=> "gold", logged:true},
     {k:"closing", label:"Call close rate", fmt:(r)=>fmtPct(r.closing,0), cls:(r)=> r.closing>=40?"pos":(r.closing<=25?"neg":""), calc:true},
     {k:"msgConv", label:"Msg → call", fmt:(r)=>fmtPct(r.msgConv,1), cls:(r)=> r.msgConv>=15?"pos":(r.msgConv<=12?"neg":""), calc:true},
     {k:"collected", label:"Collected rev", fmt:(r)=>fmtUsd(r.collected), cls:()=>"pos", logged:true},
     {k:"cpClient", label:"Cost / client", fmt:(r)=> r.cpClient?"$"+r.cpClient.toFixed(0):"—", cls:(r)=> r.cpClient && r.cpClient<=80?"pos":(r.cpClient && r.cpClient>=120?"neg":""), calc:true},
-    {k:"contractedRoi", label:"Contracted ROI", fmt:(r)=>r.contractedRoi.toFixed(1)+"×", cls:(r)=> r.contractedRoi>=30?"pos":(r.contractedRoi<=15?"neg":"gold"), calc:true},
     {k:"collectedRoi", label:"Collected ROI", fmt:(r)=>r.collectedRoi.toFixed(1)+"×", cls:(r)=> r.collectedRoi>=20?"pos":(r.collectedRoi<=10?"neg":""), calc:true},
   ];
 
@@ -1228,7 +1210,8 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                               date: ad.adName,
                               spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
                               msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
-                              contracted: ad.contracted, collected: ad.collected,
+                              taken: ad.taken,
+                              collected: ad.collected,
                             });
                             return (
                               <tr key={c.id+r.date+ad.adId} className="ad-row">
@@ -1263,196 +1246,6 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
             </tr>
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-// ------- ROAS line chart
-const ROAS_HISTORY = {
-  collected: [
-    {d:"Apr 16", v:12.4}, {d:"Apr 17", v:9.1}, {d:"Apr 18", v:22.6},
-    {d:"Apr 19", v:24.3}, {d:"Apr 20", v:17.0}, {d:"Apr 21", v:20.1}, {d:"Apr 22", v:27.2}
-  ],
-  contracted: [
-    {d:"Apr 16", v:18.1}, {d:"Apr 17", v:14.6}, {d:"Apr 18", v:30.1},
-    {d:"Apr 19", v:31.2}, {d:"Apr 20", v:23.1}, {d:"Apr 21", v:28.8}, {d:"Apr 22", v:34.5}
-  ],
-  clients: [
-    {d:"Apr 16", v:5}, {d:"Apr 17", v:4}, {d:"Apr 18", v:11},
-    {d:"Apr 19", v:8}, {d:"Apr 20", v:6}, {d:"Apr 21", v:7}, {d:"Apr 22", v:9}
-  ]
-};
-
-function buildSmoothPath(points){
-  if(points.length < 2) return "";
-  let d = "M "+points[0].x+" "+points[0].y;
-  for(let i=0; i<points.length-1; i++){
-    const p0 = points[i-1] || points[i];
-    const p1 = points[i];
-    const p2 = points[i+1];
-    const p3 = points[i+2] || p2;
-    const cp1x = p1.x + (p2.x - p0.x)/6;
-    const cp1y = p1.y + (p2.y - p0.y)/6;
-    const cp2x = p2.x - (p3.x - p1.x)/6;
-    const cp2y = p2.y - (p3.y - p1.y)/6;
-    d += " C "+cp1x+" "+cp1y+", "+cp2x+" "+cp2y+", "+p2.x+" "+p2.y;
-  }
-  return d;
-}
-
-function RoasChart(){
-  const [metric, setMetric] = useState("collected");
-  const [preset, setPreset] = useState("last7");
-  const [dateOpen, setDateOpen] = useState(false);
-  const [hover, setHover] = useState(null);
-  const dateRef = useRef(null);
-  useEffect(()=>{
-    const h = (e)=>{ if(dateRef.current && !dateRef.current.contains(e.target)) setDateOpen(false); };
-    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
-  },[]);
-
-  const allData = ROAS_HISTORY[metric];
-  let data = allData;
-  if(preset==="today") data = allData.slice(-1);
-  else if(preset==="yesterday") data = allData.slice(-2,-1);
-  else if(preset==="last3") data = allData.slice(-3);
-  else if(preset==="last7") data = allData.slice(-7);
-
-  const W = 720, H = 180, PAD_L = 44, PAD_R = 14, PAD_T = 16, PAD_B = 28;
-  const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
-  const vals = data.map(d=>d.v);
-  const max = Math.max(...vals) * 1.15;
-  const min = 0;
-  const pts = data.map((d,i)=>({
-    x: PAD_L + (data.length===1 ? innerW/2 : (i/(data.length-1))*innerW),
-    y: PAD_T + innerH - ((d.v - min)/(max - min || 1))*innerH,
-    d: d.d, v: d.v
-  }));
-  const path = buildSmoothPath(pts);
-  const area = path + " L "+pts[pts.length-1].x+" "+(PAD_T+innerH)+" L "+pts[0].x+" "+(PAD_T+innerH)+" Z";
-
-  const latest = vals[vals.length-1];
-  const prev = vals.length>1 ? vals[vals.length-2] : latest;
-  const delta = latest - prev;
-  const pctDelta = prev ? (delta/prev)*100 : 0;
-
-  const unit = metric==="clients" ? "new clients" : "× ROAS";
-  const fmtVal = (v) => metric==="clients" ? Math.round(v)+"" : v.toFixed(1)+"×";
-  const lineClass = metric;
-
-  const ROAS_PRESETS = [
-    {id:"today",label:"Today"},
-    {id:"yesterday",label:"Yesterday"},
-    {id:"last3",label:"Last 3 days"},
-    {id:"last7",label:"Last 7 days"},
-    {id:"last14",label:"Last 14 days"},
-    {id:"last30",label:"Last 30 days"},
-    {id:"custom",label:"Custom"},
-  ];
-  const curPreset = ROAS_PRESETS.find(p=>p.id===preset);
-
-  // Tick marks (4 horizontal lines)
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => ({
-    y: PAD_T + innerH - t*innerH,
-    v: min + t*(max-min)
-  }));
-
-  return (
-    <div className="panel roas-panel">
-      <div className="kw-head">
-        <div>
-          <div className="section-label" style={{marginBottom:4}}>Return on ad spend</div>
-          <div className="kw-title">ROAS trend</div>
-        </div>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <div className="kw-tabs">
-            <button className={"kw-tab "+(metric==="collected"?"active":"")} onClick={()=>setMetric("collected")}>Collected</button>
-            <button className={"kw-tab "+(metric==="contracted"?"active":"")} onClick={()=>setMetric("contracted")}>Contracted</button>
-            <button className={"kw-tab "+(metric==="clients"?"active":"")} onClick={()=>setMetric("clients")}>Clients</button>
-          </div>
-          <div className="filter" ref={dateRef}>
-            <button className={"filter-btn "+(dateOpen?"open":"")} onClick={()=>setDateOpen(!dateOpen)} style={{padding:'5px 10px',minHeight:26,fontSize:11}}>
-              <span style={{color:'var(--text-3)',display:'inline-flex'}}><IcCal /></span>
-              <span className="val" style={{fontSize:11}}>{curPreset.label}</span>
-              <span className="caret"><IcCaret/></span>
-            </button>
-            {dateOpen && (
-              <div className="pop" style={{right:0,left:'auto'}}>
-                {ROAS_PRESETS.map(p => (
-                  <div key={p.id} className={"pop-item "+(preset===p.id?"selected":"")} onClick={()=>{setPreset(p.id); setDateOpen(false);}}>
-                    <span>{p.label}</span>
-                    <span className="check"><IcCheck/></span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="roas-stat">
-        <div className="roas-stat-item">
-          <div className="rs-label">Current</div>
-          <div className="rs-val">
-            {fmtVal(latest)}
-            <span className={"rs-delta "+(delta>=0?"pos":"neg")}>
-              {delta>=0?"▲":"▼"} {Math.abs(pctDelta).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-        <div className="roas-stat-item">
-          <div className="rs-label">Avg</div>
-          <div className="rs-val">{fmtVal(vals.reduce((a,b)=>a+b,0)/vals.length)}</div>
-        </div>
-        <div className="roas-stat-item">
-          <div className="rs-label">Peak</div>
-          <div className="rs-val gold">{fmtVal(Math.max(...vals))}</div>
-        </div>
-        <div className="roas-stat-item">
-          <div className="rs-label">Metric</div>
-          <div className="rs-val" style={{fontSize:12,color:'var(--text-3)',marginTop:6}}>{unit}</div>
-        </div>
-      </div>
-
-      <div className="roas-svg-wrap">
-        <svg className="roas-svg" viewBox={"0 0 "+W+" "+H} preserveAspectRatio="none">
-          <defs>
-            <linearGradient id={"roas-grad-"+metric} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"} stopOpacity="0.3"/>
-              <stop offset="100%" stopColor={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"} stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          <g className="roas-grid">
-            {ticks.map((t,i)=>(
-              <g key={i}>
-                <line x1={PAD_L} y1={t.y} x2={W-PAD_R} y2={t.y} strokeDasharray={i===0||i===4?"":"2 4"}/>
-                <text x={PAD_L-8} y={t.y+3} className="roas-axis" textAnchor="end">{fmtVal(t.v)}</text>
-              </g>
-            ))}
-          </g>
-          {pts.map((p,i)=>(
-            <text key={i} x={p.x} y={H-8} className="roas-axis" textAnchor="middle">{p.d.replace("Apr ","")}</text>
-          ))}
-          <path d={area} fill={"url(#roas-grad-"+metric+")"} className="roas-area" style={{opacity:1}}/>
-          <path d={path} className={"roas-line "+lineClass}/>
-          {pts.map((p,i)=>(
-            <circle key={i} cx={p.x} cy={p.y} r={hover===i?5:3.5}
-              fill="#0a0a0a"
-              stroke={metric==="collected"?"#7dd3a8":metric==="contracted"?"#d4b27a":"#7aa7d4"}
-              strokeWidth="2"
-              style={{cursor:'pointer',transition:'r .15s'}}
-              onMouseEnter={()=>setHover(i)}
-              onMouseLeave={()=>setHover(null)}
-            />
-          ))}
-        </svg>
-        {hover !== null && pts[hover] && (
-          <div className="roas-tooltip" style={{left:((pts[hover].x/W)*100)+"%", top:((pts[hover].y/H)*100)+"%"}}>
-            <div className="t-label">{pts[hover].d}</div>
-            <div>{fmtVal(pts[hover].v)}</div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1632,10 +1425,9 @@ function seriesForCampaignKey(key, filterId="all", campaigns=CAMPAIGNS, labels=D
 
 function ROASChart({campaigns=CAMPAIGNS}){
   const [client, setClient] = useState("all");
-  const [mode, setMode] = useState("collected"); // 'collected' | 'contracted'
   const labels = labelsFromCampaigns(campaigns);
   const spend = seriesForCampaignKey("spend", client, campaigns, labels);
-  const revenue = seriesForCampaignKey(mode, client, campaigns, labels);
+  const revenue = seriesForCampaignKey("collected", client, campaigns, labels);
   const roasVals = revenue.map((r,i)=> spend[i] ? r/spend[i] : 0);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalRev = revenue.reduce((a,b)=>a+b,0);
@@ -1655,17 +1447,13 @@ function ROASChart({campaigns=CAMPAIGNS}){
           </div>
         </div>
         <div className="chart-controls">
-          <div className="kw-tabs">
-            <button className={"kw-tab "+(mode==="collected"?"active":"")} onClick={()=>setMode("collected")}>Collected</button>
-            <button className={"kw-tab "+(mode==="contracted"?"active":"")} onClick={()=>setMode("contracted")}>Contracted</button>
-          </div>
           <ClientPicker value={client} onChange={setClient}/>
         </div>
       </div>
       <LineChart
         labels={labels}
         series={[
-          {name: mode==="collected"?"Revenue (collected)":"Revenue (contracted)", values: revenue, color: "var(--gold)", isPrimary:true, fmt: (v)=>"$"+Math.round(v).toLocaleString()},
+          {name: "Revenue", values: revenue, color: "var(--gold)", isPrimary:true, fmt: (v)=>"$"+Math.round(v).toLocaleString()},
           {name: "Ad spend", values: spend, color: "#888", fmt: (v)=>"$"+Math.round(v).toLocaleString()},
         ]}
         fmt={(v)=>"$"+Math.round(v/1000*10)/10+"k"}
@@ -1834,20 +1622,19 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
   campaigns.forEach(c => {
     c.ads.forEach(a => {
       // sum across rows
-      let spend=0, collected=0, contracted=0, clients=0;
+      let spend=0, collected=0, clients=0;
       c.rows.forEach(r0 => {
         const ads = buildAdRows(c.id, r0, c.ads);
         const mine = ads.find(x=>x.adId===a.id);
         if(mine){
           spend += mine.spend;
           collected += mine.collected;
-          contracted += mine.contracted;
           clients += mine.clients;
         }
       });
       out.push({
         adId: a.id, adName: a.name, camp: c.id, campShort: c.short,
-        spend, collected, contracted, clients,
+        spend, collected, clients,
       });
     });
   });
@@ -1857,21 +1644,20 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
 function AdROASChart({campaigns=CAMPAIGNS}){
   const [view, setView] = useState("top"); // 'top' | 'all'
   const [client, setClient] = useState("all");
-  const [metric, setMetric] = useState("collected"); // collected | contracted
   const all = useMemo(()=>allAdsAggregated(campaigns), [campaigns]);
   const filtered = all
     .filter(a => client === "all" || a.camp === client)
-    .map(a => ({...a, roas: a.spend ? a[metric]/a.spend : 0}))
-    .sort((a,b) => b.roas - a.roas);
+    .map(a => ({...a, roas: a.spend ? a.collected/a.spend : 0}))
+    .sort((a,b) => b.collected - a.collected);
   const list = view === "top" ? filtered.slice(0,6) : filtered;
-  const max = list[0]?.roas || 1;
+  const max = list[0]?.collected || 1;
   return (
     <div className="panel chart-card ads-roas">
       <div className="chart-head">
         <div>
           <div className="chart-title">Ad ROAS</div>
           <div className="chart-subtitle">
-            <span className="chart-sub-label">{view==="top" ? "Most profitable ads" : `All ads · ${list.length} running`}</span>
+            <span className="chart-sub-label">{view==="top" ? "Top ads by revenue" : `All ads · ${list.length} running`}</span>
           </div>
         </div>
         <div className="chart-controls">
@@ -1882,10 +1668,6 @@ function AdROASChart({campaigns=CAMPAIGNS}){
           <ClientPicker value={client} onChange={setClient}/>
         </div>
       </div>
-      <div className="ar-metric-tabs">
-        <button className={"ar-mt "+(metric==="collected"?"active":"")} onClick={()=>setMetric("collected")}>Collected</button>
-        <button className={"ar-mt "+(metric==="contracted"?"active":"")} onClick={()=>setMetric("contracted")}>Contracted</button>
-      </div>
       <div className={"ar-chart-wrap "+(view==="all"?"scroll-x":"")}>
         <div className="ar-chart" style={{minWidth: Math.max(list.length * 64, 100) + "px"}}>
           {list.length === 0 && (
@@ -1894,13 +1676,13 @@ function AdROASChart({campaigns=CAMPAIGNS}){
             </div>
           )}
           {list.map((a,i)=>{
-            const h = (a.roas/max)*150;
+            const h = (a.collected/max)*150;
             const color = a.camp==="tyson" ? "var(--gold)" : "var(--blue)";
             return (
-              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.campShort} · $${a.spend.toLocaleString()} spend · $${a[metric].toLocaleString()} ${metric}`}>
+              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.campShort} · $${a.spend.toLocaleString()} spend · $${a.collected.toLocaleString()} revenue · ${a.roas.toFixed(1)}× ROAS`}>
                 <div className="ar-val">
                   <div className="ar-val-roas">{a.roas.toFixed(1)}×</div>
-                  <div className="ar-val-sub mono">${Math.round(a[metric]/1000*10)/10}k</div>
+                  <div className="ar-val-sub mono">${Math.round(a.collected/1000*10)/10}k</div>
                 </div>
                 <div className="ar-bar-v-wrap">
                   <div className="ar-bar-v" style={{height:h+"px", background:color}}></div>
@@ -1918,8 +1700,52 @@ function AdROASChart({campaigns=CAMPAIGNS}){
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Tyson</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Keith</span>
         <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>
-          {view==="all" ? "Scroll horizontally →" : "Bars sized by ROAS"}
+          {view==="all" ? "Scroll horizontally →" : "Bars sized by revenue"}
         </span>
+      </div>
+    </div>
+  );
+}
+
+function CACChart({campaigns=CAMPAIGNS}){
+  const [client, setClient] = useState("all");
+  const labels = labelsFromCampaigns(campaigns);
+  const spend = seriesForCampaignKey("spend", client, campaigns, labels);
+  const clients = seriesForCampaignKey("clients", client, campaigns, labels);
+  const cac = spend.map((s,i)=> clients[i] ? s/clients[i] : 0);
+  const totalSpend = spend.reduce((a,b)=>a+b,0);
+  const totalClients = clients.reduce((a,b)=>a+b,0);
+  const avg = totalClients ? totalSpend/totalClients : 0;
+  const delta = cac[cac.length-1] - cac[0];
+
+  return (
+    <div className="panel chart-card cac-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">CAC</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{avg ? "$"+avg.toFixed(0) : "—"}</span>
+            <span className={delta<=0?"chart-delta pos":"chart-delta neg"}>
+              {delta<=0?"▼":"▲"} ${Math.abs(delta).toFixed(0)}
+            </span>
+            <span className="chart-sub-label">Cost per new customer</span>
+          </div>
+        </div>
+        <ClientPicker value={client} onChange={setClient}/>
+      </div>
+      <LineChart
+        labels={labels}
+        series={[
+          {name:"CAC", values:cac, color:"var(--blue)", isPrimary:true, fmt:(v)=>v ? "$"+v.toFixed(0) : "—"},
+          {name:"New clients", values:clients, color:"var(--green)", axis:"right", fmt:(v)=>fmtNum(v)},
+        ]}
+        fmt={(v)=>v ? "$"+v.toFixed(0) : "—"}
+        fmtRight={(v)=>fmtNum(Math.round(v))}
+      />
+      <div className="chart-legend">
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>CAC</span>
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--green)'}}></span>New clients</span>
+        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Lower is better</span>
       </div>
     </div>
   );
@@ -1928,9 +1754,9 @@ function AdROASChart({campaigns=CAMPAIGNS}){
 // ------- Keyword entry
 const BUCKETS = [
   {id:"msgs", label:"Messages", unit:"messages"},
-  {id:"calls", label:"Booked calls", unit:"calls"},
+  {id:"calls", label:"45-min calls booked", unit:"calls"},
+  {id:"taken", label:"45-min calls taken", unit:"calls"},
   {id:"clients", label:"New clients", unit:"clients"},
-  {id:"contracted", label:"Contracted $", unit:"USD"},
   {id:"collected", label:"Collected $", unit:"USD"},
 ];
 
@@ -2216,35 +2042,35 @@ function downloadCsv(filename, rows){
 }
 
 function rowsForCsv(campaigns){
-  const header = ["Level","Account","Date","Ad","Ad spend","Impressions","Link clicks","Messages","Booked calls","New clients","Contracted revenue","Collected revenue","CPM","CTR","CPC","Cost / message","Cost / booked call","Cost / client","Contracted ROI","Collected ROI"];
+  const header = ["Level","Account","Date","Ad","Ad spend","Impressions","Link clicks","Messages","45-min calls booked","45-min calls taken","New clients","Collected revenue","CPM","CTR","CPC","Cost / message","Cost / 45-min booked","Cost / call taken","Cost / client","Collected ROI"];
   const rows = [header];
   campaigns.forEach(c => {
     const campaignAgg = aggregate(c.rows);
     rows.push([
       "campaign", c.short, "", "", campaignAgg.spend, campaignAgg.imp, campaignAgg.clicks, campaignAgg.msgs,
-      campaignAgg.calls, campaignAgg.clients, campaignAgg.contracted, campaignAgg.collected, campaignAgg.cpm,
-      campaignAgg.ctr, campaignAgg.cpc, campaignAgg.cpMsg, campaignAgg.cpCall || "", campaignAgg.cpClient || "",
-      campaignAgg.contractedRoi, campaignAgg.collectedRoi,
+      campaignAgg.calls, campaignAgg.taken, campaignAgg.clients, campaignAgg.collected, campaignAgg.cpm,
+      campaignAgg.ctr, campaignAgg.cpc, campaignAgg.cpMsg, campaignAgg.cpCall || "", campaignAgg.cpTaken || "", campaignAgg.cpClient || "",
+      campaignAgg.collectedRoi,
     ]);
     c.rows.forEach(day => {
       const dayMetrics = deriveRow(day);
       rows.push([
         "day", c.short, day.date, "", dayMetrics.spend, dayMetrics.imp, dayMetrics.clicks, dayMetrics.msgs,
-        dayMetrics.calls, dayMetrics.clients, dayMetrics.contracted, dayMetrics.collected, dayMetrics.cpm,
-        dayMetrics.ctr, dayMetrics.cpc, dayMetrics.cpMsg, dayMetrics.cpCall || "", dayMetrics.cpClient || "",
-        dayMetrics.contractedRoi, dayMetrics.collectedRoi,
+        dayMetrics.calls, dayMetrics.taken, dayMetrics.clients, dayMetrics.collected, dayMetrics.cpm,
+        dayMetrics.ctr, dayMetrics.cpc, dayMetrics.cpMsg, dayMetrics.cpCall || "", dayMetrics.cpTaken || "", dayMetrics.cpClient || "",
+        dayMetrics.collectedRoi,
       ]);
       buildAdRows(c.id, day, c.ads).forEach(ad => {
         const adMetrics = deriveRow({
           date: day.date,
           spend: ad.spend, imp: ad.imp, clicks: ad.clicks, msgs: ad.msgs,
-          calls: ad.calls, clients: ad.clients, contracted: ad.contracted, collected: ad.collected,
+          calls: ad.calls, taken: ad.taken, clients: ad.clients, collected: ad.collected,
         });
         rows.push([
           "ad", c.short, day.date, ad.adName, adMetrics.spend, adMetrics.imp, adMetrics.clicks, adMetrics.msgs,
-          adMetrics.calls, adMetrics.clients, adMetrics.contracted, adMetrics.collected, adMetrics.cpm,
-          adMetrics.ctr, adMetrics.cpc, adMetrics.cpMsg, adMetrics.cpCall || "", adMetrics.cpClient || "",
-          adMetrics.contractedRoi, adMetrics.collectedRoi,
+          adMetrics.calls, adMetrics.taken, adMetrics.clients, adMetrics.collected, adMetrics.cpm,
+          adMetrics.ctr, adMetrics.cpc, adMetrics.cpMsg, adMetrics.cpCall || "", adMetrics.cpTaken || "", adMetrics.cpClient || "",
+          adMetrics.collectedRoi,
         ]);
       });
     });
@@ -2290,13 +2116,12 @@ const RECENT = [
   {ts:"Apr 22 · 1:05p", setter:"Jake",  camp:"tyson", kw:"SIMPLE", bucket:"msgs",  value:1},
   {ts:"Apr 22 · 12:20p",setter:"Diego", camp:"keith", kw:"ACT",    bucket:"msgs",  value:1},
   {ts:"Apr 21 · 6:44p", setter:"Mia",   camp:"tyson", kw:"FIT",    bucket:"collected", value:1500},
-  {ts:"Apr 21 · 5:12p", setter:"Jake",  camp:"tyson", kw:"STRONG", bucket:"contracted",value:2400},
   {ts:"Apr 21 · 3:02p", setter:"Mia",   camp:"keith", kw:"GOAL",   bucket:"clients", value:1},
 ];
 
 function formatEntry(e){
   const b = BUCKETS.find(x=>x.id===e.bucket);
-  if(e.bucket==="contracted" || e.bucket==="collected") return fmtUsd(e.value)+" "+(e.bucket==="contracted"?"contracted":"collected");
+  if(e.bucket==="collected") return fmtUsd(e.value)+" collected";
   return e.value+" "+(b?.unit||"");
 }
 
@@ -2389,7 +2214,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
             )}
             {list.map((e)=>{
               const isEditing = editingId === e.id;
-              const isDollar = e.bucket === "contracted" || e.bucket === "collected";
+              const isDollar = e.bucket === "collected";
               const bucketLabel = BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
               return (
                 <tr key={e.id} className={isEditing ? "editing-row" : ""}>
@@ -2430,7 +2255,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                         style={{textAlign:'right'}}
                         value={draft.value}
                         onChange={ev=>setDraft(d=>({...d, value: ev.target.value.replace(/[^\d.]/g,"")}))}
-                        placeholder={(draft.bucket==="contracted"||draft.bucket==="collected")?"$":""}
+                        placeholder={draft.bucket==="collected"?"$":""}
                         onKeyDown={ev=>{ if(ev.key==="Enter") saveEdit(); if(ev.key==="Escape") cancelEdit(); }}
                       />
                     ) : (isDollar ? fmtUsd(e.value) : e.value)}
@@ -2472,7 +2297,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                 <span style={{color:'var(--text-3)'}}>{BUCKETS.find(b=>b.id===victim.bucket)?.label || victim.bucket}</span>
                 <span style={{color:'var(--text-4)'}}>·</span>
                 <span className="mono" style={{color:'var(--text-2)'}}>
-                  {(victim.bucket==="contracted"||victim.bucket==="collected") ? fmtUsd(victim.value) : victim.value}
+                  {victim.bucket==="collected" ? fmtUsd(victim.value) : victim.value}
                 </span>
                 <span style={{color:'var(--text-4)',marginLeft:'auto',fontSize:11}}>{victim.ts}</span>
               </div>
@@ -2666,7 +2491,10 @@ function App(){
           {/* Charts row 1: ROAS + Ad ROAS */}
           <div className="grid-charts">
             <ROASChart campaigns={liveCampaigns}/>
-            <AdROASChart campaigns={liveCampaigns}/>
+            <div className="right-stack">
+              <AdROASChart campaigns={liveCampaigns}/>
+              <CACChart campaigns={liveCampaigns}/>
+            </div>
           </div>
 
           {/* Charts row 2: Cost per DM + entry/actions */}
