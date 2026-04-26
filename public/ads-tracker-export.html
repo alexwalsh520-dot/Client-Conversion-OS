@@ -508,6 +508,20 @@ function splitByWeight(total, ads, seedStr, rounding=0){
 }
 
 function buildAdRows(campaignId, dayRow, adRoster){
+  if(Array.isArray(dayRow.adRows) && dayRow.adRows.length){
+    return dayRow.adRows.map(ad => ({
+      adId: ad.adId,
+      adName: ad.adName,
+      spend: ad.spend || 0,
+      imp: ad.imp || 0,
+      clicks: ad.clicks || 0,
+      msgs: ad.msgs || 0,
+      calls: ad.calls || 0,
+      clients: ad.clients || 0,
+      contracted: ad.contracted || 0,
+      collected: ad.collected || 0,
+    }));
+  }
   // Distribute every metric across the ad roster using weights
   const seed = campaignId + "-" + dayRow.date;
   const spends = splitByWeight(dayRow.spend, adRoster, seed+"-spend");
@@ -563,16 +577,16 @@ const CAMPAIGNS = [
 
 // Derive per-row metrics
 function deriveRow(r){
-  const cpm = (r.spend / r.imp) * 1000;  // cost per 1000 impressions
-  const ctr = (r.clicks/r.imp)*100;
-  const cpc = r.spend / r.clicks;
-  const cpMsg = r.spend / r.msgs;  // cost per message (DM)
+  const cpm = r.imp>0 ? (r.spend / r.imp) * 1000 : 0;  // cost per 1000 impressions
+  const ctr = r.imp>0 ? (r.clicks/r.imp)*100 : 0;
+  const cpc = r.clicks>0 ? r.spend / r.clicks : 0;
+  const cpMsg = r.msgs>0 ? r.spend / r.msgs : 0;  // cost per message (DM)
   const cpCall = r.calls>0 ? r.spend/r.calls : null;
   const cpClient = r.clients>0 ? r.spend/r.clients : null;
   const closing = r.calls>0 ? (r.clients/r.calls)*100 : 0;
   const msgConv = r.msgs>0 ? (r.calls/r.msgs)*100 : 0;
-  const contractedRoi = (r.contracted/r.spend);
-  const collectedRoi = (r.collected/r.spend);
+  const contractedRoi = r.spend>0 ? (r.contracted/r.spend) : 0;
+  const collectedRoi = r.spend>0 ? (r.collected/r.spend) : 0;
   return {...r,cpm,ctr,cpc,cpMsg,cpCall,cpClient,closing,msgConv,contractedRoi,collectedRoi};
 }
 
@@ -584,10 +598,164 @@ function aggregate(rows){
   return deriveRow({date:"Total", spend, imp, clicks, msgs, calls, clients, contracted, collected});
 }
 
+function isoDate(d){
+  return d.toISOString().slice(0,10);
+}
+
+function todayEt(){
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone:"America/New_York",
+    year:"numeric",
+    month:"2-digit",
+    day:"2-digit",
+  }).format(new Date());
+}
+
+function shiftIso(date, days){
+  const d = new Date(date+"T00:00:00.000Z");
+  d.setUTCDate(d.getUTCDate()+days);
+  return isoDate(d);
+}
+
+function rangeForPreset(id, anchor=todayEt()){
+  if(id==="today") return {preset:id, dateFrom:anchor, dateTo:anchor};
+  if(id==="yesterday"){
+    const y = shiftIso(anchor, -1);
+    return {preset:id, dateFrom:y, dateTo:y};
+  }
+  if(id==="last3") return {preset:id, dateFrom:shiftIso(anchor, -2), dateTo:anchor};
+  if(id==="last7") return {preset:id, dateFrom:shiftIso(anchor, -6), dateTo:anchor};
+  if(id==="last14") return {preset:id, dateFrom:shiftIso(anchor, -13), dateTo:anchor};
+  if(id==="last30") return {preset:id, dateFrom:shiftIso(anchor, -29), dateTo:anchor};
+  if(id==="mtd") return {preset:id, dateFrom:anchor.slice(0,8)+"01", dateTo:anchor};
+  return {preset:id, dateFrom:shiftIso(anchor, -6), dateTo:anchor};
+}
+
+function dateLabelFromIso(value){
+  if(!value) return "";
+  const d = new Date(value+"T00:00:00");
+  if(Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {month:"short", day:"numeric"});
+}
+
+function rangeLabel(range){
+  const from = dateLabelFromIso(range.dateFrom);
+  const to = dateLabelFromIso(range.dateTo);
+  const year = (range.dateTo || "").slice(0,4);
+  return from===to ? `${from}, ${year}` : `${from} – ${to}, ${year}`;
+}
+
+function labelForPreset(id){
+  return PRESETS.find(p=>p.id===id)?.label || "Custom";
+}
+
+function metricRowFromApi(row, dateLabel){
+  return {
+    date: dateLabel || row.dateLabel || row.keyword || "Total",
+    spend: Number(row.adSpend || 0),
+    imp: Number(row.impressions || 0),
+    clicks: Number(row.linkClicks || 0),
+    msgs: Number(row.messages || 0),
+    calls: Number(row.bookedCalls || 0),
+    clients: Number(row.newClients || 0),
+    contracted: Number(row.contractedRevenue || 0),
+    collected: Number(row.collectedRevenue || 0),
+  };
+}
+
+function addMetric(target, row){
+  target.spend += row.spend || 0;
+  target.imp += row.imp || 0;
+  target.clicks += row.clicks || 0;
+  target.msgs += row.msgs || 0;
+  target.calls += row.calls || 0;
+  target.clients += row.clients || 0;
+  target.contracted += row.contracted || 0;
+  target.collected += row.collected || 0;
+}
+
+function emptyMetric(date){
+  return {date, spend:0, imp:0, clicks:0, msgs:0, calls:0, clients:0, contracted:0, collected:0};
+}
+
+function campaignsFromDashboard(dashboard, range){
+  if(!dashboard || dashboard.mock || !Array.isArray(dashboard.rows) || dashboard.rows.length===0) {
+    return CAMPAIGNS;
+  }
+
+  const sourceRows = Array.isArray(dashboard.dailyRows) && dashboard.dailyRows.length
+    ? dashboard.dailyRows
+    : dashboard.rows.map(row => ({...row, dateLabel: rangeLabel(range)}));
+  const campaignMap = new Map();
+
+  for(const apiRow of sourceRows){
+    const client = apiRow.clientKey || "unknown";
+    if(client!=="tyson" && client!=="keith") continue;
+    const keyword = (apiRow.keyword || "UNKNOWN").toUpperCase();
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(apiRow.dateLabel || "")
+      ? apiRow.dateLabel
+      : (apiRow.date || apiRow.dateLabel || range.dateTo);
+    const dateLabel = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateLabelFromIso(dateKey) : dateKey;
+    const row = metricRowFromApi(apiRow, dateLabel);
+
+    if(!campaignMap.has(client)){
+      campaignMap.set(client, {
+        id: client,
+        name: `${client==="tyson"?"Tyson":"Keith"} — Warm Spring Shred Challenge`,
+        short: client==="tyson"?"Tyson":"Keith",
+        status: "active",
+        dot: client,
+        adsByName: new Map(),
+        rowsByDate: new Map(),
+      });
+    }
+
+    const campaign = campaignMap.get(client);
+    if(!campaign.adsByName.has(keyword)){
+      campaign.adsByName.set(keyword, {id:`${client}-${keyword.toLowerCase()}`, name:keyword, weight:1});
+    }
+
+    if(!campaign.rowsByDate.has(dateKey)){
+      campaign.rowsByDate.set(dateKey, {...emptyMetric(dateLabel), iso:dateKey, adRows:[]});
+    }
+
+    const day = campaign.rowsByDate.get(dateKey);
+    addMetric(day, row);
+    day.adRows.push({
+      adId: `${client}-${keyword.toLowerCase()}`,
+      adName: keyword,
+      ...row,
+    });
+  }
+
+  const campaigns = Array.from(campaignMap.values()).map(c => {
+    const ads = Array.from(c.adsByName.values()).sort((a,b)=>a.name.localeCompare(b.name));
+    const rows = Array.from(c.rowsByDate.values())
+      .sort((a,b)=>String(b.iso).localeCompare(String(a.iso)))
+      .map(row => ({
+        ...row,
+        adRows: row.adRows.sort((a,b)=>b.collected-a.collected || b.spend-a.spend),
+      }));
+    return {...c, ads, adCount:ads.length, rows};
+  });
+
+  return campaigns.length ? campaigns : CAMPAIGNS;
+}
+
+function labelsFromCampaigns(campaigns){
+  const labels = Array.from(new Set(campaigns.flatMap(c => c.rows.map(r => r.date))));
+  return labels.length ? labels.sort((a,b)=>{
+    const ai = campaigns.flatMap(c=>c.rows).find(r=>r.date===a)?.iso || a;
+    const bi = campaigns.flatMap(c=>c.rows).find(r=>r.date===b)?.iso || b;
+    return String(ai).localeCompare(String(bi));
+  }) : DAY_LABELS;
+}
+
 // ------- Date dropdown (Meta-style)
 const PRESETS = [
   {id:"today",label:"Today",days:0},
   {id:"yesterday",label:"Yesterday",days:-1},
+  {id:"last3",label:"Last 3 days",days:3},
   {id:"last7",label:"Last 7 days",days:7},
   {id:"last14",label:"Last 14 days",days:14},
   {id:"last30",label:"Last 30 days",days:30},
@@ -627,26 +795,36 @@ function MiniCalendar({monthOffset=0, rangeStart, rangeEnd}){
 
 function DateDropdown({value, onChange}){
   const [open, setOpen] = useState(false);
-  const [preset, setPreset] = useState("last7");
   const ref = useRef(null);
   useEffect(()=>{
     const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
   },[]);
-  const label = PRESETS.find(p=>p.id===preset)?.label || "Custom";
+  const current = value || rangeForPreset("last7");
+  const label = labelForPreset(current.preset);
+  const days = Math.max(1, Math.round((new Date(current.dateTo) - new Date(current.dateFrom))/(1000*60*60*24)) + 1);
   return (
     <div className="filter" ref={ref}>
       <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
         <span style={{color:'var(--text-3)',display:'inline-flex'}}><IcCal /></span>
         <span className="val">{label}</span>
-        <span className="dim" style={{fontSize:11}}>· Apr 16 – Apr 22, 2026</span>
+        <span className="dim" style={{fontSize:11}}>· {rangeLabel(current)}</span>
         <span className="caret"><IcCaret/></span>
       </button>
       {open && (
         <div className="pop date-pop" style={{minWidth:520}}>
           <div className="date-presets">
             {PRESETS.map(p=>(
-              <div key={p.id} className={"pop-item "+(preset===p.id?"selected":"")} onClick={()=>setPreset(p.id)}>
+              <div
+                key={p.id}
+                className={"pop-item "+(current.preset===p.id?"selected":"")}
+                onClick={()=>{
+                  if(p.id!=="custom") {
+                    onChange && onChange(rangeForPreset(p.id));
+                    setOpen(false);
+                  }
+                }}
+              >
                 <span>{p.label}</span>
                 <span className="check"><IcCheck/></span>
               </div>
@@ -656,7 +834,7 @@ function DateDropdown({value, onChange}){
             <MiniCalendar/>
           </div>
           <div className="date-foot">
-            <span className="mono" style={{fontSize:11}}>Apr 16, 2026 → Apr 22, 2026 · 7 days</span>
+            <span className="mono" style={{fontSize:11}}>{current.dateFrom} → {current.dateTo} · {days} day{days===1?"":"s"}</span>
             <div style={{display:'flex',gap:6}}>
               <button className="filter-btn" style={{padding:'4px 10px'}} onClick={()=>setOpen(false)}>Cancel</button>
               <button className="apply-btn" onClick={()=>setOpen(false)}>Apply</button>
@@ -720,7 +898,7 @@ const DEFAULT_COL_WIDTHS = {
 const CALC_KEYS = new Set(["cpm","ctr","cpc","cpMsg","cpCall","cpClient","closing","msgConv","contractedRoi","collectedRoi"]);
 const LOGGED_KEYS = new Set(["msgs","calls","clients","contracted","collected"]);
 
-function CampaignTable({account, status, loggedTotals}){
+function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
   const [expandedDays, setExpandedDays] = useState({}); // key: "camp-date" -> bool
@@ -746,7 +924,7 @@ function CampaignTable({account, status, loggedTotals}){
   };
 
   // Apply loggedTotals onto campaign rows (add to latest date)
-  const augmentedCampaigns = CAMPAIGNS.map(c => {
+  const augmentedCampaigns = campaigns.map(c => {
     const bump = loggedTotals?.[c.id] || {};
     const rows = c.rows.map((r, idx) => {
       if(idx !== 0) return r; // apply to newest (first in desc array)
@@ -806,7 +984,7 @@ function CampaignTable({account, status, loggedTotals}){
           </button>
           <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setView("ad")}>
             Ad level
-            <span className="tvt-count">{TYSON_ADS.length + KEITH_ADS.length}</span>
+            <span className="tvt-count">{campaigns.reduce((sum,c)=>sum+(c.ads?.length||0),0)}</span>
           </button>
         </div>
         <div className="tbl-toolbar-meta"></div>
@@ -1276,23 +1454,22 @@ function LineChart({series, labels, height=200, width=640, fmt=(v)=>v, fmtRight,
 // ------- ROAS time-series card
 const DAY_LABELS = ["Apr 16","Apr 17","Apr 18","Apr 19","Apr 20","Apr 21","Apr 22"];
 // Build daily totals from CAMPAIGNS (already contains Apr 17-22). Synthesize Apr 16.
-function seriesForCampaignKey(key, filterId="all"){
-  const camps = filterId === "all" ? CAMPAIGNS : CAMPAIGNS.filter(c=>c.id===filterId);
+function seriesForCampaignKey(key, filterId="all", campaigns=CAMPAIGNS, labels=DAY_LABELS){
+  const camps = filterId === "all" ? campaigns : campaigns.filter(c=>c.id===filterId);
   // Map date -> summed value
   const byDate = {};
   camps.forEach(c => c.rows.forEach(r => {
     byDate[r.date] = (byDate[r.date] || 0) + r[key];
   }));
-  // Synth Apr 16 roughly 92% of Apr 17
-  if(!byDate["Apr 16"] && byDate["Apr 17"]) byDate["Apr 16"] = Math.round(byDate["Apr 17"] * 0.92);
-  return DAY_LABELS.map(l => byDate[l] || 0);
+  return labels.map(l => byDate[l] || 0);
 }
 
-function ROASChart(){
+function ROASChart({campaigns=CAMPAIGNS}){
   const [client, setClient] = useState("all");
   const [mode, setMode] = useState("collected"); // 'collected' | 'contracted'
-  const spend = seriesForCampaignKey("spend", client);
-  const revenue = seriesForCampaignKey(mode, client);
+  const labels = labelsFromCampaigns(campaigns);
+  const spend = seriesForCampaignKey("spend", client, campaigns, labels);
+  const revenue = seriesForCampaignKey(mode, client, campaigns, labels);
   const roasVals = revenue.map((r,i)=> spend[i] ? r/spend[i] : 0);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalRev = revenue.reduce((a,b)=>a+b,0);
@@ -1320,7 +1497,7 @@ function ROASChart(){
         </div>
       </div>
       <LineChart
-        labels={DAY_LABELS}
+        labels={labels}
         series={[
           {name: mode==="collected"?"Revenue (collected)":"Revenue (contracted)", values: revenue, color: "var(--gold)", isPrimary:true, fmt: (v)=>"$"+Math.round(v).toLocaleString()},
           {name: "Ad spend", values: spend, color: "#888", fmt: (v)=>"$"+Math.round(v).toLocaleString()},
@@ -1349,9 +1526,9 @@ function ClientPicker({value, onChange}){
 
 // ------- Cost per DM chart
 // Attribute cost per DM either overall (spend / msgs aggregated) or per keyword (spend of keyword / msgs count)
-function seriesCpmOverall(client){
-  const spend = seriesForCampaignKey("spend", client);
-  const msgs = seriesForCampaignKey("msgs", client);
+function seriesCpmOverall(client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
+  const spend = seriesForCampaignKey("spend", client, campaigns, labels);
+  const msgs = seriesForCampaignKey("msgs", client, campaigns, labels);
   return msgs.map((m,i)=> m ? spend[i]/m : 0);
 }
 // Use the same KW_DATA.collected as our keyword roster; cost per DM per keyword per day: fluctuate around spend/count
@@ -1364,22 +1541,40 @@ const KW_ROSTER = [
   {kw:"DIALED",  camp:"keith", baseSpend: 290, baseMsgs: 24},
   {kw:"FOCUS",   camp:"keith", baseSpend: 260, baseMsgs: 20},
 ];
-function seriesCpmKeyword(kw, client){
+function seriesCpmKeyword(kw, client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
+  const live = labels.map(label => {
+    let spend = 0;
+    let msgs = 0;
+    const camps = client === "all" ? campaigns : campaigns.filter(c=>c.id===client);
+    camps.forEach(c => {
+      const day = c.rows.find(r=>r.date===label);
+      const ad = day?.adRows?.find(a=>a.adName===kw);
+      if(ad){
+        spend += ad.spend || 0;
+        msgs += ad.msgs || 0;
+      }
+    });
+    return msgs ? spend / msgs : 0;
+  });
+  if(live.some(Boolean)) return live;
+
   const def = KW_ROSTER.find(k=>k.kw===kw);
-  if(!def) return DAY_LABELS.map(()=>0);
+  if(!def) return labels.map(()=>0);
   const rand = (n)=>{ let x=0; for(let i=0;i<n.length;i++)x=((x<<5)-x+n.charCodeAt(i))|0; x=Math.abs(x); return ()=>{x=(x*9301+49297)%233280; return x/233280;}; };
   const r = rand(kw+client);
-  return DAY_LABELS.map(()=> (def.baseSpend/7) / (def.baseMsgs/7 * (0.7 + r()*0.6)));
+  return labels.map(()=> (def.baseSpend/7) / (def.baseMsgs/7 * (0.7 + r()*0.6)));
 }
 
-function CostPerDMChart(){
+function CostPerDMChart({campaigns=CAMPAIGNS}){
   const [client, setClient] = useState("all");
   const [mode, setMode] = useState("overall"); // 'overall' | 'keyword'
-  const availableKws = KW_ROSTER.filter(k => client==="all" || k.camp===client);
+  const labels = labelsFromCampaigns(campaigns);
+  const liveKws = campaigns.flatMap(c => (c.ads||[]).map(ad => ({kw:ad.name, camp:c.id})));
+  const availableKws = (liveKws.length ? liveKws : KW_ROSTER).filter(k => client==="all" || k.camp===client);
 
   let series, avg, delta, subLabel;
   if(mode === "overall"){
-    const vals = seriesCpmOverall(client);
+    const vals = seriesCpmOverall(client, campaigns, labels);
     avg = vals.reduce((a,b)=>a+b,0) / vals.length;
     delta = vals[vals.length-1] - vals[0];
     subLabel = "7-day avg overall";
@@ -1390,7 +1585,7 @@ function CostPerDMChart(){
     // One line per keyword
     const kwSeries = availableKws.map(k => ({
       name: k.kw,
-      values: seriesCpmKeyword(k.kw, client),
+      values: seriesCpmKeyword(k.kw, client, campaigns, labels),
       color: k.camp === "tyson" ? "var(--gold)" : "var(--blue)",
       camp: k.camp,
       fmt: (v)=>"$"+v.toFixed(2),
@@ -1431,7 +1626,7 @@ function CostPerDMChart(){
         </div>
       </div>
       <LineChart
-        labels={DAY_LABELS}
+        labels={labels}
         series={series}
         fmt={(v)=>"$"+v.toFixed(2)}
       />
@@ -1460,9 +1655,9 @@ function CostPerDMChart(){
 
 // ------- Ad ROAS chart (was Keyword ROI)
 // Build aggregated per-ad metrics across the 6 known days
-function allAdsAggregated(){
+function allAdsAggregated(campaigns=CAMPAIGNS){
   const out = [];
-  CAMPAIGNS.forEach(c => {
+  campaigns.forEach(c => {
     c.ads.forEach(a => {
       // sum across rows
       let spend=0, collected=0, contracted=0, clients=0;
@@ -1485,11 +1680,11 @@ function allAdsAggregated(){
   return out;
 }
 
-function AdROASChart(){
+function AdROASChart({campaigns=CAMPAIGNS}){
   const [view, setView] = useState("top"); // 'top' | 'all'
   const [client, setClient] = useState("all");
   const [metric, setMetric] = useState("collected"); // collected | contracted
-  const all = useMemo(()=>allAdsAggregated(), []);
+  const all = useMemo(()=>allAdsAggregated(campaigns), [campaigns]);
   const filtered = all
     .filter(a => client === "all" || a.camp === client)
     .map(a => ({...a, roas: a.spend ? a[metric]/a.spend : 0}))
@@ -2023,10 +2218,34 @@ function RecentEntries({extra, onToast}){
   );
 }
 
+function recentEntriesFromDashboard(dashboard){
+  if(!dashboard?.recentEvents) return [];
+  return dashboard.recentEvents.map((event, i) => {
+    const dt = event.eventAt ? new Date(event.eventAt) : null;
+    const ts = dt && !Number.isNaN(dt.getTime())
+      ? dt.toLocaleString("en-US", {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"})
+      : "Recent";
+    const bucket = event.source === "ghl" ? "calls" : "msgs";
+    return {
+      ts,
+      setter: event.setter || "Auto",
+      camp: event.clientKey || "tyson",
+      kw: event.keyword || "UNKNOWN",
+      bucket,
+      value: 1,
+      id: "live-"+i,
+    };
+  });
+}
+
 // ------- App
 function App(){
   const [account, setAccount] = useState("all");
   const [status, setStatus] = useState("active");
+  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7"));
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [newEntries, setNewEntries] = useState([]);
   const [toast, setToast] = useState(null);
 
@@ -2043,6 +2262,72 @@ function App(){
     setNewEntries(x=>[entry, ...x]);
   };
 
+  const loadDashboard = async ({silent=false}={}) => {
+    if(!silent) setLoading(true);
+    const params = new URLSearchParams({
+      account,
+      status,
+      level:"ad",
+      dateFrom:dateRange.dateFrom,
+      dateTo:dateRange.dateTo,
+    });
+    try{
+      const res = await fetch("/api/ads-tracker?"+params.toString(), {cache:"no-store"});
+      if(!res.ok) throw new Error("Ads Tracker API failed");
+      const json = await res.json();
+      setDashboard(json);
+    }catch(err){
+      console.error(err);
+      showToast("Live data unavailable · showing fallback");
+    }finally{
+      setLoading(false);
+    }
+  };
+
+  useEffect(()=>{
+    loadDashboard();
+  }, [account, status, dateRange.dateFrom, dateRange.dateTo]);
+
+  const liveCampaigns = useMemo(
+    () => campaignsFromDashboard(dashboard, dateRange),
+    [dashboard, dateRange.dateFrom, dateRange.dateTo]
+  );
+  const liveRecent = useMemo(
+    () => recentEntriesFromDashboard(dashboard),
+    [dashboard]
+  );
+  const fetchedLabel = dashboard?.mock
+    ? "Fallback data"
+    : (dashboard ? `Live · ${rangeLabel(dateRange)}` : "Loading live data");
+
+  const syncNow = async () => {
+    if(syncing) return;
+    setSyncing(true);
+    showToast("Syncing ads + sales rows…");
+    const body = JSON.stringify({dateFrom:dateRange.dateFrom, dateTo:dateRange.dateTo});
+    try{
+      const sales = await fetch("/api/sync/sales-tracker-rows", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body,
+      });
+      if(!sales.ok) throw new Error("Sales sync failed");
+      const ads = await fetch("/api/sync/ads-tracker", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body,
+      });
+      if(!ads.ok) throw new Error("Meta sync failed");
+      await loadDashboard({silent:true});
+      showToast("Synced · live data refreshed");
+    }catch(err){
+      console.error(err);
+      showToast("Sync failed · check auth/logs");
+    }finally{
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="app">
         <div className="page">
@@ -2051,9 +2336,9 @@ function App(){
             <div>
               <h1 className="page-title">Ads Tracker</h1>
             </div>
-            <button className="sync-pill" onClick={()=>showToast("Synced · just now")}>
+            <button className="sync-pill" onClick={syncNow} disabled={syncing}>
               <svg className="sync-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg>
-              <span>Last synced 6m ago</span>
+              <span>{syncing ? "Syncing…" : "Sync now"}</span>
             </button>
           </div>
 
@@ -2079,7 +2364,7 @@ function App(){
               ]}
             />
             <div className="filter-divider"></div>
-            <DateDropdown />
+            <DateDropdown value={dateRange} onChange={setDateRange} />
             <div style={{flex:1}}></div>
             <button className="filter-btn" style={{color:'var(--text-3)'}}>
               <IcSearch/>
@@ -2091,21 +2376,22 @@ function App(){
           <div className="section" style={{marginTop:0}}>
             <div className="section-head">
               <div className="section-label">Campaign performance</div>
+              <div className="section-meta">{loading ? "Loading…" : fetchedLabel}</div>
             </div>
-            <CampaignTable account={account} status={status} />
+            <CampaignTable account={account} status={status} campaigns={liveCampaigns} />
           </div>
 
           {/* Bottom grid */}
           {/* Charts row 1: ROAS + Ad ROAS */}
           <div className="grid-charts">
-            <ROASChart/>
-            <AdROASChart/>
+            <ROASChart campaigns={liveCampaigns}/>
+            <AdROASChart campaigns={liveCampaigns}/>
           </div>
 
           {/* Charts row 2: Cost per DM + entry/actions */}
           <div className="grid-bottom">
             <div>
-              <CostPerDMChart/>
+              <CostPerDMChart campaigns={liveCampaigns}/>
             </div>
             <div className="right-col">
               <div>
@@ -2122,11 +2408,11 @@ function App(){
           </div>
 
           {/* Recent entries (collapsed) */}
-          <RecentEntries extra={newEntries} onToast={showToast} />
+          <RecentEntries extra={[...newEntries, ...liveRecent]} onToast={showToast} />
 
           <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
             <span>Ads Tracker v1.4 · Client Conversion OS</span>
-            <span className="mono">Fetched Apr 22, 2026 · 16:12 PT</span>
+            <span className="mono">{fetchedLabel}</span>
           </div>
         </div>
         {toast && (

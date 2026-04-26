@@ -95,6 +95,12 @@ export interface AdsTrackerRow {
   status: "active" | "finished";
 }
 
+interface SalesAttributionOptions {
+  groupId?: (match: KeywordEvent, row: SheetRow) => string;
+  dateLabel?: (match: KeywordEvent, row: SheetRow) => string;
+  groupName?: (match: KeywordEvent, row: SheetRow) => string;
+}
+
 interface Group {
   id: string;
   clientKey: string;
@@ -184,6 +190,18 @@ function isNoShow(row: SheetRow): boolean {
   return row.outcome.includes("NS") || row.callTakenStatus === "no";
 }
 
+function eventDateKey(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function normalizeCallTakenStatus(
   value: string | null,
   callTaken: boolean | null
@@ -267,7 +285,12 @@ async function fetchSalesRowsFromSupabase(
     });
 }
 
-function applySalesToGroups(groups: Map<string, Group>, salesRows: SheetRow[], bookings: KeywordEvent[]) {
+function applySalesToGroups(
+  groups: Map<string, Group>,
+  salesRows: SheetRow[],
+  bookings: KeywordEvent[],
+  options: SalesAttributionOptions = {}
+) {
   const bookingsByName = new Map<string, KeywordEvent[]>();
   for (const booking of bookings) {
     const name = normalizePersonName(booking.contact_name);
@@ -285,9 +308,18 @@ function applySalesToGroups(groups: Map<string, Group>, salesRows: SheetRow[], b
     const match = matches.find((item) => !clientKey || item.client_key === clientKey) || matches[0];
     if (!match?.keyword_normalized) continue;
 
-    const groupId = `${match.client_key}:${match.keyword_normalized}`;
-    const group = groups.get(groupId);
-    if (!group) continue;
+    const groupId =
+      options.groupId?.(match, row) || `${match.client_key}:${match.keyword_normalized}`;
+    const group =
+      groups.get(groupId) ||
+      emptyGroup(
+        groupId,
+        match.client_key,
+        options.groupName?.(match, row) || match.client_key,
+        displayKeyword(match.keyword_normalized)
+      );
+    group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
+    groups.set(groupId, group);
 
     if (row.callTaken && !isNoShow(row)) group.callsTaken += 1;
     if (isWin(row)) group.newClients += 1;
@@ -333,7 +365,8 @@ function buildPayload(
   query: AdsTrackerQuery,
   rows: AdsTrackerRow[],
   events: KeywordEvent[],
-  mock = false
+  mock = false,
+  dailyRows: AdsTrackerRow[] = []
 ) {
   const totalSpend = rows.reduce((sum, row) => sum + row.adSpend, 0);
   const totalCollected = rows.reduce((sum, row) => sum + row.collectedRevenue, 0);
@@ -364,6 +397,7 @@ function buildPayload(
       newClients: rows.reduce((sum, row) => sum + row.newClients, 0),
     },
     rows,
+    dailyRows,
     adRoas,
     trend: rows.map((row) => ({
       label: row.keyword,
@@ -385,6 +419,47 @@ function buildPayload(
         eventAt: event.event_at,
       })),
   };
+}
+
+function addMetaRowsToGroups(
+  groups: Map<string, Group>,
+  rows: MetaRow[],
+  query: AdsTrackerQuery,
+  groupIdForRow: (row: MetaRow, keyword: string) => string,
+  dateLabelForRow: (row: MetaRow) => string
+) {
+  for (const row of rows) {
+    const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
+    if (!keyword) continue;
+    const id = groupIdForRow(row, keyword);
+    const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : row.client_name || row.client_key;
+    const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
+    group.adSpendCents += row.spend_cents || 0;
+    group.impressions += row.impressions || 0;
+    group.linkClicks += row.link_clicks || 0;
+    group.dateLabel = dateLabelForRow(row);
+    groups.set(id, group);
+  }
+}
+
+function addKeywordEventsToGroups(
+  groups: Map<string, Group>,
+  events: KeywordEvent[],
+  groupIdForEvent: (event: KeywordEvent, keyword: string) => string,
+  dateLabelForEvent: (event: KeywordEvent) => string
+) {
+  for (const event of events) {
+    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+    if (!keyword) continue;
+    const id = groupIdForEvent(event, keyword);
+    const group = groups.get(id) || emptyGroup(id, event.client_key, event.client_key, displayKeyword(keyword));
+
+    if (event.source === "manychat") group.messages += 1;
+    if (event.source === "ghl") group.bookedCalls += 1;
+
+    group.dateLabel = dateLabelForEvent(event);
+    groups.set(id, group);
+  }
 }
 
 export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
@@ -420,31 +495,20 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const rows = (metaRows || []) as MetaRow[];
   const events = (keywordEvents || []) as KeywordEvent[];
 
-  for (const row of rows) {
-    const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
-    if (!keyword) continue;
-    const id = `${row.client_key}:${keyword}`;
-    const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : row.client_name || row.client_key;
-    const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
-    group.adSpendCents += row.spend_cents || 0;
-    group.impressions += row.impressions || 0;
-    group.linkClicks += row.link_clicks || 0;
-    group.dateLabel = `${query.dateFrom} - ${query.dateTo}`;
-    groups.set(id, group);
-  }
+  addMetaRowsToGroups(
+    groups,
+    rows,
+    query,
+    (row, keyword) => `${row.client_key}:${keyword}`,
+    () => `${query.dateFrom} - ${query.dateTo}`
+  );
 
-  for (const event of events) {
-    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
-    if (!keyword) continue;
-    const id = `${event.client_key}:${keyword}`;
-    const group = groups.get(id) || emptyGroup(id, event.client_key, event.client_key, displayKeyword(keyword));
-
-    if (event.source === "manychat") group.messages += 1;
-    if (event.source === "ghl") group.bookedCalls += 1;
-
-    group.dateLabel = `${query.dateFrom} - ${query.dateTo}`;
-    groups.set(id, group);
-  }
+  addKeywordEventsToGroups(
+    groups,
+    events,
+    (event, keyword) => `${event.client_key}:${keyword}`,
+    () => `${query.dateFrom} - ${query.dateTo}`
+  );
 
   const bookings = events.filter((event) => event.source === "ghl");
   const salesRows =
@@ -456,11 +520,35 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   applySalesToGroups(groups, salesRows, bookings);
 
+  const dailyGroups = new Map<string, Group>();
+  addMetaRowsToGroups(
+    dailyGroups,
+    rows,
+    query,
+    (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
+    (row) => row.date
+  );
+  addKeywordEventsToGroups(
+    dailyGroups,
+    events,
+    (event, keyword) => `${eventDateKey(event.event_at)}:${event.client_key}:${keyword}`,
+    (event) => eventDateKey(event.event_at)
+  );
+  applySalesToGroups(dailyGroups, salesRows, bookings, {
+    groupId: (match, row) => `${row.date}:${match.client_key}:${match.keyword_normalized}`,
+    dateLabel: (_match, row) => row.date,
+  });
+
   const finalized = Array.from(groups.values())
     .map(finalizeGroup)
     .filter((row) => row.adSpend > 0 || row.messages > 0 || row.bookedCalls > 0)
     .sort((a, b) => b.collectedRoi - a.collectedRoi);
 
+  const finalizedDaily = Array.from(dailyGroups.values())
+    .map(finalizeGroup)
+    .filter((row) => row.adSpend > 0 || row.messages > 0 || row.bookedCalls > 0 || row.collectedRevenue > 0)
+    .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
+
   if (finalized.length === 0) return mockPayload(query);
-  return buildPayload(query, finalized, events);
+  return buildPayload(query, finalized, events, false, finalizedDaily);
 }
