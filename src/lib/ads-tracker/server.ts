@@ -212,6 +212,34 @@ function eventDateKey(value: string | null | undefined): string {
   }).format(date);
 }
 
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function isWithinDashboardDateRange(value: string | null | undefined, query: AdsTrackerQuery) {
+  const date = eventDateKey(value);
+  return date >= query.dateFrom && date <= query.dateTo;
+}
+
+function looksLikeTestName(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return normalized.includes("brozygaytest") || normalized.includes("brozisgay");
+}
+
+function isTestKeywordEvent(event: KeywordEvent): boolean {
+  return (
+    looksLikeTestName(event.contact_name) ||
+    looksLikeTestName(event.subscriber_name)
+  );
+}
+
+function isTestSalesRow(row: SheetRow): boolean {
+  return looksLikeTestName(row.name);
+}
+
 function normalizeCallTakenStatus(
   value: string | null,
   callTaken: boolean | null
@@ -505,6 +533,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const clientFilter =
     query.account === "all" ? ["tyson", "keith"] : [query.account];
+  const eventQueryFrom = `${shiftDate(query.dateFrom, -1)}T00:00:00.000Z`;
+  const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
 
   const [
     { data: metaRows, error: metaError },
@@ -523,13 +553,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
           "source,event_type,client_key,keyword_raw,keyword_normalized,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
         )
         .in("client_key", clientFilter)
-        .gte("event_at", `${query.dateFrom}T00:00:00.000Z`)
-        .lte("event_at", `${query.dateTo}T23:59:59.999Z`),
+        .gte("event_at", eventQueryFrom)
+        .lte("event_at", eventQueryTo),
       db
         .from("manychat_tag_events")
         .select("tag_name,client,keyword_raw,keyword_normalized,subscriber_name,setter_name,event_at")
-        .gte("event_at", `${query.dateFrom}T00:00:00.000Z`)
-        .lte("event_at", `${query.dateTo}T23:59:59.999Z`),
+        .gte("event_at", eventQueryFrom)
+        .lte("event_at", eventQueryTo),
     ]);
 
   if (metaError || eventError || manychatError) {
@@ -546,7 +576,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .map(manychatTagEventToKeywordEvent)
     .filter((event): event is KeywordEvent => Boolean(event))
     .filter((event) => clientFilter.includes(event.client_key));
-  const events = [...ghlEvents, ...manychatMessageEvents];
+  const events = [...ghlEvents, ...manychatMessageEvents]
+    .filter((event) => !isTestKeywordEvent(event))
+    .filter((event) => isWithinDashboardDateRange(event.event_at, query));
 
   addMetaRowsToGroups(
     groups,
@@ -570,8 +602,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       console.warn("[ads-tracker] Sales sheet fetch failed", error);
       return [] as SheetRow[];
     }));
+  const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
 
-  applySalesToGroups(groups, salesRows, bookings);
+  applySalesToGroups(groups, attributionSalesRows, bookings);
 
   const dailyGroups = new Map<string, Group>();
   addMetaRowsToGroups(
@@ -587,7 +620,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (event, keyword) => `${eventDateKey(event.event_at)}:${event.client_key}:${keyword}`,
     (event) => eventDateKey(event.event_at)
   );
-  applySalesToGroups(dailyGroups, salesRows, bookings, {
+  applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) => `${row.date}:${match.client_key}:${match.keyword_normalized}`,
     dateLabel: (_match, row) => row.date,
   });

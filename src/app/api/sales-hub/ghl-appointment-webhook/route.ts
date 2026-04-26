@@ -77,6 +77,10 @@ export async function POST(req: NextRequest) {
     const end_time =
       readString(root, ["end_time", "endTime"]) ||
       readString(calendar, ["endTime", "end_time"]);
+    const event_at =
+      readString(root, ["event_at", "eventAt", "created_at", "createdAt", "date_added", "dateAdded"]) ||
+      readString(calendar, ["event_at", "eventAt", "created_at", "createdAt", "date_added", "dateAdded"]) ||
+      new Date().toISOString();
     const assigned_user_id =
       readString(root, ["assigned_user_id", "assignedUserId"]) ||
       readString(calendar, ["created_by_user_id", "assigned_user_id"]) ||
@@ -158,7 +162,7 @@ export async function POST(req: NextRequest) {
             appointment_id,
             contact_id: contact_id || null,
             contact_name: contact_name || null,
-            event_at: start_time || new Date().toISOString(),
+            event_at,
             raw_payload: body,
           },
           { onConflict: "appointment_id" }
@@ -178,7 +182,7 @@ export async function POST(req: NextRequest) {
                 appointment_id,
                 contact_id: contact_id || null,
                 contact_name: contact_name || null,
-                event_at: start_time || new Date().toISOString(),
+                event_at,
                 raw_payload: body,
               },
               { onConflict: "appointment_id" }

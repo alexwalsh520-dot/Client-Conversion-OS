@@ -62,6 +62,10 @@
   .filter-btn .val{color:var(--text);font-size:12px}
   .filter-btn .caret{color:var(--text-3);font-size:9px;margin-left:2px}
   .filter-divider{width:1px;height:16px;background:var(--border-2);margin:0 4px}
+  .search-control{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;color:var(--text-3);font-size:12px;min-height:30px;min-width:150px}
+  .search-control:focus-within{background:#141414;border-color:#333;color:var(--text-2)}
+  .search-input{width:100px;color:var(--text);font-size:12px}
+  .search-input::placeholder{color:var(--text-4)}
   .segmented{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;padding:2px;height:30px}
   .seg{padding:4px 10px;font-size:12px;color:var(--text-3);border-radius:4px;display:flex;align-items:center}
   .seg:hover{color:var(--text-2)}
@@ -89,6 +93,8 @@
   .cal-day.muted{color:var(--text-4)}
   .cal-day.in-range{background:#1a1a1a;color:var(--text)}
   .cal-day.endpoint{background:var(--gold);color:#0a0a0a;font-weight:600}
+  .cal-day.today:not(.endpoint){box-shadow:inset 0 0 0 1px var(--gold-dim);color:var(--gold)}
+  .cal-day.trail{visibility:hidden}
   .date-foot{border-top:1px solid var(--border);padding:10px 14px;grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-3)}
   .apply-btn{padding:5px 12px;border-radius:5px;background:var(--gold);color:#0a0a0a;font-weight:600;font-size:11px}
   .apply-btn:hover{filter:brightness(1.08)}
@@ -617,6 +623,30 @@ function shiftIso(date, days){
   return isoDate(d);
 }
 
+function monthStartIso(date){
+  return (date || todayEt()).slice(0,7)+"-01";
+}
+
+function shiftMonth(monthIso, delta){
+  const d = new Date(monthIso+"T00:00:00");
+  d.setMonth(d.getMonth()+delta);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+}
+
+function monthTitle(monthIso){
+  const d = new Date(monthIso+"T00:00:00");
+  return d.toLocaleDateString("en-US", {month:"long", year:"numeric"});
+}
+
+function daysInMonth(monthIso){
+  const d = new Date(monthIso+"T00:00:00");
+  return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+}
+
+function isoForMonthDay(monthIso, day){
+  return `${monthIso.slice(0,7)}-${String(day).padStart(2,"0")}`;
+}
+
 function rangeForPreset(id, anchor=todayEt()){
   if(id==="today") return {preset:id, dateFrom:anchor, dateTo:anchor};
   if(id==="yesterday"){
@@ -628,6 +658,10 @@ function rangeForPreset(id, anchor=todayEt()){
   if(id==="last14") return {preset:id, dateFrom:shiftIso(anchor, -13), dateTo:anchor};
   if(id==="last30") return {preset:id, dateFrom:shiftIso(anchor, -29), dateTo:anchor};
   if(id==="mtd") return {preset:id, dateFrom:anchor.slice(0,8)+"01", dateTo:anchor};
+  if(id==="lmtd"){
+    const start = shiftMonth(monthStartIso(anchor), -1);
+    return {preset:id, dateFrom:start, dateTo:isoForMonthDay(start, daysInMonth(start))};
+  }
   return {preset:id, dateFrom:shiftIso(anchor, -6), dateTo:anchor};
 }
 
@@ -751,6 +785,73 @@ function labelsFromCampaigns(campaigns){
   }) : DAY_LABELS;
 }
 
+function rowSortKey(row){
+  return row?.iso || row?.date || "";
+}
+
+function filterCampaignsBySearch(campaigns, search){
+  const term = (search || "").trim().toLowerCase();
+  if(!term) return campaigns;
+
+  return campaigns.map(c => {
+    const campaignMatches = [c.name, c.short, c.id].some(v => String(v || "").toLowerCase().includes(term));
+    if(campaignMatches) return c;
+
+    const rows = c.rows.map(row => {
+      const adRows = (row.adRows || []).filter(ad =>
+        [ad.adName, ad.adId].some(v => String(v || "").toLowerCase().includes(term))
+      );
+      if(!adRows.length) return null;
+
+      const next = {...emptyMetric(row.date), iso:row.iso, adRows};
+      adRows.forEach(ad => addMetric(next, metricRowFromApi({
+        adSpend:ad.spend,
+        impressions:ad.imp,
+        linkClicks:ad.clicks,
+        messages:ad.msgs,
+        bookedCalls:ad.calls,
+        newClients:ad.clients,
+        contractedRevenue:ad.contracted,
+        collectedRevenue:ad.collected,
+      }, row.date)));
+      return next;
+    }).filter(Boolean);
+
+    if(!rows.length) return null;
+    const adsById = new Map();
+    rows.forEach(row => row.adRows.forEach(ad => {
+      if(!adsById.has(ad.adId)) adsById.set(ad.adId, {id:ad.adId, name:ad.adName, weight:1});
+    }));
+    const ads = Array.from(adsById.values()).sort((a,b)=>a.name.localeCompare(b.name));
+    return {...c, rows, ads, adCount:ads.length};
+  }).filter(Boolean);
+}
+
+function applyLocalEntriesToCampaigns(campaigns, entries){
+  if(!entries?.length) return campaigns;
+  const bucketToMetric = {msgs:"msgs", calls:"calls", clients:"clients", contracted:"contracted", collected:"collected"};
+  return campaigns.map(c => {
+    const matching = entries.filter(e => e.camp === c.id && bucketToMetric[e.bucket]);
+    if(!matching.length) return c;
+    const rows = c.rows.map((row, idx) => {
+      if(idx !== 0) return row;
+      const next = {...row, adRows: row.adRows ? row.adRows.map(ad => ({...ad})) : row.adRows};
+      matching.forEach(e => {
+        const metric = bucketToMetric[e.bucket];
+        const value = Number(e.value || 0);
+        next[metric] = (next[metric] || 0) + value;
+        if(Array.isArray(next.adRows)){
+          const keyword = String(e.kw || "").toUpperCase();
+          const ad = next.adRows.find(a => String(a.adName || "").toUpperCase() === keyword);
+          if(ad) ad[metric] = (ad[metric] || 0) + value;
+        }
+      });
+      return next;
+    });
+    return {...c, rows};
+  });
+}
+
 // ------- Date dropdown (Meta-style)
 const PRESETS = [
   {id:"today",label:"Today",days:0},
@@ -764,29 +865,37 @@ const PRESETS = [
   {id:"custom",label:"Custom"},
 ];
 
-function MiniCalendar({monthOffset=0, rangeStart, rangeEnd}){
-  // Static cal showing April 2026, with range 16-22 highlighted
+function MiniCalendar({monthIso, rangeStart, rangeEnd, onPick, onShift}){
   const days = [];
-  // April 2026 starts Wednesday (just a reasonable mock)
-  const startBlank = 3;
+  const monthDate = new Date(monthIso+"T00:00:00");
+  const startBlank = monthDate.getDay();
   for(let i=0;i<startBlank;i++) days.push({blank:true});
-  for(let d=1; d<=30; d++) days.push({d});
+  for(let d=1; d<=daysInMonth(monthIso); d++) days.push({d, iso:isoForMonthDay(monthIso, d)});
   while(days.length % 7 !== 0) days.push({blank:true, trail:true});
   const dow = ["S","M","T","W","T","F","S"];
+  const today = todayEt();
   return (
     <div>
       <div className="cal-head">
-        <button className="cal-nav">‹</button>
-        <span>April 2026</span>
-        <button className="cal-nav">›</button>
+        <button className="cal-nav" onClick={()=>onShift(-1)}>‹</button>
+        <span>{monthTitle(monthIso)}</span>
+        <button className="cal-nav" onClick={()=>onShift(1)}>›</button>
       </div>
       <div className="cal-grid">
         {dow.map((d,i)=><div key={"h"+i} className="cal-dow">{d}</div>)}
         {days.map((x,i)=>{
-          if(x.blank) return <div key={i} className="cal-day muted"></div>;
-          const inRange = x.d>=16 && x.d<=22;
-          const endpoint = x.d===16 || x.d===22;
-          return <div key={i} className={"cal-day "+(endpoint?"endpoint":(inRange?"in-range":""))}>{x.d}</div>;
+          if(x.blank) return <div key={i} className={"cal-day muted "+(x.trail?"trail":"")}></div>;
+          const inRange = x.iso>=rangeStart && x.iso<=rangeEnd;
+          const endpoint = x.iso===rangeStart || x.iso===rangeEnd;
+          return (
+            <button
+              key={i}
+              className={"cal-day "+(endpoint?"endpoint":(inRange?"in-range":""))+(x.iso===today?" today":"")}
+              onClick={()=>onPick(x.iso)}
+            >
+              {x.d}
+            </button>
+          );
         })}
       </div>
     </div>
@@ -795,14 +904,36 @@ function MiniCalendar({monthOffset=0, rangeStart, rangeEnd}){
 
 function DateDropdown({value, onChange}){
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value || rangeForPreset("last7"));
+  const [monthIso, setMonthIso] = useState(monthStartIso((value || rangeForPreset("last7")).dateTo));
+  const [selectingEnd, setSelectingEnd] = useState(false);
   const ref = useRef(null);
   useEffect(()=>{
     const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
   },[]);
   const current = value || rangeForPreset("last7");
+  useEffect(()=>{
+    if(open){
+      setDraft(current);
+      setMonthIso(monthStartIso(current.dateTo));
+      setSelectingEnd(false);
+    }
+  },[open, current.dateFrom, current.dateTo, current.preset]);
   const label = labelForPreset(current.preset);
-  const days = Math.max(1, Math.round((new Date(current.dateTo) - new Date(current.dateFrom))/(1000*60*60*24)) + 1);
+  const days = Math.max(1, Math.round((new Date(draft.dateTo) - new Date(draft.dateFrom))/(1000*60*60*24)) + 1);
+  const pickDate = (iso) => {
+    setDraft(prev => {
+      if(!selectingEnd){
+        setSelectingEnd(true);
+        return {preset:"custom", dateFrom:iso, dateTo:iso};
+      }
+      setSelectingEnd(false);
+      const dateFrom = iso < prev.dateFrom ? iso : prev.dateFrom;
+      const dateTo = iso < prev.dateFrom ? prev.dateFrom : iso;
+      return {preset:"custom", dateFrom, dateTo};
+    });
+  };
   return (
     <div className="filter" ref={ref}>
       <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
@@ -817,11 +948,14 @@ function DateDropdown({value, onChange}){
             {PRESETS.map(p=>(
               <div
                 key={p.id}
-                className={"pop-item "+(current.preset===p.id?"selected":"")}
+                className={"pop-item "+(draft.preset===p.id?"selected":"")}
                 onClick={()=>{
                   if(p.id!=="custom") {
                     onChange && onChange(rangeForPreset(p.id));
                     setOpen(false);
+                  } else {
+                    setDraft({...draft, preset:"custom"});
+                    setSelectingEnd(false);
                   }
                 }}
               >
@@ -831,13 +965,21 @@ function DateDropdown({value, onChange}){
             ))}
           </div>
           <div className="date-cal">
-            <MiniCalendar/>
+            <MiniCalendar
+              monthIso={monthIso}
+              rangeStart={draft.dateFrom}
+              rangeEnd={draft.dateTo}
+              onPick={pickDate}
+              onShift={(delta)=>setMonthIso(m=>shiftMonth(m, delta))}
+            />
           </div>
           <div className="date-foot">
-            <span className="mono" style={{fontSize:11}}>{current.dateFrom} → {current.dateTo} · {days} day{days===1?"":"s"}</span>
+            <span className="mono" style={{fontSize:11}}>
+              {draft.dateFrom} → {draft.dateTo} · {days} day{days===1?"":"s"}{draft.preset==="custom" && selectingEnd ? " · pick end date" : ""}
+            </span>
             <div style={{display:'flex',gap:6}}>
               <button className="filter-btn" style={{padding:'4px 10px'}} onClick={()=>setOpen(false)}>Cancel</button>
-              <button className="apply-btn" onClick={()=>setOpen(false)}>Apply</button>
+              <button className="apply-btn" onClick={()=>{onChange && onChange(draft); setOpen(false);}}>Apply</button>
             </div>
           </div>
         </div>
@@ -946,6 +1088,17 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     return true;
   });
 
+  const setTableView = (next) => {
+    setView(next);
+    if(next === "ad"){
+      setExpanded(prev => {
+        const open = {...prev};
+        visibleCampaigns.forEach(c => { open[c.id] = true; });
+        return open;
+      });
+    }
+  };
+
   const cols = [
     {k:"date", label:"Campaign / Date"},
     {k:"spend", label:"Ad spend", fmt:(r)=>fmtUsd(r.spend,0), cls:()=>""},
@@ -982,7 +1135,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           <button className={"tvt-btn "+(view==="campaign"?"active":"")} onClick={()=>setView("campaign")}>
             Campaign level
           </button>
-          <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setView("ad")}>
+          <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setTableView("ad")}>
             Ad level
             <span className="tvt-count">{campaigns.reduce((sum,c)=>sum+(c.ads?.length||0),0)}</span>
           </button>
@@ -1008,10 +1161,17 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
             </tr>
           </thead>
           <tbody>
+            {visibleCampaigns.length === 0 && (
+              <tr>
+                <td colSpan={cols.length} style={{textAlign:"left",color:"var(--text-3)",padding:"18px 20px"}}>
+                  No ads match these filters.
+                </td>
+              </tr>
+            )}
             {visibleCampaigns.map(c => {
               const agg = aggregate(c.rows);
               const isOpen = expanded[c.id];
-              const orderedRows = [...c.rows].sort((a,b)=> a.date.localeCompare(b.date));
+              const orderedRows = [...c.rows].sort((a,b)=> String(rowSortKey(b)).localeCompare(String(rowSortKey(a))));
               const shortName = widths.date < 200 ? c.short : c.name;
               return (
                 <React.Fragment key={c.id}>
@@ -1590,6 +1750,13 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
       camp: k.camp,
       fmt: (v)=>"$"+v.toFixed(2),
     }));
+    if(kwSeries.length === 0){
+      const vals = labels.map(()=>0);
+      avg = 0;
+      delta = 0;
+      subLabel = "No keyword data";
+      series = [{name:"Cost / DM", values:vals, color:"var(--blue)", isPrimary:true, fmt:(v)=>"$"+v.toFixed(2)}];
+    } else {
     // Pick the best-performing (lowest avg) as primary for the fade
     const withAvg = kwSeries.map(s => ({...s, _avg: s.values.reduce((a,b)=>a+b,0)/s.values.length}));
     const best = withAvg.reduce((a,b) => a._avg < b._avg ? a : b);
@@ -1602,6 +1769,7 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
     const lastMean  = kwSeries.reduce((a,b)=>a+b.values[b.values.length-1],0) / kwSeries.length;
     delta = lastMean - firstMean;
     subLabel = `Avg across ${kwSeries.length} keyword${kwSeries.length===1?"":"s"}`;
+    }
   }
 
   return (
@@ -1714,6 +1882,11 @@ function AdROASChart({campaigns=CAMPAIGNS}){
       </div>
       <div className={"ar-chart-wrap "+(view==="all"?"scroll-x":"")}>
         <div className="ar-chart" style={{minWidth: Math.max(list.length * 64, 100) + "px"}}>
+          {list.length === 0 && (
+            <div style={{alignSelf:"center",width:"100%",textAlign:"center",color:"var(--text-4)",fontSize:12}}>
+              No ads match these filters.
+            </div>
+          )}
           {list.map((a,i)=>{
             const h = (a.roas/max)*150;
             const color = a.camp==="tyson" ? "var(--gold)" : "var(--blue)";
@@ -2018,9 +2191,72 @@ function ImportKeywordModal({onClose, onImport}){
   );
 }
 
+function csvEscape(value){
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g,'""')}"` : text;
+}
+
+function downloadCsv(filename, rows){
+  const csv = rows.map(row => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function rowsForCsv(campaigns){
+  const header = ["Level","Account","Date","Ad","Ad spend","Impressions","Link clicks","Messages","Booked calls","New clients","Contracted revenue","Collected revenue","CPM","CTR","CPC","Cost / message","Cost / booked call","Cost / client","Contracted ROI","Collected ROI"];
+  const rows = [header];
+  campaigns.forEach(c => {
+    const campaignAgg = aggregate(c.rows);
+    rows.push([
+      "campaign", c.short, "", "", campaignAgg.spend, campaignAgg.imp, campaignAgg.clicks, campaignAgg.msgs,
+      campaignAgg.calls, campaignAgg.clients, campaignAgg.contracted, campaignAgg.collected, campaignAgg.cpm,
+      campaignAgg.ctr, campaignAgg.cpc, campaignAgg.cpMsg, campaignAgg.cpCall || "", campaignAgg.cpClient || "",
+      campaignAgg.contractedRoi, campaignAgg.collectedRoi,
+    ]);
+    c.rows.forEach(day => {
+      const dayMetrics = deriveRow(day);
+      rows.push([
+        "day", c.short, day.date, "", dayMetrics.spend, dayMetrics.imp, dayMetrics.clicks, dayMetrics.msgs,
+        dayMetrics.calls, dayMetrics.clients, dayMetrics.contracted, dayMetrics.collected, dayMetrics.cpm,
+        dayMetrics.ctr, dayMetrics.cpc, dayMetrics.cpMsg, dayMetrics.cpCall || "", dayMetrics.cpClient || "",
+        dayMetrics.contractedRoi, dayMetrics.collectedRoi,
+      ]);
+      buildAdRows(c.id, day, c.ads).forEach(ad => {
+        const adMetrics = deriveRow({
+          date: day.date,
+          spend: ad.spend, imp: ad.imp, clicks: ad.clicks, msgs: ad.msgs,
+          calls: ad.calls, clients: ad.clients, contracted: ad.contracted, collected: ad.collected,
+        });
+        rows.push([
+          "ad", c.short, day.date, ad.adName, adMetrics.spend, adMetrics.imp, adMetrics.clicks, adMetrics.msgs,
+          adMetrics.calls, adMetrics.clients, adMetrics.contracted, adMetrics.collected, adMetrics.cpm,
+          adMetrics.ctr, adMetrics.cpc, adMetrics.cpMsg, adMetrics.cpCall || "", adMetrics.cpClient || "",
+          adMetrics.contractedRoi, adMetrics.collectedRoi,
+        ]);
+      });
+    });
+  });
+  return rows;
+}
+
 // ------- Actions bar
-function Actions({onToast}){
+function Actions({campaigns=CAMPAIGNS, onToast}){
   const [modal, setModal] = useState(null);
+  const exportCsv = () => {
+    if(!campaigns.length){
+      onToast&&onToast("Nothing to export");
+      return;
+    }
+    downloadCsv("ads-tracker-export.csv", rowsForCsv(campaigns));
+    onToast&&onToast("CSV exported");
+  };
   return (
     <>
       <div className="panel actions-panel">
@@ -2031,7 +2267,7 @@ function Actions({onToast}){
           <span className="action-sep"></span>
           <button className="action-btn" onClick={()=>setModal("import")}><span className="ic"><IcUpload/></span>Import keyword data</button>
         </div>
-        <button className="action-btn" style={{color:'var(--text-3)'}} onClick={()=>onToast&&onToast("Exported 14 rows to CSV")}><span className="ic"><IcDownload/></span>Export CSV</button>
+        <button className="action-btn" style={{color:'var(--text-3)'}} onClick={exportCsv}><span className="ic"><IcDownload/></span>Export CSV</button>
       </div>
       {modal==="new" && <NewCampaignModal onClose={()=>setModal(null)} onCreate={(c)=>onToast&&onToast("Campaign \""+c.name+"\" created · "+c.keywords.length+" keywords")} />}
       {modal==="finish" && <FinishCampaignModal onClose={()=>setModal(null)} onFinish={(id)=>onToast&&onToast("Campaign "+id+" marked finished")} />}
@@ -2058,7 +2294,7 @@ function formatEntry(e){
   return e.value+" "+(b?.unit||"");
 }
 
-function RecentEntries({extra, onToast}){
+function RecentEntries({extra, includeFallback=false, onToast}){
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState(null); // null → derive from extra+RECENT
   const [editingId, setEditingId] = useState(null);
@@ -2067,8 +2303,9 @@ function RecentEntries({extra, onToast}){
 
   // Build a stable list with ids the first time (so state mutations are consistent)
   const seedAll = useMemo(() => {
-    return [...extra, ...RECENT].map((e, i) => ({id: "e-"+i, ...e}));
-  }, [extra]);
+    const source = extra?.length ? extra : (includeFallback ? RECENT : []);
+    return source.map((e, i) => ({id: "e-"+i, ...e}));
+  }, [extra, includeFallback]);
   const list = entries ?? seedAll;
 
   const startEdit = (e) => {
@@ -2121,6 +2358,13 @@ function RecentEntries({extra, onToast}){
             </tr>
           </thead>
           <tbody>
+            {list.length === 0 && (
+              <tr>
+                <td colSpan="7" style={{color:"var(--text-3)",padding:"16px 24px"}}>
+                  No recent keyword entries for this range.
+                </td>
+              </tr>
+            )}
             {list.map((e)=>{
               const isEditing = editingId === e.id;
               const isDollar = e.bucket === "contracted" || e.bucket === "collected";
@@ -2242,6 +2486,7 @@ function recentEntriesFromDashboard(dashboard){
 function App(){
   const [account, setAccount] = useState("all");
   const [status, setStatus] = useState("active");
+  const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7"));
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -2288,9 +2533,13 @@ function App(){
     loadDashboard();
   }, [account, status, dateRange.dateFrom, dateRange.dateTo]);
 
-  const liveCampaigns = useMemo(
+  const apiCampaigns = useMemo(
     () => campaignsFromDashboard(dashboard, dateRange),
     [dashboard, dateRange.dateFrom, dateRange.dateTo]
+  );
+  const liveCampaigns = useMemo(
+    () => filterCampaignsBySearch(applyLocalEntriesToCampaigns(apiCampaigns, newEntries), search),
+    [apiCampaigns, newEntries, search]
   );
   const liveRecent = useMemo(
     () => recentEntriesFromDashboard(dashboard),
@@ -2306,20 +2555,25 @@ function App(){
     showToast("Syncing ads + sales rows…");
     const body = JSON.stringify({dateFrom:dateRange.dateFrom, dateTo:dateRange.dateTo});
     try{
-      const sales = await fetch("/api/sync/sales-tracker-rows", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body,
-      });
-      if(!sales.ok) throw new Error("Sales sync failed");
-      const ads = await fetch("/api/sync/ads-tracker", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body,
-      });
-      if(!ads.ok) throw new Error("Meta sync failed");
+      const [sales, ads] = await Promise.all([
+        fetch("/api/sync/sales-tracker-rows", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body,
+        }),
+        fetch("/api/sync/ads-tracker", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body,
+        }),
+      ]);
+      const salesOk = sales.ok;
+      const adsOk = ads.ok;
+      if(!salesOk && !adsOk) throw new Error("Sync failed");
       await loadDashboard({silent:true});
-      showToast("Synced · live data refreshed");
+      if(salesOk && adsOk) showToast("Synced · live data refreshed");
+      else if(adsOk) showToast("Meta synced · sales sync needs setup");
+      else showToast("Sales synced · Meta sync needs logs");
     }catch(err){
       console.error(err);
       showToast("Sync failed · check auth/logs");
@@ -2366,10 +2620,15 @@ function App(){
             <div className="filter-divider"></div>
             <DateDropdown value={dateRange} onChange={setDateRange} />
             <div style={{flex:1}}></div>
-            <button className="filter-btn" style={{color:'var(--text-3)'}}>
+            <label className="search-control">
               <IcSearch/>
-              <span style={{fontSize:12}}>Search</span>
-            </button>
+              <input
+                className="search-input"
+                value={search}
+                onChange={e=>setSearch(e.target.value)}
+                placeholder="Search"
+              />
+            </label>
           </div>
 
           {/* Campaign table */}
@@ -2402,13 +2661,13 @@ function App(){
                   <div className="section-label">Actions</div>
                   <div className="section-meta">Manual</div>
                 </div>
-                <Actions onToast={showToast}/>
+                <Actions campaigns={liveCampaigns} onToast={showToast}/>
               </div>
             </div>
           </div>
 
           {/* Recent entries (collapsed) */}
-          <RecentEntries extra={[...newEntries, ...liveRecent]} onToast={showToast} />
+          <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onToast={showToast} />
 
           <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
             <span>Ads Tracker v1.4 · Client Conversion OS</span>
