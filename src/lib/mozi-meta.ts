@@ -38,6 +38,7 @@ export interface MetaAdInsight {
   impressions?: string;
   inline_link_clicks?: string;
   clicks?: string;
+  hourly_stats_aggregated_by_advertiser_time_zone?: string;
 }
 
 interface MetaPaging {
@@ -105,7 +106,7 @@ export async function getAdLevelInsights(
   adAccountId: string,
   since: string,
   until: string,
-  options?: { accessToken?: string }
+  options?: { accessToken?: string; breakdowns?: string[] }
 ): Promise<MetaAdInsight[]> {
   const fields = [
     "campaign_id",
@@ -120,7 +121,10 @@ export async function getAdLevelInsights(
     "clicks",
   ].join(",");
   const timeRange = JSON.stringify({ since, until });
-  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&time_increment=1&limit=500&time_range=${encodeURIComponent(timeRange)}`;
+  const breakdowns = options?.breakdowns?.length
+    ? `&breakdowns=${encodeURIComponent(options.breakdowns.join(","))}`
+    : "";
+  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&time_increment=1&limit=500&time_range=${encodeURIComponent(timeRange)}${breakdowns}`;
 
   const allData: MetaAdInsight[] = [];
   let nextUrl: string | undefined = initialUrl;
