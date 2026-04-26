@@ -48,6 +48,12 @@ function missingColumn(error: { message?: string } | null, column: string) {
   return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
 }
 
+function removeColumns<T extends Record<string, unknown>>(payload: T, columns: string[]) {
+  const compatiblePayload: Record<string, unknown> = { ...payload };
+  for (const column of columns) delete compatiblePayload[column];
+  return compatiblePayload;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const expectedSecret = process.env.MANYCHAT_WEBHOOK_SECRET;
@@ -108,7 +114,7 @@ export async function POST(req: NextRequest) {
       keywordNormalized,
     });
 
-    const { error } = await sb.from("manychat_tag_events").insert({
+    const tagEventPayload = {
       subscriber_id,
       subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
       tag_name: tag_name.toLowerCase().trim(),
@@ -118,11 +124,29 @@ export async function POST(req: NextRequest) {
       keyword_normalized: keywordNormalized,
       raw_payload: body,
       event_at: normalizedEventAt,
-    });
+    };
+
+    const { error } = await sb.from("manychat_tag_events").insert(tagEventPayload);
 
     if (error) {
-      console.error("Manychat webhook insert error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      const shouldRetryWithoutNewColumns =
+        missingColumn(error, "keyword_raw") ||
+        missingColumn(error, "keyword_normalized") ||
+        missingColumn(error, "raw_payload");
+
+      if (shouldRetryWithoutNewColumns) {
+        const { error: fallbackError } = await sb
+          .from("manychat_tag_events")
+          .insert(removeColumns(tagEventPayload, ["keyword_raw", "keyword_normalized", "raw_payload"]));
+
+        if (fallbackError) {
+          console.error("Manychat webhook fallback insert error:", fallbackError);
+          return NextResponse.json({ error: fallbackError.message }, { status: 500 });
+        }
+      } else {
+        console.error("Manychat webhook insert error:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
     }
 
     if (keywordNormalized) {
