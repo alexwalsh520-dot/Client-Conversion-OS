@@ -63,6 +63,7 @@ interface KeywordBackfillRow {
   collected_revenue_cents: number | null;
   source_workbook: string | null;
   source_sheet: string | null;
+  raw_payload: unknown;
 }
 
 interface SalesTrackerDbRow {
@@ -546,7 +547,72 @@ function uniqueMetaGroupResolver<T>(
   };
 }
 
+function hasMetaDelivery(row: MetaRow) {
+  return (row.spend_cents || 0) > 0 || (row.impressions || 0) > 0 || (row.link_clicks || 0) > 0;
+}
+
+function groupKeyForMetaRow(row: MetaRow) {
+  return `${row.campaign_id || row.campaign_name || "campaign"}:${row.ad_id}`;
+}
+
+function hintFromMetaRow(row: MetaRow, keyword: string): BackfillGroupHint {
+  return {
+    campaignId: row.campaign_id,
+    campaignName: row.campaign_name,
+    adId: row.ad_id,
+    adName: row.ad_name || displayKeyword(keyword),
+  };
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function campaignHintFromBackfillPayload(row: KeywordBackfillRow): BackfillGroupHint | null {
+  if (!row.raw_payload || typeof row.raw_payload !== "object" || Array.isArray(row.raw_payload)) return null;
+  const payload = row.raw_payload as Record<string, unknown>;
+  const rawHint = payload.campaign_hint;
+  if (!rawHint || typeof rawHint !== "object" || Array.isArray(rawHint)) return null;
+  const hint = rawHint as Record<string, unknown>;
+  const campaignName = stringFromRecord(hint, "campaign_name");
+  if (!campaignName) return null;
+
+  return {
+    campaignId: stringFromRecord(hint, "campaign_id"),
+    campaignName,
+    adId: stringFromRecord(hint, "ad_id"),
+    adName: stringFromRecord(hint, "ad_name") || displayKeyword(row.keyword_normalized || row.keyword_raw),
+  };
+}
+
+function exactMetaHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
+  const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
+  if (!keyword) return null;
+
+  const candidates = metaRows
+    .filter((metaRow) => {
+      if (metaRow.client_key !== row.client_key || metaRow.date !== row.date) return false;
+      if (!hasMetaDelivery(metaRow)) return false;
+      const metaKeyword =
+        normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
+      return metaKeyword === keyword;
+    })
+    .sort((a, b) => (b.spend_cents || 0) - (a.spend_cents || 0));
+
+  const uniqueKeys = new Set(candidates.map(groupKeyForMetaRow));
+  if (uniqueKeys.size !== 1) return null;
+
+  return hintFromMetaRow(candidates[0], keyword);
+}
+
 function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
+  const payloadHint = campaignHintFromBackfillPayload(row);
+  if (payloadHint) return payloadHint;
+
+  const exactHint = exactMetaHintForBackfillRow(row, metaRows);
+  if (exactHint) return exactHint;
+
   const source = `${row.source_workbook || ""} ${row.source_sheet || ""}`.toLowerCase();
   const clientRows = metaRows.filter((metaRow) => metaRow.client_key === row.client_key && metaRow.campaign_name);
 
@@ -671,6 +737,7 @@ async function fetchKeywordBackfillRows(
     "collected_revenue_cents",
     "source_workbook",
     "source_sheet",
+    "raw_payload",
   ];
 
   const queryRows = (selectColumns: string[]) =>
