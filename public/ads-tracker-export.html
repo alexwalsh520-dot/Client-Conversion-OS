@@ -715,6 +715,7 @@ function campaignsFromDashboard(dashboard, range){
     if(client!=="tyson" && client!=="keith") continue;
     const keyword = (apiRow.keyword || "UNKNOWN").toUpperCase();
     const clientLabel = client==="tyson" ? "Tyson" : "Keith";
+    const attributionOnly = !apiRow.campaignId;
     const campaignId = apiRow.campaignId || `${client}:keyword-attribution`;
     const campaignKey = `${client}:${campaignId}`;
     const campaignName = apiRow.campaignName || `${clientLabel} — Keyword Attribution`;
@@ -733,6 +734,7 @@ function campaignsFromDashboard(dashboard, range){
         clientKey: client,
         name: campaignName,
         short: `${clientLabel} · ${campaignName.replace(/^.*?—\s*/, "")}`,
+        attributionOnly,
         status: rowStatus,
         dot: client,
         adsByName: new Map(),
@@ -741,6 +743,7 @@ function campaignsFromDashboard(dashboard, range){
     }
 
     const campaign = campaignMap.get(campaignKey);
+    campaign.attributionOnly = campaign.attributionOnly && attributionOnly;
     if(rowStatus==="active") campaign.status = "active";
     if(!campaign.adsByName.has(adId)){
       campaign.adsByName.set(adId, {id:adId, name:adName, keyword, weight:1});
@@ -1080,7 +1083,8 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     return {...c, rows};
   });
 
-  const visibleCampaigns = augmentedCampaigns.filter(c=>{
+  const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
+  const visibleCampaigns = tableCampaigns.filter(c=>{
     if(account!=="all" && account!==(c.clientKey || c.id)) return false;
     if(status!=="all" && status!==c.status) return false;
     return true;
@@ -1135,7 +1139,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           </button>
           <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setTableView("ad")}>
             Ad level
-            <span className="tvt-count">{campaigns.reduce((sum,c)=>sum+(c.ads?.length||0),0)}</span>
+            <span className="tvt-count">{tableCampaigns.reduce((sum,c)=>sum+(c.ads?.length||0),0)}</span>
           </button>
         </div>
         <div className="tbl-toolbar-meta"></div>
