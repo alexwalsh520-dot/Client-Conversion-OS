@@ -290,9 +290,9 @@
   .ar-chart-wrap::-webkit-scrollbar-thumb:hover{background:#333}
   .ar-chart{display:flex;align-items:flex-end;gap:14px;padding:4px 2px 0;min-height:230px}
   .ar-col{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:50px}
-  .ar-val{text-align:center;min-height:30px;display:flex;flex-direction:column;justify-content:flex-end;gap:1px}
-  .ar-val-roas{font-size:12px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
-  .ar-val-sub{font-size:9.5px;color:var(--text-4)}
+  .ar-val{text-align:center;min-height:36px;display:flex;flex-direction:column;justify-content:flex-end;gap:1px}
+  .ar-val-rev{font-size:14px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+  .ar-val-roas{font-size:9.5px;color:var(--text-4);font-variant-numeric:tabular-nums}
   .ar-bar-v-wrap{display:flex;align-items:flex-end;width:100%;min-height:150px;justify-content:center}
   .ar-bar-v{width:100%;max-width:34px;border-radius:2px 2px 0 0;opacity:0.9;transition:opacity .15s, height .35s cubic-bezier(.4,0,.2,1)}
   .ar-col:hover .ar-bar-v{opacity:1}
@@ -1642,7 +1642,7 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
         }
       });
       out.push({
-        adId: a.id, adName: a.name, camp: c.clientKey || c.id, campShort: c.short,
+        adId: a.id, adName: a.name, camp: c.clientKey || c.id,
         spend, collected, clients,
       });
     });
@@ -1688,17 +1688,17 @@ function AdROASChart({campaigns=CAMPAIGNS}){
             const h = (a.collected/max)*150;
             const color = a.camp==="tyson" ? "var(--gold)" : "var(--blue)";
             return (
-              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.campShort} · $${a.spend.toLocaleString()} spend · $${a.collected.toLocaleString()} revenue · ${a.roas.toFixed(1)}× ROAS`}>
+              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.camp} · $${a.spend.toLocaleString()} spend · $${a.collected.toLocaleString()} revenue · ${a.roas.toFixed(1)}× ROAS`}>
                 <div className="ar-val">
-                  <div className="ar-val-roas">{a.roas.toFixed(1)}×</div>
-                  <div className="ar-val-sub mono">${Math.round(a.collected/1000*10)/10}k</div>
+                  <div className="ar-val-rev mono">${Math.round(a.collected/1000*10)/10}k</div>
+                  <div className="ar-val-roas">{a.roas.toFixed(1)}× ROAS</div>
                 </div>
                 <div className="ar-bar-v-wrap">
                   <div className="ar-bar-v" style={{height:h+"px", background:color}}></div>
                 </div>
                 <div className="ar-col-label">
                   <div className="ar-col-kw">{a.adName}</div>
-                  <div className="ar-col-camp" style={{color}}>{a.campShort}</div>
+                  <div className="ar-col-camp" style={{color}}>{a.camp}</div>
                 </div>
               </div>
             );
