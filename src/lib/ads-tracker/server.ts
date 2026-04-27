@@ -870,6 +870,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         row.newClients > 0 ||
         row.collectedRevenue > 0
     )
+    .filter((row) => query.status === "all" || row.status === query.status)
     .sort((a, b) => b.collectedRoi - a.collectedRoi);
 
   const finalizedDaily = Array.from(dailyGroups.values())
@@ -883,6 +884,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         row.newClients > 0 ||
         row.collectedRevenue > 0
     )
+    .filter((row) => query.status === "all" || row.status === query.status)
     .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
 
   return buildPayload(query, finalized, events, false, finalizedDaily);

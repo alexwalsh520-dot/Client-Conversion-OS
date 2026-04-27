@@ -265,11 +265,6 @@
   .chart-sw{width:10px;height:2px;border-radius:2px;display:inline-block}
   .cpm-kw-legend{display:flex;flex-wrap:wrap;gap:10px 14px;flex:1}
 
-  .client-picker{display:inline-flex;background:#0a0a0a;border:1px solid var(--border-2);border-radius:99px;padding:2px;gap:2px}
-  .cpk-btn{padding:4px 11px;font-size:11px;color:var(--text-3);border-radius:99px;letter-spacing:0.01em;transition:all .12s}
-  .cpk-btn:hover{color:var(--text-2)}
-  .cpk-btn.active{background:#181818;color:var(--text);box-shadow:inset 0 0 0 1px var(--border-2)}
-
   /* Line chart */
   .lc-wrap{position:relative;width:100%}
   .lc-svg{width:100%;height:auto;display:block;cursor:crosshair}
@@ -826,6 +821,14 @@ function filterCampaignsBySearch(campaigns, search){
     const ads = Array.from(adsById.values()).sort((a,b)=>a.name.localeCompare(b.name));
     return {...c, rows, ads, adCount:ads.length};
   }).filter(Boolean);
+}
+
+function scopeCampaigns(campaigns, account, status){
+  return campaigns.filter(c => {
+    if(account !== "all" && account !== (c.clientKey || c.id)) return false;
+    if(status !== "all" && status !== c.status) return false;
+    return true;
+  });
 }
 
 function applyLocalEntriesToCampaigns(campaigns, entries){
@@ -1439,10 +1442,9 @@ function seriesForCampaignKey(key, filterId="all", campaigns=CAMPAIGNS, labels=D
 }
 
 function ROASChart({campaigns=CAMPAIGNS}){
-  const [client, setClient] = useState("all");
   const labels = labelsFromCampaigns(campaigns);
-  const spend = seriesForCampaignKey("spend", client, campaigns, labels);
-  const revenue = seriesForCampaignKey("collected", client, campaigns, labels);
+  const spend = seriesForCampaignKey("spend", "all", campaigns, labels);
+  const revenue = seriesForCampaignKey("collected", "all", campaigns, labels);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalRev = revenue.reduce((a,b)=>a+b,0);
   const avgROAS = totalSpend ? totalRev/totalSpend : 0;
@@ -1455,9 +1457,6 @@ function ROASChart({campaigns=CAMPAIGNS}){
             <span className="chart-big">{avgROAS.toFixed(2)}×</span>
             <span className="chart-sub-label">selected period</span>
           </div>
-        </div>
-        <div className="chart-controls">
-          <ClientPicker value={client} onChange={setClient}/>
         </div>
       </div>
       <LineChart
@@ -1477,17 +1476,6 @@ function ROASChart({campaigns=CAMPAIGNS}){
   );
 }
 
-// ------- Shared client picker (pill segmented)
-function ClientPicker({value, onChange}){
-  return (
-    <div className="client-picker">
-      <button className={"cpk-btn "+(value==="all"?"active":"")} onClick={()=>onChange("all")}>All</button>
-      <button className={"cpk-btn "+(value==="tyson"?"active":"")} onClick={()=>onChange("tyson")}>Tyson</button>
-      <button className={"cpk-btn "+(value==="keith"?"active":"")} onClick={()=>onChange("keith")}>Keith</button>
-    </div>
-  );
-}
-
 // ------- Cost per DM chart
 // Attribute cost per DM either overall (spend / msgs aggregated) or per keyword (spend of keyword / msgs count)
 function seriesCpmOverall(client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
@@ -1495,16 +1483,6 @@ function seriesCpmOverall(client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
   const msgs = seriesForCampaignKey("msgs", client, campaigns, labels);
   return msgs.map((m,i)=> m ? spend[i]/m : 0);
 }
-// Use the same KW_DATA.collected as our keyword roster; cost per DM per keyword per day: fluctuate around spend/count
-const KW_ROSTER = [
-  {kw:"FIT",     camp:"tyson", baseSpend: 480, baseMsgs: 48},
-  {kw:"STRONG",  camp:"tyson", baseSpend: 420, baseMsgs: 38},
-  {kw:"SHRED",   camp:"tyson", baseSpend: 380, baseMsgs: 32},
-  {kw:"RIPPED",  camp:"tyson", baseSpend: 340, baseMsgs: 26},
-  {kw:"GOAL",    camp:"keith", baseSpend: 320, baseMsgs: 30},
-  {kw:"DIALED",  camp:"keith", baseSpend: 290, baseMsgs: 24},
-  {kw:"FOCUS",   camp:"keith", baseSpend: 260, baseMsgs: 20},
-];
 function seriesCpmKeyword(kw, client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
   const live = labels.map(label => {
     let spend = 0;
@@ -1521,24 +1499,18 @@ function seriesCpmKeyword(kw, client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
     return msgs ? spend / msgs : 0;
   });
   if(live.some(Boolean)) return live;
-
-  const def = KW_ROSTER.find(k=>k.kw===kw);
-  if(!def) return labels.map(()=>0);
-  const rand = (n)=>{ let x=0; for(let i=0;i<n.length;i++)x=((x<<5)-x+n.charCodeAt(i))|0; x=Math.abs(x); return ()=>{x=(x*9301+49297)%233280; return x/233280;}; };
-  const r = rand(kw+client);
-  return labels.map(()=> (def.baseSpend/7) / (def.baseMsgs/7 * (0.7 + r()*0.6)));
+  return labels.map(()=>0);
 }
 
 function CostPerDMChart({campaigns=CAMPAIGNS}){
-  const [client, setClient] = useState("all");
   const [mode, setMode] = useState("overall"); // 'overall' | 'keyword'
   const labels = labelsFromCampaigns(campaigns);
   const liveKws = campaigns.flatMap(c => (c.ads||[]).map(ad => ({kw:ad.name, camp:c.clientKey || c.id})));
-  const availableKws = (liveKws.length ? liveKws : KW_ROSTER).filter(k => client==="all" || k.camp===client);
+  const availableKws = liveKws;
 
   let series, avg, delta, subLabel;
   if(mode === "overall"){
-    const vals = seriesCpmOverall(client, campaigns, labels);
+    const vals = seriesCpmOverall("all", campaigns, labels);
     avg = vals.reduce((a,b)=>a+b,0) / vals.length;
     delta = vals[vals.length-1] - vals[0];
     subLabel = "7-day avg overall";
@@ -1549,7 +1521,7 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
     // One line per keyword
     const kwSeries = availableKws.map(k => ({
       name: k.kw,
-      values: seriesCpmKeyword(k.kw, client, campaigns, labels),
+      values: seriesCpmKeyword(k.kw, "all", campaigns, labels),
       color: k.camp === "tyson" ? "var(--gold)" : "var(--blue)",
       camp: k.camp,
       fmt: (v)=>"$"+v.toFixed(2),
@@ -1594,7 +1566,6 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
             <button className={"kw-tab "+(mode==="overall"?"active":"")} onClick={()=>setMode("overall")}>Overall</button>
             <button className={"kw-tab "+(mode==="keyword"?"active":"")} onClick={()=>setMode("keyword")}>By keyword</button>
           </div>
-          <ClientPicker value={client} onChange={setClient}/>
         </div>
       </div>
       <LineChart
@@ -1653,10 +1624,8 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
 
 function AdROASChart({campaigns=CAMPAIGNS}){
   const [view, setView] = useState("top"); // 'top' | 'all'
-  const [client, setClient] = useState("all");
   const all = useMemo(()=>allAdsAggregated(campaigns), [campaigns]);
   const filtered = all
-    .filter(a => client === "all" || a.camp === client)
     .map(a => ({...a, roas: a.spend ? a.collected/a.spend : 0}))
     .sort((a,b) => b.collected - a.collected);
   const list = view === "top" ? filtered.slice(0,6) : filtered;
@@ -1675,7 +1644,6 @@ function AdROASChart({campaigns=CAMPAIGNS}){
             <button className={"kw-tab "+(view==="top"?"active":"")} onClick={()=>setView("top")}>Top</button>
             <button className={"kw-tab "+(view==="all"?"active":"")} onClick={()=>setView("all")}>All ads</button>
           </div>
-          <ClientPicker value={client} onChange={setClient}/>
         </div>
       </div>
       <div className={"ar-chart-wrap "+(view==="all"?"scroll-x":"")}>
@@ -1718,10 +1686,9 @@ function AdROASChart({campaigns=CAMPAIGNS}){
 }
 
 function CACChart({campaigns=CAMPAIGNS}){
-  const [client, setClient] = useState("all");
   const labels = labelsFromCampaigns(campaigns);
-  const spend = seriesForCampaignKey("spend", client, campaigns, labels);
-  const clients = seriesForCampaignKey("clients", client, campaigns, labels);
+  const spend = seriesForCampaignKey("spend", "all", campaigns, labels);
+  const clients = seriesForCampaignKey("clients", "all", campaigns, labels);
   const cac = spend.map((s,i)=> clients[i] ? s/clients[i] : 0);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalClients = clients.reduce((a,b)=>a+b,0);
@@ -1741,7 +1708,6 @@ function CACChart({campaigns=CAMPAIGNS}){
             <span className="chart-sub-label">Cost per new customer</span>
           </div>
         </div>
-        <ClientPicker value={client} onChange={setClient}/>
       </div>
       <LineChart
         labels={labels}
@@ -2390,6 +2356,10 @@ function App(){
     () => filterCampaignsBySearch(applyLocalEntriesToCampaigns(apiCampaigns, newEntries), search),
     [apiCampaigns, newEntries, search]
   );
+  const scopedCampaigns = useMemo(
+    () => scopeCampaigns(liveCampaigns, account, status),
+    [liveCampaigns, account, status]
+  );
   const liveRecent = useMemo(
     () => recentEntriesFromDashboard(dashboard),
     [dashboard]
@@ -2486,22 +2456,22 @@ function App(){
               <div className="section-label">Campaign performance</div>
               <div className="section-meta">{loading ? "Loading…" : fetchedLabel}</div>
             </div>
-            <CampaignTable account={account} status={status} campaigns={liveCampaigns} />
+            <CampaignTable account={account} status={status} campaigns={scopedCampaigns} />
           </div>
 
           {/* Charts */}
           <div className="grid-charts">
-            <ROASChart campaigns={liveCampaigns}/>
-            <AdROASChart campaigns={liveCampaigns}/>
-            <CostPerDMChart campaigns={liveCampaigns}/>
-            <CACChart campaigns={liveCampaigns}/>
+            <ROASChart campaigns={scopedCampaigns}/>
+            <AdROASChart campaigns={scopedCampaigns}/>
+            <CostPerDMChart campaigns={scopedCampaigns}/>
+            <CACChart campaigns={scopedCampaigns}/>
             <div className="chart-actions-cell">
               <div>
                 <div className="section-head">
                   <div className="section-label">Actions</div>
                   <div className="section-meta">Export</div>
                 </div>
-                <Actions campaigns={liveCampaigns} onToast={showToast}/>
+                <Actions campaigns={scopedCampaigns} onToast={showToast}/>
               </div>
             </div>
           </div>
