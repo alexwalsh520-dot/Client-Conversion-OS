@@ -2139,16 +2139,22 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
       <div className="recent-head" onClick={()=>setOpen(!open)}>
         <div className="recent-title">
           <span className={"recent-caret "+(open?"open":"")}>▸</span>
-          Recent keyword entries
-          <span className="recent-count">{list.length} logs · last 48h</span>
+          Live attribution events
+          <span className="recent-count">{list.length} latest</span>
         </div>
         <span style={{color:'var(--text-4)',fontSize:11}}></span>
       </div>
       <div className={"recent-body "+(open?"open":"")}>
         <div className="manual-log-toggle">
-          <button className={"manual-log-btn "+(manualOpen?"active":"")} onClick={()=>setManualOpen(v=>!v)}>
+          <button
+            className={"manual-log-btn "+(manualOpen?"active":"")}
+            onClick={()=>{
+              setManualOpen(false);
+              onToast && onToast("Manual logging disabled · ManyChat/GHL are source of truth");
+            }}
+          >
             <span style={{color:'var(--gold)',fontSize:13,lineHeight:1}}>+</span>
-            {manualOpen ? "Hide manual logger" : "Log keyword manually"}
+            Log keyword manually
           </button>
         </div>
         {manualOpen && (
@@ -2159,11 +2165,12 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
         <table className="recent-tbl">
           <thead>
             <tr>
-              <th style={{width:130}}>Time</th>
+              <th style={{width:150}}>Time (ET)</th>
+              <th style={{width:160}}>Source</th>
               <th style={{width:90}}>Setter</th>
               <th style={{width:110}}>Campaign</th>
               <th style={{width:150}}>Keyword</th>
-              <th style={{width:180}}>Bucket</th>
+              <th style={{width:180}}>Event</th>
               <th className="r" style={{width:110}}>Value</th>
               <th className="actions-col">Actions</th>
             </tr>
@@ -2171,19 +2178,25 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan="7" style={{color:"var(--text-3)",padding:"16px 24px"}}>
-                  No recent keyword entries for this range.
+                <td colSpan="8" style={{color:"var(--text-3)",padding:"16px 24px"}}>
+                  No live attribution events for this range.
                 </td>
               </tr>
             )}
             {list.map((e)=>{
               const isEditing = editingId === e.id;
+              const isLive = e.source === "manychat" || e.source === "ghl";
               const isDollar = e.bucket === "collected";
               const bucketLabel = BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
+              const sourceLabel = e.source === "manychat" ? "ManyChat" : e.source === "ghl" ? "GHL" : "Manual";
               return (
                 <tr key={e.id} className={isEditing ? "editing-row" : ""}>
                   <td className="mono" style={{color:'var(--text-3)',fontSize:11,verticalAlign:'middle'}}>
                     {e.ts}{e.edited && <span className="edited-tag" title="Edited">·edited</span>}
+                  </td>
+                  <td style={{verticalAlign:'middle'}}>
+                    <div style={{color:'var(--text-2)'}}>{sourceLabel}</div>
+                    {e.name && <div style={{color:'var(--text-4)',fontSize:10,marginTop:3}}>{e.name}</div>}
                   </td>
                   <td style={{verticalAlign:'middle'}}>{e.setter}</td>
                   <td style={{color:'var(--text-3)',verticalAlign:'middle'}}>
@@ -2225,7 +2238,9 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                     ) : (isDollar ? fmtUsd(e.value) : e.value)}
                   </td>
                   <td className="actions-col" style={{verticalAlign:'middle'}}>
-                    {isEditing ? (
+                    {isLive ? (
+                      <span style={{color:'var(--text-4)',fontSize:11}}>Auto</span>
+                    ) : isEditing ? (
                       <>
                         <button className="rec-save" onClick={saveEdit} disabled={!draft.kw || !draft.value}>Save</button>
                         <button className="rec-cancel" onClick={cancelEdit}>Cancel</button>
@@ -2278,7 +2293,7 @@ function recentEntriesFromDashboard(dashboard){
   return dashboard.recentEvents.map((event, i) => {
     const dt = event.eventAt ? new Date(event.eventAt) : null;
     const ts = dt && !Number.isNaN(dt.getTime())
-      ? dt.toLocaleString("en-US", {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"})
+      ? dt.toLocaleString("en-US", {timeZone:"America/New_York", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", timeZoneName:"short"})
       : "Recent";
     const bucket = event.source === "ghl" ? "calls" : "msgs";
     return {
@@ -2288,6 +2303,9 @@ function recentEntriesFromDashboard(dashboard){
       kw: event.keyword || "UNKNOWN",
       bucket,
       value: 1,
+      source: event.source || "live",
+      eventType: event.eventType || "",
+      name: event.name || "",
       id: "live-"+i,
     };
   });
