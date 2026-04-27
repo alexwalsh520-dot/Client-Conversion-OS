@@ -61,6 +61,8 @@ interface KeywordBackfillRow {
   new_clients: number | null;
   contracted_revenue_cents: number | null;
   collected_revenue_cents: number | null;
+  source_workbook: string | null;
+  source_sheet: string | null;
 }
 
 interface SalesTrackerDbRow {
@@ -144,6 +146,13 @@ interface Group {
   contractedRevenue: number;
   collectedRevenue: number;
   status: "active" | "finished";
+}
+
+interface BackfillGroupHint {
+  campaignId: string | null;
+  campaignName: string | null;
+  adId: string | null;
+  adName: string | null;
 }
 
 function emptyGroup(id: string, clientKey: string, name: string, keyword: string): Group {
@@ -537,6 +546,58 @@ function uniqueMetaGroupResolver<T>(
   };
 }
 
+function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
+  const source = `${row.source_workbook || ""} ${row.source_sheet || ""}`.toLowerCase();
+  const clientRows = metaRows.filter((metaRow) => metaRow.client_key === row.client_key && metaRow.campaign_name);
+
+  let candidates = clientRows;
+  if (row.client_key === "tyson" && source.includes("warm ads tracker")) {
+    candidates = clientRows.filter((metaRow) => {
+      const name = (metaRow.campaign_name || "").toLowerCase();
+      return name.includes("warm") && name.includes("spring shred");
+    });
+  } else if (row.client_key === "keith" && source.includes("ads tracker")) {
+    candidates = clientRows.filter((metaRow) => {
+      const name = (metaRow.campaign_name || "").toLowerCase();
+      return name.includes("warm") && name.includes("spring shredding");
+    });
+  }
+
+  const ranked = candidates
+    .slice()
+    .sort((a, b) => (b.spend_cents || 0) - (a.spend_cents || 0));
+  const campaign = ranked[0];
+  if (!campaign?.campaign_name) return null;
+
+  const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
+  const adName = displayKeyword(keyword);
+  return {
+    campaignId: campaign.campaign_id,
+    campaignName: campaign.campaign_name,
+    adId: keyword ? `backfill:${row.client_key}:${campaign.campaign_id || campaign.campaign_name}:${keyword}` : null,
+    adName,
+  };
+}
+
+function fallbackGroupIdForBackfillRow(
+  row: KeywordBackfillRow,
+  keyword: string,
+  metaRows: MetaRow[],
+  prefix = ""
+) {
+  const hint = campaignHintForBackfillRow(row, metaRows);
+  if (!hint?.campaignName) return `${prefix}${row.client_key}:keyword:${keyword}`;
+  return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
+}
+
+function applyBackfillHint(group: Group, hint: BackfillGroupHint | null) {
+  if (!hint) return;
+  group.campaignId = group.campaignId || hint.campaignId;
+  group.campaignName = group.campaignName || hint.campaignName;
+  group.adId = group.adId || hint.adId;
+  group.adName = group.adName || hint.adName;
+}
+
 function addKeywordEventsToGroups(
   groups: Map<string, Group>,
   events: KeywordEvent[],
@@ -562,15 +623,18 @@ function addKeywordBackfillRowsToGroups(
   rows: KeywordBackfillRow[],
   query: AdsTrackerQuery,
   groupIdForRow: (row: KeywordBackfillRow, keyword: string) => string,
-  dateLabelForRow: (row: KeywordBackfillRow) => string
+  dateLabelForRow: (row: KeywordBackfillRow) => string,
+  hintForRow?: (row: KeywordBackfillRow, keyword: string) => BackfillGroupHint | null
 ) {
   for (const row of rows) {
     const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
     if (!keyword) continue;
 
     const id = groupIdForRow(row, keyword);
+    const hint = hintForRow?.(row, keyword) || null;
     const name = query.level === "ad" ? displayKeyword(keyword) : row.client_name || row.client_key;
     const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
+    applyBackfillHint(group, hint);
 
     group.messages += row.messages || 0;
     group.bookedCalls += row.booked_calls || 0;
@@ -600,6 +664,8 @@ async function fetchKeywordBackfillRows(
     "new_clients",
     "contracted_revenue_cents",
     "collected_revenue_cents",
+    "source_workbook",
+    "source_sheet",
   ];
 
   const queryRows = (selectColumns: string[]) =>
@@ -719,8 +785,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     backfill,
     query,
     (row, keyword) =>
-      periodAttributionGroupId(row, keyword, `${row.client_key}:keyword:${keyword}`),
-    () => `${query.dateFrom} - ${query.dateTo}`
+      periodAttributionGroupId(
+        row,
+        keyword,
+        fallbackGroupIdForBackfillRow(row, keyword, rows)
+      ),
+    () => `${query.dateFrom} - ${query.dateTo}`,
+    (row) => campaignHintForBackfillRow(row, rows)
   );
 
   const bookings = attributionEvents.filter((event) => event.source === "ghl");
@@ -769,8 +840,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     backfill,
     query,
     (row, keyword) =>
-      dailyAttributionGroupId(row, keyword, `${row.date}:${row.client_key}:keyword:${keyword}`),
-    (row) => row.date
+      dailyAttributionGroupId(
+        row,
+        keyword,
+        fallbackGroupIdForBackfillRow(row, keyword, rows, `${row.date}:`)
+      ),
+    (row) => row.date,
+    (row) => campaignHintForBackfillRow(row, rows)
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>

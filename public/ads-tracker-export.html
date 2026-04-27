@@ -1083,12 +1083,13 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     return {...c, rows};
   });
 
-  const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
-  const visibleCampaigns = tableCampaigns.filter(c=>{
+  const totalCampaigns = augmentedCampaigns.filter(c=>{
     if(account!=="all" && account!==(c.clientKey || c.id)) return false;
     if(status!=="all" && status!==c.status) return false;
     return true;
   });
+  const visibleCampaigns = totalCampaigns.filter(c => !c.attributionOnly);
+  const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
     setView(next);
@@ -1126,9 +1127,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const totalMin = cols.reduce((s,c)=>s+widths[c.k], 0);
 
   const overall = useMemo(()=>{
-    const allRows = visibleCampaigns.flatMap(c=>c.rows);
+    const allRows = totalCampaigns.flatMap(c=>c.rows);
     return aggregate(allRows);
-  },[visibleCampaigns]);
+  },[totalCampaigns]);
 
   return (
     <div className="panel">
