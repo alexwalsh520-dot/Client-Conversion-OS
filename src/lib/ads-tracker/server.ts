@@ -24,6 +24,8 @@ interface MetaRow {
   adset_name: string | null;
   ad_id: string;
   ad_name: string | null;
+  ad_effective_status: string | null;
+  campaign_effective_status: string | null;
   keyword_raw: string | null;
   keyword_normalized: string | null;
   date: string;
@@ -55,19 +57,10 @@ interface KeywordBackfillRow {
   keyword_normalized: string | null;
   messages: number | null;
   booked_calls: number | null;
+  calls_taken: number | null;
   new_clients: number | null;
   contracted_revenue_cents: number | null;
   collected_revenue_cents: number | null;
-}
-
-interface ManychatTagEvent {
-  tag_name: string | null;
-  client: string | null;
-  keyword_raw: string | null;
-  keyword_normalized: string | null;
-  subscriber_name: string | null;
-  setter_name: string | null;
-  event_at: string;
 }
 
 interface SalesTrackerDbRow {
@@ -95,6 +88,10 @@ export interface AdsTrackerRow {
   id: string;
   clientKey: string;
   name: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  adId: string | null;
+  adName: string | null;
   keyword: string;
   dateLabel: string;
   adSpend: number;
@@ -131,6 +128,10 @@ interface Group {
   id: string;
   clientKey: string;
   name: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  adId: string | null;
+  adName: string | null;
   keyword: string;
   dateLabel: string;
   adSpendCents: number;
@@ -142,6 +143,7 @@ interface Group {
   newClients: number;
   contractedRevenue: number;
   collectedRevenue: number;
+  status: "active" | "finished";
 }
 
 function emptyGroup(id: string, clientKey: string, name: string, keyword: string): Group {
@@ -149,6 +151,10 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     id,
     clientKey,
     name,
+    campaignId: null,
+    campaignName: null,
+    adId: null,
+    adName: null,
     keyword,
     dateLabel: "",
     adSpendCents: 0,
@@ -160,6 +166,7 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     newClients: 0,
     contractedRevenue: 0,
     collectedRevenue: 0,
+    status: "active",
   };
 }
 
@@ -177,6 +184,10 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     id: group.id,
     clientKey: group.clientKey,
     name: group.name,
+    campaignId: group.campaignId,
+    campaignName: group.campaignName,
+    adId: group.adId,
+    adName: group.adName,
     keyword: group.keyword,
     dateLabel: group.dateLabel,
     adSpend,
@@ -199,8 +210,24 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     costPerNewClient: group.newClients > 0 ? adSpend / group.newClients : null,
     contractedRoi: safeDiv(group.contractedRevenue, adSpend),
     collectedRoi: safeDiv(group.collectedRevenue, adSpend),
-    status: "active",
+    status: group.status,
   };
+}
+
+function metaRowStatus(row: MetaRow): "active" | "finished" {
+  const effectiveStatus = (row.ad_effective_status || row.campaign_effective_status || "").toUpperCase();
+  if (!effectiveStatus) return "active";
+  return effectiveStatus === "ACTIVE" ? "active" : "finished";
+}
+
+function applyGroupStatus(group: Group, status: "active" | "finished") {
+  if (status === "active") {
+    group.status = "active";
+    return;
+  }
+  if (group.adSpendCents === 0 && group.impressions === 0 && group.linkClicks === 0) {
+    group.status = "finished";
+  }
 }
 
 function clientFromOffer(row: SheetRow): string | null {
@@ -298,34 +325,6 @@ function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
   };
 }
 
-function adsClientKeyFromManychatClient(client: string | null): string | null {
-  if (!client) return null;
-  const normalized = client.toLowerCase().trim();
-  if (normalized === "tyson" || normalized === "tyson_sonnek") return "tyson";
-  if (normalized === "keith" || normalized === "keith_holland") return "keith";
-  return normalized;
-}
-
-function manychatTagEventToKeywordEvent(row: ManychatTagEvent): KeywordEvent | null {
-  const clientKey = adsClientKeyFromManychatClient(row.client);
-  const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
-  if (!clientKey || !keyword) return null;
-
-  return {
-    source: "manychat",
-    event_type: row.tag_name || "dm_keyword",
-    client_key: clientKey,
-    keyword_raw: row.keyword_raw || displayKeyword(keyword),
-    keyword_normalized: keyword,
-    subscriber_name: row.subscriber_name,
-    setter_name: row.setter_name,
-    appointment_id: null,
-    contact_id: null,
-    contact_name: null,
-    event_at: row.event_at,
-  };
-}
-
 async function fetchSalesRowsFromSupabase(
   db: ReturnType<typeof getServiceSupabase>,
   query: AdsTrackerQuery,
@@ -409,47 +408,14 @@ function applySalesToGroups(
     group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
     groups.set(groupId, group);
 
-    if (row.callTaken && !isNoShow(row)) group.callsTaken += 1;
     const includeOutcomeMetrics = options.includeOutcomeMetrics?.(match, row) ?? true;
+    if (includeOutcomeMetrics && row.callTaken && !isNoShow(row)) group.callsTaken += 1;
     if (includeOutcomeMetrics) {
       if (isWin(row)) group.newClients += 1;
       group.contractedRevenue += row.revenue || 0;
       group.collectedRevenue += row.cashCollected || 0;
     }
   }
-}
-
-function mockPayload(query: AdsTrackerQuery) {
-  const rows: AdsTrackerRow[] = [
-    finalizeGroup({
-      ...emptyGroup("tyson:fit", "tyson", "Tyson", "FIT"),
-      dateLabel: `${query.dateFrom} - ${query.dateTo}`,
-      adSpendCents: 239100,
-      impressions: 336050,
-      linkClicks: 7190,
-      messages: 489,
-      bookedCalls: 82,
-      callsTaken: 70,
-      newClients: 24,
-      contractedRevenue: 52400,
-      collectedRevenue: 47300,
-    }),
-    finalizeGroup({
-      ...emptyGroup("keith:goal", "keith", "Keith", "GOAL"),
-      dateLabel: `${query.dateFrom} - ${query.dateTo}`,
-      adSpendCents: 213400,
-      impressions: 282930,
-      linkClicks: 5206,
-      messages: 357,
-      bookedCalls: 54,
-      callsTaken: 43,
-      newClients: 10,
-      contractedRevenue: 31200,
-      collectedRevenue: 26500,
-    }),
-  ];
-
-  return buildPayload(query, rows, [], true);
 }
 
 function buildPayload(
@@ -535,12 +501,40 @@ function addMetaRowsToGroups(
     const id = groupIdForRow(row, keyword);
     const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : row.client_name || row.client_key;
     const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
+    group.campaignId = row.campaign_id || group.campaignId;
+    group.campaignName = row.campaign_name || group.campaignName;
+    group.adId = row.ad_id || group.adId;
+    group.adName = row.ad_name || group.adName;
+    applyGroupStatus(group, metaRowStatus(row));
     group.adSpendCents += row.spend_cents || 0;
     group.impressions += row.impressions || 0;
     group.linkClicks += row.link_clicks || 0;
     group.dateLabel = dateLabelForRow(row);
     groups.set(id, group);
   }
+}
+
+function uniqueMetaGroupResolver<T>(
+  rows: MetaRow[],
+  groupIdForRow: (row: MetaRow, keyword: string) => string,
+  keyForMetaRow: (row: MetaRow, keyword: string) => string,
+  keyForAttributionRow: (row: T, keyword: string) => string
+) {
+  const idsByKeyword = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
+    if (!keyword) continue;
+    const key = keyForMetaRow(row, keyword);
+    const ids = idsByKeyword.get(key) || new Set<string>();
+    ids.add(groupIdForRow(row, keyword));
+    idsByKeyword.set(key, ids);
+  }
+
+  return (row: T, keyword: string, fallbackId: string) => {
+    const ids = idsByKeyword.get(keyForAttributionRow(row, keyword));
+    return ids?.size === 1 ? Array.from(ids)[0] : fallbackId;
+  };
 }
 
 function addKeywordEventsToGroups(
@@ -580,6 +574,7 @@ function addKeywordBackfillRowsToGroups(
 
     group.messages += row.messages || 0;
     group.bookedCalls += row.booked_calls || 0;
+    group.callsTaken += row.calls_taken || 0;
     group.newClients += row.new_clients || 0;
     group.contractedRevenue += dollars(row.contracted_revenue_cents || 0);
     group.collectedRevenue += dollars(row.collected_revenue_cents || 0);
@@ -593,32 +588,45 @@ async function fetchKeywordBackfillRows(
   query: AdsTrackerQuery,
   clientFilter: string[]
 ): Promise<KeywordBackfillRow[]> {
-  const { data, error } = await db
-    .from("ads_keyword_backfill_daily")
-    .select(
-      [
-        "client_key",
-        "client_name",
-        "date",
-        "keyword_raw",
-        "keyword_normalized",
-        "messages",
-        "booked_calls",
-        "new_clients",
-        "contracted_revenue_cents",
-        "collected_revenue_cents",
-      ].join(",")
-    )
-    .in("client_key", clientFilter)
-    .gte("date", query.dateFrom)
-    .lte("date", query.dateTo);
+  const columns = [
+    "client_key",
+    "client_name",
+    "date",
+    "keyword_raw",
+    "keyword_normalized",
+    "messages",
+    "booked_calls",
+    "calls_taken",
+    "new_clients",
+    "contracted_revenue_cents",
+    "collected_revenue_cents",
+  ];
+
+  const queryRows = (selectColumns: string[]) =>
+    db
+      .from("ads_keyword_backfill_daily")
+      .select(selectColumns.join(","))
+      .in("client_key", clientFilter)
+      .gte("date", query.dateFrom)
+      .lte("date", query.dateTo);
+
+  let { data, error } = await queryRows(columns);
+
+  if (error && error.message?.toLowerCase().includes("calls_taken")) {
+    const retry = await queryRows(columns.filter((column) => column !== "calls_taken"));
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     console.warn("[ads-tracker] Keyword backfill unavailable; continuing with live events only", error);
     return [];
   }
 
-  return (data || []) as unknown as KeywordBackfillRow[];
+  return ((data || []) as unknown as KeywordBackfillRow[]).map((row) => ({
+    ...row,
+    calls_taken: row.calls_taken || 0,
+  }));
 }
 
 export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
@@ -626,13 +634,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const clientFilter =
     query.account === "all" ? ["tyson", "keith"] : [query.account];
-  const eventQueryFrom = `${shiftDate(query.dateFrom, -1)}T00:00:00.000Z`;
+  const eventQueryFrom = `${shiftDate(query.dateFrom, -120)}T00:00:00.000Z`;
   const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
 
   const [
     { data: metaRows, error: metaError },
     { data: keywordEvents, error: eventError },
-    { data: manychatEvents, error: manychatError },
     backfillRows,
   ] = await Promise.all([
       db
@@ -649,17 +656,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .in("client_key", clientFilter)
         .gte("event_at", eventQueryFrom)
         .lte("event_at", eventQueryTo),
-      db
-        .from("manychat_tag_events")
-        .select("tag_name,client,keyword_raw,keyword_normalized,subscriber_name,setter_name,event_at")
-        .gte("event_at", eventQueryFrom)
-        .lte("event_at", eventQueryTo),
       fetchKeywordBackfillRows(db, query, clientFilter),
     ]);
 
-  if (metaError || eventError || manychatError) {
-    console.warn("[ads-tracker] Falling back to mock payload", metaError || eventError || manychatError);
-    return mockPayload(query);
+  if (metaError || eventError) {
+    throw new Error(
+      `Ads Tracker data query failed: ${(metaError || eventError)?.message || "unknown error"}`
+    );
   }
 
   const groups = new Map<string, Group>();
@@ -668,43 +671,59 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const backfilledDateKeys = new Set(
     backfill.map((row) => `${row.client_key}:${row.date}`)
   );
-  const ghlEvents = ((keywordEvents || []) as KeywordEvent[]).filter(
-    (event) => event.source !== "manychat"
-  );
-  const manychatMessageEvents = ((manychatEvents || []) as unknown as ManychatTagEvent[])
-    .map(manychatTagEventToKeywordEvent)
-    .filter((event): event is KeywordEvent => Boolean(event))
-    .filter((event) => clientFilter.includes(event.client_key));
-  const allEvents = [...ghlEvents, ...manychatMessageEvents]
+  const attributionEvents = ((keywordEvents || []) as KeywordEvent[])
     .filter((event) => !isTestKeywordEvent(event))
+    .filter((event) => clientFilter.includes(event.client_key));
+  const allEvents = attributionEvents
     .filter((event) => isWithinDashboardDateRange(event.event_at, query));
   const events = allEvents.filter(
     (event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`)
+  );
+  const periodMetaGroupId = (row: MetaRow, keyword: string) =>
+    `${row.client_key}:${row.campaign_id || row.campaign_name || "campaign"}:${row.ad_id || keyword}`;
+  const dailyMetaGroupId = (row: MetaRow, keyword: string) =>
+    `${row.date}:${periodMetaGroupId(row, keyword)}`;
+  const periodAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
+    rows,
+    periodMetaGroupId,
+    (row, keyword) => `${row.client_key}:${keyword}`,
+    (row, keyword) => `${row.client_key}:${keyword}`
+  );
+  const dailyAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
+    rows,
+    dailyMetaGroupId,
+    (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
+    (row, keyword) => {
+      const date = "event_at" in row ? eventDateKey(row.event_at) : row.date;
+      return `${date}:${row.client_key}:${keyword}`;
+    }
   );
 
   addMetaRowsToGroups(
     groups,
     rows,
     query,
-    (row, keyword) => `${row.client_key}:${keyword}`,
+    periodMetaGroupId,
     () => `${query.dateFrom} - ${query.dateTo}`
   );
 
   addKeywordEventsToGroups(
     groups,
     events,
-    (event, keyword) => `${event.client_key}:${keyword}`,
+    (event, keyword) =>
+      periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
     () => `${query.dateFrom} - ${query.dateTo}`
   );
   addKeywordBackfillRowsToGroups(
     groups,
     backfill,
     query,
-    (row, keyword) => `${row.client_key}:${keyword}`,
+    (row, keyword) =>
+      periodAttributionGroupId(row, keyword, `${row.client_key}:keyword:${keyword}`),
     () => `${query.dateFrom} - ${query.dateTo}`
   );
 
-  const bookings = allEvents.filter((event) => event.source === "ghl");
+  const bookings = attributionEvents.filter((event) => event.source === "ghl");
   const salesRows =
     (await fetchSalesRowsFromSupabase(db, query, clientFilter)) ??
     (await fetchSheetData(query.dateFrom, query.dateTo).catch((error) => {
@@ -717,6 +736,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     !backfilledDateKeys.has(`${match.client_key}:${row.date}`);
 
   applySalesToGroups(groups, attributionSalesRows, bookings, {
+    groupId: (match) =>
+      periodAttributionGroupId(
+        match,
+        match.keyword_normalized || "",
+        `${match.client_key}:keyword:${match.keyword_normalized}`
+      ),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
   });
 
@@ -725,38 +750,64 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     dailyGroups,
     rows,
     query,
-    (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
+    dailyMetaGroupId,
     (row) => row.date
   );
   addKeywordEventsToGroups(
     dailyGroups,
     events,
-    (event, keyword) => `${eventDateKey(event.event_at)}:${event.client_key}:${keyword}`,
+    (event, keyword) =>
+      dailyAttributionGroupId(
+        event,
+        keyword,
+        `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
+      ),
     (event) => eventDateKey(event.event_at)
   );
   addKeywordBackfillRowsToGroups(
     dailyGroups,
     backfill,
     query,
-    (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
+    (row, keyword) =>
+      dailyAttributionGroupId(row, keyword, `${row.date}:${row.client_key}:keyword:${keyword}`),
     (row) => row.date
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
-    groupId: (match, row) => `${row.date}:${match.client_key}:${match.keyword_normalized}`,
+    groupId: (match, row) =>
+      dailyAttributionGroupId(
+        { ...match, event_at: `${row.date}T00:00:00.000Z` },
+        match.keyword_normalized || "",
+        `${row.date}:${match.client_key}:keyword:${match.keyword_normalized}`
+      ),
     dateLabel: (_match, row) => row.date,
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
   });
 
   const finalized = Array.from(groups.values())
     .map(finalizeGroup)
-    .filter((row) => row.adSpend > 0 || row.messages > 0 || row.bookedCalls > 0)
+    .filter(
+      (row) =>
+        row.adSpend > 0 ||
+        row.messages > 0 ||
+        row.bookedCalls > 0 ||
+        row.callsTaken > 0 ||
+        row.newClients > 0 ||
+        row.collectedRevenue > 0
+    )
     .sort((a, b) => b.collectedRoi - a.collectedRoi);
 
   const finalizedDaily = Array.from(dailyGroups.values())
     .map(finalizeGroup)
-    .filter((row) => row.adSpend > 0 || row.messages > 0 || row.bookedCalls > 0 || row.collectedRevenue > 0)
+    .filter(
+      (row) =>
+        row.adSpend > 0 ||
+        row.messages > 0 ||
+        row.bookedCalls > 0 ||
+        row.callsTaken > 0 ||
+        row.newClients > 0 ||
+        row.collectedRevenue > 0
+    )
     .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
 
-  if (finalized.length === 0) return mockPayload(query);
   return buildPayload(query, finalized, events, false, finalizedDaily);
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getAdLevelInsights } from "@/lib/mozi-meta";
+import { getAdEntities, getAdLevelInsights, type MetaAdEntity } from "@/lib/mozi-meta";
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, keywordFromAdName } from "@/lib/ads-tracker/normalize";
 
@@ -37,6 +37,10 @@ type AdsMetaInsightRow = {
   adset_name: string | null;
   ad_id: string;
   ad_name: string | null;
+  ad_effective_status: string | null;
+  ad_configured_status: string | null;
+  campaign_effective_status: string | null;
+  campaign_configured_status: string | null;
   keyword_raw: string | null;
   keyword_normalized: string | null;
   date: string;
@@ -46,6 +50,8 @@ type AdsMetaInsightRow = {
   synced_at: string;
   raw_payload: unknown;
 };
+
+type MetaStatusMap = Map<string, MetaAdEntity>;
 
 function firstEnv(names: readonly string[]) {
   for (const name of names) {
@@ -72,6 +78,14 @@ function shiftDate(date: string, days: number) {
   const d = new Date(`${date}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function datesInRange(dateFrom: string, dateTo: string) {
+  const dates: string[] = [];
+  for (let date = dateFrom; date <= dateTo; date = shiftDate(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
 }
 
 function dateInTimezone(date: Date, timeZone: string) {
@@ -149,9 +163,11 @@ function dailyInsightRow(
   adAccountId: string,
   row: Awaited<ReturnType<typeof getAdLevelInsights>>[number],
   date: string,
-  syncedAt: string
+  syncedAt: string,
+  statusByAdId: MetaStatusMap
 ): AdsMetaInsightRow {
   const { keyword, keywordRaw } = insightKeyword(row);
+  const status = row.ad_id ? statusByAdId.get(row.ad_id) : null;
   return {
     client_key: account.key,
     client_name: account.name,
@@ -163,6 +179,10 @@ function dailyInsightRow(
     adset_name: row.adset_name || null,
     ad_id: row.ad_id as string,
     ad_name: row.ad_name || null,
+    ad_effective_status: status?.effective_status || null,
+    ad_configured_status: status?.configured_status || null,
+    campaign_effective_status: status?.campaign?.effective_status || null,
+    campaign_configured_status: status?.campaign?.configured_status || null,
     keyword_raw: keywordRaw,
     keyword_normalized: keyword,
     date,
@@ -180,12 +200,13 @@ function buildDailyRows(
   insights: Awaited<ReturnType<typeof getAdLevelInsights>>,
   dateFrom: string,
   dateTo: string,
-  syncedAt: string
+  syncedAt: string,
+  statusByAdId: MetaStatusMap
 ): AdsMetaInsightRow[] {
   if (account.timezone === REPORTING_TIMEZONE) {
     return insights
       .filter((row) => row.ad_id && row.date_start)
-      .map((row) => dailyInsightRow(account, adAccountId, row, row.date_start, syncedAt));
+      .map((row) => dailyInsightRow(account, adAccountId, row, row.date_start, syncedAt, statusByAdId));
   }
 
   const grouped = new Map<
@@ -228,6 +249,10 @@ function buildDailyRows(
         adset_name: row.adset_name || null,
         ad_id: row.ad_id,
         ad_name: row.ad_name || null,
+        ad_effective_status: statusByAdId.get(row.ad_id)?.effective_status || null,
+        ad_configured_status: statusByAdId.get(row.ad_id)?.configured_status || null,
+        campaign_effective_status: statusByAdId.get(row.ad_id)?.campaign?.effective_status || null,
+        campaign_configured_status: statusByAdId.get(row.ad_id)?.campaign?.configured_status || null,
         keyword_raw: keywordRaw,
         keyword_normalized: keyword,
         date: reportingDate,
@@ -263,6 +288,72 @@ function isIsoDate(value: string) {
 
 function missingColumn(error: { message?: string } | null, column: string) {
   return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
+}
+
+const OPTIONAL_META_COLUMNS = [
+  "account_timezone",
+  "raw_payload",
+  "ad_effective_status",
+  "ad_configured_status",
+  "campaign_effective_status",
+  "campaign_configured_status",
+];
+
+async function upsertMetaRows(
+  db: ReturnType<typeof getServiceSupabase>,
+  rows: AdsMetaInsightRow[]
+) {
+  const { error } = await db
+    .from("ads_meta_insights_daily")
+    .upsert(rows, { onConflict: "client_key,ad_id,date" });
+
+  const missingOptionalColumns = OPTIONAL_META_COLUMNS.filter((column) => missingColumn(error, column));
+  if (error && missingOptionalColumns.length > 0) {
+    const backwardsCompatibleRows = rows.map((row) => {
+      const compatibleRow: Record<string, unknown> = { ...row };
+      for (const column of missingOptionalColumns) delete compatibleRow[column];
+      return compatibleRow;
+    });
+    const { error: retryError } = await db
+      .from("ads_meta_insights_daily")
+      .upsert(backwardsCompatibleRows, { onConflict: "client_key,ad_id,date" });
+
+    if (retryError) throw retryError;
+    return;
+  }
+
+  if (error) throw error;
+}
+
+async function deleteStaleMetaRows(
+  db: ReturnType<typeof getServiceSupabase>,
+  accountKey: string,
+  dateFrom: string,
+  dateTo: string,
+  rows: AdsMetaInsightRow[]
+) {
+  const adIdsByDate = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const ids = adIdsByDate.get(row.date) || new Set<string>();
+    ids.add(row.ad_id);
+    adIdsByDate.set(row.date, ids);
+  }
+
+  for (const date of datesInRange(dateFrom, dateTo)) {
+    const ids = Array.from(adIdsByDate.get(date) || []);
+    let query = db
+      .from("ads_meta_insights_daily")
+      .delete()
+      .eq("client_key", accountKey)
+      .eq("date", date);
+
+    if (ids.length > 0) {
+      query = query.not("ad_id", "in", `(${ids.join(",")})`);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+  }
 }
 
 async function isAuthorized(req: NextRequest) {
@@ -338,13 +429,19 @@ export async function POST(req: NextRequest) {
         accessToken: token,
         breakdowns: needsEasternRebucket ? [HOURLY_ADVERTISER_BREAKDOWN] : undefined,
       });
+      const statusRows = await getAdEntities(adAccountId, { accessToken: token }).catch((error) => {
+        console.warn(`[ads-tracker-sync] Could not fetch Meta ad statuses for ${account.key}`, error);
+        return [] as MetaAdEntity[];
+      });
+      const statusByAdId = new Map(statusRows.map((row) => [row.id, row]));
       const rows = buildDailyRows(
         account,
         adAccountId,
         insights,
         dateFrom,
         dateTo,
-        new Date().toISOString()
+        new Date().toISOString(),
+        statusByAdId
       );
 
       if (needsEasternRebucket && insights.length > 0 && rows.length === 0) {
@@ -353,36 +450,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const { error: deleteError } = await db
-        .from("ads_meta_insights_daily")
-        .delete()
-        .eq("client_key", account.key)
-        .gte("date", dateFrom)
-        .lte("date", dateTo);
-
-      if (deleteError) throw deleteError;
-
-      if (rows.length > 0) {
-        const { error } = await db
-          .from("ads_meta_insights_daily")
-          .upsert(rows, { onConflict: "client_key,ad_id,date" });
-
-        if (error && (missingColumn(error, "account_timezone") || missingColumn(error, "raw_payload"))) {
-          const backwardsCompatibleRows = rows.map((row) => {
-            const compatibleRow: Record<string, unknown> = { ...row };
-            delete compatibleRow.account_timezone;
-            delete compatibleRow.raw_payload;
-            return compatibleRow;
-          });
-          const { error: retryError } = await db
-            .from("ads_meta_insights_daily")
-            .upsert(backwardsCompatibleRows, { onConflict: "client_key,ad_id,date" });
-
-          if (retryError) throw retryError;
-        } else if (error) {
-          throw error;
-        }
-      }
+      if (rows.length > 0) await upsertMetaRows(db, rows);
+      await deleteStaleMetaRows(db, account.key, dateFrom, dateTo, rows);
 
       results.push({ account: account.key, fetched: insights.length, upserted: rows.length });
     } catch (error) {

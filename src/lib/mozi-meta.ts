@@ -41,6 +41,19 @@ export interface MetaAdInsight {
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
 }
 
+export interface MetaAdEntity {
+  id: string;
+  name?: string;
+  effective_status?: string;
+  configured_status?: string;
+  campaign?: {
+    id?: string;
+    name?: string;
+    effective_status?: string;
+    configured_status?: string;
+  };
+}
+
 interface MetaPaging {
   cursors: { before: string; after: string };
   next?: string;
@@ -132,6 +145,39 @@ export async function getAdLevelInsights(
   while (nextUrl) {
     const response: MetaInsightsResponse<MetaAdInsight> =
       await metaFetch<MetaInsightsResponse<MetaAdInsight>>(
+        nextUrl,
+        options?.accessToken
+      );
+    allData.push(...response.data);
+    nextUrl = response.paging?.next;
+  }
+
+  return allData;
+}
+
+/**
+ * Fetch lightweight ad/campaign status metadata for Ads Tracker filters.
+ * This is one paginated request per ad account sync, not one request per ad.
+ */
+export async function getAdEntities(
+  adAccountId: string,
+  options?: { accessToken?: string }
+): Promise<MetaAdEntity[]> {
+  const fields = [
+    "id",
+    "name",
+    "effective_status",
+    "configured_status",
+    "campaign{id,name,effective_status,configured_status}",
+  ].join(",");
+  const initialUrl = `${BASE_URL}/${adAccountId}/ads?fields=${fields}&limit=500`;
+
+  const allData: MetaAdEntity[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const response: MetaInsightsResponse<MetaAdEntity> =
+      await metaFetch<MetaInsightsResponse<MetaAdEntity>>(
         nextUrl,
         options?.accessToken
       );

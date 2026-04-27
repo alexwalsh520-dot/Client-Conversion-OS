@@ -244,10 +244,9 @@
   /* Bottom grid */
   .grid-bottom{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:22px}
   @media (max-width: 1100px){.grid-bottom{grid-template-columns:1fr}}
-  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px;align-items:start}
+  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px;align-items:stretch}
   @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
-  .left-stack{display:flex;flex-direction:column;gap:18px;min-width:0}
-  .right-stack{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .chart-actions-cell{grid-column:1/-1;min-width:0}
 
   /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
   .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
@@ -702,8 +701,8 @@ function emptyMetric(date){
 }
 
 function campaignsFromDashboard(dashboard, range){
-  if(!dashboard || dashboard.mock || !Array.isArray(dashboard.rows) || dashboard.rows.length===0) {
-    return CAMPAIGNS;
+  if(!dashboard || dashboard.error || !Array.isArray(dashboard.rows) || dashboard.rows.length===0) {
+    return [];
   }
 
   const sourceRows = Array.isArray(dashboard.dailyRows) && dashboard.dailyRows.length
@@ -715,27 +714,36 @@ function campaignsFromDashboard(dashboard, range){
     const client = apiRow.clientKey || "unknown";
     if(client!=="tyson" && client!=="keith") continue;
     const keyword = (apiRow.keyword || "UNKNOWN").toUpperCase();
+    const clientLabel = client==="tyson" ? "Tyson" : "Keith";
+    const campaignId = apiRow.campaignId || `${client}:keyword-attribution`;
+    const campaignKey = `${client}:${campaignId}`;
+    const campaignName = apiRow.campaignName || `${clientLabel} — Keyword Attribution`;
+    const adId = apiRow.adId || `${campaignKey}:${keyword.toLowerCase()}`;
+    const adName = (apiRow.adName || apiRow.name || keyword).toUpperCase();
+    const rowStatus = apiRow.status === "finished" ? "finished" : "active";
     const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(apiRow.dateLabel || "")
       ? apiRow.dateLabel
       : (apiRow.date || apiRow.dateLabel || range.dateTo);
     const dateLabel = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateLabelFromIso(dateKey) : dateKey;
     const row = metricRowFromApi(apiRow, dateLabel);
 
-    if(!campaignMap.has(client)){
-      campaignMap.set(client, {
-        id: client,
-        name: `${client==="tyson"?"Tyson":"Keith"} — Warm Spring Shred Challenge`,
-        short: client==="tyson"?"Tyson":"Keith",
-        status: "active",
+    if(!campaignMap.has(campaignKey)){
+      campaignMap.set(campaignKey, {
+        id: campaignKey,
+        clientKey: client,
+        name: campaignName,
+        short: `${clientLabel} · ${campaignName.replace(/^.*?—\s*/, "")}`,
+        status: rowStatus,
         dot: client,
         adsByName: new Map(),
         rowsByDate: new Map(),
       });
     }
 
-    const campaign = campaignMap.get(client);
-    if(!campaign.adsByName.has(keyword)){
-      campaign.adsByName.set(keyword, {id:`${client}-${keyword.toLowerCase()}`, name:keyword, weight:1});
+    const campaign = campaignMap.get(campaignKey);
+    if(rowStatus==="active") campaign.status = "active";
+    if(!campaign.adsByName.has(adId)){
+      campaign.adsByName.set(adId, {id:adId, name:adName, keyword, weight:1});
     }
 
     if(!campaign.rowsByDate.has(dateKey)){
@@ -745,8 +753,9 @@ function campaignsFromDashboard(dashboard, range){
     const day = campaign.rowsByDate.get(dateKey);
     addMetric(day, row);
     day.adRows.push({
-      adId: `${client}-${keyword.toLowerCase()}`,
-      adName: keyword,
+      adId,
+      adName,
+      keyword,
       ...row,
     });
   }
@@ -762,7 +771,7 @@ function campaignsFromDashboard(dashboard, range){
     return {...c, ads, adCount:ads.length, rows};
   });
 
-  return campaigns.length ? campaigns : CAMPAIGNS;
+  return campaigns;
 }
 
 function labelsFromCampaigns(campaigns){
@@ -783,7 +792,7 @@ function filterCampaignsBySearch(campaigns, search){
   if(!term) return campaigns;
 
   return campaigns.map(c => {
-    const campaignMatches = [c.name, c.short, c.id].some(v => String(v || "").toLowerCase().includes(term));
+    const campaignMatches = [c.name, c.short, c.id, c.clientKey].some(v => String(v || "").toLowerCase().includes(term));
     if(campaignMatches) return c;
 
     const rows = c.rows.map(row => {
@@ -1072,7 +1081,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   });
 
   const visibleCampaigns = augmentedCampaigns.filter(c=>{
-    if(account!=="all" && account!==c.id) return false;
+    if(account!=="all" && account!==(c.clientKey || c.id)) return false;
     if(status!=="all" && status!==c.status) return false;
     return true;
   });
@@ -1415,7 +1424,7 @@ function LineChart({series, labels, height=200, width=640, fmt=(v)=>v, fmtRight,
 const DAY_LABELS = ["Apr 16","Apr 17","Apr 18","Apr 19","Apr 20","Apr 21","Apr 22"];
 // Build daily totals from CAMPAIGNS (already contains Apr 17-22). Synthesize Apr 16.
 function seriesForCampaignKey(key, filterId="all", campaigns=CAMPAIGNS, labels=DAY_LABELS){
-  const camps = filterId === "all" ? campaigns : campaigns.filter(c=>c.id===filterId);
+  const camps = filterId === "all" ? campaigns : campaigns.filter(c=>(c.clientKey || c.id)===filterId);
   // Map date -> summed value
   const byDate = {};
   camps.forEach(c => c.rows.forEach(r => {
@@ -1500,7 +1509,7 @@ function seriesCpmKeyword(kw, client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
   const live = labels.map(label => {
     let spend = 0;
     let msgs = 0;
-    const camps = client === "all" ? campaigns : campaigns.filter(c=>c.id===client);
+    const camps = client === "all" ? campaigns : campaigns.filter(c=>(c.clientKey || c.id)===client);
     camps.forEach(c => {
       const day = c.rows.find(r=>r.date===label);
       const ad = day?.adRows?.find(a=>a.adName===kw);
@@ -1524,7 +1533,7 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
   const [client, setClient] = useState("all");
   const [mode, setMode] = useState("overall"); // 'overall' | 'keyword'
   const labels = labelsFromCampaigns(campaigns);
-  const liveKws = campaigns.flatMap(c => (c.ads||[]).map(ad => ({kw:ad.name, camp:c.id})));
+  const liveKws = campaigns.flatMap(c => (c.ads||[]).map(ad => ({kw:ad.name, camp:c.clientKey || c.id})));
   const availableKws = (liveKws.length ? liveKws : KW_ROSTER).filter(k => client==="all" || k.camp===client);
 
   let series, avg, delta, subLabel;
@@ -1634,7 +1643,7 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
         }
       });
       out.push({
-        adId: a.id, adName: a.name, camp: c.id, campShort: c.short,
+        adId: a.id, adName: a.name, camp: c.clientKey || c.id, campShort: c.short,
         spend, collected, clients,
       });
     });
@@ -2081,7 +2090,6 @@ function rowsForCsv(campaigns){
 
 // ------- Actions bar
 function Actions({campaigns=CAMPAIGNS, onToast}){
-  const [modal, setModal] = useState(null);
   const exportCsv = () => {
     if(!campaigns.length){
       onToast&&onToast("Nothing to export");
@@ -2091,21 +2099,10 @@ function Actions({campaigns=CAMPAIGNS, onToast}){
     onToast&&onToast("CSV exported");
   };
   return (
-    <>
-      <div className="panel actions-panel">
-        <div className="actions-left">
-          <button className="action-btn" onClick={()=>setModal("new")}><span className="ic"><IcPlus/></span>New campaign</button>
-          <span className="action-sep"></span>
-          <button className="action-btn" onClick={()=>setModal("finish")}><span className="ic"><IcFlag/></span>Finish campaign</button>
-          <span className="action-sep"></span>
-          <button className="action-btn" onClick={()=>setModal("import")}><span className="ic"><IcUpload/></span>Import keyword data</button>
-        </div>
-        <button className="action-btn" style={{color:'var(--text-3)'}} onClick={exportCsv}><span className="ic"><IcDownload/></span>Export CSV</button>
-      </div>
-      {modal==="new" && <NewCampaignModal onClose={()=>setModal(null)} onCreate={(c)=>onToast&&onToast("Campaign \""+c.name+"\" created · "+c.keywords.length+" keywords")} />}
-      {modal==="finish" && <FinishCampaignModal onClose={()=>setModal(null)} onFinish={(id)=>onToast&&onToast("Campaign "+id+" marked finished")} />}
-      {modal==="import" && <ImportKeywordModal onClose={()=>setModal(null)} onImport={(r)=>onToast&&onToast("Imported "+r.count+" keywords into "+(r.campaign==="tyson"?"Tyson":"Keith"))} />}
-    </>
+    <div className="panel actions-panel">
+      <div className="actions-left"></div>
+      <button className="action-btn" style={{color:'var(--text-3)'}} onClick={exportCsv}><span className="ic"><IcDownload/></span>Export CSV</button>
+    </div>
   );
 }
 
@@ -2335,8 +2332,9 @@ function App(){
   const [account, setAccount] = useState("all");
   const [status, setStatus] = useState("active");
   const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7"));
+  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7", shiftIso(todayEt(), -1)));
   const [dashboard, setDashboard] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [newEntries, setNewEntries] = useState([]);
@@ -2357,6 +2355,7 @@ function App(){
 
   const loadDashboard = async ({silent=false}={}) => {
     if(!silent) setLoading(true);
+    setLoadError(null);
     const params = new URLSearchParams({
       account,
       status,
@@ -2366,12 +2365,14 @@ function App(){
     });
     try{
       const res = await fetch("/api/ads-tracker?"+params.toString(), {cache:"no-store"});
-      if(!res.ok) throw new Error("Ads Tracker API failed");
       const json = await res.json();
+      if(!res.ok) throw new Error(json.error || "Ads Tracker API failed");
       setDashboard(json);
     }catch(err){
       console.error(err);
-      showToast("Live data unavailable · showing fallback");
+      setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[]});
+      setLoadError(err?.message || "Live data unavailable");
+      showToast("Live data unavailable");
     }finally{
       setLoading(false);
     }
@@ -2393,8 +2394,8 @@ function App(){
     () => recentEntriesFromDashboard(dashboard),
     [dashboard]
   );
-  const fetchedLabel = dashboard?.mock
-    ? "Fallback data"
+  const fetchedLabel = loadError
+    ? "Live data unavailable"
     : (dashboard ? `Live · ${rangeLabel(dateRange)}` : "Loading live data");
 
   const syncNow = async () => {
@@ -2490,17 +2491,15 @@ function App(){
 
           {/* Charts */}
           <div className="grid-charts">
-            <div className="left-stack">
-              <ROASChart campaigns={liveCampaigns}/>
-              <CostPerDMChart campaigns={liveCampaigns}/>
-            </div>
-            <div className="right-stack">
-              <AdROASChart campaigns={liveCampaigns}/>
-              <CACChart campaigns={liveCampaigns}/>
+            <ROASChart campaigns={liveCampaigns}/>
+            <AdROASChart campaigns={liveCampaigns}/>
+            <CostPerDMChart campaigns={liveCampaigns}/>
+            <CACChart campaigns={liveCampaigns}/>
+            <div className="chart-actions-cell">
               <div>
                 <div className="section-head">
                   <div className="section-label">Actions</div>
-                  <div className="section-meta">Manual</div>
+                  <div className="section-meta">Export</div>
                 </div>
                 <Actions campaigns={liveCampaigns} onToast={showToast}/>
               </div>

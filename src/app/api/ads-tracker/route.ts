@@ -42,13 +42,24 @@ export async function GET(req: NextRequest) {
   const statusParam = params.get("status");
   const levelParam = params.get("level");
 
-  const payload = await getAdsTrackerDashboard({
-    account: isAccount(accountParam) ? accountParam : "all",
-    status: isStatus(statusParam) ? statusParam : "active",
-    level: isLevel(levelParam) ? levelParam : "campaign",
-    dateFrom,
-    dateTo,
-  });
+  try {
+    const payload = await getAdsTrackerDashboard({
+      account: isAccount(accountParam) ? accountParam : "all",
+      status: isStatus(statusParam) ? statusParam : "active",
+      level: isLevel(levelParam) ? levelParam : "campaign",
+      dateFrom,
+      dateTo,
+    });
 
-  return NextResponse.json(payload);
+    return NextResponse.json(payload);
+  } catch (error) {
+    console.error("[ads-tracker] Dashboard load failed", error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Ads Tracker failed to load live data",
+        query: { dateFrom, dateTo },
+      },
+      { status: 500 }
+    );
+  }
 }
