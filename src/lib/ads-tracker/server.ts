@@ -556,6 +556,11 @@ function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]
       const name = (metaRow.campaign_name || "").toLowerCase();
       return name.includes("warm") && name.includes("spring shred");
     });
+  } else if (row.client_key === "tyson" && source.includes("cold ads tracker")) {
+    candidates = clientRows.filter((metaRow) => {
+      const name = (metaRow.campaign_name || "").toLowerCase();
+      return name.includes("vets") && name.includes("cold") && name.includes("spring shred");
+    });
   } else if (row.client_key === "keith" && source.includes("ads tracker")) {
     candidates = clientRows.filter((metaRow) => {
       const name = (metaRow.campaign_name || "").toLowerCase();
