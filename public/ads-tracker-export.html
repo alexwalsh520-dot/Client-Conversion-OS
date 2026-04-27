@@ -1442,11 +1442,9 @@ function ROASChart({campaigns=CAMPAIGNS}){
   const labels = labelsFromCampaigns(campaigns);
   const spend = seriesForCampaignKey("spend", client, campaigns, labels);
   const revenue = seriesForCampaignKey("collected", client, campaigns, labels);
-  const roasVals = revenue.map((r,i)=> spend[i] ? r/spend[i] : 0);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalRev = revenue.reduce((a,b)=>a+b,0);
   const avgROAS = totalSpend ? totalRev/totalSpend : 0;
-  const deltaROAS = roasVals[roasVals.length-1] - roasVals[0];
   return (
     <div className="panel chart-card">
       <div className="chart-head">
@@ -1454,10 +1452,7 @@ function ROASChart({campaigns=CAMPAIGNS}){
           <div className="chart-title">ROAS</div>
           <div className="chart-subtitle">
             <span className="chart-big">{avgROAS.toFixed(2)}×</span>
-            <span className={deltaROAS>=0?"chart-delta pos":"chart-delta neg"}>
-              {deltaROAS>=0?"▲":"▼"} {Math.abs(deltaROAS).toFixed(2)}×
-            </span>
-            <span className="chart-sub-label">7-day avg</span>
+            <span className="chart-sub-label">selected period</span>
           </div>
         </div>
         <div className="chart-controls">
