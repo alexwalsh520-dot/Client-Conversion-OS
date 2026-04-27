@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   searchDuplicateContact,
   createContact,
+  addContactTags,
   addContactNote,
   createOpportunity,
   getAIOutreachPipeline,
@@ -14,6 +15,12 @@ import {
   ColdDmsRow,
   normalizeInstagramUsername,
 } from "@/lib/outreach-export";
+import {
+  buildSegmentTag,
+  getSegmentLabel,
+  normalizeSegmentKey,
+  summarizeSegments,
+} from "@/lib/outreach-segments";
 
 export const maxDuration = 300;
 
@@ -25,6 +32,7 @@ interface LeadInput {
   email?: string;
   instagram_username?: string;
   instagram_link?: string;
+  segment?: string;
 }
 
 interface PipelineInput {
@@ -40,6 +48,13 @@ interface ImportLeadResult {
   error?: string;
 }
 
+interface ContactRoute {
+  contactId: string;
+  segment: string;
+  segment_key: string;
+  segment_tag: string;
+}
+
 interface ProcessedLead {
   success: boolean;
   failed: boolean;
@@ -47,6 +62,8 @@ interface ProcessedLead {
   result: ImportLeadResult;
   colddmsRow: ColdDmsRow | null;
   contactId: string | null;
+  contactRoute: ContactRoute | null;
+  warnings: string[];
 }
 
 async function mapWithConcurrency<T, R>(
@@ -118,6 +135,9 @@ export async function POST(req: NextRequest) {
           const igLink =
             lead.instagram_link?.trim() ||
             (igUsername ? `https://instagram.com/${igUsername}` : "");
+          const segment = getSegmentLabel(lead.segment);
+          const segmentKey = normalizeSegmentKey(segment) || "unmapped";
+          const segmentTag = buildSegmentTag(segment);
 
           if (!email && !igUsername) {
             return {
@@ -131,6 +151,8 @@ export async function POST(req: NextRequest) {
               },
               colddmsRow: null,
               contactId: null,
+              contactRoute: null,
+              warnings: [],
             };
           }
 
@@ -157,6 +179,7 @@ export async function POST(req: NextRequest) {
               firstName: contactFirstName,
               lastName,
               email: email || undefined,
+              tags: [segmentTag],
             });
             contactId = created.contact?.id;
           }
@@ -173,7 +196,22 @@ export async function POST(req: NextRequest) {
               },
               colddmsRow: null,
               contactId: null,
+              contactRoute: null,
+              warnings: [],
             };
+          }
+
+          const warnings: string[] = [];
+          if (!isNew) {
+            try {
+              await addContactTags(contactId, [segmentTag]);
+            } catch (e) {
+              warnings.push(
+                `Contact ${contactId}: GHL segment tag "${segmentTag}" failed: ${
+                  e instanceof Error ? e.message : "unknown"
+                }`
+              );
+            }
           }
 
           let coldDmsRow: ColdDmsRow | null = null;
@@ -233,6 +271,8 @@ export async function POST(req: NextRequest) {
                 },
                 colddmsRow: null,
                 contactId: null,
+                contactRoute: null,
+                warnings,
               };
             }
           }
@@ -252,6 +292,13 @@ export async function POST(req: NextRequest) {
             },
             colddmsRow: coldDmsRow,
             contactId,
+            contactRoute: {
+              contactId,
+              segment,
+              segment_key: segmentKey,
+              segment_tag: segmentTag,
+            },
+            warnings,
           };
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : "Unknown error";
@@ -266,6 +313,8 @@ export async function POST(req: NextRequest) {
             },
             colddmsRow: null,
             contactId: null,
+            contactRoute: null,
+            warnings: [],
           };
         }
       }
@@ -277,6 +326,8 @@ export async function POST(req: NextRequest) {
     const results: ImportLeadResult[] = [];
     const colddmsRows: ColdDmsRow[] = [];
     const contactIds = new Set<string>();
+    const contactRoutes = new Map<string, ContactRoute>();
+    const warnings: string[] = [];
 
     for (const processedLead of processedLeads) {
       if (processedLead.success) success++;
@@ -284,6 +335,13 @@ export async function POST(req: NextRequest) {
       if (processedLead.alreadyExisted) alreadyExisted++;
       if (processedLead.colddmsRow) colddmsRows.push(processedLead.colddmsRow);
       if (processedLead.contactId) contactIds.add(processedLead.contactId);
+      if (processedLead.contactRoute) {
+        contactRoutes.set(
+          processedLead.contactRoute.contactId,
+          processedLead.contactRoute
+        );
+      }
+      warnings.push(...processedLead.warnings);
       results.push(processedLead.result);
     }
 
@@ -294,6 +352,9 @@ export async function POST(req: NextRequest) {
       total: leads.length,
       results,
       contact_ids: Array.from(contactIds),
+      contact_routes: Array.from(contactRoutes.values()),
+      segment_counts: summarizeSegments(leads, (lead) => lead.segment),
+      warnings,
       colddms_usernames: colddmsRows.map((row) => row.username),
       colddms_rows: colddmsRows,
       colddms_csv: buildColdDmsCsv(colddmsRows),

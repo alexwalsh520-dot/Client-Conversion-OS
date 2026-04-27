@@ -3,8 +3,10 @@
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const DEFAULT_OUTREACH_PIPELINE_NAME = "AI Outreach";
-const GHL_MAX_RETRIES = 3;
-const GHL_BASE_RETRY_DELAY_MS = 1000;
+const GHL_MAX_RETRIES = 5;
+const GHL_BASE_RETRY_DELAY_MS = 2000;
+const GHL_MAX_RETRY_DELAY_MS = 60000;
+const GHL_MIN_REQUEST_INTERVAL_MS = 125;
 const OUTREACH_PIPELINE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 let cachedOutreachPipeline:
@@ -15,6 +17,8 @@ let cachedOutreachPipeline:
     }
   | null = null;
 let cachedOutreachPipelinePromise: Promise<PipelineInfo> | null = null;
+let ghlRequestQueue: Promise<void> = Promise.resolve();
+let nextGhlRequestAt = 0;
 
 function normalizeLabel(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
@@ -60,6 +64,17 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function readNumber(value: string | null) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readPositiveNumber(value: string | null) {
+  const parsed = readNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
 function parseRetryAfterMs(headers: Headers) {
   const retryAfter = headers.get("retry-after");
   if (!retryAfter) return null;
@@ -77,20 +92,63 @@ function parseRetryAfterMs(headers: Headers) {
   return null;
 }
 
+function parseRateLimitDelayMs(headers: Headers, attempt: number) {
+  const retryAfterMs = parseRetryAfterMs(headers);
+  if (retryAfterMs !== null) return retryAfterMs;
+
+  const intervalMs = readPositiveNumber(
+    headers.get("x-ratelimit-interval-milliseconds")
+  );
+  if (intervalMs !== null) return intervalMs;
+
+  return Math.min(
+    GHL_BASE_RETRY_DELAY_MS * 2 ** attempt,
+    GHL_MAX_RETRY_DELAY_MS
+  );
+}
+
+function pauseGhlRequests(ms: number) {
+  nextGhlRequestAt = Math.max(nextGhlRequestAt, Date.now() + ms);
+}
+
+async function waitForGhlSlot() {
+  const previousQueue = ghlRequestQueue.catch(() => undefined);
+  const currentQueue = previousQueue.then(async () => {
+    const waitMs = Math.max(0, nextGhlRequestAt - Date.now());
+    if (waitMs > 0) await sleep(waitMs);
+    nextGhlRequestAt = Date.now() + GHL_MIN_REQUEST_INTERVAL_MS;
+  });
+
+  ghlRequestQueue = currentQueue;
+  await currentQueue;
+}
+
+function updateGhlPacingFromHeaders(headers: Headers) {
+  const remaining = readNumber(headers.get("x-ratelimit-remaining"));
+  const intervalMs = readPositiveNumber(
+    headers.get("x-ratelimit-interval-milliseconds")
+  );
+
+  if (remaining === 0 && intervalMs !== null) {
+    pauseGhlRequests(intervalMs);
+  }
+}
+
 async function fetchGhlWithRetry(
   url: string,
   init: RequestInit = {},
   attempt = 0
 ): Promise<Response> {
+  await waitForGhlSlot();
   const res = await fetch(url, init);
+  updateGhlPacingFromHeaders(res.headers);
 
   if (res.status !== 429 || attempt >= GHL_MAX_RETRIES) {
     return res;
   }
 
-  const retryDelay =
-    parseRetryAfterMs(res.headers) ||
-    GHL_BASE_RETRY_DELAY_MS * (attempt + 1);
+  const retryDelay = parseRateLimitDelayMs(res.headers, attempt);
+  pauseGhlRequests(retryDelay);
 
   await sleep(retryDelay);
   return fetchGhlWithRetry(url, init, attempt + 1);
@@ -115,6 +173,7 @@ export async function createContact(data: {
   firstName: string;
   lastName?: string;
   email?: string;
+  tags?: string[];
 }) {
   const locationId = getLocationId();
   const res = await fetchGhlWithRetry(`${GHL_BASE}/contacts/`, {
@@ -125,12 +184,31 @@ export async function createContact(data: {
       firstName: data.firstName,
       lastName: data.lastName || "",
       ...(data.email ? { email: data.email } : {}),
+      ...(data.tags?.length ? { tags: data.tags } : {}),
       source: "Dashboard Import",
     }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GHL create contact failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function addContactTags(contactId: string, tags: string[]) {
+  const cleanTags = Array.from(
+    new Set(tags.map((tag) => tag.trim()).filter(Boolean))
+  );
+  if (cleanTags.length === 0) return null;
+
+  const res = await fetchGhlWithRetry(`${GHL_BASE}/contacts/${contactId}/tags`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ tags: cleanTags }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GHL add tags failed (${res.status}): ${text}`);
   }
   return res.json();
 }

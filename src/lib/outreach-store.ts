@@ -2,6 +2,12 @@
 // MVP: Uses localStorage on the client side.
 // Can be upgraded to Vercel KV, Supabase, or another DB later.
 
+import type {
+  SegmentCount,
+  SmartleadCampaignSummary,
+  SmartleadSegmentRoute,
+} from "@/lib/outreach-segments";
+
 export interface OutreachRun {
   id: string;
   timestamp: string;
@@ -16,10 +22,14 @@ export interface OutreachRun {
   colddms_file: string;
   colddms_usernames: string[];
   colddms_csv?: string;
+  segment_counts?: SegmentCount[];
+  smartlead_campaigns?: SmartleadCampaignSummary[];
+  unmapped_segments?: SegmentCount[];
   status: "completed" | "failed" | "partial";
 }
 
 const STORAGE_KEY = "ccos_outreach_runs";
+const SEGMENT_ROUTES_STORAGE_KEY = "ccos_smartlead_segment_routes";
 
 export function getRuns(): OutreachRun[] {
   if (typeof window === "undefined") return [];
@@ -50,6 +60,24 @@ export function generateRunId(): string {
   const runs = getRuns().filter((r) => r.id.startsWith(`run_${date}`));
   const num = String(runs.length + 1).padStart(3, "0");
   return `run_${date}_${num}`;
+}
+
+export function getSmartleadSegmentRoutes(): SmartleadSegmentRoute[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SEGMENT_ROUTES_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SmartleadSegmentRoute[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSmartleadSegmentRoutes(
+  routes: SmartleadSegmentRoute[]
+): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SEGMENT_ROUTES_STORAGE_KEY, JSON.stringify(routes));
 }
 
 export function getQuickStats() {

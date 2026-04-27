@@ -16,6 +16,10 @@ import {
   mergeColdDmsRows,
   normalizeInstagramUsername,
 } from "@/lib/outreach-export";
+import type {
+  SegmentCount,
+  SmartleadCampaignSummary,
+} from "@/lib/outreach-segments";
 
 export const maxDuration = 300;
 
@@ -83,6 +87,7 @@ async function mapWithConcurrency<T, R>(
 
 interface RunRequestBody {
   contactIds?: string[];
+  contactRoutes?: ContactRouteInput[];
   limit?: number;
   pipeline?: {
     pipelineId?: string;
@@ -92,13 +97,27 @@ interface RunRequestBody {
   };
 }
 
+interface ContactRouteInput {
+  contactId: string;
+  segment?: string;
+  segment_key?: string;
+  campaignId?: string;
+  campaignName?: string;
+}
+
 interface ProcessedContact {
   processed: boolean;
   error?: string;
   smartleadLead?: {
     email: string;
     first_name: string;
+    campaignId?: string;
+    campaignName?: string;
+    segment?: string;
+    segment_key?: string;
+    custom_fields?: Record<string, string>;
   };
+  unmappedSegment?: SegmentCount;
   coldDmsRow?: ColdDmsRow | null;
 }
 
@@ -147,6 +166,11 @@ export async function POST(req: NextRequest) {
     }
 
     let contactIds = dedupeContactIds(body.contactIds || []);
+    const routeByContactId = new Map(
+      (body.contactRoutes || [])
+        .filter((route) => route.contactId)
+        .map((route) => [route.contactId, route])
+    );
 
     if (contactIds.length === 0) {
       const oppData = await searchOpportunities({
@@ -170,6 +194,8 @@ export async function POST(req: NextRequest) {
         smartlead_added: 0,
         dms_queued: 0,
         errors: [],
+        smartlead_campaigns: [],
+        unmapped_segments: [],
         colddms_usernames: [],
         colddms_csv: "",
         message: "No leads ready to run",
@@ -186,6 +212,13 @@ export async function POST(req: NextRequest) {
           const email = contact.email;
           const firstName = contact.firstName || contact.first_name || "";
           const lastName = contact.lastName || contact.last_name || "";
+          const route = routeByContactId.get(contactId);
+          const segment = route?.segment || "Unmapped";
+          const segmentKey = route?.segment_key || "unmapped";
+          const campaignId = route?.campaignId?.trim() || "";
+          const campaignName = route?.campaignName?.trim() || "";
+          const shouldUseSegmentRouting = routeByContactId.size > 0;
+          const isSmartleadMapped = !shouldUseSegmentRouting || Boolean(campaignId);
 
           let igUsername: string | null = null;
           try {
@@ -224,12 +257,30 @@ export async function POST(req: NextRequest) {
 
           return {
             processed: true,
-            smartleadLead: email
+            smartleadLead: email && isSmartleadMapped
               ? {
                   email: email.trim(),
                   first_name: firstName,
+                  campaignId: campaignId || undefined,
+                  campaignName: campaignName || undefined,
+                  segment,
+                  segment_key: segmentKey,
+                  custom_fields: shouldUseSegmentRouting
+                    ? {
+                        segment,
+                        segment_key: segmentKey,
+                      }
+                    : undefined,
                 }
               : undefined,
+            unmappedSegment:
+              email && shouldUseSegmentRouting && !campaignId
+                ? {
+                    segment,
+                    segment_key: segmentKey,
+                    count: 1,
+                  }
+                : undefined,
             coldDmsRow: igUsername
               ? buildColdDmsRow({
                   username: normalizeInstagramUsername(igUsername),
@@ -249,13 +300,25 @@ export async function POST(req: NextRequest) {
     );
 
     const errors: string[] = [];
-    const smartleadLeads = new Map<
+    const smartleadLeadsByCampaign = new Map<
       string,
       {
-        email: string;
-        first_name: string;
+        campaignId?: string;
+        leads: Map<
+          string,
+          {
+            email: string;
+            first_name: string;
+            campaignId?: string;
+            campaignName?: string;
+            segment?: string;
+            segment_key?: string;
+            custom_fields?: Record<string, string>;
+          }
+        >;
       }
     >();
+    const unmappedSegments = new Map<string, SegmentCount>();
     const coldDmsRows: ColdDmsRow[] = [];
     let processed = 0;
 
@@ -263,10 +326,32 @@ export async function POST(req: NextRequest) {
       if (processedContact.error) errors.push(processedContact.error);
       if (processedContact.processed) processed++;
       if (processedContact.smartleadLead) {
-        smartleadLeads.set(
+        const campaignKey =
+          processedContact.smartleadLead.campaignId || "__default__";
+        const group =
+          smartleadLeadsByCampaign.get(campaignKey) ||
+          {
+            campaignId: processedContact.smartleadLead.campaignId,
+            leads: new Map(),
+          };
+        group.leads.set(
           processedContact.smartleadLead.email.trim().toLowerCase(),
           processedContact.smartleadLead
         );
+        smartleadLeadsByCampaign.set(campaignKey, group);
+      }
+      if (processedContact.unmappedSegment) {
+        const existing = unmappedSegments.get(
+          processedContact.unmappedSegment.segment_key
+        );
+        if (existing) {
+          existing.count += processedContact.unmappedSegment.count;
+        } else {
+          unmappedSegments.set(
+            processedContact.unmappedSegment.segment_key,
+            { ...processedContact.unmappedSegment }
+          );
+        }
       }
       if (processedContact.coldDmsRow) {
         coldDmsRows.push(processedContact.coldDmsRow);
@@ -274,16 +359,52 @@ export async function POST(req: NextRequest) {
     }
 
     let smartleadAdded = 0;
-    const smartleadLeadList = Array.from(smartleadLeads.values());
-    if (smartleadLeadList.length > 0) {
+    const smartleadCampaigns = new Map<string, SmartleadCampaignSummary>();
+    for (const segment of unmappedSegments.values()) {
+      errors.push(
+        `Smartlead campaign unmapped for segment "${segment.segment}" (${segment.count} leads skipped for email)`
+      );
+    }
+
+    for (const group of smartleadLeadsByCampaign.values()) {
+      const smartleadLeadList = Array.from(group.leads.values());
+      if (smartleadLeadList.length === 0) continue;
+
       try {
-        await addLeadsToCampaign(smartleadLeadList);
-        smartleadAdded = smartleadLeadList.length;
+        await addLeadsToCampaign(
+          smartleadLeadList.map((lead) => ({
+            email: lead.email,
+            first_name: lead.first_name,
+            custom_fields: lead.custom_fields,
+          })),
+          group.campaignId
+        );
+        smartleadAdded += smartleadLeadList.length;
       } catch (e) {
         errors.push(
-          `Smartlead batch add failed: ${e instanceof Error ? e.message : "unknown"}`
+          `Smartlead batch add failed${
+            group.campaignId ? ` for campaign ${group.campaignId}` : ""
+          }: ${e instanceof Error ? e.message : "unknown"}`
         );
         // Still return DMs list even if Smartlead fails
+        continue;
+      }
+
+      for (const lead of smartleadLeadList) {
+        const segmentKey = lead.segment_key || "default";
+        const summaryKey = `${group.campaignId || "default"}::${segmentKey}`;
+        const existing = smartleadCampaigns.get(summaryKey);
+        if (existing) {
+          existing.leads_added += 1;
+        } else {
+          smartleadCampaigns.set(summaryKey, {
+            campaign_id: group.campaignId || "default",
+            campaign_name: lead.campaignName,
+            segment: lead.segment || "Default",
+            segment_key: segmentKey,
+            leads_added: 1,
+          });
+        }
       }
     }
 
@@ -294,6 +415,8 @@ export async function POST(req: NextRequest) {
       smartlead_added: smartleadAdded,
       dms_queued: mergedColdDmsRows.length,
       errors,
+      smartlead_campaigns: Array.from(smartleadCampaigns.values()),
+      unmapped_segments: Array.from(unmappedSegments.values()),
       colddms_usernames: mergedColdDmsRows.map((row) => row.username),
       colddms_rows: mergedColdDmsRows,
       colddms_csv: buildColdDmsCsv(mergedColdDmsRows),

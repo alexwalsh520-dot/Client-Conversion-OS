@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   Upload,
   Download,
   Copy,
   Trash2,
+  Plus,
+  Save,
   ChevronDown,
   ChevronUp,
   CheckCircle,
@@ -23,6 +25,8 @@ import {
   saveRun,
   deleteRun,
   generateRunId,
+  getSmartleadSegmentRoutes,
+  saveSmartleadSegmentRoutes,
 } from "@/lib/outreach-store";
 import {
   buildColdDmsCsv,
@@ -30,6 +34,14 @@ import {
   ColdDmsRow,
   mergeColdDmsRows,
 } from "@/lib/outreach-export";
+import {
+  findSegmentRoute,
+  normalizeSegmentKey,
+  summarizeSegments,
+  SegmentCount,
+  SmartleadCampaignSummary,
+  SmartleadSegmentRoute,
+} from "@/lib/outreach-segments";
 import OutreachDashboard from "@/components/outreach/OutreachDashboard";
 import { AgencyBusinessMetrics } from "@/app/components/BusinessMetrics";
 
@@ -41,6 +53,7 @@ interface ParsedLead {
   email: string;
   instagram_username: string;
   instagram_link: string;
+  segment: string;
 }
 
 function normalizeColumnName(col: string): string {
@@ -74,6 +87,8 @@ function parseCSV(text: string): ParsedLead[] {
       h === "igurl"
     )
       colMap.instagram_link = i;
+    if (h === "segment" || h === "segments" || h.includes("leadsegment"))
+      colMap.segment = i;
   });
 
   if (colMap.first_name === undefined) {
@@ -94,6 +109,7 @@ function parseCSV(text: string): ParsedLead[] {
       email: vals[colMap.email] || "",
       instagram_username: vals[colMap.instagram_username] || "",
       instagram_link: vals[colMap.instagram_link] || "",
+      segment: vals[colMap.segment] || "",
     };
 
     if (lead.instagram_username && !lead.instagram_link) {
@@ -127,10 +143,25 @@ interface ImportApiResponse {
   total: number;
   results: ImportApiResult[];
   contact_ids?: string[];
+  contact_routes?: ImportedContactRoute[];
+  segment_counts?: SegmentCount[];
+  warnings?: string[];
   colddms_usernames: string[];
   colddms_rows?: ColdDmsRow[];
   colddms_csv?: string;
   error?: string;
+}
+
+interface ImportedContactRoute {
+  contactId: string;
+  segment: string;
+  segment_key: string;
+  segment_tag: string;
+}
+
+interface ContactSmartleadRoute extends ImportedContactRoute {
+  campaignId?: string;
+  campaignName?: string;
 }
 
 interface RunApiResponse {
@@ -138,6 +169,8 @@ interface RunApiResponse {
   smartlead_added: number;
   dms_queued: number;
   errors: string[];
+  smartlead_campaigns?: SmartleadCampaignSummary[];
+  unmapped_segments?: SegmentCount[];
   colddms_usernames: string[];
   colddms_rows?: ColdDmsRow[];
   colddms_csv?: string;
@@ -171,6 +204,61 @@ async function readApiResponse<T>(res: Response) {
   }
 }
 
+function mergeSegmentCounts(
+  existing: SegmentCount[],
+  incoming: SegmentCount[] = []
+) {
+  const map = new Map<string, SegmentCount>();
+
+  for (const item of [...existing, ...incoming]) {
+    const key = item.segment_key || normalizeSegmentKey(item.segment);
+    const current = map.get(key);
+    if (current) {
+      current.count += item.count;
+    } else {
+      map.set(key, { ...item, segment_key: key });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.segment.localeCompare(b.segment)
+  );
+}
+
+function mergeSmartleadCampaignSummaries(
+  existing: SmartleadCampaignSummary[],
+  incoming: SmartleadCampaignSummary[] = []
+) {
+  const map = new Map<string, SmartleadCampaignSummary>();
+
+  for (const item of [...existing, ...incoming]) {
+    const key = `${item.campaign_id}::${item.segment_key}`;
+    const current = map.get(key);
+    if (current) {
+      current.leads_added += item.leads_added;
+    } else {
+      map.set(key, { ...item });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.segment.localeCompare(b.segment)
+  );
+}
+
+function buildContactSmartleadRoute(
+  route: ImportedContactRoute,
+  segmentRoutes: SmartleadSegmentRoute[]
+): ContactSmartleadRoute {
+  const smartleadRoute = findSegmentRoute(route.segment, segmentRoutes);
+
+  return {
+    ...route,
+    campaignId: smartleadRoute?.campaignId.trim() || undefined,
+    campaignName: smartleadRoute?.campaignName?.trim() || undefined,
+  };
+}
+
 // ── Component ──────────────────────────────────────────────────
 
 export default function OutreachRunsPage() {
@@ -192,8 +280,12 @@ export default function OutreachRunsPage() {
     errors: string[];
     colddms_usernames: string[];
     colddms_csv: string;
+    segment_counts: SegmentCount[];
+    smartlead_campaigns: SmartleadCampaignSummary[];
+    unmapped_segments: SegmentCount[];
   } | null>(null);
   const [runError, setRunError] = useState("");
+  const [segmentRoutes, setSegmentRoutes] = useState<SmartleadSegmentRoute[]>([]);
 
   // History
   const [runs, setRuns] = useState<OutreachRun[]>([]);
@@ -202,7 +294,73 @@ export default function OutreachRunsPage() {
 
   useEffect(() => {
     setRuns(getRuns());
+    setSegmentRoutes(getSmartleadSegmentRoutes());
   }, []);
+
+  const saveSegmentRoutes = useCallback((routes: SmartleadSegmentRoute[]) => {
+    setSegmentRoutes(routes);
+    saveSmartleadSegmentRoutes(routes);
+  }, []);
+
+  const updateSegmentRoute = useCallback(
+    (
+      index: number,
+      field: keyof SmartleadSegmentRoute,
+      value: string
+    ) => {
+      const next = segmentRoutes.map((route, i) =>
+        i === index ? { ...route, [field]: value } : route
+      );
+      saveSegmentRoutes(next);
+    },
+    [saveSegmentRoutes, segmentRoutes]
+  );
+
+  const addSegmentRoute = useCallback(
+    (segment = "") => {
+      saveSegmentRoutes([
+        ...segmentRoutes,
+        { segment, campaignId: "", campaignName: "" },
+      ]);
+    },
+    [saveSegmentRoutes, segmentRoutes]
+  );
+
+  const removeSegmentRoute = useCallback(
+    (index: number) => {
+      saveSegmentRoutes(segmentRoutes.filter((_, i) => i !== index));
+    },
+    [saveSegmentRoutes, segmentRoutes]
+  );
+
+  const segmentSummaries = useMemo(() => {
+    return summarizeSegments(parsedLeads, (lead) => lead.segment).map((item) => {
+      const route = findSegmentRoute(item.segment, segmentRoutes);
+      return {
+        ...item,
+        campaignId: route?.campaignId || "",
+        campaignName: route?.campaignName || "",
+        mapped: Boolean(route?.campaignId),
+      };
+    });
+  }, [parsedLeads, segmentRoutes]);
+
+  const addDetectedSegmentsToRoutes = useCallback(() => {
+    const existingKeys = new Set(
+      segmentRoutes.map((route) => normalizeSegmentKey(route.segment))
+    );
+    const missingRoutes = segmentSummaries
+      .filter((segment) => !existingKeys.has(segment.segment_key))
+      .map((segment) => ({
+        segment: segment.segment,
+        campaignId: "",
+        campaignName: "",
+      }));
+
+    if (missingRoutes.length > 0) {
+      saveSegmentRoutes([...segmentRoutes, ...missingRoutes]);
+    }
+  }, [saveSegmentRoutes, segmentRoutes, segmentSummaries]);
 
   // ── File handling ──────────────────────────────────────────
 
@@ -264,8 +422,11 @@ export default function OutreachRunsPage() {
         already_existed: 0,
         results: [] as ImportApiResult[],
         colddms_rows: [] as ColdDmsRow[],
+        warnings: [] as string[],
+        segment_counts: [] as SegmentCount[],
       };
       const importedContactIds = new Set<string>();
+      const importedContactRoutes = new Map<string, ContactSmartleadRoute>();
       const importBatches = chunkArray(parsedLeads, IMPORT_BATCH_SIZE);
 
       for (let index = 0; index < importBatches.length; index++) {
@@ -298,6 +459,18 @@ export default function OutreachRunsPage() {
           importTotals.colddms_rows,
           data.colddms_rows
         );
+        importTotals.warnings.push(...(data.warnings || []));
+        importTotals.segment_counts = mergeSegmentCounts(
+          importTotals.segment_counts,
+          data.segment_counts
+        );
+
+        for (const route of data.contact_routes || []) {
+          importedContactRoutes.set(
+            route.contactId,
+            buildContactSmartleadRoute(route, segmentRoutes)
+          );
+        }
 
         for (const contactId of data.contact_ids || []) {
           if (contactId) importedContactIds.add(contactId);
@@ -320,6 +493,8 @@ export default function OutreachRunsPage() {
         smartlead_added: 0,
         errors: [] as string[],
         colddms_rows: [] as ColdDmsRow[],
+        smartlead_campaigns: [] as SmartleadCampaignSummary[],
+        unmapped_segments: [] as SegmentCount[],
       };
       const contactIds = Array.from(importedContactIds);
       const runBatches = chunkArray(contactIds, RUN_BATCH_SIZE);
@@ -335,7 +510,13 @@ export default function OutreachRunsPage() {
         const res = await fetch("/api/outreach/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contactIds: batch, pipeline }),
+          body: JSON.stringify({
+            contactIds: batch,
+            pipeline,
+            contactRoutes: batch
+              .map((contactId) => importedContactRoutes.get(contactId))
+              .filter(Boolean),
+          }),
         });
         const { data, raw } = await readApiResponse<RunApiResponse>(res);
 
@@ -348,6 +529,14 @@ export default function OutreachRunsPage() {
 
         runTotals.smartlead_added += data.smartlead_added || 0;
         runTotals.errors.push(...(data.errors || []));
+        runTotals.smartlead_campaigns = mergeSmartleadCampaignSummaries(
+          runTotals.smartlead_campaigns,
+          data.smartlead_campaigns
+        );
+        runTotals.unmapped_segments = mergeSegmentCounts(
+          runTotals.unmapped_segments,
+          data.unmapped_segments
+        );
         runTotals.colddms_rows = mergeColdDmsRows(
           runTotals.colddms_rows,
           data.colddms_rows
@@ -368,9 +557,12 @@ export default function OutreachRunsPage() {
         failed_import: importTotals.failed,
         smartlead_added: runTotals.smartlead_added,
         dms_queued: uniqueUsernames.length,
-        errors: runTotals.errors,
+        errors: [...importTotals.warnings, ...runTotals.errors],
         colddms_usernames: uniqueUsernames,
         colddms_csv: colddmsCsv,
+        segment_counts: importTotals.segment_counts,
+        smartlead_campaigns: runTotals.smartlead_campaigns,
+        unmapped_segments: runTotals.unmapped_segments,
       };
       setResult(combined);
       setRunStatus("done");
@@ -390,6 +582,9 @@ export default function OutreachRunsPage() {
         colddms_file: `colddms_${new Date().toISOString().split("T")[0]}.txt`,
         colddms_usernames: uniqueUsernames,
         colddms_csv: combined.colddms_csv,
+        segment_counts: combined.segment_counts,
+        smartlead_campaigns: combined.smartlead_campaigns,
+        unmapped_segments: combined.unmapped_segments,
         status:
           combined.errors.length > 0 && combined.smartlead_added === 0
             ? "failed"
@@ -465,6 +660,125 @@ export default function OutreachRunsPage() {
           Run Outreach
         </h2>
         <div className="glass-static" style={{ padding: 24 }}>
+          {/* Smartlead routing */}
+          <div style={{ marginBottom: 24, padding: 16, border: "1px solid var(--border-primary)", borderRadius: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: 0 }}>
+                  <Save size={14} />
+                  Smartlead Campaign Routing
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                  Segment names are matched loosely. Unmapped segments still run, but email is skipped.
+                </div>
+              </div>
+              <button
+                className="btn-secondary"
+                onClick={() => addSegmentRoute()}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 12 }}
+              >
+                <Plus size={14} /> Add Mapping
+              </button>
+            </div>
+
+            {segmentRoutes.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "10px 0" }}>
+                No Smartlead routes yet. Add segment names now, then paste campaign IDs when you have them.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: "8px 10px", fontSize: 11 }}>Segment</th>
+                      <th style={{ padding: "8px 10px", fontSize: 11 }}>Campaign ID</th>
+                      <th style={{ padding: "8px 10px", fontSize: 11 }}>Campaign Name</th>
+                      <th style={{ padding: "8px 10px", fontSize: 11 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {segmentRoutes.map((route, index) => (
+                      <tr key={index}>
+                        <td style={{ padding: "8px 10px", minWidth: 180 }}>
+                          <input
+                            value={route.segment}
+                            onChange={(e) => updateSegmentRoute(index, "segment", e.target.value)}
+                            placeholder="fitness coaches"
+                            style={{ width: "100%", minWidth: 160, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 6, padding: "8px 10px", color: "var(--text-primary)", fontSize: 13 }}
+                          />
+                        </td>
+                        <td style={{ padding: "8px 10px", minWidth: 170 }}>
+                          <input
+                            value={route.campaignId}
+                            onChange={(e) => updateSegmentRoute(index, "campaignId", e.target.value)}
+                            placeholder="Smartlead campaign ID"
+                            style={{ width: "100%", minWidth: 150, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 6, padding: "8px 10px", color: "var(--text-primary)", fontSize: 13 }}
+                          />
+                        </td>
+                        <td style={{ padding: "8px 10px", minWidth: 180 }}>
+                          <input
+                            value={route.campaignName || ""}
+                            onChange={(e) => updateSegmentRoute(index, "campaignName", e.target.value)}
+                            placeholder="Optional name"
+                            style={{ width: "100%", minWidth: 160, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 6, padding: "8px 10px", color: "var(--text-primary)", fontSize: 13 }}
+                          />
+                        </td>
+                        <td style={{ padding: "8px 10px", width: 44 }}>
+                          <button
+                            onClick={() => removeSegmentRoute(index)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+                            title="Delete mapping"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {segmentSummaries.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-primary)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0 }}>
+                    CSV Segments
+                  </div>
+                  <button
+                    className="btn-secondary"
+                    onClick={addDetectedSegmentsToRoutes}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", fontSize: 12 }}
+                  >
+                    <Plus size={13} /> Add Detected Segments
+                  </button>
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {segmentSummaries.map((segment) => (
+                    <div
+                      key={segment.segment_key}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(120px, 1fr) 80px minmax(150px, 1.4fr)",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        background: segment.mapped ? "var(--success-soft)" : "var(--warning-soft)",
+                        color: segment.mapped ? "var(--success)" : "var(--warning)",
+                        fontSize: 12,
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{segment.segment}</span>
+                      <span>{fmtNumber(segment.count)} leads</span>
+                      <span>{segment.mapped ? `Routes to ${segment.campaignName || segment.campaignId}` : "Not mapped. Smartlead email skipped."}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Upload CSV */}
           <div style={{ marginBottom: 24 }}>
             <div
@@ -504,7 +818,7 @@ export default function OutreachRunsPage() {
                     Drop a CSV file here, or click to browse
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                    Expected columns: first_name, email, instagram_username
+                    Expected columns: first_name, email, instagram_username, segment
                   </div>
                 </>
               )}
@@ -519,6 +833,7 @@ export default function OutreachRunsPage() {
                       <th style={{ padding: "8px 12px", fontSize: 12 }}>Name</th>
                       <th style={{ padding: "8px 12px", fontSize: 12 }}>Email</th>
                       <th style={{ padding: "8px 12px", fontSize: 12 }}>Instagram</th>
+                      <th style={{ padding: "8px 12px", fontSize: 12 }}>Segment</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -529,6 +844,7 @@ export default function OutreachRunsPage() {
                         <td style={{ padding: "8px 12px", fontSize: 13, color: "var(--text-secondary)" }}>
                           {lead.instagram_username ? `@${lead.instagram_username}` : "—"}
                         </td>
+                        <td style={{ padding: "8px 12px", fontSize: 13, color: "var(--text-secondary)" }}>{lead.segment || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -582,13 +898,32 @@ export default function OutreachRunsPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <CheckCircle size={14} />
-                  {result.smartlead_added} leads added to Smartlead email campaign
+                  {result.smartlead_added} leads added to Smartlead
+                  {result.smartlead_campaigns.length > 0
+                    ? ` across ${result.smartlead_campaigns.length} route${result.smartlead_campaigns.length !== 1 ? "s" : ""}`
+                    : " email campaign"}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <CheckCircle size={14} />
                   {result.dms_queued} Instagram usernames ready for ColdDMs
                 </div>
               </div>
+
+              {result.smartlead_campaigns.length > 0 && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--bg-secondary)", fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+                  {result.smartlead_campaigns.map((campaign) => (
+                    <div key={`${campaign.campaign_id}-${campaign.segment_key}`}>
+                      {campaign.segment}: {fmtNumber(campaign.leads_added)} leads to {campaign.campaign_name || campaign.campaign_id}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result.unmapped_segments.length > 0 && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--warning-soft)", fontSize: 12, color: "var(--warning)", marginBottom: 8 }}>
+                  Unmapped: {result.unmapped_segments.map((segment) => `${segment.segment} (${fmtNumber(segment.count)})`).join(", ")}
+                </div>
+              )}
 
               {result.errors.length > 0 && (
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--warning-soft)", fontSize: 12, color: "var(--warning)", marginBottom: 8 }}>
@@ -678,6 +1013,16 @@ export default function OutreachRunsPage() {
                               <CheckCircle size={12} />
                               {fmtNumber(run.smartlead_added)} leads added to Smartlead email campaign
                             </div>
+                            {(run.smartlead_campaigns || []).map((campaign) => (
+                              <div key={`${campaign.campaign_id}-${campaign.segment_key}`} style={{ marginLeft: 18, marginBottom: 3 }}>
+                                {campaign.segment}: {fmtNumber(campaign.leads_added)} to {campaign.campaign_name || campaign.campaign_id}
+                              </div>
+                            ))}
+                            {(run.unmapped_segments || []).length > 0 && (
+                              <div style={{ marginLeft: 18, marginBottom: 3, color: "var(--warning)" }}>
+                                Unmapped: {(run.unmapped_segments || []).map((segment) => `${segment.segment} (${fmtNumber(segment.count)})`).join(", ")}
+                              </div>
+                            )}
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <CheckCircle size={12} />
                               {fmtNumber(run.dms_queued)} Instagram usernames ready for ColdDMs

@@ -19,10 +19,11 @@ export async function addLeadsToCampaign(
     email: string;
     first_name: string;
     custom_fields?: Record<string, string>;
-  }[]
+  }[],
+  campaignIdOverride?: string
 ) {
   const apiKey = getApiKey();
-  const campaignId = getCampaignId();
+  const campaignId = campaignIdOverride || getCampaignId();
   const gammaLink = process.env.GAMMA_LINK || "";
 
   const leadList = leads.map((l) => ({
