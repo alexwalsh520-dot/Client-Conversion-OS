@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { fetchSheetData, fetchSubscriptionsSold, SheetRow } from "@/lib/google-sheets";
 
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = req.nextUrl;
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");

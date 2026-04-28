@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 
 /**
  * GHL Location Discovery — finds the correct location ID for the PIT key.
@@ -10,6 +11,11 @@ const GHL_BASE = "https://services.leadconnectorhq.com";
 const API_VERSIONS = ["2021-07-28", "2021-04-15"];
 
 export async function GET() {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const apiKey = process.env.GHL_API_KEY;
   const currentLocationId = process.env.GHL_LOCATION_ID;
 

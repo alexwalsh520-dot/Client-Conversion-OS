@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 
 // Quick debug endpoint for GHL V2 API — DELETE after debugging
 const GHL_V2_BASE = "https://services.leadconnectorhq.com";
 
 export async function GET() {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const results: Record<string, unknown> = {};
 
   const apiKey = process.env.GHL_API_KEY;
