@@ -42,6 +42,113 @@ function missingColumn(error: { message?: string } | null, column: string) {
   return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
 }
 
+function adsClientMatchesContactLink(adsClient: string, linkClient: string | null | undefined) {
+  if (!linkClient) return false;
+  const normalized = linkClient.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (adsClient === "tyson") return normalized === "tyson" || normalized === "tyson_sonnek";
+  if (adsClient === "keith") return normalized === "keith" || normalized === "keith_holland";
+  return normalized === adsClient;
+}
+
+function extractStringByKeys(payload: unknown, keys: string[]): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const targetKeys = new Set(keys);
+  const seen = new Set<unknown>();
+  const queue: unknown[] = [payload];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(current)) {
+      if (targetKeys.has(key) && typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  return null;
+}
+
+function extractManychatSubscriberId(payload: unknown): string | null {
+  return extractStringByKeys(payload, [
+    "manychat_user_id",
+    "manychatUserId",
+    "manychat_userid",
+    "subscriber_id",
+    "subscriberId",
+  ]);
+}
+
+function eventTimeWithLag(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Date.now() : time + 60 * 60 * 1000;
+}
+
+async function resolveKeywordFromManychatFallback(params: {
+  supabase: ReturnType<typeof getServiceSupabase>;
+  client: string | null;
+  contactId: string | null;
+  eventAt: string;
+  body: unknown;
+}) {
+  const { supabase, client, contactId, eventAt, body } = params;
+  if (!client) return null;
+
+  let subscriberId = extractManychatSubscriberId(body);
+  if (!subscriberId && contactId) {
+    const { data, error } = await supabase
+      .from("manychat_contact_links")
+      .select("client,subscriber_id,ghl_contact_id")
+      .eq("ghl_contact_id", contactId);
+
+    if (error) {
+      console.error("[ghl-appointment-webhook] contact-link fallback query error:", error);
+    } else {
+      const matchingLink = (data || []).find((row) =>
+        adsClientMatchesContactLink(client, row.client)
+      );
+      subscriberId = matchingLink?.subscriber_id || null;
+    }
+  }
+
+  if (!subscriberId) return null;
+
+  const cutoff = new Date(eventTimeWithLag(eventAt)).toISOString();
+  const { data, error } = await supabase
+    .from("ads_keyword_events")
+    .select("keyword_raw,keyword_normalized,subscriber_id,event_at")
+    .eq("source", "manychat")
+    .eq("client_key", client)
+    .eq("subscriber_id", subscriberId)
+    .not("keyword_normalized", "is", null)
+    .lte("event_at", cutoff)
+    .order("event_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[ghl-appointment-webhook] keyword fallback query error:", error);
+    return null;
+  }
+
+  const keywordNormalized = normalizeKeyword(data?.keyword_normalized || data?.keyword_raw);
+  if (!keywordNormalized) return null;
+
+  return {
+    keywordNormalized,
+    keywordRaw: displayKeyword(keywordNormalized),
+    subscriberId,
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -110,10 +217,20 @@ export async function POST(req: NextRequest) {
 
     const closer_name = assigned_user_id ? (CLOSER_MAP[assigned_user_id] || null) : null;
     const client = deriveClient(calendar_name);
-    const keywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
-    const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
-
     const supabase = getServiceSupabase();
+    const directKeywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
+    const fallbackKeyword = directKeywordNormalized
+      ? null
+      : await resolveKeywordFromManychatFallback({
+          supabase,
+          client,
+          contactId: contact_id || null,
+          eventAt: event_at,
+          body,
+        });
+    const keywordNormalized = directKeywordNormalized || fallbackKeyword?.keywordNormalized || null;
+    const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
+    const subscriberId = fallbackKeyword?.subscriberId || extractManychatSubscriberId(body);
 
     const { data, error } = await supabase
       .from("ghl_appointments")
@@ -159,6 +276,7 @@ export async function POST(req: NextRequest) {
             client_key: client,
             keyword_raw: keywordRaw,
             keyword_normalized: keywordNormalized,
+            subscriber_id: subscriberId || null,
             appointment_id,
             contact_id: contact_id || null,
             contact_name: contact_name || null,
@@ -179,6 +297,7 @@ export async function POST(req: NextRequest) {
                 client_key: client,
                 keyword_raw: keywordRaw,
                 keyword_normalized: keywordNormalized,
+                subscriber_id: subscriberId || null,
                 appointment_id,
                 contact_id: contact_id || null,
                 contact_name: contact_name || null,

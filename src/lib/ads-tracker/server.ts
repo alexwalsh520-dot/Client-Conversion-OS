@@ -41,12 +41,33 @@ interface KeywordEvent {
   client_key: string;
   keyword_raw: string | null;
   keyword_normalized: string | null;
+  subscriber_id: string | null;
   subscriber_name: string | null;
   setter_name: string | null;
   appointment_id: string | null;
   contact_id: string | null;
   contact_name: string | null;
   event_at: string;
+}
+
+interface GhlAppointmentRow {
+  appointment_id: string | null;
+  client: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  keyword_raw: string | null;
+  keyword_normalized: string | null;
+  start_time: string | null;
+  created_at: string | null;
+  status: string | null;
+  event_type: string | null;
+  raw_payload: unknown;
+}
+
+interface ManychatContactLinkRow {
+  client: string;
+  subscriber_id: string;
+  ghl_contact_id: string;
 }
 
 interface KeywordBackfillRow {
@@ -293,6 +314,166 @@ function isTestKeywordEvent(event: KeywordEvent): boolean {
     looksLikeTestName(event.contact_name) ||
     looksLikeTestName(event.subscriber_name)
   );
+}
+
+function adsClientMatchesContactLink(adsClient: string, linkClient: string | null | undefined) {
+  if (!linkClient) return false;
+  const normalized = linkClient.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (adsClient === "tyson") return normalized === "tyson" || normalized === "tyson_sonnek";
+  if (adsClient === "keith") return normalized === "keith" || normalized === "keith_holland";
+  return normalized === adsClient;
+}
+
+function extractStringByKeys(payload: unknown, keys: string[]): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const targetKeys = new Set(keys);
+  const seen = new Set<unknown>();
+  const queue: unknown[] = [payload];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(current)) {
+      if (targetKeys.has(key) && typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  return null;
+}
+
+function extractManychatSubscriberId(payload: unknown): string | null {
+  return extractStringByKeys(payload, [
+    "manychat_user_id",
+    "manychatUserId",
+    "manychat_userid",
+    "subscriber_id",
+    "subscriberId",
+  ]);
+}
+
+function eventTimeWithLag(value: string | null | undefined): number {
+  if (!value) return Date.now();
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Date.now() : time + 60 * 60 * 1000;
+}
+
+function isBookableAppointment(row: GhlAppointmentRow) {
+  const status = (row.status || "").toLowerCase();
+  const eventType = (row.event_type || "").toLowerCase();
+  return !status.includes("cancel") && !eventType.includes("cancel");
+}
+
+async function buildSupplementalGhlKeywordEvents(
+  db: ReturnType<typeof getServiceSupabase>,
+  appointments: GhlAppointmentRow[],
+  keywordEvents: KeywordEvent[],
+  clientFilter: string[]
+): Promise<KeywordEvent[]> {
+  const existingGhlAppointmentIds = new Set(
+    keywordEvents
+      .filter((event) => event.source === "ghl" && event.appointment_id)
+      .map((event) => event.appointment_id as string)
+  );
+  const contactIds = [
+    ...new Set(
+      appointments
+        .map((appointment) => appointment.contact_id)
+        .filter((value): value is string => Boolean(value))
+    ),
+  ];
+
+  let contactLinks: ManychatContactLinkRow[] = [];
+  if (contactIds.length > 0) {
+    const { data, error } = await db
+      .from("manychat_contact_links")
+      .select("client,subscriber_id,ghl_contact_id")
+      .in("ghl_contact_id", contactIds);
+
+    if (error) {
+      console.warn("[ads-tracker] ManyChat contact-link fallback unavailable", error);
+    } else {
+      contactLinks = (data || []) as ManychatContactLinkRow[];
+    }
+  }
+
+  const contactLinksByContactId = new Map<string, ManychatContactLinkRow[]>();
+  for (const link of contactLinks) {
+    const list = contactLinksByContactId.get(link.ghl_contact_id) || [];
+    list.push(link);
+    contactLinksByContactId.set(link.ghl_contact_id, list);
+  }
+
+  const manychatEvents = keywordEvents
+    .filter((event) => event.source === "manychat")
+    .filter((event) => Boolean(event.subscriber_id && event.keyword_normalized))
+    .sort((a, b) => b.event_at.localeCompare(a.event_at));
+
+  const supplemental: KeywordEvent[] = [];
+  for (const appointment of appointments) {
+    if (!appointment.appointment_id || !appointment.client) continue;
+    if (!clientFilter.includes(appointment.client)) continue;
+    if (existingGhlAppointmentIds.has(appointment.appointment_id)) continue;
+    if (!isBookableAppointment(appointment)) continue;
+
+    const appointmentEventAt =
+      appointment.created_at || appointment.start_time || new Date().toISOString();
+    let keywordNormalized = normalizeKeyword(
+      appointment.keyword_normalized || appointment.keyword_raw
+    );
+    let keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
+    let subscriberId = extractManychatSubscriberId(appointment.raw_payload);
+
+    if (!keywordNormalized) {
+      const contactLinksForAppointment = appointment.contact_id
+        ? contactLinksByContactId.get(appointment.contact_id) || []
+        : [];
+      const matchingLink = contactLinksForAppointment.find((link) =>
+        adsClientMatchesContactLink(appointment.client as string, link.client)
+      );
+      subscriberId = subscriberId || matchingLink?.subscriber_id || null;
+
+      if (subscriberId) {
+        const latestManychatKeyword = manychatEvents.find((event) => {
+          if (event.subscriber_id !== subscriberId) return false;
+          if (event.client_key !== appointment.client) return false;
+          return new Date(event.event_at).getTime() <= eventTimeWithLag(appointmentEventAt);
+        });
+        keywordNormalized = normalizeKeyword(
+          latestManychatKeyword?.keyword_normalized || latestManychatKeyword?.keyword_raw
+        );
+        keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
+      }
+    }
+
+    if (!keywordNormalized) continue;
+
+    supplemental.push({
+      source: "ghl",
+      event_type: "booked_call",
+      client_key: appointment.client,
+      keyword_raw: keywordRaw,
+      keyword_normalized: keywordNormalized,
+      subscriber_id: subscriberId,
+      subscriber_name: null,
+      setter_name: null,
+      appointment_id: appointment.appointment_id,
+      contact_id: appointment.contact_id,
+      contact_name: appointment.contact_name,
+      event_at: appointmentEventAt,
+    });
+  }
+
+  return supplemental;
 }
 
 function isTestSalesRow(row: SheetRow): boolean {
@@ -778,6 +959,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const [
     { data: metaRows, error: metaError },
     { data: keywordEvents, error: eventError },
+    { data: ghlAppointments, error: appointmentError },
     backfillRows,
   ] = await Promise.all([
       db
@@ -789,27 +971,42 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       db
         .from("ads_keyword_events")
         .select(
-          "source,event_type,client_key,keyword_raw,keyword_normalized,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
+          "source,event_type,client_key,keyword_raw,keyword_normalized,subscriber_id,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
         )
         .in("client_key", clientFilter)
         .gte("event_at", eventQueryFrom)
         .lte("event_at", eventQueryTo),
+      db
+        .from("ghl_appointments")
+        .select(
+          "appointment_id,client,contact_id,contact_name,keyword_raw,keyword_normalized,start_time,created_at,status,event_type,raw_payload"
+        )
+        .in("client", clientFilter)
+        .gte("created_at", eventQueryFrom)
+        .lte("created_at", eventQueryTo),
       fetchKeywordBackfillRows(db, query, clientFilter),
     ]);
 
-  if (metaError || eventError) {
+  if (metaError || eventError || appointmentError) {
     throw new Error(
-      `Ads Tracker data query failed: ${(metaError || eventError)?.message || "unknown error"}`
+      `Ads Tracker data query failed: ${(metaError || eventError || appointmentError)?.message || "unknown error"}`
     );
   }
 
   const groups = new Map<string, Group>();
   const rows = (metaRows || []) as MetaRow[];
   const backfill = backfillRows as KeywordBackfillRow[];
+  const baseKeywordEvents = ((keywordEvents || []) as KeywordEvent[]);
+  const supplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
+    db,
+    (ghlAppointments || []) as GhlAppointmentRow[],
+    baseKeywordEvents,
+    clientFilter
+  );
   const backfilledDateKeys = new Set(
     backfill.map((row) => `${row.client_key}:${row.date}`)
   );
-  const attributionEvents = ((keywordEvents || []) as KeywordEvent[])
+  const attributionEvents = [...baseKeywordEvents, ...supplementalGhlEvents]
     .filter((event) => !isTestKeywordEvent(event))
     .filter((event) => clientFilter.includes(event.client_key));
   const allEvents = attributionEvents
