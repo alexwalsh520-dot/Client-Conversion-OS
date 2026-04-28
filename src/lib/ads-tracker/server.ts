@@ -742,7 +742,7 @@ function addMetaRowsToGroups(
     const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
     if (!keyword) continue;
     const id = groupIdForRow(row, keyword);
-    const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : row.client_name || row.client_key;
+    const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : campaignDisplayName(row);
     const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
     group.campaignId = row.campaign_id || group.campaignId;
     group.campaignName = row.campaign_name || group.campaignName;
@@ -786,6 +786,22 @@ function hasMetaDelivery(row: MetaRow) {
 
 function groupKeyForMetaRow(row: MetaRow) {
   return `${row.campaign_id || row.campaign_name || "campaign"}:${row.ad_id}`;
+}
+
+function campaignGroupId(row: Pick<MetaRow, "client_key" | "campaign_id" | "campaign_name">) {
+  return `${row.client_key}:${row.campaign_id || row.campaign_name || "campaign"}`;
+}
+
+function adGroupId(
+  row: Pick<MetaRow, "client_key" | "campaign_id" | "campaign_name" | "ad_id">,
+  keyword: string
+) {
+  return `${row.client_key}:${row.campaign_id || row.campaign_name || "campaign"}:${row.ad_id || keyword}`;
+}
+
+function campaignDisplayName(row: Pick<MetaRow, "client_name" | "client_key" | "campaign_name">) {
+  const clientName = row.client_name || row.client_key;
+  return row.campaign_name ? `${clientName} · ${row.campaign_name}` : clientName;
 }
 
 function hintFromMetaRow(row: MetaRow, keyword: string): BackfillGroupHint {
@@ -887,10 +903,14 @@ function fallbackGroupIdForBackfillRow(
   row: KeywordBackfillRow,
   keyword: string,
   metaRows: MetaRow[],
-  prefix = ""
+  prefix = "",
+  level: AdsTrackerLevel = "ad"
 ) {
   const hint = campaignHintForBackfillRow(row, metaRows);
   if (!hint?.campaignName) return `${prefix}${row.client_key}:keyword:${keyword}`;
+  if (level === "campaign") {
+    return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}`;
+  }
   return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
 }
 
@@ -936,7 +956,12 @@ function addKeywordBackfillRowsToGroups(
 
     const id = groupIdForRow(row, keyword);
     const hint = hintForRow?.(row, keyword) || null;
-    const name = query.level === "ad" ? displayKeyword(keyword) : row.client_name || row.client_key;
+    const name =
+      query.level === "ad"
+        ? displayKeyword(keyword)
+        : hint?.campaignName
+          ? `${row.client_name || row.client_key} · ${hint.campaignName}`
+          : row.client_name || row.client_key;
     const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
     applyBackfillHint(group, hint);
 
@@ -1070,7 +1095,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`)
   );
   const periodMetaGroupId = (row: MetaRow, keyword: string) =>
-    `${row.client_key}:${row.campaign_id || row.campaign_name || "campaign"}:${row.ad_id || keyword}`;
+    query.level === "campaign" ? campaignGroupId(row) : adGroupId(row, keyword);
   const dailyMetaGroupId = (row: MetaRow, keyword: string) =>
     `${row.date}:${periodMetaGroupId(row, keyword)}`;
   const periodAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
@@ -1112,7 +1137,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       periodAttributionGroupId(
         row,
         keyword,
-        fallbackGroupIdForBackfillRow(row, keyword, rows)
+        fallbackGroupIdForBackfillRow(row, keyword, rows, "", query.level)
       ),
     () => `${query.dateFrom} - ${query.dateTo}`,
     (row) => campaignHintForBackfillRow(row, rows)
@@ -1170,7 +1195,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       dailyAttributionGroupId(
         row,
         keyword,
-        fallbackGroupIdForBackfillRow(row, keyword, rows, `${row.date}:`)
+        fallbackGroupIdForBackfillRow(row, keyword, rows, `${row.date}:`, query.level)
       ),
     (row) => row.date,
     (row) => campaignHintForBackfillRow(row, rows)
