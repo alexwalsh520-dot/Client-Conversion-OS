@@ -244,9 +244,10 @@
   /* Bottom grid */
   .grid-bottom{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:22px}
   @media (max-width: 1100px){.grid-bottom{grid-template-columns:1fr}}
-  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px;align-items:stretch}
+  .grid-charts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:28px;align-items:start}
+  .chart-column{display:flex;flex-direction:column;gap:18px;min-width:0}
   @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
-  .chart-actions-cell{grid-column:1/-1;min-width:0}
+  .chart-actions-cell{min-width:0}
 
   /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
   .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
@@ -507,6 +508,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
       calls: ad.calls || 0,
       taken: ad.taken || 0,
       clients: ad.clients || 0,
+      mainClients: ad.mainClients ?? ad.clients ?? 0,
+      subClients: ad.subClients || 0,
       collected: ad.collected || 0,
     }));
   }
@@ -519,6 +522,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
   const calls = splitByWeight(dayRow.calls, adRoster, seed+"-calls");
   const taken = splitByWeight(dayRow.taken, adRoster, seed+"-taken");
   const clients = splitByWeight(dayRow.clients, adRoster, seed+"-clients");
+  const mainClients = splitByWeight(dayRow.mainClients ?? dayRow.clients, adRoster, seed+"-main-clients");
+  const subClients = splitByWeight(dayRow.subClients, adRoster, seed+"-sub-clients");
   const collected = splitByWeight(dayRow.collected, adRoster, seed+"-col");
   return adRoster.map((a,i) => ({
     adId: a.id,
@@ -530,6 +535,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
     calls: Math.max(0, calls[i].v),
     taken: Math.max(0, taken[i].v),
     clients: Math.max(0, clients[i].v),
+    mainClients: Math.max(0, mainClients[i].v),
+    subClients: Math.max(0, subClients[i].v),
     collected: Math.max(0, collected[i].v),
   }));
 }
@@ -676,6 +683,8 @@ function metricRowFromApi(row, dateLabel){
     calls: Number(row.bookedCalls || 0),
     taken: Number(row.callsTaken || 0),
     clients: Number(row.newClients || 0),
+    mainClients: Number(row.mainOfferClients ?? row.newClients ?? 0),
+    subClients: Number(row.subscriptionClients || 0),
     collected: Number(row.collectedRevenue || 0),
   };
 }
@@ -688,11 +697,13 @@ function addMetric(target, row){
   target.calls += row.calls || 0;
   target.taken += row.taken || 0;
   target.clients += row.clients || 0;
+  target.mainClients += row.mainClients ?? row.clients ?? 0;
+  target.subClients += row.subClients || 0;
   target.collected += row.collected || 0;
 }
 
 function emptyMetric(date){
-  return {date, spend:0, imp:0, clicks:0, msgs:0, calls:0, taken:0, clients:0, collected:0};
+  return {date, spend:0, imp:0, clicks:0, msgs:0, calls:0, taken:0, clients:0, mainClients:0, subClients:0, collected:0};
 }
 
 function campaignsFromDashboard(dashboard, range){
@@ -808,6 +819,8 @@ function filterCampaignsBySearch(campaigns, search){
         bookedCalls:ad.calls,
         callsTaken:ad.taken,
         newClients:ad.clients,
+        mainOfferClients:ad.mainClients,
+        subscriptionClients:ad.subClients,
         collectedRevenue:ad.collected,
       }, row.date)));
       return next;
@@ -843,11 +856,17 @@ function applyLocalEntriesToCampaigns(campaigns, entries){
       matching.forEach(e => {
         const metric = bucketToMetric[e.bucket];
         const value = Number(e.value || 0);
+        const previousMainClients = next.mainClients ?? next.clients ?? 0;
         next[metric] = (next[metric] || 0) + value;
+        if(metric === "clients") next.mainClients = previousMainClients + value;
         if(Array.isArray(next.adRows)){
           const keyword = String(e.kw || "").toUpperCase();
           const ad = next.adRows.find(a => String(a.adName || "").toUpperCase() === keyword);
-          if(ad) ad[metric] = (ad[metric] || 0) + value;
+          if(ad) {
+            const previousAdMainClients = ad.mainClients ?? ad.clients ?? 0;
+            ad[metric] = (ad[metric] || 0) + value;
+            if(metric === "clients") ad.mainClients = previousAdMainClients + value;
+          }
         }
       });
       return next;
@@ -1080,6 +1099,8 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
         calls: r.calls + (bump.calls||0),
         taken: (r.taken||0) + (bump.taken||0),
         clients: r.clients + (bump.clients||0),
+        mainClients: (r.mainClients ?? r.clients ?? 0) + (bump.clients||0),
+        subClients: r.subClients || 0,
         collected: r.collected + (bump.collected||0),
       };
     });
@@ -1502,6 +1523,12 @@ function seriesCpmKeyword(kw, client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
   return labels.map(()=>0);
 }
 
+function firstLastRealDelta(vals){
+  const real = vals.filter(v => Number.isFinite(v) && v > 0);
+  if(real.length < 2) return 0;
+  return real[real.length - 1] - real[0];
+}
+
 function CostPerDMChart({campaigns=CAMPAIGNS}){
   const [mode, setMode] = useState("overall"); // 'overall' | 'keyword'
   const labels = labelsFromCampaigns(campaigns);
@@ -1511,9 +1538,11 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
   let series, avg, delta, subLabel;
   if(mode === "overall"){
     const vals = seriesCpmOverall("all", campaigns, labels);
-    avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-    delta = vals[vals.length-1] - vals[0];
-    subLabel = "7-day avg overall";
+    const totalSpend = seriesForCampaignKey("spend", "all", campaigns, labels).reduce((a,b)=>a+b,0);
+    const totalMsgs = seriesForCampaignKey("msgs", "all", campaigns, labels).reduce((a,b)=>a+b,0);
+    avg = totalMsgs ? totalSpend / totalMsgs : 0;
+    delta = firstLastRealDelta(vals);
+    subLabel = "selected period";
     series = [
       {name: "Cost / DM", values: vals, color: "var(--blue)", isPrimary:true, fmt: (v)=>"$"+v.toFixed(2)},
     ];
@@ -1534,16 +1563,20 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
       series = [{name:"Cost / DM", values:vals, color:"var(--blue)", isPrimary:true, fmt:(v)=>"$"+v.toFixed(2)}];
     } else {
     // Pick the best-performing (lowest avg) as primary for the fade
-    const withAvg = kwSeries.map(s => ({...s, _avg: s.values.reduce((a,b)=>a+b,0)/s.values.length}));
+    const withAvg = kwSeries.map(s => {
+      const real = s.values.filter(v => v > 0);
+      return {...s, _avg: real.length ? real.reduce((a,b)=>a+b,0)/real.length : Number.POSITIVE_INFINITY};
+    });
     const best = withAvg.reduce((a,b) => a._avg < b._avg ? a : b);
     series = kwSeries.map(s => ({...s, isPrimary: s.name === best.name}));
     // Aggregate average = weighted average across all kw series
-    const allVals = kwSeries.flatMap(s => s.values);
-    avg = allVals.reduce((a,b)=>a+b,0) / allVals.length;
+    const totalSpend = seriesForCampaignKey("spend", "all", campaigns, labels).reduce((a,b)=>a+b,0);
+    const totalMsgs = seriesForCampaignKey("msgs", "all", campaigns, labels).reduce((a,b)=>a+b,0);
+    avg = totalMsgs ? totalSpend / totalMsgs : 0;
     // Delta: overall last-vs-first (mean across all lines)
     const firstMean = kwSeries.reduce((a,b)=>a+b.values[0],0) / kwSeries.length;
     const lastMean  = kwSeries.reduce((a,b)=>a+b.values[b.values.length-1],0) / kwSeries.length;
-    delta = lastMean - firstMean;
+    delta = firstLastRealDelta([firstMean, lastMean]);
     subLabel = `Avg across ${kwSeries.length} keyword${kwSeries.length===1?"":"s"}`;
     }
   }
@@ -1686,14 +1719,17 @@ function AdROASChart({campaigns=CAMPAIGNS}){
 }
 
 function CACChart({campaigns=CAMPAIGNS}){
+  const [mode, setMode] = useState("main"); // 'main' excludes exactly-$50 subscription wins
   const labels = labelsFromCampaigns(campaigns);
   const spend = seriesForCampaignKey("spend", "all", campaigns, labels);
-  const clients = seriesForCampaignKey("clients", "all", campaigns, labels);
+  const clients = seriesForCampaignKey(mode === "main" ? "mainClients" : "clients", "all", campaigns, labels);
+  const subscriptionClients = seriesForCampaignKey("subClients", "all", campaigns, labels)
+    .reduce((a,b)=>a+b,0);
   const cac = spend.map((s,i)=> clients[i] ? s/clients[i] : 0);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
   const totalClients = clients.reduce((a,b)=>a+b,0);
   const avg = totalClients ? totalSpend/totalClients : 0;
-  const delta = cac[cac.length-1] - cac[0];
+  const delta = firstLastRealDelta(cac);
 
   return (
     <div className="panel chart-card cac-card">
@@ -1705,7 +1741,15 @@ function CACChart({campaigns=CAMPAIGNS}){
             <span className={delta<=0?"chart-delta pos":"chart-delta neg"}>
               {delta<=0?"▼":"▲"} ${Math.abs(delta).toFixed(0)}
             </span>
-            <span className="chart-sub-label">Cost per new customer</span>
+            <span className="chart-sub-label">
+              {mode === "main" ? "Excludes $50 subs" : "Includes $50 subs"}
+            </span>
+          </div>
+        </div>
+        <div className="chart-controls">
+          <div className="kw-tabs">
+            <button className={"kw-tab "+(mode==="main"?"active":"")} onClick={()=>setMode("main")}>Main offers</button>
+            <button className={"kw-tab "+(mode==="all"?"active":"")} onClick={()=>setMode("all")}>Incl. $50</button>
           </div>
         </div>
       </div>
@@ -1721,7 +1765,9 @@ function CACChart({campaigns=CAMPAIGNS}){
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>CAC</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--green)'}}></span>New clients</span>
-        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Lower is better</span>
+        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>
+          {subscriptionClients ? `${subscriptionClients} $50 sub${subscriptionClients===1?"":"s"} tracked` : "Lower is better"}
+        </span>
       </div>
     </div>
   );
@@ -2479,12 +2525,14 @@ function App(){
 
           {/* Charts */}
           <div className="grid-charts">
-            <ROASChart campaigns={scopedCampaigns}/>
-            <AdROASChart campaigns={scopedCampaigns}/>
-            <CostPerDMChart campaigns={scopedCampaigns}/>
-            <CACChart campaigns={scopedCampaigns}/>
-            <div className="chart-actions-cell">
-              <div>
+            <div className="chart-column">
+              <ROASChart campaigns={scopedCampaigns}/>
+              <CostPerDMChart campaigns={scopedCampaigns}/>
+            </div>
+            <div className="chart-column">
+              <AdROASChart campaigns={scopedCampaigns}/>
+              <CACChart campaigns={scopedCampaigns}/>
+              <div className="chart-actions-cell">
                 <div className="section-head">
                   <div className="section-label">Actions</div>
                   <div className="section-meta">Export</div>

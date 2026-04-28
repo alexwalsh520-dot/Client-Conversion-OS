@@ -131,6 +131,8 @@ export interface AdsTrackerRow {
   callsTaken: number;
   costPerCallTaken: number | null;
   newClients: number;
+  mainOfferClients: number;
+  subscriptionClients: number;
   contractedRevenue: number;
   callClosingRate: number;
   messagesConversionRate: number;
@@ -146,6 +148,8 @@ interface SalesAttributionOptions {
   dateLabel?: (match: KeywordEvent, row: SheetRow) => string;
   groupName?: (match: KeywordEvent, row: SheetRow) => string;
   includeOutcomeMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
+  includeCallTakenMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
+  includeClientSplitMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
 }
 
 interface Group {
@@ -165,6 +169,8 @@ interface Group {
   bookedCalls: number;
   callsTaken: number;
   newClients: number;
+  mainOfferClients: number;
+  subscriptionClients: number;
   contractedRevenue: number;
   collectedRevenue: number;
   status: "active" | "finished";
@@ -195,6 +201,8 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     bookedCalls: 0,
     callsTaken: 0,
     newClients: 0,
+    mainOfferClients: 0,
+    subscriptionClients: 0,
     contractedRevenue: 0,
     collectedRevenue: 0,
     status: "active",
@@ -211,6 +219,7 @@ function safeDiv(numerator: number, denominator: number): number {
 
 function finalizeGroup(group: Group): AdsTrackerRow {
   const adSpend = dollars(group.adSpendCents);
+  const hasClientSplit = group.mainOfferClients > 0 || group.subscriptionClients > 0;
   return {
     id: group.id,
     clientKey: group.clientKey,
@@ -234,6 +243,8 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     callsTaken: group.callsTaken,
     costPerCallTaken: group.callsTaken > 0 ? adSpend / group.callsTaken : null,
     newClients: group.newClients,
+    mainOfferClients: hasClientSplit ? group.mainOfferClients : group.newClients,
+    subscriptionClients: group.subscriptionClients,
     contractedRevenue: group.contractedRevenue,
     callClosingRate: safeDiv(group.newClients, group.callsTaken || group.bookedCalls) * 100,
     messagesConversionRate: safeDiv(group.bookedCalls, group.messages) * 100,
@@ -270,6 +281,24 @@ function clientFromOffer(row: SheetRow): string | null {
 
 function isWin(row: SheetRow): boolean {
   return row.outcome.includes("WIN");
+}
+
+function isSubscriptionSale(row: SheetRow): boolean {
+  const amount = row.cashCollected > 0 ? row.cashCollected : row.revenue;
+  return Math.abs(amount - 50) < 0.01;
+}
+
+function inferBackfillSubscriptionClients(row: KeywordBackfillRow): number {
+  const newClients = row.new_clients || 0;
+  if (newClients <= 0) return 0;
+
+  const collected = dollars(row.collected_revenue_cents || 0);
+  const contracted = dollars(row.contracted_revenue_cents || 0);
+  const amount = collected > 0 ? collected : contracted;
+
+  // Backfill rows are aggregated by keyword/day, so only classify rows where
+  // every recorded client was the known $50 subscription product.
+  return Math.abs(amount - newClients * 50) < 0.01 ? newClients : 0;
 }
 
 function isNoShow(row: SheetRow): boolean {
@@ -609,7 +638,16 @@ function applySalesToGroups(
     groups.set(groupId, group);
 
     const includeOutcomeMetrics = options.includeOutcomeMetrics?.(match, row) ?? true;
-    if (includeOutcomeMetrics && row.callTaken && !isNoShow(row)) group.callsTaken += 1;
+    const includeCallTakenMetrics =
+      options.includeCallTakenMetrics?.(match, row) ?? includeOutcomeMetrics;
+    const includeClientSplitMetrics =
+      options.includeClientSplitMetrics?.(match, row) ?? includeOutcomeMetrics;
+
+    if (includeCallTakenMetrics && row.callTaken && !isNoShow(row)) group.callsTaken += 1;
+    if (includeClientSplitMetrics && isWin(row)) {
+      if (isSubscriptionSale(row)) group.subscriptionClients += 1;
+      else group.mainOfferClients += 1;
+    }
     if (includeOutcomeMetrics) {
       if (isWin(row)) group.newClients += 1;
       group.contractedRevenue += row.revenue || 0;
@@ -628,6 +666,8 @@ function buildPayload(
   const totalSpend = rows.reduce((sum, row) => sum + row.adSpend, 0);
   const totalCollected = rows.reduce((sum, row) => sum + row.collectedRevenue, 0);
   const totalContracted = rows.reduce((sum, row) => sum + row.contractedRevenue, 0);
+  const totalMainOfferClients = rows.reduce((sum, row) => sum + row.mainOfferClients, 0);
+  const totalSubscriptionClients = rows.reduce((sum, row) => sum + row.subscriptionClients, 0);
 
   const adRoas = rows
     .map((row) => ({
@@ -654,10 +694,13 @@ function buildPayload(
       bookedCalls: rows.reduce((sum, row) => sum + row.bookedCalls, 0),
       callsTaken: rows.reduce((sum, row) => sum + row.callsTaken, 0),
       newClients: rows.reduce((sum, row) => sum + row.newClients, 0),
+      mainOfferClients: totalMainOfferClients,
+      subscriptionClients: totalSubscriptionClients,
       costPerNewClient: safeDiv(
         totalSpend,
         rows.reduce((sum, row) => sum + row.newClients, 0)
       ),
+      costPerMainOfferClient: safeDiv(totalSpend, totalMainOfferClients),
       costPerCallTaken: safeDiv(
         totalSpend,
         rows.reduce((sum, row) => sum + row.callsTaken, 0)
@@ -897,10 +940,14 @@ function addKeywordBackfillRowsToGroups(
     const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
     applyBackfillHint(group, hint);
 
+    const newClients = row.new_clients || 0;
+    const subscriptionClients = inferBackfillSubscriptionClients(row);
     group.messages += row.messages || 0;
     group.bookedCalls += row.booked_calls || 0;
     group.callsTaken += row.calls_taken || 0;
-    group.newClients += row.new_clients || 0;
+    group.newClients += newClients;
+    group.subscriptionClients += subscriptionClients;
+    group.mainOfferClients += Math.max(0, newClients - subscriptionClients);
     group.contractedRevenue += dollars(row.contracted_revenue_cents || 0);
     group.collectedRevenue += dollars(row.collected_revenue_cents || 0);
     group.dateLabel = dateLabelForRow(row);
@@ -1082,6 +1129,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const includeSalesOutcomeMetrics = (match: KeywordEvent, row: SheetRow) =>
     !backfilledDateKeys.has(`${match.client_key}:${row.date}`);
+  const includeCallTakenMetrics = () => true;
 
   applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match) =>
@@ -1091,6 +1139,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         `${match.client_key}:keyword:${match.keyword_normalized}`
       ),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
+    includeCallTakenMetrics,
+    includeClientSplitMetrics: includeSalesOutcomeMetrics,
   });
 
   const dailyGroups = new Map<string, Group>();
@@ -1134,6 +1184,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       ),
     dateLabel: (_match, row) => row.date,
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
+    includeCallTakenMetrics,
+    includeClientSplitMetrics: includeSalesOutcomeMetrics,
   });
 
   const finalized = Array.from(groups.values())

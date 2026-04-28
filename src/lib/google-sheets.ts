@@ -218,14 +218,14 @@ function getOfferForRow(row: (string | undefined)[], tab?: string): string {
 
 /**
  * Fetch raw values from a single monthly tab via Google Sheets API v4.
- * Range: A8:Q200 (row 8 = headers, rows 9+ = data).
+ * Range: A8:Q1000 (row 8 = headers, rows 9+ = data).
  */
 async function fetchTabValues(
   tab: string
 ): Promise<(string | undefined)[][]> {
   const sheetId = getSheetId();
   const apiKey = getApiKey();
-  const range = encodeURIComponent(`${tab}!A8:Q200`);
+  const range = encodeURIComponent(`${tab}!A8:Q1000`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
   const response = await fetch(url);

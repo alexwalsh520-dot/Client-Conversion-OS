@@ -21,6 +21,10 @@ const CLOSER_MAP: Record<string, string> = {
 
 const VALID_EVENTS = ["booked", "rescheduled", "cancelled", "noshow", "confirmed"];
 
+function isCancelledAppointment(status: string | null, eventType: string | null) {
+  return `${status || ""} ${eventType || ""}`.toLowerCase().includes("cancel");
+}
+
 function readString(source: Record<string, unknown> | null | undefined, keys: string[]) {
   if (!source) return null;
   for (const key of keys) {
@@ -284,7 +288,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    if (client && keywordNormalized) {
+    if (isCancelledAppointment(status, event_type)) {
+      const { error: deleteKeywordError } = await supabase
+        .from("ads_keyword_events")
+        .delete()
+        .eq("appointment_id", appointment_id);
+
+      if (deleteKeywordError) {
+        console.error("[ghl-appointment-webhook] keyword event cancellation cleanup error:", deleteKeywordError);
+      }
+    } else if (client && keywordNormalized) {
       const { error: keywordError } = await supabase
         .from("ads_keyword_events")
         .upsert(
