@@ -391,6 +391,12 @@ async function buildSupplementalGhlKeywordEvents(
         .filter((value): value is string => Boolean(value))
     ),
   ];
+  const subscriberIdsByContactId = new Map<string, string>();
+  for (const appointment of appointments) {
+    if (!appointment.contact_id) continue;
+    const subscriberId = extractManychatSubscriberId(appointment.raw_payload);
+    if (subscriberId) subscriberIdsByContactId.set(appointment.contact_id, subscriberId);
+  }
 
   let contactLinks: ManychatContactLinkRow[] = [];
   if (contactIds.length > 0) {
@@ -431,7 +437,10 @@ async function buildSupplementalGhlKeywordEvents(
       appointment.keyword_normalized || appointment.keyword_raw
     );
     let keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
-    let subscriberId = extractManychatSubscriberId(appointment.raw_payload);
+    let subscriberId =
+      extractManychatSubscriberId(appointment.raw_payload) ||
+      (appointment.contact_id ? subscriberIdsByContactId.get(appointment.contact_id) : null) ||
+      null;
 
     if (!keywordNormalized) {
       const contactLinksForAppointment = appointment.contact_id
@@ -981,7 +990,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .select(
           "appointment_id,client,contact_id,contact_name,keyword_raw,keyword_normalized,start_time,created_at,status,event_type,raw_payload"
         )
-        .in("client", clientFilter)
         .gte("created_at", eventQueryFrom)
         .lte("created_at", eventQueryTo),
       fetchKeywordBackfillRows(db, query, clientFilter),

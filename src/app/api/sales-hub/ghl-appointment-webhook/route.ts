@@ -119,6 +119,25 @@ async function resolveKeywordFromManychatFallback(params: {
     }
   }
 
+  if (!subscriberId && contactId) {
+    const { data, error } = await supabase
+      .from("ghl_appointments")
+      .select("raw_payload,updated_at,created_at")
+      .eq("contact_id", contactId)
+      .not("raw_payload", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error("[ghl-appointment-webhook] appointment-payload fallback query error:", error);
+    } else {
+      for (const appointment of data || []) {
+        subscriberId = extractManychatSubscriberId(appointment.raw_payload);
+        if (subscriberId) break;
+      }
+    }
+  }
+
   if (!subscriberId) return null;
 
   const cutoff = new Date(eventTimeWithLag(eventAt)).toISOString();
