@@ -743,11 +743,14 @@ function addMetaRowsToGroups(
     if (!keyword) continue;
     const id = groupIdForRow(row, keyword);
     const name = query.level === "ad" ? row.ad_name || displayKeyword(keyword) : campaignDisplayName(row);
-    const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
+    const groupKeyword = query.level === "ad" ? displayKeyword(keyword) : row.campaign_name || row.client_name || row.client_key;
+    const group = groups.get(id) || emptyGroup(id, row.client_key, name, groupKeyword);
     group.campaignId = row.campaign_id || group.campaignId;
     group.campaignName = row.campaign_name || group.campaignName;
-    group.adId = row.ad_id || group.adId;
-    group.adName = row.ad_name || group.adName;
+    if (query.level === "ad") {
+      group.adId = row.ad_id || group.adId;
+      group.adName = row.ad_name || group.adName;
+    }
     applyGroupStatus(group, metaRowStatus(row));
     group.adSpendCents += row.spend_cents || 0;
     group.impressions += row.impressions || 0;
@@ -914,12 +917,14 @@ function fallbackGroupIdForBackfillRow(
   return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
 }
 
-function applyBackfillHint(group: Group, hint: BackfillGroupHint | null) {
+function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: AdsTrackerLevel = "ad") {
   if (!hint) return;
   group.campaignId = group.campaignId || hint.campaignId;
   group.campaignName = group.campaignName || hint.campaignName;
-  group.adId = group.adId || hint.adId;
-  group.adName = group.adName || hint.adName;
+  if (level === "ad") {
+    group.adId = group.adId || hint.adId;
+    group.adName = group.adName || hint.adName;
+  }
 }
 
 function addKeywordEventsToGroups(
@@ -962,8 +967,9 @@ function addKeywordBackfillRowsToGroups(
         : hint?.campaignName
           ? `${row.client_name || row.client_key} · ${hint.campaignName}`
           : row.client_name || row.client_key;
-    const group = groups.get(id) || emptyGroup(id, row.client_key, name, displayKeyword(keyword));
-    applyBackfillHint(group, hint);
+    const groupKeyword = query.level === "ad" ? displayKeyword(keyword) : hint?.campaignName || row.client_name || row.client_key;
+    const group = groups.get(id) || emptyGroup(id, row.client_key, name, groupKeyword);
+    applyBackfillHint(group, hint, query.level);
 
     const newClients = row.new_clients || 0;
     const subscriptionClients = inferBackfillSubscriptionClients(row);
@@ -1218,6 +1224,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .filter(
       (row) =>
         row.adSpend > 0 ||
+        row.impressions > 0 ||
+        row.linkClicks > 0 ||
         row.messages > 0 ||
         row.bookedCalls > 0 ||
         row.callsTaken > 0 ||
@@ -1232,6 +1240,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .filter(
       (row) =>
         row.adSpend > 0 ||
+        row.impressions > 0 ||
+        row.linkClicks > 0 ||
         row.messages > 0 ||
         row.bookedCalls > 0 ||
         row.callsTaken > 0 ||
