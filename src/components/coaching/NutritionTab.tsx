@@ -654,6 +654,17 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
   const [expandedClientId, setExpandedClientId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
+  // 2026-04-30 product filters:
+  //   - Pending: hide tasks older than 30 days (treated as auto-done by
+  //     default — coach can reveal with a button)
+  //   - Unlinked: hide intake forms submitted before 2026-04-01 (legacy
+  //     forms whose linkable clients aren't worth chasing)
+  // Both are UI-only filters; DB state is unchanged.
+  const [showStalePending, setShowStalePending] = useState(false);
+  const [showOldUnlinked, setShowOldUnlinked] = useState(false);
+  const STALE_PENDING_DAYS = 30;
+  const UNLINKED_CUTOFF_TS = new Date("2026-04-01T00:00:00Z").getTime();
+
   // Link-from-unlinked state
   const [linkingFormId, setLinkingFormId] = useState<number | null>(null);
   const [linkClientSearch, setLinkClientSearch] = useState("");
@@ -662,9 +673,25 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
   const linkedFormIds = new Set<number>(
     clients.map((c) => c.nutritionFormId).filter((id): id is number => id != null)
   );
-  const unlinkedForms = nutritionForms.filter((nf) => nf.id != null && !linkedFormIds.has(nf.id));
+  const allUnlinkedForms = nutritionForms.filter((nf) => nf.id != null && !linkedFormIds.has(nf.id));
+  // Recent: timestamp present AND >= 2026-04-01. Missing timestamps fall
+  // into the "old" bucket — safer to hide unknown-age legacy data.
+  const recentUnlinkedForms = allUnlinkedForms.filter(
+    (nf) => nf.timestamp != null && new Date(nf.timestamp).getTime() >= UNLINKED_CUTOFF_TS,
+  );
+  const oldUnlinkedForms = allUnlinkedForms.filter(
+    (nf) => nf.timestamp == null || new Date(nf.timestamp).getTime() < UNLINKED_CUTOFF_TS,
+  );
+  const visibleUnlinkedForms = showOldUnlinked ? allUnlinkedForms : recentUnlinkedForms;
 
-  const pendingClients = clients.filter((c) => c.nutritionFormId && (c.nutritionStatus === "pending" || c.nutritionStatus === "assigned"));
+  const allPendingClients = clients.filter((c) => c.nutritionFormId && (c.nutritionStatus === "pending" || c.nutritionStatus === "assigned"));
+  const freshPendingClients = allPendingClients.filter(
+    (c) => daysSince(c.onboardingDate || c.startDate) <= STALE_PENDING_DAYS,
+  );
+  const stalePendingClients = allPendingClients.filter(
+    (c) => daysSince(c.onboardingDate || c.startDate) > STALE_PENDING_DAYS,
+  );
+  const visiblePendingClients = showStalePending ? allPendingClients : freshPendingClients;
   const doneClients = clients.filter((c) => c.nutritionFormId && c.nutritionStatus === "done");
 
   const getFormForClient = (client: Client) => nutritionForms.find((nf) => nf.id === client.nutritionFormId);
@@ -712,15 +739,33 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
           <UtensilsCrossed size={16} />
           Unlinked Intake Forms
           <span style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
-            {unlinkedForms.length}
+            {recentUnlinkedForms.length}
           </span>
         </button>
 
         {expandedUnlinked && (
           <div className="glass-static" style={{ overflow: "auto" }}>
-            {unlinkedForms.length === 0 ? (
+            {visibleUnlinkedForms.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                No unlinked intake forms. All forms are matched to clients.
+                No unlinked intake forms{showOldUnlinked ? "." : " submitted on or after Apr 1, 2026."}
+                {!showOldUnlinked && oldUnlinkedForms.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      onClick={() => setShowOldUnlinked(true)}
+                      style={{
+                        padding: "6px 12px",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        background: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        borderRadius: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      Show {oldUnlinkedForms.length} older form{oldUnlinkedForms.length === 1 ? "" : "s"} (pre-Apr 1)
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <table className="data-table">
@@ -733,7 +778,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                   </tr>
                 </thead>
                 <tbody>
-                  {unlinkedForms
+                  {visibleUnlinkedForms
                     .filter((nf) => filterBySearch(`${nf.firstName} ${nf.lastName}`, nf.email))
                     .map((nf) => (
                     <React.Fragment key={nf.id}>
@@ -817,6 +862,33 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                 </tbody>
               </table>
             )}
+            {/* Reveal toggle for older unlinked intake forms */}
+            {oldUnlinkedForms.length > 0 && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  textAlign: "center",
+                }}
+              >
+                <button
+                  onClick={() => setShowOldUnlinked(!showOldUnlinked)}
+                  style={{
+                    padding: "4px 12px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    borderRadius: 6,
+                    fontSize: 11,
+                  }}
+                >
+                  {showOldUnlinked
+                    ? `Hide ${oldUnlinkedForms.length} older form${oldUnlinkedForms.length === 1 ? "" : "s"} (pre-Apr 1)`
+                    : `Show ${oldUnlinkedForms.length} older form${oldUnlinkedForms.length === 1 ? "" : "s"} (pre-Apr 1)`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -831,15 +903,35 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
           <Clock size={16} />
           Pending Meal Plans
           <span style={{ background: "rgba(59,130,246,0.2)", color: "#3b82f6", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
-            {pendingClients.length}
+            {freshPendingClients.length}
           </span>
         </button>
 
         {expandedPending && (
           <div className="glass-static" style={{ overflow: "auto" }}>
-            {pendingClients.length === 0 ? (
+            {visiblePendingClients.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                No pending meal plan tasks.
+                {showStalePending
+                  ? "No pending meal plan tasks."
+                  : `No pending meal plan tasks within the last ${STALE_PENDING_DAYS} days.`}
+                {!showStalePending && stalePendingClients.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      onClick={() => setShowStalePending(true)}
+                      style={{
+                        padding: "6px 12px",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        background: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        borderRadius: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      Show {stalePendingClients.length} task{stalePendingClients.length === 1 ? "" : "s"} older than {STALE_PENDING_DAYS} days
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <table className="data-table">
@@ -852,7 +944,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingClients
+                  {visiblePendingClients
                     .filter((c) => filterBySearch(c.name, c.email))
                     .sort((a, b) => daysSince(b.onboardingDate || b.startDate) - daysSince(a.onboardingDate || a.startDate))
                     .map((client) => {
@@ -911,6 +1003,34 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                     })}
                 </tbody>
               </table>
+            )}
+            {/* Reveal toggle for stale pending tasks (>30 days). Default
+                hidden; coach can opt in to see what was auto-treated as done. */}
+            {stalePendingClients.length > 0 && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  textAlign: "center",
+                }}
+              >
+                <button
+                  onClick={() => setShowStalePending(!showStalePending)}
+                  style={{
+                    padding: "4px 12px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    borderRadius: 6,
+                    fontSize: 11,
+                  }}
+                >
+                  {showStalePending
+                    ? `Hide ${stalePendingClients.length} task${stalePendingClients.length === 1 ? "" : "s"} older than ${STALE_PENDING_DAYS} days`
+                    : `Show ${stalePendingClients.length} task${stalePendingClients.length === 1 ? "" : "s"} older than ${STALE_PENDING_DAYS} days`}
+                </button>
+              </div>
             )}
           </div>
         )}
