@@ -6,6 +6,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/ads-tracker-sync",
+      "schedule": "0 */2 * * *"
+    },
+    {
       "path": "/api/cron/monthly-financials",
       "schedule": "0 9 1 * *"
     }
