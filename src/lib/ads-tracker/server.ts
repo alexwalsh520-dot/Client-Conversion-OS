@@ -150,6 +150,7 @@ interface SalesAttributionOptions {
   includeOutcomeMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeCallTakenMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeClientSplitMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
+  includeUnmatchedSales?: (row: SheetRow, clientKey: string | null) => boolean;
 }
 
 interface Group {
@@ -174,6 +175,25 @@ interface Group {
   contractedRevenue: number;
   collectedRevenue: number;
   status: "active" | "finished";
+}
+
+interface UnmatchedSale {
+  date: string;
+  clientKey: string | null;
+  name: string;
+  setter: string;
+  outcome: string;
+  callTaken: boolean;
+  contractedRevenue: number;
+  collectedRevenue: number;
+  amount: number;
+  reason: "missing_sales_name" | "no_matching_ghl_booking" | "missing_booking_keyword";
+  classification: "organic_or_unattributed";
+}
+
+interface BuildPayloadOptions {
+  unmatchedSales?: UnmatchedSale[];
+  sourceStatus?: Record<string, unknown>;
 }
 
 interface BackfillGroupHint {
@@ -288,6 +308,34 @@ function isSubscriptionSale(row: SheetRow): boolean {
   return Math.abs(amount - 50) < 0.01;
 }
 
+function saleAmount(row: SheetRow): number {
+  return row.cashCollected || 0;
+}
+
+function shouldTrackUnmatchedSale(row: SheetRow): boolean {
+  return saleAmount(row) > 0 || row.revenue > 0 || isWin(row) || (row.callTaken && !isNoShow(row));
+}
+
+function unmatchedSale(
+  row: SheetRow,
+  clientKey: string | null,
+  reason: UnmatchedSale["reason"]
+): UnmatchedSale {
+  return {
+    date: row.date,
+    clientKey,
+    name: row.name || "Unknown",
+    setter: row.setter || "",
+    outcome: row.outcome || "",
+    callTaken: row.callTaken && !isNoShow(row),
+    contractedRevenue: row.revenue || 0,
+    collectedRevenue: row.cashCollected || 0,
+    amount: saleAmount(row),
+    reason,
+    classification: "organic_or_unattributed",
+  };
+}
+
 function inferBackfillSubscriptionClients(row: KeywordBackfillRow): number {
   const newClients = row.new_clients || 0;
   if (newClients <= 0) return 0;
@@ -321,6 +369,14 @@ function shiftDate(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function datesInRange(dateFrom: string, dateTo: string): string[] {
+  const dates: string[] = [];
+  for (let date = dateFrom; date <= dateTo; date = shiftDate(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
 }
 
 function isWithinDashboardDateRange(value: string | null | undefined, query: AdsTrackerQuery) {
@@ -627,7 +683,7 @@ function applySalesToGroups(
   salesRows: SheetRow[],
   bookings: KeywordEvent[],
   options: SalesAttributionOptions = {}
-) {
+): UnmatchedSale[] {
   const bookingsByName = new Map<string, KeywordEvent[]>();
   for (const booking of bookings) {
     const name = normalizePersonName(booking.contact_name);
@@ -637,13 +693,34 @@ function applySalesToGroups(
     bookingsByName.set(name, list);
   }
 
+  const unmatched: UnmatchedSale[] = [];
+  const addUnmatched = (
+    row: SheetRow,
+    clientKey: string | null,
+    reason: UnmatchedSale["reason"]
+  ) => {
+    if (!shouldTrackUnmatchedSale(row)) return;
+    if (!(options.includeUnmatchedSales?.(row, clientKey) ?? true)) return;
+    unmatched.push(unmatchedSale(row, clientKey, reason));
+  };
+
   for (const row of salesRows) {
     const name = normalizePersonName(row.name);
-    if (!name) continue;
-    const matches = bookingsByName.get(name) || [];
     const clientKey = clientFromOffer(row);
+    if (!name) {
+      addUnmatched(row, clientKey, "missing_sales_name");
+      continue;
+    }
+    const matches = bookingsByName.get(name) || [];
     const match = matches.find((item) => !clientKey || item.client_key === clientKey) || matches[0];
-    if (!match?.keyword_normalized) continue;
+    if (!match) {
+      addUnmatched(row, clientKey, "no_matching_ghl_booking");
+      continue;
+    }
+    if (!match.keyword_normalized) {
+      addUnmatched(row, clientKey || match.client_key, "missing_booking_keyword");
+      continue;
+    }
 
     const groupId =
       options.groupId?.(match, row) || `${match.client_key}:${match.keyword_normalized}`;
@@ -675,6 +752,8 @@ function applySalesToGroups(
       group.collectedRevenue += row.cashCollected || 0;
     }
   }
+
+  return unmatched;
 }
 
 function buildPayload(
@@ -682,13 +761,20 @@ function buildPayload(
   rows: AdsTrackerRow[],
   events: KeywordEvent[],
   mock = false,
-  dailyRows: AdsTrackerRow[] = []
+  dailyRows: AdsTrackerRow[] = [],
+  options: BuildPayloadOptions = {}
 ) {
   const totalSpend = rows.reduce((sum, row) => sum + row.adSpend, 0);
   const totalCollected = rows.reduce((sum, row) => sum + row.collectedRevenue, 0);
   const totalContracted = rows.reduce((sum, row) => sum + row.contractedRevenue, 0);
   const totalMainOfferClients = rows.reduce((sum, row) => sum + row.mainOfferClients, 0);
   const totalSubscriptionClients = rows.reduce((sum, row) => sum + row.subscriptionClients, 0);
+  const unmatchedSales = options.unmatchedSales || [];
+  const organicUnattributedRevenue = unmatchedSales.reduce(
+    (sum, row) => sum + row.amount,
+    0
+  );
+  const totalCollectedRevenue = totalCollected + organicUnattributedRevenue;
 
   const adRoas = rows
     .map((row) => ({
@@ -708,6 +794,9 @@ function buildPayload(
     summary: {
       adSpend: totalSpend,
       collectedRevenue: totalCollected,
+      paidAttributedRevenue: totalCollected,
+      organicUnattributedRevenue,
+      totalCollectedRevenue,
       contractedRevenue: totalContracted,
       collectedRoi: safeDiv(totalCollected, totalSpend),
       contractedRoi: safeDiv(totalContracted, totalSpend),
@@ -727,6 +816,13 @@ function buildPayload(
         rows.reduce((sum, row) => sum + row.callsTaken, 0)
       ),
     },
+    attribution: {
+      paidAttributedRevenue: totalCollected,
+      organicUnattributedRevenue,
+      totalCollectedRevenue,
+      unmatchedSales,
+    },
+    sourceStatus: options.sourceStatus || null,
     rows,
     dailyRows,
     adRoas,
@@ -1177,8 +1273,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const includeSalesOutcomeMetrics = (match: KeywordEvent, row: SheetRow) =>
     !backfilledDateKeys.has(`${match.client_key}:${row.date}`);
   const includeCallTakenMetrics = () => true;
+  const includeUnmatchedSales = (row: SheetRow, clientKey: string | null) =>
+    Boolean(clientKey && clientFilter.includes(clientKey)) &&
+    !backfilledDateKeys.has(`${clientKey}:${row.date}`);
 
-  applySalesToGroups(groups, attributionSalesRows, bookings, {
+  const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match) =>
       periodAttributionGroupId(
         match,
@@ -1188,6 +1287,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
+    includeUnmatchedSales,
   });
 
   const dailyGroups = new Map<string, Group>();
@@ -1233,6 +1333,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
+    includeUnmatchedSales,
   });
 
   const finalized = Array.from(groups.values())
@@ -1267,5 +1368,35 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .filter((row) => query.status === "all" || row.status === query.status)
     .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
 
-  return buildPayload(query, finalized, events, false, finalizedDaily);
+  const metaDates = new Set(rows.map((row) => row.date));
+  const latestMetaSyncedAt = rows
+    .map((row) => row.synced_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+  const unmatchedRevenue = unmatchedSales.reduce((sum, row) => sum + row.amount, 0);
+  const sourceStatus = {
+    meta: {
+      rowCount: rows.length,
+      spend: dollars(rows.reduce((sum, row) => sum + (row.spend_cents || 0), 0)),
+      latestSyncedAt: latestMetaSyncedAt || null,
+      missingDates: datesInRange(query.dateFrom, query.dateTo).filter(
+        (date) => !metaDates.has(date)
+      ),
+    },
+    attributionEvents: {
+      manychat: events.filter((event) => event.source === "manychat").length,
+      ghl: events.filter((event) => event.source === "ghl").length,
+    },
+    sales: {
+      rowCount: attributionSalesRows.length,
+      organicOrUnattributedCount: unmatchedSales.length,
+      organicOrUnattributedRevenue: unmatchedRevenue,
+    },
+  };
+
+  return buildPayload(query, finalized, events, false, finalizedDaily, {
+    unmatchedSales,
+    sourceStatus,
+  });
 }

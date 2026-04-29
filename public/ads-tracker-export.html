@@ -104,6 +104,15 @@
   .section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
   .section-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500}
   .section-meta{font-size:11px;color:var(--text-4)}
+  .attribution-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 26px}
+  .attr-card{border:1px solid var(--border);border-radius:8px;background:#0f0f0f;padding:14px 16px;min-height:78px}
+  .attr-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
+  .attr-value{font-size:23px;line-height:1.05;font-weight:500;letter-spacing:-0.03em;color:var(--text)}
+  .attr-value.gold{color:var(--gold)}
+  .attr-meta{font-size:11px;color:var(--text-4);margin-top:7px}
+  .attr-meta.good{color:var(--green)}
+  .attr-meta.warn{color:var(--gold-dim)}
+  @media(max-width:900px){.attribution-strip{grid-template-columns:1fr}}
 
   /* Table panel */
   .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
@@ -2357,6 +2366,40 @@ function recentEntriesFromDashboard(dashboard){
   });
 }
 
+function RevenueAttributionStrip({dashboard}){
+  const summary = dashboard?.summary || {};
+  const attribution = dashboard?.attribution || {};
+  const paid = Number(attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
+  const organic = Number(attribution.organicUnattributedRevenue ?? summary.organicUnattributedRevenue ?? 0);
+  const total = Number(attribution.totalCollectedRevenue ?? summary.totalCollectedRevenue ?? (paid + organic));
+  const missingMetaDates = dashboard?.sourceStatus?.meta?.missingDates || [];
+  const unmatchedCount = attribution.unmatchedSales?.length || dashboard?.sourceStatus?.sales?.organicOrUnattributedCount || 0;
+
+  return (
+    <div className="attribution-strip">
+      <div className="attr-card">
+        <div className="attr-label">Paid attributed</div>
+        <div className="attr-value gold">{fmtUsd(paid)}</div>
+        <div className="attr-meta">Revenue tied to ad keyword attribution</div>
+      </div>
+      <div className="attr-card">
+        <div className="attr-label">Organic / unattributed</div>
+        <div className="attr-value">{fmtUsd(organic)}</div>
+        <div className={"attr-meta "+(organic ? "warn" : "good")}>
+          {organic ? `${unmatchedCount} sale${unmatchedCount===1?"":"s"} not tied to a paid keyword` : "No unmatched paid revenue"}
+        </div>
+      </div>
+      <div className="attr-card">
+        <div className="attr-label">Total collected</div>
+        <div className="attr-value">{fmtUsd(total)}</div>
+        <div className={"attr-meta "+(missingMetaDates.length ? "warn" : "good")}>
+          {missingMetaDates.length ? `Meta spend pending for ${missingMetaDates.length} date${missingMetaDates.length===1?"":"s"}` : "Meta + attribution sources loaded"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ------- App
 function App(){
   const [account, setAccount] = useState("all");
@@ -2522,6 +2565,8 @@ function App(){
             </div>
             <CampaignTable account={account} status={status} campaigns={scopedCampaigns} />
           </div>
+
+          <RevenueAttributionStrip dashboard={dashboard} />
 
           {/* Charts */}
           <div className="grid-charts">

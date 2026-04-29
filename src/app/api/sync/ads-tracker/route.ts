@@ -331,7 +331,7 @@ async function deleteStaleMetaRows(
   dateFrom: string,
   dateTo: string,
   rows: AdsMetaInsightRow[]
-) {
+): Promise<{ skippedDates: string[] }> {
   const adIdsByDate = new Map<string, Set<string>>();
   for (const row of rows) {
     const ids = adIdsByDate.get(row.date) || new Set<string>();
@@ -339,8 +339,16 @@ async function deleteStaleMetaRows(
     adIdsByDate.set(row.date, ids);
   }
 
+  const skippedDates: string[] = [];
   for (const date of datesInRange(dateFrom, dateTo)) {
     const ids = Array.from(adIdsByDate.get(date) || []);
+    if (ids.length === 0) {
+      // Empty Meta responses can be transient. Never wipe a day unless the
+      // fresh API response contains at least one row for that day.
+      skippedDates.push(date);
+      continue;
+    }
+
     let query = db
       .from("ads_meta_insights_daily")
       .delete()
@@ -354,6 +362,8 @@ async function deleteStaleMetaRows(
     const { error } = await query;
     if (error) throw error;
   }
+
+  return { skippedDates };
 }
 
 async function isAuthorized(req: NextRequest) {
@@ -382,7 +392,13 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getServiceSupabase();
-  const results: Array<{ account: string; fetched: number; upserted: number; error?: string }> = [];
+  const results: Array<{
+    account: string;
+    fetched: number;
+    upserted: number;
+    skippedStaleDeleteDates?: string[];
+    error?: string;
+  }> = [];
   let syncRunId: string | null = null;
 
   const { data: syncRun, error: syncRunError } = await db
@@ -451,9 +467,14 @@ export async function POST(req: NextRequest) {
       }
 
       if (rows.length > 0) await upsertMetaRows(db, rows);
-      await deleteStaleMetaRows(db, account.key, dateFrom, dateTo, rows);
+      const staleDelete = await deleteStaleMetaRows(db, account.key, dateFrom, dateTo, rows);
 
-      results.push({ account: account.key, fetched: insights.length, upserted: rows.length });
+      results.push({
+        account: account.key,
+        fetched: insights.length,
+        upserted: rows.length,
+        skippedStaleDeleteDates: staleDelete.skippedDates,
+      });
     } catch (error) {
       results.push({
         account: account.key,
