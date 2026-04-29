@@ -554,6 +554,13 @@ function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
   };
 }
 
+function filterSalesRowsForClients(rows: SheetRow[], clientFilter: string[]) {
+  return rows.filter((row) => {
+    const clientKey = clientFromOffer(row);
+    return !clientKey || clientFilter.includes(clientKey);
+  });
+}
+
 async function fetchSalesRowsFromSupabase(
   db: ReturnType<typeof getServiceSupabase>,
   query: AdsTrackerQuery,
@@ -593,12 +600,26 @@ async function fetchSalesRowsFromSupabase(
 
   if (!data || data.length === 0) return null;
 
-  return (data as unknown as SalesTrackerDbRow[])
-    .map(salesDbRowToSheetRow)
-    .filter((row) => {
-      const clientKey = clientFromOffer(row);
-      return !clientKey || clientFilter.includes(clientKey);
-    });
+  return filterSalesRowsForClients(
+    (data as unknown as SalesTrackerDbRow[]).map(salesDbRowToSheetRow),
+    clientFilter
+  );
+}
+
+async function fetchFreshSalesRows(
+  db: ReturnType<typeof getServiceSupabase>,
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+): Promise<SheetRow[]> {
+  try {
+    return filterSalesRowsForClients(
+      await fetchSheetData(query.dateFrom, query.dateTo),
+      clientFilter
+    );
+  } catch (error) {
+    console.warn("[ads-tracker] Live sales sheet fetch failed; falling back to synced rows", error);
+    return (await fetchSalesRowsFromSupabase(db, query, clientFilter)) || [];
+  }
 }
 
 function applySalesToGroups(
@@ -1150,12 +1171,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
 
   const bookings = attributionEvents.filter((event) => event.source === "ghl");
-  const salesRows =
-    (await fetchSalesRowsFromSupabase(db, query, clientFilter)) ??
-    (await fetchSheetData(query.dateFrom, query.dateTo).catch((error) => {
-      console.warn("[ads-tracker] Sales sheet fetch failed", error);
-      return [] as SheetRow[];
-    }));
+  const salesRows = await fetchFreshSalesRows(db, query, clientFilter);
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
 
   const includeSalesOutcomeMetrics = (match: KeywordEvent, row: SheetRow) =>

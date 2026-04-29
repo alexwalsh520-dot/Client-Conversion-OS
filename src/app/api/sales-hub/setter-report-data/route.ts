@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetterReportData } from "@/lib/setter-report-data";
 
+export const dynamic = "force-dynamic";
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+};
+
 function getEtDateString(input: string | null) {
   if (input) return input;
 
@@ -20,14 +26,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const data = await getSetterReportData(reportDate);
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[sales-hub/setter-report-data] error:", error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to load setter report data",
       },
-      { status: 500 },
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 }

@@ -228,7 +228,7 @@ async function fetchTabValues(
   const range = encodeURIComponent(`${tab}!A8:Q1000`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { cache: "no-store" });
 
   if (!response.ok) {
     // 400 often means the tab doesn't exist — return empty
@@ -407,7 +407,7 @@ export async function fetchSubscriptionsSold(
     try {
       const range = encodeURIComponent(`${tab}!Q3`);
       const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) continue;
       const json = await response.json();
       const val = json.values?.[0]?.[0];

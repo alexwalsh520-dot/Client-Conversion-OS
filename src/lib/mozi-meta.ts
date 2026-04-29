@@ -74,7 +74,7 @@ async function metaFetch<T>(url: string, accessToken?: string): Promise<T> {
   const separator = url.includes("?") ? "&" : "?";
   const authedUrl = `${url}${separator}access_token=${token}`;
 
-  const res = await fetch(authedUrl);
+  const res = await fetch(authedUrl, { cache: "no-store" });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Meta API error ${res.status}: ${body}`);

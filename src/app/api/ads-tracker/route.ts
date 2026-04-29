@@ -6,6 +6,12 @@ import {
   type AdsTrackerStatus,
 } from "@/lib/ads-tracker/server";
 
+export const dynamic = "force-dynamic";
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+};
+
 function todayIso() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
@@ -51,7 +57,7 @@ export async function GET(req: NextRequest) {
       dateTo,
     });
 
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[ads-tracker] Dashboard load failed", error);
     return NextResponse.json(
@@ -59,7 +65,7 @@ export async function GET(req: NextRequest) {
         error: error instanceof Error ? error.message : "Ads Tracker failed to load live data",
         query: { dateFrom, dateTo },
       },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
