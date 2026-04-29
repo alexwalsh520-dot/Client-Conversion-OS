@@ -892,6 +892,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                                       email: client.email,
                                     }}
                                     mode="pending"
+                                    intakeForm={form}
                                     onRefreshClients={onRefreshClients}
                                   />
                                 ) : (

@@ -25,7 +25,9 @@ import { PasteCorrectionSection } from "./PasteCorrectionSection";
 import { GenerateProgress } from "./GenerateProgress";
 import { PlanHistory } from "./PlanHistory";
 import { MoveToDoneDialog } from "./MoveToDoneDialog";
+import { IntakeFormCard } from "./IntakeFormCard";
 import type { CoachClientLite, PlanResponse, PanelMode } from "./types";
+import type { NutritionIntakeForm } from "@/lib/types";
 
 // ===========================================================================
 // Hook: load latest plan for a client
@@ -91,12 +93,17 @@ function useLatestPlan(clientId: number, refreshKey: number) {
 interface NutritionV2TaskPanelProps {
   client: CoachClientLite;
   mode: PanelMode;
+  /** Intake form for the linked client. Rendered as a collapsible card
+   *  at the top of every state so the coach always sees parsed intake
+   *  context (matches the v1 panel's behavior). */
+  intakeForm?: NutritionIntakeForm;
   onRefreshClients?: () => void;
 }
 
 export function NutritionV2TaskPanel({
   client,
   mode,
+  intakeForm,
   onRefreshClients,
 }: NutritionV2TaskPanelProps) {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -153,6 +160,7 @@ export function NutritionV2TaskPanel({
   if (loading && !planResp && missing === false) {
     return (
       <div style={panelStyle}>
+        <IntakeFormCard form={intakeForm} />
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           Loading…
         </div>
@@ -167,6 +175,7 @@ export function NutritionV2TaskPanel({
       // so coach sees the failure detail; "Try Again" clears it.
       return (
         <div style={panelStyle}>
+          <IntakeFormCard form={intakeForm} />
           <StateBlocked
             errorKind={jobState.error_kind ?? "unknown"}
             errorDetails={jobState.error_details}
@@ -193,6 +202,7 @@ export function NutritionV2TaskPanel({
     }
     return (
       <div style={panelStyle}>
+        <IntakeFormCard form={intakeForm} />
         <GenerateProgress state={jobState} onCancel={cancelJob} />
       </div>
     );
@@ -202,6 +212,7 @@ export function NutritionV2TaskPanel({
   if (missing || !planResp) {
     return (
       <div style={panelStyle}>
+        <IntakeFormCard form={intakeForm} />
         <StateNoPlan
           onGenerate={handleGenerate}
           error={generateError}
@@ -218,6 +229,7 @@ export function NutritionV2TaskPanel({
   if (auditBlocked) {
     return (
       <div style={panelStyle}>
+        <IntakeFormCard form={intakeForm} />
         <StateBlocked
           errorKind="audit_blocked"
           errorDetails={plan.audit_results}
@@ -251,6 +263,7 @@ export function NutritionV2TaskPanel({
 
   return (
     <div style={panelStyle}>
+      <IntakeFormCard form={intakeForm} />
       {reviewRecommended && (
         <CoachReviewBanner
           complexityReasons={plan.complexity_reasons ?? []}
