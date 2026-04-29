@@ -504,6 +504,13 @@ const panelStyle: React.CSSProperties = {
   padding: 16,
   background: "rgba(255,255,255,0.02)",
   borderTop: "1px solid rgba(255,255,255,0.06)",
+  // Belt-and-suspenders against horizontal overflow: the panel lives
+  // inside a `<table className="data-table">` which auto-sizes to its
+  // widest content. minWidth: 0 + overflow: hidden lets the panel
+  // shrink to the available width instead of expanding the table.
+  minWidth: 0,
+  overflow: "hidden",
+  boxSizing: "border-box",
 };
 
 const primaryButton: React.CSSProperties = {

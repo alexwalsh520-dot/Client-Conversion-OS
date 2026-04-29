@@ -1,12 +1,21 @@
 /**
- * Coach UI v2 — "Copy correction prompt for Claude.ai" + sharable PDF
- * link block. Drives the round-trip with Claude.ai for State 3.
+ * Coach UI v2 — handoff prompt + sharable PDF link block.
+ *
+ * Click "Get correction prompt" → fetches the pre-rendered handoff
+ * markdown and reveals it inline in a textarea. Coach copies manually
+ * (or clicks the copy button) and pastes into a Claude.ai chat in their
+ * own browser tab.
+ *
+ * Earlier rev opened claude.ai/new automatically and pushed text to
+ * clipboard, but the new tab loses clipboard access in some browsers
+ * and the paste failed silently. Showing the prompt inline + manual
+ * copy is more reliable for coaches.
  */
 
 "use client";
 
 import React, { useState } from "react";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, Check } from "lucide-react";
 
 interface CopyHandoffSectionProps {
   planId: number;
@@ -14,32 +23,42 @@ interface CopyHandoffSectionProps {
 }
 
 export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [textCopied, setTextCopied] = useState(false);
   const [pdfCopied, setPdfCopied] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleCopy = async () => {
-    setCopyState("copying");
-    setErrorMessage(null);
+  const handleLoad = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/nutrition/v2/plan/${planId}/coach-handoff`);
       if (!res.ok) {
         throw new Error(`couldn't load handoff: HTTP ${res.status}`);
       }
       const data = await res.json();
-      const prompt = (data.handoff_prompt as string) ?? "";
-      if (!prompt) {
+      const p = (data.handoff_prompt as string) ?? "";
+      if (!p) {
         throw new Error("handoff prompt is empty");
       }
-      await navigator.clipboard.writeText(prompt);
-      setCopyState("copied");
-      // Open Claude.ai in a new tab
-      window.open("https://claude.ai/new", "_blank", "noopener");
-      // Reset after 2.5s
-      setTimeout(() => setCopyState("idle"), 2_500);
+      setPrompt(p);
     } catch (e) {
-      setCopyState("error");
-      setErrorMessage(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setTextCopied(true);
+      setTimeout(() => setTextCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable — coach can still select-all in the
+      // textarea below as a fallback.
     }
   };
 
@@ -48,51 +67,112 @@ export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) 
     try {
       await navigator.clipboard.writeText(pdfUrl);
       setPdfCopied(true);
-      setTimeout(() => setPdfCopied(false), 2_000);
+      setTimeout(() => setPdfCopied(false), 2000);
     } catch {
       // ignore
     }
   };
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      <button
-        onClick={handleCopy}
-        disabled={copyState === "copying"}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "8px 14px",
-          background: copyState === "copied" ? "var(--success, #22c55e)" : "var(--accent, #6366f1)",
-          color: "#fff",
-          border: "none",
-          borderRadius: 6,
-          cursor: copyState === "copying" ? "wait" : "pointer",
-          fontSize: 13,
-          fontWeight: 600,
-          marginBottom: 8,
-          transition: "background 200ms",
-        }}
-      >
-        <Copy size={13} />
-        {copyState === "copying"
-          ? "Loading prompt…"
-          : copyState === "copied"
-            ? "✓ Copied — opening Claude.ai"
-            : copyState === "error"
-              ? "Failed — try again"
-              : "Copy correction prompt for Claude.ai"}
-      </button>
+    <div style={{ marginBottom: 12, minWidth: 0 }}>
+      {!prompt ? (
+        <button
+          onClick={handleLoad}
+          disabled={loading}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 14px",
+            background: "var(--accent, #6366f1)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            cursor: loading ? "wait" : "pointer",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <Copy size={13} />
+          {loading ? "Loading prompt…" : "Get correction prompt for Claude.ai"}
+        </button>
+      ) : (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 6,
+            }}
+          >
+            <button
+              onClick={handleCopyPrompt}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                background: textCopied ? "var(--success, #22c55e)" : "var(--accent, #6366f1)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {textCopied ? <Check size={12} /> : <Copy size={12} />}
+              {textCopied ? "Copied" : "Copy prompt"}
+            </button>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {prompt.length.toLocaleString()} characters · paste into a new
+              Claude.ai chat
+            </span>
+          </div>
+          <textarea
+            readOnly
+            value={prompt}
+            onFocus={(e) => e.currentTarget.select()}
+            rows={10}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 11,
+              lineHeight: 1.4,
+              background: "rgba(0,0,0,0.4)",
+              color: "var(--text-primary)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 4,
+              padding: 8,
+              resize: "vertical",
+              whiteSpace: "pre",
+              overflow: "auto",
+            }}
+          />
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+            Click the textarea to select all, or use the Copy prompt button
+            above. Then open Claude.ai in another tab, start a new chat, and
+            paste.
+          </div>
+        </div>
+      )}
 
-      {errorMessage && (
-        <div style={{ fontSize: 11, color: "var(--danger, #ef4444)", marginBottom: 8 }}>
-          {errorMessage}
+      {error && (
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 11,
+            color: "var(--danger, #ef4444)",
+          }}
+        >
+          {error}
         </div>
       )}
 
       {pdfUrl && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>
           <div style={{ marginBottom: 4 }}>PDF link to share with Claude.ai:</div>
           <div
             style={{
@@ -104,11 +184,13 @@ export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) 
               border: "1px solid rgba(255,255,255,0.08)",
               borderRadius: 4,
               fontFamily: "ui-monospace, monospace",
+              minWidth: 0,
             }}
           >
             <span
               style={{
                 flex: 1,
+                minWidth: 0,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -128,16 +210,22 @@ export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) 
                 padding: "2px 4px",
                 display: "flex",
                 alignItems: "center",
+                flexShrink: 0,
               }}
               title="Copy URL"
             >
-              {pdfCopied ? "✓" : <Copy size={11} />}
+              {pdfCopied ? <Check size={11} /> : <Copy size={11} />}
             </button>
             <a
               href={pdfUrl}
               target="_blank"
               rel="noreferrer"
-              style={{ color: "var(--text-muted)", display: "flex", alignItems: "center" }}
+              style={{
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                flexShrink: 0,
+              }}
               title="Open PDF"
             >
               <ExternalLink size={11} />

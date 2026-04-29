@@ -92,9 +92,15 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            // minmax(0, 1fr) lets columns shrink below the intrinsic
+            // width of long unbreakable strings (ingredient lists,
+            // addresses) so the parent table cell doesn't stretch
+            // past the viewport. Without this the row overflows
+            // horizontally and the user has to scroll right.
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
             gap: 8,
             fontSize: 13,
+            minWidth: 0,
           }}
         >
           {fields.map((f) => (
@@ -104,6 +110,8 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
                 padding: "6px 10px",
                 background: "rgba(255,255,255,0.04)",
                 borderRadius: 6,
+                minWidth: 0,
+                overflow: "hidden",
               }}
             >
               <div
@@ -122,7 +130,12 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
                 style={{
                   color: "var(--text-primary)",
                   whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
+                  // overflow-wrap: anywhere is the modern replacement
+                  // for word-break: break-word AND it allows breaks
+                  // inside long unbreakable tokens (URLs, comma-only
+                  // ingredient lists). This is what stops the column
+                  // from forcing the parent wider than the viewport.
+                  overflowWrap: "anywhere",
                 }}
               >
                 {f.value}
