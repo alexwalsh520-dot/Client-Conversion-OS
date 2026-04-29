@@ -22,6 +22,15 @@ import {
   Loader2,
 } from "lucide-react";
 import type { Client, NutritionIntakeForm } from "@/lib/types";
+import { NutritionV2TaskPanel } from "./nutrition-v2/NutritionV2TaskPanel";
+
+// B6b — feature flag for the new best-of-3 + coach-review-handoff UI.
+// Default: ON. To disable (kill-switch back to v1 MealPlanTaskPanel for
+// Pending rows) set NEXT_PUBLIC_NUTRITION_V2_UI=false in the deployment
+// environment. The Done section always renders the v1 panel for legacy
+// plan rendering — the flag only gates the Pending-row experience.
+const USE_NUTRITION_V2_UI =
+  process.env.NEXT_PUBLIC_NUTRITION_V2_UI !== "false";
 
 interface Props {
   clients: Client[];
@@ -875,12 +884,24 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                           {isExpanded && (
                             <tr>
                               <td colSpan={4} style={{ padding: 0 }}>
-                                <MealPlanTaskPanel
-                                  client={client}
-                                  intakeForm={form}
-                                  isDoneSection={false}
-                                  onRefreshClients={onRefreshClients}
-                                />
+                                {USE_NUTRITION_V2_UI ? (
+                                  <NutritionV2TaskPanel
+                                    client={{
+                                      id: client.id!,
+                                      name: client.name,
+                                      email: client.email,
+                                    }}
+                                    mode="pending"
+                                    onRefreshClients={onRefreshClients}
+                                  />
+                                ) : (
+                                  <MealPlanTaskPanel
+                                    client={client}
+                                    intakeForm={form}
+                                    isDoneSection={false}
+                                    onRefreshClients={onRefreshClients}
+                                  />
+                                )}
                               </td>
                             </tr>
                           )}

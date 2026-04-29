@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/monthly-financials",
       "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/nutrition-plan-drain",
+      "schedule": "* * * * *"
     }
   ]
 }
