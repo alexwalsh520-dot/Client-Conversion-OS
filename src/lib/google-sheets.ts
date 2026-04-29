@@ -54,13 +54,7 @@ const SALES_TRACKER_SPREADSHEET_ID = "1890ucxVRqIPiXjs2-XoW517_RKKvPZC0tT-OU33av
 // ---------------------------------------------------------------------------
 
 function getSheetId(): string {
-  const id = process.env.SALES_TRACKER_SPREADSHEET_ID || SALES_TRACKER_SPREADSHEET_ID;
-  if (!id) {
-    throw new Error(
-      "Missing Sales Tracker spreadsheet ID"
-    );
-  }
-  return id;
+  return SALES_TRACKER_SPREADSHEET_ID;
 }
 
 function getApiKey(): string {
