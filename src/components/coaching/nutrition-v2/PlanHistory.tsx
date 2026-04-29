@@ -1,19 +1,21 @@
 /**
- * Coach UI v2 — Previous Plan Versions list. Collapsed by default.
- * Each row: version, timestamp, status badge, View PDF link.
+ * Coach UI (B6c) — Previous Plan Versions list. Collapsed by default.
+ *
+ * Each row: version, status (uploaded vs legacy), timestamp, View PDF.
+ * Simplified post-rip-out — no more clean/coach_review/blocked/manual
+ * status taxonomy.
  */
 
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Upload } from "lucide-react";
 import type { ClientPlansListItem } from "./types";
 
 interface PlanHistoryProps {
   clientId: number;
   /** Latest plan_id — excluded from history (it's the one already shown). */
   excludePlanId: number | null;
-  /** Bumped externally to force re-fetch (e.g., after applying a correction). */
   refreshKey?: number;
 }
 
@@ -66,9 +68,7 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
       {expanded && (
         <div style={{ marginTop: 8 }}>
           {loading ? (
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Loading…
-            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Loading…</div>
           ) : filtered.length === 0 ? (
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
               No prior versions for this client.
@@ -86,6 +86,7 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
                     background: "rgba(255,255,255,0.03)",
                     borderRadius: 4,
                     fontSize: 11,
+                    minWidth: 0,
                   }}
                 >
                   <span
@@ -97,30 +98,20 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
                   >
                     v{p.version_number ?? p.version}
                   </span>
-                  <StatusBadge status={p.status} />
-                  <span style={{ color: "var(--text-muted)", flex: 1 }}>
-                    {p.created_at
-                      ? new Date(p.created_at).toLocaleString()
-                      : "—"}
+                  <SourceBadge isUploaded={p.is_uploaded} />
+                  <span
+                    style={{
+                      color: "var(--text-muted)",
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
+                    {p.uploaded_by ? ` · ${p.uploaded_by}` : p.created_by ? ` · ${p.created_by}` : ""}
                   </span>
-                  {p.template_id === "coach_corrected" && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "rgb(255, 179, 71)",
-                        background: "rgba(255, 179, 71, 0.1)",
-                        padding: "1px 6px",
-                        borderRadius: 4,
-                      }}
-                      title={
-                        p.parent_plan_id
-                          ? `Coach correction of plan ${p.parent_plan_id}`
-                          : "Coach correction"
-                      }
-                    >
-                      corrected
-                    </span>
-                  )}
                   {p.pdf_signed_url ? (
                     <a
                       href={p.pdf_signed_url}
@@ -133,16 +124,13 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
                         color: "var(--accent, #6366f1)",
                         textDecoration: "none",
                         fontSize: 11,
+                        flexShrink: 0,
                       }}
                     >
                       <FileText size={11} /> View
                     </a>
-                  ) : p.manual_completion ? (
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      no PDF (manual)
-                    </span>
                   ) : (
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
                       no PDF
                     </span>
                   )}
@@ -156,29 +144,43 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
   );
 }
 
-function StatusBadge({ status }: { status: ClientPlansListItem["status"] }) {
-  const map = {
-    clean: { color: "var(--success, #22c55e)", label: "clean", Icon: CheckCircle },
-    coach_review: { color: "rgb(255, 179, 71)", label: "review", Icon: AlertTriangle },
-    blocked: { color: "var(--danger, #ef4444)", label: "blocked", Icon: XCircle },
-    manual: { color: "var(--text-muted)", label: "manual", Icon: FileText },
-  } as const;
-  const { color, label, Icon } = map[status];
+function SourceBadge({ isUploaded }: { isUploaded: boolean }) {
+  if (isUploaded) {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          color: "var(--success, #22c55e)",
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          fontWeight: 600,
+          flexShrink: 0,
+        }}
+      >
+        <Upload size={11} />
+        uploaded
+      </span>
+    );
+  }
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
-        color,
+        color: "var(--text-muted)",
         fontSize: 10,
         textTransform: "uppercase",
         letterSpacing: 0.5,
         fontWeight: 600,
+        flexShrink: 0,
       }}
     >
-      <Icon size={11} />
-      {label}
+      <FileText size={11} />
+      legacy
     </span>
   );
 }

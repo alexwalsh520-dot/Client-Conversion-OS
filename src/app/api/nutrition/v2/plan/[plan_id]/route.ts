@@ -1,8 +1,12 @@
 /**
- * Phase B6b — GET /api/nutrition/v2/plan/:plan_id
+ * Phase B6c — GET /api/nutrition/v2/plan/:plan_id
  *
  * Returns a single plan row + freshly-signed PDF URL. Drives the
- * Coach UI's State 2 / 3 panels.
+ * coach panel's PDF preview after a manual upload.
+ *
+ * Simplified post-rip-out: no more coach_review_recommended /
+ * complexity_reasons / parent_plan_id / manual_completion fields —
+ * those columns were dropped in migration 022.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -30,7 +34,7 @@ export async function GET(
   const { data, error } = await db
     .from("nutrition_meal_plans")
     .select(
-      "id, client_id, version, version_number, build_type, dietary_style, allergy_flags, medical_flags, plan_complexity, distribution_template, audit_results, pdf_path, created_at, created_by, template_id, coach_review_recommended, complexity_reasons, parent_plan_id, manual_completion",
+      "id, client_id, version, version_number, pdf_path, uploaded_pdf_path, uploaded_by, created_at, created_by, template_id",
     )
     .eq("id", planId)
     .single();
@@ -47,24 +51,9 @@ export async function GET(
     signedUrl = (signed as { signedUrl?: string } | null)?.signedUrl ?? null;
   }
 
-  // Audit summary derived for UI display
-  const audit = r.audit_results as
-    | { pass?: boolean; blocking_errors?: unknown[]; warnings?: unknown[]; action?: string }
-    | null;
-  const audit_summary = audit
-    ? {
-        pass: Boolean(audit.pass),
-        action: audit.action ?? null,
-        blocking_count: Array.isArray(audit.blocking_errors)
-          ? audit.blocking_errors.length
-          : 0,
-        warning_count: Array.isArray(audit.warnings) ? audit.warnings.length : 0,
-      }
-    : null;
-
   return NextResponse.json({
     plan: r,
     pdf_signed_url: signedUrl,
-    audit_summary,
+    is_uploaded: r.uploaded_pdf_path != null,
   });
 }

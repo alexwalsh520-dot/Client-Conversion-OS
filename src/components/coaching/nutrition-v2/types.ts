@@ -1,5 +1,6 @@
 /**
- * Coach UI v2 — shared types.
+ * Coach UI v2 (B6c) — shared types.
+ * Simplified post-rip-out: no more coach_review affordances.
  */
 
 export interface PlanRow {
@@ -8,31 +9,17 @@ export interface PlanRow {
   version: number | null;
   version_number: number | null;
   pdf_path: string | null;
-  audit_results: unknown;
-  build_type: string;
-  dietary_style: string | null;
-  allergy_flags: string[] | null;
-  medical_flags: string[] | null;
-  plan_complexity: string | null;
-  distribution_template: string | null;
+  uploaded_pdf_path: string | null;
+  uploaded_by: string | null;
   created_at: string;
   created_by: string | null;
   template_id: string | null;
-  coach_review_recommended: boolean;
-  complexity_reasons: string[] | null;
-  parent_plan_id: number | null;
-  manual_completion: boolean;
 }
 
 export interface PlanResponse {
   plan: PlanRow;
   pdf_signed_url: string | null;
-  audit_summary: {
-    pass: boolean;
-    action: string | null;
-    blocking_count: number;
-    warning_count: number;
-  } | null;
+  is_uploaded: boolean;
 }
 
 export interface ClientPlansListItem {
@@ -41,11 +28,9 @@ export interface ClientPlansListItem {
   version_number: number | null;
   created_at: string;
   created_by: string | null;
+  uploaded_by: string | null;
+  is_uploaded: boolean;
   template_id: string | null;
-  parent_plan_id: number | null;
-  coach_review_recommended: boolean;
-  manual_completion: boolean;
-  status: "clean" | "coach_review" | "blocked" | "manual";
   pdf_signed_url: string | null;
 }
 

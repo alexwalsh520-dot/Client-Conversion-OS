@@ -1,32 +1,28 @@
 /**
- * Coach UI v2 — top-level Pending-row panel.
+ * Coach UI (B6c) — Pending-row panel for the simplified upload flow.
  *
- * Renders one of four states based on the latest plan for the client:
- *   1. No plan generated yet  → Generate button
- *   2. Plan ready, clean      → PDF + Regenerate / Move to Done
- *   3. Plan ready, needs review → PDF + amber banner + handoff loop
- *   4. Generation blocked     → red banner + Try Again / Handle manually
+ * Section order:
+ *   1. Intake form (collapsible card, default-expanded)
+ *   2. CopyPromptButton — assemble + reveal Claude.ai prompt
+ *   3. UploadPlanButton — file picker for the finished PDF
+ *   4. If a plan exists: version metadata + PDF iframe + Replace + Move-to-Done
+ *   5. Previous Plan Versions (collapsed by default)
  *
- * Auth: relies on the existing NextAuth session (server endpoints enforce).
- * Polling: useNutritionJobPoll handles progress + timeouts.
- *
- * The Done-section row keeps the v1 panel — this panel is only used for
- * Pending rows when NEXT_PUBLIC_NUTRITION_V2_UI=true.
+ * No more in-app generation, no more best-of-3, no more polling, no
+ * more coach-review banner. Just intake → copy → paste-into-Claude →
+ * upload → done.
  */
 
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { FileText, RefreshCw, AlertCircle, CheckCircle } from "lucide-react";
-import { useNutritionJobPoll } from "./useNutritionJobPoll";
-import { CoachReviewBanner } from "./CoachReviewBanner";
-import { CopyHandoffSection } from "./CopyHandoffSection";
-import { PasteCorrectionSection } from "./PasteCorrectionSection";
-import { GenerateProgress } from "./GenerateProgress";
+import { CheckCircle } from "lucide-react";
+import { CopyPromptButton } from "./CopyPromptButton";
+import { UploadPlanButton } from "./UploadPlanButton";
+import { IntakeFormCard } from "./IntakeFormCard";
 import { PlanHistory } from "./PlanHistory";
 import { MoveToDoneDialog } from "./MoveToDoneDialog";
-import { IntakeFormCard } from "./IntakeFormCard";
-import type { CoachClientLite, PlanResponse, PanelMode } from "./types";
+import type { CoachClientLite, PanelMode, PlanResponse } from "./types";
 import type { NutritionIntakeForm } from "@/lib/types";
 
 // ===========================================================================
@@ -93,9 +89,6 @@ function useLatestPlan(clientId: number, refreshKey: number) {
 interface NutritionV2TaskPanelProps {
   client: CoachClientLite;
   mode: PanelMode;
-  /** Intake form for the linked client. Rendered as a collapsible card
-   *  at the top of every state so the coach always sees parsed intake
-   *  context (matches the v1 panel's behavior). */
   intakeForm?: NutritionIntakeForm;
   onRefreshClients?: () => void;
 }
@@ -107,396 +100,195 @@ export function NutritionV2TaskPanel({
   onRefreshClients,
 }: NutritionV2TaskPanelProps) {
   const [refreshKey, setRefreshKey] = useState(0);
-  const { data: planResp, loading, missing } = useLatestPlan(client.id, refreshKey);
-  const [activeJobId, setActiveJobId] = useState<number | null>(null);
-  const { state: jobState, cancel: cancelJob } = useNutritionJobPoll(activeJobId);
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const { data: planResp, loading } = useLatestPlan(client.id, refreshKey);
   const [showMoveToDone, setShowMoveToDone] = useState(false);
-  const [moveToDoneMode, setMoveToDoneMode] = useState<"normal" | "manual">("normal");
 
-  // Reload latest plan once a job finishes successfully
-  useEffect(() => {
-    if (jobState.status === "complete" && jobState.plan_id != null) {
-      setActiveJobId(null);
-      setRefreshKey((n) => n + 1);
-      if (onRefreshClients) onRefreshClients();
-    }
-  }, [jobState.status, jobState.plan_id, onRefreshClients]);
-
-  const handleGenerate = useCallback(async () => {
-    setGenerateError(null);
-    try {
-      const res = await fetch("/api/nutrition/v2/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: client.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
-      }
-      setActiveJobId((data as { job_id: number }).job_id);
-    } catch (e) {
-      setGenerateError(e instanceof Error ? e.message : String(e));
-    }
-  }, [client.id]);
-
-  const handleCorrectionApplied = useCallback(
-    (newPlanId: number) => {
-      // newPlanId is the new latest. Trigger refetch.
-      void newPlanId;
-      setRefreshKey((n) => n + 1);
-    },
-    [],
-  );
+  const handleUploaded = useCallback(() => {
+    setRefreshKey((n) => n + 1);
+    if (onRefreshClients) onRefreshClients();
+  }, [onRefreshClients]);
 
   const handleMoveToDoneComplete = useCallback(() => {
     setShowMoveToDone(false);
     if (onRefreshClients) onRefreshClients();
   }, [onRefreshClients]);
 
-  // ---- Render branches ----
-
-  if (loading && !planResp && missing === false) {
-    return (
-      <div style={panelStyle}>
-        <IntakeFormCard form={intakeForm} />
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          Loading…
-        </div>
-      </div>
-    );
-  }
-
-  // Generation in progress — preempts all other states.
-  if (activeJobId != null && jobState.status !== "complete") {
-    if (jobState.status === "failed" || jobState.status === "cancelled") {
-      // Surface as State 4-style block with retry CTA. Keep activeJobId set
-      // so coach sees the failure detail; "Try Again" clears it.
-      return (
-        <div style={panelStyle}>
-          <IntakeFormCard form={intakeForm} />
-          <StateBlocked
-            errorKind={jobState.error_kind ?? "unknown"}
-            errorDetails={jobState.error_details}
-            onTryAgain={() => {
-              setActiveJobId(null);
-              handleGenerate();
-            }}
-            onHandleManually={() => {
-              setActiveJobId(null);
-              setMoveToDoneMode("manual");
-              setShowMoveToDone(true);
-            }}
-          />
-          {showMoveToDone && (
-            <MoveToDoneDialog
-              clientId={client.id}
-              onComplete={handleMoveToDoneComplete}
-              onCancel={() => setShowMoveToDone(false)}
-              manualMode={moveToDoneMode === "manual"}
-            />
-          )}
-        </div>
-      );
-    }
-    return (
-      <div style={panelStyle}>
-        <IntakeFormCard form={intakeForm} />
-        <GenerateProgress state={jobState} onCancel={cancelJob} />
-      </div>
-    );
-  }
-
-  // ---- State 1: no plan ----
-  if (missing || !planResp) {
-    return (
-      <div style={panelStyle}>
-        <IntakeFormCard form={intakeForm} />
-        <StateNoPlan
-          onGenerate={handleGenerate}
-          error={generateError}
-        />
-      </div>
-    );
-  }
-
-  // ---- State 4: generation blocked (most recent plan has no PDF AND was
-  //               not a manual_completion) ----
-  const plan = planResp.plan;
-  const auditBlocked =
-    !plan.pdf_path && !plan.manual_completion;
-  if (auditBlocked) {
-    return (
-      <div style={panelStyle}>
-        <IntakeFormCard form={intakeForm} />
-        <StateBlocked
-          errorKind="audit_blocked"
-          errorDetails={plan.audit_results}
-          onTryAgain={handleGenerate}
-          onHandleManually={() => {
-            setMoveToDoneMode("manual");
-            setShowMoveToDone(true);
-          }}
-        />
-        <PlanHistory
-          clientId={client.id}
-          excludePlanId={plan.id}
-          refreshKey={refreshKey}
-        />
-        {showMoveToDone && (
-          <MoveToDoneDialog
-            clientId={client.id}
-            onComplete={handleMoveToDoneComplete}
-            onCancel={() => setShowMoveToDone(false)}
-            manualMode={true}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // ---- State 2 / 3: plan ready ----
-  const reviewRecommended = plan.coach_review_recommended;
-  const auditWarnings =
-    (plan.audit_results as { warnings?: unknown[] } | null)?.warnings ?? [];
+  const plan = planResp?.plan ?? null;
 
   return (
     <div style={panelStyle}>
+      {/* 1. Intake form */}
       <IntakeFormCard form={intakeForm} />
-      {reviewRecommended && (
-        <CoachReviewBanner
-          complexityReasons={plan.complexity_reasons ?? []}
-          auditWarnings={auditWarnings as Parameters<typeof CoachReviewBanner>[0]["auditWarnings"]}
-        />
-      )}
 
-      {/* Plan metadata */}
+      {/* 2. Copy prompt */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 10,
-          fontSize: 12,
-          color: "var(--text-muted)",
+          marginBottom: 14,
+          padding: 12,
+          background: "rgba(99,102,241,0.05)",
+          border: "1px solid rgba(99,102,241,0.2)",
+          borderRadius: 8,
         }}
       >
-        <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-          v{plan.version_number ?? plan.version}
-        </span>
-        <span>· generated {new Date(plan.created_at).toLocaleString()}</span>
-        {plan.created_by && <span>· by {plan.created_by}</span>}
-        {plan.template_id === "coach_corrected" && (
-          <span
-            style={{
-              fontSize: 10,
-              color: "rgb(255, 179, 71)",
-              background: "rgba(255, 179, 71, 0.1)",
-              padding: "1px 6px",
-              borderRadius: 4,
-            }}
-          >
-            corrected
-          </span>
-        )}
-      </div>
-
-      {/* PDF embed — strip the thumbnail sidebar (#navpanes=0) and fit-to-width
-          so the PDF renders cleanly in the panel width. Chrome's default
-          embedded viewer otherwise shows a thumbnail rail + dark scratch
-          area which reads as a broken layout. */}
-      {planResp.pdf_signed_url && (
-        <iframe
-          src={`${planResp.pdf_signed_url}#navpanes=0&view=FitH`}
-          style={{
-            display: "block",
-            width: "100%",
-            maxWidth: "100%",
-            height: 720,
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 6,
-            background: "#fff",
-            marginBottom: 12,
-          }}
-          title={`Plan v${plan.version_number ?? plan.version}`}
-        />
-      )}
-
-      {/* Coach-review actions (state 3 only) */}
-      {reviewRecommended && (
-        <div style={{ marginBottom: 12 }}>
-          <CopyHandoffSection planId={plan.id} pdfUrl={planResp.pdf_signed_url} />
-          <PasteCorrectionSection
-            planId={plan.id}
-            onCorrectionApplied={handleCorrectionApplied}
-          />
-        </div>
-      )}
-
-      {/* Always-available actions */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          onClick={handleGenerate}
-          style={secondaryButton}
-        >
-          <RefreshCw size={12} /> Regenerate
-        </button>
-        {mode === "pending" && (
-          <button
-            onClick={() => {
-              setMoveToDoneMode("normal");
-              setShowMoveToDone(!showMoveToDone);
-            }}
-            style={primaryButton}
-          >
-            <CheckCircle size={12} /> Move to Done
-          </button>
-        )}
-      </div>
-
-      {showMoveToDone && (
-        <MoveToDoneDialog
-          clientId={client.id}
-          onComplete={handleMoveToDoneComplete}
-          onCancel={() => setShowMoveToDone(false)}
-          manualMode={moveToDoneMode === "manual"}
-        />
-      )}
-
-      <PlanHistory
-        clientId={client.id}
-        excludePlanId={plan.id}
-        refreshKey={refreshKey}
-      />
-    </div>
-  );
-}
-
-// ===========================================================================
-// State 1
-// ===========================================================================
-
-function StateNoPlan({
-  onGenerate,
-  error,
-}: {
-  onGenerate: () => void;
-  error: string | null;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 13,
-          color: "var(--text-muted)",
-          marginBottom: 12,
-        }}
-      >
-        No plan generated yet for this client.
-      </div>
-      <button onClick={onGenerate} style={primaryButton}>
-        <FileText size={12} /> Generate Plan
-      </button>
-      {error && (
         <div
           style={{
-            marginTop: 8,
-            fontSize: 11,
-            color: "var(--danger, #ef4444)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            marginBottom: 8,
           }}
         >
-          {error}
+          1. Generate the plan in Claude.ai
         </div>
-      )}
-    </div>
-  );
-}
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+          Click below to assemble a prompt with this client&apos;s intake +
+          computed macro targets. Paste into a new Claude.ai chat, ask
+          Claude to build the plan, then export it as a PDF.
+        </div>
+        <CopyPromptButton clientId={client.id} />
+      </div>
 
-// ===========================================================================
-// State 4
-// ===========================================================================
-
-function StateBlocked({
-  errorKind,
-  errorDetails,
-  onTryAgain,
-  onHandleManually,
-}: {
-  errorKind: string;
-  errorDetails: unknown;
-  onTryAgain: () => void;
-  onHandleManually: () => void;
-}) {
-  // Best-effort summary from error_details
-  let summary = "Couldn't generate a valid plan for this client.";
-  let detail: string | null = null;
-  const ed = errorDetails as
-    | {
-        reason?: string;
-        attempts?: Array<{ attempt: number; kinds: string[] }>;
-        scored_diagnostics?: Array<{ hard_errors?: Array<{ kind: string }> }>;
-        blocking_errors?: Array<{ check: string; reason: string }>;
-      }
-    | null;
-
-  if (ed?.reason) detail = ed.reason;
-  if (ed?.attempts && Array.isArray(ed.attempts)) {
-    const allKinds = new Set<string>();
-    for (const a of ed.attempts) for (const k of a.kinds) allKinds.add(k);
-    if (allKinds.size > 0) {
-      const list = Array.from(allKinds).join(", ");
-      summary = `All 3 attempts produced: ${list}.`;
-      detail =
-        "Coach should review the intake form and try again, or handle manually.";
-    }
-  } else if (ed?.blocking_errors && Array.isArray(ed.blocking_errors) && ed.blocking_errors.length > 0) {
-    summary = `Audit blocked the plan (${ed.blocking_errors.length} blocker${ed.blocking_errors.length === 1 ? "" : "s"}).`;
-    detail = ed.blocking_errors
-      .slice(0, 3)
-      .map((e) => e.reason)
-      .join(" | ");
-  }
-
-  return (
-    <div
-      style={{
-        background: "rgba(239, 68, 68, 0.08)",
-        border: "1px solid rgba(239, 68, 68, 0.3)",
-        borderRadius: 8,
-        padding: 14,
-      }}
-    >
+      {/* 3. Upload */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          color: "rgb(239, 68, 68)",
-          fontWeight: 600,
-          fontSize: 13,
-          marginBottom: 6,
+          marginBottom: 14,
+          padding: 12,
+          background: "rgba(34,197,94,0.04)",
+          border: "1px solid rgba(34,197,94,0.2)",
+          borderRadius: 8,
         }}
       >
-        <AlertCircle size={14} />
-        {summary}
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            marginBottom: 8,
+          }}
+        >
+          2. Upload the finished PDF
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+          Once Claude.ai has produced the plan and you&apos;ve exported it
+          as a PDF, upload it here. It&apos;ll be saved as a new version
+          for this client.
+        </div>
+        <UploadPlanButton
+          clientId={client.id}
+          onUploaded={handleUploaded}
+          label={plan?.uploaded_pdf_path ? "Replace PDF" : "Upload PDF"}
+        />
       </div>
-      {detail && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          {detail}
+
+      {/* 4. Current plan preview */}
+      {loading && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
+          Loading…
         </div>
       )}
-      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 12 }}>
-        error_kind: {errorKind}
-      </div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={onTryAgain} style={primaryButton}>
-          <RefreshCw size={12} /> Try Again
-        </button>
-        <button onClick={onHandleManually} style={secondaryButton}>
-          Handle manually & mark Done
-        </button>
-      </div>
+      {!loading && plan && planResp?.pdf_signed_url && (
+        <div style={{ marginBottom: 14 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 10,
+              fontSize: 12,
+              color: "var(--text-muted)",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+              v{plan.version_number ?? plan.version}
+            </span>
+            <span>· {new Date(plan.created_at).toLocaleString()}</span>
+            {plan.uploaded_by && <span>· uploaded by {plan.uploaded_by}</span>}
+            {planResp.is_uploaded ? (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: "var(--success, #22c55e)",
+                  background: "rgba(34,197,94,0.1)",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  fontWeight: 600,
+                }}
+              >
+                uploaded
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  background: "rgba(255,255,255,0.05)",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  fontWeight: 600,
+                }}
+              >
+                legacy
+              </span>
+            )}
+          </div>
+          <iframe
+            src={`${planResp.pdf_signed_url}#navpanes=0&view=FitH`}
+            style={{
+              display: "block",
+              width: "100%",
+              maxWidth: "100%",
+              height: 720,
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 6,
+              background: "#fff",
+            }}
+            title={`Plan v${plan.version_number ?? plan.version}`}
+          />
+
+          {/* Move-to-Done */}
+          {mode === "pending" && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => setShowMoveToDone(!showMoveToDone)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 14px",
+                  background: "var(--success, #22c55e)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                <CheckCircle size={12} /> Move to Done
+              </button>
+              {showMoveToDone && (
+                <MoveToDoneDialog
+                  clientId={client.id}
+                  onComplete={handleMoveToDoneComplete}
+                  onCancel={() => setShowMoveToDone(false)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Plan history */}
+      <PlanHistory
+        clientId={client.id}
+        excludePlanId={plan?.id ?? null}
+        refreshKey={refreshKey}
+      />
     </div>
   );
 }
@@ -509,38 +301,7 @@ const panelStyle: React.CSSProperties = {
   padding: 16,
   background: "rgba(255,255,255,0.02)",
   borderTop: "1px solid rgba(255,255,255,0.06)",
-  // Belt-and-suspenders against horizontal overflow: the panel lives
-  // inside a `<table className="data-table">` which auto-sizes to its
-  // widest content. minWidth: 0 + overflow: hidden lets the panel
-  // shrink to the available width instead of expanding the table.
   minWidth: 0,
   overflow: "hidden",
   boxSizing: "border-box",
-};
-
-const primaryButton: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 14px",
-  background: "var(--accent, #6366f1)",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 600,
-};
-
-const secondaryButton: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 14px",
-  background: "none",
-  color: "var(--text-primary)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontSize: 12,
 };
