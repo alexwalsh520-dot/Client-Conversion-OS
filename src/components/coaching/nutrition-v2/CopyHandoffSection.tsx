@@ -135,6 +135,7 @@ export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) 
             value={prompt}
             onFocus={(e) => e.currentTarget.select()}
             rows={10}
+            wrap="soft"
             style={{
               width: "100%",
               boxSizing: "border-box",
@@ -147,8 +148,14 @@ export function CopyHandoffSection({ planId, pdfUrl }: CopyHandoffSectionProps) 
               borderRadius: 4,
               padding: 8,
               resize: "vertical",
-              whiteSpace: "pre",
-              overflow: "auto",
+              // Removed `whiteSpace: "pre"` — it was forcing lines not
+              // to wrap and demanding a wider intrinsic min-width than
+              // the panel could provide, which contributed to horizontal
+              // overflow. Soft-wrap is fine for a copy-only display;
+              // the actual newlines round-trip through the clipboard.
+              overflowWrap: "anywhere",
+              overflowX: "hidden",
+              overflowY: "auto",
             }}
           />
           <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>

@@ -302,13 +302,18 @@ export function NutritionV2TaskPanel({
         )}
       </div>
 
-      {/* PDF embed */}
+      {/* PDF embed — strip the thumbnail sidebar (#navpanes=0) and fit-to-width
+          so the PDF renders cleanly in the panel width. Chrome's default
+          embedded viewer otherwise shows a thumbnail rail + dark scratch
+          area which reads as a broken layout. */}
       {planResp.pdf_signed_url && (
         <iframe
-          src={planResp.pdf_signed_url}
+          src={`${planResp.pdf_signed_url}#navpanes=0&view=FitH`}
           style={{
+            display: "block",
             width: "100%",
-            height: 600,
+            maxWidth: "100%",
+            height: 720,
             border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 6,
             background: "#fff",
