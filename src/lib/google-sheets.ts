@@ -47,16 +47,17 @@ const MONTH_NAMES = [
 ] as const;
 
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
+const SALES_TRACKER_SPREADSHEET_ID = "1890ucxVRqIPiXjs2-XoW517_RKKvPZC0tT-OU33av9o";
 
 // ---------------------------------------------------------------------------
 // Environment helpers
 // ---------------------------------------------------------------------------
 
 function getSheetId(): string {
-  const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const id = process.env.SALES_TRACKER_SPREADSHEET_ID || SALES_TRACKER_SPREADSHEET_ID;
   if (!id) {
     throw new Error(
-      "Missing environment variable GOOGLE_SHEETS_SPREADSHEET_ID"
+      "Missing Sales Tracker spreadsheet ID"
     );
   }
   return id;
