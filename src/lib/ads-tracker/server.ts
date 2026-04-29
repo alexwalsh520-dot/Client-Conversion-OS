@@ -193,6 +193,7 @@ interface UnmatchedSale {
 
 interface BuildPayloadOptions {
   unmatchedSales?: UnmatchedSale[];
+  salesCollectedRevenue?: number;
   sourceStatus?: Record<string, unknown>;
 }
 
@@ -770,11 +771,13 @@ function buildPayload(
   const totalMainOfferClients = rows.reduce((sum, row) => sum + row.mainOfferClients, 0);
   const totalSubscriptionClients = rows.reduce((sum, row) => sum + row.subscriptionClients, 0);
   const unmatchedSales = options.unmatchedSales || [];
-  const organicUnattributedRevenue = unmatchedSales.reduce(
-    (sum, row) => sum + row.amount,
-    0
-  );
-  const totalCollectedRevenue = totalCollected + organicUnattributedRevenue;
+  const unmatchedSalesRevenue = unmatchedSales.reduce((sum, row) => sum + row.amount, 0);
+  const directSalesCollectedRevenue = options.salesCollectedRevenue;
+  const totalCollectedRevenue =
+    directSalesCollectedRevenue === undefined
+      ? totalCollected + unmatchedSalesRevenue
+      : Math.max(totalCollected, directSalesCollectedRevenue);
+  const organicUnattributedRevenue = Math.max(0, totalCollectedRevenue - totalCollected);
 
   const adRoas = rows
     .map((row) => ({
@@ -1375,6 +1378,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .sort()
     .at(-1);
   const unmatchedRevenue = unmatchedSales.reduce((sum, row) => sum + row.amount, 0);
+  const salesCollectedRevenue = attributionSalesRows.reduce(
+    (sum, row) => sum + (row.cashCollected || 0),
+    0
+  );
   const sourceStatus = {
     meta: {
       rowCount: rows.length,
@@ -1390,13 +1397,19 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     },
     sales: {
       rowCount: attributionSalesRows.length,
+      directCollectedRevenue: salesCollectedRevenue,
       organicOrUnattributedCount: unmatchedSales.length,
-      organicOrUnattributedRevenue: unmatchedRevenue,
+      unmatchedSalesRevenue: unmatchedRevenue,
+      organicOrUnattributedRevenue: Math.max(
+        0,
+        salesCollectedRevenue - finalized.reduce((sum, row) => sum + row.collectedRevenue, 0)
+      ),
     },
   };
 
   return buildPayload(query, finalized, events, false, finalizedDaily, {
     unmatchedSales,
+    salesCollectedRevenue,
     sourceStatus,
   });
 }

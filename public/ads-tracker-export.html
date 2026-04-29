@@ -2373,7 +2373,6 @@ function RevenueAttributionStrip({dashboard}){
   const organic = Number(attribution.organicUnattributedRevenue ?? summary.organicUnattributedRevenue ?? 0);
   const total = Number(attribution.totalCollectedRevenue ?? summary.totalCollectedRevenue ?? (paid + organic));
   const missingMetaDates = dashboard?.sourceStatus?.meta?.missingDates || [];
-  const unmatchedCount = attribution.unmatchedSales?.length || dashboard?.sourceStatus?.sales?.organicOrUnattributedCount || 0;
 
   return (
     <div className="attribution-strip">
@@ -2386,7 +2385,7 @@ function RevenueAttributionStrip({dashboard}){
         <div className="attr-label">Organic / unattributed</div>
         <div className="attr-value">{fmtUsd(organic)}</div>
         <div className={"attr-meta "+(organic ? "warn" : "good")}>
-          {organic ? `${unmatchedCount} sale${unmatchedCount===1?"":"s"} not tied to a paid keyword` : "No unmatched paid revenue"}
+          {organic ? `Sales Tracker cash not tied to paid attribution` : "No unmatched paid revenue"}
         </div>
       </div>
       <div className="attr-card">
@@ -2566,8 +2565,6 @@ function App(){
             <CampaignTable account={account} status={status} campaigns={scopedCampaigns} />
           </div>
 
-          <RevenueAttributionStrip dashboard={dashboard} />
-
           {/* Charts */}
           <div className="grid-charts">
             <div className="chart-column">
@@ -2586,6 +2583,8 @@ function App(){
               </div>
             </div>
           </div>
+
+          <RevenueAttributionStrip dashboard={dashboard} />
 
           {/* Recent entries (collapsed) */}
           <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
