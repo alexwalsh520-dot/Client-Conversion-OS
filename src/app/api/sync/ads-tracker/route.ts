@@ -23,6 +23,7 @@ const ACCOUNTS = [
 
 const REPORTING_TIMEZONE = "America/New_York";
 const HOURLY_ADVERTISER_BREAKDOWN = "hourly_stats_aggregated_by_advertiser_time_zone";
+const DEFAULT_LOOKBACK_DAYS = 10;
 
 type AccountConfig = (typeof ACCOUNTS)[number];
 
@@ -303,6 +304,8 @@ async function upsertMetaRows(
   db: ReturnType<typeof getServiceSupabase>,
   rows: AdsMetaInsightRow[]
 ) {
+  if (rows.length === 0) return;
+
   const { error } = await db
     .from("ads_meta_insights_daily")
     .upsert(rows, { onConflict: "client_key,ad_id,date" });
@@ -325,29 +328,45 @@ async function upsertMetaRows(
   if (error) throw error;
 }
 
-async function deleteStaleMetaRows(
+function rowsByDate(rows: AdsMetaInsightRow[]) {
+  const byDate = new Map<string, AdsMetaInsightRow[]>();
+  for (const row of rows) {
+    const list = byDate.get(row.date) || [];
+    list.push(row);
+    byDate.set(row.date, list);
+  }
+  return byDate;
+}
+
+function summarizeRows(rows: Array<Pick<AdsMetaInsightRow, "spend_cents" | "impressions" | "link_clicks">>) {
+  return {
+    rowCount: rows.length,
+    spendCents: rows.reduce((sum, row) => sum + (row.spend_cents || 0), 0),
+    impressions: rows.reduce((sum, row) => sum + (row.impressions || 0), 0),
+    linkClicks: rows.reduce((sum, row) => sum + (row.link_clicks || 0), 0),
+  };
+}
+
+function summarizeDates(dateFrom: string, dateTo: string, rows: AdsMetaInsightRow[]) {
+  const byDate = rowsByDate(rows);
+  return datesInRange(dateFrom, dateTo).map((date) => ({
+    date,
+    ...summarizeRows(byDate.get(date) || []),
+  }));
+}
+
+async function replaceStoredMetaSlice(
   db: ReturnType<typeof getServiceSupabase>,
   accountKey: string,
   dateFrom: string,
   dateTo: string,
   rows: AdsMetaInsightRow[]
-): Promise<{ skippedDates: string[] }> {
-  const adIdsByDate = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const ids = adIdsByDate.get(row.date) || new Set<string>();
-    ids.add(row.ad_id);
-    adIdsByDate.set(row.date, ids);
-  }
+) {
+  const freshRowsByDate = rowsByDate(rows);
 
-  const skippedDates: string[] = [];
   for (const date of datesInRange(dateFrom, dateTo)) {
-    const ids = Array.from(adIdsByDate.get(date) || []);
-    if (ids.length === 0) {
-      // Empty Meta responses can be transient. Never wipe a day unless the
-      // fresh API response contains at least one row for that day.
-      skippedDates.push(date);
-      continue;
-    }
+    const freshRows = freshRowsByDate.get(date) || [];
+    await upsertMetaRows(db, freshRows);
 
     let query = db
       .from("ads_meta_insights_daily")
@@ -355,6 +374,7 @@ async function deleteStaleMetaRows(
       .eq("client_key", accountKey)
       .eq("date", date);
 
+    const ids = freshRows.map((row) => row.ad_id);
     if (ids.length > 0) {
       query = query.not("ad_id", "in", `(${ids.join(",")})`);
     }
@@ -363,7 +383,38 @@ async function deleteStaleMetaRows(
     if (error) throw error;
   }
 
-  return { skippedDates };
+  const { data: storedRows, error: storedError } = await db
+    .from("ads_meta_insights_daily")
+    .select("date,ad_id,spend_cents,impressions,link_clicks")
+    .eq("client_key", accountKey)
+    .gte("date", dateFrom)
+    .lte("date", dateTo);
+
+  if (storedError) throw storedError;
+
+  const expected = summarizeRows(rows);
+  const stored = summarizeRows((storedRows || []) as AdsMetaInsightRow[]);
+
+  if (
+    expected.rowCount !== stored.rowCount ||
+    expected.spendCents !== stored.spendCents ||
+    expected.impressions !== stored.impressions ||
+    expected.linkClicks !== stored.linkClicks
+  ) {
+    throw new Error(
+      [
+        "Stored Meta slice did not match latest Meta pull",
+        `expected rows=${expected.rowCount} spend=${expected.spendCents} impressions=${expected.impressions} clicks=${expected.linkClicks}`,
+        `stored rows=${stored.rowCount} spend=${stored.spendCents} impressions=${stored.impressions} clicks=${stored.linkClicks}`,
+      ].join("; ")
+    );
+  }
+
+  return {
+    expected,
+    stored,
+    dates: summarizeDates(dateFrom, dateTo, rows),
+  };
 }
 
 async function isAuthorized(req: NextRequest) {
@@ -382,7 +433,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const dateTo = typeof body.dateTo === "string" ? body.dateTo : todayIso();
   const dateFrom =
-    typeof body.dateFrom === "string" ? body.dateFrom : shiftDate(dateTo, -6);
+    typeof body.dateFrom === "string" ? body.dateFrom : shiftDate(dateTo, -DEFAULT_LOOKBACK_DAYS);
 
   if (!isIsoDate(dateFrom) || !isIsoDate(dateTo) || dateFrom > dateTo) {
     return NextResponse.json(
@@ -395,8 +446,17 @@ export async function POST(req: NextRequest) {
   const results: Array<{
     account: string;
     fetched: number;
-    upserted: number;
-    skippedStaleDeleteDates?: string[];
+    storedRows: number;
+    spendCents: number;
+    impressions: number;
+    linkClicks: number;
+    dates?: Array<{
+      date: string;
+      rowCount: number;
+      spendCents: number;
+      impressions: number;
+      linkClicks: number;
+    }>;
     error?: string;
   }> = [];
   let syncRunId: string | null = null;
@@ -430,7 +490,10 @@ export async function POST(req: NextRequest) {
       results.push({
         account: account.key,
         fetched: 0,
-        upserted: 0,
+        storedRows: 0,
+        spendCents: 0,
+        impressions: 0,
+        linkClicks: 0,
         error: `Missing one of ${account.adAccountEnv.join(", ")} or ${account.tokenEnv.join(", ")}`,
       });
       continue;
@@ -441,6 +504,7 @@ export async function POST(req: NextRequest) {
       const needsEasternRebucket = account.timezone !== REPORTING_TIMEZONE;
       const metaDateFrom = needsEasternRebucket ? shiftDate(dateFrom, -1) : dateFrom;
       const metaDateTo = needsEasternRebucket ? shiftDate(dateTo, 1) : dateTo;
+      const syncedAt = new Date().toISOString();
       const insights = await getAdLevelInsights(adAccountId, metaDateFrom, metaDateTo, {
         accessToken: token,
         breakdowns: needsEasternRebucket ? [HOURLY_ADVERTISER_BREAKDOWN] : undefined,
@@ -456,7 +520,7 @@ export async function POST(req: NextRequest) {
         insights,
         dateFrom,
         dateTo,
-        new Date().toISOString(),
+        syncedAt,
         statusByAdId
       );
 
@@ -466,20 +530,25 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      if (rows.length > 0) await upsertMetaRows(db, rows);
-      const staleDelete = await deleteStaleMetaRows(db, account.key, dateFrom, dateTo, rows);
+      const replacement = await replaceStoredMetaSlice(db, account.key, dateFrom, dateTo, rows);
 
       results.push({
         account: account.key,
         fetched: insights.length,
-        upserted: rows.length,
-        skippedStaleDeleteDates: staleDelete.skippedDates,
+        storedRows: replacement.stored.rowCount,
+        spendCents: replacement.stored.spendCents,
+        impressions: replacement.stored.impressions,
+        linkClicks: replacement.stored.linkClicks,
+        dates: replacement.dates,
       });
     } catch (error) {
       results.push({
         account: account.key,
         fetched: 0,
-        upserted: 0,
+        storedRows: 0,
+        spendCents: 0,
+        impressions: 0,
+        linkClicks: 0,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -490,7 +559,7 @@ export async function POST(req: NextRequest) {
     const update = {
       status: ok ? "success" : "error",
       rows_fetched: results.reduce((sum, result) => sum + result.fetched, 0),
-      rows_upserted: results.reduce((sum, result) => sum + result.upserted, 0),
+      rows_upserted: results.reduce((sum, result) => sum + result.storedRows, 0),
       accounts: results,
       error_message: ok
         ? null

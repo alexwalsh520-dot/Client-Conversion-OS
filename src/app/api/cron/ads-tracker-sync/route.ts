@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const DEFAULT_LOOKBACK_DAYS = 10;
+const MAX_LOOKBACK_DAYS = 30;
+
 function todayIso() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
@@ -47,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   const params = req.nextUrl.searchParams;
   const dateTo = params.get("dateTo") || todayIso();
-  const lookback = Math.min(Math.max(Number(params.get("lookbackDays") || 3), 0), 14);
+  const lookback = Math.min(Math.max(Number(params.get("lookbackDays") || DEFAULT_LOOKBACK_DAYS), 0), MAX_LOOKBACK_DAYS);
   const dateFrom = params.get("dateFrom") || shiftDate(dateTo, -lookback);
 
   if (!isIsoDate(dateFrom) || !isIsoDate(dateTo) || dateFrom > dateTo) {

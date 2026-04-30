@@ -197,6 +197,13 @@ interface BuildPayloadOptions {
   sourceStatus?: Record<string, unknown>;
 }
 
+interface AdsSyncRunRow {
+  date_from: string | null;
+  date_to: string | null;
+  completed_at: string | null;
+  accounts: unknown;
+}
+
 interface BackfillGroupHint {
   campaignId: string | null;
   campaignName: string | null;
@@ -1155,6 +1162,45 @@ async function fetchKeywordBackfillRows(
   }));
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function syncedMetaDateAccounts(
+  runs: AdsSyncRunRow[],
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+) {
+  const synced = new Set<string>();
+  for (const run of runs) {
+    const accounts = Array.isArray(run.accounts) ? run.accounts : [];
+    for (const accountValue of accounts) {
+      const account = asObject(accountValue);
+      if (!account) continue;
+      const clientKey = account.account || account.key;
+      if (typeof clientKey !== "string" || !clientFilter.includes(clientKey)) continue;
+
+      const dateSummaries = Array.isArray(account.dates) ? account.dates : null;
+      if (dateSummaries) {
+        for (const dateValue of dateSummaries) {
+          const dateSummary = asObject(dateValue);
+          const date = dateSummary?.date;
+          if (typeof date === "string" && date >= query.dateFrom && date <= query.dateTo) {
+            synced.add(`${clientKey}:${date}`);
+          }
+        }
+        continue;
+      }
+
+      // Only the replacement-sync shape includes per-date verification. Older
+      // sync logs are intentionally ignored so stale runs cannot hide gaps.
+    }
+  }
+  return synced;
+}
+
 export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const db = getServiceSupabase();
 
@@ -1167,6 +1213,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     { data: metaRows, error: metaError },
     { data: keywordEvents, error: eventError },
     { data: ghlAppointments, error: appointmentError },
+    { data: metaSyncRuns, error: syncRunError },
     backfillRows,
   ] = await Promise.all([
       db
@@ -1190,12 +1237,21 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         )
         .gte("created_at", eventQueryFrom)
         .lte("created_at", eventQueryTo),
+      db
+        .from("ads_sync_runs")
+        .select("date_from,date_to,completed_at,accounts")
+        .eq("source", "meta_ads")
+        .eq("status", "success")
+        .lte("date_from", query.dateTo)
+        .gte("date_to", query.dateFrom)
+        .order("completed_at", { ascending: false })
+        .limit(20),
       fetchKeywordBackfillRows(db, query, clientFilter),
     ]);
 
-  if (metaError || eventError || appointmentError) {
+  if (metaError || eventError || appointmentError || syncRunError) {
     throw new Error(
-      `Ads Tracker data query failed: ${(metaError || eventError || appointmentError)?.message || "unknown error"}`
+      `Ads Tracker data query failed: ${(metaError || eventError || appointmentError || syncRunError)?.message || "unknown error"}`
     );
   }
 
@@ -1371,7 +1427,21 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     .filter((row) => query.status === "all" || row.status === query.status)
     .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
 
-  const metaDates = new Set(rows.map((row) => row.date));
+  const metaDateAccounts = new Set(rows.map((row) => `${row.client_key}:${row.date}`));
+  const syncedDateAccounts = syncedMetaDateAccounts(
+    (metaSyncRuns || []) as AdsSyncRunRow[],
+    query,
+    clientFilter
+  );
+  const missingDateAccounts = datesInRange(query.dateFrom, query.dateTo).flatMap((date) =>
+    clientFilter
+      .map((clientKey) => ({ date, clientKey }))
+      .filter(
+        ({ date: dateKey, clientKey }) =>
+          !metaDateAccounts.has(`${clientKey}:${dateKey}`) &&
+          !syncedDateAccounts.has(`${clientKey}:${dateKey}`)
+      )
+  );
   const latestMetaSyncedAt = rows
     .map((row) => row.synced_at)
     .filter(Boolean)
@@ -1387,9 +1457,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       rowCount: rows.length,
       spend: dollars(rows.reduce((sum, row) => sum + (row.spend_cents || 0), 0)),
       latestSyncedAt: latestMetaSyncedAt || null,
-      missingDates: datesInRange(query.dateFrom, query.dateTo).filter(
-        (date) => !metaDates.has(date)
-      ),
+      missingDates: Array.from(new Set(missingDateAccounts.map((row) => row.date))),
+      missingDateAccounts,
     },
     attributionEvents: {
       manychat: events.filter((event) => event.source === "manychat").length,
