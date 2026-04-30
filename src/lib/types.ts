@@ -65,7 +65,13 @@ export interface Client {
   endDate: string;
   onboardingDate: string | null; // Actual onboarding date (from Nicole's EOD confirmation)
   onboardingStatus: 'scheduled' | 'onboarded' | 'no_show' | 'rescheduled' | null;
-  status: 'active' | 'paused' | 'completed' | 'cancelled' | 'refunded' | 'retained';
+  // 2026-04-30 simplification (migration 023): collapsed to two values.
+  //   active    = client is currently on the program
+  //   completed = client is no longer on the program (finished, refunded,
+  //               cancelled — all roll up to "completed")
+  // Legacy values (paused, retained, cancelled, refunded) were migrated
+  // into one of the two and a CHECK constraint enforces the contract DB-side.
+  status: 'active' | 'completed';
   paymentPlatform: string;
   salesFathomLink: string;
   onboardingFathomLink: string;

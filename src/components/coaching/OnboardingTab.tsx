@@ -144,12 +144,12 @@ export default function OnboardingTab({ clients, onClientClick }: Props) {
         </div>
         <div className="glass-static metric-card">
           <div className="metric-card-label">
-            {needsAttention.length > 0 ? "Needs Attention" : "Cancelled/Refunded"}
+            {needsAttention.length > 0 ? "Needs Attention" : "Completed"}
           </div>
-          <div className="metric-card-value" style={{ color: needsAttention.length > 0 ? "var(--warning)" : "var(--danger)" }}>
+          <div className="metric-card-value" style={{ color: needsAttention.length > 0 ? "var(--warning)" : "var(--accent)" }}>
             {needsAttention.length > 0
               ? needsAttention.length
-              : clients.filter((c) => c.status === "cancelled" || c.status === "refunded").length
+              : clients.filter((c) => c.status === "completed").length
             }
           </div>
         </div>

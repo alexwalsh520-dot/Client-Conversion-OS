@@ -121,8 +121,10 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
     const lastDay = new Date(year, monthIndex + 1, 0);
 
     return clients.filter((c) => {
-      const validStatuses = ["active", "paused", "retained"];
-      if (!validStatuses.includes(c.status)) return false;
+      // Post-status-simplification (migration 023): only "active"
+      // counts as billable. Legacy paused/retained collapsed into
+      // active; cancelled/refunded into completed.
+      if (c.status !== "active") return false;
       if (!c.startDate) return false;
       const start = new Date(c.startDate);
       if (start > lastDay) return false;

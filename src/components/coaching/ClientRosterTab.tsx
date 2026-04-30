@@ -228,7 +228,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
       </div>
 
       {/* Summary */}
-      <div className="metric-grid metric-grid-4" style={{ marginBottom: 16 }}>
+      <div className="metric-grid metric-grid-3" style={{ marginBottom: 16 }}>
         <div className="glass-static metric-card">
           <div className="metric-card-label">Total Clients</div>
           <div className="metric-card-value">{clients.length}</div>
@@ -243,12 +243,6 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
           <div className="metric-card-label">Completed</div>
           <div className="metric-card-value" style={{ color: "var(--accent)" }}>
             {clients.filter((c) => c.status === "completed").length}
-          </div>
-        </div>
-        <div className="glass-static metric-card">
-          <div className="metric-card-label">Refunded/Cancelled</div>
-          <div className="metric-card-value" style={{ color: "var(--danger)" }}>
-            {clients.filter((c) => c.status === "refunded" || c.status === "cancelled").length}
           </div>
         </div>
       </div>
@@ -400,18 +394,23 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             </div>
             <div>
               <label className="field-label">Status</label>
-              <select className="input-field" value={formData.status || "active"} onChange={(e) => {
-                const newStatus = e.target.value as Client["status"];
-                setFormData({ ...formData, status: newStatus });
-                if (newStatus !== "retained") setRetainedDuration("");
-              }}>
+              <select
+                className="input-field"
+                value={formData.status || "active"}
+                onChange={(e) => {
+                  const newStatus = e.target.value as Client["status"];
+                  setFormData({ ...formData, status: newStatus });
+                }}
+              >
                 <option value="active">Active</option>
-                <option value="retained">Retained</option>
                 <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="refunded">Refunded</option>
               </select>
-              {formData.status === "retained" && (
+              {/* "Extend program" affordance — replaces the legacy
+                  Retained dropdown workflow. Available whenever the
+                  client is active + has an end date. Selection pushes
+                  the end date out by N weeks and posts an auto-note;
+                  status stays active throughout. */}
+              {formData.status === "active" && formData.endDate && (
                 <select
                   className="input-field"
                   value={retainedDuration}
@@ -423,8 +422,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                       const newEnd = new Date(formData.endDate);
                       newEnd.setDate(newEnd.getDate() + weeks * 7);
                       const newEndStr = newEnd.toISOString().split("T")[0];
-                      setFormData({ ...formData, status: "active", endDate: newEndStr });
-                      // Auto-add retention note
+                      setFormData({ ...formData, endDate: newEndStr });
                       const today = new Date().toISOString().split("T")[0];
                       if (formData.name) {
                         fetch("/api/coaching/client-notes", {
@@ -432,19 +430,21 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
                             clientName: formData.name,
-                            note: `Retained on ${today} for ${weeks} weeks. End date changed from ${oldEnd} to ${newEndStr}.`,
+                            note: `Program extended on ${today} by ${weeks} weeks. End date changed from ${oldEnd} to ${newEndStr}.`,
                           }),
                         }).then(() => {
                           if (formData.name) fetchClientNotes(formData.name);
                         }).catch(() => {});
                       }
+                      // Reset selection so coach can extend again later
+                      setTimeout(() => setRetainedDuration(""), 100);
                     }
                   }}
                   style={{ marginTop: 6 }}
                 >
-                  <option value="">Select extension duration...</option>
-                  <option value="4">4 Weeks</option>
-                  <option value="12">12 Weeks</option>
+                  <option value="">Extend program by…</option>
+                  <option value="4">+4 Weeks</option>
+                  <option value="12">+12 Weeks</option>
                 </select>
               )}
             </div>
