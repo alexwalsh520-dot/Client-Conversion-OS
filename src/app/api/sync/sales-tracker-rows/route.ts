@@ -96,6 +96,14 @@ function chunks<T>(items: T[], size: number) {
   return output;
 }
 
+function isMissingSalesCacheTable(error: { message?: string }) {
+  const message = error.message?.toLowerCase() || "";
+  return (
+    message.includes("sales_tracker_rows") &&
+    (message.includes("schema cache") || message.includes("does not exist"))
+  );
+}
+
 async function handler(req: NextRequest) {
   if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -133,6 +141,20 @@ async function handler(req: NextRequest) {
       .upsert(chunk, { onConflict: "source,sheet_row_key" });
 
     if (error) {
+      if (isMissingSalesCacheTable(error)) {
+        return NextResponse.json({
+          ok: true,
+          dateFrom,
+          dateTo,
+          rowsFetched: salesRows.length,
+          rowsPrepared: rows.length,
+          rowsUpserted: upserted,
+          cacheStatus: "skipped_missing_table",
+          warning:
+            "sales_tracker_rows cache table is missing; Ads Tracker will continue using live Google Sheets sales data.",
+        });
+      }
+
       return NextResponse.json(
         {
           ok: false,
