@@ -1285,14 +1285,22 @@ export interface NutritionIntakeRow {
   water_intake: string;
   daily_meals_description: string;
   daily_meals_description_2: string;
+  // Two new questions added to the form (2026-04-30). Coaches use these
+  // to decide whether a client should be coached alongside their provider
+  // or referred back exclusively to the provider.
+  medical_supervision_yn: string;
+  medical_supervision_detail: string;
   diet_plan_sent: string;
 }
 
 export async function fetchNutritionIntake(): Promise<NutritionIntakeRow[]> {
   const sheets = getSheets();
+  // Range expanded to AD2000 to cover the two new questions (cols AA, AB),
+  // a placeholder "Column 26" the form leaves blank (col AC, ignored), and
+  // the actual Diet Plan Sent column which shifted right to AD.
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_IDS.nutritionIntake,
-    range: "'Form Responses 1'!A2:AA2000",
+    range: "'Form Responses 1'!A2:AD2000",
   });
 
   const rows = res.data.values || [];
@@ -1325,7 +1333,11 @@ export async function fetchNutritionIntake(): Promise<NutritionIntakeRow[]> {
       water_intake: (row[23] || "").trim(),
       daily_meals_description: (row[24] || "").trim(),
       daily_meals_description_2: (row[25] || "").trim(),
-      diet_plan_sent: (row[26] || "").trim(),
+      medical_supervision_yn: (row[26] || "").trim(),
+      medical_supervision_detail: (row[27] || "").trim(),
+      // row[28] is the placeholder "Column 26" cell — Google Sheets'
+      // auto-name for an unlabeled spacer column. Skip it.
+      diet_plan_sent: (row[29] || "").trim(),
     }));
 }
 

@@ -229,6 +229,16 @@ export interface NutritionIntakeForm {
   waterIntake: string;
   dailyMealsDescription: string;
   dailyMealsDescription2: string;
+  // Two new questions added to the intake form (2026-04-30):
+  //   medicalSupervisionYn     — "Yes"/"No" to "are you working with a
+  //                              dietitian/nutritionist/healthcare provider
+  //                              on a prescribed diet plan?"
+  //   medicalSupervisionDetail — when Yes: free-text describing what they're
+  //                              being treated for + any dietary guidelines
+  //                              from the provider. Coaches use this to
+  //                              decide safety / referral.
+  medicalSupervisionYn: string;
+  medicalSupervisionDetail: string;
   dietPlanSent: string;
   createdAt?: string;
 }

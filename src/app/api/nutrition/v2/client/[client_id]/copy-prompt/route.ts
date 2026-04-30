@@ -127,6 +127,30 @@ export async function GET(
   if (i.allergies) lines.push(`- Allergies / medical conditions: ${i.allergies}`);
   if (i.medications) lines.push(`- Medications: ${i.medications}`);
   if (i.supplements) lines.push(`- Supplements: ${i.supplements}`);
+  // Medical supervision flag — added 2026-04-30. When the client is
+  // already under a healthcare provider's prescribed diet, surface the
+  // detail prominently so Claude.ai (and the coach reviewing the plan)
+  // knows to either coordinate with the provider's restrictions or flag
+  // for referral. Critical safety info — do not omit.
+  if (i.medical_supervision_yn) {
+    const yn = String(i.medical_supervision_yn).trim();
+    if (yn.toLowerCase() === "yes") {
+      lines.push(
+        `- ⚠ Under medical supervision: YES — client is on a prescribed diet from a healthcare provider`,
+      );
+      if (i.medical_supervision_detail) {
+        lines.push(
+          `- Provider-prescribed diet detail: ${i.medical_supervision_detail}`,
+        );
+      } else {
+        lines.push(
+          `- (Client did not provide detail — coach should follow up before delivery.)`,
+        );
+      }
+    } else {
+      lines.push(`- Under medical supervision: ${yn || "no"}`);
+    }
+  }
   if (i.protein_preferences) lines.push(`- Protein preferences: ${i.protein_preferences}`);
   if (mealCountRaw) {
     const mealNote = mealCount

@@ -92,6 +92,9 @@ function IntakeFormDetail({ form }: { form: NutritionIntakeForm }) {
     { label: "Water Intake", value: form.waterIntake },
     { label: "Daily Meals Description", value: form.dailyMealsDescription },
     { label: "Daily Meals (cont.)", value: form.dailyMealsDescription2 },
+    // 2026-04-30: two new intake questions about medical supervision.
+    { label: "Under Medical Supervision?", value: form.medicalSupervisionYn },
+    { label: "Medical Supervision Detail", value: form.medicalSupervisionDetail },
   ].filter((f) => f.value);
 
   return (

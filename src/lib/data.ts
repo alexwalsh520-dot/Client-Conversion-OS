@@ -553,6 +553,8 @@ export async function getNutritionIntakeForms(): Promise<NutritionIntakeForm[]> 
       waterIntake: row.water_intake || "",
       dailyMealsDescription: row.daily_meals_description || "",
       dailyMealsDescription2: row.daily_meals_description_2 || "",
+      medicalSupervisionYn: row.medical_supervision_yn || "",
+      medicalSupervisionDetail: row.medical_supervision_detail || "",
       dietPlanSent: row.diet_plan_sent || "",
       createdAt: row.created_at,
     }));

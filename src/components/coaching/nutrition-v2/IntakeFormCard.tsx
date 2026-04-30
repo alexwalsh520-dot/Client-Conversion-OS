@@ -51,6 +51,11 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
     { label: "Water Intake", value: form.waterIntake },
     { label: "Daily Meals Description", value: form.dailyMealsDescription },
     { label: "Daily Meals (cont.)", value: form.dailyMealsDescription2 },
+    // Two new questions added to the intake form on 2026-04-30. When the
+    // client says they're under medical supervision, the detail field is
+    // safety-critical for coach review.
+    { label: "Under Medical Supervision?", value: form.medicalSupervisionYn },
+    { label: "Medical Supervision Detail", value: form.medicalSupervisionDetail },
   ].filter((f) => f.value != null && String(f.value).trim().length > 0);
 
   return (
