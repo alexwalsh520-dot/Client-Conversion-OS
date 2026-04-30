@@ -730,7 +730,7 @@ function applySalesToGroups(
       emptyGroup(
         groupId,
         match.client_key,
-        options.groupName?.(match, row) || match.client_key,
+        options.groupName?.(match, row) || displayKeyword(match.keyword_normalized),
         displayKeyword(match.keyword_normalized)
       );
     group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
@@ -1057,7 +1057,7 @@ function addKeywordEventsToGroups(
     const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
     if (!keyword) continue;
     const id = groupIdForEvent(event, keyword);
-    const group = groups.get(id) || emptyGroup(id, event.client_key, event.client_key, displayKeyword(keyword));
+    const group = groups.get(id) || emptyGroup(id, event.client_key, displayKeyword(keyword), displayKeyword(keyword));
 
     if (event.source === "manychat") group.messages += 1;
     if (event.source === "ghl") group.bookedCalls += 1;
