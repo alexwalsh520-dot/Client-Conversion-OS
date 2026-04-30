@@ -878,10 +878,10 @@ function addMetaRowsToGroups(
       group.adId = row.ad_id || group.adId;
       group.adName = row.ad_name || group.adName;
     }
-    applyGroupStatus(group, metaRowStatus(row));
     group.adSpendCents += row.spend_cents || 0;
     group.impressions += row.impressions || 0;
     group.linkClicks += row.link_clicks || 0;
+    applyGroupStatus(group, metaRowStatus(row));
     group.dateLabel = dateLabelForRow(row);
     groups.set(id, group);
   }
