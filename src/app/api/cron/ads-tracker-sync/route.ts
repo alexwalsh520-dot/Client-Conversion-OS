@@ -23,7 +23,9 @@ function isIsoDate(value: string | null) {
 }
 
 function getBaseUrl(req: NextRequest) {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.VERCEL_ENV === "production") return "https://client-conversion-os.vercel.app";
   return new URL(req.url).origin;
 }
 
