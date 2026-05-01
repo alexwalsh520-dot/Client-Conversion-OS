@@ -247,6 +247,30 @@ async function fetchTabValues(
   return rows.slice(1); // skip header row
 }
 
+async function fetchSubscriptionTabValues(
+  tab: string
+): Promise<(string | undefined)[][]> {
+  const sheetId = getSheetId();
+  const apiKey = getApiKey();
+  const range = encodeURIComponent(`${tab}!AG4:AN1000`);
+  const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
+
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 404) return [];
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Google Sheets API error (HTTP ${response.status}): ${body.substring(0, 200)}`
+    );
+  }
+
+  const json = await response.json();
+  const rows: (string | undefined)[][] = json.values || [];
+  if (rows.length <= 1) return [];
+  return rows.slice(1); // skip header row at AG4:AN4
+}
+
 /**
  * Parse a raw row array into a SheetRow.
  * Columns: A=0 Call#, B=1 Date, C=2 Name, D=3 Call Taken, E=4 Call Length,
@@ -282,6 +306,40 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
     setter,
     callNotes: normalizeCell(row[isJanuary ? 13 : 14]),
     recordingLink: normalizeCell(row[isJanuary ? 14 : 15]),
+    offer,
+  };
+}
+
+function parseSubscriptionRow(row: (string | undefined)[]): SheetRow | null {
+  const dateStr = parseDateString(row[1]);
+  if (!dateStr) return null;
+
+  const name = normalizeCell(row[2]);
+  const amount = parseRevenue(row[4] || "");
+  const source = normalizeCell(row[5]);
+  const offer = normalizeCell(row[6]);
+
+  if (!name || !offer) return null;
+  if (!amount && !source) return null;
+
+  return {
+    callNumber: normalizeCell(row[0]),
+    date: dateStr,
+    name,
+    callTaken: false,
+    callTakenStatus: "pending",
+    callLength: "",
+    recorded: false,
+    outcome: amount > 0 ? "WIN" : "REFUNDED",
+    closer: normalizeCell(row[3]).toUpperCase(),
+    objection: "",
+    programLength: "Subscription",
+    revenue: amount,
+    cashCollected: amount,
+    method: source,
+    setter: normalizeSetterName(row[3]),
+    callNotes: normalizeCell(row[7]),
+    recordingLink: "",
     offer,
   };
 }
@@ -332,14 +390,27 @@ export async function fetchSheetData(
 
   // Fetch all tabs in parallel
   const tabEntries = Array.from(tabsToQuery);
-  const tabResults = await Promise.all(
-    tabEntries.map((tab) =>
-      fetchTabValues(tab).catch((err) => {
-        console.error(`[google-sheets] Error fetching tab "${tab}":`, err);
-        return [] as (string | undefined)[][];
-      })
-    )
-  );
+  const [tabResults, subscriptionTabResults] = await Promise.all([
+    Promise.all(
+      tabEntries.map((tab) =>
+        fetchTabValues(tab).catch((err) => {
+          console.error(`[google-sheets] Error fetching tab "${tab}":`, err);
+          return [] as (string | undefined)[][];
+        })
+      )
+    ),
+    Promise.all(
+      tabEntries.map((tab) =>
+        fetchSubscriptionTabValues(tab).catch((err) => {
+          console.error(
+            `[google-sheets] Error fetching subscription table "${tab}":`,
+            err
+          );
+          return [] as (string | undefined)[][];
+        })
+      )
+    ),
+  ]);
 
   // Parse and filter rows
   const allRows: SheetRow[] = [];
@@ -354,6 +425,16 @@ export async function fetchSheetData(
       if (!parsed) continue;
 
       // Filter by date range (string comparison works for YYYY-MM-DD)
+      if (parsed.date >= fromISO && parsed.date <= toISO) {
+        allRows.push(parsed);
+      }
+    }
+
+    const rawSubscriptionRows = subscriptionTabResults[i] || [];
+    for (const raw of rawSubscriptionRows) {
+      const parsed = parseSubscriptionRow(raw);
+      if (!parsed) continue;
+
       if (parsed.date >= fromISO && parsed.date <= toISO) {
         allRows.push(parsed);
       }
