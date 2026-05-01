@@ -138,7 +138,6 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
 
   const activeClients = getActiveClientsForMonth();
   const invoiceAmount = activeClients.length * 30;
-  const commission = invoiceAmount - totalExpenses;
 
   // ---- Passcode Gate UI ----
   if (!unlocked) {
@@ -383,29 +382,6 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
         </div>
       </div>
 
-      {/* ---- Section 3: Ahmad's Commission ---- */}
-      <div className="section">
-        <h2 className="section-title">
-          <DollarSign size={16} />
-          Ahmad&apos;s Commission — {MONTHS[monthIndex]} {year}
-        </h2>
-        <div className="metric-grid metric-grid-4" style={{ marginBottom: 16 }}>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total Invoice</div>
-            <div className="metric-card-value" style={{ color: "var(--success)" }}>{fmtMoney(invoiceAmount)}</div>
-          </div>
-          <div className="glass-static metric-card">
-            <div className="metric-card-label">Total Expenses</div>
-            <div className="metric-card-value" style={{ color: "var(--danger)" }}>{fmtMoney(totalExpenses)}</div>
-          </div>
-          <div className="glass-static metric-card" style={{ gridColumn: "span 2" }}>
-            <div className="metric-card-label">Commission</div>
-            <div className="metric-card-value" style={{ color: commission >= 0 ? "var(--accent)" : "var(--danger)", fontSize: 28 }}>
-              {fmtMoney(commission)}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
