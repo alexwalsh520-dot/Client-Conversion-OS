@@ -41,6 +41,7 @@ interface KeywordEvent {
   client_key: string;
   keyword_raw: string | null;
   keyword_normalized: string | null;
+  value_cents?: number | null;
   subscriber_id: string | null;
   subscriber_name: string | null;
   setter_name: string | null;
@@ -851,6 +852,7 @@ function buildPayload(
         eventType: event.event_type,
         clientKey: event.client_key,
         keyword: displayKeyword(event.keyword_normalized || event.keyword_raw),
+        value: event.value_cents || null,
         name: event.contact_name || event.subscriber_name || "",
         setter: event.setter_name,
         eventAt: event.event_at,
@@ -1065,9 +1067,25 @@ function addKeywordEventsToGroups(
     if (!keyword) continue;
     const id = groupIdForEvent(event, keyword);
     const group = groups.get(id) || emptyGroup(id, event.client_key, displayKeyword(keyword), displayKeyword(keyword));
+    const manualValue = Number(event.value_cents || 0);
 
-    if (event.source === "manychat") group.messages += 1;
-    if (event.source === "ghl") group.bookedCalls += 1;
+    if (event.event_type === "manual_messages") {
+      group.messages += manualValue;
+    } else if (event.event_type === "manual_booked_calls") {
+      group.bookedCalls += manualValue;
+    } else if (event.event_type === "manual_calls_taken") {
+      group.callsTaken += manualValue;
+    } else if (event.event_type === "manual_new_clients") {
+      group.newClients += manualValue;
+      group.mainOfferClients += manualValue;
+    } else if (event.event_type === "manual_collected_revenue") {
+      const amount = dollars(manualValue);
+      group.collectedRevenue += amount;
+      group.contractedRevenue += amount;
+    } else {
+      if (event.source === "manychat") group.messages += 1;
+      if (event.source === "ghl") group.bookedCalls += 1;
+    }
 
     group.dateLabel = dateLabelForEvent(event);
     groups.set(id, group);
@@ -1225,7 +1243,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       db
         .from("ads_keyword_events")
         .select(
-          "source,event_type,client_key,keyword_raw,keyword_normalized,subscriber_id,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
+          "source,event_type,client_key,keyword_raw,keyword_normalized,value_cents,subscriber_id,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
         )
         .in("client_key", clientFilter)
         .gte("event_at", eventQueryFrom)

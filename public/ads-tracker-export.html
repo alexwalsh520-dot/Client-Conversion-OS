@@ -1798,6 +1798,7 @@ function emptyRow(){ return {id: Math.random().toString(36).slice(2,9), keyword:
 function KeywordEntry({onSubmit}){
   const [campaign, setCampaign] = useState("tyson");
   const [setter, setSetter] = useState(SETTERS[0]);
+  const [eventDate, setEventDate] = useState(todayEt());
   // bucket groups appear in order added. Each: {id (bucket), rows: [{id,keyword,value}]}
   const [groups, setGroups] = useState([
     {bucket:"msgs", rows:[emptyRow()]},
@@ -1824,7 +1825,7 @@ function KeywordEntry({onSubmit}){
   const submit = () => {
     if(validRows.length===0) return;
     validRows.forEach(r => {
-      onSubmit({campaign, bucket:r.bucket, setter, keyword: r.keyword.toUpperCase(), value: parseFloat(r.value)});
+      onSubmit({campaign, date:eventDate, bucket:r.bucket, setter, keyword: r.keyword.toUpperCase(), value: parseFloat(r.value)});
     });
     // Reset to clean state
     setGroups([{bucket:"msgs", rows:[emptyRow()]}]);
@@ -1842,6 +1843,13 @@ function KeywordEntry({onSubmit}){
         <select className="entry-select" value={setter} onChange={e=>setSetter(e.target.value)} style={{maxWidth:140}}>
           {SETTERS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <input
+          className="entry-select"
+          type="date"
+          value={eventDate}
+          onChange={e=>setEventDate(e.target.value || todayEt())}
+          style={{maxWidth:150}}
+        />
       </div>
 
       {groups.map(g => {
@@ -2203,10 +2211,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
         <div className="manual-log-toggle">
           <button
             className={"manual-log-btn "+(manualOpen?"active":"")}
-            onClick={()=>{
-              setManualOpen(false);
-              onToast && onToast("Manual logging disabled · ManyChat/GHL are source of truth");
-            }}
+            onClick={()=>setManualOpen(v=>!v)}
           >
             <span style={{color:'var(--gold)',fontSize:13,lineHeight:1}}>+</span>
             Log keyword manually
@@ -2243,7 +2248,9 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
               const isLive = e.source === "manychat" || e.source === "ghl";
               const isDollar = e.bucket === "collected";
               const bucketLabel = BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
-              const sourceLabel = e.source === "manychat" ? "ManyChat" : e.source === "ghl" ? "GHL" : "Manual";
+              const sourceLabel = String(e.eventType || "").startsWith("manual_")
+                ? "Manual"
+                : e.source === "manychat" ? "ManyChat" : e.source === "ghl" ? "GHL" : "Manual";
               return (
                 <tr key={e.id} className={isEditing ? "editing-row" : ""}>
                   <td className="mono" style={{color:'var(--text-3)',fontSize:11,verticalAlign:'middle'}}>
@@ -2350,14 +2357,25 @@ function recentEntriesFromDashboard(dashboard){
     const ts = dt && !Number.isNaN(dt.getTime())
       ? dt.toLocaleString("en-US", {timeZone:"America/New_York", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", timeZoneName:"short"})
       : "Recent";
-    const bucket = event.source === "ghl" ? "calls" : "msgs";
+    const manualBuckets = {
+      manual_messages: "msgs",
+      manual_booked_calls: "calls",
+      manual_calls_taken: "taken",
+      manual_new_clients: "clients",
+      manual_collected_revenue: "collected",
+    };
+    const bucket = manualBuckets[event.eventType] || (event.source === "ghl" ? "calls" : "msgs");
+    const rawValue = Number(event.value || 0);
+    const value = event.eventType === "manual_collected_revenue"
+      ? rawValue / 100
+      : (rawValue || 1);
     return {
       ts,
       setter: event.setter || "Auto",
       camp: event.clientKey || "tyson",
       kw: event.keyword || "UNKNOWN",
       bucket,
-      value: 1,
+      value,
       source: event.source || "live",
       eventType: event.eventType || "",
       name: event.name || "",
@@ -2418,11 +2436,32 @@ function App(){
     showToast._t = setTimeout(()=>setToast(null), 2400);
   };
 
-  const onLogEntry = (e) => {
-    const entry = {
-      ts:"Just now", setter:e.setter, camp:e.campaign, kw:e.keyword, bucket:e.bucket, value:e.value
-    };
-    setNewEntries(x=>[entry, ...x]);
+  const onLogEntry = async (e) => {
+    try{
+      const res = await fetch("/api/ads-tracker/manual-event", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          clientKey:e.campaign,
+          date:e.date,
+          bucket:e.bucket,
+          setterName:e.setter,
+          keyword:e.keyword,
+          value:e.value,
+        }),
+      });
+      const json = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(json.error || "Manual entry failed");
+      const entry = {
+        ts:"Just now", setter:e.setter, camp:e.campaign, kw:e.keyword, bucket:e.bucket, value:e.value, source:"manual", eventType:"manual"
+      };
+      setNewEntries(x=>[entry, ...x]);
+      showToast("Manual correction saved");
+      await loadDashboard({silent:true});
+    }catch(err){
+      console.error(err);
+      showToast(err?.message || "Manual correction failed");
+    }
   };
 
   const loadDashboard = async ({silent=false}={}) => {
