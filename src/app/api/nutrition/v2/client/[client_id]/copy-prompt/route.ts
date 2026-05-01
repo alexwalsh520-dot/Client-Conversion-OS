@@ -111,19 +111,52 @@ export async function GET(
 
   // --- 3. Inline design spec (explicit structure contract) ---
   lines.push("## Required structure");
-  lines.push("Produce the plan with these sections in this order:");
+  lines.push(
+    "Produce the plan with these sections in this exact order. Section 1 + 4–8 are mandatory; sections 2 and 3 are conditional — include only if the relevant intake fields below are populated.",
+  );
+  lines.push("");
+  lines.push("### Tone");
+  lines.push(
+    "Write client-facing — second person (\"your meals,\" \"you'll have,\" \"drink up to 90 oz/day\"). Encouraging but not preachy. Plain ingredient names, no coach-jargon addressed to a third party.",
+  );
+  lines.push("");
+  lines.push("### Sections");
   lines.push("");
   lines.push(
-    "1. **Cover** — client first name, age, current weight, height, fitness goal, generated date, daily macro targets (kcal / P / C / F).",
+    "1. **Cover** (mandatory) — client first name, age, current weight, height, fitness goal, generated date, daily macro targets (kcal / P / C / F).",
   );
   lines.push(
-    "2. **Daily breakdown** — one section per day, Day 1 through Day 7. Each day shows every meal with: meal name, ingredients (with grams), per-meal macros (kcal / P / C / F), and a daily total at the bottom.",
+    "2. **Strategy & approach** (mandatory) — one or two paragraphs explaining: (a) why these specific macros for this client given their goal and bodyweight; (b) why this meal-count and meal-timing structure works around their existing schedule (pull from their typical-daily-meals description and meal-count preference); (c) the overall game-plan in plain language. This is the \"why this works for you\" narrative — not a bulleted list, real prose.",
   );
   lines.push(
-    "3. **Aggregated grocery list** — a single list at the end covering all 7 days, sorted into categories: Proteins / Produce / Grains & Starches / Dairy / Fats & Oils / Pantry & Spices. Show total weight or count needed for the week.",
+    "3. **Medication & lifestyle notes** (conditional — include only the sub-sections whose intake fields are populated, omit the section entirely if none apply):",
   );
   lines.push(
-    "4. **Variance disclosure** — at the very end, state the daily kcal range across the 7 days (e.g. \"Daily kcal range: 2,420 – 2,510\") and confirm each macro stays within ±5% of the target. If any day falls outside ±5%, fix it before emitting.",
+    "   - **Medication note** — only if the client listed medications. Call out anything that affects appetite/timing (stimulants suppress appetite during the day → place a substantial breakfast early; GLP-1 → smaller more frequent meals, protein priority; MAOI → tyramine watchlist; etc.). Reference the specific medication and the practical implication.",
+  );
+  lines.push(
+    "   - **Hydration note** — only if water intake is reported. Quote their current intake and set a realistic target (e.g. \"You're at 40-50 oz/day; build toward 70-90 oz over the next two weeks\"). Tie it to plan execution.",
+  );
+  lines.push(
+    "   - **Sleep note** — only if sleep hours are reported. Quote the number and tie it to the plan (e.g. \"At 6 hours of sleep, dinner stays simple and finishes 2+ hours before bed to reduce late-night decision fatigue\").",
+  );
+  lines.push(
+    "   - **Sodium strategy** — only if the client has hypertension/kidney issues, is on diuretics, or is on a stimulant (which raises baseline BP). Explain the no-salt-added swap, batch-cook seasoning approach, and the high-sodium watch list (sourdough, cured meats, hard cheeses, packaged sauces).",
+  );
+  lines.push(
+    "4. **Daily breakdown** (mandatory) — one section per day, Day 1 through Day 7. Each day shows every meal with: meal name, ingredients (with grams), per-meal macros (kcal / P / C / F), and a daily total at the bottom.",
+  );
+  lines.push(
+    "5. **Aggregated grocery list** (mandatory) — a single list covering all 7 days, sorted into categories: Proteins / Produce / Grains & Starches / Dairy / Fats & Oils / Pantry & Spices. Show total weight or count needed for the week.",
+  );
+  lines.push(
+    "6. **Prep & batch cooking guidance** (mandatory) — two or three short paragraphs. What to batch on Sunday (proteins, grains, sauces/bases). How often to recook through the week (typically 2–3×). What tools fit their meal-count and cooking ability (crockpot, sheet pan, rice cooker). Tie to their stated cooking ability — don't suggest scratch cooking if they said they can barely boil water.",
+  );
+  lines.push(
+    "7. **Practical substitutions** (mandatory) — a short \"if-then\" list giving the client agency without rewriting the plan. Examples: \"If you're tired of chicken on Day 4 lunch → swap to ground turkey at the same weight.\" \"If you can't find Greek yogurt → use cottage cheese, same protein.\" Honor their foods-to-avoid + protein preferences when writing these.",
+  );
+  lines.push(
+    "8. **Variance disclosure** (mandatory) — final line(s). State the daily kcal range across the 7 days (e.g. \"Daily kcal range: 2,420 – 2,510\") and confirm each macro stays within ±5% of the target. If any day falls outside ±5%, fix the plan before emitting — do not show drafts.",
   );
   lines.push("");
 
@@ -234,11 +267,14 @@ export async function GET(
     "3. **Banned words** — any of the forbidden words in section 6 sneaking into a meal name or description.",
   );
   lines.push(
-    "4. **Missing structure** — any of the four required sections (cover / daily breakdown / grocery list / variance disclosure) absent.",
+    "4. **Missing structure** — every mandatory section present in the right order: (1) Cover, (2) Strategy & approach, (4) Daily breakdown, (5) Aggregated grocery list, (6) Prep & batch cooking guidance, (7) Practical substitutions, (8) Variance disclosure. Section 3 (Medication & lifestyle notes) is conditional — include it if any sub-note applies, omit entirely if none. Do NOT skip a mandatory section because it's tedious; if a section is missing, write it and re-emit.",
+  );
+  lines.push(
+    "5. **Tone drift** — confirm the writing is client-facing second person throughout, not coach-facing third person. If you slipped into talking about the client instead of to them, rewrite.",
   );
   lines.push("");
   lines.push(
-    "Once everything passes, emit the final plan. The coach will save it as a PDF and deliver to the client.",
+    "Once everything passes, emit the final plan as a single, polished, printable document. The coach will save it as a PDF and deliver to the client.",
   );
 
   const prompt = lines.join("\n");
