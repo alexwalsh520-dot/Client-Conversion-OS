@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Lock,
   Plus,
@@ -13,8 +13,14 @@ import {
   Users,
   X,
   Check,
+  Wallet,
+  CalendarDays,
 } from "lucide-react";
 import type { Expense, Client } from "@/lib/types";
+import {
+  referenceInvoiceDate,
+  sumMonthsRemaining,
+} from "@/lib/coaching/months-remaining";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -137,7 +143,97 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
   };
 
   const activeClients = getActiveClientsForMonth();
-  const invoiceAmount = activeClients.length * 30;
+
+  // ---- Editable per-client rate ----
+  // Stored in app_settings (migration 025), drives both the Total Invoice
+  // card above and the Cash Reserve card at the bottom of the tab.
+  // Loaded on mount; saved to server on blur.
+  const [rate, setRate] = useState<number>(30);
+  const [rateInput, setRateInput] = useState<string>("30");
+  const [rateLoading, setRateLoading] = useState(true);
+  const [rateSaving, setRateSaving] = useState(false);
+  const [rateSavedAt, setRateSavedAt] = useState<number | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/coaching/expenses/settings");
+        if (!res.ok) return;
+        const data = await res.json();
+        const v = Number((data as { invoice_rate_per_client?: number }).invoice_rate_per_client);
+        if (cancelled) return;
+        if (Number.isFinite(v) && v > 0) {
+          setRate(v);
+          setRateInput(String(v));
+        }
+      } catch {
+        // network error — keep the $30 default; user can still edit.
+      } finally {
+        if (!cancelled) setRateLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked]);
+
+  const saveRate = useCallback(async () => {
+    const parsed = Number(rateInput);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1000) {
+      setRateError("Rate must be a positive number up to 1000.");
+      setRateInput(String(rate));
+      return;
+    }
+    if (parsed === rate) return; // no-op
+    setRateSaving(true);
+    setRateError(null);
+    try {
+      const res = await fetch("/api/coaching/expenses/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_rate_per_client: parsed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      setRate(parsed);
+      setRateSavedAt(Date.now());
+      setTimeout(() => setRateSavedAt(null), 2000);
+    } catch (e) {
+      setRateError(e instanceof Error ? e.message : String(e));
+      setRateInput(String(rate)); // revert on failure
+    } finally {
+      setRateSaving(false);
+    }
+  }, [rate, rateInput]);
+
+  const invoiceAmount = activeClients.length * rate;
+
+  // ---- Cash Reserve calculation (bottom section) ----
+  // Snapshot to the most recent past 14th or 28th — invoice cadence.
+  // Uses the live `clients` array (not the per-month filter) since this
+  // is a global "what we owe right now" number, not a month-specific
+  // billing line.
+  const refDate = referenceInvoiceDate(new Date());
+  const monthsBreakdown = sumMonthsRemaining(
+    clients.map((c) => ({
+      status: c.status,
+      startDate: c.startDate,
+      endDate: c.endDate,
+    })),
+    refDate,
+  );
+  const cashReserveNeeded = monthsBreakdown.total_months * rate;
+  const refDateLabel = refDate.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   // ---- Passcode Gate UI ----
   if (!unlocked) {
@@ -369,7 +465,7 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
           </div>
           <div className="glass-static metric-card">
             <div className="metric-card-label">Rate per Client</div>
-            <div className="metric-card-value">$30.00</div>
+            <div className="metric-card-value">{fmtMoney(rate)}</div>
           </div>
           <div className="glass-static metric-card">
             <div className="metric-card-label">Total Invoice</div>
@@ -378,6 +474,156 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
           <div className="glass-static metric-card">
             <div className="metric-card-label">Total Expenses</div>
             <div className="metric-card-value" style={{ color: "var(--danger)" }}>{fmtMoney(totalExpenses)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- Section 3: Cash Reserve (months remaining × rate) ----
+          Snapshot to the most recent past 14th or 28th — number is stable
+          between invoice cycles, snaps on the next invoice date. The rate
+          input here is the same global rate that drives the Invoice
+          Calculation card above; editing it updates both. */}
+      <div className="section" style={{ marginBottom: 24 }}>
+        <h2 className="section-title">
+          <Wallet size={16} />
+          Cash Reserve — months still owed to deliver
+        </h2>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--text-muted)",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <CalendarDays size={12} />
+          As of {refDateLabel} · updates on the 14th and 28th of each month
+        </div>
+
+        {/* Editable rate input — same value persists for the Invoice Calculation
+            card above. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 8,
+            marginBottom: 12,
+            maxWidth: 460,
+            flexWrap: "wrap",
+          }}
+        >
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Per-client rate ($/month):
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "var(--text-muted)" }}>$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={1}
+              max={1000}
+              step={1}
+              value={rateInput}
+              disabled={rateLoading || rateSaving}
+              onChange={(e) => setRateInput(e.target.value)}
+              onBlur={saveRate}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              style={{
+                width: 80,
+                padding: "4px 8px",
+                background: "rgba(0,0,0,0.4)",
+                color: "var(--text-primary)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 4,
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 13,
+              }}
+            />
+          </div>
+          {rateSaving && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              saving…
+            </span>
+          )}
+          {rateSavedAt && !rateSaving && (
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--success, #22c55e)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 3,
+              }}
+            >
+              <Check size={11} /> saved
+            </span>
+          )}
+          {rateError && (
+            <span style={{ fontSize: 11, color: "var(--danger, #ef4444)" }}>
+              {rateError}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            (drives both Total Invoice and Cash Reserve)
+          </span>
+        </div>
+
+        <div className="metric-grid metric-grid-2" style={{ marginBottom: 16 }}>
+          <div className="glass-static metric-card">
+            <div className="metric-card-label">Months Remaining to Deliver</div>
+            <div
+              className="metric-card-value"
+              style={{ color: "var(--accent)" }}
+            >
+              {monthsBreakdown.total_months.toLocaleString()}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginTop: 4,
+              }}
+            >
+              Across {monthsBreakdown.active_count.toLocaleString()} active
+              {monthsBreakdown.no_end_date_count > 0 && (
+                <>
+                  {" "}· {monthsBreakdown.no_end_date_count} with no end date (counted as 1 each)
+                </>
+              )}
+              {monthsBreakdown.ended_count > 0 && (
+                <>
+                  {" "}· {monthsBreakdown.ended_count} past end date (excluded)
+                </>
+              )}
+            </div>
+          </div>
+          <div className="glass-static metric-card">
+            <div className="metric-card-label">
+              Cash Reserve Needed ({monthsBreakdown.total_months.toLocaleString()} × {fmtMoney(rate)})
+            </div>
+            <div
+              className="metric-card-value"
+              style={{ color: "var(--success)", fontSize: 28 }}
+            >
+              {fmtMoney(cashReserveNeeded)}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginTop: 4,
+              }}
+            >
+              Cash to keep on hand to deliver outstanding programs
+            </div>
           </div>
         </div>
       </div>
