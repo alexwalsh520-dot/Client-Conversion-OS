@@ -20,6 +20,7 @@ import { CheckCircle } from "lucide-react";
 import { CopyPromptButton } from "./CopyPromptButton";
 import { UploadPlanButton } from "./UploadPlanButton";
 import { IntakeFormCard } from "./IntakeFormCard";
+import { MacroTargetEditor } from "./MacroTargetEditor";
 import { PlanHistory } from "./PlanHistory";
 import { MoveToDoneDialog } from "./MoveToDoneDialog";
 import type { CoachClientLite, PanelMode, PlanResponse } from "./types";
@@ -102,6 +103,9 @@ export function NutritionV2TaskPanel({
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: planResp, loading } = useLatestPlan(client.id, refreshKey);
   const [showMoveToDone, setShowMoveToDone] = useState(false);
+  // Locked kcal target from the MacroTargetEditor — null until coach
+  // clicks "Lock target". Gates the Generate-prompt button.
+  const [lockedKcal, setLockedKcal] = useState<number | null>(null);
 
   const handleUploaded = useCallback(() => {
     setRefreshKey((n) => n + 1);
@@ -120,7 +124,7 @@ export function NutritionV2TaskPanel({
       {/* 1. Intake form */}
       <IntakeFormCard form={intakeForm} />
 
-      {/* 2. Copy prompt */}
+      {/* 2. Lock macro target → Generate prompt */}
       <div
         style={{
           marginBottom: 14,
@@ -140,12 +144,17 @@ export function NutritionV2TaskPanel({
         >
           1. Generate the plan in Claude.ai
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-          Click below to assemble a prompt with this client&apos;s intake +
-          computed macro targets. Paste into a new Claude.ai chat, ask
-          Claude to build the plan, then export it as a PDF.
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+          Review the macro targets below. Adjust the daily kcal if needed —
+          protein, carbs, and fat will recalculate automatically. When you&apos;re
+          happy with the numbers, click <strong>Lock target</strong>, then
+          generate the prompt to paste into Claude.ai.
         </div>
-        <CopyPromptButton clientId={client.id} />
+        <MacroTargetEditor
+          clientId={client.id}
+          onLockChange={setLockedKcal}
+        />
+        <CopyPromptButton clientId={client.id} lockedKcal={lockedKcal} />
       </div>
 
       {/* 3. Upload */}
