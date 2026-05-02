@@ -71,10 +71,17 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
       abortRef.current?.abort();
       abortRef.current = new AbortController();
       try {
+        // Cache-bust per kcal value so we never serve a stale browser
+        // cache when the coach is sweeping kcal up or down. The server
+        // also sets `Cache-Control: no-store` on the response.
+        const base = `/api/nutrition/v2/client/${clientId}/macros`;
         const url = kcalOverride != null
-          ? `/api/nutrition/v2/client/${clientId}/macros?kcal=${kcalOverride}`
-          : `/api/nutrition/v2/client/${clientId}/macros`;
-        const res = await fetch(url, { signal: abortRef.current.signal });
+          ? `${base}?kcal=${kcalOverride}&_t=${Date.now()}`
+          : `${base}?_t=${Date.now()}`;
+        const res = await fetch(url, {
+          signal: abortRef.current.signal,
+          cache: "no-store",
+        });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           setError(
@@ -217,7 +224,7 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
             }}
           />
         </Field>
-        <Field label="Protein (g)">
+        <Field label="Protein (g)" hint="anchored to bodyweight">
           <ReadOnlyValue v={t.proteinG} />
         </Field>
         <Field label="Carbs (g)">
@@ -229,7 +236,7 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
       </div>
 
       <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
-        Sodium cap ≤ {t.sodiumCapMg} mg/day · Calculator output: {data.raw_calculator_kcal} kcal · Auto-suggestion applies a 400-kcal downward adjustment.
+        Sodium cap ≤ {t.sodiumCapMg} mg/day · Calculator output: {data.raw_calculator_kcal} kcal · Auto-suggestion applies a 400-kcal downward adjustment. When you adjust kcal, carbs and fat redistribute; protein stays fixed (driven by bodyweight, not calorie target).
         {t.flooredAt1200 && !locked && draftKcal === t.calories && (
           <span style={{ color: "rgb(255, 179, 71)", marginLeft: 4 }}>
             (floored at 1,200 — calculator − 400 would have gone below)
@@ -290,7 +297,7 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
 
 // ---- internal sub-components ----
 
-function Field({ label, editable, children }: { label: string; editable?: boolean; children: React.ReactNode }) {
+function Field({ label, editable, hint, children }: { label: string; editable?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -301,7 +308,9 @@ function Field({ label, editable, children }: { label: string; editable?: boolea
       }}
     >
       <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.4 }}>
-        {label} {editable && <span style={{ color: "var(--accent, #6366f1)" }}>(editable)</span>}
+        {label}
+        {editable && <span style={{ color: "var(--accent, #6366f1)" }}> (editable)</span>}
+        {hint && <span style={{ color: "var(--text-muted)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}> · {hint}</span>}
       </div>
       {children}
     </div>

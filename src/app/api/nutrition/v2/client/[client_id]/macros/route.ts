@@ -62,24 +62,35 @@ export async function GET(
 
   const adjusted = adjustMacros(result.raw, { overrideKcal });
 
-  return NextResponse.json({
-    client_id: clientId,
-    client_name: result.clientName,
-    raw_calculator_kcal: adjusted.rawCalculatorKcal,
-    suggested_kcal: Math.max(
-      KCAL_FLOOR,
-      adjusted.rawCalculatorKcal - 400,
-    ), // what the editor shows on first load
-    targets: {
-      calories: adjusted.calories,
-      proteinG: adjusted.proteinG,
-      carbsG: adjusted.carbsG,
-      fatG: adjusted.fatG,
-      sodiumCapMg: adjusted.sodiumCapMg,
-      notes: adjusted.notes,
-      source: adjusted.source,
-      flooredAt1200: adjusted.flooredAt1200,
+  // Explicit no-store: the editor calls this once on mount and again on
+  // every debounced kcal change. Even though Next.js marks the route
+  // dynamic (we read searchParams), browser/CDN caches can still serve
+  // stale responses across same ?kcal=N values. Force fresh every time.
+  return NextResponse.json(
+    {
+      client_id: clientId,
+      client_name: result.clientName,
+      raw_calculator_kcal: adjusted.rawCalculatorKcal,
+      suggested_kcal: Math.max(
+        KCAL_FLOOR,
+        adjusted.rawCalculatorKcal - 400,
+      ),
+      targets: {
+        calories: adjusted.calories,
+        proteinG: adjusted.proteinG,
+        carbsG: adjusted.carbsG,
+        fatG: adjusted.fatG,
+        sodiumCapMg: adjusted.sodiumCapMg,
+        notes: adjusted.notes,
+        source: adjusted.source,
+        flooredAt1200: adjusted.flooredAt1200,
+      },
+      parsed: result.parsed,
     },
-    parsed: result.parsed, // weight/height/age/sex for editor display
-  });
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate",
+      },
+    },
+  );
 }
