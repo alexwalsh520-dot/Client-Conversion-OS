@@ -109,12 +109,39 @@
   .attr-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
   .attr-value{font-size:23px;line-height:1.05;font-weight:500;letter-spacing:-0.03em;color:var(--text)}
   .attr-value.gold{color:var(--gold)}
-  .attr-meta{font-size:11px;color:var(--text-4);margin-top:7px}
-  .attr-meta.good{color:var(--green)}
-  .attr-meta.warn{color:var(--gold-dim)}
-  @media(max-width:900px){.attribution-strip{grid-template-columns:1fr}}
+	  .attr-meta{font-size:11px;color:var(--text-4);margin-top:7px}
+	  .attr-meta.good{color:var(--green)}
+	  .attr-meta.warn{color:var(--gold-dim)}
+	  @media(max-width:900px){.attribution-strip{grid-template-columns:1fr}}
 
-  /* Table panel */
+	  /* Attribution alerts */
+	  .alerts-panel{padding:0;overflow:hidden}
+	  .alerts-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)}
+	  .alerts-title{font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:var(--text-3);font-weight:500}
+	  .alerts-count{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--gold);margin-left:8px}
+	  .alerts-sub{font-size:11px;color:var(--text-4);margin-top:5px}
+	  .alerts-list{display:flex;flex-direction:column}
+	  .alert-row{display:grid;grid-template-columns:minmax(0,1.2fr) 96px 96px 190px;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--border);min-height:64px}
+	  .alert-row:last-child{border-bottom:none}
+	  .alert-name{font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .alert-meta{font-size:10px;color:var(--text-4);margin-top:4px;text-transform:uppercase;letter-spacing:0.05em}
+	  .alert-amount{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--gold);font-size:13px;text-align:right}
+	  .alert-reason{font-size:11px;color:var(--text-3);line-height:1.35}
+	  .alert-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+	  .alert-btn{padding:5px 9px;border:1px solid var(--border-2);border-radius:5px;background:#0c0c0c;color:var(--text-3);font-size:11px}
+	  .alert-btn:hover{background:#141414;color:var(--text)}
+	  .alert-btn.primary{border-color:#3a3020;color:var(--gold);background:#121008}
+	  .alert-empty{padding:18px;color:var(--text-4);font-size:12px}
+	  .resolved-strip{border-top:1px solid var(--border);background:#0c0c0c;padding:10px 18px}
+	  .resolved-head{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-4);margin-bottom:8px}
+	  .resolved-row{display:grid;grid-template-columns:minmax(0,1fr) 76px 82px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #171717}
+	  .resolved-row:first-of-type{border-top:none}
+	  .resolved-main{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .resolved-pill{font-size:9px;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-4)}
+	  .alert-option-meta{display:block;color:var(--text-4);font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  @media(max-width:900px){.alert-row{grid-template-columns:1fr}.alert-amount{text-align:left}.alert-actions{justify-content:flex-start}}
+
+	  /* Table panel */
   .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
   .tbl-scroll{overflow-x:auto;overflow-y:visible}
   .tbl-scroll::-webkit-scrollbar{height:8px;width:8px}
@@ -2417,6 +2444,256 @@ function RevenueAttributionStrip({dashboard}){
   );
 }
 
+function clientLabel(key){
+  if(key==="tyson") return "Tyson";
+  if(key==="keith") return "Keith";
+  return "Unknown";
+}
+
+function alertSaleKey(alert){
+  return alert?.key || alert?.saleKey || "";
+}
+
+function alertReasonLabel(reason){
+  if(reason==="missing_sales_name") return "Missing Sales Tracker name";
+  if(reason==="missing_booking_keyword") return "Booked call has no keyword";
+  if(reason==="no_matching_ghl_booking") return "No matching GHL booking";
+  return reason || "Needs review";
+}
+
+function alertDateLabel(alert){
+  return alert?.date ? dateLabelFromIso(alert.date) : "Recent";
+}
+
+function normalizeUiKeyword(value){
+  return String(value || "").trim().replace(/\s+/g," ").toUpperCase();
+}
+
+function attributionOptionsFromCampaigns(campaigns, alert){
+  const clientKey = alert?.clientKey;
+  const options = [];
+  const seen = new Set();
+  for(const campaign of campaigns || []){
+    if(clientKey && campaign.clientKey !== clientKey) continue;
+    const campaignId = String(campaign.id || "");
+    const rawCampaignId = campaignId.includes(":") ? campaignId.split(":").slice(1).join(":") : campaignId;
+    const ads = [];
+    (campaign.ads || []).forEach(ad => ads.push(ad));
+    (campaign.rows || []).forEach(row => (row.adRows || []).forEach(ad => ads.push({
+      id: ad.adId,
+      name: ad.adName,
+      keyword: ad.keyword || ad.adName,
+    })));
+
+    for(const ad of ads){
+      const adId = ad.id || ad.adId || ad.name;
+      const adName = ad.name || ad.adName || ad.keyword || "UNKNOWN";
+      const keyword = normalizeUiKeyword(ad.keyword || adName);
+      if(!keyword || keyword==="UNKNOWN") continue;
+      const groupId = String(adId).startsWith(`${campaignId}:`)
+        ? String(adId)
+        : `${campaignId}:${adId}`;
+      const key = `${campaign.clientKey}:${groupId}:${keyword}`;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      options.push({
+        id: key,
+        clientKey: campaign.clientKey,
+        keyword,
+        campaignId: rawCampaignId,
+        campaignName: campaign.name,
+        adId: String(adId),
+        adName,
+        groupId,
+        groupName: keyword,
+        label: `${keyword} · ${clientLabel(campaign.clientKey)}`,
+        meta: campaign.name || campaign.short || "",
+      });
+    }
+  }
+
+  const alertClient = clientKey || "";
+  const alertKeyword = normalizeUiKeyword(alert?.keyword || alert?.adName);
+  options.sort((a,b)=>{
+    const aKw = alertKeyword && a.keyword===alertKeyword ? 0 : 1;
+    const bKw = alertKeyword && b.keyword===alertKeyword ? 0 : 1;
+    if(aKw!==bKw) return aKw-bKw;
+    const aClient = alertClient && a.clientKey===alertClient ? 0 : 1;
+    const bClient = alertClient && b.clientKey===alertClient ? 0 : 1;
+    if(aClient!==bClient) return aClient-bClient;
+    return a.keyword.localeCompare(b.keyword);
+  });
+  return options;
+}
+
+function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onResolve}){
+  const options = useMemo(() => attributionOptionsFromCampaigns(campaigns, alert), [campaigns, alert]);
+  const initialOptionId = existing?.groupId
+    ? options.find(o=>o.groupId===existing.groupId)?.id
+    : options.find(o=>o.keyword===normalizeUiKeyword(existing?.keyword || alert?.keyword))?.id;
+  const [selectedId, setSelectedId] = useState(initialOptionId || options[0]?.id || "");
+  const [manualKeyword, setManualKeyword] = useState(normalizeUiKeyword(existing?.keyword || alert?.keyword || options[0]?.keyword || ""));
+  const [note, setNote] = useState(existing?.note || "");
+  const selected = options.find(o=>o.id===selectedId) || null;
+  const keyword = normalizeUiKeyword(selected?.keyword || manualKeyword);
+  const submit = (action) => {
+    const payload = {
+      resolutionId: existing?.id || null,
+      saleKey: alertSaleKey(alert),
+      action,
+      clientKey: alert.clientKey || selected?.clientKey || existing?.clientKey || null,
+      keyword: action==="attribute" ? keyword : null,
+      campaignId: action==="attribute" ? selected?.campaignId || null : null,
+      campaignName: action==="attribute" ? selected?.campaignName || null : null,
+      adId: action==="attribute" ? selected?.adId || null : null,
+      adName: action==="attribute" ? selected?.adName || keyword : null,
+      groupId: action==="attribute" ? selected?.groupId || null : null,
+      groupName: action==="attribute" ? selected?.groupName || keyword : null,
+      note,
+      sale: {
+        date: alert.date,
+        name: alert.name,
+        setter: alert.setter,
+        amount: Number(alert.amount || 0),
+        reason: alert.reason || existing?.action || "",
+      },
+    };
+    onResolve(payload);
+  };
+
+  return (
+    <Modal
+      title="Resolve attribution"
+      subtitle={`${alert.name || "Unknown"} · ${clientLabel(alert.clientKey)} · ${fmtUsd(Number(alert.amount || 0))}`}
+      onClose={onClose}
+      wide
+      footer={<>
+        <button className="btn-secondary" onClick={()=>submit("organic")} disabled={saving}>Mark organic</button>
+        <button className="btn-secondary" onClick={()=>submit("ignore")} disabled={saving}>Ignore</button>
+        <button className="btn-primary" onClick={()=>submit("attribute")} disabled={saving || !keyword}>
+          {saving ? "Saving…" : "Save attribution"}
+        </button>
+      </>}
+    >
+      <div style={{display:'grid',gap:12}}>
+        <div>
+          <label className="mf-label">Paid ad / keyword</label>
+          <select className="mf-select" value={selectedId} onChange={e=>setSelectedId(e.target.value)}>
+            {options.length === 0 && <option value="">No active ad options found</option>}
+            {options.map(o=>(
+              <option key={o.id} value={o.id}>{o.label} · {o.meta}</option>
+            ))}
+          </select>
+          {selected && <span className="alert-option-meta">{selected.meta}</span>}
+        </div>
+        <div>
+          <label className="mf-label">Keyword</label>
+          <input
+            className="mf-input mono"
+            value={keyword}
+            onChange={e=>{setManualKeyword(e.target.value.toUpperCase()); setSelectedId("");}}
+            placeholder="KEYWORD"
+          />
+        </div>
+        <div>
+          <label className="mf-label">Note</label>
+          <input
+            className="mf-input"
+            value={note}
+            onChange={e=>setNote(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
+  const attribution = dashboard?.attribution || {};
+  const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
+  const resolved = Array.isArray(attribution.resolvedAlerts) ? attribution.resolvedAlerts.slice(0,5) : [];
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const saveResolution = async (payload) => {
+    if(!payload.saleKey) return;
+    setSaving(true);
+    try{
+      await onResolve(payload);
+      setModal(null);
+    }catch(err){
+      onToast && onToast(err?.message || "Attribution save failed");
+    }finally{
+      setSaving(false);
+    }
+  };
+
+  const quickResolve = (alert, action) => saveResolution({
+    saleKey: alertSaleKey(alert),
+    action,
+    clientKey: alert.clientKey,
+    sale: {
+      date: alert.date,
+      name: alert.name,
+      setter: alert.setter,
+      amount: Number(alert.amount || 0),
+      reason: alert.reason || "",
+    },
+  });
+
+  return (
+    <div className="panel alerts-panel">
+      <div className="alerts-head">
+        <div>
+          <div className="alerts-title">Attribution Alerts <span className="alerts-count">{alerts.length}</span></div>
+          <div className="alerts-sub">Sales that need a paid/organic decision</div>
+        </div>
+      </div>
+      <div className="alerts-list">
+        {alerts.length === 0 && <div className="alert-empty">No unresolved attribution alerts.</div>}
+        {alerts.slice(0,6).map(alert => (
+          <div className="alert-row" key={alertSaleKey(alert)}>
+            <div>
+              <div className="alert-name">{alert.name || "Unknown"}</div>
+              <div className="alert-meta">{alertDateLabel(alert)} · {clientLabel(alert.clientKey)} · {alert.setter || "No setter"}</div>
+            </div>
+            <div className="alert-amount">{fmtUsd(Number(alert.amount || 0))}</div>
+            <div className="alert-reason">{alertReasonLabel(alert.reason)}</div>
+            <div className="alert-actions">
+              <button className="alert-btn primary" onClick={()=>setModal({alert})}>Attribute</button>
+              <button className="alert-btn" onClick={()=>quickResolve(alert,"organic")} disabled={saving}>Organic</button>
+              <button className="alert-btn" onClick={()=>quickResolve(alert,"ignore")} disabled={saving}>Ignore</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {resolved.length > 0 && (
+        <div className="resolved-strip">
+          <div className="resolved-head">Resolved</div>
+          {resolved.map(item => (
+            <div className="resolved-row" key={item.id}>
+              <div className="resolved-main">{item.name} · {item.keyword || item.action} · {fmtUsd(Number(item.amount || 0))}</div>
+              <div className="resolved-pill">{item.action}</div>
+              <button className="rec-edit-btn" onClick={()=>setModal({alert:{...item, key:item.saleKey, reason:item.action}, existing:item})}>Edit</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {modal && (
+        <AttributionAlertModal
+          alert={modal.alert}
+          existing={modal.existing}
+          campaigns={campaigns}
+          saving={saving}
+          onClose={()=>setModal(null)}
+          onResolve={saveResolution}
+        />
+      )}
+    </div>
+  );
+}
+
 // ------- App
 function App(){
   const [account, setAccount] = useState("all");
@@ -2487,6 +2764,18 @@ function App(){
     }finally{
       setLoading(false);
     }
+  };
+
+  const onResolveAlert = async (payload) => {
+    const res = await fetch("/api/ads-tracker/attribution-alerts", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(json.error || "Attribution save failed");
+    showToast("Attribution saved");
+    await loadDashboard({silent:true});
   };
 
   useEffect(()=>{
@@ -2609,6 +2898,7 @@ function App(){
             <div className="chart-column">
               <ROASChart campaigns={scopedCampaigns}/>
               <CostPerDMChart campaigns={scopedCampaigns}/>
+              <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
             </div>
             <div className="chart-column">
               <AdROASChart campaigns={scopedCampaigns}/>

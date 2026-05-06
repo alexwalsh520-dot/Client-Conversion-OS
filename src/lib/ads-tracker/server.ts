@@ -41,6 +41,13 @@ interface KeywordEvent {
   client_key: string;
   keyword_raw: string | null;
   keyword_normalized: string | null;
+  override_group_id?: string | null;
+  override_group_name?: string | null;
+  override_campaign_id?: string | null;
+  override_campaign_name?: string | null;
+  override_ad_id?: string | null;
+  override_ad_name?: string | null;
+  attribution_resolution_id?: string | null;
   value_cents?: number | null;
   subscriber_id: string | null;
   subscriber_name: string | null;
@@ -179,6 +186,7 @@ interface Group {
 }
 
 interface UnmatchedSale {
+  key: string;
   date: string;
   clientKey: string | null;
   name: string;
@@ -192,8 +200,59 @@ interface UnmatchedSale {
   classification: "organic_or_unattributed";
 }
 
+type AttributionResolutionAction = "attribute" | "organic" | "ignore";
+
+interface AttributionExceptionRow {
+  id: string;
+  source: string;
+  reason: string;
+  client_key: string | null;
+  keyword_normalized: string | null;
+  contact_name: string | null;
+  appointment_id: string | null;
+  payload: unknown;
+  resolved_at: string | null;
+  created_at: string | null;
+}
+
+interface AttributionResolution {
+  id: string;
+  saleKey: string;
+  action: AttributionResolutionAction;
+  clientKey: string | null;
+  keywordNormalized: string | null;
+  keywordRaw: string | null;
+  contactName: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  adId: string | null;
+  adName: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  note: string | null;
+  resolvedAt: string | null;
+  createdAt: string | null;
+}
+
+interface ResolvedAttributionAlert {
+  id: string;
+  saleKey: string;
+  action: AttributionResolutionAction;
+  date: string;
+  clientKey: string | null;
+  name: string;
+  setter: string;
+  amount: number;
+  keyword: string;
+  campaignName: string | null;
+  adName: string | null;
+  note: string | null;
+  resolvedAt: string | null;
+}
+
 interface BuildPayloadOptions {
   unmatchedSales?: UnmatchedSale[];
+  resolvedAlerts?: ResolvedAttributionAlert[];
   salesCollectedRevenue?: number;
   sourceStatus?: Record<string, unknown>;
 }
@@ -213,6 +272,7 @@ interface BackfillGroupHint {
 }
 
 const SUPABASE_PAGE_SIZE = 1000;
+const ALERT_RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
 
 function emptyGroup(id: string, clientKey: string, name: string, keyword: string): Group {
   return {
@@ -323,6 +383,29 @@ function saleAmount(row: SheetRow): number {
   return row.cashCollected || 0;
 }
 
+function normalizeKeyPart(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function salesRowKey(row: SheetRow, clientKey: string | null): string {
+  const stableRowId =
+    normalizeKeyPart(row.callNumber) ||
+    normalizePersonName(row.name) ||
+    normalizeKeyPart(row.name) ||
+    "unknown";
+  return [
+    "sale",
+    row.date || "nodate",
+    clientKey || clientFromOffer(row) || "unknown",
+    stableRowId,
+    normalizeKeyPart(row.setter) || "nosetter",
+    normalizeKeyPart(row.outcome) || "nooutcome",
+  ].join(":");
+}
+
 function shouldTrackUnmatchedSale(row: SheetRow): boolean {
   return saleAmount(row) > 0 || row.revenue > 0 || isWin(row) || (row.callTaken && !isNoShow(row));
 }
@@ -333,6 +416,7 @@ function unmatchedSale(
   reason: UnmatchedSale["reason"]
 ): UnmatchedSale {
   return {
+    key: salesRowKey(row, clientKey),
     date: row.date,
     clientKey,
     name: row.name || "Unknown",
@@ -734,7 +818,9 @@ function applySalesToGroups(
     }
 
     const groupId =
-      options.groupId?.(match, row) || `${match.client_key}:${match.keyword_normalized}`;
+      match.override_group_id ||
+      options.groupId?.(match, row) ||
+      `${match.client_key}:${match.keyword_normalized}`;
     const group =
       groups.get(groupId) ||
       emptyGroup(
@@ -743,6 +829,7 @@ function applySalesToGroups(
         options.groupName?.(match, row) || displayKeyword(match.keyword_normalized),
         displayKeyword(match.keyword_normalized)
       );
+    applyOverrideMetadata(group, match);
     group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
     groups.set(groupId, group);
 
@@ -781,6 +868,7 @@ function buildPayload(
   const totalMainOfferClients = rows.reduce((sum, row) => sum + row.mainOfferClients, 0);
   const totalSubscriptionClients = rows.reduce((sum, row) => sum + row.subscriptionClients, 0);
   const unmatchedSales = options.unmatchedSales || [];
+  const resolvedAlerts = options.resolvedAlerts || [];
   const unmatchedSalesRevenue = unmatchedSales.reduce((sum, row) => sum + row.amount, 0);
   const directSalesCollectedRevenue = options.salesCollectedRevenue;
   const totalCollectedRevenue =
@@ -834,6 +922,7 @@ function buildPayload(
       organicUnattributedRevenue,
       totalCollectedRevenue,
       unmatchedSales,
+      resolvedAlerts,
     },
     sourceStatus: options.sourceStatus || null,
     rows,
@@ -1273,6 +1362,146 @@ function asObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function isResolutionAction(value: unknown): value is AttributionResolutionAction {
+  return value === "attribute" || value === "organic" || value === "ignore";
+}
+
+function parseAttributionResolution(row: AttributionExceptionRow): AttributionResolution | null {
+  const payload = asObject(row.payload);
+  if (!payload) return null;
+
+  const saleKey = stringFromRecord(payload, "saleKey") || stringFromRecord(payload, "sale_key");
+  const actionValue = stringFromRecord(payload, "action") || row.reason;
+  if (!saleKey || !isResolutionAction(actionValue)) return null;
+
+  const keyword =
+    normalizeKeyword(row.keyword_normalized) ||
+    normalizeKeyword(stringFromRecord(payload, "keyword")) ||
+    normalizeKeyword(stringFromRecord(payload, "keywordRaw"));
+
+  return {
+    id: row.id,
+    saleKey,
+    action: actionValue,
+    clientKey: row.client_key || stringFromRecord(payload, "clientKey"),
+    keywordNormalized: keyword,
+    keywordRaw:
+      stringFromRecord(payload, "keywordRaw") ||
+      stringFromRecord(payload, "keyword") ||
+      (keyword ? displayKeyword(keyword) : null),
+    contactName: row.contact_name || stringFromRecord(payload, "contactName"),
+    campaignId: stringFromRecord(payload, "campaignId"),
+    campaignName: stringFromRecord(payload, "campaignName"),
+    adId: stringFromRecord(payload, "adId"),
+    adName: stringFromRecord(payload, "adName"),
+    groupId: stringFromRecord(payload, "groupId"),
+    groupName: stringFromRecord(payload, "groupName"),
+    note: stringFromRecord(payload, "note"),
+    resolvedAt: row.resolved_at,
+    createdAt: row.created_at,
+  };
+}
+
+async function fetchAttributionResolutions(
+  db: ReturnType<typeof getServiceSupabase>
+): Promise<AttributionResolution[]> {
+  const rows: AttributionResolution[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await db
+      .from("ads_attribution_exceptions")
+      .select(
+        "id,source,reason,client_key,keyword_normalized,contact_name,appointment_id,payload,resolved_at,created_at"
+      )
+      .eq("source", ALERT_RESOLUTION_SOURCE)
+      .order("created_at", { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Attribution alert resolutions query failed: ${error.message}`);
+
+    const page = ((data || []) as AttributionExceptionRow[])
+      .map(parseAttributionResolution)
+      .filter((value): value is AttributionResolution => Boolean(value));
+    rows.push(...page);
+    if ((data || []).length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
+function latestResolutionsBySaleKey(resolutions: AttributionResolution[]) {
+  const latest = new Map<string, AttributionResolution>();
+  for (const resolution of resolutions) {
+    latest.set(resolution.saleKey, resolution);
+  }
+  return latest;
+}
+
+function attributionOverrideEventForRow(
+  row: SheetRow,
+  resolution: AttributionResolution | undefined,
+  clientKey: string | null
+): KeywordEvent | null {
+  if (!resolution || resolution.action !== "attribute") return null;
+
+  const keyword = normalizeKeyword(resolution.keywordNormalized || resolution.keywordRaw);
+  const resolvedClientKey = resolution.clientKey || clientKey;
+  if (!keyword || !resolvedClientKey) return null;
+
+  return {
+    source: "ghl",
+    event_type: "manual_attribution_override",
+    client_key: resolvedClientKey,
+    keyword_raw: resolution.keywordRaw || displayKeyword(keyword),
+    keyword_normalized: keyword,
+    override_group_id: resolution.groupId,
+    override_group_name: resolution.groupName,
+    override_campaign_id: resolution.campaignId,
+    override_campaign_name: resolution.campaignName,
+    override_ad_id: resolution.adId,
+    override_ad_name: resolution.adName,
+    attribution_resolution_id: resolution.id,
+    subscriber_id: null,
+    subscriber_name: null,
+    setter_name: row.setter || null,
+    appointment_id: null,
+    contact_id: null,
+    contact_name: row.name || resolution.contactName,
+    event_at: `${row.date}T12:00:00.000Z`,
+  };
+}
+
+function resolvedAlertForRow(
+  row: SheetRow,
+  clientKey: string | null,
+  resolution: AttributionResolution
+): ResolvedAttributionAlert {
+  const keyword = normalizeKeyword(resolution.keywordNormalized || resolution.keywordRaw);
+  return {
+    id: resolution.id,
+    saleKey: resolution.saleKey,
+    action: resolution.action,
+    date: row.date,
+    clientKey: resolution.clientKey || clientKey,
+    name: row.name || resolution.contactName || "Unknown",
+    setter: row.setter || "",
+    amount: saleAmount(row),
+    keyword: keyword ? displayKeyword(keyword) : "",
+    campaignName: resolution.campaignName,
+    adName: resolution.adName,
+    note: resolution.note,
+    resolvedAt: resolution.resolvedAt || resolution.createdAt,
+  };
+}
+
+function applyOverrideMetadata(group: Group, match: KeywordEvent) {
+  group.campaignId = match.override_campaign_id || group.campaignId;
+  group.campaignName = match.override_campaign_name || group.campaignName;
+  group.adId = match.override_ad_id || group.adId;
+  group.adName = match.override_ad_name || group.adName;
+  if (match.override_group_name) group.name = match.override_group_name;
+}
+
 function syncedMetaDateAccounts(
   runs: AdsSyncRunRow[],
   query: AdsTrackerQuery,
@@ -1320,6 +1549,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     ghlAppointments,
     { data: metaSyncRuns, error: syncRunError },
     backfillRows,
+    attributionResolutions,
   ] = await Promise.all([
       fetchMetaRows(db, query, clientFilter),
       fetchKeywordEvents(db, clientFilter, eventQueryFrom, eventQueryTo),
@@ -1334,6 +1564,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .order("completed_at", { ascending: false })
         .limit(20),
       fetchKeywordBackfillRows(db, query, clientFilter),
+      fetchAttributionResolutions(db),
     ]);
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
@@ -1411,19 +1642,54 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (row) => campaignHintForBackfillRow(row, rows)
   );
 
-  const bookings = attributionEvents.filter((event) => event.source === "ghl");
   const salesRows = await fetchFreshSalesRows(db, query, clientFilter);
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
+  const resolutionBySaleKey = latestResolutionsBySaleKey(attributionResolutions);
+  const manualAttributionBookings = attributionSalesRows
+    .map((row) => {
+      const clientKey = clientFromOffer(row);
+      if (!clientKey || !clientFilter.includes(clientKey)) return null;
+      if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) return null;
+      return attributionOverrideEventForRow(
+        row,
+        resolutionBySaleKey.get(salesRowKey(row, clientKey)),
+        clientKey
+      );
+    })
+    .filter((event): event is KeywordEvent => Boolean(event));
+  const bookings = [
+    ...attributionEvents.filter((event) => event.source === "ghl"),
+    ...manualAttributionBookings,
+  ];
+  addKeywordEventsToGroups(
+    groups,
+    manualAttributionBookings,
+    (event, keyword) =>
+      event.override_group_id ||
+      periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
+    () => `${query.dateFrom} - ${query.dateTo}`
+  );
+  const resolvedAlerts = attributionSalesRows
+    .map((row) => {
+      const clientKey = clientFromOffer(row);
+      const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+      return resolution ? resolvedAlertForRow(row, clientKey, resolution) : null;
+    })
+    .filter((alert): alert is ResolvedAttributionAlert => Boolean(alert))
+    .filter((alert) => !alert.clientKey || clientFilter.includes(alert.clientKey))
+    .sort((a, b) => (b.resolvedAt || "").localeCompare(a.resolvedAt || ""));
 
   const includeSalesOutcomeMetrics = (match: KeywordEvent, row: SheetRow) =>
     !backfilledDateKeys.has(`${match.client_key}:${row.date}`);
   const includeCallTakenMetrics = () => true;
   const includeUnmatchedSales = (row: SheetRow, clientKey: string | null) =>
     Boolean(clientKey && clientFilter.includes(clientKey)) &&
-    !backfilledDateKeys.has(`${clientKey}:${row.date}`);
+    !backfilledDateKeys.has(`${clientKey}:${row.date}`) &&
+    !resolutionBySaleKey.has(salesRowKey(row, clientKey));
 
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match) =>
+      match.override_group_id ||
       periodAttributionGroupId(
         match,
         match.keyword_normalized || "",
@@ -1467,13 +1733,28 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (row) => row.date,
     (row) => campaignHintForBackfillRow(row, rows)
   );
+  addKeywordEventsToGroups(
+    dailyGroups,
+    manualAttributionBookings,
+    (event, keyword) =>
+      event.override_group_id
+        ? `${eventDateKey(event.event_at)}:${event.override_group_id}`
+        : dailyAttributionGroupId(
+            event,
+            keyword,
+            `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
+          ),
+    (event) => eventDateKey(event.event_at)
+  );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
-      dailyAttributionGroupId(
-        { ...match, event_at: `${row.date}T12:00:00.000Z` },
-        match.keyword_normalized || "",
-        `${row.date}:${match.client_key}:keyword:${match.keyword_normalized}`
-      ),
+      match.override_group_id
+        ? `${row.date}:${match.override_group_id}`
+        : dailyAttributionGroupId(
+            { ...match, event_at: `${row.date}T12:00:00.000Z` },
+            match.keyword_normalized || "",
+            `${row.date}:${match.client_key}:keyword:${match.keyword_normalized}`
+          ),
     dateLabel: (_match, row) => row.date,
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
@@ -1564,6 +1845,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   return buildPayload(query, finalized, events, false, finalizedDaily, {
     unmatchedSales,
+    resolvedAlerts,
     salesCollectedRevenue,
     sourceStatus,
   });
