@@ -115,31 +115,64 @@
 	  @media(max-width:900px){.attribution-strip{grid-template-columns:1fr}}
 
 	  /* Attribution alerts */
-	  .alerts-panel{padding:0;overflow:hidden}
-	  .alerts-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)}
-	  .alerts-title{font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:var(--text-3);font-weight:500}
-	  .alerts-count{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--gold);margin-left:8px}
-	  .alerts-sub{font-size:11px;color:var(--text-4);margin-top:5px}
-	  .alerts-list{display:flex;flex-direction:column}
-	  .alert-row{display:grid;grid-template-columns:minmax(0,1.2fr) 96px 96px 190px;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--border);min-height:64px}
+	  .alerts-panel{margin-top:28px;border-radius:16px;background:#101010;border:1px solid #242424;overflow:hidden}
+	  .alerts-head{height:130px;display:flex;align-items:center;justify-content:space-between;padding:0 42px;border-bottom:1px solid #222}
+	  .alerts-title{font-size:20px;line-height:1.1;font-weight:700;letter-spacing:-0.03em;color:#ededed}
+	  .alerts-sub{font-size:17px;line-height:1.25;color:#4f4f4f;margin-top:10px;font-weight:400;letter-spacing:-0.02em}
+	  .alerts-tabs{display:inline-flex;align-items:center;gap:8px;padding:4px;border:1px solid #252525;border-radius:999px;background:#090909}
+	  .alerts-tab{height:44px;padding:0 22px;border-radius:999px;color:#727272;font-size:18px;display:inline-flex;align-items:center;gap:12px}
+	  .alerts-tab.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
+	  .alerts-tab-count{min-width:28px;height:22px;padding:0 8px;border-radius:999px;border:1px solid #282828;background:#171717;color:#555;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:1}
+	  .alerts-tab.active .alerts-tab-count{border-color:#3c331f;color:var(--gold)}
+	  .alerts-grid{display:grid;grid-template-columns:72px minmax(280px,1.4fr) minmax(210px,.85fr) minmax(130px,.45fr) 210px;align-items:center}
+	  .alerts-table-head{height:66px;border-bottom:1px solid #222;color:#4d4d4d;font-size:14px;text-transform:uppercase;letter-spacing:0.15em;font-weight:600}
+	  .alert-row{min-height:112px;border-bottom:1px solid #222}
 	  .alert-row:last-child{border-bottom:none}
-	  .alert-name{font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	  .alert-meta{font-size:10px;color:var(--text-4);margin-top:4px;text-transform:uppercase;letter-spacing:0.05em}
-	  .alert-amount{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--gold);font-size:13px;text-align:right}
-	  .alert-reason{font-size:11px;color:var(--text-3);line-height:1.35}
-	  .alert-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-	  .alert-btn{padding:5px 9px;border:1px solid var(--border-2);border-radius:5px;background:#0c0c0c;color:var(--text-3);font-size:11px}
-	  .alert-btn:hover{background:#141414;color:var(--text)}
-	  .alert-btn.primary{border-color:#3a3020;color:var(--gold);background:#121008}
-	  .alert-empty{padding:18px;color:var(--text-4);font-size:12px}
-	  .resolved-strip{border-top:1px solid var(--border);background:#0c0c0c;padding:10px 18px}
-	  .resolved-head{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-4);margin-bottom:8px}
-	  .resolved-row{display:grid;grid-template-columns:minmax(0,1fr) 76px 82px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #171717}
+	  .alert-check{width:28px;height:28px;border:1px solid #2d2d2d;border-radius:6px;margin-left:42px}
+	  .alert-name{font-size:20px;line-height:1.1;font-weight:700;color:#ededed;letter-spacing:-0.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .alert-meta{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;line-height:1.25;color:#666;margin-top:10px;letter-spacing:0}
+	  .alert-campaign{display:flex;align-items:center;gap:14px;color:#a6a6a6;font-size:20px;letter-spacing:-0.02em}
+	  .alert-campaign-dot{width:10px;height:10px;border-radius:99px;background:var(--gold);flex:0 0 auto}
+	  .alert-campaign-dot.keith{background:var(--blue)}
+	  .alert-amount{font-family:'Inter',system-ui,sans-serif;color:#f0f0f0;font-size:21px;font-weight:700;letter-spacing:-0.03em;text-align:left}
+	  .alert-actions{display:flex;justify-content:flex-start}
+	  .alert-resolve{height:46px;min-width:162px;padding:0 24px;border-radius:7px;background:var(--gold);color:#090909;font-size:17px;font-weight:800;letter-spacing:-0.02em}
+	  .alert-resolve:hover{filter:brightness(1.06)}
+	  .alert-empty{padding:36px 42px;color:#555;font-size:16px}
+	  .resolved-strip{border-top:1px solid #222;background:#0c0c0c;padding:16px 42px}
+	  .resolved-head{font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#4f4f4f;margin-bottom:10px}
+	  .resolved-row{display:grid;grid-template-columns:minmax(0,1fr) 96px 80px;gap:12px;align-items:center;padding:9px 0;border-top:1px solid #171717}
 	  .resolved-row:first-of-type{border-top:none}
-	  .resolved-main{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	  .resolved-pill{font-size:9px;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-4)}
+	  .resolved-main{font-size:13px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .resolved-pill{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#555}
 	  .alert-option-meta{display:block;color:var(--text-4);font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	  @media(max-width:900px){.alert-row{grid-template-columns:1fr}.alert-amount{text-align:left}.alert-actions{justify-content:flex-start}}
+
+	  .alert-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding-top:7vh;z-index:180}
+	  .alert-modal{width:880px;max-width:calc(100vw - 72px);background:#111;border:1px solid #2a2a2a;border-radius:16px;box-shadow:0 28px 90px rgba(0,0,0,.72);overflow:hidden}
+	  .alert-modal-head{height:120px;display:flex;align-items:flex-start;justify-content:space-between;padding:34px 40px 0;border-bottom:1px solid #242424}
+	  .alert-modal-title{font-size:25px;line-height:1.05;font-weight:800;color:#f1f1f1;letter-spacing:-0.04em}
+	  .alert-modal-sub{font-size:19px;color:#676767;margin-top:10px;letter-spacing:-0.03em}
+	  .alert-modal-close{font-size:34px;line-height:1;color:#777;padding:0 4px}
+	  .alert-modal-close:hover{color:#eee}
+	  .alert-modal-body{padding:34px 40px 36px}
+	  .alert-modal-info{border:1px solid #242424;border-radius:10px;background:#0b0b0b;padding:22px 26px;margin-bottom:30px;display:grid;gap:18px}
+	  .alert-info-row{display:grid;grid-template-columns:130px 1fr;align-items:center}
+	  .alert-info-label{font-size:16px;text-transform:uppercase;letter-spacing:0.14em;color:#555}
+	  .alert-info-value{display:flex;align-items:center;gap:16px;color:#aaa;font-size:23px;letter-spacing:-0.03em}
+	  .alert-info-pill{width:88px;height:12px;border-radius:999px;background:var(--gold)}
+	  .alert-info-pill.keith{background:var(--blue)}
+	  .alert-field-label{font-size:16px;text-transform:uppercase;letter-spacing:0.22em;color:#696969;font-weight:700;margin-bottom:14px}
+	  .alert-keyword-select{width:100%;height:74px;border:1px solid #272727;border-radius:9px;background:#0a0a0a;color:#777;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:20px;padding:0 26px;appearance:auto}
+	  .alert-note-toggle{margin-top:28px;color:#666;font-size:18px}
+	  .alert-note-input{margin-top:14px;width:100%;height:52px;border:1px solid #272727;border-radius:9px;background:#0a0a0a;color:#aaa;font-size:16px;padding:0 18px}
+	  .alert-modal-foot{height:112px;border-top:1px solid #242424;display:flex;align-items:center;justify-content:space-between;padding:0 40px}
+	  .alert-ignore{font-size:20px;color:#3f3f3f}
+	  .alert-ignore:hover{color:#777}
+	  .alert-foot-actions{display:flex;gap:16px}
+	  .alert-outline-btn{height:60px;padding:0 28px;border:1px solid #313131;border-radius:8px;background:#121212;color:#b0b0b0;font-size:21px}
+	  .alert-paid-btn{height:60px;padding:0 28px;border-radius:8px;background:var(--gold);color:#070707;font-size:21px;font-weight:800}
+	  .alert-paid-btn:disabled{opacity:.45;cursor:not-allowed}
+	  @media(max-width:900px){.alerts-head{height:auto;padding:28px 22px;align-items:flex-start;gap:18px;flex-direction:column}.alerts-grid{grid-template-columns:48px 1fr}.alerts-table-head{display:none}.alert-row{grid-template-columns:48px 1fr;gap:0;padding:18px 0}.alert-row .alert-campaign,.alert-row .alert-amount,.alert-row .alert-actions{grid-column:2;margin-top:12px}.alert-check{margin-left:20px}.alert-modal{max-width:calc(100vw - 28px)}.alert-modal-head,.alert-modal-body,.alert-modal-foot{padding-left:22px;padding-right:22px}.alert-modal-foot{height:auto;padding-top:18px;padding-bottom:18px;gap:16px;align-items:stretch;flex-direction:column}.alert-foot-actions{flex-direction:column}.alert-outline-btn,.alert-paid-btn{width:100%}}
 
 	  /* Table panel */
   .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
@@ -2465,6 +2498,12 @@ function alertDateLabel(alert){
   return alert?.date ? dateLabelFromIso(alert.date) : "Recent";
 }
 
+function alertTimestampLabel(alert){
+  const date = alertDateLabel(alert);
+  const time = alert?.time || alert?.eventTime || "";
+  return time ? `${date} · ${time}` : date;
+}
+
 function normalizeUiKeyword(value){
   return String(value || "").trim().replace(/\s+/g," ").toUpperCase();
 }
@@ -2532,10 +2571,10 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
     ? options.find(o=>o.groupId===existing.groupId)?.id
     : options.find(o=>o.keyword===normalizeUiKeyword(existing?.keyword || alert?.keyword))?.id;
   const [selectedId, setSelectedId] = useState(initialOptionId || options[0]?.id || "");
-  const [manualKeyword, setManualKeyword] = useState(normalizeUiKeyword(existing?.keyword || alert?.keyword || options[0]?.keyword || ""));
+  const [noteOpen, setNoteOpen] = useState(Boolean(existing?.note));
   const [note, setNote] = useState(existing?.note || "");
   const selected = options.find(o=>o.id===selectedId) || null;
-  const keyword = normalizeUiKeyword(selected?.keyword || manualKeyword);
+  const keyword = normalizeUiKeyword(selected?.keyword || "");
   const submit = (action) => {
     const payload = {
       resolutionId: existing?.id || null,
@@ -2562,59 +2601,74 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
   };
 
   return (
-    <Modal
-      title="Resolve attribution"
-      subtitle={`${alert.name || "Unknown"} · ${clientLabel(alert.clientKey)} · ${fmtUsd(Number(alert.amount || 0))}`}
-      onClose={onClose}
-      wide
-      footer={<>
-        <button className="btn-secondary" onClick={()=>submit("organic")} disabled={saving}>Mark organic</button>
-        <button className="btn-secondary" onClick={()=>submit("ignore")} disabled={saving}>Ignore</button>
-        <button className="btn-primary" onClick={()=>submit("attribute")} disabled={saving || !keyword}>
-          {saving ? "Saving…" : "Save attribution"}
-        </button>
-      </>}
-    >
-      <div style={{display:'grid',gap:12}}>
-        <div>
-          <label className="mf-label">Paid ad / keyword</label>
-          <select className="mf-select" value={selectedId} onChange={e=>setSelectedId(e.target.value)}>
-            {options.length === 0 && <option value="">No active ad options found</option>}
+    <div className="alert-modal-backdrop" onClick={onClose}>
+      <div className="alert-modal" onClick={e=>e.stopPropagation()}>
+        <div className="alert-modal-head">
+          <div>
+            <div className="alert-modal-title">Resolve attribution</div>
+            <div className="alert-modal-sub">{alert.name || "Unknown"} · {fmtUsd(Number(alert.amount || 0))}</div>
+          </div>
+          <button className="alert-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="alert-modal-body">
+          <div className="alert-modal-info">
+            <div className="alert-info-row">
+              <div className="alert-info-label">Campaign</div>
+              <div className="alert-info-value">
+                <span className={"alert-info-pill "+(alert.clientKey==="keith"?"keith":"")}></span>
+                {clientLabel(alert.clientKey)}
+              </div>
+            </div>
+            <div className="alert-info-row">
+              <div className="alert-info-label">Time</div>
+              <div className="alert-info-value mono">{alertTimestampLabel(alert)}</div>
+            </div>
+          </div>
+          <div className="alert-field-label">Which keyword did they use?</div>
+          <select className="alert-keyword-select" value={selectedId} onChange={e=>setSelectedId(e.target.value)}>
+            <option value="" disabled>Select keyword…</option>
             {options.map(o=>(
-              <option key={o.id} value={o.id}>{o.label} · {o.meta}</option>
+              <option key={o.id} value={o.id}>{o.keyword} · {o.meta}</option>
             ))}
           </select>
-          {selected && <span className="alert-option-meta">{selected.meta}</span>}
+          {noteOpen ? (
+            <input
+              className="alert-note-input"
+              value={note}
+              onChange={e=>setNote(e.target.value)}
+              placeholder="Add note"
+              autoFocus
+            />
+          ) : (
+            <button className="alert-note-toggle" onClick={()=>setNoteOpen(true)}>+ Add note</button>
+          )}
         </div>
-        <div>
-          <label className="mf-label">Keyword</label>
-          <input
-            className="mf-input mono"
-            value={keyword}
-            onChange={e=>{setManualKeyword(e.target.value.toUpperCase()); setSelectedId("");}}
-            placeholder="KEYWORD"
-          />
-        </div>
-        <div>
-          <label className="mf-label">Note</label>
-          <input
-            className="mf-input"
-            value={note}
-            onChange={e=>setNote(e.target.value)}
-            placeholder="Optional"
-          />
+        <div className="alert-modal-foot">
+          <button className="alert-ignore" onClick={()=>submit("ignore")} disabled={saving}>Ignore</button>
+          <div className="alert-foot-actions">
+            <button className="alert-outline-btn" onClick={()=>submit("organic")} disabled={saving}>Mark organic</button>
+            <button className="alert-paid-btn" onClick={()=>submit("attribute")} disabled={saving || !keyword}>
+              {saving ? "Saving…" : "Mark as paid"}
+            </button>
+          </div>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
 function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
   const attribution = dashboard?.attribution || {};
   const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
-  const resolved = Array.isArray(attribution.resolvedAlerts) ? attribution.resolvedAlerts.slice(0,5) : [];
+  const [filter, setFilter] = useState("all");
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
+  const counts = {
+    all: alerts.length,
+    tyson: alerts.filter(a=>a.clientKey==="tyson").length,
+    keith: alerts.filter(a=>a.clientKey==="keith").length,
+  };
+  const visibleAlerts = filter === "all" ? alerts : alerts.filter(a=>a.clientKey===filter);
 
   const saveResolution = async (payload) => {
     if(!payload.saleKey) return;
@@ -2629,57 +2683,53 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
     }
   };
 
-  const quickResolve = (alert, action) => saveResolution({
-    saleKey: alertSaleKey(alert),
-    action,
-    clientKey: alert.clientKey,
-    sale: {
-      date: alert.date,
-      name: alert.name,
-      setter: alert.setter,
-      amount: Number(alert.amount || 0),
-      reason: alert.reason || "",
-    },
-  });
-
   return (
     <div className="panel alerts-panel">
       <div className="alerts-head">
         <div>
-          <div className="alerts-title">Attribution Alerts <span className="alerts-count">{alerts.length}</span></div>
-          <div className="alerts-sub">Sales that need a paid/organic decision</div>
+          <div className="alerts-title">Attribution alerts</div>
+          <div className="alerts-sub">{alerts.length} unresolved · sales without a clear source keyword</div>
+        </div>
+        <div className="alerts-tabs">
+          {[
+            ["all","All",counts.all],
+            ["tyson","Tyson",counts.tyson],
+            ["keith","Keith",counts.keith],
+          ].map(([id,label,count])=>(
+            <button key={id} className={"alerts-tab "+(filter===id?"active":"")} onClick={()=>setFilter(id)}>
+              {label}
+              <span className="alerts-tab-count">{count}</span>
+            </button>
+          ))}
         </div>
       </div>
-      <div className="alerts-list">
-        {alerts.length === 0 && <div className="alert-empty">No unresolved attribution alerts.</div>}
-        {alerts.slice(0,6).map(alert => (
-          <div className="alert-row" key={alertSaleKey(alert)}>
+      <div className="alerts-table-head alerts-grid">
+        <div><div className="alert-check"></div></div>
+        <div>Customer</div>
+        <div>Campaign</div>
+        <div>Amount</div>
+        <div></div>
+      </div>
+      <div>
+        {visibleAlerts.length === 0 && <div className="alert-empty">No unresolved attribution alerts.</div>}
+        {visibleAlerts.slice(0,8).map(alert => (
+          <div className="alert-row alerts-grid" key={alertSaleKey(alert)}>
+            <div><div className="alert-check"></div></div>
             <div>
               <div className="alert-name">{alert.name || "Unknown"}</div>
-              <div className="alert-meta">{alertDateLabel(alert)} · {clientLabel(alert.clientKey)} · {alert.setter || "No setter"}</div>
+              <div className="alert-meta">{alertTimestampLabel(alert)}</div>
+            </div>
+            <div className="alert-campaign">
+              <span className={"alert-campaign-dot "+(alert.clientKey==="keith"?"keith":"")}></span>
+              {clientLabel(alert.clientKey)}
             </div>
             <div className="alert-amount">{fmtUsd(Number(alert.amount || 0))}</div>
-            <div className="alert-reason">{alertReasonLabel(alert.reason)}</div>
             <div className="alert-actions">
-              <button className="alert-btn primary" onClick={()=>setModal({alert})}>Attribute</button>
-              <button className="alert-btn" onClick={()=>quickResolve(alert,"organic")} disabled={saving}>Organic</button>
-              <button className="alert-btn" onClick={()=>quickResolve(alert,"ignore")} disabled={saving}>Ignore</button>
+              <button className="alert-resolve" onClick={()=>setModal({alert})}>Resolve →</button>
             </div>
           </div>
         ))}
       </div>
-      {resolved.length > 0 && (
-        <div className="resolved-strip">
-          <div className="resolved-head">Resolved</div>
-          {resolved.map(item => (
-            <div className="resolved-row" key={item.id}>
-              <div className="resolved-main">{item.name} · {item.keyword || item.action} · {fmtUsd(Number(item.amount || 0))}</div>
-              <div className="resolved-pill">{item.action}</div>
-              <button className="rec-edit-btn" onClick={()=>setModal({alert:{...item, key:item.saleKey, reason:item.action}, existing:item})}>Edit</button>
-            </div>
-          ))}
-        </div>
-      )}
       {modal && (
         <AttributionAlertModal
           alert={modal.alert}
@@ -2898,7 +2948,6 @@ function App(){
             <div className="chart-column">
               <ROASChart campaigns={scopedCampaigns}/>
               <CostPerDMChart campaigns={scopedCampaigns}/>
-              <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
             </div>
             <div className="chart-column">
               <AdROASChart campaigns={scopedCampaigns}/>
@@ -2912,6 +2961,8 @@ function App(){
               </div>
             </div>
           </div>
+
+          <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
 
           <RevenueAttributionStrip dashboard={dashboard} />
 
