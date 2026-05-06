@@ -212,6 +212,8 @@ interface BackfillGroupHint {
   adName: string | null;
 }
 
+const SUPABASE_PAGE_SIZE = 1000;
+
 function emptyGroup(id: string, clientKey: string, name: string, keyword: string): Group {
   return {
     id,
@@ -1180,6 +1182,91 @@ async function fetchKeywordBackfillRows(
   }));
 }
 
+async function fetchMetaRows(
+  db: ReturnType<typeof getServiceSupabase>,
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+): Promise<MetaRow[]> {
+  const rows: MetaRow[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await db
+      .from("ads_meta_insights_daily")
+      .select("*")
+      .in("client_key", clientFilter)
+      .gte("date", query.dateFrom)
+      .lte("date", query.dateTo)
+      .order("date", { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Meta insights query failed: ${error.message}`);
+
+    const page = (data || []) as MetaRow[];
+    rows.push(...page);
+    if (page.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
+async function fetchKeywordEvents(
+  db: ReturnType<typeof getServiceSupabase>,
+  clientFilter: string[],
+  eventQueryFrom: string,
+  eventQueryTo: string
+): Promise<KeywordEvent[]> {
+  const rows: KeywordEvent[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await db
+      .from("ads_keyword_events")
+      .select(
+        "source,event_type,client_key,keyword_raw,keyword_normalized,value_cents,subscriber_id,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
+      )
+      .in("client_key", clientFilter)
+      .gte("event_at", eventQueryFrom)
+      .lte("event_at", eventQueryTo)
+      .order("event_at", { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Keyword events query failed: ${error.message}`);
+
+    const page = (data || []) as KeywordEvent[];
+    rows.push(...page);
+    if (page.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
+async function fetchGhlAppointments(
+  db: ReturnType<typeof getServiceSupabase>,
+  eventQueryFrom: string,
+  eventQueryTo: string
+): Promise<GhlAppointmentRow[]> {
+  const rows: GhlAppointmentRow[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await db
+      .from("ghl_appointments")
+      .select(
+        "appointment_id,client,contact_id,contact_name,keyword_raw,keyword_normalized,start_time,created_at,status,event_type,raw_payload"
+      )
+      .gte("created_at", eventQueryFrom)
+      .lte("created_at", eventQueryTo)
+      .order("created_at", { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw new Error(`GHL appointments query failed: ${error.message}`);
+
+    const page = (data || []) as GhlAppointmentRow[];
+    rows.push(...page);
+    if (page.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1228,33 +1315,15 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
 
   const [
-    { data: metaRows, error: metaError },
-    { data: keywordEvents, error: eventError },
-    { data: ghlAppointments, error: appointmentError },
+    metaRows,
+    keywordEvents,
+    ghlAppointments,
     { data: metaSyncRuns, error: syncRunError },
     backfillRows,
   ] = await Promise.all([
-      db
-        .from("ads_meta_insights_daily")
-        .select("*")
-        .in("client_key", clientFilter)
-        .gte("date", query.dateFrom)
-        .lte("date", query.dateTo),
-      db
-        .from("ads_keyword_events")
-        .select(
-          "source,event_type,client_key,keyword_raw,keyword_normalized,value_cents,subscriber_id,subscriber_name,setter_name,appointment_id,contact_id,contact_name,event_at"
-        )
-        .in("client_key", clientFilter)
-        .gte("event_at", eventQueryFrom)
-        .lte("event_at", eventQueryTo),
-      db
-        .from("ghl_appointments")
-        .select(
-          "appointment_id,client,contact_id,contact_name,keyword_raw,keyword_normalized,start_time,created_at,status,event_type,raw_payload"
-        )
-        .gte("created_at", eventQueryFrom)
-        .lte("created_at", eventQueryTo),
+      fetchMetaRows(db, query, clientFilter),
+      fetchKeywordEvents(db, clientFilter, eventQueryFrom, eventQueryTo),
+      fetchGhlAppointments(db, eventQueryFrom, eventQueryTo),
       db
         .from("ads_sync_runs")
         .select("date_from,date_to,completed_at,accounts")
@@ -1267,19 +1336,15 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       fetchKeywordBackfillRows(db, query, clientFilter),
     ]);
 
-  if (metaError || eventError || appointmentError || syncRunError) {
-    throw new Error(
-      `Ads Tracker data query failed: ${(metaError || eventError || appointmentError || syncRunError)?.message || "unknown error"}`
-    );
-  }
+  if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
 
   const groups = new Map<string, Group>();
-  const rows = (metaRows || []) as MetaRow[];
+  const rows = metaRows;
   const backfill = backfillRows as KeywordBackfillRow[];
-  const baseKeywordEvents = ((keywordEvents || []) as KeywordEvent[]);
+  const baseKeywordEvents = keywordEvents;
   const supplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
     db,
-    (ghlAppointments || []) as GhlAppointmentRow[],
+    ghlAppointments,
     baseKeywordEvents,
     clientFilter
   );
@@ -1402,7 +1467,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
       dailyAttributionGroupId(
-        { ...match, event_at: `${row.date}T00:00:00.000Z` },
+        { ...match, event_at: `${row.date}T12:00:00.000Z` },
         match.keyword_normalized || "",
         `${row.date}:${match.client_key}:keyword:${match.keyword_normalized}`
       ),
