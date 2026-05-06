@@ -155,6 +155,7 @@ interface SalesAttributionOptions {
   groupId?: (match: KeywordEvent, row: SheetRow) => string;
   dateLabel?: (match: KeywordEvent, row: SheetRow) => string;
   groupName?: (match: KeywordEvent, row: SheetRow) => string;
+  groupHint?: (match: KeywordEvent, row: SheetRow) => BackfillGroupHint | null;
   includeOutcomeMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeCallTakenMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeClientSplitMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
@@ -830,6 +831,7 @@ function applySalesToGroups(
         displayKeyword(match.keyword_normalized)
       );
     applyOverrideMetadata(group, match);
+    applyBackfillHint(group, options.groupHint?.(match, row) || null, "ad");
     group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
     groups.set(groupId, group);
 
@@ -1078,6 +1080,27 @@ function exactMetaHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[
   return hintFromMetaRow(candidates[0], keyword);
 }
 
+function exactMetaHintForKeywordEvent(event: KeywordEvent, metaRows: MetaRow[]): BackfillGroupHint | null {
+  const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+  if (!keyword) return null;
+
+  const eventDate = eventDateKey(event.event_at);
+  const candidates = metaRows
+    .filter((metaRow) => {
+      if (metaRow.client_key !== event.client_key || metaRow.date !== eventDate) return false;
+      if (!hasMetaDelivery(metaRow)) return false;
+      const metaKeyword =
+        normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
+      return metaKeyword === keyword;
+    })
+    .sort((a, b) => (b.spend_cents || 0) - (a.spend_cents || 0));
+
+  const uniqueKeys = new Set(candidates.map(groupKeyForMetaRow));
+  if (uniqueKeys.size !== 1) return null;
+
+  return hintFromMetaRow(candidates[0], keyword);
+}
+
 function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
   const payloadHint = campaignHintFromBackfillPayload(row);
   if (payloadHint) return payloadHint;
@@ -1135,6 +1158,26 @@ function fallbackGroupIdForBackfillRow(
     return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}`;
   }
   return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
+}
+
+function dailySalesGroupIdFromBookingDate(
+  match: KeywordEvent,
+  row: SheetRow,
+  keyword: string,
+  dailyAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
+) {
+  if (match.override_group_id) return `${row.date}:${match.override_group_id}`;
+
+  const bookingDate = eventDateKey(match.event_at);
+  const resolvedOnBookingDate = dailyAttributionGroupId(
+    match,
+    keyword,
+    `${bookingDate}:${match.client_key}:keyword:${keyword}`
+  );
+
+  return resolvedOnBookingDate.startsWith(`${bookingDate}:`)
+    ? `${row.date}:${resolvedOnBookingDate.slice(bookingDate.length + 1)}`
+    : `${row.date}:${match.client_key}:keyword:${keyword}`;
 }
 
 function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: AdsTrackerLevel = "ad") {
@@ -1695,6 +1738,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         match.keyword_normalized || "",
         `${match.client_key}:keyword:${match.keyword_normalized}`
       ),
+    groupHint: (match) => exactMetaHintForKeywordEvent(match, rows),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
@@ -1748,14 +1792,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
-      match.override_group_id
-        ? `${row.date}:${match.override_group_id}`
-        : dailyAttributionGroupId(
-            { ...match, event_at: `${row.date}T12:00:00.000Z` },
-            match.keyword_normalized || "",
-            `${row.date}:${match.client_key}:keyword:${match.keyword_normalized}`
-          ),
+      dailySalesGroupIdFromBookingDate(
+        match,
+        row,
+        match.keyword_normalized || "",
+        dailyAttributionGroupId
+      ),
     dateLabel: (_match, row) => row.date,
+    groupHint: (match) => exactMetaHintForKeywordEvent(match, rows),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
