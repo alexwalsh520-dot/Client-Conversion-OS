@@ -1366,8 +1366,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const periodAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
     rows,
     periodMetaGroupId,
-    (row, keyword) => `${row.client_key}:${keyword}`,
-    (row, keyword) => `${row.client_key}:${keyword}`
+    (row, keyword) => `${row.client_key}:${row.date}:${keyword}`,
+    (row, keyword) => {
+      const date = "event_at" in row ? eventDateKey(row.event_at) : row.date;
+      return `${row.client_key}:${date}:${keyword}`;
+    }
   );
   const dailyAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
     rows,
