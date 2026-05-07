@@ -328,10 +328,14 @@
   .metric-grid{margin-top:0}
   .metric-support-grid{margin-top:18px}
   .metric-card-shell{position:relative;min-width:0}
-  .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .14s,opacity .14s,background-color .14s}
+  .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .18s cubic-bezier(.2,.8,.2,1),opacity .14s,background-color .14s}
   .metric-card-shell.editing:hover .panel{border-color:#333;box-shadow:0 0 0 1px rgba(255,255,255,.035),0 12px 30px rgba(0,0,0,.28)}
-  .metric-card-shell.dragging .panel{border-style:dashed;border-color:#3a3a3a;background:#090909;box-shadow:none;opacity:.42}
+  .metric-card-shell.dragging{pointer-events:auto}
+  .metric-drag-placeholder{height:100%;min-height:240px;border:1px dashed #3a3a3a;border-radius:8px;background:#090909;box-shadow:inset 0 0 0 1px rgba(255,255,255,.018)}
   .metric-card-shell.drop-target .panel{border-color:var(--gold-dim);box-shadow:0 0 0 1px rgba(212,178,122,.18)}
+  .metric-floating-card{position:fixed;z-index:220;pointer-events:none;filter:drop-shadow(0 22px 40px rgba(0,0,0,.55));transform:scale(1.01);transform-origin:top left}
+  .metric-floating-card .panel{border-color:#333;box-shadow:0 0 0 1px rgba(255,255,255,.05),0 24px 60px rgba(0,0,0,.58)}
+  body.metric-dragging{cursor:grabbing;user-select:none}
   .metric-delete{position:absolute;top:9px;right:10px;z-index:4;width:26px;height:26px;border:1px solid var(--border-2);border-radius:999px;background:#121212;color:var(--text-3);font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
   .metric-delete:hover{background:#1a1a1a;color:var(--text)}
   .metric-add-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:58vh;overflow:auto;padding-right:2px}
@@ -510,7 +514,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
 
 // ------- Icons (minimal, stroke)
 const Icon = ({ d, size=14, stroke=1.4 }) => (
@@ -2137,21 +2141,25 @@ function moveMetricCard(ids, fromId, toId){
   return next;
 }
 
-function MetricCardShell({id, editing, draggingId, dropTargetId, onDelete, onDragStart, onDragEnter, onDrop, onDragEnd, children}){
+function MetricCardShell({id, editing, draggingId, dropTargetId, dragHeight, onDelete, onPointerDown, registerRef, children}){
   const isDragging = draggingId === id;
   const isDropTarget = dropTargetId === id && draggingId && draggingId !== id;
   return (
     <div
+      ref={node=>registerRef(id, node)}
+      data-metric-id={id}
       className={"metric-card-shell "+(editing?"editing ":"")+(isDragging?"dragging ":"")+(isDropTarget?"drop-target":"")}
-      draggable={editing}
-      onDragStart={e=>onDragStart(e, id)}
-      onDragEnter={e=>onDragEnter(e, id)}
-      onDragOver={e=>{ if(editing) e.preventDefault(); }}
-      onDrop={e=>onDrop(e, id)}
-      onDragEnd={onDragEnd}
+      onPointerDown={e=>onPointerDown(e, id)}
+      style={isDragging && dragHeight ? {height:dragHeight} : undefined}
     >
-      {editing && <button className="metric-delete" title="Delete card" onClick={e=>{e.stopPropagation(); onDelete(id);}}>×</button>}
-      {children}
+      {isDragging ? (
+        <div className="metric-drag-placeholder"></div>
+      ) : (
+        <>
+          {editing && <button className="metric-delete" title="Delete card" onClick={e=>{e.stopPropagation(); onDelete(id);}}>×</button>}
+          {children}
+        </>
+      )}
     </div>
   );
 }
@@ -2205,15 +2213,67 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
   const [layout, setLayout] = useState(loadMetricLayout);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [draggingId, setDraggingId] = useState(null);
+  const [dragInfo, setDragInfo] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
   const visibleLayout = sanitizeMetricLayout(layout, []);
   const leftLayout = visibleLayout.filter((_, i) => i % 2 === 0);
   const rightLayout = visibleLayout.filter((_, i) => i % 2 === 1);
+  const cardRefs = useRef({});
+  const pendingRects = useRef(null);
+  const visibleLayoutKey = visibleLayout.join("|");
+  const draggingId = dragInfo?.id || null;
 
   useEffect(()=>{
     try{ window.localStorage.setItem(METRIC_CARD_STORAGE_KEY, JSON.stringify(visibleLayout)); }catch(err){}
-  }, [visibleLayout.join("|")]);
+  }, [visibleLayoutKey]);
+
+  useEffect(()=>{
+    document.body.classList.toggle("metric-dragging", Boolean(dragInfo));
+    return ()=>document.body.classList.remove("metric-dragging");
+  }, [Boolean(dragInfo)]);
+
+  const measureCards = () => {
+    const rects = {};
+    visibleLayout.forEach(id => {
+      const node = cardRefs.current[id];
+      if(node) {
+        const rect = node.getBoundingClientRect();
+        rects[id] = {left:rect.left, top:rect.top};
+      }
+    });
+    return rects;
+  };
+
+  const setLayoutWithAnimation = (updater) => {
+    pendingRects.current = measureCards();
+    setLayout(updater);
+  };
+
+  useLayoutEffect(()=>{
+    const before = pendingRects.current;
+    if(!before) return;
+    pendingRects.current = null;
+    visibleLayout.forEach(id => {
+      if(id === draggingId) return;
+      const node = cardRefs.current[id];
+      const prev = before[id];
+      if(!node || !prev) return;
+      const rect = node.getBoundingClientRect();
+      const dx = prev.left - rect.left;
+      const dy = prev.top - rect.top;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      node.style.transition = "none";
+      node.style.transform = `translate(${dx}px, ${dy}px)`;
+      node.getBoundingClientRect();
+      requestAnimationFrame(()=>{
+        node.style.transition = "transform 190ms cubic-bezier(.2,.8,.2,1)";
+        node.style.transform = "";
+        window.setTimeout(()=>{
+          node.style.transition = "";
+        }, 220);
+      });
+    });
+  }, [visibleLayoutKey, draggingId]);
 
   const deleteCard = (id) => {
     setLayout(prev => prev.filter(cardId => cardId !== id));
@@ -2222,32 +2282,78 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
     setLayout(sanitizeMetricLayout(next, []));
     setPickerOpen(false);
   };
-  const startDrag = (event, id) => {
-    if(!editing) return;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", id);
-    setDraggingId(id);
+
+  const registerRef = (id, node) => {
+    if(node) cardRefs.current[id] = node;
+    else delete cardRefs.current[id];
   };
-  const enterDrag = (event, id) => {
-    if(!editing) return;
-    const fromId = draggingId || event.dataTransfer.getData("text/plain");
-    if(!fromId || fromId === id) return;
+
+  const beginPointerDrag = (event, id) => {
+    if(!editing || event.button !== 0) return;
+    if(event.target.closest("button,input,select,textarea")) return;
+    const node = cardRefs.current[id];
+    if(!node) return;
+    const rect = node.getBoundingClientRect();
     event.preventDefault();
-    setDropTargetId(id);
-    setLayout(prev => moveMetricCard(prev, fromId, id));
-  };
-  const dropCard = (event, id) => {
-    if(!editing) return;
-    event.preventDefault();
-    const fromId = draggingId || event.dataTransfer.getData("text/plain");
-    setLayout(prev => moveMetricCard(prev, fromId, id));
-    setDraggingId(null);
     setDropTargetId(null);
+    setDragInfo({
+      id,
+      pointerId:event.pointerId,
+      x:event.clientX,
+      y:event.clientY,
+      offsetX:event.clientX - rect.left,
+      offsetY:event.clientY - rect.top,
+      width:rect.width,
+      height:rect.height,
+    });
   };
-  const endDrag = () => {
-    setDraggingId(null);
-    setDropTargetId(null);
+
+  const reorderTowardPointer = (clientX, clientY) => {
+    if(!dragInfo) return;
+    const targetId = visibleLayout.find(id => {
+      if(id === dragInfo.id) return false;
+      const node = cardRefs.current[id];
+      if(!node) return false;
+      const rect = node.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    });
+    if(!targetId || targetId === dragInfo.id) {
+      setDropTargetId(null);
+      return;
+    }
+    setDropTargetId(targetId);
+    setLayoutWithAnimation(prev => moveMetricCard(prev, dragInfo.id, targetId));
   };
+
+  useEffect(()=>{
+    if(!dragInfo) return;
+    const onMove = (event) => {
+      if(event.pointerId !== dragInfo.pointerId) return;
+      setDragInfo(prev => prev ? {...prev, x:event.clientX, y:event.clientY} : prev);
+      reorderTowardPointer(event.clientX, event.clientY);
+    };
+    const onUp = (event) => {
+      if(event.pointerId !== dragInfo.pointerId) return;
+      setDragInfo(null);
+      setDropTargetId(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [dragInfo?.id, dragInfo?.pointerId, visibleLayoutKey]);
+
+  const floatingDef = dragInfo ? metricDefFor(dragInfo.id) : null;
+  const floatingStyle = dragInfo ? {
+    left:dragInfo.x - dragInfo.offsetX,
+    top:dragInfo.y - dragInfo.offsetY,
+    width:dragInfo.width,
+  } : null;
+
   const renderCard = (id) => {
     const def = metricDefFor(id);
     if(!def) return null;
@@ -2258,11 +2364,10 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
         editing={editing}
         draggingId={draggingId}
         dropTargetId={dropTargetId}
+        dragHeight={dragInfo?.id === id ? dragInfo.height : null}
         onDelete={deleteCard}
-        onDragStart={startDrag}
-        onDragEnter={enterDrag}
-        onDrop={dropCard}
-        onDragEnd={endDrag}
+        onPointerDown={beginPointerDrag}
+        registerRef={registerRef}
       >
         {def.render({campaigns})}
       </MetricCardShell>
@@ -2284,6 +2389,11 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
         <div className="chart-column">{leftLayout.map(renderCard)}</div>
         <div className="chart-column">{rightLayout.map(renderCard)}</div>
       </div>
+      {floatingDef && (
+        <div className="metric-floating-card" style={floatingStyle}>
+          {floatingDef.render({campaigns})}
+        </div>
+      )}
       {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
     </>
   );
