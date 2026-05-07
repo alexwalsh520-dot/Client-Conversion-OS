@@ -33,6 +33,7 @@ interface MetaRow {
   impressions: number;
   link_clicks: number;
   synced_at: string | null;
+  raw_payload?: unknown;
 }
 
 interface KeywordEvent {
@@ -124,6 +125,8 @@ export interface AdsTrackerRow {
   campaignName: string | null;
   adId: string | null;
   adName: string | null;
+  previewImageUrl: string | null;
+  previewThumbnailUrl: string | null;
   keyword: string;
   dateLabel: string;
   adSpend: number;
@@ -170,6 +173,8 @@ interface Group {
   campaignName: string | null;
   adId: string | null;
   adName: string | null;
+  previewImageUrl: string | null;
+  previewThumbnailUrl: string | null;
   keyword: string;
   dateLabel: string;
   adSpendCents: number;
@@ -284,6 +289,8 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     campaignName: null,
     adId: null,
     adName: null,
+    previewImageUrl: null,
+    previewThumbnailUrl: null,
     keyword,
     dateLabel: "",
     adSpendCents: 0,
@@ -320,6 +327,8 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     campaignName: group.campaignName,
     adId: group.adId,
     adName: group.adName,
+    previewImageUrl: group.previewImageUrl,
+    previewThumbnailUrl: group.previewThumbnailUrl,
     keyword: group.keyword,
     dateLabel: group.dateLabel,
     adSpend,
@@ -953,6 +962,25 @@ function buildPayload(
   };
 }
 
+function recordFromUnknown(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function creativePreviewFromPayload(payload: unknown) {
+  const root = recordFromUnknown(payload);
+  const preview = recordFromUnknown(root?.creative_preview);
+  if (!preview) return { imageUrl: null, thumbnailUrl: null };
+
+  const imageUrl = stringFromRecord(preview, "image_url");
+  const thumbnailUrl = stringFromRecord(preview, "thumbnail_url");
+  return {
+    imageUrl: imageUrl || thumbnailUrl,
+    thumbnailUrl,
+  };
+}
+
 function addMetaRowsToGroups(
   groups: Map<string, Group>,
   rows: MetaRow[],
@@ -972,6 +1000,9 @@ function addMetaRowsToGroups(
     if (query.level === "ad") {
       group.adId = row.ad_id || group.adId;
       group.adName = row.ad_name || group.adName;
+      const preview = creativePreviewFromPayload(row.raw_payload);
+      group.previewImageUrl = group.previewImageUrl || preview.imageUrl;
+      group.previewThumbnailUrl = group.previewThumbnailUrl || preview.thumbnailUrl;
     }
     group.adSpendCents += row.spend_cents || 0;
     group.impressions += row.impressions || 0;

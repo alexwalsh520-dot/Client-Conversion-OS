@@ -390,10 +390,13 @@
   .ar-val-roas{font-size:9.5px;color:var(--text-4);font-variant-numeric:tabular-nums}
   .ar-bar-v-wrap{display:flex;align-items:flex-end;width:100%;min-height:150px;justify-content:center}
   .ar-bar-v{width:100%;max-width:34px;border-radius:2px 2px 0 0;opacity:0.9;transition:opacity .15s, height .35s cubic-bezier(.4,0,.2,1)}
+  .ar-bar-v-wrap.has-preview{cursor:zoom-in}
   .ar-col:hover .ar-bar-v{opacity:1}
   .ar-col-label{text-align:center;margin-top:2px}
   .ar-col-kw{font-size:10.5px;color:var(--text-2);font-weight:500;letter-spacing:0.02em}
   .ar-col-camp{font-size:9px;color:var(--text-4);letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;opacity:0.8}
+  .ad-preview-popover{position:fixed;z-index:80;width:min(340px,calc(100vw - 28px));max-height:calc(100vh - 28px);padding:8px;background:#0d0d0d;border:1px solid var(--border-2);border-radius:8px;box-shadow:0 18px 60px rgba(0,0,0,0.72);pointer-events:none}
+  .ad-preview-image{display:block;width:100%;max-height:calc(100vh - 44px);object-fit:contain;border-radius:5px;background:#050505}
 
   /* Keyword chart */
   .kw-panel{padding:18px 20px}
@@ -601,6 +604,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
     return dayRow.adRows.map(ad => ({
       adId: ad.adId,
       adName: ad.adName,
+      previewImageUrl: ad.previewImageUrl || ad.previewThumbnailUrl || null,
+      previewThumbnailUrl: ad.previewThumbnailUrl || null,
       spend: ad.spend || 0,
       imp: ad.imp || 0,
       clicks: ad.clicks || 0,
@@ -628,6 +633,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
   return adRoster.map((a,i) => ({
     adId: a.id,
     adName: a.name,
+    previewImageUrl: a.previewImageUrl || a.previewThumbnailUrl || null,
+    previewThumbnailUrl: a.previewThumbnailUrl || null,
     spend: spends[i].v,
     imp: imps[i].v,
     clicks: clicks[i].v,
@@ -827,6 +834,8 @@ function campaignsFromDashboard(dashboard, range){
     const campaignName = apiRow.campaignName || `${clientLabel} — Keyword Attribution`;
     const adId = apiRow.adId || `${campaignKey}:${keyword.toLowerCase()}`;
     const adName = (apiRow.adName || keyword || apiRow.name).toUpperCase();
+    const previewImageUrl = apiRow.previewImageUrl || apiRow.previewThumbnailUrl || null;
+    const previewThumbnailUrl = apiRow.previewThumbnailUrl || null;
     const rowStatus = apiRow.status === "finished" ? "finished" : "active";
     const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(apiRow.dateLabel || "")
       ? apiRow.dateLabel
@@ -852,7 +861,13 @@ function campaignsFromDashboard(dashboard, range){
     campaign.attributionOnly = campaign.attributionOnly && attributionOnly;
     if(rowStatus==="active") campaign.status = "active";
     if(!campaign.adsByName.has(adId)){
-      campaign.adsByName.set(adId, {id:adId, name:adName, keyword, weight:1});
+      campaign.adsByName.set(adId, {id:adId, name:adName, keyword, previewImageUrl, previewThumbnailUrl, weight:1});
+    }else{
+      const existingAd = campaign.adsByName.get(adId);
+      if(existingAd){
+        existingAd.previewImageUrl = existingAd.previewImageUrl || previewImageUrl;
+        existingAd.previewThumbnailUrl = existingAd.previewThumbnailUrl || previewThumbnailUrl;
+      }
     }
 
     if(!campaign.rowsByDate.has(dateKey)){
@@ -862,10 +877,12 @@ function campaignsFromDashboard(dashboard, range){
     const day = campaign.rowsByDate.get(dateKey);
     addMetric(day, row);
     day.adRows.push({
+      ...row,
       adId,
       adName,
       keyword,
-      ...row,
+      previewImageUrl,
+      previewThumbnailUrl,
     });
   }
 
@@ -1741,6 +1758,8 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
     c.ads.forEach(a => {
       // sum across rows
       let spend=0, collected=0, clients=0;
+      let previewImageUrl = a.previewImageUrl || a.previewThumbnailUrl || null;
+      let previewThumbnailUrl = a.previewThumbnailUrl || null;
       c.rows.forEach(r0 => {
         const ads = buildAdRows(c.id, r0, c.ads);
         const mine = ads.find(x=>x.adId===a.id);
@@ -1748,25 +1767,52 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
           spend += mine.spend;
           collected += mine.collected;
           clients += mine.clients;
+          previewImageUrl = previewImageUrl || mine.previewImageUrl || mine.previewThumbnailUrl || null;
+          previewThumbnailUrl = previewThumbnailUrl || mine.previewThumbnailUrl || null;
         }
       });
       out.push({
         adId: a.id, adName: a.name, camp: c.clientKey || c.id,
-        spend, collected, clients,
+        spend, collected, clients, previewImageUrl, previewThumbnailUrl,
       });
     });
   });
   return out;
 }
 
+function adPreviewPosition(event){
+  const previewWidth = Math.min(340, Math.max(260, window.innerWidth - 28));
+  const previewHeight = Math.min(560, window.innerHeight - 28);
+  const pad = 14;
+  let left = event.clientX + 18;
+  let top = event.clientY - 42;
+
+  if(left + previewWidth > window.innerWidth - pad) left = event.clientX - previewWidth - 18;
+  if(top + previewHeight > window.innerHeight - pad) top = window.innerHeight - previewHeight - pad;
+  if(left < pad) left = pad;
+  if(top < pad) top = pad;
+  return {left, top};
+}
+
 function AdROASChart({campaigns=CAMPAIGNS}){
   const [view, setView] = useState("top"); // 'top' | 'all'
+  const [preview, setPreview] = useState(null);
   const all = useMemo(()=>allAdsAggregated(campaigns), [campaigns]);
   const filtered = all
     .map(a => ({...a, roas: a.spend ? a.collected/a.spend : 0}))
     .sort((a,b) => b.collected - a.collected);
   const list = view === "top" ? filtered.slice(0,6) : filtered;
   const max = list[0]?.collected || 1;
+  const showPreview = (event, ad) => {
+    const url = ad.previewImageUrl || ad.previewThumbnailUrl;
+    if(!url) return;
+    setPreview({url, position: adPreviewPosition(event)});
+  };
+  const movePreview = (event, ad) => {
+    const url = ad.previewImageUrl || ad.previewThumbnailUrl;
+    if(!url) return;
+    setPreview({url, position: adPreviewPosition(event)});
+  };
   return (
     <div className="panel chart-card ads-roas">
       <div className="chart-head">
@@ -1793,13 +1839,20 @@ function AdROASChart({campaigns=CAMPAIGNS}){
           {list.map((a,i)=>{
             const h = (a.collected/max)*150;
             const color = a.camp==="tyson" ? "var(--gold)" : "var(--blue)";
+            const hasPreview = Boolean(a.previewImageUrl || a.previewThumbnailUrl);
             return (
-              <div key={a.adId} className="ar-col" title={`${a.adName} · ${a.camp} · $${a.spend.toLocaleString()} spend · $${a.collected.toLocaleString()} revenue · ${a.roas.toFixed(1)}× ROAS`}>
+              <div key={a.adId} className="ar-col">
                 <div className="ar-val">
                   <div className="ar-val-rev mono">${Math.round(a.collected/1000*10)/10}k</div>
                   <div className="ar-val-roas">{a.roas.toFixed(1)}× ROAS</div>
                 </div>
-                <div className="ar-bar-v-wrap">
+                <div
+                  className={"ar-bar-v-wrap "+(hasPreview?"has-preview":"")}
+                  onMouseEnter={(event)=>showPreview(event, a)}
+                  onMouseMove={(event)=>movePreview(event, a)}
+                  onMouseLeave={()=>setPreview(null)}
+                  aria-label={hasPreview ? `${a.adName} creative preview` : `${a.adName}`}
+                >
                   <div className="ar-bar-v" style={{height:h+"px", background:color}}></div>
                 </div>
                 <div className="ar-col-label">
@@ -1811,6 +1864,11 @@ function AdROASChart({campaigns=CAMPAIGNS}){
           })}
         </div>
       </div>
+      {preview && (
+        <div className="ad-preview-popover" style={{left:preview.position.left, top:preview.position.top}}>
+          <img className="ad-preview-image" src={preview.url} alt="" />
+        </div>
+      )}
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Tyson</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Keith</span>

@@ -54,6 +54,17 @@ type AdsMetaInsightRow = {
 
 type MetaStatusMap = Map<string, MetaAdEntity>;
 
+function creativePreviewFromEntity(entity: MetaAdEntity | null | undefined) {
+  const creative = entity?.creative;
+  if (!creative?.thumbnail_url && !creative?.image_url) return null;
+  return {
+    creative_id: creative.id || null,
+    creative_name: creative.name || null,
+    thumbnail_url: creative.thumbnail_url || null,
+    image_url: creative.image_url || null,
+  };
+}
+
 function firstEnv(names: readonly string[]) {
   for (const name of names) {
     const value = process.env[name];
@@ -169,6 +180,7 @@ function dailyInsightRow(
 ): AdsMetaInsightRow {
   const { keyword, keywordRaw } = insightKeyword(row);
   const status = row.ad_id ? statusByAdId.get(row.ad_id) : null;
+  const creativePreview = creativePreviewFromEntity(status);
   return {
     client_key: account.key,
     client_name: account.name,
@@ -191,7 +203,10 @@ function dailyInsightRow(
     impressions: Number(row.impressions || 0) || 0,
     link_clicks: Number(row.inline_link_clicks || row.clicks || 0) || 0,
     synced_at: syncedAt,
-    raw_payload: row,
+    raw_payload: {
+      ...row,
+      creative_preview: creativePreview,
+    },
   };
 }
 
@@ -218,6 +233,7 @@ function buildDailyRows(
         reporting_timezone: string;
         account_timezone: string;
         source_breakdown: string;
+        creative_preview: ReturnType<typeof creativePreviewFromEntity>;
         hourly_rows: typeof insights;
       };
     }
@@ -237,6 +253,7 @@ function buildDailyRows(
     const { keyword, keywordRaw } = insightKeyword(row);
     const key = `${account.key}:${row.ad_id}:${reportingDate}`;
     const existing = grouped.get(key);
+    const creativePreview = creativePreviewFromEntity(statusByAdId.get(row.ad_id));
 
     if (!existing) {
       grouped.set(key, {
@@ -265,6 +282,7 @@ function buildDailyRows(
           reporting_timezone: REPORTING_TIMEZONE,
           account_timezone: account.timezone,
           source_breakdown: HOURLY_ADVERTISER_BREAKDOWN,
+          creative_preview: creativePreview,
           hourly_rows: [row],
         },
       });

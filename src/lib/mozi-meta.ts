@@ -46,6 +46,12 @@ export interface MetaAdEntity {
   name?: string;
   effective_status?: string;
   configured_status?: string;
+  creative?: {
+    id?: string;
+    name?: string;
+    thumbnail_url?: string;
+    image_url?: string;
+  };
   campaign?: {
     id?: string;
     name?: string;
@@ -168,6 +174,7 @@ export async function getAdEntities(
     "name",
     "effective_status",
     "configured_status",
+    "creative{id,name,thumbnail_url,image_url}",
     "campaign{id,name,effective_status,configured_status}",
   ].join(",");
   const initialUrl = `${BASE_URL}/${adAccountId}/ads?fields=${fields}&limit=500`;
