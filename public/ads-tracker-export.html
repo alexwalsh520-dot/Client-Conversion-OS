@@ -104,21 +104,20 @@
   .section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
   .section-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500}
   .section-meta{font-size:11px;color:var(--text-4)}
-  .attribution-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 26px}
-  .attr-card{border:1px solid var(--border);border-radius:8px;background:#0f0f0f;padding:14px 16px;min-height:78px}
-  .attr-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
-  .attr-value{font-size:23px;line-height:1.05;font-weight:500;letter-spacing:-0.03em;color:var(--text)}
-  .attr-value.gold{color:var(--gold)}
-	  .attr-meta{font-size:11px;color:var(--text-4);margin-top:7px}
-	  .attr-meta.good{color:var(--green)}
-	  .attr-meta.warn{color:var(--gold-dim)}
-	  @media(max-width:900px){.attribution-strip{grid-template-columns:1fr}}
-
 	  /* Attribution alerts */
 	  .alerts-panel{border-radius:8px;background:var(--panel);border:1px solid var(--border);overflow:hidden}
 	  .alerts-head{min-height:92px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 	  .alerts-title{font-size:11px;line-height:1.15;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-3)}
 	  .alerts-sub{font-size:11px;line-height:1.25;color:var(--text-4);margin-top:6px;font-weight:400;letter-spacing:0}
+	  .alerts-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 20px;border-bottom:1px solid var(--border);background:#0d0d0d}
+	  .alerts-summary-card{min-height:68px;border:1px solid var(--border);border-radius:7px;background:#101010;padding:11px 12px}
+	  .alerts-summary-card.good{border-color:rgba(125,211,168,.22);background:linear-gradient(180deg,rgba(125,211,168,.055),#101010 70%)}
+	  .alerts-summary-card.warn{border-color:rgba(232,154,148,.25);background:linear-gradient(180deg,rgba(232,154,148,.06),#101010 72%)}
+	  .alerts-summary-label{font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
+	  .alerts-summary-value{font-size:20px;line-height:1.05;font-weight:500;letter-spacing:-0.03em;color:var(--text)}
+	  .alerts-summary-value.good{color:var(--green)}
+	  .alerts-summary-value.warn{color:var(--red)}
+	  .alerts-summary-note{font-size:10px;color:var(--text-4);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 	  .alerts-tabs{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--border-2);border-radius:999px;background:#090909}
 	  .alerts-tab{height:30px;padding:0 11px;border-radius:999px;color:var(--text-3);font-size:12px;display:inline-flex;align-items:center;gap:7px}
 	  .alerts-tab.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
@@ -174,7 +173,7 @@
 	  .alert-outline-btn:hover{background:#181818;color:var(--text)}
 	  .alert-paid-btn{height:34px;padding:0 14px;border-radius:6px;background:var(--gold);color:#070707;font-size:12px;font-weight:700}
 	  .alert-paid-btn:disabled{opacity:.45;cursor:not-allowed}
-	  @media(max-width:900px){.alerts-head{height:auto;padding:18px 20px;align-items:flex-start;gap:14px;flex-direction:column}.alerts-grid{grid-template-columns:42px 1fr}.alerts-table-head{display:none}.alert-row{grid-template-columns:42px 1fr;gap:0;padding:14px 0}.alert-row .alert-campaign,.alert-row .alert-amount,.alert-row .alert-actions{grid-column:2;margin-top:9px}.alert-check{margin-left:18px}.alert-modal{max-width:calc(100vw - 28px)}.alert-modal-head,.alert-modal-body,.alert-modal-foot{padding-left:22px;padding-right:22px}.alert-modal-foot{height:auto;padding-top:18px;padding-bottom:18px;gap:16px;align-items:stretch;flex-direction:column}.alert-foot-actions{flex-direction:column}.alert-outline-btn,.alert-paid-btn{width:100%}}
+	  @media(max-width:900px){.alerts-head{height:auto;padding:18px 20px;align-items:flex-start;gap:14px;flex-direction:column}.alerts-summary{grid-template-columns:1fr;padding:12px 18px}.alerts-grid{grid-template-columns:42px 1fr}.alerts-table-head{display:none}.alert-row{grid-template-columns:42px 1fr;gap:0;padding:14px 0}.alert-row .alert-campaign,.alert-row .alert-amount,.alert-row .alert-actions{grid-column:2;margin-top:9px}.alert-check{margin-left:18px}.alert-modal{max-width:calc(100vw - 28px)}.alert-modal-head,.alert-modal-body,.alert-modal-foot{padding-left:22px;padding-right:22px}.alert-modal-foot{height:auto;padding-top:18px;padding-bottom:18px;gap:16px;align-items:stretch;flex-direction:column}.alert-foot-actions{flex-direction:column}.alert-outline-btn,.alert-paid-btn{width:100%}}
 
 	  /* Table panel */
   .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
@@ -3065,34 +3064,35 @@ function recentEntriesFromDashboard(dashboard){
   });
 }
 
-function RevenueAttributionStrip({dashboard}){
+function AttributionSummaryTiles({dashboard, alerts}){
   const summary = dashboard?.summary || {};
   const attribution = dashboard?.attribution || {};
   const paid = Number(attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
-  const organic = Number(attribution.organicUnattributedRevenue ?? summary.organicUnattributedRevenue ?? 0);
-  const total = Number(attribution.totalCollectedRevenue ?? summary.totalCollectedRevenue ?? (paid + organic));
-  const missingMetaDates = dashboard?.sourceStatus?.meta?.missingDates || [];
+  const unresolved = (alerts || []).reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
+  const resolvedAlerts = Array.isArray(attribution.resolvedAlerts) ? attribution.resolvedAlerts : [];
+  const resolvedOrganic = resolvedAlerts
+    .filter(alert => alert.action === "organic")
+    .reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
+  const organicAndUnattributed = Number(attribution.organicUnattributedRevenue ?? summary.organicUnattributedRevenue ?? 0);
+  const organic = Math.max(resolvedOrganic, organicAndUnattributed - unresolved, 0);
+  const unattributedIsClear = unresolved <= 0;
 
   return (
-    <div className="attribution-strip">
-      <div className="attr-card">
-        <div className="attr-label">Paid attributed</div>
-        <div className="attr-value gold">{fmtUsd(paid)}</div>
-        <div className="attr-meta">Revenue tied to ad keyword attribution</div>
+    <div className="alerts-summary">
+      <div className="alerts-summary-card">
+        <div className="alerts-summary-label">Attributed</div>
+        <div className="alerts-summary-value">{fmtUsd(paid)}</div>
+        <div className="alerts-summary-note">Tied to paid keywords</div>
       </div>
-      <div className="attr-card">
-        <div className="attr-label">Organic / unattributed</div>
-        <div className="attr-value">{fmtUsd(organic)}</div>
-        <div className={"attr-meta "+(organic ? "warn" : "good")}>
-          {organic ? `Sales Tracker cash not tied to paid attribution` : "No unmatched paid revenue"}
-        </div>
+      <div className="alerts-summary-card">
+        <div className="alerts-summary-label">Organic</div>
+        <div className="alerts-summary-value">{fmtUsd(organic)}</div>
+        <div className="alerts-summary-note">Resolved as non-paid</div>
       </div>
-      <div className="attr-card">
-        <div className="attr-label">Total collected</div>
-        <div className="attr-value">{fmtUsd(total)}</div>
-        <div className={"attr-meta "+(missingMetaDates.length ? "warn" : "good")}>
-          {missingMetaDates.length ? `Meta spend pending for ${missingMetaDates.length} date${missingMetaDates.length===1?"":"s"}` : "Meta + attribution sources loaded"}
-        </div>
+      <div className={"alerts-summary-card "+(unattributedIsClear ? "good" : "warn")}>
+        <div className="alerts-summary-label">Unattributed</div>
+        <div className={"alerts-summary-value "+(unattributedIsClear ? "good" : "warn")}>{fmtUsd(unresolved)}</div>
+        <div className="alerts-summary-note">{alerts.length} unresolved sale{alerts.length===1?"":"s"}</div>
       </div>
     </div>
   );
@@ -3324,6 +3324,7 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
           ))}
         </div>
       </div>
+      <AttributionSummaryTiles dashboard={dashboard} alerts={alerts}/>
       <div className="alerts-table-head alerts-grid">
         <div><div className="alert-check"></div></div>
         <div>Customer</div>
@@ -3568,8 +3569,6 @@ function App(){
           <MetricCardBoard campaigns={scopedCampaigns}/>
 
           <TasksSection dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
-
-          <RevenueAttributionStrip dashboard={dashboard} />
 
           {/* Recent entries (collapsed) */}
           <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
