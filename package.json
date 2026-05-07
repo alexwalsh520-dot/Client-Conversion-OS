@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "guard": "node scripts/ccos-guard.mjs",
     "start": "next start",
     "lint": "eslint"
   },
