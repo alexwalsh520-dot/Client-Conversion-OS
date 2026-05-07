@@ -319,7 +319,8 @@
   .chart-column{display:flex;flex-direction:column;gap:18px;min-width:0}
   @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
   .chart-actions-cell{min-width:0}
-  .metric-board-head{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:28px 0 10px}
+  .metric-board-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:28px 0 10px}
+  .metric-board-title{font-size:22px;font-weight:600;letter-spacing:-0.02em;margin:0;color:var(--text)}
   .metric-board-actions{display:flex;align-items:center;gap:8px}
   .metric-board-btn{height:32px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;color:var(--text-2);font-size:12px;font-weight:500}
   .metric-board-btn:hover{background:#161616;color:var(--text)}
@@ -327,9 +328,9 @@
   .metric-grid{margin-top:0}
   .metric-support-grid{margin-top:18px}
   .metric-card-shell{position:relative;min-width:0}
-  .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .14s}
+  .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .14s,opacity .14s,background-color .14s}
   .metric-card-shell.editing:hover .panel{border-color:#333;box-shadow:0 0 0 1px rgba(255,255,255,.035),0 12px 30px rgba(0,0,0,.28)}
-  .metric-card-shell.dragging{opacity:.58}
+  .metric-card-shell.dragging .panel{border-style:dashed;border-color:#3a3a3a;background:#090909;box-shadow:none;opacity:.42}
   .metric-card-shell.drop-target .panel{border-color:var(--gold-dim);box-shadow:0 0 0 1px rgba(212,178,122,.18)}
   .metric-delete{position:absolute;top:9px;right:10px;z-index:4;width:26px;height:26px;border:1px solid var(--border-2);border-radius:999px;background:#121212;color:var(--text-3);font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
   .metric-delete:hover{background:#1a1a1a;color:var(--text)}
@@ -341,7 +342,7 @@
   .metric-pick-meta{font-size:10px;color:var(--text-4);margin-top:5px;line-height:1.35}
   .metric-pick-icon{width:22px;height:22px;border:1px solid var(--border-2);border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--text-3);flex:0 0 auto}
   .metric-pick-card.selected .metric-pick-icon{border-color:#3a301d;color:var(--gold)}
-  @media(max-width:700px){.metric-add-grid{grid-template-columns:1fr}.metric-board-head{justify-content:flex-start}}
+  @media(max-width:700px){.metric-add-grid{grid-template-columns:1fr}.metric-board-head{align-items:flex-start;flex-direction:column}}
 
   /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
   .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
@@ -1526,9 +1527,15 @@ function LineChart({series, labels, height=200, width=640, fmt=(v)=>v, fmtRight,
           </g>
         )}
       </svg>
-      {hoverIdx !== null && (
+      {hoverIdx !== null && (() => {
+        const pct = (xOf(hoverIdx)/width)*100;
+        const transform = pct > 82
+          ? "translate(-100%, -6px)"
+          : (pct < 18 ? "translate(0, -6px)" : "translate(-50%, -6px)");
+        return (
         <div className="lc-tooltip" style={{
-          left: `${(xOf(hoverIdx)/width)*100}%`,
+          left: `${pct}%`,
+          transform,
         }}>
           <div className="lc-tt-date">{labels[hoverIdx]}</div>
           {series.map((s,i)=>(
@@ -1539,7 +1546,8 @@ function LineChart({series, labels, height=200, width=640, fmt=(v)=>v, fmtRight,
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -1846,10 +1854,9 @@ function CACChart({campaigns=CAMPAIGNS}){
         labels={labels}
         series={[
           {name:"CAC", values:cac, color:"var(--blue)", isPrimary:true, fmt:(v)=>v ? "$"+v.toFixed(0) : "—"},
-          {name:"New clients", values:clients, color:"var(--green)", axis:"right", fmt:(v)=>fmtNum(v)},
+          {name:"New clients", values:clients, color:"var(--green)", fmt:(v)=>fmtNum(v)},
         ]}
         fmt={(v)=>v ? "$"+v.toFixed(0) : "—"}
-        fmtRight={(v)=>fmtNum(Math.round(v))}
       />
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>CAC</span>
@@ -2201,6 +2208,8 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
   const [draggingId, setDraggingId] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
   const visibleLayout = sanitizeMetricLayout(layout, []);
+  const leftLayout = visibleLayout.filter((_, i) => i % 2 === 0);
+  const rightLayout = visibleLayout.filter((_, i) => i % 2 === 1);
 
   useEffect(()=>{
     try{ window.localStorage.setItem(METRIC_CARD_STORAGE_KEY, JSON.stringify(visibleLayout)); }catch(err){}
@@ -2220,9 +2229,12 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
     setDraggingId(id);
   };
   const enterDrag = (event, id) => {
-    if(!editing || !draggingId || draggingId === id) return;
+    if(!editing) return;
+    const fromId = draggingId || event.dataTransfer.getData("text/plain");
+    if(!fromId || fromId === id) return;
     event.preventDefault();
     setDropTargetId(id);
+    setLayout(prev => moveMetricCard(prev, fromId, id));
   };
   const dropCard = (event, id) => {
     if(!editing) return;
@@ -2236,10 +2248,31 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
     setDraggingId(null);
     setDropTargetId(null);
   };
+  const renderCard = (id) => {
+    const def = metricDefFor(id);
+    if(!def) return null;
+    return (
+      <MetricCardShell
+        key={id}
+        id={id}
+        editing={editing}
+        draggingId={draggingId}
+        dropTargetId={dropTargetId}
+        onDelete={deleteCard}
+        onDragStart={startDrag}
+        onDragEnter={enterDrag}
+        onDrop={dropCard}
+        onDragEnd={endDrag}
+      >
+        {def.render({campaigns})}
+      </MetricCardShell>
+    );
+  };
 
   return (
     <>
       <div className="metric-board-head">
+        <h2 className="metric-board-title">Metrics</h2>
         <div className="metric-board-actions">
           <button className="metric-board-btn" onClick={()=>setPickerOpen(true)}><IcPlus/> Add</button>
           <button className={"metric-board-btn "+(editing?"active":"")} onClick={()=>setEditing(v=>!v)}>
@@ -2248,26 +2281,8 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
         </div>
       </div>
       <div className={"grid-charts metric-grid "+(editing?"editing":"")}>
-        {visibleLayout.map(id => {
-          const def = metricDefFor(id);
-          if(!def) return null;
-          return (
-            <MetricCardShell
-              key={id}
-              id={id}
-              editing={editing}
-              draggingId={draggingId}
-              dropTargetId={dropTargetId}
-              onDelete={deleteCard}
-              onDragStart={startDrag}
-              onDragEnter={enterDrag}
-              onDrop={dropCard}
-              onDragEnd={endDrag}
-            >
-              {def.render({campaigns})}
-            </MetricCardShell>
-          );
-        })}
+        <div className="chart-column">{leftLayout.map(renderCard)}</div>
+        <div className="chart-column">{rightLayout.map(renderCard)}</div>
       </div>
       {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
     </>
@@ -3382,21 +3397,20 @@ function App(){
             <div className="chart-column">
               <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
             </div>
-            <div className="chart-column">
-              <div className="chart-actions-cell">
-                <div className="section-head">
-                  <div className="section-label">Actions</div>
-                  <div className="section-meta">Export</div>
-                </div>
-                <Actions campaigns={scopedCampaigns} onToast={showToast}/>
-              </div>
-            </div>
           </div>
 
           <RevenueAttributionStrip dashboard={dashboard} />
 
           {/* Recent entries (collapsed) */}
           <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
+
+          <div className="section chart-actions-cell">
+            <div className="section-head">
+              <div className="section-label">Actions</div>
+              <div className="section-meta">Export</div>
+            </div>
+            <Actions campaigns={scopedCampaigns} onToast={showToast}/>
+          </div>
 
           <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
             <span>Ads Tracker v1.4 · Client Conversion OS</span>
