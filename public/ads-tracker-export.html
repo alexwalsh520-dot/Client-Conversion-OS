@@ -319,6 +319,29 @@
   .chart-column{display:flex;flex-direction:column;gap:18px;min-width:0}
   @media (max-width: 1100px){.grid-charts{grid-template-columns:1fr}}
   .chart-actions-cell{min-width:0}
+  .metric-board-head{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:28px 0 10px}
+  .metric-board-actions{display:flex;align-items:center;gap:8px}
+  .metric-board-btn{height:32px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border:1px solid var(--border-2);border-radius:6px;background:#0f0f0f;color:var(--text-2);font-size:12px;font-weight:500}
+  .metric-board-btn:hover{background:#161616;color:var(--text)}
+  .metric-board-btn.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
+  .metric-grid{margin-top:0}
+  .metric-support-grid{margin-top:18px}
+  .metric-card-shell{position:relative;min-width:0}
+  .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .14s}
+  .metric-card-shell.editing:hover .panel{border-color:#333;box-shadow:0 0 0 1px rgba(255,255,255,.035),0 12px 30px rgba(0,0,0,.28)}
+  .metric-card-shell.dragging{opacity:.58}
+  .metric-card-shell.drop-target .panel{border-color:var(--gold-dim);box-shadow:0 0 0 1px rgba(212,178,122,.18)}
+  .metric-delete{position:absolute;top:9px;right:10px;z-index:4;width:26px;height:26px;border:1px solid var(--border-2);border-radius:999px;background:#121212;color:var(--text-3);font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
+  .metric-delete:hover{background:#1a1a1a;color:var(--text)}
+  .metric-add-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:58vh;overflow:auto;padding-right:2px}
+  .metric-pick-card{min-height:78px;padding:12px;border:1px solid var(--border-2);border-radius:7px;background:#0b0b0b;text-align:left;color:var(--text-2);display:flex;gap:12px;align-items:flex-start;justify-content:space-between}
+  .metric-pick-card:hover{background:#111;border-color:#333;color:var(--text)}
+  .metric-pick-card.selected{border-color:#3a301d;background:#141108;color:var(--text)}
+  .metric-pick-label{font-size:12px;font-weight:600;color:var(--text);line-height:1.2}
+  .metric-pick-meta{font-size:10px;color:var(--text-4);margin-top:5px;line-height:1.35}
+  .metric-pick-icon{width:22px;height:22px;border:1px solid var(--border-2);border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--text-3);flex:0 0 auto}
+  .metric-pick-card.selected .metric-pick-icon{border-color:#3a301d;color:var(--gold)}
+  @media(max-width:700px){.metric-add-grid{grid-template-columns:1fr}.metric-board-head{justify-content:flex-start}}
 
   /* Chart cards (ROAS + Cost per DM + Ad ROAS) */
   .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
@@ -503,6 +526,7 @@ const IcCaret = () => (
 );
 const IcDownload = () => <Icon d={<><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M20 21H4"/></>}/>;
 const IcSearch = () => <Icon d={<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>} />;
+const IcEdit = () => <Icon d={<><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></>} />;
 
 // ------- Helpers
 const fmtUsd = (n, d=0) => {
@@ -1562,7 +1586,6 @@ function ROASChart({campaigns=CAMPAIGNS}){
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Revenue</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'#888'}}></span>Ad spend</span>
-        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Hover to see daily ROAS</span>
       </div>
     </div>
   );
@@ -1681,7 +1704,6 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
         {mode === "overall" ? (
           <>
             <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Cost per DM</span>
-            <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Lower is better</span>
           </>
         ) : (
           <>
@@ -1692,7 +1714,6 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
                 </span>
               ))}
             </div>
-            <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>Hover to compare · lower is better</span>
           </>
         )}
       </div>
@@ -1781,9 +1802,6 @@ function AdROASChart({campaigns=CAMPAIGNS}){
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Tyson</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>Keith</span>
-        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>
-          {view==="all" ? "Scroll horizontally →" : "Bars sized by revenue"}
-        </span>
       </div>
     </div>
   );
@@ -1836,11 +1854,423 @@ function CACChart({campaigns=CAMPAIGNS}){
       <div className="chart-legend">
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--blue)'}}></span>CAC</span>
         <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--green)'}}></span>New clients</span>
-        <span style={{marginLeft:'auto',color:'var(--text-4)',fontSize:10}}>
-          {subscriptionClients ? `${subscriptionClients} $50 sub${subscriptionClients===1?"":"s"} tracked` : "Lower is better"}
-        </span>
       </div>
     </div>
+  );
+}
+
+// ------- Customizable metric card board
+const METRIC_CARD_STORAGE_KEY = "ccos.adsTracker.metricCards.v1";
+const DEFAULT_METRIC_CARD_IDS = ["roas","ad_roas","cost_per_dm","cac"];
+
+function safeRatio(num, den){
+  return den ? num / den : 0;
+}
+
+function fmtCompactUsd(n){
+  if(n==null || isNaN(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  const v = Math.abs(n);
+  if(v >= 1000000) return sign+"$"+(v/1000000).toFixed(v>=10000000?0:1)+"M";
+  if(v >= 1000) return sign+"$"+(v/1000).toFixed(v>=10000?0:1)+"k";
+  return sign+"$"+Math.round(v).toLocaleString();
+}
+
+function fmtCompactNum(n){
+  if(n==null || isNaN(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  const v = Math.abs(n);
+  if(v >= 1000000) return sign+(v/1000000).toFixed(v>=10000000?0:1)+"M";
+  if(v >= 1000) return sign+(v/1000).toFixed(v>=10000?0:1)+"k";
+  return sign+Math.round(v).toLocaleString();
+}
+
+function aggregateRowsByLabel(campaigns, labels){
+  return labels.map(label => {
+    const row = {...emptyMetric(label)};
+    campaigns.forEach(c => {
+      const day = (c.rows || []).find(r => r.date === label);
+      if(day) addMetric(row, day);
+    });
+    return row;
+  });
+}
+
+function aggregateTotal(rows){
+  const total = {...emptyMetric("Total")};
+  rows.forEach(row => addMetric(total, row));
+  return total;
+}
+
+const GENERIC_METRIC_DEFS = [
+  {
+    id:"spend",
+    label:"Ad spend",
+    meta:"Meta spend across visible campaigns",
+    color:"var(--gold)",
+    value:r=>r.spend,
+    total:t=>t.spend,
+    format:v=>fmtUsd(v),
+    axis:fmtCompactUsd,
+  },
+  {
+    id:"impressions",
+    label:"Impressions",
+    meta:"Total delivery from Meta",
+    color:"var(--blue)",
+    value:r=>r.imp,
+    total:t=>t.imp,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"cpm",
+    label:"CPM",
+    meta:"Spend per 1,000 impressions",
+    color:"var(--gold)",
+    value:r=>safeRatio(r.spend * 1000, r.imp),
+    total:t=>safeRatio(t.spend * 1000, t.imp),
+    format:v=>fmtUsd(v,2),
+    axis:v=>fmtUsd(v,0),
+  },
+  {
+    id:"link_clicks",
+    label:"Link clicks",
+    meta:"Total link clicks",
+    color:"var(--blue)",
+    value:r=>r.clicks,
+    total:t=>t.clicks,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"ctr",
+    label:"CTR",
+    meta:"Clicks divided by impressions",
+    color:"var(--green)",
+    value:r=>safeRatio(r.clicks * 100, r.imp),
+    total:t=>safeRatio(t.clicks * 100, t.imp),
+    format:v=>fmtPct(v,2),
+    axis:v=>fmtPct(v,1),
+  },
+  {
+    id:"cpc",
+    label:"CPC",
+    meta:"Spend divided by link clicks",
+    color:"var(--blue)",
+    value:r=>safeRatio(r.spend, r.clicks),
+    total:t=>safeRatio(t.spend, t.clicks),
+    format:v=>fmtUsd(v,2),
+    axis:v=>fmtUsd(v,1),
+  },
+  {
+    id:"messages",
+    label:"Messages",
+    meta:"Tracked inbound messages",
+    color:"var(--green)",
+    value:r=>r.msgs,
+    total:t=>t.msgs,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"calls_booked",
+    label:"45-min calls booked",
+    meta:"Booked strategy calls",
+    color:"var(--gold)",
+    value:r=>r.calls,
+    total:t=>t.calls,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"cost_per_call_booked",
+    label:"Cost per call booked",
+    meta:"Spend divided by booked calls",
+    color:"var(--gold)",
+    value:r=>safeRatio(r.spend, r.calls),
+    total:t=>safeRatio(t.spend, t.calls),
+    format:v=>fmtUsd(v,0),
+    axis:v=>fmtUsd(v,0),
+  },
+  {
+    id:"calls_taken",
+    label:"Calls taken",
+    meta:"Completed sales calls",
+    color:"var(--blue)",
+    value:r=>r.taken,
+    total:t=>t.taken,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"cost_per_call_taken",
+    label:"Cost per call taken",
+    meta:"Spend divided by taken calls",
+    color:"var(--blue)",
+    value:r=>safeRatio(r.spend, r.taken),
+    total:t=>safeRatio(t.spend, t.taken),
+    format:v=>fmtUsd(v,0),
+    axis:v=>fmtUsd(v,0),
+  },
+  {
+    id:"new_clients",
+    label:"New clients",
+    meta:"Closed clients from tracked calls",
+    color:"var(--green)",
+    value:r=>r.clients,
+    total:t=>t.clients,
+    format:v=>fmtNum(v),
+    axis:fmtCompactNum,
+  },
+  {
+    id:"call_close_rate",
+    label:"Call close rate",
+    meta:"New clients divided by calls taken",
+    color:"var(--green)",
+    value:r=>safeRatio(r.clients * 100, r.taken),
+    total:t=>safeRatio(t.clients * 100, t.taken),
+    format:v=>fmtPct(v,1),
+    axis:v=>fmtPct(v,0),
+  },
+  {
+    id:"message_to_call_rate",
+    label:"Message-to-call rate",
+    meta:"Booked calls divided by messages",
+    color:"var(--gold)",
+    value:r=>safeRatio(r.calls * 100, r.msgs),
+    total:t=>safeRatio(t.calls * 100, t.msgs),
+    format:v=>fmtPct(v,1),
+    axis:v=>fmtPct(v,0),
+  },
+  {
+    id:"collected_revenue",
+    label:"Collected revenue",
+    meta:"Revenue collected from tracked sales",
+    color:"var(--gold)",
+    value:r=>r.collected,
+    total:t=>t.collected,
+    format:v=>fmtUsd(v),
+    axis:fmtCompactUsd,
+  },
+];
+
+function GenericMetricCard({metricId, campaigns=CAMPAIGNS}){
+  const def = GENERIC_METRIC_DEFS.find(m => m.id === metricId);
+  const labels = labelsFromCampaigns(campaigns);
+  const rows = aggregateRowsByLabel(campaigns, labels);
+  const total = aggregateTotal(rows);
+  if(!def) return null;
+  const values = rows.map(row => def.value(row));
+  const value = def.total(total);
+  return (
+    <div className="panel chart-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">{def.label}</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{def.format(value)}</span>
+            <span className="chart-sub-label">selected period</span>
+          </div>
+        </div>
+      </div>
+      <LineChart
+        labels={labels}
+        series={[
+          {name:def.label, values, color:def.color, isPrimary:true, fmt:def.format},
+        ]}
+        fmt={def.axis || def.format}
+      />
+      <div className="chart-legend">
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:def.color}}></span>{def.label}</span>
+      </div>
+    </div>
+  );
+}
+
+const METRIC_CARD_DEFS = [
+  {id:"roas", label:"ROAS", meta:"Revenue compared with ad spend", render:({campaigns})=><ROASChart campaigns={campaigns}/>},
+  {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns})=><AdROASChart campaigns={campaigns}/>},
+  {id:"cost_per_dm", label:"Cost per DM", meta:"Spend divided by messages", render:({campaigns})=><CostPerDMChart campaigns={campaigns}/>},
+  {id:"cac", label:"CAC", meta:"Cost per client", render:({campaigns})=><CACChart campaigns={campaigns}/>},
+  ...GENERIC_METRIC_DEFS.map(def => ({
+    id:def.id,
+    label:def.label,
+    meta:def.meta,
+    render:({campaigns})=><GenericMetricCard metricId={def.id} campaigns={campaigns}/>,
+  })),
+];
+
+function metricDefFor(id){
+  return METRIC_CARD_DEFS.find(def => def.id === id);
+}
+
+function sanitizeMetricLayout(ids, fallback=DEFAULT_METRIC_CARD_IDS){
+  const valid = new Set(METRIC_CARD_DEFS.map(def => def.id));
+  const seen = new Set();
+  const clean = (Array.isArray(ids) ? ids : [])
+    .filter(id => valid.has(id) && !seen.has(id) && seen.add(id));
+  return clean.length ? clean : fallback;
+}
+
+function loadMetricLayout(){
+  try{
+    const raw = window.localStorage.getItem(METRIC_CARD_STORAGE_KEY);
+    if(raw) return sanitizeMetricLayout(JSON.parse(raw), []);
+  }catch(err){}
+  return DEFAULT_METRIC_CARD_IDS;
+}
+
+function moveMetricCard(ids, fromId, toId){
+  if(!fromId || !toId || fromId === toId) return ids;
+  const next = ids.filter(id => id !== fromId);
+  const toIndex = next.indexOf(toId);
+  if(toIndex === -1) return ids;
+  next.splice(toIndex, 0, fromId);
+  return next;
+}
+
+function MetricCardShell({id, editing, draggingId, dropTargetId, onDelete, onDragStart, onDragEnter, onDrop, onDragEnd, children}){
+  const isDragging = draggingId === id;
+  const isDropTarget = dropTargetId === id && draggingId && draggingId !== id;
+  return (
+    <div
+      className={"metric-card-shell "+(editing?"editing ":"")+(isDragging?"dragging ":"")+(isDropTarget?"drop-target":"")}
+      draggable={editing}
+      onDragStart={e=>onDragStart(e, id)}
+      onDragEnter={e=>onDragEnter(e, id)}
+      onDragOver={e=>{ if(editing) e.preventDefault(); }}
+      onDrop={e=>onDrop(e, id)}
+      onDragEnd={onDragEnd}
+    >
+      {editing && <button className="metric-delete" title="Delete card" onClick={e=>{e.stopPropagation(); onDelete(id);}}>×</button>}
+      {children}
+    </div>
+  );
+}
+
+function MetricAddModal({layout, onApply, onClose}){
+  const [selected, setSelected] = useState(()=>new Set(layout));
+  const toggle = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const apply = () => {
+    const kept = layout.filter(id => selected.has(id));
+    const added = METRIC_CARD_DEFS
+      .map(def => def.id)
+      .filter(id => selected.has(id) && !kept.includes(id));
+    onApply([...kept, ...added]);
+  };
+  return (
+    <Modal
+      title="Add cards"
+      subtitle="Choose which campaign metrics are visible in this chart section."
+      onClose={onClose}
+      wide
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" onClick={apply}>Apply</button>
+      </>}
+    >
+      <div className="metric-add-grid">
+        {METRIC_CARD_DEFS.map(def => {
+          const isSelected = selected.has(def.id);
+          return (
+            <button key={def.id} className={"metric-pick-card "+(isSelected?"selected":"")} onClick={()=>toggle(def.id)}>
+              <span>
+                <div className="metric-pick-label">{def.label}</div>
+                <div className="metric-pick-meta">{def.meta}</div>
+              </span>
+              <span className="metric-pick-icon">{isSelected ? <IcCheck/> : <IcPlus/>}</span>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+function MetricCardBoard({campaigns=CAMPAIGNS}){
+  const [layout, setLayout] = useState(loadMetricLayout);
+  const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draggingId, setDraggingId] = useState(null);
+  const [dropTargetId, setDropTargetId] = useState(null);
+  const visibleLayout = sanitizeMetricLayout(layout, []);
+
+  useEffect(()=>{
+    try{ window.localStorage.setItem(METRIC_CARD_STORAGE_KEY, JSON.stringify(visibleLayout)); }catch(err){}
+  }, [visibleLayout.join("|")]);
+
+  const deleteCard = (id) => {
+    setLayout(prev => prev.filter(cardId => cardId !== id));
+  };
+  const applyPicker = (next) => {
+    setLayout(sanitizeMetricLayout(next, []));
+    setPickerOpen(false);
+  };
+  const startDrag = (event, id) => {
+    if(!editing) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+    setDraggingId(id);
+  };
+  const enterDrag = (event, id) => {
+    if(!editing || !draggingId || draggingId === id) return;
+    event.preventDefault();
+    setDropTargetId(id);
+  };
+  const dropCard = (event, id) => {
+    if(!editing) return;
+    event.preventDefault();
+    const fromId = draggingId || event.dataTransfer.getData("text/plain");
+    setLayout(prev => moveMetricCard(prev, fromId, id));
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+  const endDrag = () => {
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+
+  return (
+    <>
+      <div className="metric-board-head">
+        <div className="metric-board-actions">
+          <button className="metric-board-btn" onClick={()=>setPickerOpen(true)}><IcPlus/> Add</button>
+          <button className={"metric-board-btn "+(editing?"active":"")} onClick={()=>setEditing(v=>!v)}>
+            <IcEdit/> {editing ? "Done" : "Edit"}
+          </button>
+        </div>
+      </div>
+      <div className={"grid-charts metric-grid "+(editing?"editing":"")}>
+        {visibleLayout.map(id => {
+          const def = metricDefFor(id);
+          if(!def) return null;
+          return (
+            <MetricCardShell
+              key={id}
+              id={id}
+              editing={editing}
+              draggingId={draggingId}
+              dropTargetId={dropTargetId}
+              onDelete={deleteCard}
+              onDragStart={startDrag}
+              onDragEnter={enterDrag}
+              onDrop={dropCard}
+              onDragEnd={endDrag}
+            >
+              {def.render({campaigns})}
+            </MetricCardShell>
+          );
+        })}
+      </div>
+      {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
+    </>
   );
 }
 
@@ -2946,15 +3376,13 @@ function App(){
           </div>
 
           {/* Charts */}
-          <div className="grid-charts">
+          <MetricCardBoard campaigns={scopedCampaigns}/>
+
+          <div className="grid-charts metric-support-grid">
             <div className="chart-column">
-              <ROASChart campaigns={scopedCampaigns}/>
-              <CostPerDMChart campaigns={scopedCampaigns}/>
               <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
             </div>
             <div className="chart-column">
-              <AdROASChart campaigns={scopedCampaigns}/>
-              <CACChart campaigns={scopedCampaigns}/>
               <div className="chart-actions-cell">
                 <div className="section-head">
                   <div className="section-label">Actions</div>
