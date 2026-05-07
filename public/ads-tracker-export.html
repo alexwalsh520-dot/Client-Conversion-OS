@@ -327,6 +327,7 @@
   .metric-board-btn.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
   .metric-grid{margin-top:0}
   .metric-support-grid{margin-top:18px}
+  .tasks-grid{margin-top:0}
   .metric-card-shell{position:relative;min-width:0}
   .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .18s cubic-bezier(.2,.8,.2,1),opacity .14s,background-color .14s}
   .metric-card-shell.editing:hover .panel{border-color:#333;box-shadow:0 0 0 1px rgba(255,255,255,.035),0 12px 30px rgba(0,0,0,.28)}
@@ -2134,9 +2135,10 @@ function loadMetricLayout(){
 
 function moveMetricCard(ids, fromId, toId){
   if(!fromId || !toId || fromId === toId) return ids;
+  const fromIndex = ids.indexOf(fromId);
+  const toIndex = ids.indexOf(toId);
+  if(fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return ids;
   const next = ids.filter(id => id !== fromId);
-  const toIndex = next.indexOf(toId);
-  if(toIndex === -1) return ids;
   next.splice(toIndex, 0, fromId);
   return next;
 }
@@ -2220,8 +2222,19 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
   const rightLayout = visibleLayout.filter((_, i) => i % 2 === 1);
   const cardRefs = useRef({});
   const pendingRects = useRef(null);
+  const visibleLayoutRef = useRef(visibleLayout);
+  const dragInfoRef = useRef(null);
+  const ignoredTargetRef = useRef(null);
   const visibleLayoutKey = visibleLayout.join("|");
   const draggingId = dragInfo?.id || null;
+
+  useLayoutEffect(()=>{
+    visibleLayoutRef.current = visibleLayout;
+  }, [visibleLayoutKey]);
+
+  useEffect(()=>{
+    dragInfoRef.current = dragInfo;
+  }, [dragInfo]);
 
   useEffect(()=>{
     try{ window.localStorage.setItem(METRIC_CARD_STORAGE_KEY, JSON.stringify(visibleLayout)); }catch(err){}
@@ -2234,7 +2247,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
 
   const measureCards = () => {
     const rects = {};
-    visibleLayout.forEach(id => {
+    visibleLayoutRef.current.forEach(id => {
       const node = cardRefs.current[id];
       if(node) {
         const rect = node.getBoundingClientRect();
@@ -2246,7 +2259,11 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
 
   const setLayoutWithAnimation = (updater) => {
     pendingRects.current = measureCards();
-    setLayout(updater);
+    setLayout(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      visibleLayoutRef.current = sanitizeMetricLayout(next, []);
+      return next;
+    });
   };
 
   useLayoutEffect(()=>{
@@ -2296,7 +2313,8 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
     const rect = node.getBoundingClientRect();
     event.preventDefault();
     setDropTargetId(null);
-    setDragInfo({
+    ignoredTargetRef.current = null;
+    const nextDrag = {
       id,
       pointerId:event.pointerId,
       x:event.clientX,
@@ -2305,35 +2323,68 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
       offsetY:event.clientY - rect.top,
       width:rect.width,
       height:rect.height,
-    });
+    };
+    dragInfoRef.current = nextDrag;
+    setDragInfo(nextDrag);
+  };
+
+  const pointInsideCard = (id, clientX, clientY) => {
+    const node = cardRefs.current[id];
+    if(!node) return false;
+    const rect = node.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
   };
 
   const reorderTowardPointer = (clientX, clientY) => {
-    if(!dragInfo) return;
-    const targetId = visibleLayout.find(id => {
-      if(id === dragInfo.id) return false;
-      const node = cardRefs.current[id];
-      if(!node) return false;
-      const rect = node.getBoundingClientRect();
-      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-    });
-    if(!targetId || targetId === dragInfo.id) {
+    const activeDrag = dragInfoRef.current;
+    if(!activeDrag) return;
+    const ignoredTarget = ignoredTargetRef.current;
+    if(ignoredTarget && pointInsideCard(ignoredTarget, clientX, clientY)) {
       setDropTargetId(null);
       return;
     }
+    if(ignoredTarget) ignoredTargetRef.current = null;
+
+    const candidates = visibleLayoutRef.current
+      .filter(id => id !== activeDrag.id)
+      .map(id => {
+        const node = cardRefs.current[id];
+        if(!node) return null;
+        const rect = node.getBoundingClientRect();
+        if(clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+        const dx = clientX - (rect.left + rect.width / 2);
+        const dy = clientY - (rect.top + rect.height / 2);
+        return {id, distance: Math.hypot(dx, dy)};
+      })
+      .filter(Boolean)
+      .sort((a,b)=>a.distance-b.distance);
+    const targetId = candidates[0]?.id;
+    if(!targetId) {
+      setDropTargetId(null);
+      return;
+    }
+    const currentLayout = visibleLayoutRef.current;
+    if(currentLayout.indexOf(activeDrag.id) === currentLayout.indexOf(targetId)) return;
     setDropTargetId(targetId);
-    setLayoutWithAnimation(prev => moveMetricCard(prev, dragInfo.id, targetId));
+    ignoredTargetRef.current = targetId;
+    setLayoutWithAnimation(prev => moveMetricCard(prev, activeDrag.id, targetId));
   };
 
   useEffect(()=>{
     if(!dragInfo) return;
     const onMove = (event) => {
-      if(event.pointerId !== dragInfo.pointerId) return;
-      setDragInfo(prev => prev ? {...prev, x:event.clientX, y:event.clientY} : prev);
+      const activeDrag = dragInfoRef.current;
+      if(!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+      const nextDrag = {...activeDrag, x:event.clientX, y:event.clientY};
+      dragInfoRef.current = nextDrag;
+      setDragInfo(nextDrag);
       reorderTowardPointer(event.clientX, event.clientY);
     };
     const onUp = (event) => {
-      if(event.pointerId !== dragInfo.pointerId) return;
+      const activeDrag = dragInfoRef.current;
+      if(!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+      dragInfoRef.current = null;
+      ignoredTargetRef.current = null;
       setDragInfo(null);
       setDropTargetId(null);
     };
@@ -2345,7 +2396,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [dragInfo?.id, dragInfo?.pointerId, visibleLayoutKey]);
+  }, [Boolean(dragInfo)]);
 
   const floatingDef = dragInfo ? metricDefFor(dragInfo.id) : null;
   const floatingStyle = dragInfo ? {
@@ -2395,6 +2446,21 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
         </div>
       )}
       {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
+    </>
+  );
+}
+
+function TasksSection({dashboard, campaigns, onResolve, onToast}){
+  return (
+    <>
+      <div className="metric-board-head">
+        <h2 className="metric-board-title">Tasks</h2>
+      </div>
+      <div className="grid-charts metric-support-grid tasks-grid">
+        <div className="chart-column">
+          <AttributionAlerts dashboard={dashboard} campaigns={campaigns} onResolve={onResolve} onToast={onToast}/>
+        </div>
+      </div>
     </>
   );
 }
@@ -3503,11 +3569,7 @@ function App(){
           {/* Charts */}
           <MetricCardBoard campaigns={scopedCampaigns}/>
 
-          <div className="grid-charts metric-support-grid">
-            <div className="chart-column">
-              <AttributionAlerts dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
-            </div>
-          </div>
+          <TasksSection dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
 
           <RevenueAttributionStrip dashboard={dashboard} />
 
