@@ -1229,7 +1229,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     if(status!=="all" && status!==c.status) return false;
     return true;
   });
-  const visibleCampaigns = totalCampaigns.filter(c => !c.attributionOnly);
+  const visibleCampaigns = totalCampaigns;
   const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
@@ -1238,6 +1238,13 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
       setExpanded(prev => {
         const open = {...prev};
         visibleCampaigns.forEach(c => { open[c.id] = true; });
+        return open;
+      });
+      setExpandedDays(prev => {
+        const open = {...prev};
+        visibleCampaigns.forEach(c => {
+          (c.rows || []).forEach(r => { open[c.id+"|"+r.date] = true; });
+        });
         return open;
       });
     }

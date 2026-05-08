@@ -207,7 +207,16 @@ export async function POST(req: NextRequest) {
     const end_time =
       readString(root, ["end_time", "endTime"]) ||
       readString(calendar, ["endTime", "end_time"]);
+    const appointment_created_at =
+      readString(calendar, ["date_created", "dateCreated", "created_at", "createdAt"]) ||
+      readString(root, [
+        "appointment_created_at",
+        "appointmentCreatedAt",
+        "booking_created_at",
+        "bookingCreatedAt",
+      ]);
     const event_at =
+      appointment_created_at ||
       readString(root, ["event_at", "eventAt", "created_at", "createdAt", "date_added", "dateAdded"]) ||
       readString(calendar, ["event_at", "eventAt", "created_at", "createdAt", "date_added", "dateAdded"]) ||
       new Date().toISOString();

@@ -1019,20 +1019,50 @@ function uniqueMetaGroupResolver<T>(
   keyForMetaRow: (row: MetaRow, keyword: string) => string,
   keyForAttributionRow: (row: T, keyword: string) => string
 ) {
-  const idsByKeyword = new Map<string, Set<string>>();
+  const candidatesByKeyword = new Map<
+    string,
+    Map<string, { id: string; spendCents: number; impressions: number; linkClicks: number }>
+  >();
 
   for (const row of rows) {
     const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
     if (!keyword) continue;
     const key = keyForMetaRow(row, keyword);
-    const ids = idsByKeyword.get(key) || new Set<string>();
-    ids.add(groupIdForRow(row, keyword));
-    idsByKeyword.set(key, ids);
+    const id = groupIdForRow(row, keyword);
+    const candidates = candidatesByKeyword.get(key) || new Map<string, { id: string; spendCents: number; impressions: number; linkClicks: number }>();
+    const candidate = candidates.get(id) || { id, spendCents: 0, impressions: 0, linkClicks: 0 };
+    candidate.spendCents += row.spend_cents || 0;
+    candidate.impressions += row.impressions || 0;
+    candidate.linkClicks += row.link_clicks || 0;
+    candidates.set(id, candidate);
+    candidatesByKeyword.set(key, candidates);
   }
 
   return (row: T, keyword: string, fallbackId: string) => {
-    const ids = idsByKeyword.get(keyForAttributionRow(row, keyword));
-    return ids?.size === 1 ? Array.from(ids)[0] : fallbackId;
+    const candidates = Array.from(
+      candidatesByKeyword.get(keyForAttributionRow(row, keyword))?.values() || []
+    );
+    if (candidates.length === 0) return fallbackId;
+    if (candidates.length === 1) return candidates[0].id;
+
+    const deliveredCandidates = candidates.filter(
+      (candidate) =>
+        candidate.spendCents > 0 || candidate.impressions > 0 || candidate.linkClicks > 0
+    );
+    const ranked = (deliveredCandidates.length ? deliveredCandidates : candidates).sort(
+      (a, b) =>
+        b.spendCents - a.spendCents ||
+        b.impressions - a.impressions ||
+        b.linkClicks - a.linkClicks
+    );
+    const top = ranked[0];
+    const totalSpend = ranked.reduce((sum, candidate) => sum + candidate.spendCents, 0);
+    const totalImpressions = ranked.reduce((sum, candidate) => sum + candidate.impressions, 0);
+
+    if (totalSpend > 0 && top.spendCents / totalSpend >= 0.8) return top.id;
+    if (totalImpressions > 0 && top.impressions / totalImpressions >= 0.8) return top.id;
+
+    return fallbackId;
   };
 }
 
@@ -1132,6 +1162,42 @@ function exactMetaHintForKeywordEvent(event: KeywordEvent, metaRows: MetaRow[]):
   return hintFromMetaRow(candidates[0], keyword);
 }
 
+function appointmentBookingEventAt(appointment: GhlAppointmentRow | null | undefined): string | null {
+  if (!appointment) return null;
+  const payload = recordFromUnknown(appointment.raw_payload);
+  const calendar = recordFromUnknown(payload?.calendar);
+
+  return (
+    stringFromRecord(calendar || {}, "date_created") ||
+    stringFromRecord(calendar || {}, "dateCreated") ||
+    stringFromRecord(calendar || {}, "created_at") ||
+    stringFromRecord(calendar || {}, "createdAt") ||
+    stringFromRecord(payload || {}, "appointment_created_at") ||
+    stringFromRecord(payload || {}, "appointmentCreatedAt") ||
+    stringFromRecord(payload || {}, "booking_created_at") ||
+    stringFromRecord(payload || {}, "bookingCreatedAt") ||
+    appointment.created_at ||
+    null
+  );
+}
+
+function normalizeGhlKeywordEventDates(
+  events: KeywordEvent[],
+  appointments: GhlAppointmentRow[]
+): KeywordEvent[] {
+  const appointmentsById = new Map(
+    appointments
+      .filter((appointment) => appointment.appointment_id)
+      .map((appointment) => [appointment.appointment_id as string, appointment])
+  );
+
+  return events.map((event) => {
+    if (event.source !== "ghl" || !event.appointment_id) return event;
+    const bookingEventAt = appointmentBookingEventAt(appointmentsById.get(event.appointment_id));
+    return bookingEventAt ? { ...event, event_at: bookingEventAt } : event;
+  });
+}
+
 function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
   const payloadHint = campaignHintFromBackfillPayload(row);
   if (payloadHint) return payloadHint;
@@ -1191,7 +1257,11 @@ function fallbackGroupIdForBackfillRow(
   return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
 }
 
-function dailySalesGroupIdFromBookingDate(
+function attributionEventOnDashboardDate(event: KeywordEvent, date: string): KeywordEvent {
+  return { ...event, event_at: `${date}T12:00:00.000Z` };
+}
+
+function dailySalesGroupIdFromSaleDate(
   match: KeywordEvent,
   row: SheetRow,
   keyword: string,
@@ -1199,15 +1269,14 @@ function dailySalesGroupIdFromBookingDate(
 ) {
   if (match.override_group_id) return `${row.date}:${match.override_group_id}`;
 
-  const bookingDate = eventDateKey(match.event_at);
-  const resolvedOnBookingDate = dailyAttributionGroupId(
-    match,
+  const resolvedOnSaleDate = dailyAttributionGroupId(
+    attributionEventOnDashboardDate(match, row.date),
     keyword,
-    `${bookingDate}:${match.client_key}:keyword:${keyword}`
+    `${row.date}:${match.client_key}:keyword:${keyword}`
   );
 
-  return resolvedOnBookingDate.startsWith(`${bookingDate}:`)
-    ? `${row.date}:${resolvedOnBookingDate.slice(bookingDate.length + 1)}`
+  return resolvedOnSaleDate.startsWith(`${row.date}:`)
+    ? resolvedOnSaleDate
     : `${row.date}:${match.client_key}:keyword:${keyword}`;
 }
 
@@ -1646,7 +1715,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const groups = new Map<string, Group>();
   const rows = metaRows;
   const backfill = backfillRows as KeywordBackfillRow[];
-  const baseKeywordEvents = keywordEvents;
+  const baseKeywordEvents = normalizeGhlKeywordEventDates(keywordEvents, ghlAppointments);
   const supplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
     db,
     ghlAppointments,
@@ -1762,10 +1831,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     !resolutionBySaleKey.has(salesRowKey(row, clientKey));
 
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
-    groupId: (match) =>
+    groupId: (match, row) =>
       match.override_group_id ||
       periodAttributionGroupId(
-        match,
+        attributionEventOnDashboardDate(match, row.date),
         match.keyword_normalized || "",
         `${match.client_key}:keyword:${match.keyword_normalized}`
       ),
@@ -1823,7 +1892,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
-      dailySalesGroupIdFromBookingDate(
+      dailySalesGroupIdFromSaleDate(
         match,
         row,
         match.keyword_normalized || "",
