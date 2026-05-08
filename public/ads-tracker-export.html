@@ -1759,7 +1759,7 @@ function CostPerDMChart({campaigns=CAMPAIGNS}){
 
 // ------- Ad ROAS chart (was Keyword ROI)
 // Build aggregated per-ad metrics across the 6 known days
-function allAdsAggregated(campaigns=CAMPAIGNS){
+function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
   const out = [];
   campaigns.forEach(c => {
     c.ads.forEach(a => {
@@ -1784,6 +1784,33 @@ function allAdsAggregated(campaigns=CAMPAIGNS){
       });
     });
   });
+
+  if(Array.isArray(authoritativeAdRoas) && authoritativeAdRoas.length){
+    const byAdId = new Map(out.map(ad => [String(ad.adId), ad]));
+    return authoritativeAdRoas
+      .map(row => {
+        const adId = row.adId || row.id || row.label;
+        const matched = byAdId.get(String(adId));
+        const spend = Number(row.adSpend || 0);
+        const collected = Number(row.collectedRevenue || 0);
+        const roas = Number.isFinite(Number(row.collectedRoi))
+          ? Number(row.collectedRoi)
+          : (spend ? collected / spend : 0);
+        return {
+          adId,
+          adName: row.adName || row.label || matched?.adName || "UNKNOWN",
+          camp: row.clientKey || matched?.camp || "",
+          spend,
+          collected,
+          clients: Number(row.newClients || 0),
+          roas,
+          previewImageUrl: row.previewImageUrl || row.previewThumbnailUrl || matched?.previewImageUrl || matched?.previewThumbnailUrl || null,
+          previewThumbnailUrl: row.previewThumbnailUrl || matched?.previewThumbnailUrl || null,
+        };
+      })
+      .filter(ad => ad.spend > 0 || ad.collected > 0 || ad.clients > 0);
+  }
+
   return out;
 }
 
@@ -1801,12 +1828,12 @@ function adPreviewPosition(event){
   return {left, top};
 }
 
-function AdROASChart({campaigns=CAMPAIGNS}){
+function AdROASChart({campaigns=CAMPAIGNS, dashboard=null}){
   const [view, setView] = useState("top"); // 'top' | 'all'
   const [preview, setPreview] = useState(null);
-  const all = useMemo(()=>allAdsAggregated(campaigns), [campaigns]);
+  const all = useMemo(()=>allAdsAggregated(campaigns, dashboard?.adRoas), [campaigns, dashboard?.adRoas]);
   const filtered = all
-    .map(a => ({...a, roas: a.spend ? a.collected/a.spend : 0}))
+    .map(a => ({...a, roas: Number.isFinite(a.roas) ? a.roas : (a.spend ? a.collected/a.spend : 0)}))
     .sort((a,b) => b.collected - a.collected);
   const list = view === "top" ? filtered.slice(0,6) : filtered;
   const max = list[0]?.collected || 1;
@@ -2166,7 +2193,7 @@ function GenericMetricCard({metricId, campaigns=CAMPAIGNS}){
 
 const METRIC_CARD_DEFS = [
   {id:"roas", label:"ROAS", meta:"Revenue compared with ad spend", render:({campaigns})=><ROASChart campaigns={campaigns}/>},
-  {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns})=><AdROASChart campaigns={campaigns}/>},
+  {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns,dashboard})=><AdROASChart campaigns={campaigns} dashboard={dashboard}/>},
   {id:"cost_per_dm", label:"Cost per DM", meta:"Spend divided by messages", render:({campaigns})=><CostPerDMChart campaigns={campaigns}/>},
   {id:"cac", label:"CAC", meta:"Cost per client", render:({campaigns})=><CACChart campaigns={campaigns}/>},
   ...GENERIC_METRIC_DEFS.map(def => ({
@@ -2274,7 +2301,7 @@ function MetricAddModal({layout, onApply, onClose}){
   );
 }
 
-function MetricCardBoard({campaigns=CAMPAIGNS}){
+function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null}){
   const [layout, setLayout] = useState(loadMetricLayout);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -2481,7 +2508,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
         onPointerDown={beginPointerDrag}
         registerRef={registerRef}
       >
-        {def.render({campaigns})}
+        {def.render({campaigns,dashboard})}
       </MetricCardShell>
     );
   };
@@ -2503,7 +2530,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS}){
       </div>
       {floatingDef && (
         <div className="metric-floating-card" style={floatingStyle}>
-          {floatingDef.render({campaigns})}
+          {floatingDef.render({campaigns,dashboard})}
         </div>
       )}
       {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
@@ -3630,7 +3657,7 @@ function App(){
           </div>
 
           {/* Charts */}
-          <MetricCardBoard campaigns={scopedCampaigns}/>
+          <MetricCardBoard campaigns={scopedCampaigns} dashboard={dashboard}/>
 
           <TasksSection dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
 
