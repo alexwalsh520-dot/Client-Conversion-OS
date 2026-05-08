@@ -1982,7 +1982,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
     setLoading(true);
     setError("");
     try {
-      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", zoeEmily: "Zoe and Emily" };
+      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", lucy: "Lucy Hubbard" };
       const clientParam =
         filters.client !== "all" && clientNames[filters.client]
           ? `&client=${encodeURIComponent(clientNames[filters.client])}`

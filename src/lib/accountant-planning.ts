@@ -97,6 +97,12 @@ const CLIENTS: FinanceClientConfig[] = [
     offerMatches: ["tyson", "sonnek"],
     paymentInfluencer: "tyson",
   },
+  {
+    key: "lucy",
+    name: "Lucy Hubbard",
+    offerMatches: ["lucy", "hubbard"],
+    paymentInfluencer: "lucy",
+  },
 ];
 
 const DEFAULT_SETTINGS: AccountantSettings = {
@@ -472,7 +478,7 @@ async function loadAdSpendByClient(start: string, end: string): Promise<Record<s
     if (error) throw error;
 
     for (const row of (data ?? []) as Array<{ influencer: string | null; spend: number | null }>) {
-      const clientKey = row.influencer === "tyson" ? "tyson" : row.influencer === "keith" ? "keith" : null;
+      const clientKey = CLIENTS.find((item) => item.paymentInfluencer === row.influencer)?.key ?? null;
       if (!clientKey) continue;
       totals[clientKey] = (totals[clientKey] ?? 0) + toNumber(row.spend);
     }

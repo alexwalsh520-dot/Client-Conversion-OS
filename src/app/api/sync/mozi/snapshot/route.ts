@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ── Compute per-influencer KPIs ───────────────────────────────
-    const influencers = ['keith', 'tyson', 'zoeEmily'];
+    const influencers = ['keith', 'tyson', 'lucy'];
     const byInfluencer: Record<string, ReturnType<typeof computeKPIs>> = {};
 
     for (const inf of influencers) {

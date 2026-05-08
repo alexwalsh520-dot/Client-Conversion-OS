@@ -1,5 +1,5 @@
 // Mock data for CCOS (Client Conversion OS)
-// Three clients: Keith, Tyson, Zoe & Emily
+// Three clients: Keith, Tyson, Lucy Hubbard
 // Coaches: Ignacio, Fatima, Waleed, Stef, Farrukh
 // Closers: Jacob Broz, Will
 // Onboarding: Nicole
@@ -12,7 +12,7 @@
 export const CLIENTS = {
   keith: { name: "Keith", fullName: "Keith Holland", color: "#8b5cf6", stripeAccounts: 1 },
   tyson: { name: "Tyson", fullName: "Tyson Sonnek", color: "#06b6d4", stripeAccounts: 2 },
-  zoeEmily: { name: "Zoe & Emily", fullName: "Zoe and Emily", color: "#f59e0b", stripeAccounts: 1 },
+  lucy: { name: "Lucy Hubbard", fullName: "Lucy Hubbard", color: "#f59e0b", stripeAccounts: 1 },
 } as const;
 
 export const revenueData = {
@@ -38,7 +38,7 @@ export const revenueData = {
       avgRevenuePerUser: 793,
     },
   },
-  zoeEmily: {
+  lucy: {
     thisMonth: 0,
     lastMonth: 0,
     mrr: 0,
@@ -2267,17 +2267,17 @@ export interface RevenueByMonthEntry {
   month: string;
   keith: number;
   tyson: number;
-  zoeEmily: number;
+  lucy: number;
   total: number;
 }
 
 export const revenueByMonth: RevenueByMonthEntry[] = [
-  { month: "2025-09", keith: 8200, tyson: 5100, zoeEmily: 0, total: 13300 },
-  { month: "2025-10", keith: 12400, tyson: 8900, zoeEmily: 0, total: 21300 },
-  { month: "2025-11", keith: 16800, tyson: 12200, zoeEmily: 0, total: 29000 },
-  { month: "2025-12", keith: 19500, tyson: 15800, zoeEmily: 0, total: 35300 },
-  { month: "2026-01", keith: 28600, tyson: 23991, zoeEmily: 0, total: 52591 },
-  { month: "2026-02", keith: 38200, tyson: 31700, zoeEmily: 0, total: 69900 },
+  { month: "2025-09", keith: 8200, tyson: 5100, lucy: 0, total: 13300 },
+  { month: "2025-10", keith: 12400, tyson: 8900, lucy: 0, total: 21300 },
+  { month: "2025-11", keith: 16800, tyson: 12200, lucy: 0, total: 29000 },
+  { month: "2025-12", keith: 19500, tyson: 15800, lucy: 0, total: 35300 },
+  { month: "2026-01", keith: 28600, tyson: 23991, lucy: 0, total: 52591 },
+  { month: "2026-02", keith: 38200, tyson: 31700, lucy: 0, total: 69900 },
 ];
 
 // ============================================================================

@@ -19,6 +19,7 @@ const ACCOUNTS = [
   { influencer: 'keith',  account: 'keith',       key: process.env.STRIPE_KEY_KEITH },
   { influencer: 'tyson',  account: 'tyson_llp',   key: process.env.STRIPE_KEY_TYSON_LLP },
   { influencer: 'tyson',  account: 'tyson_subs',  key: process.env.STRIPE_KEY_TYSON_SUBS },
+  { influencer: 'lucy',   account: 'lucy_hubbard', key: process.env.STRIPE_KEY_LUCY_HUBBARD },
 ];
 
 function classify(productName = '', unitAmount, interval) {

@@ -176,7 +176,7 @@ function getManyChatKey(client: string): string {
   const keyMap: Record<string, string | undefined> = {
     tyson_sonnek: process.env.MANYCHAT_API_KEY_TYSON,
     keith_holland: process.env.MANYCHAT_API_KEY_KEITH,
-    zoe_and_emily: process.env.MANYCHAT_API_KEY_ZOE_EMILY,
+    lucy_hubbard: process.env.MANYCHAT_API_KEY_LUCY_HUBBARD,
   };
   const key = keyMap[client]?.trim();
   if (!key) {

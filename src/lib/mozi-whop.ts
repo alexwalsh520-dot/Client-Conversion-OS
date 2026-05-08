@@ -56,6 +56,9 @@ export async function getAllWhopPayments(apiKey: string): Promise<WhopPayment[]>
 }
 
 export const whopClients = [
-  { apiKey: process.env.WHOP_KEY_KEITH!, influencer: "keith" as const },
-  { apiKey: process.env.WHOP_KEY_TYSON!, influencer: "tyson" as const },
-];
+  { apiKey: process.env.WHOP_KEY_KEITH, influencer: "keith" as const },
+  { apiKey: process.env.WHOP_KEY_TYSON, influencer: "tyson" as const },
+  { apiKey: process.env.WHOP_KEY_LUCY_HUBBARD, influencer: "lucy" as const },
+].filter((client): client is { apiKey: string; influencer: "keith" | "tyson" | "lucy" } =>
+  Boolean(client.apiKey),
+);

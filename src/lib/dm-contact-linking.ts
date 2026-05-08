@@ -161,7 +161,7 @@ function parseClientFromTags(contact: GhlSearchContact): string | null {
   const tags = (contact.tags || []).map((tag) => normalizeText(tag));
   if (tags.includes("client_tyson_sonnek")) return "tyson_sonnek";
   if (tags.includes("client_keith_holland")) return "keith_holland";
-  if (tags.includes("client_zoe_and_emily")) return "zoe_and_emily";
+  if (tags.includes("client_lucy_hubbard")) return "lucy_hubbard";
   return null;
 }
 

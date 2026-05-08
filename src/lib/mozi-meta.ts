@@ -7,12 +7,12 @@ export const metaConfig = {
 export const metaAdAccounts = [
   { influencer: "keith" as const, adAccountId: process.env.META_AD_ACCOUNT_KEITH },
   { influencer: "tyson" as const, adAccountId: process.env.META_AD_ACCOUNT_TYSON },
-  { influencer: "zoeEmily" as const, adAccountId: process.env.META_AD_ACCOUNT_ZOE_EMILY },
+  { influencer: "lucy" as const, adAccountId: process.env.META_AD_ACCOUNT_LUCY_HUBBARD },
 ].filter(
   (
     account
   ): account is {
-    influencer: "keith" | "tyson" | "zoeEmily";
+    influencer: "keith" | "tyson" | "lucy";
     adAccountId: string;
   } => Boolean(account.adAccountId),
 );

@@ -18,7 +18,7 @@ function offerToClientKey(offer: string): string | null {
   const lower = offer.toLowerCase();
   if (lower.includes("keith")) return "keith";
   if (lower.includes("tyson")) return "tyson";
-  if (lower.includes("zoe") || lower.includes("emily")) return "zoeEmily";
+  if (lower.includes("lucy") || lower.includes("hubbard")) return "lucy";
   return null;
 }
 

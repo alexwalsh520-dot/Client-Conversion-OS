@@ -1,7 +1,8 @@
 // Allowlisted costs for Mozi math.
 // User-confirmed on 2026-04-21. If you change these, update the report.
 
-export type ClientKey = "keith" | "tyson";
+export const CLIENT_KEYS = ["keith", "tyson", "lucy"] as const;
+export type ClientKey = (typeof CLIENT_KEYS)[number];
 export type SplitRule =
   | { kind: "equal" }                                // split 50/50 between Keith and Tyson
   | { kind: "only"; client: ClientKey };             // 100% to one client
@@ -22,7 +23,8 @@ export const ACQUISITION_SOFTWARE: Array<{
   { match: ["elevenlabs"],          label: "ElevenLabs",      split: { kind: "equal" } },
 
   // Per-client ManyChat (identified by exact monthly amount band since counterparty
-  // name is identical across all three). $56 = Zoe (excluded), $62 = Keith, $238 = Tyson.
+  // name is identical across client accounts). Lucy is not launched, so leave
+  // her ManyChat allocation excluded until a real amount is confirmed.
   // Handled as a special case in mozi-mercury.ts, not here.
 ];
 
@@ -67,10 +69,10 @@ export const CLOSER_COMMISSION_PCT = 10;
 
 // Explicit per-client ManyChat allocation (all three show up under the same
 // counterparty name; disambiguate by the monthly dollar band, first match wins).
-// Amounts in cents. Zoe = ~$56 (excluded), Keith = ~$62 + small top-ups,
+// Amounts in cents. Lucy is excluded until launch, Keith = ~$62 + small top-ups,
 // Tyson = ~$238 + top-ups.
 export const MANYCHAT_PER_CLIENT: Array<{ amountBandCents: [number, number]; client: ClientKey | "exclude" }> = [
-  { amountBandCents: [4000,   6000],  client: "exclude" },  // ~$56 Zoe & Emily main charge
+  { amountBandCents: [4000,   6000],  client: "exclude" },  // unlaunched Lucy Hubbard range
   { amountBandCents: [0,      15000], client: "keith" },    // Keith main ~$62 + small top-ups (<$150)
   { amountBandCents: [15000,  50000], client: "tyson" },    // Tyson main ~$238 + larger top-ups
 ];

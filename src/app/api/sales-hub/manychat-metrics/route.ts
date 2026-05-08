@@ -3,11 +3,11 @@ import { getMetrics } from "@/lib/manychat";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const client = searchParams.get("client") as "tyson" | "keith" | "zoeEmily";
+  const client = searchParams.get("client") as "tyson" | "keith" | "lucy";
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
 
-  if (!client || !["tyson", "keith", "zoeEmily"].includes(client)) {
+  if (!client || !["tyson", "keith", "lucy"].includes(client)) {
     return NextResponse.json({ error: "Invalid client" }, { status: 400 });
   }
   if (!dateFrom || !dateTo) {
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
         ? "tyson_sonnek"
         : client === "keith"
           ? "keith_holland"
-          : "zoe_and_emily";
+          : "lucy_hubbard";
     const metrics = await getMetrics(clientKey, dateFrom, dateTo);
     return NextResponse.json(metrics);
   } catch (err) {

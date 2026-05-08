@@ -2,8 +2,8 @@ import Stripe from "stripe";
 
 const API_VERSION = "2025-02-24.acacia" as const;
 
-type StripeInfluencer = "keith" | "tyson";
-type StripeAccountName = "keith" | "tyson_llp" | "tyson_subs";
+type StripeInfluencer = "keith" | "tyson" | "lucy";
+type StripeAccountName = "keith" | "tyson_llp" | "tyson_subs" | "lucy_hubbard";
 
 interface StripeClientConfig {
   secretKey?: string;
@@ -27,6 +27,11 @@ function getStripeClients() {
       secretKey: process.env.STRIPE_KEY_TYSON_SUBS,
       influencer: "tyson",
       account: "tyson_subs",
+    },
+    {
+      secretKey: process.env.STRIPE_KEY_LUCY_HUBBARD,
+      influencer: "lucy",
+      account: "lucy_hubbard",
     },
   ];
 

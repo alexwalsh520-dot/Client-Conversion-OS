@@ -14,7 +14,7 @@
 //   LTGP         = monthly_gp_per_active_client × avg_program_months.
 //   CAPACITY     = active end-clients / total max seats across all coaches.
 
-import type { ClientKey } from "./mozi-costs-config";
+import { CLIENT_KEYS, type ClientKey } from "./mozi-costs-config";
 
 // Raised to $200 so $50/wk Forge Enforcement Challenge + similar low-ticket
 // subscription rebills don't count as "new coaching clients" — they dilute
@@ -117,6 +117,7 @@ function normalizeInfluencer(v: string | null | undefined): ClientKey | null {
   const x = String(v).toLowerCase();
   if (x === "keith") return "keith";
   if (x === "tyson") return "tyson";
+  if (x === "lucy" || x === "lucy_hubbard" || x === "lucy hubbard") return "lucy";
   return null;
 }
 
@@ -183,7 +184,7 @@ function indexCustomers(charges: Charge[]) {
     const key = customerKey(c);
     if (!key) continue;
     const infl = normalizeInfluencer(c.influencer as string | null);
-    if (!infl) continue;                           // ignore zoeEmily and unattributed
+    if (!infl) continue;                           // ignore unattributed rows
 
     const existing = map.get(key);
     if (existing) {
@@ -239,15 +240,13 @@ function computeClient(
   // 3. CAC = marketing-side only. Ad spend + acquisition SaaS. Commissions are
   //    a COST OF THE SALE, not a customer-acquisition cost, so they belong in
   //    GP30 direct costs below (user-confirmed 2026-04-22).
-  let adSpend = 0, mercuryAcq = 0, salesCommissions = 0;
+  let adSpend = 0, mercuryAcq = 0;
   if (clientKey === "total") {
-    adSpend = (inputs.metaAdSpendByClient.keith ?? 0) + (inputs.metaAdSpendByClient.tyson ?? 0);
-    mercuryAcq = (inputs.mercuryAcquisitionByClient.keith ?? 0) + (inputs.mercuryAcquisitionByClient.tyson ?? 0);
-    salesCommissions = (inputs.salesCommissionsByClient.keith ?? 0) + (inputs.salesCommissionsByClient.tyson ?? 0);
+    adSpend = CLIENT_KEYS.reduce((sum, client) => sum + (inputs.metaAdSpendByClient[client] ?? 0), 0);
+    mercuryAcq = CLIENT_KEYS.reduce((sum, client) => sum + (inputs.mercuryAcquisitionByClient[client] ?? 0), 0);
   } else {
     adSpend = inputs.metaAdSpendByClient[clientKey] ?? 0;
     mercuryAcq = inputs.mercuryAcquisitionByClient[clientKey] ?? 0;
-    salesCommissions = inputs.salesCommissionsByClient[clientKey] ?? 0;
   }
   const cacTotal = adSpend + mercuryAcq;
   const cacPerNewClient = newClientCount > 0 ? Math.round(cacTotal / newClientCount) : 0;
@@ -323,10 +322,6 @@ function computeClient(
     ? Math.round((avgObservedLtv - feeDragOverLtv) / avgObservedTenureMonths) - perEndClientCoachingMonthly
     : 0;
 
-  const activeCount = clientKey === "total"
-    ? (inputs.activeClientsByInfluencer.keith ?? 0) + (inputs.activeClientsByInfluencer.tyson ?? 0)
-    : (inputs.activeClientsByInfluencer[clientKey] ?? 0);
-
   // 6. Capacity (Total only in the UI, but we compute it generically).
   let capacity: ClientCohortResult["capacity"] | undefined;
   if (inputs.totalMaxClientSeats > 0) {
@@ -373,10 +368,9 @@ export function runCohortEngine(inputs: CohortInputs): CohortEngineOutput {
 
   const idx = indexCustomers(inputs.allCharges);
 
-  const perClient: Record<ClientKey, ClientCohortResult> = {
-    keith: computeClient("keith", inputs, windowStart, windowEnd, idx),
-    tyson: computeClient("tyson", inputs, windowStart, windowEnd, idx),
-  };
+  const perClient = Object.fromEntries(
+    CLIENT_KEYS.map((client) => [client, computeClient(client, inputs, windowStart, windowEnd, idx)]),
+  ) as Record<ClientKey, ClientCohortResult>;
   const total = computeClient("total", inputs, windowStart, windowEnd, idx);
 
   return {

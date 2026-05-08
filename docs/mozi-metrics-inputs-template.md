@@ -9,7 +9,7 @@ Stripe accounts:
 - Keith
 - Tyson: Forge LLP
 - Tyson: Forge Subscriptions
-- Zoe & Emily: Instagram
+- Lucy Hubbard: Instagram
 
 For each client, list which Stripe products or prices mean:
 
@@ -35,7 +35,7 @@ Client: Tyson (Forge LLP + Forge Subscriptions)
 - Downsell:
 - Ignore:
 
-Client: Zoe & Emily (Instagram)
+Client: Lucy Hubbard (Instagram)
 - New sale:
 - Renewal:
 - Upsell:
@@ -83,7 +83,7 @@ If capacity should be split by client, add this too:
 
 - Keith capacity share:
 - Tyson capacity share:
-- Zoe & Emily capacity share:
+- Lucy Hubbard capacity share:
 
 ## 6. Rules
 

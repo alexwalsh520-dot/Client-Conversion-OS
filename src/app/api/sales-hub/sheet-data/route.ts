@@ -38,8 +38,8 @@ export async function GET(req: NextRequest) {
           return offerLower.includes("tyson") || offerLower.includes("sonic");
         }
         if (clientLower === "keith" || clientLower === "keith holland") return offerLower.includes("keith");
-        if (clientLower === "zoe and emily" || clientLower === "zoeemily") {
-          return offerLower.includes("zoe") || offerLower.includes("emily");
+        if (clientLower === "lucy" || clientLower === "lucy hubbard") {
+          return offerLower.includes("lucy") || offerLower.includes("hubbard");
         }
         return offerLower.includes(clientLower);
       });

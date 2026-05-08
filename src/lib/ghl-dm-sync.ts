@@ -15,12 +15,12 @@ export interface ManychatDmEvent {
   eventAt: string;
 }
 
-export type ClientKey = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
+export type ClientKey = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
 
 const CLIENT_LABELS: Record<ClientKey, string> = {
   tyson_sonnek: "Tyson Sonnek",
   keith_holland: "Keith Holland",
-  zoe_and_emily: "Zoe and Emily",
+  lucy_hubbard: "Lucy Hubbard",
 };
 
 const TAG_TO_DATE_FIELD: Record<string, string> = {
@@ -107,21 +107,15 @@ export function normalizeClientKey(raw: string): ClientKey {
   }
   if (
     [
-      "zoe",
-      "emily",
-      "zoe_and_emily",
-      "client_zoe_and_emily",
-      "client_zoe_emily",
-      "zoe and emily",
-      "zoe & emily",
-      "zoe + emily",
-      "zoe_emily",
-      "zoe emily",
-      "zoe and em",
-      "zoe & em",
+      "lucy",
+      "hubbard",
+      "lucy_hubbard",
+      "client_lucy_hubbard",
+      "lucy hubbard",
+      "lucy_h",
     ].includes(value)
   ) {
-    return "zoe_and_emily";
+    return "lucy_hubbard";
   }
 
   throw new Error(`Unsupported client value: ${raw}`);

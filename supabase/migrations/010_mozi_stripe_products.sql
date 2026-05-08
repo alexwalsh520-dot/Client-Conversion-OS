@@ -11,7 +11,7 @@
 
 CREATE TABLE IF NOT EXISTS mozi_stripe_products (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  influencer      text NOT NULL CHECK (influencer IN ('keith', 'tyson', 'zoeEmily')),
+  influencer      text NOT NULL CHECK (influencer IN ('keith', 'tyson', 'lucy')),
   stripe_account  text NOT NULL,
   price_id        text UNIQUE NOT NULL,
   product_id      text,

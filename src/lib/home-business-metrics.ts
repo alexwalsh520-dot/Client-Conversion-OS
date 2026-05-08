@@ -14,9 +14,9 @@ import { CLIENTS } from "@/lib/mock-data";
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchAcquisitionCostsBreakdown, type AcquisitionCostsBreakdown } from "@/lib/mozi-acquisition-costs";
 import { fetchFulfillmentPayroll, type FulfillmentPayrollBreakdown } from "@/lib/mozi-coach-payroll";
-import { fetchSalesCohort, type SalesCohort, fetchSalesCommissions, type CommissionBreakdown, fetchSalesLtgpData, type SalesLtgp } from "@/lib/mozi-sales-commissions";
+import { fetchSalesCohort, type SalesCohort, fetchSalesCommissions, type CommissionBreakdown, fetchSalesLtgpData } from "@/lib/mozi-sales-commissions";
 import { fetchKeithAdSpendLast30d } from "@/lib/mozi-keith-ads";
-import type { ClientKey } from "@/lib/mozi-costs-config";
+import { CLIENT_KEYS, type ClientKey } from "@/lib/mozi-costs-config";
 
 type UiClientKey = ClientKey;
 type CardState = "live" | "needs_setup";
@@ -139,6 +139,12 @@ function getClientConfig() {
       revenueReady: Boolean(process.env.STRIPE_KEY_TYSON_LLP || process.env.STRIPE_KEY_TYSON_SUBS),
       adSpendReady: Boolean(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_TYSON),
     },
+    {
+      key: "lucy" as ClientKey,
+      label: CLIENTS.lucy.name,
+      revenueReady: Boolean(process.env.STRIPE_KEY_LUCY_HUBBARD),
+      adSpendReady: Boolean(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_LUCY_HUBBARD),
+    },
   ];
 }
 
@@ -153,6 +159,26 @@ function buildMissingSetup(): string[] {
   if (!process.env.MERCURY_TOKEN_CORESHIFT || !process.env.MERCURY_TOKEN_FORGE) missing.push("Mercury access (acquisition SaaS + coach payroll)");
   if (!process.env.META_ACCESS_TOKEN || !process.env.META_AD_ACCOUNT_TYSON) missing.push("Tyson Meta ad account access");
   return missing;
+}
+
+function emptyClientNumberRecord(): Record<ClientKey, number> {
+  return Object.fromEntries(CLIENT_KEYS.map((client) => [client, 0])) as Record<ClientKey, number>;
+}
+
+function clientKeyFromOffer(offer: string | null | undefined): ClientKey | null {
+  const value = (offer || "").toLowerCase();
+  if (value.includes("keith")) return "keith";
+  if (value.includes("tyson") || value.includes("sonnek")) return "tyson";
+  if (value.includes("lucy") || value.includes("hubbard")) return "lucy";
+  return null;
+}
+
+function isClientKey(value: string | null | undefined): value is ClientKey {
+  return CLIENT_KEYS.includes(value as ClientKey);
+}
+
+function sumClientValues(getValue: (client: ClientKey) => number): number {
+  return CLIENT_KEYS.reduce((sum, client) => sum + getValue(client), 0);
 }
 
 function latestSyncStatus(rows: SyncLogRow[]): SyncLogRow[] {
@@ -207,7 +233,11 @@ function computeLtgp(
   const byCust = new Map<string, { firstAt: number; totalCents: number }>();
   for (const c of charges) {
     const infl = (c.influencer || "").toLowerCase();
-    if (clientKey !== "total" && infl !== clientKey) continue;
+    if (clientKey === "total") {
+      if (!isClientKey(infl)) continue;
+    } else if (infl !== clientKey) {
+      continue;
+    }
     const key = c.customer_id || (c.customer_email ? c.customer_email.toLowerCase() : null);
     if (!key) continue;
     const gross = (c.amount ?? 0) - (c.refund_amount ?? 0);
@@ -315,11 +345,10 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
   const chargebackPct = costs.chargeback_rate_pct ?? 1;
 
   // Active clients per influencer
-  const activeByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+  const activeByClient = emptyClientNumberRecord();
   let totalActive = 0;
   for (const row of (clientsRes.data ?? []) as Array<{ offer: string | null; status: string | null }>) {
-    const offer = (row.offer || "").toLowerCase();
-    const influencer: ClientKey | null = offer.includes("keith") ? "keith" : offer.includes("tyson") ? "tyson" : null;
+    const influencer = clientKeyFromOffer(row.offer);
     if (!influencer) continue;
     if ((row.status || "").toLowerCase() === "active") {
       activeByClient[influencer]++;
@@ -328,20 +357,22 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
   }
 
   // Ad spend per client
-  const adSpendByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+  const adSpendByClient = emptyClientNumberRecord();
   for (const r of (adSpendRes.data ?? []) as Array<{ influencer: string; spend: number | null }>) {
-    if (r.influencer === "keith") adSpendByClient.keith += r.spend ?? 0;
-    if (r.influencer === "tyson") adSpendByClient.tyson += r.spend ?? 0;
+    if (isClientKey(r.influencer)) adSpendByClient[r.influencer] += r.spend ?? 0;
   }
   if (keithAdSpendSheet && keithAdSpendSheet.totalCents > 0) {
     adSpendByClient.keith = Math.max(adSpendByClient.keith, keithAdSpendSheet.totalCents);
   }
 
   // Mercury acquisition per client (SaaS + ManyChat)
-  const mercuryAcquisitionByClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+  const mercuryAcquisitionByClient = emptyClientNumberRecord();
   if (acquisitionBreakdown) {
-    mercuryAcquisitionByClient.keith = acquisitionBreakdown.acquisitionTotalPerClient.keith + acquisitionBreakdown.manychatPerClient.keith;
-    mercuryAcquisitionByClient.tyson = acquisitionBreakdown.acquisitionTotalPerClient.tyson + acquisitionBreakdown.manychatPerClient.tyson;
+    for (const client of CLIENT_KEYS) {
+      mercuryAcquisitionByClient[client] =
+        acquisitionBreakdown.acquisitionTotalPerClient[client] +
+        acquisitionBreakdown.manychatPerClient[client];
+    }
   }
 
   // Per-end-client coaching+software cost per month (month 1 share for GP30).
@@ -359,8 +390,8 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
         ? {
             count: salesCohort.total.count,
             cashCollectedCents: salesCohort.total.cashCollectedCents,
-            setterCommissionsCents: salesCohort.perClient.keith.setterCommissionsCents + salesCohort.perClient.tyson.setterCommissionsCents,
-            closerCommissionsCents: salesCohort.perClient.keith.closerCommissionsCents + salesCohort.perClient.tyson.closerCommissionsCents,
+            setterCommissionsCents: sumClientValues((client) => salesCohort.perClient[client].setterCommissionsCents),
+            closerCommissionsCents: sumClientValues((client) => salesCohort.perClient[client].closerCommissionsCents),
           }
         : {
             count: salesCohort.perClient[clientKey].count,
@@ -381,8 +412,8 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     const gp30 = aov - directCosts;
 
     // CAC
-    const adSpend = clientKey === "total" ? adSpendByClient.keith + adSpendByClient.tyson : adSpendByClient[clientKey];
-    const mercuryAcq = clientKey === "total" ? mercuryAcquisitionByClient.keith + mercuryAcquisitionByClient.tyson : mercuryAcquisitionByClient[clientKey];
+    const adSpend = clientKey === "total" ? sumClientValues((client) => adSpendByClient[client]) : adSpendByClient[clientKey];
+    const mercuryAcq = clientKey === "total" ? sumClientValues((client) => mercuryAcquisitionByClient[client]) : mercuryAcquisitionByClient[clientKey];
     const cacTotal = adSpend + mercuryAcq;
     const cacPerClient = cohort.count > 0 ? Math.round(cacTotal / cohort.count) : 0;
 
@@ -404,13 +435,11 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     const wideBucket = salesLtgpData
       ? clientKey === "total"
         ? {
-            uniqueCustomers: salesLtgpData.keith.uniqueCustomers + salesLtgpData.tyson.uniqueCustomers,
-            totalPurchases: salesLtgpData.keith.totalPurchases + salesLtgpData.tyson.totalPurchases,
-            totalRevenueCents: salesLtgpData.keith.totalRevenueCents + salesLtgpData.tyson.totalRevenueCents,
-            totalSetterCommissionsCents:
-              salesLtgpData.keith.totalSetterCommissionsCents + salesLtgpData.tyson.totalSetterCommissionsCents,
-            totalCloserCommissionsCents:
-              salesLtgpData.keith.totalCloserCommissionsCents + salesLtgpData.tyson.totalCloserCommissionsCents,
+            uniqueCustomers: sumClientValues((client) => salesLtgpData[client].uniqueCustomers),
+            totalPurchases: sumClientValues((client) => salesLtgpData[client].totalPurchases),
+            totalRevenueCents: sumClientValues((client) => salesLtgpData[client].totalRevenueCents),
+            totalSetterCommissionsCents: sumClientValues((client) => salesLtgpData[client].totalSetterCommissionsCents),
+            totalCloserCommissionsCents: sumClientValues((client) => salesLtgpData[client].totalCloserCommissionsCents),
             windowStart: salesLtgpData.keith.windowStart,
             windowEnd: salesLtgpData.keith.windowEnd,
           }
@@ -452,9 +481,11 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
           ? line.totalCents
           : (line.perClientCents[clientKey] ?? 0);
         if (perClient <= 0) continue;
-        const splitNote = (line.perClientCents.keith > 0 && line.perClientCents.tyson > 0)
-          ? "50/50 split"
-          : line.perClientCents.keith > 0 ? "100% Keith" : "100% Tyson";
+        const splitClients = CLIENT_KEYS.filter((client) => line.perClientCents[client] > 0);
+        const splitNote =
+          splitClients.length > 1
+            ? `${splitClients.map((client) => CLIENTS[client].name).join(" + ")} split`
+            : `100% ${CLIENTS[splitClients[0] ?? "tyson"].name}`;
         cacAcquisitionLines.push({
           label: line.label,
           perClientCents: perClient,
@@ -465,7 +496,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
     }
     const manychatPerClient = acquisitionBreakdown
       ? (clientKey === "total"
-          ? acquisitionBreakdown.manychatPerClient.keith + acquisitionBreakdown.manychatPerClient.tyson
+          ? sumClientValues((client) => acquisitionBreakdown.manychatPerClient[client])
           : acquisitionBreakdown.manychatPerClient[clientKey])
       : 0;
     if (manychatPerClient > 0) {
@@ -473,7 +504,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
         label: "ManyChat",
         perClientCents: manychatPerClient,
         totalCents: manychatPerClient,
-        splitNote: clientKey === "total" ? "Keith + Tyson" : `100% ${clientKey === "keith" ? "Keith" : "Tyson"}`,
+        splitNote: clientKey === "total" ? "All active client accounts" : `100% ${CLIENTS[clientKey].name}`,
       });
     }
 
@@ -550,8 +581,9 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
   }
 
   const clientConfig = getClientConfig();
-  const keithCard = buildCard("keith", { ready: { revenue: clientConfig[0].revenueReady, adSpend: clientConfig[0].adSpendReady } });
-  const tysonCard = buildCard("tyson", { ready: { revenue: clientConfig[1].revenueReady, adSpend: clientConfig[1].adSpendReady } });
+  const clientCards = clientConfig.map((config) =>
+    buildCard(config.key, { ready: { revenue: config.revenueReady, adSpend: config.adSpendReady } }),
+  );
   const totalCard = buildCard("total");
 
   const syncedAt =
@@ -562,7 +594,7 @@ export async function getHomeBusinessMetrics(): Promise<HomeBusinessMetricsRespo
       .at(-1) ?? null;
 
   return {
-    cards: [totalCard, keithCard, tysonCard],
+    cards: [totalCard, ...clientCards],
     syncedAt,
     missingSetup,
     sourceStatus: syncStatuses,

@@ -8,6 +8,7 @@
 import { getMercuryAccounts, getMercuryTransactions, mercuryTokens } from "./mozi-mercury";
 import {
   ACQUISITION_SOFTWARE,
+  CLIENT_KEYS,
   MANYCHAT_PER_CLIENT,
   FULFILLMENT_SOFTWARE_MATCHES,
   type ClientKey,
@@ -19,6 +20,12 @@ interface DebitTx {
   bankDescription?: string;
   postedAt?: string;
   createdAt?: string;
+}
+
+const COST_SPLIT_CLIENTS: ClientKey[] = ["keith", "tyson"];
+
+function emptyClientCents(): Record<ClientKey, number> {
+  return Object.fromEntries(CLIENT_KEYS.map((client) => [client, 0])) as Record<ClientKey, number>;
 }
 
 async function fetchDebits(token: string, sinceYmd: string): Promise<DebitTx[]> {
@@ -57,7 +64,7 @@ export interface AcquisitionCostsBreakdown {
   sinceIso: string;                                // window start
   acquisitionByLabel: AcquisitionSoftwareLine[];
   acquisitionTotalPerClient: Record<ClientKey, number>;
-  manychatPerClient: Record<ClientKey, number>;    // Keith + Tyson (Zoe excluded)
+  manychatPerClient: Record<ClientKey, number>;    // Lucy excluded until launch
   fulfillmentSoftwareCents: number;                // Everfit etc. — for GP30
   excludedBigDebits: Array<{ counterparty: string; totalCents: number }>;
 }
@@ -71,8 +78,8 @@ export async function fetchAcquisitionCostsBreakdown(): Promise<AcquisitionCosts
   if (mercuryTokens.forge) txs.push(...(await fetchDebits(mercuryTokens.forge, sinceYmd)));
 
   const acquisitionByLabel: AcquisitionSoftwareLine[] = [];
-  const totalPerClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
-  const manychatPerClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+  const totalPerClient = emptyClientCents();
+  const manychatPerClient = emptyClientCents();
   let fulfillmentCents = 0;
   const consumed = new WeakSet<DebitTx>();
 
@@ -94,16 +101,20 @@ export async function fetchAcquisitionCostsBreakdown(): Promise<AcquisitionCosts
     }
     if (total === 0) continue;
 
-    const perClient: Record<ClientKey, number> = { keith: 0, tyson: 0 };
+    const perClient = emptyClientCents();
     if (spec.split.kind === "equal") {
-      const half = Math.round(total / 2);
-      perClient.keith = half;
-      perClient.tyson = total - half;
+      const baseShare = Math.floor(total / COST_SPLIT_CLIENTS.length);
+      let remainder = total - baseShare * COST_SPLIT_CLIENTS.length;
+      for (const client of COST_SPLIT_CLIENTS) {
+        perClient[client] = baseShare + (remainder > 0 ? 1 : 0);
+        remainder -= 1;
+      }
     } else {
       perClient[spec.split.client] = total;
     }
-    totalPerClient.keith += perClient.keith;
-    totalPerClient.tyson += perClient.tyson;
+    for (const client of CLIENT_KEYS) {
+      totalPerClient[client] += perClient[client];
+    }
     acquisitionByLabel.push({ label: spec.label, totalCents: total, perClientCents: perClient, charges });
   }
 

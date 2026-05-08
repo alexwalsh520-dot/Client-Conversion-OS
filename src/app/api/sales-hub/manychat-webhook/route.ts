@@ -228,7 +228,7 @@ export async function GET() {
       last_name: "{{last_name}}",
       instagram_handle: "{{username}}",
       tag_name: "new_lead | lead_engaged | call_link_sent | sub_link_sent",
-      client: "Tyson Sonnek | Keith Holland | Zoe and Emily",
+      client: "Tyson Sonnek | Keith Holland | Lucy Hubbard",
       keyword: "{{custom field: keyword}}",
       setter_name: "(optional) amara | kelechi | gideon | debbie",
       event_at: "optional ISO timestamp",

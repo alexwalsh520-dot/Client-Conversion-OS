@@ -9,12 +9,13 @@
 // 5% for Amara, 3% for Kelechi/Gideon/Debbie, and closer is always 10%.
 
 import { fetchSheetData, type SheetRow } from "./google-sheets";
-import { SETTER_COMMISSION_RULES, CLOSER_COMMISSION_PCT, type ClientKey } from "./mozi-costs-config";
+import { CLIENT_KEYS, SETTER_COMMISSION_RULES, CLOSER_COMMISSION_PCT, type ClientKey } from "./mozi-costs-config";
 
 function offerToClient(offer: string): ClientKey | null {
   const o = offer.toLowerCase();
   if (o.includes("keith")) return "keith";
   if (o.includes("tyson") || o.includes("sonnek")) return "tyson";
+  if (o.includes("lucy") || o.includes("hubbard")) return "lucy";
   return null;
 }
 
@@ -57,6 +58,10 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function emptyClientBuckets<T>(build: () => T): Record<ClientKey, T> {
+  return Object.fromEntries(CLIENT_KEYS.map((client) => [client, build()])) as Record<ClientKey, T>;
+}
+
 export async function fetchSalesCohort(options?: {
   dateFrom?: string;
   dateTo?: string;
@@ -74,7 +79,7 @@ export async function fetchSalesCohort(options?: {
     closerCommissionsCents: 0,
     totalCommissionsCents: 0,
   });
-  const perClient: SalesCohort["perClient"] = { keith: empty(), tyson: empty() };
+  const perClient: SalesCohort["perClient"] = emptyClientBuckets(empty);
 
   for (const row of rows) {
     const cashCents = Math.round(row.cashCollected * 100);
@@ -109,9 +114,9 @@ export async function fetchSalesCohort(options?: {
   return {
     perClient,
     total: {
-      count: perClient.keith.count + perClient.tyson.count,
-      cashCollectedCents: perClient.keith.cashCollectedCents + perClient.tyson.cashCollectedCents,
-      totalCommissionsCents: perClient.keith.totalCommissionsCents + perClient.tyson.totalCommissionsCents,
+      count: CLIENT_KEYS.reduce((sum, client) => sum + perClient[client].count, 0),
+      cashCollectedCents: CLIENT_KEYS.reduce((sum, client) => sum + perClient[client].cashCollectedCents, 0),
+      totalCommissionsCents: CLIENT_KEYS.reduce((sum, client) => sum + perClient[client].totalCommissionsCents, 0),
     },
   };
 }
@@ -123,22 +128,19 @@ export async function fetchSalesCommissions(options?: {
 }) {
   const cohort = await fetchSalesCohort(options);
   return {
-    perClient: {
-      keith: {
-        setterCents: cohort.perClient.keith.setterCommissionsCents,
-        closerCents: cohort.perClient.keith.closerCommissionsCents,
-        totalCents: cohort.perClient.keith.totalCommissionsCents,
-        rowCount: cohort.perClient.keith.count,
-      },
-      tyson: {
-        setterCents: cohort.perClient.tyson.setterCommissionsCents,
-        closerCents: cohort.perClient.tyson.closerCommissionsCents,
-        totalCents: cohort.perClient.tyson.totalCommissionsCents,
-        rowCount: cohort.perClient.tyson.count,
-      },
-    },
-    detail: [
-      ...cohort.perClient.keith.rows.map((r) => ({
+    perClient: Object.fromEntries(
+      CLIENT_KEYS.map((client) => [
+        client,
+        {
+          setterCents: cohort.perClient[client].setterCommissionsCents,
+          closerCents: cohort.perClient[client].closerCommissionsCents,
+          totalCents: cohort.perClient[client].totalCommissionsCents,
+          rowCount: cohort.perClient[client].count,
+        },
+      ]),
+    ) as Record<ClientKey, { setterCents: number; closerCents: number; totalCents: number; rowCount: number }>,
+    detail: CLIENT_KEYS.flatMap((client) =>
+      cohort.perClient[client].rows.map((r) => ({
         date: r.date,
         client: r.client,
         setter: r.setter,
@@ -147,16 +149,7 @@ export async function fetchSalesCommissions(options?: {
         setterCommissionCents: r.setterCommissionCents,
         closerCommissionCents: r.closerCommissionCents,
       })),
-      ...cohort.perClient.tyson.rows.map((r) => ({
-        date: r.date,
-        client: r.client,
-        setter: r.setter,
-        closer: r.closer,
-        cashCollectedCents: r.cashCollectedCents,
-        setterCommissionCents: r.setterCommissionCents,
-        closerCommissionCents: r.closerCommissionCents,
-      })),
-    ],
+    ),
   };
 }
 
@@ -193,19 +186,18 @@ export async function fetchSalesLtgpData(options?: {
 
   const rows: SheetRow[] = await fetchSheetData(from, to);
 
-  const customers: Record<ClientKey, Map<string, number>> = {
-    keith: new Map(),
-    tyson: new Map(),
-  };
+  const customers = emptyClientBuckets(() => new Map<string, number>());
   const totals: Record<ClientKey, {
     totalPurchases: number;
     totalRevenueCents: number;
     totalSetterCommissionsCents: number;
     totalCloserCommissionsCents: number;
-  }> = {
-    keith: { totalPurchases: 0, totalRevenueCents: 0, totalSetterCommissionsCents: 0, totalCloserCommissionsCents: 0 },
-    tyson: { totalPurchases: 0, totalRevenueCents: 0, totalSetterCommissionsCents: 0, totalCloserCommissionsCents: 0 },
-  };
+  }> = emptyClientBuckets(() => ({
+    totalPurchases: 0,
+    totalRevenueCents: 0,
+    totalSetterCommissionsCents: 0,
+    totalCloserCommissionsCents: 0,
+  }));
 
   for (const row of rows) {
     const cashCents = Math.round(row.cashCollected * 100);
@@ -228,7 +220,7 @@ export async function fetchSalesLtgpData(options?: {
   }
 
   const result = {} as SalesLtgp;
-  for (const client of ["keith", "tyson"] as ClientKey[]) {
+  for (const client of CLIENT_KEYS) {
     const unique = customers[client].size;
     const t = totals[client];
     const avgPurchases = unique > 0 ? t.totalPurchases / unique : 0;

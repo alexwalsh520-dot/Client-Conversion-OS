@@ -1,4 +1,4 @@
-export type Client = "tyson" | "keith" | "zoeEmily" | "all";
+export type Client = "tyson" | "keith" | "lucy" | "all";
 export type DatePreset = "mtd" | "last7" | "last30" | "custom";
 
 export interface Filters {

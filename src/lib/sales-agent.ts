@@ -53,7 +53,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       properties: {
         dateFrom: { type: "string", description: "Start date in YYYY-MM-DD format" },
         dateTo: { type: "string", description: "End date in YYYY-MM-DD format" },
-        client: { type: "string", enum: ["all", "tyson", "keith", "zoe"], description: "Filter by client. Defaults to all." }
+        client: { type: "string", enum: ["all", "tyson", "keith", "lucy"], description: "Filter by client. Defaults to all." }
       },
       required: ["dateFrom", "dateTo"]
     }
@@ -183,7 +183,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       properties: {
         dateFrom: { type: "string", description: "Start date YYYY-MM-DD" },
         dateTo: { type: "string", description: "End date YYYY-MM-DD" },
-        client: { type: "string", enum: ["all", "tyson", "keith", "zoe"], description: "Filter by client" }
+        client: { type: "string", enum: ["all", "tyson", "keith", "lucy"], description: "Filter by client" }
       },
       required: ["dateFrom", "dateTo"]
     }
@@ -257,7 +257,7 @@ async function executeTool(toolName: string, input: Record<string, unknown>): Pr
               ? "Tyson Sonnek"
               : input.client === "keith"
                 ? "Keith Holland"
-                : "Zoe and Emily";
+                : "Lucy Hubbard";
           filtered = rows.filter(r => r.offer === clientName);
         }
 
@@ -515,7 +515,7 @@ You are a hard-nosed sales manager. You do not guess. You do not use fluff. You 
 Client Conversion OS manages sales for fitness coaching businesses. Current offers:
 - **Tyson Sonnek** — biggest live DM volume
 - **Keith Holland** — lower live DM volume
-- **Zoe and Emily** — newest offer, judge lightly until real ad traffic is in
+- **Lucy Hubbard** — newest offer, judge lightly until real ad traffic is in
 
 ## THE TEAM
 **Closers:** Broz, Will, Jacob

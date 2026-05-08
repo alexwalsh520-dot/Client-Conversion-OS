@@ -288,7 +288,7 @@ export default function SalesHubPage() {
       const clientNames: Record<string, string> = {
         tyson: "Tyson Sonnek",
         keith: "Keith Holland",
-        zoeEmily: "Zoe and Emily",
+        lucy: "Lucy Hubbard",
       };
       const clientParam =
         filters.client !== "all" && clientNames[filters.client]

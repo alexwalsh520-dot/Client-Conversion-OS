@@ -96,7 +96,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       setSheet((prev) => ({ ...prev, error: "" }));
     }
     try {
-      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", zoeEmily: "Zoe and Emily" };
+      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", lucy: "Lucy Hubbard" };
       const clientParam =
         filters.client !== "all" && clientNames[filters.client]
           ? `&client=${encodeURIComponent(clientNames[filters.client])}`
@@ -136,15 +136,15 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       return offer.includes("tyson") || offer.includes("sonic");
     });
     const keithRows = rows.filter((r) => r.offer?.toLowerCase().includes("keith"));
-    const zoeEmilyRows = rows.filter((r) => {
+    const lucyRows = rows.filter((r) => {
       const offer = r.offer?.toLowerCase() || "";
-      return offer.includes("zoe") || offer.includes("emily");
+      return offer.includes("lucy") || offer.includes("hubbard");
     });
 
     return {
       tyson: computeMetrics(tysonRows, "Tyson Sonnek"),
       keith: computeMetrics(keithRows, "Keith Holland"),
-      zoeEmily: computeMetrics(zoeEmilyRows, "Zoe and Emily"),
+      lucy: computeMetrics(lucyRows, "Lucy Hubbard"),
     };
   }, [sheet.data, filters.client]);
 
@@ -220,7 +220,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             </tr>
           </thead>
           <tbody>
-            {[clientBreakdown.tyson, clientBreakdown.keith, clientBreakdown.zoeEmily].map((c) => (
+            {[clientBreakdown.tyson, clientBreakdown.keith, clientBreakdown.lucy].map((c) => (
               <tr key={c.label}>
                 <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                   {c.label}

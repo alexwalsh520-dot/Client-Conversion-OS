@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 
 // All tab routes available in the app
-export const ALL_TABS = [
+const ALL_TABS = [
   "/",
   "/mozi-metrics",
   "/sales",

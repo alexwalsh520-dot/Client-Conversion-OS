@@ -5,7 +5,7 @@ import {
 } from "@/lib/slack-appointments";
 import { getServiceSupabase } from "@/lib/supabase";
 
-type ClientKey = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
+type ClientKey = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
 
 interface SetterDef {
   key: string;
@@ -257,7 +257,7 @@ function clientKeyFromOffer(offer: string | null | undefined): ClientKey | null 
   const normalized = (offer || "").toLowerCase();
   if (normalized.includes("tyson")) return "tyson_sonnek";
   if (normalized.includes("keith")) return "keith_holland";
-  if (normalized.includes("zoe") || normalized.includes("emily")) return "zoe_and_emily";
+  if (normalized.includes("lucy") || normalized.includes("hubbard")) return "lucy_hubbard";
   return null;
 }
 
@@ -464,7 +464,7 @@ function filterSheetRowsForSetter(
         ? offerLower.includes("tyson")
         : setter.clientKey === "keith_holland"
           ? offerLower.includes("keith")
-          : offerLower.includes("zoe") || offerLower.includes("emily");
+          : offerLower.includes("lucy") || offerLower.includes("hubbard");
 
     if (!clientMatch) return false;
     return row.date >= effectiveStart && row.date <= dateTo;

@@ -54,7 +54,7 @@ interface SheetRow {
 const CLIENT_SETTERS: Record<string, string[]> = {
   tyson: ["Amara", "Kelechi", "Debbie"],
   keith: ["Gideon"],
-  zoeEmily: [],
+  lucy: [],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -67,7 +67,7 @@ const SETTER_SHEET_KEYS: Record<string, string[]> = {
 const CLIENT_BADGE_LABELS: Record<string, string> = {
   tyson: "Tyson",
   keith: "Keith",
-  zoeEmily: "Zoe & Emily",
+  lucy: "Lucy Hubbard",
 };
 
 function getSetterClient(name: string, client: string): string {
@@ -79,7 +79,7 @@ function getRelevantSetters(client: string): { name: string; client: string }[] 
     return [
       ...CLIENT_SETTERS.tyson.map((n) => ({ name: n, client: "tyson" })),
       ...CLIENT_SETTERS.keith.map((n) => ({ name: n, client: "keith" })),
-      ...CLIENT_SETTERS.zoeEmily.map((n) => ({ name: n, client: "zoeEmily" })),
+      ...CLIENT_SETTERS.lucy.map((n) => ({ name: n, client: "lucy" })),
     ];
   }
   return (CLIENT_SETTERS[client] || []).map((n) => ({ name: n, client }));
@@ -123,9 +123,9 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
             `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
           fetchJSON<ManychatMetrics>(
-            `/api/sales-hub/manychat-metrics?client=zoeEmily&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+            `/api/sales-hub/manychat-metrics?client=lucy&dateFrom=${dateFrom}&dateTo=${dateTo}`,
           ),
-        ]).then(([tyson, keith, zoeEmily]) => ({ tyson, keith, zoeEmily }));
+        ]).then(([tyson, keith, lucy]) => ({ tyson, keith, lucy }));
       } else {
         manychatPromise = fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
@@ -148,7 +148,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
   /* ── Aggregated DM dashboard across all visible clients ─────────── */
   const aggregatedDashboard = useMemo((): ManychatDashboard | null => {
-    const keys = filters.client === "all" ? ["tyson", "keith", "zoeEmily"] : [filters.client];
+    const keys = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
     const dashboards = keys
       .map((k) => metricsMap[k]?.dashboard)
       .filter((d): d is ManychatDashboard => Boolean(d));
@@ -348,7 +348,7 @@ function SetterGrid({ rows }: { rows: SetterRow[] }) {
         const cc =
           client === "keith"
             ? "var(--keith)"
-            : client === "zoeEmily"
+            : client === "lucy"
               ? "var(--accent)"
               : "var(--tyson)";
 
