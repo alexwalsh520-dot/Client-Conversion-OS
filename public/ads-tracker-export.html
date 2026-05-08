@@ -648,6 +648,37 @@ function buildAdRows(campaignId, dayRow, adRoster){
   }));
 }
 
+function aggregateAdRowsForCampaign(campaign){
+  const adsById = new Map();
+
+  (campaign.rows || []).forEach(row => {
+    buildAdRows(campaign.id, row, campaign.ads || []).forEach(ad => {
+      const id = ad.adId || ad.adName;
+      const current = adsById.get(id) || {
+        ...ad,
+        spend:0, imp:0, clicks:0, msgs:0, calls:0, taken:0,
+        clients:0, mainClients:0, subClients:0, collected:0,
+      };
+      current.spend += ad.spend || 0;
+      current.imp += ad.imp || 0;
+      current.clicks += ad.clicks || 0;
+      current.msgs += ad.msgs || 0;
+      current.calls += ad.calls || 0;
+      current.taken += ad.taken || 0;
+      current.clients += ad.clients || 0;
+      current.mainClients += ad.mainClients ?? ad.clients ?? 0;
+      current.subClients += ad.subClients || 0;
+      current.collected += ad.collected || 0;
+      current.previewImageUrl = current.previewImageUrl || ad.previewImageUrl || ad.previewThumbnailUrl || null;
+      current.previewThumbnailUrl = current.previewThumbnailUrl || ad.previewThumbnailUrl || null;
+      adsById.set(id, current);
+    });
+  });
+
+  return Array.from(adsById.values())
+    .sort((a,b)=>b.collected-a.collected || b.spend-a.spend || a.adName.localeCompare(b.adName));
+}
+
 const CAMPAIGNS = [
   {
     id:"tyson", name:"Tyson — Warm Spring Shred Challenge", short:"Tyson", status:"active",
@@ -1342,7 +1373,33 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                       return <td key={col.k} className={cls}>{col.fmt(agg)}</td>;
                     })}
                   </tr>
-                  {isOpen && orderedRows.map(r0=>{
+                  {isOpen && view === "ad" && aggregateAdRowsForCampaign(c).map(ad => {
+                    const adMetrics = deriveRow({
+                      date: ad.adName,
+                      spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
+                      msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
+                      taken: ad.taken,
+                      collected: ad.collected,
+                    });
+                    return (
+                      <tr key={c.id+"period"+ad.adId} className="ad-row">
+                        <td>
+                          <span style={{paddingLeft:34,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
+                            <span className="ad-id mono">{ad.adId}</span>
+                            <span style={{color:'var(--text-3)'}}>·</span>
+                            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                          </span>
+                        </td>
+                        {cols.slice(1).map(col=>{
+                          const cls = (col.cls? col.cls(adMetrics):"")+(col.calc?" calc":"");
+                          let val;
+                          try { val = col.fmt(adMetrics); } catch(e){ val = "—"; }
+                          return <td key={col.k} className={cls} style={{fontSize:11.5}}>{val}</td>;
+                        })}
+                      </tr>
+                    );
+                  })}
+                  {isOpen && view !== "ad" && orderedRows.map(r0=>{
                     const r = deriveRow(r0);
                     const dayKey = c.id+"|"+r.date;
                     const dayOpen = !!expandedDays[dayKey];
