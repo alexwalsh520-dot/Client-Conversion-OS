@@ -1352,7 +1352,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
             )}
             {visibleCampaigns.map(c => {
               const agg = aggregate(c.rows);
-              const isOpen = expanded[c.id];
+              const isOpen = view === "ad" || expanded[c.id];
               const orderedRows = [...c.rows].sort((a,b)=> String(rowSortKey(b)).localeCompare(String(rowSortKey(a))));
               const shortName = widths.date < 200 ? c.short : c.name;
               return (
