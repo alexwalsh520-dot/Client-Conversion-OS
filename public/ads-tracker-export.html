@@ -1364,6 +1364,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                     const dayKey = c.id+"|"+r.date;
                     const dayOpen = !!expandedDays[dayKey];
                     const isAdView = view === "ad";
+                    const dayAdRows = isAdView
+                      ? buildAdRows(c.id, r0, c.ads).sort((a,b)=>b.spend-a.spend)
+                      : [];
                     return (
                       <React.Fragment key={c.id+r.date}>
                         <tr
@@ -1373,22 +1376,27 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                         >
                           <td>
                             <span style={{paddingLeft:30,color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:8}} className="mono">
-                              {isAdView && <span className="day-chevron">{dayOpen?"▾":"▸"}</span>}
-                              {r.date}
-                              {isAdView && <span className="day-ad-count">{c.ads.length}</span>}
-                            </span>
-                          </td>
+	                              {isAdView && <span className="day-chevron">{dayOpen?"▾":"▸"}</span>}
+	                              {r.date}
+	                              {isAdView && <span className="day-ad-count">{dayAdRows.length}</span>}
+	                            </span>
+	                          </td>
                           {cols.slice(1).map(col=>{
                             const cls = (col.cls? col.cls(r):"")+(col.calc?" calc":"");
                             return <td key={col.k} className={cls}>{col.fmt(r)}</td>;
                           })}
                         </tr>
-                        {isAdView && dayOpen && buildAdRows(c.id, r0, c.ads)
-                          .sort((a,b)=>b.spend-a.spend)
-                          .map(ad => {
-                            const adMetrics = deriveRow({
-                              date: ad.adName,
-                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
+	                        {isAdView && dayOpen && dayAdRows.length === 0 && (
+	                          <tr className="ad-row">
+	                            <td colSpan={cols.length}>
+	                              <span style={{paddingLeft:56,color:'var(--text-4)',fontSize:11}}>No individual ad rows for this date.</span>
+	                            </td>
+	                          </tr>
+	                        )}
+	                        {isAdView && dayOpen && dayAdRows.map(ad => {
+	                            const adMetrics = deriveRow({
+	                              date: ad.adName,
+	                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
                               msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
                               taken: ad.taken,
                               collected: ad.collected,
