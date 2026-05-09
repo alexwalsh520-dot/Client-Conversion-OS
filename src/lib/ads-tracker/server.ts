@@ -1168,6 +1168,35 @@ function exactMetaHintForKeywordEvent(event: KeywordEvent, metaRows: MetaRow[]):
   return hintFromMetaRow(candidates[0], keyword);
 }
 
+function hintForAttributionGroupId(
+  groupId: string,
+  metaRows: MetaRow[],
+  keyword: string
+): BackfillGroupHint | null {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  if (!normalizedKeyword) return null;
+  const candidates = metaRows
+    .filter((metaRow) => {
+      const metaKeyword =
+        normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
+      if (metaKeyword !== normalizedKeyword) return false;
+      const adId = adGroupId(metaRow, normalizedKeyword);
+      const campaignId = campaignGroupId(metaRow);
+      return (
+        groupId === adId ||
+        groupId === campaignId ||
+        groupId.endsWith(`:${adId}`) ||
+        groupId.endsWith(`:${campaignId}`)
+      );
+    })
+    .sort((a, b) =>
+      (b.spend_cents || 0) - (a.spend_cents || 0) ||
+      (b.impressions || 0) - (a.impressions || 0)
+    );
+
+  return candidates[0] ? hintFromMetaRow(candidates[0], normalizedKeyword) : null;
+}
+
 function appointmentBookingEventAt(appointment: GhlAppointmentRow | null | undefined): string | null {
   if (!appointment) return null;
   const payload = recordFromUnknown(appointment.raw_payload);
@@ -1306,13 +1335,16 @@ function addKeywordEventsToGroups(
   groups: Map<string, Group>,
   events: KeywordEvent[],
   groupIdForEvent: (event: KeywordEvent, keyword: string) => string,
-  dateLabelForEvent: (event: KeywordEvent) => string
+  dateLabelForEvent: (event: KeywordEvent) => string,
+  hintForEvent?: (event: KeywordEvent, keyword: string, groupId: string) => BackfillGroupHint | null
 ) {
   for (const event of events) {
     const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
     if (!keyword) continue;
     const id = groupIdForEvent(event, keyword);
     const group = groups.get(id) || emptyGroup(id, event.client_key, displayKeyword(keyword), displayKeyword(keyword));
+    applyOverrideMetadata(group, event);
+    applyBackfillHint(group, hintForEvent?.(event, keyword, id) || null, "ad");
     const manualValue = Number(event.value_cents || 0);
 
     if (event.event_type === "manual_messages") {
@@ -1794,7 +1826,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     events,
     (event, keyword) =>
       periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
-    () => `${query.dateFrom} - ${query.dateTo}`
+    () => `${query.dateFrom} - ${query.dateTo}`,
+    (event, keyword, groupId) =>
+      hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+      exactMetaHintForKeywordEvent(event, attributionRows)
   );
   addKeywordBackfillRowsToGroups(
     groups,
@@ -1835,7 +1870,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (event, keyword) =>
       event.override_group_id ||
       periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
-    () => `${query.dateFrom} - ${query.dateTo}`
+    () => `${query.dateFrom} - ${query.dateTo}`,
+    (event, keyword, groupId) =>
+      hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+      exactMetaHintForKeywordEvent(event, attributionRows)
   );
   const resolvedAlerts = attributionSalesRows
     .map((row) => {
@@ -1862,7 +1900,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         match.keyword_normalized || "",
         periodAttributionGroupId
       ),
-    groupHint: (match) => exactMetaHintForKeywordEvent(match, attributionRows),
+    groupHint: (match) => {
+      const keyword = match.keyword_normalized || "";
+      const groupId = periodSalesGroupIdFromBookingDate(match, keyword, periodAttributionGroupId);
+      return (
+        hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+        exactMetaHintForKeywordEvent(match, attributionRows)
+      );
+    },
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
@@ -1886,7 +1931,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         keyword,
         `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
       ),
-    (event) => eventDateKey(event.event_at)
+    (event) => eventDateKey(event.event_at),
+    (event, keyword, groupId) =>
+      hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+      exactMetaHintForKeywordEvent(event, attributionRows)
   );
   addKeywordBackfillRowsToGroups(
     dailyGroups,
@@ -1912,7 +1960,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
             keyword,
             `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
           ),
-    (event) => eventDateKey(event.event_at)
+    (event) => eventDateKey(event.event_at),
+    (event, keyword, groupId) =>
+      hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+      exactMetaHintForKeywordEvent(event, attributionRows)
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
@@ -1923,7 +1974,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         periodAttributionGroupId
       ),
     dateLabel: (_match, row) => row.date,
-    groupHint: (match) => exactMetaHintForKeywordEvent(match, attributionRows),
+    groupHint: (match, row) => {
+      const keyword = match.keyword_normalized || "";
+      const groupId = dailySalesGroupIdFromSaleDate(match, row, keyword, periodAttributionGroupId);
+      return (
+        hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+        exactMetaHintForKeywordEvent(match, attributionRows)
+      );
+    },
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
