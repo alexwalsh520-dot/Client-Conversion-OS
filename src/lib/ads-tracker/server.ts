@@ -1263,27 +1263,33 @@ function fallbackGroupIdForBackfillRow(
   return `${prefix}${row.client_key}:${hint.campaignId || hint.campaignName}:${hint.adId || keyword}`;
 }
 
-function attributionEventOnDashboardDate(event: KeywordEvent, date: string): KeywordEvent {
-  return { ...event, event_at: `${date}T12:00:00.000Z` };
-}
-
 function dailySalesGroupIdFromSaleDate(
   match: KeywordEvent,
   row: SheetRow,
   keyword: string,
-  dailyAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
+  periodAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
 ) {
-  if (match.override_group_id) return `${row.date}:${match.override_group_id}`;
+  const resolvedBookingIdentity = match.override_group_id ||
+    periodAttributionGroupId(
+      match,
+      keyword,
+      `${match.client_key}:keyword:${keyword}`
+    );
 
-  const resolvedOnSaleDate = dailyAttributionGroupId(
-    attributionEventOnDashboardDate(match, row.date),
-    keyword,
-    `${row.date}:${match.client_key}:keyword:${keyword}`
-  );
+  return `${row.date}:${resolvedBookingIdentity}`;
+}
 
-  return resolvedOnSaleDate.startsWith(`${row.date}:`)
-    ? resolvedOnSaleDate
-    : `${row.date}:${match.client_key}:keyword:${keyword}`;
+function periodSalesGroupIdFromBookingDate(
+  match: KeywordEvent,
+  keyword: string,
+  periodAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
+) {
+  return match.override_group_id ||
+    periodAttributionGroupId(
+      match,
+      keyword,
+      `${match.client_key}:keyword:${keyword}`
+    );
 }
 
 function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: AdsTrackerLevel = "ad") {
@@ -1425,6 +1431,15 @@ async function fetchMetaRows(
   query: AdsTrackerQuery,
   clientFilter: string[]
 ): Promise<MetaRow[]> {
+  return fetchMetaRowsForDateRange(db, clientFilter, query.dateFrom, query.dateTo);
+}
+
+async function fetchMetaRowsForDateRange(
+  db: ReturnType<typeof getServiceSupabase>,
+  clientFilter: string[],
+  dateFrom: string,
+  dateTo: string
+): Promise<MetaRow[]> {
   const rows: MetaRow[] = [];
 
   for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
@@ -1432,8 +1447,8 @@ async function fetchMetaRows(
       .from("ads_meta_insights_daily")
       .select("*")
       .in("client_key", clientFilter)
-      .gte("date", query.dateFrom)
-      .lte("date", query.dateTo)
+      .gte("date", dateFrom)
+      .lte("date", dateTo)
       .order("date", { ascending: true })
       .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
@@ -1691,9 +1706,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     query.account === "all" ? ["tyson", "keith"] : [query.account];
   const eventQueryFrom = `${shiftDate(query.dateFrom, -120)}T00:00:00.000Z`;
   const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
+  const attributionDateFrom = shiftDate(query.dateFrom, -120);
 
   const [
     metaRows,
+    attributionMetaRows,
     keywordEvents,
     ghlAppointments,
     { data: metaSyncRuns, error: syncRunError },
@@ -1701,6 +1718,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     attributionResolutions,
   ] = await Promise.all([
       fetchMetaRows(db, query, clientFilter),
+      fetchMetaRowsForDateRange(db, clientFilter, attributionDateFrom, query.dateTo),
       fetchKeywordEvents(db, clientFilter, eventQueryFrom, eventQueryTo),
       fetchGhlAppointments(db, eventQueryFrom, eventQueryTo),
       db
@@ -1720,6 +1738,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const groups = new Map<string, Group>();
   const rows = metaRows;
+  const attributionRows = attributionMetaRows.length ? attributionMetaRows : rows;
   const backfill = backfillRows as KeywordBackfillRow[];
   const baseKeywordEvents = normalizeGhlKeywordEventDates(keywordEvents, ghlAppointments);
   const supplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
@@ -1744,7 +1763,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const dailyMetaGroupId = (row: MetaRow, keyword: string) =>
     `${row.date}:${periodMetaGroupId(row, keyword)}`;
   const periodAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
-    rows,
+    attributionRows,
     periodMetaGroupId,
     (row, keyword) => `${row.client_key}:${row.date}:${keyword}`,
     (row, keyword) => {
@@ -1753,7 +1772,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     }
   );
   const dailyAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
-    rows,
+    attributionRows,
     dailyMetaGroupId,
     (row, keyword) => `${row.date}:${row.client_key}:${keyword}`,
     (row, keyword) => {
@@ -1838,13 +1857,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
-      match.override_group_id ||
-      periodAttributionGroupId(
-        attributionEventOnDashboardDate(match, row.date),
+      periodSalesGroupIdFromBookingDate(
+        match,
         match.keyword_normalized || "",
-        `${match.client_key}:keyword:${match.keyword_normalized}`
+        periodAttributionGroupId
       ),
-    groupHint: (match) => exactMetaHintForKeywordEvent(match, rows),
+    groupHint: (match) => exactMetaHintForKeywordEvent(match, attributionRows),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
@@ -1902,10 +1920,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         match,
         row,
         match.keyword_normalized || "",
-        dailyAttributionGroupId
+        periodAttributionGroupId
       ),
     dateLabel: (_match, row) => row.date,
-    groupHint: (match) => exactMetaHintForKeywordEvent(match, rows),
+    groupHint: (match) => exactMetaHintForKeywordEvent(match, attributionRows),
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
