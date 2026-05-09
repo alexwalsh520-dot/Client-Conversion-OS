@@ -19,7 +19,7 @@ const CLOSER_MAP: Record<string, string> = {
   sXMfoQQdUn31JmQCPDJx: "AUSTIN",
 };
 
-const VALID_EVENTS = ["booked", "rescheduled", "cancelled", "noshow", "confirmed"];
+const KNOWN_EVENTS = new Set(["booked", "rescheduled", "cancelled", "noshow", "confirmed"]);
 
 function isCancelledAppointment(status: string | null, eventType: string | null) {
   return `${status || ""} ${eventType || ""}`.toLowerCase().includes("cancel");
@@ -34,12 +34,27 @@ function readString(source: Record<string, unknown> | null | undefined, keys: st
   return null;
 }
 
-function deriveClient(calendarName: string | null | undefined): string | null {
-  if (!calendarName) return null;
-  const upper = calendarName.toUpperCase();
-  if (upper.includes("TS")) return "tyson";
-  if (upper.includes("KH")) return "keith";
+function deriveClientFromText(...values: Array<string | null | undefined>): string | null {
+  const text = values.filter(Boolean).join(" ").toUpperCase();
+  if (!text) return null;
+  if (
+    text.includes("(TS)") ||
+    text.includes("TYSON") ||
+    text.includes("SONNEK") ||
+    text.includes("TYSON SONNEK")
+  ) return "tyson";
+  if (
+    text.includes("(KH)") ||
+    text.includes("KEITH") ||
+    text.includes("HOLLAND") ||
+    text.includes("KEITH HOLLAND")
+  ) return "keith";
   return null;
+}
+
+function isSalesCalendar(calendarName: string | null | undefined, calendarTitle: string | null | undefined) {
+  const text = `${calendarName || ""} ${calendarTitle || ""}`.toUpperCase();
+  return text.includes("STRATEGY SESSION") || text.includes("(TS)") || text.includes("(KH)");
 }
 
 function missingColumn(error: { message?: string } | null, column: string) {
@@ -177,6 +192,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const root = body as Record<string, unknown>;
     const calendar = (root.calendar || {}) as Record<string, unknown>;
+    const contact = (root.contact || {}) as Record<string, unknown>;
     const user = (root.user || {}) as Record<string, unknown>;
 
     const event_type =
@@ -191,10 +207,18 @@ export async function POST(req: NextRequest) {
     const calendar_name =
       readString(root, ["calendar_name", "calendarName"]) ||
       readString(calendar, ["calendarName", "name"]);
+    const calendar_title =
+      readString(root, ["calendar_title", "calendarTitle", "title"]) ||
+      readString(calendar, ["title"]);
     const contact_id = readString(root, ["contact_id", "contactId", "id"]);
     const contact_name =
       readString(root, ["contact_name", "contactName", "full_name", "fullName"]) ||
+      readString(contact, ["contact_name", "contactName", "full_name", "fullName", "name"]) ||
       [readString(root, ["first_name", "firstName"]), readString(root, ["last_name", "lastName"])]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      [readString(contact, ["first_name", "firstName"]), readString(contact, ["last_name", "lastName"])]
         .filter(Boolean)
         .join(" ")
         .trim() ||
@@ -240,15 +264,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (event_type && !VALID_EVENTS.includes(event_type)) {
-      return NextResponse.json(
-        { error: `Invalid event_type: ${event_type}. Must be one of: ${VALID_EVENTS.join(", ")}` },
-        { status: 400 }
-      );
+    if (event_type && !KNOWN_EVENTS.has(event_type.toLowerCase().trim())) {
+      console.warn("[ghl-appointment-webhook] Unknown event_type accepted", {
+        event_type,
+        appointment_id,
+        calendar_name,
+      });
     }
 
     const closer_name = assigned_user_id ? (CLOSER_MAP[assigned_user_id] || null) : null;
-    const client = deriveClient(calendar_name);
+    const calendarIsSalesCall = isSalesCalendar(calendar_name, calendar_title);
+    const client = calendarIsSalesCall
+      ? deriveClientFromText(
+          calendar_name,
+          calendar_title,
+          readString(root, ["client", "client_name", "clientName"]),
+          readString(root, ["tags", "contact_source", "contactSource"])
+        )
+      : null;
     const supabase = getServiceSupabase();
     const directKeywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
     const fallbackKeyword = directKeywordNormalized

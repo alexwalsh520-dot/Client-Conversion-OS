@@ -618,34 +618,9 @@ function buildAdRows(campaignId, dayRow, adRoster){
       collected: ad.collected || 0,
     }));
   }
-  // Distribute every metric across the ad roster using weights
-  const seed = campaignId + "-" + dayRow.date;
-  const spends = splitByWeight(dayRow.spend, adRoster, seed+"-spend");
-  const imps = splitByWeight(dayRow.imp, adRoster, seed+"-imp");
-  const clicks = splitByWeight(dayRow.clicks, adRoster, seed+"-clicks");
-  const msgs = splitByWeight(dayRow.msgs, adRoster, seed+"-msgs");
-  const calls = splitByWeight(dayRow.calls, adRoster, seed+"-calls");
-  const taken = splitByWeight(dayRow.taken, adRoster, seed+"-taken");
-  const clients = splitByWeight(dayRow.clients, adRoster, seed+"-clients");
-  const mainClients = splitByWeight(dayRow.mainClients ?? dayRow.clients, adRoster, seed+"-main-clients");
-  const subClients = splitByWeight(dayRow.subClients, adRoster, seed+"-sub-clients");
-  const collected = splitByWeight(dayRow.collected, adRoster, seed+"-col");
-  return adRoster.map((a,i) => ({
-    adId: a.id,
-    adName: a.name,
-    previewImageUrl: a.previewImageUrl || a.previewThumbnailUrl || null,
-    previewThumbnailUrl: a.previewThumbnailUrl || null,
-    spend: spends[i].v,
-    imp: imps[i].v,
-    clicks: clicks[i].v,
-    msgs: Math.max(0, msgs[i].v),
-    calls: Math.max(0, calls[i].v),
-    taken: Math.max(0, taken[i].v),
-    clients: Math.max(0, clients[i].v),
-    mainClients: Math.max(0, mainClients[i].v),
-    subClients: Math.max(0, subClients[i].v),
-    collected: Math.max(0, collected[i].v),
-  }));
+  // Never invent ad-level metrics. If Meta did not return rows for the ads on
+  // this date, show an explicit empty state instead of splitting campaign totals.
+  return [];
 }
 
 function aggregateAdRowsForCampaign(campaign){
@@ -1214,7 +1189,6 @@ const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
-  const [expandedDays, setExpandedDays] = useState({}); // key: "camp-date" -> bool
   const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
   const [resizingKey, setResizingKey] = useState(null);
 
@@ -1361,8 +1335,6 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                   </tr>
                   {isOpen && orderedRows.map(r0=>{
                     const r = deriveRow(r0);
-                    const dayKey = c.id+"|"+r.date;
-                    const dayOpen = !!expandedDays[dayKey];
                     const isAdView = view === "ad";
                     const dayAdRows = isAdView
                       ? buildAdRows(c.id, r0, c.ads).sort((a,b)=>b.spend-a.spend)
@@ -1371,12 +1343,10 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                       <React.Fragment key={c.id+r.date}>
                         <tr
                           className={isAdView?"day-row":""}
-                          onClick={isAdView ? ()=>setExpandedDays(s=>({...s,[dayKey]:!s[dayKey]})) : undefined}
-                          style={isAdView?{cursor:'pointer'}:undefined}
+                          style={isAdView?{cursor:'default'}:undefined}
                         >
                           <td>
                             <span style={{paddingLeft:30,color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:8}} className="mono">
-	                              {isAdView && <span className="day-chevron">{dayOpen?"▾":"▸"}</span>}
 	                              {r.date}
 	                              {isAdView && <span className="day-ad-count">{dayAdRows.length}</span>}
 	                            </span>
@@ -1386,14 +1356,14 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                             return <td key={col.k} className={cls}>{col.fmt(r)}</td>;
                           })}
                         </tr>
-	                        {isAdView && dayOpen && dayAdRows.length === 0 && (
+	                        {isAdView && dayAdRows.length === 0 && (
 	                          <tr className="ad-row">
 	                            <td colSpan={cols.length}>
 	                              <span style={{paddingLeft:56,color:'var(--text-4)',fontSize:11}}>No individual ad rows for this date.</span>
 	                            </td>
 	                          </tr>
 	                        )}
-	                        {isAdView && dayOpen && dayAdRows.map(ad => {
+	                        {isAdView && dayAdRows.map(ad => {
 	                            const adMetrics = deriveRow({
 	                              date: ad.adName,
 	                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
