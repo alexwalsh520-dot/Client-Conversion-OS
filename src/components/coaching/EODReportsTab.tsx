@@ -48,6 +48,17 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
     return Array.from(names).sort();
   }, [activeClients]);
 
+  // Roster shown in the EOD Submission Calendar. Canonical team first,
+  // then any other coach names auto-discovered from active clients
+  // (legacy excludes filtered out — see EOD_LEGACY_EXCLUDES below).
+  const eodTeam = useMemo(() => {
+    const inCanonical = new Set(EOD_TEAM_CANONICAL);
+    const discovered = coachNames
+      .filter((n) => !inCanonical.has(n) && !EOD_LEGACY_EXCLUDES.has(n))
+      .sort();
+    return [...EOD_TEAM_CANONICAL, ...discovered];
+  }, [coachNames]);
+
   // Clients for the selected coach
   const coachActiveClients = useMemo(() => {
     if (!formData.submittedBy) return [];
@@ -876,10 +887,29 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
       ))}
 
       {/* ======================== EOD SUBMISSION CALENDAR ======================== */}
-      <EODSubmissionCalendar reports={reports} eodTeam={["Farrukh", "Fatima", "Ignacio", "Stef", "Waleed", "Nicole", "Daman"]} onClientClick={onClientClick} />
+      <EODSubmissionCalendar
+        reports={reports}
+        eodTeam={eodTeam}
+        onClientClick={onClientClick}
+      />
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// EOD team roster
+// ---------------------------------------------------------------------------
+//
+// Canonical list comes first; auto-discovered coach names from the active
+// client roster get appended after. If a new coach is added to the team
+// and starts taking active clients, they'll appear in the calendar
+// automatically without a code change.
+//
+// LEGACY_EXCLUDES protects against off-team names re-appearing via
+// auto-discovery (e.g. clients that still have a former coach's name on
+// the row). Add a name here only when removing them from the team.
+const EOD_TEAM_CANONICAL = ["Waleed", "Farrukh", "Stef", "Belkys", "Nicole"];
+const EOD_LEGACY_EXCLUDES = new Set(["Fatima", "Ignacio", "Daman"]);
 
 // ============ EOD Submission Calendar Component ============
 
