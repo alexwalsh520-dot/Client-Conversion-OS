@@ -4,6 +4,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowLeft,
   Download,
   ImagePlus,
@@ -21,6 +24,7 @@ const CANVAS_H = 1920;
 const AUTOSAVE_KEY = "active-draft";
 const DB_NAME = "ccos-studio-2";
 const DB_STORE = "drafts";
+const DRAG_THRESHOLD = 5;
 
 const FONT_OPTIONS = [
   { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
@@ -121,6 +125,7 @@ interface BlockMetrics {
 type DragState =
   | {
       kind: "move-text";
+      active: boolean;
       blockId: string;
       startX: number;
       startY: number;
@@ -129,23 +134,28 @@ type DragState =
     }
   | {
       kind: "resize-text";
+      active: boolean;
       blockId: string;
       handle: ResizeHandle;
       startX: number;
       startY: number;
       orig: TextBlock;
+      origMetrics: BlockMetrics;
     }
   | {
       kind: "move-image";
+      active: boolean;
       startX: number;
       startY: number;
       orig: ImageTransform;
     }
   | {
       kind: "resize-image";
+      active: boolean;
       startX: number;
       startY: number;
       orig: ImageTransform;
+      startDistance: number;
     };
 
 type ResizeHandle = "nw" | "ne" | "sw" | "se" | "e" | "w";
@@ -159,6 +169,37 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 
 const cloneCreatives = (creatives: Creative[]) =>
   JSON.parse(JSON.stringify(creatives)) as Creative[];
+
+function normalizeTextBlock(block: TextBlock): TextBlock {
+  const fontSize = block.fontSize || 44;
+  const looksLikeFirstPass = (block.lineHeight || 0) < 1.3 || block.lineGap >= 8;
+  const next: TextBlock = {
+    ...block,
+    lineHeight: looksLikeFirstPass ? 1.5 : block.lineHeight || 1.5,
+    lineGap: looksLikeFirstPass ? (fontSize <= 46 ? 5 : 6) : block.lineGap ?? (fontSize <= 46 ? 5 : 6),
+  };
+
+  if (looksLikeFirstPass && fontSize === 52 && block.paddingH === 24 && block.paddingV === 14) {
+    next.paddingH = 28;
+    next.paddingV = 16;
+    next.borderRadius = 16;
+  }
+
+  if (looksLikeFirstPass && fontSize === 56 && block.paddingH === 24 && block.paddingV === 14) {
+    next.paddingH = 28;
+    next.paddingV = 18;
+    next.borderRadius = 16;
+  }
+
+  return next;
+}
+
+function normalizeCreative(creative: Creative): Creative {
+  return {
+    ...creative,
+    textBlocks: creative.textBlocks.map(normalizeTextBlock),
+  };
+}
 
 function openDraftDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -288,10 +329,12 @@ function measureTextBlock(ctx: CanvasRenderingContext2D, block: TextBlock): Bloc
   const availableW = Math.max(40, block.maxWidth - block.paddingH * 2);
   let y = block.y;
   const rendered: RenderedLine[] = [];
+  let bottom = block.y;
 
   for (const logicalLine of block.lines) {
     if (!logicalLine.trim()) {
       y += Math.round(block.fontSize * 0.55 + block.lineGap);
+      bottom = Math.max(bottom, y);
       continue;
     }
 
@@ -311,11 +354,12 @@ function measureTextBlock(ctx: CanvasRenderingContext2D, block: TextBlock): Bloc
         bgH,
         block,
       });
-      y += bgH + block.lineGap;
+      bottom = Math.max(bottom, y + bgH);
+      y += lineH + block.lineGap;
     }
   }
 
-  const h = Math.max(24, y - block.y - block.lineGap);
+  const h = Math.max(24, bottom - block.y);
   return { x: block.x, y: block.y, w: block.maxWidth, h, lines: rendered };
 }
 
@@ -398,7 +442,7 @@ function drawOverlay(
     return;
   }
 
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 5;
   ctx.strokeStyle = "#7C5CFC";
   ctx.fillStyle = "#7C5CFC";
   ctx.shadowColor = "rgba(124,92,252,0.35)";
@@ -428,9 +472,9 @@ function drawTextHandles(ctx: CanvasRenderingContext2D, m: BlockMetrics) {
   const handles = getTextHandles(m);
   ctx.fillStyle = "#ffffff";
   ctx.strokeStyle = "#7C5CFC";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3;
   for (const h of handles) {
-    roundRect(ctx, h.x - 10, h.y - 10, 20, 20, 6);
+    roundRect(ctx, h.x - 13, h.y - 13, 26, 26, 7);
     ctx.fill();
     ctx.stroke();
   }
@@ -447,7 +491,7 @@ function drawImageHandles(ctx: CanvasRenderingContext2D) {
   ctx.strokeStyle = "#7C5CFC";
   ctx.lineWidth = 2;
   for (const [x, y] of points) {
-    roundRect(ctx, x - 13, y - 13, 26, 26, 8);
+    roundRect(ctx, x - 15, y - 15, 30, 30, 8);
     ctx.fill();
     ctx.stroke();
   }
@@ -467,19 +511,19 @@ function getTextHandles(m: BlockMetrics): { handle: ResizeHandle; x: number; y: 
 
 function hitTextHandle(point: { x: number; y: number }, metrics: BlockMetrics): ResizeHandle | null {
   for (const h of getTextHandles(metrics)) {
-    if (Math.abs(point.x - h.x) <= 18 && Math.abs(point.y - h.y) <= 18) return h.handle;
+    if (Math.abs(point.x - h.x) <= 30 && Math.abs(point.y - h.y) <= 30) return h.handle;
   }
   return null;
 }
 
-function hitImageHandle(point: { x: number; y: number }) {
+function hitImageHandle(point: { x: number; y: number }): ResizeHandle | null {
   const corners = [
-    { x: 22, y: 22 },
-    { x: CANVAS_W - 22, y: 22 },
-    { x: 22, y: CANVAS_H - 22 },
-    { x: CANVAS_W - 22, y: CANVAS_H - 22 },
+    { handle: "nw" as const, x: 22, y: 22 },
+    { handle: "ne" as const, x: CANVAS_W - 22, y: 22 },
+    { handle: "sw" as const, x: 22, y: CANVAS_H - 22 },
+    { handle: "se" as const, x: CANVAS_W - 22, y: CANVAS_H - 22 },
   ];
-  return corners.some((c) => Math.abs(point.x - c.x) <= 28 && Math.abs(point.y - c.y) <= 28);
+  return corners.find((c) => Math.abs(point.x - c.x) <= 36 && Math.abs(point.y - c.y) <= 36)?.handle ?? null;
 }
 
 function pointInMetrics(point: { x: number; y: number }, m: BlockMetrics) {
@@ -547,11 +591,27 @@ function buttonStyle(active = false): React.CSSProperties {
   };
 }
 
+function segmentedButtonStyle(active = false): React.CSSProperties {
+  return {
+    width: 42,
+    height: 34,
+    border: "none",
+    borderRadius: 7,
+    background: active ? "#ffffff" : "transparent",
+    color: active ? "#11101a" : "rgba(255,255,255,0.64)",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+}
+
 const panelStyle: React.CSSProperties = {
-  background: "rgba(20,17,32,0.92)",
-  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(18,16,27,0.96)",
+  border: "1px solid rgba(255,255,255,0.09)",
   borderRadius: 8,
-  padding: 12,
+  padding: 14,
+  boxShadow: "0 16px 40px rgba(0,0,0,0.18)",
 };
 
 const labelStyle: React.CSSProperties = {
@@ -573,6 +633,12 @@ const inputStyle: React.CSSProperties = {
   fontFamily: "inherit",
   outline: "none",
 };
+
+const alignOptions = [
+  { value: "left" as const, label: "Left", icon: AlignLeft },
+  { value: "center" as const, label: "Center", icon: AlignCenter },
+  { value: "right" as const, label: "Right", icon: AlignRight },
+];
 
 export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
@@ -632,7 +698,7 @@ export default function Studio2Page() {
       .then((draft) => {
         if (!draft || cancelled) return;
         setPhotos(draft.photos || []);
-        setCreatives(draft.creatives || []);
+        setCreatives((draft.creatives || []).map(normalizeCreative));
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
         setProjectName(draft.projectName || "Studio 2.0 Batch");
@@ -789,24 +855,30 @@ export default function Studio2Page() {
     (lines: string[], role: "title" | "body" | "callout" | "cta"): TextBlock => {
       const isLight = colorPreset === "light";
       const isSerif = fontPreset.includes("Source Serif");
+      const config = {
+        title: { fontSize: 72, x: 90, maxWidth: 900, paddingH: 32, paddingV: 18, borderRadius: 18, lineGap: 6 },
+        body: { fontSize: 44, x: 80, maxWidth: 960, paddingH: 24, paddingV: 14, borderRadius: 14, lineGap: 5 },
+        callout: { fontSize: 52, x: 90, maxWidth: 900, paddingH: 28, paddingV: 16, borderRadius: 16, lineGap: 6 },
+        cta: { fontSize: 56, x: 90, maxWidth: 900, paddingH: 28, paddingV: 18, borderRadius: 16, lineGap: 6 },
+      }[role];
       return {
         id: uid(),
         lines,
-        x: 60,
+        x: config.x,
         y: 80,
-        fontSize: role === "title" ? 72 : role === "cta" ? 56 : role === "callout" ? 52 : 44,
+        fontSize: config.fontSize,
         fontFamily: fontPreset,
         fontWeight: isSerif ? 400 : 700,
         textColor: isLight ? "#000000" : "#ffffff",
         bgColor: isLight ? "#ffffff" : "#000000",
         bgOpacity: 1,
-        borderRadius: role === "title" ? 18 : 14,
-        paddingH: role === "title" ? 32 : 24,
-        paddingV: role === "title" ? 18 : 14,
+        borderRadius: config.borderRadius,
+        paddingH: config.paddingH,
+        paddingV: config.paddingV,
         align: role === "body" ? "left" : "center",
-        lineGap: 8,
-        lineHeight: 1.18,
-        maxWidth: 960,
+        lineGap: config.lineGap,
+        lineHeight: 1.5,
+        maxWidth: config.maxWidth,
       };
     },
     [colorPreset, fontPreset]
@@ -825,12 +897,12 @@ export default function Studio2Page() {
       let y = top;
 
       return blocks.map((block, index) => {
+        const align = index === 0 || index === blocks.length - 1 ? "center" as TextAlign : "left" as TextAlign;
         const next = {
           ...block,
-          x: 60,
+          x: align === "center" ? Math.round((CANVAS_W - block.maxWidth) / 2) : block.x,
           y: Math.round(y),
-          maxWidth: 960,
-          align: index === 0 || index === blocks.length - 1 ? "center" as TextAlign : "left" as TextAlign,
+          align,
         };
         y += measured[index] + gap;
         return next;
@@ -903,6 +975,7 @@ export default function Studio2Page() {
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (event.button !== 0) return;
       if (!currentCreative) return;
       event.currentTarget.setPointerCapture(event.pointerId);
       const point = pointFromEvent(event);
@@ -911,29 +984,33 @@ export default function Studio2Page() {
       if (selectedLayer?.type === "text") {
         const block = currentCreative.textBlocks.find((b) => b.id === selectedLayer.id);
         if (block && !block.locked) {
-          const handle = hitTextHandle(point, measureTextBlock(ctx, block));
+          const metrics = measureTextBlock(ctx, block);
+          const handle = hitTextHandle(point, metrics);
           if (handle) {
-            pushUndo();
             dragRef.current = {
               kind: "resize-text",
+              active: false,
               blockId: block.id,
               handle,
               startX: point.x,
               startY: point.y,
               orig: { ...block, lines: [...block.lines] },
+              origMetrics: metrics,
             };
             return;
           }
         }
       }
 
-      if (selectedLayer?.type === "image" && hitImageHandle(point)) {
-        pushUndo();
+      const imageHandle = selectedLayer?.type === "image" ? hitImageHandle(point) : null;
+      if (imageHandle) {
         dragRef.current = {
           kind: "resize-image",
+          active: false,
           startX: point.x,
           startY: point.y,
           orig: { ...currentCreative.imageTransform },
+          startDistance: Math.max(1, Math.hypot(point.x - CANVAS_W / 2, point.y - CANVAS_H / 2)),
         };
         return;
       }
@@ -942,9 +1019,9 @@ export default function Studio2Page() {
       if (hit) {
         setSelectedLayer({ type: "text", id: hit.id });
         if (!hit.locked) {
-          pushUndo();
           dragRef.current = {
             kind: "move-text",
+            active: false,
             blockId: hit.id,
             startX: point.x,
             startY: point.y,
@@ -956,31 +1033,42 @@ export default function Studio2Page() {
       }
 
       setSelectedLayer({ type: "image" });
-      pushUndo();
       dragRef.current = {
         kind: "move-image",
+        active: false,
         startX: point.x,
         startY: point.y,
         orig: { ...currentCreative.imageTransform },
       };
     },
-    [currentCreative, findHitBlock, getMeasureCtx, pushUndo, selectedLayer]
+    [currentCreative, findHitBlock, getMeasureCtx, selectedLayer]
   );
 
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const drag = dragRef.current;
       if (!drag) return;
+      event.preventDefault();
       const point = pointFromEvent(event);
       const dx = point.x - drag.startX;
       const dy = point.y - drag.startY;
+
+      if (!drag.active) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        drag.active = true;
+        pushUndo();
+      }
 
       if (drag.kind === "move-text") {
         updateCurrentCreative((creative) => ({
           ...creative,
           textBlocks: creative.textBlocks.map((block) =>
             block.id === drag.blockId
-              ? { ...block, x: Math.round(drag.origX + dx), y: Math.round(drag.origY + dy) }
+              ? {
+                  ...block,
+                  x: clamp(Math.round(drag.origX + dx), -220, CANVAS_W - 80),
+                  y: clamp(Math.round(drag.origY + dy), -220, CANVAS_H - 60),
+                }
               : block
           ),
         }));
@@ -988,27 +1076,46 @@ export default function Studio2Page() {
 
       if (drag.kind === "resize-text") {
         const handle = drag.handle;
-        const widthDelta = handle.includes("e") ? dx : handle.includes("w") ? -dx : 0;
-        const scaleDelta = handle.length === 2 ? (widthDelta - dy) / 360 : 0;
-        const factor = clamp(1 + scaleDelta, 0.35, 2.6);
-        const maxWidth = clamp(Math.round(drag.orig.maxWidth + widthDelta), 220, 1060);
-        const fontSize = handle.length === 2
-          ? clamp(Math.round(drag.orig.fontSize * factor), 14, 150)
-          : drag.orig.fontSize;
-        const paddingH = handle.length === 2 ? Math.round(drag.orig.paddingH * factor) : drag.orig.paddingH;
-        const paddingV = handle.length === 2 ? Math.round(drag.orig.paddingV * factor) : drag.orig.paddingV;
-        const borderRadius = handle.length === 2
-          ? Math.round(drag.orig.borderRadius * factor)
-          : drag.orig.borderRadius;
-        const x = handle.includes("w")
-          ? Math.round(drag.orig.x + (drag.orig.maxWidth - maxWidth))
-          : drag.orig.x;
+        const isCorner = handle.length === 2;
+        const ctx = getMeasureCtx();
+        let maxWidth = drag.orig.maxWidth;
+        let fontSize = drag.orig.fontSize;
+        let paddingH = drag.orig.paddingH;
+        let paddingV = drag.orig.paddingV;
+        let borderRadius = drag.orig.borderRadius;
+        let x = drag.orig.x;
+        let y = drag.orig.y;
+
+        if (isCorner) {
+          const nextW = Math.max(80, drag.origMetrics.w + (handle.includes("e") ? dx : -dx));
+          const nextH = Math.max(40, drag.origMetrics.h + (handle.includes("s") ? dy : -dy));
+          const widthFactor = nextW / Math.max(1, drag.origMetrics.w);
+          const heightFactor = nextH / Math.max(1, drag.origMetrics.h);
+          const factor = clamp((widthFactor + heightFactor) / 2, 0.35, 2.6);
+          maxWidth = clamp(Math.round(drag.orig.maxWidth * factor), 220, 1060);
+          fontSize = clamp(Math.round(drag.orig.fontSize * factor), 14, 150);
+          paddingH = clamp(Math.round(drag.orig.paddingH * factor), 0, 90);
+          paddingV = clamp(Math.round(drag.orig.paddingV * factor), 0, 90);
+          borderRadius = clamp(Math.round(drag.orig.borderRadius * factor), 0, 60);
+
+          const resized = { ...drag.orig, maxWidth, fontSize, paddingH, paddingV, borderRadius };
+          const resizedH = measureTextBlock(ctx, resized).h;
+          if (handle.includes("w")) x = Math.round(drag.orig.x + drag.orig.maxWidth - maxWidth);
+          if (handle.includes("n")) y = Math.round(drag.orig.y + drag.origMetrics.h - resizedH);
+        } else {
+          maxWidth = clamp(
+            Math.round(drag.orig.maxWidth + (handle === "e" ? dx : -dx)),
+            220,
+            1060
+          );
+          if (handle === "w") x = Math.round(drag.orig.x + drag.orig.maxWidth - maxWidth);
+        }
 
         updateCurrentCreative((creative) => ({
           ...creative,
           textBlocks: creative.textBlocks.map((block) =>
             block.id === drag.blockId
-              ? { ...block, x, maxWidth, fontSize, paddingH, paddingV, borderRadius }
+              ? { ...block, x, y, maxWidth, fontSize, paddingH, paddingV, borderRadius }
               : block
           ),
         }));
@@ -1022,16 +1129,19 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "resize-image") {
+        const nextDistance = Math.max(1, Math.hypot(point.x - CANVAS_W / 2, point.y - CANVAS_H / 2));
         updateImage({
-          scale: clamp(parseFloat((drag.orig.scale + (dx - dy) / 850).toFixed(3)), 0.4, 4),
+          scale: clamp(parseFloat((drag.orig.scale * (nextDistance / drag.startDistance)).toFixed(3)), 0.4, 4),
         });
       }
     },
-    [updateCurrentCreative, updateImage]
+    [getMeasureCtx, pushUndo, updateCurrentCreative, updateImage]
   );
 
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     dragRef.current = null;
   }, []);
 
@@ -1307,6 +1417,35 @@ export default function Studio2Page() {
 
   return (
     <div className="ad-studio-fullbleed" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      <style>{`
+        .studio2-range {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 6px;
+          border-radius: 999px;
+          outline: none;
+          cursor: pointer;
+        }
+        .studio2-range::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 16px;
+          height: 16px;
+          border-radius: 999px;
+          background: #ffffff;
+          border: 3px solid #7C5CFC;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+        }
+        .studio2-range::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          border-radius: 999px;
+          background: #ffffff;
+          border: 3px solid #7C5CFC;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+        }
+      `}</style>
       <div style={{
         height: 58,
         display: "flex",
@@ -1327,12 +1466,16 @@ export default function Studio2Page() {
         </span>
         <div style={{ flex: 1 }} />
         <input
+          className="studio2-range"
           type="range"
           min={18}
           max={70}
           value={Math.round(viewScale * 100)}
           onChange={(e) => setViewScale(parseInt(e.target.value) / 100)}
-          style={{ accentColor: "#7C5CFC", width: 96 }}
+          style={{
+            width: 96,
+            background: `linear-gradient(90deg, #8E7CFF 0%, #8E7CFF ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, rgba(255,255,255,0.13) ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, rgba(255,255,255,0.13) 100%)`,
+          }}
         />
         <span style={{ color: "var(--text-muted)", fontSize: 11, width: 34 }}>{Math.round(viewScale * 100)}%</span>
         <button style={{ ...buttonStyle(false), opacity: undoStack.length ? 1 : 0.35 }} onClick={undo} disabled={!undoStack.length}>
@@ -1384,7 +1527,14 @@ export default function Studio2Page() {
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: selectedLayer?.type === "image" ? "grab" : "default" }}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                touchAction: "none",
+                cursor: selectedLayer?.type === "image" ? "grab" : selectedLayer?.type === "text" ? "move" : "default",
+              }}
             />
           </div>
 
@@ -1440,8 +1590,23 @@ export default function Studio2Page() {
               <MousePointer2 size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
               Selection
             </div>
-            <div style={{ color: "rgba(255,255,255,0.58)", fontSize: 12, lineHeight: 1.6 }}>
-              Click text to move it. Drag white handles to resize. Click the background image to crop, move, or zoom it.
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ color: "rgba(255,255,255,0.62)", fontSize: 12 }}>
+                {selectedBlock ? "Text block" : selectedLayer?.type === "image" ? "Background image" : "Nothing selected"}
+              </span>
+              <span style={{
+                border: "1px solid rgba(124,92,252,0.35)",
+                background: "rgba(124,92,252,0.12)",
+                color: "rgba(255,255,255,0.72)",
+                borderRadius: 999,
+                padding: "4px 8px",
+                fontSize: 10,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 0.4,
+              }}>
+                Canvas
+              </span>
             </div>
           </div>
 
@@ -1488,11 +1653,29 @@ export default function Studio2Page() {
                 <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>text / highlight</span>
               </Control>
               <Control label="Align">
-                {(["left", "center", "right"] as const).map((align) => (
-                  <button key={align} style={buttonStyle(selectedBlock.align === align)} onClick={() => { pushUndo(); updateSelectedBlock({ align }); }}>
-                    {align}
-                  </button>
-                ))}
+                <div style={{
+                  display: "inline-flex",
+                  gap: 3,
+                  padding: 3,
+                  borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(5,5,10,0.58)",
+                }}>
+                  {alignOptions.map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      aria-label={`Align ${label}`}
+                      title={`Align ${label}`}
+                      style={segmentedButtonStyle(selectedBlock.align === value)}
+                      onClick={() => {
+                        pushUndo();
+                        updateSelectedBlock({ align: value });
+                      }}
+                    >
+                      <Icon size={15} />
+                    </button>
+                  ))}
+                </div>
               </Control>
             </div>
           )}
@@ -1560,9 +1743,9 @@ export default function Studio2Page() {
 
 function Control({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ ...labelStyle, marginBottom: 5 }}>{label}</div>
-      <div style={{ display: "flex", gap: 7, alignItems: "center" }}>{children}</div>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ ...labelStyle, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{children}</div>
     </div>
   );
 }
@@ -1584,20 +1767,36 @@ function Slider({
   onChange: (value: number) => void;
   suffix?: string;
 }) {
+  const fill = clamp(((value - min) / (max - min)) * 100, 0, 100);
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
         <span style={labelStyle}>{label}</span>
-        <span style={{ color: "rgba(255,255,255,0.36)", fontSize: 11 }}>{value}{suffix}</span>
+        <span style={{
+          minWidth: 44,
+          textAlign: "right",
+          color: "rgba(255,255,255,0.68)",
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 999,
+          padding: "3px 7px",
+          fontSize: 11,
+          fontWeight: 700,
+        }}>
+          {value}{suffix}
+        </span>
       </div>
       <input
+        className="studio2-range"
         type="range"
         min={min}
         max={max}
         value={value}
         onPointerDown={onStart}
         onChange={(e) => onChange(parseInt(e.target.value))}
-        style={{ width: "100%", accentColor: "#7C5CFC" }}
+        style={{
+          background: `linear-gradient(90deg, #8E7CFF 0%, #8E7CFF ${fill}%, rgba(255,255,255,0.13) ${fill}%, rgba(255,255,255,0.13) 100%)`,
+        }}
       />
     </div>
   );
