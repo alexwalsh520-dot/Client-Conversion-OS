@@ -2566,11 +2566,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     backfill,
     query,
     (row, keyword) =>
-      periodAttributionGroupId(
-        row,
-        keyword,
-        fallbackGroupIdForBackfillRow(row, keyword, rows, "", query.level)
-      ),
+      fallbackGroupIdForBackfillRow(row, keyword, rows, "", query.level),
     () => `${query.dateFrom} - ${query.dateTo}`,
     (row) => campaignHintForBackfillRow(row, rows)
   );
@@ -2712,11 +2708,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     backfill,
     query,
     (row, keyword) =>
-      dailyAttributionGroupId(
-        row,
-        keyword,
-        fallbackGroupIdForBackfillRow(row, keyword, rows, `${row.date}:`, query.level)
-      ),
+      fallbackGroupIdForBackfillRow(row, keyword, rows, `${row.date}:`, query.level),
     (row) => row.date,
     (row) => campaignHintForBackfillRow(row, rows)
   );
