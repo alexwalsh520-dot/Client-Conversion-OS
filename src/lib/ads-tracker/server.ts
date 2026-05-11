@@ -1166,6 +1166,7 @@ function uniqueMetaGroupResolver<T>(
         firstDate: string;
         lastDate: string;
         active: boolean;
+        dateMetrics: Map<string, { spendCents: number; impressions: number; linkClicks: number }>;
       }
     >
   >();
@@ -1185,6 +1186,7 @@ function uniqueMetaGroupResolver<T>(
         firstDate: string;
         lastDate: string;
         active: boolean;
+        dateMetrics: Map<string, { spendCents: number; impressions: number; linkClicks: number }>;
       }
     >();
     const candidate = candidates.get(id) || {
@@ -1195,10 +1197,20 @@ function uniqueMetaGroupResolver<T>(
       firstDate: row.date,
       lastDate: row.date,
       active: false,
+      dateMetrics: new Map<string, { spendCents: number; impressions: number; linkClicks: number }>(),
     };
     candidate.spendCents += row.spend_cents || 0;
     candidate.impressions += row.impressions || 0;
     candidate.linkClicks += row.link_clicks || 0;
+    const existingDateMetrics = candidate.dateMetrics.get(row.date) || {
+      spendCents: 0,
+      impressions: 0,
+      linkClicks: 0,
+    };
+    existingDateMetrics.spendCents += row.spend_cents || 0;
+    existingDateMetrics.impressions += row.impressions || 0;
+    existingDateMetrics.linkClicks += row.link_clicks || 0;
+    candidate.dateMetrics.set(row.date, existingDateMetrics);
     if (row.date < candidate.firstDate) candidate.firstDate = row.date;
     if (row.date > candidate.lastDate) candidate.lastDate = row.date;
     if (metaRowStatus(row) === "active") candidate.active = true;
@@ -1215,6 +1227,29 @@ function uniqueMetaGroupResolver<T>(
 
     const attributionDate = attributionDateForResolver(row);
     if (attributionDate) {
+      const exactDateCandidates = candidates
+        .map((candidate) => {
+          const metrics = candidate.dateMetrics.get(attributionDate);
+          return metrics ? { ...candidate, exactDateMetrics: metrics } : null;
+        })
+        .filter((candidate): candidate is (typeof candidates)[number] & {
+          exactDateMetrics: { spendCents: number; impressions: number; linkClicks: number };
+        } => Boolean(candidate))
+        .filter(
+          (candidate) =>
+            candidate.exactDateMetrics.spendCents > 0 ||
+            candidate.exactDateMetrics.impressions > 0 ||
+            candidate.exactDateMetrics.linkClicks > 0
+        )
+        .sort(
+          (a, b) =>
+            b.exactDateMetrics.spendCents - a.exactDateMetrics.spendCents ||
+            b.exactDateMetrics.impressions - a.exactDateMetrics.impressions ||
+            b.exactDateMetrics.linkClicks - a.exactDateMetrics.linkClicks
+        );
+
+      if (exactDateCandidates[0]) return exactDateCandidates[0].id;
+
       const rankedByDate = candidates
         .map((candidate) => ({
           ...candidate,
