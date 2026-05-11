@@ -493,10 +493,15 @@
   .recent-caret.open{transform:rotate(90deg)}
   .recent-body{border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .25s ease}
   .recent-body.open{max-height:980px}
-  .manual-log-toggle{display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--border);background:#0c0c0c}
+  .manual-log-toggle{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);background:#0c0c0c}
   .manual-log-btn{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--border-2);border-radius:5px;background:#0f0f0f;color:var(--text-3);font-size:11px}
   .manual-log-btn:hover{background:#171717;color:var(--text-2)}
   .manual-log-btn.active{color:var(--gold);border-color:#3a301d;background:#151108}
+  .history-pager{display:inline-flex;align-items:center;gap:6px;margin-right:auto}
+  .history-page-btn{padding:5px 8px;border:1px solid var(--border-2);border-radius:5px;background:#0f0f0f;color:var(--text-3);font-size:10.5px}
+  .history-page-btn:hover:not(:disabled){background:#171717;color:var(--text-2)}
+  .history-page-btn:disabled{opacity:.35;cursor:not-allowed}
+  .history-page-label{font-family:'JetBrains Mono',monospace;color:var(--text-4);font-size:10.5px}
   .manual-log-area{padding:0 18px 14px;background:#0c0c0c;border-bottom:1px solid var(--border)}
   .manual-log-area .entry-panel{background:#101010}
   table.recent-tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -2988,6 +2993,7 @@ function formatEntry(e){
 function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
   const [open, setOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [page, setPage] = useState(0);
   const [entries, setEntries] = useState(null); // null → derive from extra+RECENT
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({kw:"", value:"", bucket:"msgs", camp:"tyson"});
@@ -2999,6 +3005,12 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
     return source.map((e, i) => ({id: "e-"+i, ...e}));
   }, [extra, includeFallback]);
   const list = entries ?? seedAll;
+  const pageSize = 50;
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleList = list.slice(safePage * pageSize, safePage * pageSize + pageSize);
+
+  useEffect(()=>{ setPage(0); }, [seedAll.length]);
 
   const startEdit = (e) => {
     setEditingId(e.id);
@@ -3049,6 +3061,13 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
             <span style={{color:'var(--gold)',fontSize:13,lineHeight:1}}>+</span>
             Log keyword manually
           </button>
+          {list.length > pageSize && (
+            <div className="history-pager">
+              <button className="history-page-btn" onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={safePage===0}>Prev</button>
+              <span className="history-page-label">{safePage+1}/{pageCount}</span>
+              <button className="history-page-btn" onClick={()=>setPage(p=>Math.min(pageCount-1,p+1))} disabled={safePage>=pageCount-1}>Next</button>
+            </div>
+          )}
         </div>
         {manualOpen && (
           <div className="manual-log-area">
@@ -3076,7 +3095,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                 </td>
               </tr>
             )}
-            {list.map((e)=>{
+            {visibleList.map((e)=>{
               const isEditing = editingId === e.id;
               const isLive = e.locked !== false;
               const isDollar = e.bucket === "collected";
