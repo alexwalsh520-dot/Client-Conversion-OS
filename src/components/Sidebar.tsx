@@ -19,6 +19,7 @@ import {
   X,
   Monitor,
   Palette,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/studio", label: "Studio", icon: Palette },
+  { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/accountant", label: "Accountant", icon: Calculator },
