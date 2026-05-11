@@ -1213,9 +1213,6 @@ function uniqueMetaGroupResolver<T>(
     if (candidates.length === 0) return fallbackId;
     if (candidates.length === 1) return candidates[0].id;
 
-    const activeCandidates = candidates.filter((candidate) => candidate.active);
-    if (activeCandidates.length === 1) return activeCandidates[0].id;
-
     const attributionDate = attributionDateForResolver(row);
     if (attributionDate) {
       const rankedByDate = candidates
@@ -1238,6 +1235,9 @@ function uniqueMetaGroupResolver<T>(
         return rankedByDate[0].id;
       }
     }
+
+    const activeCandidates = candidates.filter((candidate) => candidate.active);
+    if (activeCandidates.length === 1) return activeCandidates[0].id;
 
     const deliveredCandidates = candidates.filter(
       (candidate) =>
@@ -2062,7 +2062,9 @@ async function persistAutomaticSalesAttributions({
     if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) continue;
 
     const saleKey = salesRowKey(row, clientKey);
-    if (existingResolutionBySaleKey.has(saleKey) || saleKeysInBatch.has(saleKey)) continue;
+    const existingResolution = existingResolutionBySaleKey.get(saleKey);
+    if (saleKeysInBatch.has(saleKey)) continue;
+    if (existingResolution && existingResolution.source !== AUTO_ATTRIBUTION_SOURCE) continue;
 
     const match = matchedBookingForSalesRow(row, bookingsByName);
     if (!match) continue;
@@ -2077,6 +2079,13 @@ async function persistAutomaticSalesAttributions({
       hintForAttributionGroupId(resolvedAdGroupId, attributionRows, keyword) ||
       exactMetaHintForKeywordEvent(match, attributionRows);
     if (!hint?.campaignName && !hint?.adName) continue;
+    if (
+      existingResolution?.action === "attribute" &&
+      existingResolution.groupId === resolvedAdGroupId &&
+      normalizeKeyword(existingResolution.keywordNormalized || existingResolution.keywordRaw) === keyword
+    ) {
+      continue;
+    }
 
     saleKeysInBatch.add(saleKey);
     inserts.push({
