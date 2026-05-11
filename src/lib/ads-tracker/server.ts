@@ -429,6 +429,11 @@ function finalizeGroup(group: Group): AdsTrackerRow {
   };
 }
 
+function matchesStatusFilter(row: AdsTrackerRow, status: AdsTrackerStatus) {
+  if (status === "all") return true;
+  return row.status === status;
+}
+
 function metaRowStatus(row: MetaRow): "active" | "finished" {
   const effectiveStatus = (row.ad_effective_status || row.campaign_effective_status || "").toUpperCase();
   if (!effectiveStatus) return "active";
@@ -2695,6 +2700,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         row.newClients > 0 ||
         row.collectedRevenue > 0
     )
+    .filter((row) => matchesStatusFilter(row, query.status))
     .sort((a, b) => b.collectedRoi - a.collectedRoi);
 
   const paidFinalized = finalized.filter((row) => !row.attributionOnly);
@@ -2712,6 +2718,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         row.newClients > 0 ||
         row.collectedRevenue > 0
     )
+    .filter((row) => matchesStatusFilter(row, query.status))
     .sort((a, b) => a.dateLabel.localeCompare(b.dateLabel));
 
   const metaDateAccounts = new Set(rows.map((row) => `${row.client_key}:${row.date}`));
