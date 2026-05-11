@@ -2063,7 +2063,8 @@ function attributionOverrideEventForRow(
     keyword_raw: resolution.keywordRaw || displayKeyword(keyword),
     keyword_normalized: keyword,
     override_group_id: resolution.groupId,
-    override_group_name: resolution.groupName,
+    override_group_name:
+      resolution.source === AUTO_ATTRIBUTION_SOURCE ? null : resolution.groupName,
     override_campaign_id: resolution.campaignId,
     override_campaign_name: resolution.campaignName,
     override_ad_id: resolution.adId,
