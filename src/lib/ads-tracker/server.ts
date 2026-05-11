@@ -247,6 +247,7 @@ interface AttributionExceptionRow {
 
 interface AttributionResolution {
   id: string;
+  source: string;
   saleKey: string;
   action: AttributionResolutionAction;
   clientKey: string | null;
@@ -331,6 +332,7 @@ interface BackfillGroupHint {
 
 const SUPABASE_PAGE_SIZE = 1000;
 const ALERT_RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
+const AUTO_ATTRIBUTION_SOURCE = "ads_tracker_auto_sales_attribution";
 const MANYCHAT_MISSING_KEYWORD_TAG_NAMES = [
   "needs_keyword_attribution",
   "needs keyword attribution",
@@ -917,10 +919,10 @@ function applySalesToGroups(
     }
 
     const groupId =
-      match.override_group_id ||
       options.groupId?.(match, row) ||
+      match.override_group_id ||
       `${match.client_key}:${match.keyword_normalized}`;
-    if (!match.override_group_id && isFallbackAttributionGroupId(groupId)) {
+    if (isFallbackAttributionGroupId(groupId)) {
       addUnmatched(row, clientKey || match.client_key, "ambiguous_or_missing_meta_match");
       continue;
     }
@@ -1134,7 +1136,17 @@ function uniqueMetaGroupResolver<T>(
 ) {
   const candidatesByKeyword = new Map<
     string,
-    Map<string, { id: string; spendCents: number; impressions: number; linkClicks: number }>
+    Map<
+      string,
+      {
+        id: string;
+        spendCents: number;
+        impressions: number;
+        linkClicks: number;
+        firstDate: string;
+        lastDate: string;
+      }
+    >
   >();
 
   for (const row of rows) {
@@ -1142,11 +1154,30 @@ function uniqueMetaGroupResolver<T>(
     if (!keyword) continue;
     const key = keyForMetaRow(row, keyword);
     const id = groupIdForRow(row, keyword);
-    const candidates = candidatesByKeyword.get(key) || new Map<string, { id: string; spendCents: number; impressions: number; linkClicks: number }>();
-    const candidate = candidates.get(id) || { id, spendCents: 0, impressions: 0, linkClicks: 0 };
+    const candidates = candidatesByKeyword.get(key) || new Map<
+      string,
+      {
+        id: string;
+        spendCents: number;
+        impressions: number;
+        linkClicks: number;
+        firstDate: string;
+        lastDate: string;
+      }
+    >();
+    const candidate = candidates.get(id) || {
+      id,
+      spendCents: 0,
+      impressions: 0,
+      linkClicks: 0,
+      firstDate: row.date,
+      lastDate: row.date,
+    };
     candidate.spendCents += row.spend_cents || 0;
     candidate.impressions += row.impressions || 0;
     candidate.linkClicks += row.link_clicks || 0;
+    if (row.date < candidate.firstDate) candidate.firstDate = row.date;
+    if (row.date > candidate.lastDate) candidate.lastDate = row.date;
     candidates.set(id, candidate);
     candidatesByKeyword.set(key, candidates);
   }
@@ -1157,6 +1188,29 @@ function uniqueMetaGroupResolver<T>(
     );
     if (candidates.length === 0) return fallbackId;
     if (candidates.length === 1) return candidates[0].id;
+
+    const attributionDate = attributionDateForResolver(row);
+    if (attributionDate) {
+      const rankedByDate = candidates
+        .map((candidate) => ({
+          ...candidate,
+          distanceDays: distanceFromDateWindow(attributionDate, candidate.firstDate, candidate.lastDate),
+        }))
+        .sort(
+          (a, b) =>
+            a.distanceDays - b.distanceDays ||
+            b.spendCents - a.spendCents ||
+            b.impressions - a.impressions ||
+            b.linkClicks - a.linkClicks
+        );
+      if (
+        rankedByDate[0] &&
+        rankedByDate[0].distanceDays <= 30 &&
+        rankedByDate[0].distanceDays < (rankedByDate[1]?.distanceDays ?? Number.POSITIVE_INFINITY)
+      ) {
+        return rankedByDate[0].id;
+      }
+    }
 
     const deliveredCandidates = candidates.filter(
       (candidate) =>
@@ -1177,6 +1231,26 @@ function uniqueMetaGroupResolver<T>(
 
     return fallbackId;
   };
+}
+
+function attributionDateForResolver(row: unknown): string | null {
+  if (!row || typeof row !== "object") return null;
+  if ("event_at" in row && typeof row.event_at === "string") return eventDateKey(row.event_at);
+  if ("date" in row && typeof row.date === "string") return row.date;
+  return null;
+}
+
+function distanceFromDateWindow(date: string, firstDate: string, lastDate: string) {
+  if (date >= firstDate && date <= lastDate) return 0;
+  if (date < firstDate) return daysBetween(date, firstDate);
+  return daysBetween(lastDate, date);
+}
+
+function daysBetween(from: string, to: string) {
+  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
+  const toMs = Date.parse(`${to}T00:00:00.000Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return Number.POSITIVE_INFINITY;
+  return Math.abs(Math.round((toMs - fromMs) / 86_400_000));
 }
 
 function hasMetaDelivery(row: MetaRow) {
@@ -1415,17 +1489,34 @@ function dailySalesGroupIdFromSaleDate(
   return `${row.date}:${resolvedBookingIdentity}`;
 }
 
-function periodSalesGroupIdFromBookingDate(
+function resolvedAttributionGroupId(
   match: KeywordEvent,
   keyword: string,
-  periodAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
+  level: AdsTrackerLevel,
+  fallbackId: string
 ) {
-  return match.override_group_id ||
-    periodAttributionGroupId(
-      match,
-      keyword,
-      `${match.client_key}:keyword:${keyword}`
-    );
+  const campaignIdentity = match.override_campaign_id || match.override_campaign_name;
+  if (campaignIdentity) {
+    if (level === "campaign") return `${match.client_key}:${campaignIdentity}`;
+    return `${match.client_key}:${campaignIdentity}:${match.override_ad_id || keyword}`;
+  }
+
+  return match.override_group_id || fallbackId;
+}
+
+function dailyResolvedAttributionGroupId(
+  match: KeywordEvent,
+  keyword: string,
+  level: AdsTrackerLevel,
+  date: string,
+  fallbackId: string
+) {
+  const campaignIdentity = match.override_campaign_id || match.override_campaign_name;
+  if (campaignIdentity) {
+    return `${date}:${resolvedAttributionGroupId(match, keyword, level, fallbackId)}`;
+  }
+  if (match.override_group_id) return `${date}:${match.override_group_id}`;
+  return fallbackId.startsWith(`${date}:`) ? fallbackId : `${date}:${fallbackId}`;
 }
 
 function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: AdsTrackerLevel = "ad") {
@@ -1467,7 +1558,7 @@ function addKeywordEventsToGroups(
       const amount = dollars(manualValue);
       group.collectedRevenue += amount;
       group.contractedRevenue += amount;
-    } else {
+    } else if (event.event_type !== "manual_attribution_override") {
       if (event.source === "manychat") group.messages += 1;
       if (event.source === "ghl") group.bookedCalls += 1;
     }
@@ -1783,6 +1874,7 @@ function parseAttributionResolution(row: AttributionExceptionRow): AttributionRe
 
   return {
     id: row.id,
+    source: row.source,
     saleKey,
     action: actionValue,
     clientKey: row.client_key || stringFromRecord(payload, "clientKey"),
@@ -1815,7 +1907,7 @@ async function fetchAttributionResolutions(
       .select(
         "id,source,reason,client_key,keyword_normalized,contact_name,appointment_id,payload,resolved_at,created_at"
       )
-      .eq("source", ALERT_RESOLUTION_SOURCE)
+      .in("source", [ALERT_RESOLUTION_SOURCE, AUTO_ATTRIBUTION_SOURCE])
       .order("created_at", { ascending: true })
       .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
@@ -1834,9 +1926,123 @@ async function fetchAttributionResolutions(
 function latestResolutionsBySaleKey(resolutions: AttributionResolution[]) {
   const latest = new Map<string, AttributionResolution>();
   for (const resolution of resolutions) {
-    latest.set(resolution.saleKey, resolution);
+    const previous = latest.get(resolution.saleKey);
+    if (!previous || resolutionPriority(resolution) >= resolutionPriority(previous)) {
+      latest.set(resolution.saleKey, resolution);
+    }
   }
   return latest;
+}
+
+function resolutionPriority(resolution: AttributionResolution) {
+  if (resolution.source === ALERT_RESOLUTION_SOURCE) return 2;
+  if (resolution.source === AUTO_ATTRIBUTION_SOURCE) return 1;
+  return 0;
+}
+
+async function persistAutomaticSalesAttributions({
+  db,
+  salesRows,
+  bookings,
+  clientFilter,
+  existingResolutionBySaleKey,
+  backfilledDateKeys,
+  attributionRows,
+  adAttributionGroupId,
+}: {
+  db: ReturnType<typeof getServiceSupabase>;
+  salesRows: SheetRow[];
+  bookings: KeywordEvent[];
+  clientFilter: string[];
+  existingResolutionBySaleKey: Map<string, AttributionResolution>;
+  backfilledDateKeys: Set<string>;
+  attributionRows: MetaRow[];
+  adAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string;
+}): Promise<AttributionResolution[]> {
+  const bookingsByName = bookingsByContactName(bookings);
+  const now = new Date().toISOString();
+  const inserts: Array<Record<string, unknown>> = [];
+  const saleKeysInBatch = new Set<string>();
+
+  for (const row of salesRows) {
+    if (!shouldTrackUnmatchedSale(row)) continue;
+    const clientKey = clientFromOffer(row);
+    if (!clientKey || !clientFilter.includes(clientKey)) continue;
+    if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) continue;
+
+    const saleKey = salesRowKey(row, clientKey);
+    if (existingResolutionBySaleKey.has(saleKey) || saleKeysInBatch.has(saleKey)) continue;
+
+    const match = matchedBookingForSalesRow(row, bookingsByName);
+    if (!match) continue;
+
+    const keyword = normalizeKeyword(match.keyword_normalized || match.keyword_raw);
+    if (!keyword) continue;
+
+    const resolvedAdGroupId = adAttributionGroupId(match, keyword, `${match.client_key}:keyword:${keyword}`);
+    if (isFallbackAttributionGroupId(resolvedAdGroupId)) continue;
+
+    const hint =
+      hintForAttributionGroupId(resolvedAdGroupId, attributionRows, keyword) ||
+      exactMetaHintForKeywordEvent(match, attributionRows);
+    if (!hint?.campaignName && !hint?.adName) continue;
+
+    saleKeysInBatch.add(saleKey);
+    inserts.push({
+      source: AUTO_ATTRIBUTION_SOURCE,
+      reason: "attribute",
+      client_key: clientKey,
+      keyword_normalized: keyword,
+      contact_name: row.name || match.contact_name,
+      appointment_id: match.appointment_id,
+      payload: {
+        saleKey,
+        action: "attribute",
+        clientKey,
+        keyword: displayKeyword(keyword),
+        keywordRaw: match.keyword_raw || displayKeyword(keyword),
+        campaignId: hint.campaignId,
+        campaignName: hint.campaignName,
+        adId: hint.adId,
+        adName: hint.adName,
+        groupId: resolvedAdGroupId,
+        groupName: hint.adName || displayKeyword(keyword),
+        contactName: row.name || match.contact_name,
+        sale: {
+          date: row.date,
+          name: row.name,
+          setter: row.setter,
+          amount: saleAmount(row),
+          outcome: row.outcome,
+          callTaken: row.callTaken,
+        },
+        booking: {
+          appointmentId: match.appointment_id,
+          contactId: match.contact_id,
+          contactName: match.contact_name,
+          eventAt: match.event_at,
+        },
+        created_from: "ads_tracker_auto_sales_attribution",
+        created_at: now,
+      },
+      resolved_at: now,
+    });
+  }
+
+  if (inserts.length === 0) return [];
+
+  const { data, error } = await db
+    .from("ads_attribution_exceptions")
+    .insert(inserts)
+    .select("id,source,reason,client_key,keyword_normalized,contact_name,appointment_id,payload,resolved_at,created_at");
+
+  if (error) {
+    throw new Error(`Automatic sales attribution save failed: ${error.message}`);
+  }
+
+  return ((data || []) as AttributionExceptionRow[])
+    .map(parseAttributionResolution)
+    .filter((value): value is AttributionResolution => Boolean(value));
 }
 
 function attributionOverrideEventForRow(
@@ -2211,6 +2417,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (row, keyword) => `${row.client_key}:${keyword}`,
     (row, keyword) => `${row.client_key}:${keyword}`
   );
+  const periodAdAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent>(
+    attributionRows,
+    adGroupId,
+    (row, keyword) => `${row.client_key}:${keyword}`,
+    (row, keyword) => `${row.client_key}:${keyword}`
+  );
   const dailyAttributionIdentity = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
     attributionRows,
     periodMetaGroupId,
@@ -2264,7 +2476,22 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const salesRows = await fetchFreshSalesRows(db, query, clientFilter);
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
-  const resolutionBySaleKey = latestResolutionsBySaleKey(attributionResolutions);
+  const attributionGhlBookings = attributionEvents.filter((event) => event.source === "ghl");
+  const automaticAttributionResolutions = await persistAutomaticSalesAttributions({
+    db,
+    salesRows: attributionSalesRows,
+    bookings: attributionGhlBookings,
+    clientFilter,
+    existingResolutionBySaleKey: latestResolutionsBySaleKey(attributionResolutions),
+    backfilledDateKeys,
+    attributionRows,
+    adAttributionGroupId: periodAdAttributionGroupId,
+  });
+  const allAttributionResolutions = [
+    ...attributionResolutions,
+    ...automaticAttributionResolutions,
+  ];
+  const resolutionBySaleKey = latestResolutionsBySaleKey(allAttributionResolutions);
   const missingManychatKeywordAlerts = buildMissingManychatKeywordAlerts(
     missingManychatKeywordEvents,
     resolutionBySaleKey
@@ -2282,15 +2509,19 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     })
     .filter((event): event is KeywordEvent => Boolean(event));
   const bookings = [
-    ...attributionEvents.filter((event) => event.source === "ghl"),
+    ...attributionGhlBookings,
     ...manualAttributionBookings,
   ];
   addKeywordEventsToGroups(
     groups,
     manualAttributionBookings,
     (event, keyword) =>
-      event.override_group_id ||
-      periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
+      resolvedAttributionGroupId(
+        event,
+        keyword,
+        query.level,
+        periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`)
+      ),
     () => `${query.dateFrom} - ${query.dateTo}`,
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
@@ -2316,14 +2547,24 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match) =>
-      periodSalesGroupIdFromBookingDate(
+      resolvedAttributionGroupId(
         match,
         match.keyword_normalized || "",
-        periodAttributionGroupId
+        query.level,
+        periodAttributionGroupId(
+          match,
+          match.keyword_normalized || "",
+          `${match.client_key}:keyword:${match.keyword_normalized || ""}`
+        )
       ),
     groupHint: (match) => {
       const keyword = match.keyword_normalized || "";
-      const groupId = periodSalesGroupIdFromBookingDate(match, keyword, periodAttributionGroupId);
+      const groupId = resolvedAttributionGroupId(
+        match,
+        keyword,
+        query.level,
+        periodAttributionGroupId(match, keyword, `${match.client_key}:keyword:${keyword}`)
+      );
       return (
         hintForAttributionGroupId(groupId, attributionRows, keyword) ||
         exactMetaHintForKeywordEvent(match, attributionRows)
@@ -2379,13 +2620,17 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     dailyGroups,
     manualAttributionBookings,
     (event, keyword) =>
-      event.override_group_id
-        ? `${eventDateKey(event.event_at)}:${event.override_group_id}`
-        : dailyAttributionGroupId(
-            event,
-            keyword,
-            `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
-          ),
+      dailyResolvedAttributionGroupId(
+        event,
+        keyword,
+        query.level,
+        eventDateKey(event.event_at),
+        dailyAttributionGroupId(
+          event,
+          keyword,
+          `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
+        )
+      ),
     (event) => eventDateKey(event.event_at),
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
@@ -2393,16 +2638,28 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
   applySalesToGroups(dailyGroups, attributionSalesRows, bookings, {
     groupId: (match, row) =>
-      dailySalesGroupIdFromSaleDate(
+      dailyResolvedAttributionGroupId(
         match,
-        row,
         match.keyword_normalized || "",
-        periodAttributionGroupId
+        query.level,
+        row.date,
+        dailySalesGroupIdFromSaleDate(
+          match,
+          row,
+          match.keyword_normalized || "",
+          periodAttributionGroupId
+        )
       ),
     dateLabel: (_match, row) => row.date,
     groupHint: (match, row) => {
       const keyword = match.keyword_normalized || "";
-      const groupId = dailySalesGroupIdFromSaleDate(match, row, keyword, periodAttributionGroupId);
+      const groupId = dailyResolvedAttributionGroupId(
+        match,
+        keyword,
+        query.level,
+        row.date,
+        dailySalesGroupIdFromSaleDate(match, row, keyword, periodAttributionGroupId)
+      );
       return (
         hintForAttributionGroupId(groupId, attributionRows, keyword) ||
         exactMetaHintForKeywordEvent(match, attributionRows)
