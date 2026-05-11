@@ -18,13 +18,14 @@ import {
   Menu,
   X,
   Monitor,
+  Palette,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/ads", label: "Ads", icon: Megaphone },
-  { href: "/studio", label: "Studio", icon: Monitor },
+  { href: "/studio", label: "Studio", icon: Palette },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/accountant", label: "Accountant", icon: Calculator },
