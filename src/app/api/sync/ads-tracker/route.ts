@@ -435,6 +435,93 @@ async function replaceStoredMetaSlice(
   };
 }
 
+async function refreshStoredMetaStatuses(
+  db: ReturnType<typeof getServiceSupabase>,
+  accountKey: string,
+  statusRows: MetaAdEntity[],
+  syncedAt: string
+) {
+  const updateForStatus = (status: MetaAdEntity, includeOptionalColumns = true) => {
+    const payload: Record<string, unknown> = { synced_at: syncedAt };
+    if (includeOptionalColumns) {
+      payload.ad_effective_status = status.effective_status || null;
+      payload.ad_configured_status = status.configured_status || null;
+      payload.campaign_effective_status = status.campaign?.effective_status || null;
+      payload.campaign_configured_status = status.campaign?.configured_status || null;
+    }
+    return payload;
+  };
+  const chunks: MetaAdEntity[][] = [];
+  for (let index = 0; index < statusRows.length; index += 20) {
+    chunks.push(statusRows.slice(index, index + 20));
+  }
+
+  let updated = 0;
+  for (const chunk of chunks) {
+    await Promise.all(
+      chunk.map(async (status) => {
+        if (!status.id) return;
+        const { error, count } = await db
+          .from("ads_meta_insights_daily")
+          .update(updateForStatus(status), { count: "exact" })
+          .eq("client_key", accountKey)
+          .eq("ad_id", status.id);
+
+        const missingOptionalColumns = OPTIONAL_META_COLUMNS.filter((column) => missingColumn(error, column));
+        if (error && missingOptionalColumns.length > 0) {
+          const { error: fallbackError, count: fallbackCount } = await db
+            .from("ads_meta_insights_daily")
+            .update(updateForStatus(status, false), { count: "exact" })
+            .eq("client_key", accountKey)
+            .eq("ad_id", status.id);
+
+          if (fallbackError) throw fallbackError;
+          updated += fallbackCount || 0;
+          return;
+        }
+
+        if (error) throw error;
+        updated += count || 0;
+      })
+    );
+  }
+
+  if (statusRows.length > 0) {
+    const statusIds = statusRows.map((status) => status.id).filter(Boolean);
+    let query = db
+      .from("ads_meta_insights_daily")
+      .update(updateForStatus({ id: "" }), { count: "exact" })
+      .eq("client_key", accountKey);
+
+    if (statusIds.length > 0) {
+      query = query.not("ad_id", "in", `(${statusIds.join(",")})`);
+    }
+
+    const { error, count } = await query;
+    const missingOptionalColumns = OPTIONAL_META_COLUMNS.filter((column) => missingColumn(error, column));
+    if (error && missingOptionalColumns.length > 0) {
+      let fallbackQuery = db
+        .from("ads_meta_insights_daily")
+        .update(updateForStatus({ id: "" }, false), { count: "exact" })
+        .eq("client_key", accountKey);
+
+      if (statusIds.length > 0) {
+        fallbackQuery = fallbackQuery.not("ad_id", "in", `(${statusIds.join(",")})`);
+      }
+
+      const { error: fallbackError, count: fallbackCount } = await fallbackQuery;
+      if (fallbackError) throw fallbackError;
+      updated += fallbackCount || 0;
+      return updated;
+    }
+
+    if (error) throw error;
+    updated += count || 0;
+  }
+
+  return updated;
+}
+
 async function isAuthorized(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
@@ -468,6 +555,8 @@ export async function POST(req: NextRequest) {
     spendCents: number;
     impressions: number;
     linkClicks: number;
+    statusRows?: number;
+    statusRowsUpdated?: number;
     dates?: Array<{
       date: string;
       rowCount: number;
@@ -549,6 +638,12 @@ export async function POST(req: NextRequest) {
       }
 
       const replacement = await replaceStoredMetaSlice(db, account.key, dateFrom, dateTo, rows);
+      const statusRowsUpdated = await refreshStoredMetaStatuses(
+        db,
+        account.key,
+        statusRows,
+        syncedAt
+      );
 
       results.push({
         account: account.key,
@@ -557,6 +652,8 @@ export async function POST(req: NextRequest) {
         spendCents: replacement.stored.spendCents,
         impressions: replacement.stored.impressions,
         linkClicks: replacement.stored.linkClicks,
+        statusRows: statusRows.length,
+        statusRowsUpdated,
         dates: replacement.dates,
       });
     } catch (error) {

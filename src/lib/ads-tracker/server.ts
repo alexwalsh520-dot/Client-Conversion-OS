@@ -223,7 +223,7 @@ interface UnmatchedSale {
     | "ambiguous_or_missing_meta_match"
     | "missing_manychat_keyword";
   classification: "organic_or_unattributed" | "missing_keyword";
-  alertType?: "sale" | "missing_dm_keyword";
+  alertType?: "sale" | "call" | "missing_dm_keyword";
   subscriberId?: string | null;
   instagramHandle?: string | null;
   manychatUrl?: string | null;
@@ -263,6 +263,7 @@ interface AttributionResolution {
   note: string | null;
   resolvedAt: string | null;
   createdAt: string | null;
+  alertType: "sale" | "call" | "missing_dm_keyword" | null;
 }
 
 interface ResolvedAttributionAlert {
@@ -314,6 +315,8 @@ interface AttributionHistoryEvent {
   setter: string;
   reason: string | null;
   eventAt: string;
+  saleKey?: string | null;
+  alertType?: "sale" | "call" | "missing_dm_keyword" | null;
 }
 
 interface AdsSyncRunRow {
@@ -434,10 +437,17 @@ function matchesStatusFilter(row: AdsTrackerRow, status: AdsTrackerStatus) {
   return row.status === status;
 }
 
+function normalizedMetaStatus(value: string | null | undefined) {
+  return (value || "").trim().toUpperCase();
+}
+
 function metaRowStatus(row: MetaRow): "active" | "finished" {
-  const effectiveStatus = (row.ad_effective_status || row.campaign_effective_status || "").toUpperCase();
-  if (!effectiveStatus) return "active";
-  return effectiveStatus === "ACTIVE" ? "active" : "finished";
+  const adStatus = normalizedMetaStatus(row.ad_effective_status);
+  const campaignStatus = normalizedMetaStatus(row.campaign_effective_status);
+  if (campaignStatus && campaignStatus !== "ACTIVE") return "finished";
+  if (adStatus && adStatus !== "ACTIVE") return "finished";
+  if (campaignStatus === "ACTIVE" || adStatus === "ACTIVE") return "active";
+  return "finished";
 }
 
 function applyGroupStatus(group: Group, status: "active" | "finished") {
@@ -468,6 +478,10 @@ function isSubscriptionSale(row: SheetRow): boolean {
 
 function saleAmount(row: SheetRow): number {
   return row.cashCollected || 0;
+}
+
+function isRevenueEvent(row: SheetRow): boolean {
+  return saleAmount(row) > 0 || row.revenue > 0 || isWin(row);
 }
 
 function normalizeKeyPart(value: unknown): string {
@@ -515,6 +529,7 @@ function unmatchedSale(
     amount: saleAmount(row),
     reason,
     classification: "organic_or_unattributed",
+    alertType: isRevenueEvent(row) ? "sale" : "call",
   };
 }
 
@@ -1150,6 +1165,7 @@ function uniqueMetaGroupResolver<T>(
         linkClicks: number;
         firstDate: string;
         lastDate: string;
+        active: boolean;
       }
     >
   >();
@@ -1168,6 +1184,7 @@ function uniqueMetaGroupResolver<T>(
         linkClicks: number;
         firstDate: string;
         lastDate: string;
+        active: boolean;
       }
     >();
     const candidate = candidates.get(id) || {
@@ -1177,12 +1194,14 @@ function uniqueMetaGroupResolver<T>(
       linkClicks: 0,
       firstDate: row.date,
       lastDate: row.date,
+      active: false,
     };
     candidate.spendCents += row.spend_cents || 0;
     candidate.impressions += row.impressions || 0;
     candidate.linkClicks += row.link_clicks || 0;
     if (row.date < candidate.firstDate) candidate.firstDate = row.date;
     if (row.date > candidate.lastDate) candidate.lastDate = row.date;
+    if (metaRowStatus(row) === "active") candidate.active = true;
     candidates.set(id, candidate);
     candidatesByKeyword.set(key, candidates);
   }
@@ -1193,6 +1212,9 @@ function uniqueMetaGroupResolver<T>(
     );
     if (candidates.length === 0) return fallbackId;
     if (candidates.length === 1) return candidates[0].id;
+
+    const activeCandidates = candidates.filter((candidate) => candidate.active);
+    if (activeCandidates.length === 1) return activeCandidates[0].id;
 
     const attributionDate = attributionDateForResolver(row);
     if (attributionDate) {
@@ -1563,6 +1585,8 @@ function addKeywordEventsToGroups(
       const amount = dollars(manualValue);
       group.collectedRevenue += amount;
       group.contractedRevenue += amount;
+    } else if (event.event_type === "manual_missing_booking_attribution_override") {
+      group.bookedCalls += 1;
     } else if (event.event_type !== "manual_attribution_override") {
       if (event.source === "manychat") group.messages += 1;
       if (event.source === "ghl") group.bookedCalls += 1;
@@ -1898,7 +1922,13 @@ function parseAttributionResolution(row: AttributionExceptionRow): AttributionRe
     note: stringFromRecord(payload, "note"),
     resolvedAt: row.resolved_at,
     createdAt: row.created_at,
+    alertType: parseAlertType(stringFromRecord(payload, "alertType")),
   };
+}
+
+function parseAlertType(value: string | null): AttributionResolution["alertType"] {
+  if (value === "sale" || value === "call" || value === "missing_dm_keyword") return value;
+  return null;
 }
 
 async function fetchAttributionResolutions(
@@ -2053,7 +2083,8 @@ async function persistAutomaticSalesAttributions({
 function attributionOverrideEventForRow(
   row: SheetRow,
   resolution: AttributionResolution | undefined,
-  clientKey: string | null
+  clientKey: string | null,
+  hasRealGhlBooking = true
 ): KeywordEvent | null {
   if (!resolution || resolution.action !== "attribute") return null;
 
@@ -2063,7 +2094,9 @@ function attributionOverrideEventForRow(
 
   return {
     source: "ghl",
-    event_type: "manual_attribution_override",
+    event_type: hasRealGhlBooking
+      ? "manual_attribution_override"
+      : "manual_missing_booking_attribution_override",
     client_key: resolvedClientKey,
     keyword_raw: resolution.keywordRaw || displayKeyword(keyword),
     keyword_normalized: keyword,
@@ -2191,7 +2224,9 @@ function buildAttributionEventsHistory({
       : null;
     const isManual = event.event_type.startsWith("manual_");
     const eventType: AttributionHistoryEvent["eventType"] = isManual
-      ? (event.event_type as AttributionHistoryEvent["eventType"])
+      ? event.event_type === "manual_missing_booking_attribution_override"
+        ? "booked_call"
+        : (event.event_type as AttributionHistoryEvent["eventType"])
       : event.source === "ghl"
         ? "booked_call"
         : "dm";
@@ -2221,6 +2256,8 @@ function buildAttributionEventsHistory({
       setter: event.setter_name || "",
       reason: status === "needs_review" ? "No unique Meta ad match" : null,
       eventAt: event.event_at,
+      saleKey: event.attribution_resolution_id || null,
+      alertType: null,
     });
   }
 
@@ -2284,6 +2321,8 @@ function buildAttributionEventsHistory({
       setter: row.setter || "",
       reason,
       eventAt: historyEventAtForSalesRow(row),
+      saleKey,
+      alertType: isRevenueEvent(row) ? ("sale" as const) : ("call" as const),
     };
 
     if (row.callTakenStatus !== "pending" || row.callTaken || isNoShow(row)) {
@@ -2502,21 +2541,24 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     missingManychatKeywordEvents,
     resolutionBySaleKey
   );
+  const realGhlBookingsByName = bookingsByContactName(attributionGhlBookings);
   const manualAttributionBookings = attributionSalesRows
     .map((row) => {
       const clientKey = clientFromOffer(row);
       if (!clientKey || !clientFilter.includes(clientKey)) return null;
       if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) return null;
+      const hasRealGhlBooking = Boolean(matchedBookingForSalesRow(row, realGhlBookingsByName));
       return attributionOverrideEventForRow(
         row,
         resolutionBySaleKey.get(salesRowKey(row, clientKey)),
-        clientKey
+        clientKey,
+        hasRealGhlBooking
       );
     })
     .filter((event): event is KeywordEvent => Boolean(event));
   const bookings = [
-    ...attributionGhlBookings,
     ...manualAttributionBookings,
+    ...attributionGhlBookings,
   ];
   addKeywordEventsToGroups(
     groups,
@@ -2679,7 +2721,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const eventsHistory = buildAttributionEventsHistory({
     query,
-    events: attributionEvents,
+    events: [
+      ...attributionEvents,
+      ...manualAttributionBookings.filter(
+        (event) => event.event_type === "manual_missing_booking_attribution_override"
+      ),
+    ],
     salesRows: attributionSalesRows,
     bookings,
     resolutionBySaleKey,

@@ -1856,6 +1856,8 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
 
   if(Array.isArray(authoritativeAdRoas) && authoritativeAdRoas.length){
     const byAdId = new Map(out.map(ad => [String(ad.adId), ad]));
+    const visibleAdIds = new Set(out.map(ad => String(ad.adId)));
+    const visibleCampaignIds = new Set((campaigns || []).map(c => String(c.id || "")));
     return authoritativeAdRoas
       .map(row => {
         const adId = row.adId || row.id || row.label;
@@ -1869,6 +1871,7 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
           adId,
           adName: row.adName || row.label || matched?.adName || "UNKNOWN",
           camp: row.clientKey || matched?.camp || "",
+          campaignId: row.campaignId || null,
           spend,
           collected,
           clients: Number(row.newClients || 0),
@@ -1877,7 +1880,11 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
           previewThumbnailUrl: row.previewThumbnailUrl || matched?.previewThumbnailUrl || null,
         };
       })
-      .filter(ad => ad.spend > 0 || ad.collected > 0 || ad.clients > 0);
+      .filter(ad => {
+        const campaignId = String(ad.campaignId || "");
+        const isVisible = visibleAdIds.has(String(ad.adId)) || (campaignId && visibleCampaignIds.has(campaignId));
+        return isVisible && (ad.spend > 0 || ad.collected > 0 || ad.clients > 0);
+      });
   }
 
   return out;
@@ -2992,7 +2999,7 @@ function formatEntry(e){
   return e.value+" "+(b?.unit||"");
 }
 
-function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
+function RecentEntries({extra, includeFallback=false, campaigns=[], onManualSubmit, onResolve, onToast}){
   const [open, setOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [page, setPage] = useState(0);
@@ -3000,6 +3007,8 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({kw:"", value:"", bucket:"msgs", camp:"tyson"});
   const [confirmDel, setConfirmDel] = useState(null);
+  const [fixingEvent, setFixingEvent] = useState(null);
+  const [savingFix, setSavingFix] = useState(false);
 
   // Build a stable list with ids the first time (so state mutations are consistent)
   const seedAll = useMemo(() => {
@@ -3042,6 +3051,18 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
   const submitManualEntry = (entry) => {
     onManualSubmit && onManualSubmit(entry);
     setManualOpen(false);
+  };
+  const saveEventResolution = async (payload) => {
+    if(!onResolve) return;
+    setSavingFix(true);
+    try{
+      await onResolve(payload);
+      setFixingEvent(null);
+    }catch(err){
+      onToast && onToast(err?.message || "Attribution save failed");
+    }finally{
+      setSavingFix(false);
+    }
   };
 
   return (
@@ -3119,6 +3140,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                 organic:"Organic",
                 ignored:"Ignored",
               }[e.status] || "Attributed";
+              const canResolveLive = isLive && e.saleKey && (e.status === "needs_review" || e.status === "missing_keyword");
               return (
                 <tr key={e.id} className={isEditing ? "editing-row" : ""}>
                   <td className="mono" style={{color:'var(--text-3)',fontSize:11,verticalAlign:'middle'}}>
@@ -3174,7 +3196,12 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                   </td>
                   <td className="actions-col" style={{verticalAlign:'middle'}}>
                     {isLive ? (
-                      <span className={"event-status "+(e.status || "attributed")} title={e.reason || ""}>{statusLabel}</span>
+                      <>
+                        <span className={"event-status "+(e.status || "attributed")} title={e.reason || ""}>{statusLabel}</span>
+                        {canResolveLive && (
+                          <button className="rec-edit-btn" style={{marginLeft:6}} onClick={()=>setFixingEvent(e)}>Resolve</button>
+                        )}
+                      </>
                     ) : isEditing ? (
                       <>
                         <button className="rec-save" onClick={saveEdit} disabled={!draft.kw || !draft.value}>Save</button>
@@ -3219,8 +3246,39 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
           </Modal>
         );
       })()}
+      {fixingEvent && (
+        <AttributionAlertModal
+          alert={alertFromHistoryEntry(fixingEvent)}
+          campaigns={campaigns}
+          saving={savingFix}
+          onClose={()=>setFixingEvent(null)}
+          onResolve={saveEventResolution}
+        />
+      )}
     </div>
   );
+}
+
+function alertFromHistoryEntry(entry){
+  const eventDate = entry.eventAt ? eventDateKeyFromIso(entry.eventAt) : "";
+  return {
+    key: entry.saleKey,
+    saleKey: entry.saleKey,
+    date: eventDate,
+    eventAt: entry.eventAt || null,
+    clientKey: entry.camp || null,
+    name: entry.name || "Unknown",
+    setter: entry.setter || "",
+    amount: entry.eventType === "sale" ? Number(entry.value || 0) : 0,
+    reason: entry.reason || "",
+    alertType: entry.alertType || (entry.eventType === "call_taken" || entry.eventType === "no_show" ? "call" : "sale"),
+  };
+}
+
+function eventDateKeyFromIso(value){
+  const dt = value ? new Date(value) : null;
+  if(!dt || Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("en-CA", {timeZone:"America/New_York"});
 }
 
 function recentEntriesFromDashboard(dashboard){
@@ -3267,6 +3325,9 @@ function recentEntriesFromDashboard(dashboard){
       reason: event.reason || "",
       campaignName: event.campaignName || "",
       adName: event.adName || "",
+      saleKey: event.saleKey || null,
+      alertType: event.alertType || null,
+      eventAt: event.eventAt || null,
       locked: true,
       id: "live-"+i,
     };
@@ -3296,7 +3357,7 @@ function AttributionSummaryTiles({dashboard, alerts}){
       <div className={"alerts-summary-card "+(unattributedIsClear ? "good" : "warn")}>
         <div className="alerts-summary-label">Unattributed</div>
         <div className={"alerts-summary-value "+(unattributedIsClear ? "good" : "warn")}>{fmtUsd(unresolved)}</div>
-        <div className="alerts-summary-note">{alerts.length} unresolved sale{alerts.length===1?"":"s"}</div>
+        <div className="alerts-summary-note">{alerts.length} unresolved item{alerts.length===1?"":"s"}</div>
       </div>
     </div>
   );
@@ -3329,6 +3390,20 @@ function alertTimestampLabel(alert){
   const date = alertDateLabel(alert);
   const time = alert?.time || alert?.eventTime || "";
   return time ? `${date} · ${time}` : date;
+}
+
+function alertAmountLabel(alert){
+  const amount = Number(alert?.amount || 0);
+  if(amount > 0) return fmtUsd(amount);
+  if(alert?.alertType === "call" || alert?.callTaken) return "Call taken";
+  if(alert?.alertType === "missing_dm_keyword") return "DM keyword";
+  return "No revenue";
+}
+
+function alertTitleLabel(alert){
+  if(alert?.alertType === "call") return "Call attribution";
+  if(alert?.alertType === "missing_dm_keyword") return "Keyword attribution";
+  return "Sale attribution";
 }
 
 function normalizeUiKeyword(value){
@@ -3438,8 +3513,8 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
       <div className="alert-modal" onClick={e=>e.stopPropagation()}>
         <div className="alert-modal-head">
           <div>
-            <div className="alert-modal-title">Resolve attribution</div>
-            <div className="alert-modal-sub">{alert.name || "Unknown"} · {fmtUsd(Number(alert.amount || 0))}</div>
+            <div className="alert-modal-title">Resolve {alertTitleLabel(alert)}</div>
+            <div className="alert-modal-sub">{alert.name || "Unknown"} · {alertAmountLabel(alert)}</div>
           </div>
           <button className="alert-modal-close" onClick={onClose}>×</button>
         </div>
@@ -3521,7 +3596,7 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
       <div className="alerts-head">
         <div>
           <div className="alerts-title">Attribution alerts</div>
-          <div className="alerts-sub">{alerts.length} unresolved · sales without a clear source keyword</div>
+          <div className="alerts-sub">{alerts.length} unresolved · items without a clear source keyword</div>
         </div>
         <div className="alerts-tabs">
           {[
@@ -3557,7 +3632,7 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
               <span className={"alert-campaign-dot "+(alert.clientKey==="keith"?"keith":"")}></span>
               {clientLabel(alert.clientKey)}
             </div>
-            <div className="alert-amount">{fmtUsd(Number(alert.amount || 0))}</div>
+            <div className="alert-amount">{alertAmountLabel(alert)}</div>
             <div className="alert-actions">
               {alert.manychatUrl && (
                 <a
@@ -3689,6 +3764,10 @@ function App(){
     [liveCampaigns, account, status]
   );
   const metricCampaigns = useMemo(
+    () => scopeCampaigns(liveCampaigns, account, status),
+    [liveCampaigns, account, status]
+  );
+  const resolveCampaigns = useMemo(
     () => scopeCampaigns(liveCampaigns, account, "all"),
     [liveCampaigns, account]
   );
@@ -3794,10 +3873,17 @@ function App(){
           {/* Charts */}
           <MetricCardBoard campaigns={metricCampaigns} dashboard={dashboard}/>
 
-          <TasksSection dashboard={dashboard} campaigns={metricCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
+          <TasksSection dashboard={dashboard} campaigns={resolveCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
 
           {/* Recent entries (collapsed) */}
-          <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
+          <RecentEntries
+            extra={[...newEntries, ...liveRecent]}
+            includeFallback={dashboard?.mock}
+            campaigns={resolveCampaigns}
+            onManualSubmit={onLogEntry}
+            onResolve={onResolveAlert}
+            onToast={showToast}
+          />
 
           <div className="section chart-actions-cell">
             <div className="section-head">
