@@ -331,6 +331,10 @@ interface BackfillGroupHint {
 
 const SUPABASE_PAGE_SIZE = 1000;
 const ALERT_RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
+const MANYCHAT_MISSING_KEYWORD_TAG_NAMES = [
+  "needs_keyword_attribution",
+  "needs keyword attribution",
+];
 
 function emptyGroup(id: string, clientKey: string, name: string, keyword: string): Group {
   return {
@@ -1667,7 +1671,7 @@ async function fetchManychatMissingKeywordEvents(
       .select(
         "id,subscriber_id,subscriber_name,tag_name,client,setter_name,keyword_raw,keyword_normalized,raw_payload,event_at"
       )
-      .eq("tag_name", "needs_keyword_attribution")
+      .in("tag_name", MANYCHAT_MISSING_KEYWORD_TAG_NAMES)
       .gte("event_at", eventQueryFrom)
       .lte("event_at", eventQueryTo)
       .order("event_at", { ascending: true })
