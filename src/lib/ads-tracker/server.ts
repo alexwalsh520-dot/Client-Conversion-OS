@@ -152,6 +152,7 @@ export interface AdsTrackerRow {
   contractedRoi: number;
   collectedRoi: number;
   status: "active" | "finished";
+  attributionOnly: boolean;
 }
 
 interface SalesAttributionOptions {
@@ -202,7 +203,11 @@ interface UnmatchedSale {
   contractedRevenue: number;
   collectedRevenue: number;
   amount: number;
-  reason: "missing_sales_name" | "no_matching_ghl_booking" | "missing_booking_keyword";
+  reason:
+    | "missing_sales_name"
+    | "no_matching_ghl_booking"
+    | "missing_booking_keyword"
+    | "ambiguous_or_missing_meta_match";
   classification: "organic_or_unattributed";
 }
 
@@ -261,6 +266,34 @@ interface BuildPayloadOptions {
   resolvedAlerts?: ResolvedAttributionAlert[];
   salesCollectedRevenue?: number;
   sourceStatus?: Record<string, unknown>;
+  eventsHistory?: AttributionHistoryEvent[];
+}
+
+interface AttributionHistoryEvent {
+  id: string;
+  source: "manychat" | "ghl" | "sales_tracker" | "manual";
+  eventType:
+    | "dm"
+    | "booked_call"
+    | "call_taken"
+    | "no_show"
+    | "sale"
+    | "manual_correction"
+    | "manual_messages"
+    | "manual_booked_calls"
+    | "manual_calls_taken"
+    | "manual_new_clients"
+    | "manual_collected_revenue";
+  status: "attributed" | "needs_review" | "missing_keyword" | "organic" | "ignored";
+  clientKey: string | null;
+  keyword: string;
+  campaignName: string | null;
+  adName: string | null;
+  value: number | null;
+  name: string;
+  setter: string;
+  reason: string | null;
+  eventAt: string;
 }
 
 interface AdsSyncRunRow {
@@ -304,7 +337,7 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     subscriptionClients: 0,
     contractedRevenue: 0,
     collectedRevenue: 0,
-    status: "active",
+    status: "finished",
   };
 }
 
@@ -354,6 +387,7 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     contractedRoi: safeDiv(group.contractedRevenue, adSpend),
     collectedRoi: safeDiv(group.collectedRevenue, adSpend),
     status: group.status,
+    attributionOnly: !group.campaignId && !group.adId && group.adSpendCents === 0,
   };
 }
 
@@ -783,20 +817,40 @@ async function fetchFreshSalesRows(
   }
 }
 
+function bookingsByContactName(bookings: KeywordEvent[]) {
+  const byName = new Map<string, KeywordEvent[]>();
+  for (const booking of bookings) {
+    const name = normalizePersonName(booking.contact_name);
+    if (!name) continue;
+    const list = byName.get(name) || [];
+    list.push(booking);
+    byName.set(name, list);
+  }
+  return byName;
+}
+
+function matchedBookingForSalesRow(
+  row: SheetRow,
+  bookingsByName: Map<string, KeywordEvent[]>
+) {
+  const name = normalizePersonName(row.name);
+  if (!name) return null;
+  const clientKey = clientFromOffer(row);
+  const matches = bookingsByName.get(name) || [];
+  return matches.find((item) => !clientKey || item.client_key === clientKey) || matches[0] || null;
+}
+
+function isFallbackAttributionGroupId(groupId: string) {
+  return groupId.includes(":keyword:");
+}
+
 function applySalesToGroups(
   groups: Map<string, Group>,
   salesRows: SheetRow[],
   bookings: KeywordEvent[],
   options: SalesAttributionOptions = {}
 ): UnmatchedSale[] {
-  const bookingsByName = new Map<string, KeywordEvent[]>();
-  for (const booking of bookings) {
-    const name = normalizePersonName(booking.contact_name);
-    if (!name) continue;
-    const list = bookingsByName.get(name) || [];
-    list.push(booking);
-    bookingsByName.set(name, list);
-  }
+  const bookingsByName = bookingsByContactName(bookings);
 
   const unmatched: UnmatchedSale[] = [];
   const addUnmatched = (
@@ -816,8 +870,7 @@ function applySalesToGroups(
       addUnmatched(row, clientKey, "missing_sales_name");
       continue;
     }
-    const matches = bookingsByName.get(name) || [];
-    const match = matches.find((item) => !clientKey || item.client_key === clientKey) || matches[0];
+    const match = matchedBookingForSalesRow(row, bookingsByName);
     if (!match) {
       addUnmatched(row, clientKey, "no_matching_ghl_booking");
       continue;
@@ -831,6 +884,10 @@ function applySalesToGroups(
       match.override_group_id ||
       options.groupId?.(match, row) ||
       `${match.client_key}:${match.keyword_normalized}`;
+    if (!match.override_group_id && isFallbackAttributionGroupId(groupId)) {
+      addUnmatched(row, clientKey || match.client_key, "ambiguous_or_missing_meta_match");
+      continue;
+    }
     const group =
       groups.get(groupId) ||
       emptyGroup(
@@ -873,11 +930,12 @@ function buildPayload(
   dailyRows: AdsTrackerRow[] = [],
   options: BuildPayloadOptions = {}
 ) {
-  const totalSpend = rows.reduce((sum, row) => sum + row.adSpend, 0);
-  const totalCollected = rows.reduce((sum, row) => sum + row.collectedRevenue, 0);
-  const totalContracted = rows.reduce((sum, row) => sum + row.contractedRevenue, 0);
-  const totalMainOfferClients = rows.reduce((sum, row) => sum + row.mainOfferClients, 0);
-  const totalSubscriptionClients = rows.reduce((sum, row) => sum + row.subscriptionClients, 0);
+  const paidRows = rows.filter((row) => !row.attributionOnly);
+  const totalSpend = paidRows.reduce((sum, row) => sum + row.adSpend, 0);
+  const totalCollected = paidRows.reduce((sum, row) => sum + row.collectedRevenue, 0);
+  const totalContracted = paidRows.reduce((sum, row) => sum + row.contractedRevenue, 0);
+  const totalMainOfferClients = paidRows.reduce((sum, row) => sum + row.mainOfferClients, 0);
+  const totalSubscriptionClients = paidRows.reduce((sum, row) => sum + row.subscriptionClients, 0);
   const unmatchedSales = options.unmatchedSales || [];
   const resolvedAlerts = options.resolvedAlerts || [];
   const unmatchedSalesRevenue = unmatchedSales.reduce((sum, row) => sum + row.amount, 0);
@@ -888,7 +946,7 @@ function buildPayload(
       : Math.max(totalCollected, directSalesCollectedRevenue);
   const organicUnattributedRevenue = Math.max(0, totalCollectedRevenue - totalCollected);
 
-  const adRoas = rows
+  const adRoas = paidRows
     .map((row) => ({
       id: row.id,
       label: row.keyword,
@@ -918,20 +976,20 @@ function buildPayload(
       contractedRevenue: totalContracted,
       collectedRoi: safeDiv(totalCollected, totalSpend),
       contractedRoi: safeDiv(totalContracted, totalSpend),
-      messages: rows.reduce((sum, row) => sum + row.messages, 0),
-      bookedCalls: rows.reduce((sum, row) => sum + row.bookedCalls, 0),
-      callsTaken: rows.reduce((sum, row) => sum + row.callsTaken, 0),
-      newClients: rows.reduce((sum, row) => sum + row.newClients, 0),
+      messages: paidRows.reduce((sum, row) => sum + row.messages, 0),
+      bookedCalls: paidRows.reduce((sum, row) => sum + row.bookedCalls, 0),
+      callsTaken: paidRows.reduce((sum, row) => sum + row.callsTaken, 0),
+      newClients: paidRows.reduce((sum, row) => sum + row.newClients, 0),
       mainOfferClients: totalMainOfferClients,
       subscriptionClients: totalSubscriptionClients,
       costPerNewClient: safeDiv(
         totalSpend,
-        rows.reduce((sum, row) => sum + row.newClients, 0)
+        paidRows.reduce((sum, row) => sum + row.newClients, 0)
       ),
       costPerMainOfferClient: safeDiv(totalSpend, totalMainOfferClients),
       costPerCallTaken: safeDiv(
         totalSpend,
-        rows.reduce((sum, row) => sum + row.callsTaken, 0)
+        paidRows.reduce((sum, row) => sum + row.callsTaken, 0)
       ),
     },
     attribution: {
@@ -945,12 +1003,13 @@ function buildPayload(
     rows,
     dailyRows,
     adRoas,
-    trend: rows.map((row) => ({
+    trend: paidRows.map((row) => ({
       label: row.keyword,
       adSpend: row.adSpend,
       collectedRevenue: row.collectedRevenue,
       collectedRoi: row.collectedRoi,
     })),
+    eventsHistory: options.eventsHistory || [],
     recentEvents: events
       .slice()
       .sort((a, b) => b.event_at.localeCompare(a.event_at))
@@ -1690,6 +1749,208 @@ function resolvedAlertForRow(
   };
 }
 
+function historyEventAtForSalesRow(row: SheetRow) {
+  return `${row.date}T12:00:00.000Z`;
+}
+
+function historyKeyword(keyword: string | null | undefined) {
+  const normalized = normalizeKeyword(keyword);
+  return normalized ? displayKeyword(normalized) : "";
+}
+
+function historyHintFromResolution(resolution: AttributionResolution | undefined): BackfillGroupHint | null {
+  if (!resolution || resolution.action !== "attribute") return null;
+  return {
+    campaignId: resolution.campaignId,
+    campaignName: resolution.campaignName,
+    adId: resolution.adId,
+    adName: resolution.adName,
+  };
+}
+
+function historyStatusForResolution(
+  resolution: AttributionResolution | undefined
+): AttributionHistoryEvent["status"] | null {
+  if (!resolution) return null;
+  if (resolution.action === "organic") return "organic";
+  if (resolution.action === "ignore") return "ignored";
+  return "attributed";
+}
+
+function historyEventHintForKeywordEvent(
+  event: KeywordEvent,
+  keyword: string,
+  groupId: string,
+  attributionRows: MetaRow[]
+): BackfillGroupHint | null {
+  if (event.override_campaign_name || event.override_ad_name) {
+    return {
+      campaignId: event.override_campaign_id || null,
+      campaignName: event.override_campaign_name || null,
+      adId: event.override_ad_id || null,
+      adName: event.override_ad_name || null,
+    };
+  }
+
+  return (
+    hintForAttributionGroupId(groupId, attributionRows, keyword) ||
+    exactMetaHintForKeywordEvent(event, attributionRows)
+  );
+}
+
+function buildAttributionEventsHistory({
+  query,
+  events,
+  salesRows,
+  bookings,
+  resolutionBySaleKey,
+  attributionRows,
+  periodAttributionGroupId,
+}: {
+  query: AdsTrackerQuery;
+  events: KeywordEvent[];
+  salesRows: SheetRow[];
+  bookings: KeywordEvent[];
+  resolutionBySaleKey: Map<string, AttributionResolution>;
+  attributionRows: MetaRow[];
+  periodAttributionGroupId: (
+    row: KeywordEvent,
+    keyword: string,
+    fallbackId: string
+  ) => string;
+}): AttributionHistoryEvent[] {
+  const history: AttributionHistoryEvent[] = [];
+
+  for (const event of events.filter((item) => isWithinDashboardDateRange(item.event_at, query))) {
+    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+    const fallbackId = keyword ? `${event.client_key}:keyword:${keyword}` : "";
+    const groupId = keyword
+      ? event.override_group_id || periodAttributionGroupId(event, keyword, fallbackId)
+      : "";
+    const hint = keyword
+      ? historyEventHintForKeywordEvent(event, keyword, groupId, attributionRows)
+      : null;
+    const isManual = event.event_type.startsWith("manual_");
+    const eventType: AttributionHistoryEvent["eventType"] = isManual
+      ? (event.event_type as AttributionHistoryEvent["eventType"])
+      : event.source === "ghl"
+        ? "booked_call"
+        : "dm";
+    const status: AttributionHistoryEvent["status"] = !keyword
+      ? "missing_keyword"
+      : !event.override_group_id && isFallbackAttributionGroupId(groupId)
+        ? "needs_review"
+        : "attributed";
+
+    history.push({
+      id: [
+        event.source,
+        event.event_type,
+        event.appointment_id || event.subscriber_id || event.contact_id || "",
+        event.event_at,
+        keyword || "",
+      ].join(":"),
+      source: isManual ? "manual" : event.source,
+      eventType,
+      status,
+      clientKey: event.client_key,
+      keyword: historyKeyword(keyword || event.keyword_raw),
+      campaignName: hint?.campaignName || event.override_campaign_name || null,
+      adName: hint?.adName || event.override_ad_name || null,
+      value: event.value_cents || null,
+      name: event.contact_name || event.subscriber_name || "",
+      setter: event.setter_name || "",
+      reason: status === "needs_review" ? "No unique Meta ad match" : null,
+      eventAt: event.event_at,
+    });
+  }
+
+  const bookingsByName = bookingsByContactName(bookings);
+
+  for (const row of salesRows) {
+    if (isTestSalesRow(row)) continue;
+    const clientKey = clientFromOffer(row);
+    const saleKey = salesRowKey(row, clientKey);
+    const resolution = resolutionBySaleKey.get(saleKey);
+    const match = matchedBookingForSalesRow(row, bookingsByName);
+    const keyword = normalizeKeyword(
+      resolution?.keywordNormalized ||
+        resolution?.keywordRaw ||
+        match?.keyword_normalized ||
+        match?.keyword_raw
+    );
+    const fallbackId = match && keyword ? `${match.client_key}:keyword:${keyword}` : "";
+    const groupId = match && keyword
+      ? match.override_group_id || periodAttributionGroupId(match, keyword, fallbackId)
+      : resolution?.groupId || "";
+    const hint =
+      historyHintFromResolution(resolution) ||
+      (match && keyword
+        ? historyEventHintForKeywordEvent(match, keyword, groupId, attributionRows)
+        : null);
+    const resolutionStatus = historyStatusForResolution(resolution);
+    const status: AttributionHistoryEvent["status"] =
+      resolutionStatus ||
+      (!row.name
+        ? "needs_review"
+        : !match
+          ? "needs_review"
+          : !keyword
+            ? "missing_keyword"
+            : isFallbackAttributionGroupId(groupId)
+              ? "needs_review"
+              : "attributed");
+    const reason =
+      resolutionStatus === "organic"
+        ? "Resolved organic"
+        : resolutionStatus === "ignored"
+          ? "Ignored"
+          : !row.name
+            ? "Missing Sales Tracker name"
+            : !match
+              ? "No matching GHL booking"
+              : !keyword
+                ? "Booked call missing keyword"
+                : isFallbackAttributionGroupId(groupId)
+                  ? "No unique Meta ad match"
+                  : null;
+    const base = {
+      source: "sales_tracker" as const,
+      status,
+      clientKey,
+      keyword: historyKeyword(keyword),
+      campaignName: hint?.campaignName || resolution?.campaignName || null,
+      adName: hint?.adName || resolution?.adName || null,
+      name: row.name || resolution?.contactName || "",
+      setter: row.setter || "",
+      reason,
+      eventAt: historyEventAtForSalesRow(row),
+    };
+
+    if (row.callTakenStatus !== "pending" || row.callTaken || isNoShow(row)) {
+      history.push({
+        ...base,
+        id: `${saleKey}:call`,
+        eventType: row.callTaken && !isNoShow(row) ? "call_taken" : "no_show",
+        value: null,
+      });
+    }
+
+    if (saleAmount(row) > 0 || row.revenue > 0 || isWin(row)) {
+      history.push({
+        ...base,
+        id: `${saleKey}:sale`,
+        eventType: "sale",
+        value: Math.round(saleAmount(row) * 100),
+      });
+    }
+  }
+
+  return history
+    .sort((a, b) => b.eventAt.localeCompare(a.eventAt))
+    .slice(0, 200);
+}
+
 function applyOverrideMetadata(group: Group, match: KeywordEvent) {
   group.campaignId = match.override_campaign_id || group.campaignId;
   group.campaignName = match.override_campaign_name || group.campaignName;
@@ -1988,6 +2249,16 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeUnmatchedSales,
   });
 
+  const eventsHistory = buildAttributionEventsHistory({
+    query,
+    events: attributionEvents,
+    salesRows: attributionSalesRows,
+    bookings,
+    resolutionBySaleKey,
+    attributionRows,
+    periodAttributionGroupId,
+  });
+
   const finalized = Array.from(groups.values())
     .map(finalizeGroup)
     .filter(
@@ -2003,6 +2274,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     )
     .filter((row) => query.status === "all" || row.status === query.status)
     .sort((a, b) => b.collectedRoi - a.collectedRoi);
+
+  const paidFinalized = finalized.filter((row) => !row.attributionOnly);
 
   const finalizedDaily = Array.from(dailyGroups.values())
     .map(finalizeGroup)
@@ -2064,7 +2337,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       unmatchedSalesRevenue: unmatchedRevenue,
       organicOrUnattributedRevenue: Math.max(
         0,
-        salesCollectedRevenue - finalized.reduce((sum, row) => sum + row.collectedRevenue, 0)
+        salesCollectedRevenue - paidFinalized.reduce((sum, row) => sum + row.collectedRevenue, 0)
       ),
     },
   };
@@ -2074,5 +2347,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     resolvedAlerts,
     salesCollectedRevenue,
     sourceStatus,
+    eventsHistory,
   });
 }

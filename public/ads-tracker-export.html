@@ -195,6 +195,11 @@
   table.ads thead th:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:3;padding-left:20px}
   table.ads thead th.num{text-align:right}
   table.ads thead th .th-inner{display:inline-block;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.ads thead th.sortable-th{cursor:pointer;user-select:none}
+  table.ads thead th.sortable-th:hover{color:var(--text-2)}
+  table.ads thead th.sorted{color:var(--gold)}
+  .sort-arrow{font-size:9px;color:var(--text-4);margin-left:6px;letter-spacing:0}
+  table.ads thead th.sorted .sort-arrow{color:var(--gold)}
   table.ads thead th .col-resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:4}
   table.ads thead th .col-resize:hover,table.ads thead th .col-resize.active{background:linear-gradient(90deg,transparent,var(--gold) 50%,transparent)}
   table.ads thead th{position:sticky;top:0;background:var(--panel);text-align:right;padding:11px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);font-weight:500;white-space:nowrap;border-bottom:1px solid var(--border-2);z-index:2;position:sticky}
@@ -214,8 +219,9 @@
   .camp-dot.tyson{background:var(--gold)}
   .camp-dot.keith{background:var(--blue)}
   .chevron{color:var(--text-4);font-size:9px;width:10px;display:inline-block}
-  .status-pill{font-size:10px;color:var(--green-dim);letter-spacing:0.06em;text-transform:uppercase;padding-left:8px;border-left:1px solid var(--border-2);margin-left:4px}
-  .status-pill.finished{color:var(--text-4)}
+  .status-pill{font-size:9px;color:var(--green);letter-spacing:0.06em;text-transform:uppercase;padding:2px 6px;border:1px solid rgba(125,211,168,.18);border-radius:99px;background:rgba(125,211,168,.045);margin-left:4px;flex:0 0 auto}
+  .status-pill.finished{color:var(--text-4);border-color:var(--border-2);background:#111}
+  .status-pill.empty{color:var(--text-4);border-color:#2a2a2a;background:#0a0a0a}
 
   .pos{color:var(--green)}
   .neg{color:var(--red)}
@@ -501,6 +507,11 @@
   table.recent-tbl tr:last-child td{border-bottom:none}
   table.recent-tbl tr:hover td{background:var(--row-hover);color:var(--text)}
   .kw-tag{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);letter-spacing:0.04em}
+  .event-status{display:inline-flex;align-items:center;justify-content:center;min-width:78px;padding:4px 8px;border-radius:999px;border:1px solid var(--border-2);background:#101010;color:var(--text-3);font-size:10px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  .event-status.attributed{color:var(--green);border-color:rgba(125,211,168,.22);background:rgba(125,211,168,.045)}
+  .event-status.needs_review,.event-status.missing_keyword{color:var(--red);border-color:rgba(232,154,148,.22);background:rgba(232,154,148,.045)}
+  .event-status.organic{color:var(--blue);border-color:rgba(122,167,212,.2);background:rgba(122,167,212,.04)}
+  .event-status.ignored{color:var(--text-4)}
 
   /* Chips in filter */
   .count-badge{background:#1c1c1c;color:var(--text-2);font-size:10px;padding:1px 6px;border-radius:99px;margin-left:4px}
@@ -834,7 +845,7 @@ function campaignsFromDashboard(dashboard, range){
     if(client!=="tyson" && client!=="keith") continue;
     const keyword = (apiRow.keyword || "UNKNOWN").toUpperCase();
     const clientLabel = client==="tyson" ? "Tyson" : "Keith";
-    const attributionOnly = !apiRow.campaignId;
+    const attributionOnly = Boolean(apiRow.attributionOnly) || (!apiRow.campaignId && !apiRow.adId && !Number(apiRow.adSpend || 0));
     const campaignId = apiRow.campaignId || `${client}:keyword-attribution`;
     const campaignKey = `${client}:${campaignId}`;
     const campaignName = apiRow.campaignName || `${clientLabel} — Keyword Attribution`;
@@ -857,6 +868,8 @@ function campaignsFromDashboard(dashboard, range){
         short: `${clientLabel} · ${campaignName.replace(/^.*?—\s*/, "")}`,
         attributionOnly,
         status: rowStatus,
+        latestIso: dateKey,
+        hasSpend: false,
         dot: client,
         adsByName: new Map(),
         rowsByDate: new Map(),
@@ -866,22 +879,26 @@ function campaignsFromDashboard(dashboard, range){
     const campaign = campaignMap.get(campaignKey);
     campaign.attributionOnly = campaign.attributionOnly && attributionOnly;
     if(rowStatus==="active") campaign.status = "active";
+    if(String(dateKey).localeCompare(String(campaign.latestIso || "")) > 0) campaign.latestIso = dateKey;
+    if(Number(row.spend || 0) > 0) campaign.hasSpend = true;
     if(!campaign.adsByName.has(adId)){
-      campaign.adsByName.set(adId, {id:adId, name:adName, keyword, previewImageUrl, previewThumbnailUrl, weight:1});
+      campaign.adsByName.set(adId, {id:adId, name:adName, keyword, previewImageUrl, previewThumbnailUrl, status:rowStatus, weight:1});
     }else{
       const existingAd = campaign.adsByName.get(adId);
       if(existingAd){
         existingAd.previewImageUrl = existingAd.previewImageUrl || previewImageUrl;
         existingAd.previewThumbnailUrl = existingAd.previewThumbnailUrl || previewThumbnailUrl;
+        if(rowStatus==="active") existingAd.status = "active";
       }
     }
 
     if(!campaign.rowsByDate.has(dateKey)){
-      campaign.rowsByDate.set(dateKey, {...emptyMetric(dateLabel), iso:dateKey, adRows:[]});
+      campaign.rowsByDate.set(dateKey, {...emptyMetric(dateLabel), iso:dateKey, status:rowStatus, adRows:[]});
     }
 
     const day = campaign.rowsByDate.get(dateKey);
     addMetric(day, row);
+    if(rowStatus==="active") day.status = "active";
     day.adRows.push({
       ...row,
       adId,
@@ -889,6 +906,7 @@ function campaignsFromDashboard(dashboard, range){
       keyword,
       previewImageUrl,
       previewThumbnailUrl,
+      status: rowStatus,
     });
   }
 
@@ -900,10 +918,11 @@ function campaignsFromDashboard(dashboard, range){
         ...row,
         adRows: row.adRows.sort((a,b)=>b.collected-a.collected || b.spend-a.spend),
       }));
-    return {...c, ads, adCount:ads.length, rows};
+    const hasRangeSpend = rows.some(row => Number(row.spend || 0) > 0);
+    return {...c, ads, adCount:ads.length, rows, hasSpend:hasRangeSpend || c.hasSpend};
   });
 
-  return campaigns;
+  return campaigns.sort((a,b)=>String(b.latestIso || "").localeCompare(String(a.latestIso || "")));
 }
 
 function labelsFromCampaigns(campaigns){
@@ -1189,6 +1208,8 @@ const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
+  const [expandedDays, setExpandedDays] = useState({});
+  const [sort, setSort] = useState({key:"date", dir:"desc"});
   const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
   const [resizingKey, setResizingKey] = useState(null);
 
@@ -1208,6 +1229,36 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+  };
+
+  const toggleSort = (key) => {
+    setSort(current => ({
+      key,
+      dir: current.key === key && current.dir === "desc" ? "asc" : "desc",
+    }));
+  };
+
+  const valueForSort = (row, key) => {
+    if(key === "date") return row.latestIso || row.iso || row.date || "";
+    const derived = deriveRow(row);
+    const value = derived[key];
+    return Number.isFinite(Number(value)) ? Number(value) : 0;
+  };
+
+  const compareBySort = (a, b, key=sort.key, dir=sort.dir) => {
+    const av = valueForSort(a, key);
+    const bv = valueForSort(b, key);
+    const mult = dir === "asc" ? 1 : -1;
+    if(typeof av === "string" || typeof bv === "string"){
+      return String(av).localeCompare(String(bv)) * mult;
+    }
+    return (av - bv) * mult;
+  };
+
+  const statusLabelForCampaign = (campaign) => {
+    if(campaign.status === "active") return "Active";
+    if(!campaign.hasSpend) return "No spend";
+    return "Off";
   };
 
   // Apply loggedTotals onto campaign rows (add to latest date)
@@ -1234,7 +1285,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     if(status!=="all" && status!==c.status) return false;
     return true;
   });
-  const visibleCampaigns = totalCampaigns;
+  const visibleCampaigns = totalCampaigns
+    .filter(c => !c.attributionOnly)
+    .sort((a,b) => compareBySort({...aggregate(a.rows), latestIso:a.latestIso}, {...aggregate(b.rows), latestIso:b.latestIso}));
   const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
@@ -1266,9 +1319,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const totalMin = cols.reduce((s,c)=>s+widths[c.k], 0);
 
   const overall = useMemo(()=>{
-    const allRows = totalCampaigns.flatMap(c=>c.rows);
+    const allRows = visibleCampaigns.flatMap(c=>c.rows);
     return aggregate(allRows);
-  },[totalCampaigns]);
+  },[visibleCampaigns]);
 
   return (
     <div className="panel">
@@ -1292,8 +1345,16 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           <thead>
             <tr>
               {cols.map((c,i)=>(
-                <th key={c.k} className={(i===0?"":"num ")+(c.calc?"calc ":"")+(c.logged?"logged":"")} style={{position:"relative"}}>
-                  <span className="th-inner">{i===0 && view==="ad" ? "Campaign / Date / Ad" : c.label}</span>
+                <th
+                  key={c.k}
+                  className={(i===0?"":"num ")+(c.calc?"calc ":"")+(c.logged?"logged ":"")+"sortable-th "+(sort.key===c.k?"sorted":"")}
+                  style={{position:"relative"}}
+                  onClick={()=>toggleSort(c.k)}
+                >
+                  <span className="th-inner">
+                    {i===0 && view==="ad" ? "Campaign / Date / Ad" : c.label}
+                    <span className="sort-arrow">{sort.key===c.k ? (sort.dir==="desc" ? "↓" : "↑") : "↕"}</span>
+                  </span>
                   <span
                     className={"col-resize "+(resizingKey===c.k?"active":"")}
                     onMouseDown={(e)=>startResize(c.k, e)}
@@ -1313,8 +1374,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
             {visibleCampaigns.map(c => {
               const agg = aggregate(c.rows);
               const isOpen = expanded[c.id];
-              const orderedRows = [...c.rows].sort((a,b)=> String(rowSortKey(b)).localeCompare(String(rowSortKey(a))));
+              const orderedRows = [...c.rows].sort((a,b)=>compareBySort(a,b));
               const shortName = widths.date < 200 ? c.short : c.name;
+              const statusLabel = statusLabelForCampaign(c);
               return (
                 <React.Fragment key={c.id}>
                   <tr className="campaign-row" onClick={()=>setExpanded(s=>({...s,[c.id]:!s[c.id]}))} style={{cursor:'pointer'}}>
@@ -1326,6 +1388,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                         {view==="ad" && (
                           <span className="ad-count-chip">{c.ads.length} ads</span>
                         )}
+                        <span className={"status-pill "+(c.status==="active"?"active":"finished")+" "+(!c.hasSpend?"empty":"")}>{statusLabel}</span>
                       </div>
                     </td>
                     {cols.slice(1).map(col=>{
@@ -1336,17 +1399,21 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                   {isOpen && orderedRows.map(r0=>{
                     const r = deriveRow(r0);
                     const isAdView = view === "ad";
+                    const dayKey = `${c.id}:${r0.iso || r0.date}`;
+                    const dayOpen = Boolean(expandedDays[dayKey]);
                     const dayAdRows = isAdView
-                      ? buildAdRows(c.id, r0, c.ads).sort((a,b)=>b.spend-a.spend)
+                      ? buildAdRows(c.id, r0, c.ads).sort((a,b)=>compareBySort(a,b))
                       : [];
                     return (
                       <React.Fragment key={c.id+r.date}>
                         <tr
                           className={isAdView?"day-row":""}
-                          style={isAdView?{cursor:'default'}:undefined}
+                          style={isAdView?{cursor:'pointer'}:undefined}
+                          onClick={isAdView ? (e)=>{e.stopPropagation(); setExpandedDays(s=>({...s,[dayKey]:!s[dayKey]}));} : undefined}
                         >
                           <td>
                             <span style={{paddingLeft:30,color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:8}} className="mono">
+	                              {isAdView && <span className="day-chevron">{dayOpen?"▾":"▸"}</span>}
 	                              {r.date}
 	                              {isAdView && <span className="day-ad-count">{dayAdRows.length}</span>}
 	                            </span>
@@ -1356,14 +1423,14 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                             return <td key={col.k} className={cls}>{col.fmt(r)}</td>;
                           })}
                         </tr>
-	                        {isAdView && dayAdRows.length === 0 && (
+	                        {isAdView && dayOpen && dayAdRows.length === 0 && (
 	                          <tr className="ad-row">
 	                            <td colSpan={cols.length}>
 	                              <span style={{paddingLeft:56,color:'var(--text-4)',fontSize:11}}>No individual ad rows for this date.</span>
 	                            </td>
 	                          </tr>
 	                        )}
-	                        {isAdView && dayAdRows.map(ad => {
+	                        {isAdView && dayOpen && dayAdRows.map(ad => {
 	                            const adMetrics = deriveRow({
 	                              date: ad.adName,
 	                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
@@ -2968,7 +3035,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
       <div className="recent-head" onClick={()=>setOpen(!open)}>
         <div className="recent-title">
           <span className={"recent-caret "+(open?"open":"")}>▸</span>
-          Live attribution events
+          Attribution events history
           <span className="recent-count">{list.length} latest</span>
         </div>
         <span style={{color:'var(--text-4)',fontSize:11}}></span>
@@ -2998,7 +3065,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
               <th style={{width:150}}>Keyword</th>
               <th style={{width:180}}>Event</th>
               <th className="r" style={{width:110}}>Value</th>
-              <th className="actions-col">Actions</th>
+              <th className="actions-col">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -3011,12 +3078,26 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
             )}
             {list.map((e)=>{
               const isEditing = editingId === e.id;
-              const isLive = e.source === "manychat" || e.source === "ghl";
+              const isLive = e.locked !== false;
               const isDollar = e.bucket === "collected";
-              const bucketLabel = BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
+              const bucketLabel = ({
+                dm:"DM received",
+                booked_call:"45-min call booked",
+                call_taken:"45-min call taken",
+                no_show:"No-show",
+                sale:"Collected revenue",
+                manual_correction:"Manual correction",
+              }[e.eventType]) || BUCKETS.find(b=>b.id===e.bucket)?.label || e.bucket;
               const sourceLabel = String(e.eventType || "").startsWith("manual_")
                 ? "Manual"
-                : e.source === "manychat" ? "ManyChat" : e.source === "ghl" ? "GHL" : "Manual";
+                : e.source === "manychat" ? "ManyChat" : e.source === "ghl" ? "GHL" : e.source === "sales_tracker" ? "Sales Tracker" : "Manual";
+              const statusLabel = {
+                attributed:"Attributed",
+                needs_review:"Needs review",
+                missing_keyword:"Missing keyword",
+                organic:"Organic",
+                ignored:"Ignored",
+              }[e.status] || "Attributed";
               return (
                 <tr key={e.id} className={isEditing ? "editing-row" : ""}>
                   <td className="mono" style={{color:'var(--text-3)',fontSize:11,verticalAlign:'middle'}}>
@@ -3033,7 +3114,12 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                         <option value="tyson">Tyson</option>
                         <option value="keith">Keith</option>
                       </select>
-                    ) : (e.camp==="tyson" ? "Tyson" : "Keith")}
+                    ) : (
+                      <div>
+                        <div>{e.camp==="tyson" ? "Tyson" : e.camp==="keith" ? "Keith" : "Unknown"}</div>
+                        {(e.campaignName || e.adName) && <div style={{color:'var(--text-4)',fontSize:10,marginTop:3,overflow:'hidden',textOverflow:'ellipsis',maxWidth:190}}>{e.adName || e.campaignName}</div>}
+                      </div>
+                    )}
                   </td>
                   <td style={{verticalAlign:'middle'}}>
                     {isEditing ? (
@@ -3067,7 +3153,7 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
                   </td>
                   <td className="actions-col" style={{verticalAlign:'middle'}}>
                     {isLive ? (
-                      <span style={{color:'var(--text-4)',fontSize:11}}>Auto</span>
+                      <span className={"event-status "+(e.status || "attributed")} title={e.reason || ""}>{statusLabel}</span>
                     ) : isEditing ? (
                       <>
                         <button className="rec-save" onClick={saveEdit} disabled={!draft.kw || !draft.value}>Save</button>
@@ -3117,8 +3203,11 @@ function RecentEntries({extra, includeFallback=false, onManualSubmit, onToast}){
 }
 
 function recentEntriesFromDashboard(dashboard){
-  if(!dashboard?.recentEvents) return [];
-  return dashboard.recentEvents.map((event, i) => {
+  const history = Array.isArray(dashboard?.eventsHistory) && dashboard.eventsHistory.length
+    ? dashboard.eventsHistory
+    : (dashboard?.recentEvents || []);
+  if(!history.length) return [];
+  return history.map((event, i) => {
     const dt = event.eventAt ? new Date(event.eventAt) : null;
     const ts = dt && !Number.isNaN(dt.getTime())
       ? dt.toLocaleString("en-US", {timeZone:"America/New_York", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", timeZoneName:"short"})
@@ -3130,9 +3219,17 @@ function recentEntriesFromDashboard(dashboard){
       manual_new_clients: "clients",
       manual_collected_revenue: "collected",
     };
-    const bucket = manualBuckets[event.eventType] || (event.source === "ghl" ? "calls" : "msgs");
+    const historyBuckets = {
+      dm: "msgs",
+      booked_call: "calls",
+      call_taken: "taken",
+      no_show: "taken",
+      sale: "collected",
+      manual_correction: "collected",
+    };
+    const bucket = historyBuckets[event.eventType] || manualBuckets[event.eventType] || (event.source === "ghl" ? "calls" : "msgs");
     const rawValue = Number(event.value || 0);
-    const value = event.eventType === "manual_collected_revenue"
+    const value = event.eventType === "manual_collected_revenue" || event.eventType === "sale"
       ? rawValue / 100
       : (rawValue || 1);
     return {
@@ -3145,6 +3242,11 @@ function recentEntriesFromDashboard(dashboard){
       source: event.source || "live",
       eventType: event.eventType || "",
       name: event.name || "",
+      status: event.status || "attributed",
+      reason: event.reason || "",
+      campaignName: event.campaignName || "",
+      adName: event.adName || "",
+      locked: true,
       id: "live-"+i,
     };
   });
@@ -3198,6 +3300,7 @@ function alertReasonLabel(reason){
   if(reason==="missing_sales_name") return "Missing Sales Tracker name";
   if(reason==="missing_booking_keyword") return "Booked call has no keyword";
   if(reason==="no_matching_ghl_booking") return "No matching GHL booking";
+  if(reason==="ambiguous_or_missing_meta_match") return "No unique Meta ad match";
   return reason || "Needs review";
 }
 
@@ -3457,7 +3560,7 @@ function App(){
   const [account, setAccount] = useState("all");
   const [status, setStatus] = useState("active");
   const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7", shiftIso(todayEt(), -1)));
+  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7", todayEt()));
   const [dashboard, setDashboard] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3516,7 +3619,7 @@ function App(){
       setDashboard(json);
     }catch(err){
       console.error(err);
-      setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[]});
+      setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[], eventsHistory:[]});
       setLoadError(err?.message || "Live data unavailable");
       showToast("Live data unavailable");
     }finally{

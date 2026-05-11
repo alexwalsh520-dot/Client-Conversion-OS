@@ -3,7 +3,7 @@ export default function AdsTrackerPage() {
     <main className="ads-export-page" aria-label="Ads Tracker">
       <iframe
         className="ads-export-frame"
-        src="/ads-tracker-export.html?v=ad-rows-authoritative-2026-05-09"
+        src="/ads-tracker-export.html?v=accuracy-accountability-2026-05-11"
         title="Ads Tracker"
       />
     </main>
