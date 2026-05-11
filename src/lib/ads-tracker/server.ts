@@ -1339,20 +1339,50 @@ function exactMetaHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[
   const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw);
   if (!keyword) return null;
 
-  const candidates = metaRows
+  const candidatesByAd = new Map<
+    string,
+    {
+      row: MetaRow;
+      spendCents: number;
+      impressions: number;
+      linkClicks: number;
+    }
+  >();
+
+  for (const metaRow of metaRows) {
+    if (metaRow.client_key !== row.client_key || metaRow.date !== row.date) continue;
+    if (!hasMetaDelivery(metaRow)) continue;
+    const metaKeyword =
+      normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
+    if (metaKeyword !== keyword) continue;
+
+    const key = groupKeyForMetaRow(metaRow);
+    const existing = candidatesByAd.get(key) || {
+      row: metaRow,
+      spendCents: 0,
+      impressions: 0,
+      linkClicks: 0,
+    };
+    existing.spendCents += metaRow.spend_cents || 0;
+    existing.impressions += metaRow.impressions || 0;
+    existing.linkClicks += metaRow.link_clicks || 0;
+    candidatesByAd.set(key, existing);
+  }
+
+  const candidates = Array.from(candidatesByAd.values())
     .filter((metaRow) => {
-      if (metaRow.client_key !== row.client_key || metaRow.date !== row.date) return false;
-      if (!hasMetaDelivery(metaRow)) return false;
-      const metaKeyword =
-        normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
-      return metaKeyword === keyword;
+      return metaRow.spendCents > 0 || metaRow.impressions > 0 || metaRow.linkClicks > 0;
     })
-    .sort((a, b) => (b.spend_cents || 0) - (a.spend_cents || 0));
+    .sort(
+      (a, b) =>
+        b.spendCents - a.spendCents ||
+        b.impressions - a.impressions ||
+        b.linkClicks - a.linkClicks
+    );
 
-  const uniqueKeys = new Set(candidates.map(groupKeyForMetaRow));
-  if (uniqueKeys.size !== 1) return null;
+  if (candidates.length === 0) return null;
 
-  return hintFromMetaRow(candidates[0], keyword);
+  return hintFromMetaRow(candidates[0].row, keyword);
 }
 
 function exactMetaHintForKeywordEvent(event: KeywordEvent, metaRows: MetaRow[]): BackfillGroupHint | null {
@@ -1360,20 +1390,46 @@ function exactMetaHintForKeywordEvent(event: KeywordEvent, metaRows: MetaRow[]):
   if (!keyword) return null;
 
   const eventDate = eventDateKey(event.event_at);
-  const candidates = metaRows
-    .filter((metaRow) => {
-      if (metaRow.client_key !== event.client_key || metaRow.date !== eventDate) return false;
-      if (!hasMetaDelivery(metaRow)) return false;
-      const metaKeyword =
-        normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
-      return metaKeyword === keyword;
-    })
-    .sort((a, b) => (b.spend_cents || 0) - (a.spend_cents || 0));
+  const candidatesByAd = new Map<
+    string,
+    {
+      row: MetaRow;
+      spendCents: number;
+      impressions: number;
+      linkClicks: number;
+    }
+  >();
 
-  const uniqueKeys = new Set(candidates.map(groupKeyForMetaRow));
-  if (uniqueKeys.size !== 1) return null;
+  for (const metaRow of metaRows) {
+    if (metaRow.client_key !== event.client_key || metaRow.date !== eventDate) continue;
+    if (!hasMetaDelivery(metaRow)) continue;
+    const metaKeyword =
+      normalizeKeyword(metaRow.keyword_normalized || metaRow.keyword_raw) || keywordFromAdName(metaRow.ad_name);
+    if (metaKeyword !== keyword) continue;
 
-  return hintFromMetaRow(candidates[0], keyword);
+    const key = groupKeyForMetaRow(metaRow);
+    const existing = candidatesByAd.get(key) || {
+      row: metaRow,
+      spendCents: 0,
+      impressions: 0,
+      linkClicks: 0,
+    };
+    existing.spendCents += metaRow.spend_cents || 0;
+    existing.impressions += metaRow.impressions || 0;
+    existing.linkClicks += metaRow.link_clicks || 0;
+    candidatesByAd.set(key, existing);
+  }
+
+  const candidates = Array.from(candidatesByAd.values()).sort(
+    (a, b) =>
+      b.spendCents - a.spendCents ||
+      b.impressions - a.impressions ||
+      b.linkClicks - a.linkClicks
+  );
+
+  if (candidates.length === 0) return null;
+
+  return hintFromMetaRow(candidates[0].row, keyword);
 }
 
 function hintForAttributionGroupId(
@@ -1442,11 +1498,11 @@ function normalizeGhlKeywordEventDates(
 }
 
 function campaignHintForBackfillRow(row: KeywordBackfillRow, metaRows: MetaRow[]): BackfillGroupHint | null {
-  const payloadHint = campaignHintFromBackfillPayload(row);
-  if (payloadHint) return payloadHint;
-
   const exactHint = exactMetaHintForBackfillRow(row, metaRows);
   if (exactHint) return exactHint;
+
+  const payloadHint = campaignHintFromBackfillPayload(row);
+  if (payloadHint) return payloadHint;
 
   const source = `${row.source_workbook || ""} ${row.source_sheet || ""}`.toLowerCase();
   const clientRows = metaRows.filter((metaRow) => metaRow.client_key === row.client_key && metaRow.campaign_name);
