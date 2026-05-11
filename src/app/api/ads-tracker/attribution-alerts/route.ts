@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
 const ACTIONS = new Set(["attribute", "organic", "ignore"]);
+const MISSING_DM_KEYWORD_ALERT = "missing_dm_keyword";
 
 function isClientKey(value: unknown): value is "tyson" | "keith" {
   return value === "tyson" || value === "keith";
@@ -14,6 +15,20 @@ function isClientKey(value: unknown): value is "tyson" | "keith" {
 
 function cleanString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function duplicateEvent(error: { code?: string; message?: string } | null) {
+  return error?.code === "23505" || Boolean(error?.message?.toLowerCase().includes("duplicate key"));
+}
+
+function missingColumn(error: { message?: string } | null, column: string) {
+  return Boolean(error?.message?.toLowerCase().includes(column.toLowerCase()));
+}
+
+function removeColumns<T extends Record<string, unknown>>(payload: T, columns: string[]) {
+  const compatiblePayload: Record<string, unknown> = { ...payload };
+  for (const column of columns) delete compatiblePayload[column];
+  return compatiblePayload;
 }
 
 async function isAuthorized(req: NextRequest) {
@@ -37,9 +52,11 @@ export async function POST(req: NextRequest) {
     : {};
   const clientKey = cleanString(body.clientKey) || cleanString(sale.clientKey);
   const keyword = normalizeKeyword(body.keyword);
+  const alertType = cleanString(body.alertType);
+  const isMissingDmKeywordAlert = alertType === MISSING_DM_KEYWORD_ALERT;
 
   if (!saleKey) {
-    return NextResponse.json({ error: "saleKey is required" }, { status: 400 });
+    return NextResponse.json({ error: "alert key is required" }, { status: 400 });
   }
   if (!action || !ACTIONS.has(action)) {
     return NextResponse.json({ error: "action must be attribute, organic, or ignore" }, { status: 400 });
@@ -48,14 +65,69 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientKey must be tyson or keith" }, { status: 400 });
   }
   if (action === "attribute" && !keyword) {
-    return NextResponse.json({ error: "keyword is required when attributing a sale" }, { status: 400 });
+    return NextResponse.json({ error: "keyword is required when attributing" }, { status: 400 });
+  }
+  if (isMissingDmKeywordAlert && !clientKey) {
+    return NextResponse.json({ error: "clientKey is required for missing keyword alerts" }, { status: 400 });
   }
 
   const now = new Date().toISOString();
   const db = getServiceSupabase();
+
+  if (isMissingDmKeywordAlert && action === "attribute" && keyword) {
+    const eventAt = cleanString(body.eventAt) || now;
+    const subscriberId = cleanString(body.subscriberId);
+    const keywordEventPayload = {
+      source: "manychat",
+      source_event_id: `missing-keyword-resolution:${saleKey}:${keyword}`,
+      event_type: "dm_keyword",
+      client_key: clientKey,
+      keyword_raw: cleanString(body.keyword) || displayKeyword(keyword),
+      keyword_normalized: keyword,
+      subscriber_id: subscriberId,
+      subscriber_name: cleanString(body.subscriberName) || cleanString(sale.name) || cleanString(body.contactName),
+      setter_name: cleanString(body.setterName) || cleanString(sale.setter),
+      appointment_id: null,
+      contact_id: null,
+      contact_name: cleanString(body.contactName) || cleanString(sale.name),
+      event_at: eventAt,
+      raw_payload: {
+        manual: true,
+        alertType,
+        saleKey,
+        instagramHandle: cleanString(body.instagramHandle),
+        manychatUrl: cleanString(body.manychatUrl),
+        note: cleanString(body.note),
+        created_from: "ads_tracker_missing_manychat_keyword_resolution",
+        created_at: now,
+      },
+    };
+
+    const { error: keywordEventError } = await db
+      .from("ads_keyword_events")
+      .insert(keywordEventPayload);
+
+    if (keywordEventError && !duplicateEvent(keywordEventError)) {
+      if (missingColumn(keywordEventError, "source_event_id")) {
+        const { error: fallbackError } = await db
+          .from("ads_keyword_events")
+          .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
+
+        if (fallbackError && !duplicateEvent(fallbackError)) {
+          console.error("[ads-tracker] Missing keyword repair insert failed", fallbackError);
+          return NextResponse.json({ error: fallbackError.message }, { status: 500 });
+        }
+      } else {
+        console.error("[ads-tracker] Missing keyword repair insert failed", keywordEventError);
+        return NextResponse.json({ error: keywordEventError.message }, { status: 500 });
+      }
+    }
+  }
+
   const payload = {
     saleKey,
     action,
+    alertType,
     previousResolutionId: cleanString(body.resolutionId),
     sale: {
       date: cleanString(sale.date),
@@ -73,6 +145,11 @@ export async function POST(req: NextRequest) {
     adName: cleanString(body.adName),
     groupId: cleanString(body.groupId),
     groupName: cleanString(body.groupName),
+    subscriberId: cleanString(body.subscriberId),
+    subscriberName: cleanString(body.subscriberName),
+    instagramHandle: cleanString(body.instagramHandle),
+    manychatUrl: cleanString(body.manychatUrl),
+    eventAt: cleanString(body.eventAt),
     note: cleanString(body.note),
     created_from: "ads_tracker_attribution_alerts",
     created_at: now,

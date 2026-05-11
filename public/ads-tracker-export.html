@@ -134,7 +134,9 @@
 	  .alert-campaign-dot{width:6px;height:6px;border-radius:99px;background:var(--gold);flex:0 0 auto}
 	  .alert-campaign-dot.keith{background:var(--blue)}
 	  .alert-amount{font-family:'Inter',system-ui,sans-serif;color:var(--text);font-size:13px;font-weight:500;letter-spacing:-0.01em;text-align:left;font-variant-numeric:tabular-nums}
-	  .alert-actions{display:flex;justify-content:flex-start;padding-right:14px}
+	  .alert-actions{display:flex;justify-content:flex-start;align-items:center;gap:6px;padding-right:14px}
+	  .alert-open-link{width:30px;height:30px;border:1px solid #303030;border-radius:7px;background:#141414;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1}
+	  .alert-open-link:hover{background:#202020;border-color:#3a3a3a;color:#fff}
 	  .alert-resolve{height:30px;min-width:84px;padding:0 12px;border:1px solid #303030;border-radius:999px;background:#1b1b1b;color:#f1f1f1;font-size:12px;font-weight:500;letter-spacing:0}
 	  .alert-resolve:hover{background:#242424;border-color:#3a3a3a;color:#fff}
 	  .alert-empty{padding:22px 20px;color:var(--text-4);font-size:12px}
@@ -3276,12 +3278,7 @@ function AttributionSummaryTiles({dashboard, alerts}){
   const attribution = dashboard?.attribution || {};
   const paid = Number(attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
   const unresolved = (alerts || []).reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
-  const resolvedAlerts = Array.isArray(attribution.resolvedAlerts) ? attribution.resolvedAlerts : [];
-  const resolvedOrganic = resolvedAlerts
-    .filter(alert => alert.action === "organic")
-    .reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
-  const organicAndUnattributed = Number(attribution.organicUnattributedRevenue ?? summary.organicUnattributedRevenue ?? 0);
-  const organic = Math.max(resolvedOrganic, organicAndUnattributed - unresolved, 0);
+  const organic = Number(attribution.organicRevenue ?? summary.organicRevenue ?? 0);
   const unattributedIsClear = unresolved <= 0;
 
   return (
@@ -3320,6 +3317,7 @@ function alertReasonLabel(reason){
   if(reason==="missing_booking_keyword") return "Booked call has no keyword";
   if(reason==="no_matching_ghl_booking") return "No matching GHL booking";
   if(reason==="ambiguous_or_missing_meta_match") return "No unique Meta ad match";
+  if(reason==="missing_manychat_keyword") return "Missing ManyChat keyword";
   return reason || "Needs review";
 }
 
@@ -3417,6 +3415,12 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
       adName: action==="attribute" ? selected?.adName || keyword : null,
       groupId: action==="attribute" ? selected?.groupId || null : null,
       groupName: action==="attribute" ? selected?.groupName || keyword : null,
+      alertType: alert.alertType || null,
+      subscriberId: alert.subscriberId || null,
+      subscriberName: alert.name || null,
+      instagramHandle: alert.instagramHandle || null,
+      manychatUrl: alert.manychatUrl || null,
+      eventAt: alert.eventAt || null,
       note,
       sale: {
         date: alert.date,
@@ -3555,6 +3559,16 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
             </div>
             <div className="alert-amount">{fmtUsd(Number(alert.amount || 0))}</div>
             <div className="alert-actions">
+              {alert.manychatUrl && (
+                <a
+                  className="alert-open-link"
+                  href={alert.manychatUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={e=>e.stopPropagation()}
+                  title="Open ManyChat conversation"
+                >↗</a>
+              )}
               <button className="alert-resolve" onClick={()=>setModal({alert})}>Resolve →</button>
             </div>
           </div>
@@ -3626,7 +3640,7 @@ function App(){
     setLoadError(null);
     const params = new URLSearchParams({
       account,
-      status,
+      status:"all",
       level:"ad",
       dateFrom:dateRange.dateFrom,
       dateTo:dateRange.dateTo,
@@ -3660,7 +3674,7 @@ function App(){
 
   useEffect(()=>{
     loadDashboard();
-  }, [account, status, dateRange.dateFrom, dateRange.dateTo]);
+  }, [account, dateRange.dateFrom, dateRange.dateTo]);
 
   const apiCampaigns = useMemo(
     () => campaignsFromDashboard(dashboard, dateRange),
@@ -3673,6 +3687,10 @@ function App(){
   const scopedCampaigns = useMemo(
     () => scopeCampaigns(liveCampaigns, account, status),
     [liveCampaigns, account, status]
+  );
+  const metricCampaigns = useMemo(
+    () => scopeCampaigns(liveCampaigns, account, "all"),
+    [liveCampaigns, account]
   );
   const liveRecent = useMemo(
     () => recentEntriesFromDashboard(dashboard),
@@ -3774,9 +3792,9 @@ function App(){
           </div>
 
           {/* Charts */}
-          <MetricCardBoard campaigns={scopedCampaigns} dashboard={dashboard}/>
+          <MetricCardBoard campaigns={metricCampaigns} dashboard={dashboard}/>
 
-          <TasksSection dashboard={dashboard} campaigns={scopedCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
+          <TasksSection dashboard={dashboard} campaigns={metricCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
 
           {/* Recent entries (collapsed) */}
           <RecentEntries extra={[...newEntries, ...liveRecent]} includeFallback={dashboard?.mock} onManualSubmit={onLogEntry} onToast={showToast} />
