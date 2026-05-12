@@ -42,6 +42,26 @@ const IG_SAFE_ZONES = [
   { id: "dm" as const, x: 170, y: 1590, w: 740, h: 195, label: "Send message button" },
   { id: "bottom" as const, x: 0, y: 1830, w: 170, h: 82, label: "Ad label" },
 ];
+const ADS_BRAND = {
+  bg: "#0a0a0a",
+  bgDeep: "#050505",
+  panel: "#111111",
+  panel2: "#141414",
+  panel3: "#0f0f0f",
+  active: "#1e1e1e",
+  border: "#1f1f1f",
+  border2: "#262626",
+  text: "#e8e8e8",
+  text2: "#a8a8a8",
+  text3: "#6b6b6b",
+  text4: "#4a4a4a",
+  gold: "#d4b27a",
+  goldDim: "#8a7348",
+  goldSoft: "rgba(212,178,122,0.08)",
+  goldBorder: "rgba(212,178,122,0.32)",
+  success: "#7dd3a8",
+  successText: "#07130d",
+};
 
 const FONT_OPTIONS = [
   { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
@@ -431,7 +451,7 @@ function drawArtwork(
   ctx.save();
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  ctx.fillStyle = "#05040a";
+  ctx.fillStyle = ADS_BRAND.bgDeep;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   if (image) {
@@ -481,9 +501,9 @@ function drawOverlay(
   }
 
   ctx.lineWidth = 5;
-  ctx.strokeStyle = "#7C5CFC";
-  ctx.fillStyle = "#7C5CFC";
-  ctx.shadowColor = "rgba(124,92,252,0.35)";
+  ctx.strokeStyle = ADS_BRAND.gold;
+  ctx.fillStyle = ADS_BRAND.gold;
+  ctx.shadowColor = "rgba(212,178,122,0.32)";
   ctx.shadowBlur = 16;
 
   if (selectedLayer.type === "image") {
@@ -542,9 +562,9 @@ function drawAlignmentGuides(ctx: CanvasRenderingContext2D, guides: AlignmentGui
   if (!guides.x.length && !guides.y.length) return;
 
   ctx.save();
-  ctx.strokeStyle = "#BFA7FF";
+  ctx.strokeStyle = ADS_BRAND.gold;
   ctx.lineWidth = 4;
-  ctx.shadowColor = "rgba(124,92,252,0.8)";
+  ctx.shadowColor = "rgba(212,178,122,0.65)";
   ctx.shadowBlur = 12;
   ctx.setLineDash([18, 12]);
 
@@ -568,7 +588,7 @@ function drawAlignmentGuides(ctx: CanvasRenderingContext2D, guides: AlignmentGui
 function drawTextHandles(ctx: CanvasRenderingContext2D, m: BlockMetrics) {
   const handles = getTextHandles(m);
   ctx.fillStyle = "#ffffff";
-  ctx.strokeStyle = "#7C5CFC";
+  ctx.strokeStyle = ADS_BRAND.gold;
   ctx.lineWidth = 3;
   for (const h of handles) {
     roundRect(ctx, h.x - 13, h.y - 13, 26, 26, 7);
@@ -585,7 +605,7 @@ function drawImageHandles(ctx: CanvasRenderingContext2D) {
     [CANVAS_W - 22, CANVAS_H - 22],
   ];
   ctx.fillStyle = "#ffffff";
-  ctx.strokeStyle = "#7C5CFC";
+  ctx.strokeStyle = ADS_BRAND.gold;
   ctx.lineWidth = 2;
   for (const [x, y] of points) {
     roundRect(ctx, x - 15, y - 15, 30, 30, 8);
@@ -769,10 +789,10 @@ function getDraftDate(savedAt: number) {
 
 function buttonStyle(active = false): React.CSSProperties {
   return {
-    border: active ? "1px solid #7C5CFC" : "1px solid rgba(255,255,255,0.08)",
-    background: active ? "#7C5CFC" : "rgba(255,255,255,0.05)",
-    color: active ? "#ffffff" : "rgba(255,255,255,0.72)",
-    borderRadius: 8,
+    border: active ? `1px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
+    background: active ? ADS_BRAND.gold : ADS_BRAND.panel3,
+    color: active ? ADS_BRAND.bg : ADS_BRAND.text2,
+    borderRadius: 6,
     padding: "8px 12px",
     fontSize: 12,
     fontWeight: 700,
@@ -788,9 +808,9 @@ function buttonStyle(active = false): React.CSSProperties {
 function approveButtonStyle(approved = false): React.CSSProperties {
   return {
     ...buttonStyle(false),
-    border: approved ? "1px solid rgba(52, 211, 153, 0.72)" : "1px solid rgba(255,255,255,0.08)",
-    background: approved ? "#34d399" : "rgba(255,255,255,0.05)",
-    color: approved ? "#06140f" : "rgba(255,255,255,0.72)",
+    border: approved ? `1px solid ${ADS_BRAND.success}` : `1px solid ${ADS_BRAND.border2}`,
+    background: approved ? ADS_BRAND.success : ADS_BRAND.panel3,
+    color: approved ? ADS_BRAND.successText : ADS_BRAND.text2,
   };
 }
 
@@ -799,9 +819,9 @@ function segmentedButtonStyle(active = false): React.CSSProperties {
     width: 42,
     height: 34,
     border: "none",
-    borderRadius: 7,
-    background: active ? "#ffffff" : "transparent",
-    color: active ? "#11101a" : "rgba(255,255,255,0.64)",
+    borderRadius: 4,
+    background: active ? ADS_BRAND.active : "transparent",
+    color: active ? ADS_BRAND.text : ADS_BRAND.text3,
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -810,26 +830,26 @@ function segmentedButtonStyle(active = false): React.CSSProperties {
 }
 
 const panelStyle: React.CSSProperties = {
-  background: "rgba(18,16,27,0.96)",
-  border: "1px solid rgba(255,255,255,0.09)",
+  background: ADS_BRAND.panel,
+  border: `1px solid ${ADS_BRAND.border}`,
   borderRadius: 8,
   padding: 14,
-  boxShadow: "0 16px 40px rgba(0,0,0,0.18)",
+  boxShadow: "0 16px 40px rgba(0,0,0,0.32)",
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
-  color: "rgba(255,255,255,0.4)",
+  color: ADS_BRAND.text3,
   textTransform: "uppercase",
   letterSpacing: 0.5,
 };
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  border: "1px solid rgba(255,255,255,0.08)",
-  background: "rgba(8,8,14,0.75)",
-  color: "rgba(255,255,255,0.9)",
+  border: `1px solid ${ADS_BRAND.border2}`,
+  background: ADS_BRAND.bg,
+  color: ADS_BRAND.text,
   borderRadius: 6,
   padding: "8px 10px",
   fontSize: 12,
@@ -1004,7 +1024,7 @@ export default function Studio2Page() {
     } else {
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#05040a";
+      ctx.fillStyle = ADS_BRAND.bgDeep;
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
@@ -1817,7 +1837,7 @@ export default function Studio2Page() {
             {photos.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginTop: 16 }}>
                 {photos.map((photo, index) => (
-                  <div key={`${photo.slice(0, 24)}-${index}`} style={{ position: "relative", aspectRatio: "9 / 16", borderRadius: 7, overflow: "hidden", background: "#05040a" }}>
+                  <div key={`${photo.slice(0, 24)}-${index}`} style={{ position: "relative", aspectRatio: "9 / 16", borderRadius: 7, overflow: "hidden", background: ADS_BRAND.bgDeep }}>
                     <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     <button
                       aria-label="Remove photo"
@@ -1923,7 +1943,7 @@ export default function Studio2Page() {
           height: 16px;
           border-radius: 999px;
           background: #ffffff;
-          border: 3px solid #7C5CFC;
+          border: 3px solid ${ADS_BRAND.gold};
           box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
         .studio2-range::-moz-range-thumb {
@@ -1931,7 +1951,7 @@ export default function Studio2Page() {
           height: 16px;
           border-radius: 999px;
           background: #ffffff;
-          border: 3px solid #7C5CFC;
+          border: 3px solid ${ADS_BRAND.gold};
           box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
       `}</style>
@@ -1951,16 +1971,16 @@ export default function Studio2Page() {
         alignItems: "center",
         gap: 10,
         padding: "0 14px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(20,17,32,0.96)",
+        borderBottom: `1px solid ${ADS_BRAND.border}`,
+        background: ADS_BRAND.bg,
       }}>
         <button style={buttonStyle(false)} onClick={() => setView("setup")}>
           <ArrowLeft size={14} /> Setup
         </button>
-        <div style={{ height: 24, width: 1, background: "rgba(255,255,255,0.1)" }} />
+        <div style={{ height: 24, width: 1, background: ADS_BRAND.border2 }} />
         <strong style={{ color: "var(--text-primary)", fontSize: 14 }}>{projectName}</strong>
         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Ad {currentIndex + 1} of {creatives.length}</span>
-        <span style={{ color: "rgba(124,92,252,0.85)", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>
+        <span style={{ color: ADS_BRAND.gold, fontSize: 11, fontWeight: 700, marginLeft: 4 }}>
           {saveStatus}
         </span>
         <div style={{ flex: 1 }} />
@@ -1973,7 +1993,7 @@ export default function Studio2Page() {
           onChange={(e) => setViewScale(parseInt(e.target.value) / 100)}
           style={{
             width: 96,
-            background: `linear-gradient(90deg, #8E7CFF 0%, #8E7CFF ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, rgba(255,255,255,0.13) ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, rgba(255,255,255,0.13) 100%)`,
+            background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} 100%)`,
           }}
         />
         <span style={{ color: "var(--text-muted)", fontSize: 11, width: 34 }}>{Math.round(viewScale * 100)}%</span>
@@ -2010,8 +2030,8 @@ export default function Studio2Page() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#07070d",
-          backgroundImage: "linear-gradient(rgba(124,92,252,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(124,92,252,0.08) 1px, transparent 1px)",
+          backgroundColor: ADS_BRAND.bg,
+          backgroundImage: "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
           backgroundSize: "44px 44px",
           position: "relative",
         }}>
@@ -2025,7 +2045,7 @@ export default function Studio2Page() {
             width: CANVAS_W * viewScale,
             height: CANVAS_H * viewScale,
             boxShadow: "0 22px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)",
-            background: "#05040a",
+            background: ADS_BRAND.bgDeep,
           }}>
             <canvas
               ref={canvasRef}
@@ -2083,8 +2103,8 @@ export default function Studio2Page() {
                   top: editingMetrics.y * viewScale,
                   width: editingMetrics.w * viewScale,
                   minHeight: Math.max(editingMetrics.h * viewScale, editingBlock.fontSize * viewScale * 2.1),
-                  border: `${Math.max(1, 2 * viewScale)}px solid rgba(191,167,255,0.95)`,
-                  boxShadow: "0 0 0 3px rgba(124,92,252,0.25), 0 10px 26px rgba(0,0,0,0.28)",
+                  border: `${Math.max(1, 2 * viewScale)}px solid ${ADS_BRAND.gold}`,
+                  boxShadow: "0 0 0 3px rgba(212,178,122,0.18), 0 10px 26px rgba(0,0,0,0.28)",
                   borderRadius: Math.max(6, editingBlock.borderRadius * viewScale),
                   background: "transparent",
                   color: editingBlock.textColor,
@@ -2117,8 +2137,8 @@ export default function Studio2Page() {
                   height: 74,
                   borderRadius: 6,
                   overflow: "hidden",
-                  border: index === currentIndex ? "2px solid #7C5CFC" : "1px solid rgba(255,255,255,0.12)",
-                  background: "#05040a",
+                  border: index === currentIndex ? `2px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.bgDeep,
                   padding: 0,
                   cursor: "pointer",
                   flexShrink: 0,
@@ -2134,8 +2154,8 @@ export default function Studio2Page() {
                     width: 16,
                     height: 16,
                     borderRadius: "50%",
-                    background: "#34d399",
-                    color: "#06140f",
+                    background: ADS_BRAND.success,
+                    color: ADS_BRAND.successText,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -2151,8 +2171,8 @@ export default function Studio2Page() {
         <aside style={{
           width: 326,
           flexShrink: 0,
-          borderLeft: "1px solid rgba(255,255,255,0.08)",
-          background: "rgba(13,11,22,0.98)",
+          borderLeft: `1px solid ${ADS_BRAND.border}`,
+          background: ADS_BRAND.bg,
           padding: 12,
           overflowY: "auto",
           display: "flex",
@@ -2174,13 +2194,13 @@ export default function Studio2Page() {
               Selection
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ color: "rgba(255,255,255,0.62)", fontSize: 12 }}>
+              <span style={{ color: ADS_BRAND.text2, fontSize: 12 }}>
                 {selectedBlock ? "Text block" : selectedLayer?.type === "image" ? "Background image" : "Nothing selected"}
               </span>
               <span style={{
-                border: "1px solid rgba(124,92,252,0.35)",
-                background: "rgba(124,92,252,0.12)",
-                color: "rgba(255,255,255,0.72)",
+                border: `1px solid ${ADS_BRAND.goldBorder}`,
+                background: ADS_BRAND.goldSoft,
+                color: ADS_BRAND.gold,
                 borderRadius: 999,
                 padding: "4px 8px",
                 fontSize: 10,
@@ -2233,7 +2253,7 @@ export default function Studio2Page() {
               <Control label="Colors">
                 <input type="color" value={selectedBlock.textColor} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ textColor: e.target.value })} style={{ width: 42, height: 32, border: "none", background: "transparent" }} title="Text color" />
                 <input type="color" value={selectedBlock.bgColor} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ bgColor: e.target.value })} style={{ width: 42, height: 32, border: "none", background: "transparent" }} title="Highlight color" />
-                <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>text / highlight</span>
+                <span style={{ color: ADS_BRAND.text3, fontSize: 11 }}>text / highlight</span>
               </Control>
               <Control label="Align">
                 <div style={{
@@ -2241,8 +2261,8 @@ export default function Studio2Page() {
                   gap: 3,
                   padding: 3,
                   borderRadius: 8,
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background: "rgba(5,5,10,0.58)",
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel3,
                 }}>
                   {alignOptions.map(({ value, label, icon: Icon }) => (
                     <button
@@ -2333,7 +2353,7 @@ export default function Studio2Page() {
             ))}
           </div>
 
-          <div style={{ color: "rgba(255,255,255,0.28)", fontSize: 11, lineHeight: 1.5, padding: "2px 2px 10px" }}>
+          <div style={{ color: ADS_BRAND.text4, fontSize: 11, lineHeight: 1.5, padding: "2px 2px 10px" }}>
             Studio 2.0 saves locally in this browser. It can recover your work after refresh or Wi-Fi loss.
           </div>
         </aside>
@@ -2348,8 +2368,8 @@ export default function Studio2Page() {
             width: 276,
             padding: 8,
             borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(35,37,48,0.98)",
+            border: `1px solid ${ADS_BRAND.border2}`,
+            background: ADS_BRAND.panel,
             boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
             zIndex: 40,
           }}
@@ -2400,12 +2420,12 @@ export default function Studio2Page() {
           <div style={{
             width: 390,
             borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(23,21,34,0.98)",
+            border: `1px solid ${ADS_BRAND.border2}`,
+            background: ADS_BRAND.panel,
             boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
             padding: 18,
           }}>
-            <div style={{ color: "#fff", fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Name export folder</div>
+            <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Name export folder</div>
             <input
               value={exportFolderName}
               onChange={(event) => setExportFolderName(event.target.value)}
@@ -2456,11 +2476,11 @@ function MenuAction({
     : isPressed
       ? danger
         ? "rgba(255, 105, 105, 0.22)"
-        : "rgba(255,255,255,0.15)"
+        : ADS_BRAND.active
       : isHovered
         ? danger
           ? "rgba(255, 105, 105, 0.15)"
-          : "rgba(255,255,255,0.08)"
+          : ADS_BRAND.panel2
         : "transparent";
 
   return (
@@ -2485,7 +2505,7 @@ function MenuAction({
         border: "none",
         borderRadius: 8,
         background,
-        color: disabled ? "rgba(255,255,255,0.28)" : danger ? "#ffb4b4" : "rgba(255,255,255,0.9)",
+        color: disabled ? ADS_BRAND.text4 : danger ? "#ffb4b4" : ADS_BRAND.text,
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         alignItems: "center",
@@ -2496,7 +2516,7 @@ function MenuAction({
         fontWeight: 650,
         textAlign: "left",
         outline: "none",
-        boxShadow: isHovered && isInteractive ? "inset 0 0 0 1px rgba(255,255,255,0.06)" : "none",
+        boxShadow: isHovered && isInteractive ? `inset 0 0 0 1px ${danger ? "rgba(255, 105, 105, 0.1)" : ADS_BRAND.border2}` : "none",
         transition: "background 120ms ease, box-shadow 120ms ease, transform 120ms ease",
         transform: isPressed && isInteractive ? "scale(0.995)" : "scale(1)",
       }}
@@ -2505,8 +2525,9 @@ function MenuAction({
       <span style={{ flex: 1 }}>{label}</span>
       {shortcut && (
         <span style={{
-          color: "rgba(255,255,255,0.72)",
-          background: "rgba(255,255,255,0.12)",
+          color: ADS_BRAND.text2,
+          background: ADS_BRAND.active,
+          border: `1px solid ${ADS_BRAND.border2}`,
           borderRadius: 6,
           padding: "4px 7px",
           fontSize: 11,
@@ -2520,7 +2541,7 @@ function MenuAction({
 }
 
 function MenuDivider() {
-  return <div style={{ height: 1, background: "rgba(255,255,255,0.1)", margin: "7px -8px" }} />;
+  return <div style={{ height: 1, background: ADS_BRAND.border, margin: "7px -8px" }} />;
 }
 
 function Control({ label, children }: { label: string; children: React.ReactNode }) {
@@ -2557,9 +2578,9 @@ function Slider({
         <span style={{
           minWidth: 44,
           textAlign: "right",
-          color: "rgba(255,255,255,0.68)",
-          background: "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          color: ADS_BRAND.text2,
+          background: ADS_BRAND.panel3,
+          border: `1px solid ${ADS_BRAND.border2}`,
           borderRadius: 999,
           padding: "3px 7px",
           fontSize: 11,
@@ -2577,7 +2598,7 @@ function Slider({
         onPointerDown={onStart}
         onChange={(e) => onChange(parseInt(e.target.value))}
         style={{
-          background: `linear-gradient(90deg, #8E7CFF 0%, #8E7CFF ${fill}%, rgba(255,255,255,0.13) ${fill}%, rgba(255,255,255,0.13) 100%)`,
+          background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${fill}%, ${ADS_BRAND.border2} ${fill}%, ${ADS_BRAND.border2} 100%)`,
         }}
       />
     </div>
