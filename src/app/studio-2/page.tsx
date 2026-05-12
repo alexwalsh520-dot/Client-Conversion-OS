@@ -19,11 +19,9 @@ import {
   CopyPlus,
   Download,
   FilePlus2,
-  Film,
   Folder,
   FolderPlus,
   Grid3X3,
-  HardDrive,
   ImagePlus,
   Layers,
   MoreHorizontal,
@@ -878,22 +876,6 @@ const homePanelStyle: React.CSSProperties = {
   padding: 12,
 };
 
-const homeActionStyle: React.CSSProperties = {
-  minHeight: 78,
-  border: `1px solid ${ADS_BRAND.border}`,
-  borderRadius: 8,
-  background: ADS_BRAND.panel,
-  color: ADS_BRAND.text,
-  cursor: "pointer",
-  fontFamily: "inherit",
-  fontSize: 13,
-  fontWeight: 800,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 9,
-};
-
 const folderButtonStyle: React.CSSProperties = {
   width: "100%",
   border: `1px solid ${ADS_BRAND.border}`,
@@ -957,7 +939,6 @@ export default function Studio2Page() {
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [selectedHomeProjects, setSelectedHomeProjects] = useState<string[]>([]);
-  const [homeStatus, setHomeStatus] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1875,7 +1856,6 @@ export default function Studio2Page() {
 
   const openSetupFlow = useCallback(() => {
     setCreateMenuOpen(false);
-    setHomeStatus("");
     setView("setup");
   }, []);
 
@@ -1885,8 +1865,6 @@ export default function Studio2Page() {
         setView(creatives.length ? "editor" : "setup");
         return;
       }
-      const project = HOME_SAMPLE_PROJECTS.find((item) => item.id === projectId);
-      setHomeStatus(`${project?.name || "Project"} is a UI preview until project storage is wired.`);
     },
     [creatives.length]
   );
@@ -1902,29 +1880,21 @@ export default function Studio2Page() {
   const downloadSelectedProjects = useCallback(async () => {
     if (!selectedHomeProjects.length) return;
     const includesActiveDraft = selectedHomeProjects.includes("active-draft");
-    const selectedSamples = selectedHomeProjects.filter((id) => id !== "active-draft").length;
 
     if (includesActiveDraft && creatives.length) {
       await exportAll(projectName, false);
     } else if (includesActiveDraft) {
-      setHomeStatus("Open the batch setup and generate ads before downloading this draft.");
       setView("setup");
       return;
-    }
-
-    if (selectedSamples) {
-      setHomeStatus("Saved project downloads will turn on when the Supabase/R2 project library is wired.");
     }
   }, [creatives.length, exportAll, projectName, selectedHomeProjects]);
 
   if (view === "home") {
     const selectedCount = selectedHomeProjects.length;
-    const totalAds = creatives.length || HOME_SAMPLE_PROJECTS.reduce((sum, project) => sum + project.ads, 0);
 
     return (
       <div className="fade-up" style={{ paddingBottom: 40 }}>
         <style>{`
-          .studio2-home-action:hover,
           .studio2-project-card:hover,
           .studio2-folder-card:hover {
             border-color: ${ADS_BRAND.border2};
@@ -1961,28 +1931,57 @@ export default function Studio2Page() {
           }}
         />
 
-        <div className="page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18 }}>
+        <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18 }}>
           <div>
             <h1 className="page-title">Studio 2.0</h1>
             <p className="page-subtitle">Projects, folders, media, and Canva-style batch creation.</p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
-            <button
-              style={buttonStyle(false)}
-              disabled={!selectedCount}
-              onClick={() => void downloadSelectedProjects()}
-            >
-              <Download size={14} /> Download{selectedCount ? ` ${selectedCount}` : ""}
-            </button>
-            <button
-              style={{ ...buttonStyle(true), padding: "10px 14px" }}
-              onClick={(event) => {
-                event.stopPropagation();
-                setCreateMenuOpen((open) => !open);
-              }}
-            >
-              <Plus size={16} /> Create <ChevronDown size={14} />
-            </button>
+          <div style={{ width: 280, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, position: "relative" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              {selectedCount > 0 && (
+                <button
+                  style={buttonStyle(false)}
+                  onClick={() => void downloadSelectedProjects()}
+                >
+                  <Download size={14} /> Download {selectedCount}
+                </button>
+              )}
+              <button
+                style={{ ...buttonStyle(true), padding: "10px 14px" }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCreateMenuOpen((open) => !open);
+                }}
+              >
+                <Plus size={16} /> Create <ChevronDown size={14} />
+              </button>
+            </div>
+            <label style={{
+              width: "100%",
+              height: 38,
+              border: `1px solid ${ADS_BRAND.border}`,
+              borderRadius: 8,
+              background: ADS_BRAND.panel,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 10px",
+              color: ADS_BRAND.text3,
+            }}>
+              <Search size={14} />
+              <input
+                placeholder="Search projects"
+                style={{
+                  width: "100%",
+                  border: "none",
+                  outline: "none",
+                  background: "transparent",
+                  color: ADS_BRAND.text,
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                }}
+              />
+            </label>
             {createMenuOpen && (
               <div
                 className="studio2-create-menu"
@@ -2014,7 +2013,6 @@ export default function Studio2Page() {
                   label="Create folder"
                   onClick={() => {
                     setCreateMenuOpen(false);
-                    setHomeStatus("Folder creation is shown in the UI and will save when the project library is wired.");
                   }}
                 />
                 <HomeMenuButton
@@ -2022,90 +2020,12 @@ export default function Studio2Page() {
                   label="Upload videos"
                   onClick={() => {
                     setCreateMenuOpen(false);
-                    setHomeStatus("Video upload is planned for the R2 media library build.");
                   }}
                 />
               </div>
             )}
           </div>
         </div>
-
-        <div className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-            <button className="studio2-home-action" onClick={openSetupFlow} style={homeActionStyle}>
-              <FilePlus2 size={20} color={ADS_BRAND.gold} />
-              <span>New batch of ads</span>
-            </button>
-            <button className="studio2-home-action" onClick={() => homeUploadInputRef.current?.click()} style={homeActionStyle}>
-              <Upload size={20} color={ADS_BRAND.gold} />
-              <span>Upload photos</span>
-            </button>
-            <button
-              className="studio2-home-action"
-              onClick={() => setHomeStatus("Video cards are ready visually. R2 video upload/export wiring comes next.")}
-              style={homeActionStyle}
-            >
-              <Film size={20} color={ADS_BRAND.gold} />
-              <span>Video project</span>
-            </button>
-          </div>
-
-          <div style={{
-            border: `1px solid ${ADS_BRAND.border}`,
-            borderRadius: 8,
-            background: ADS_BRAND.panel,
-            padding: 12,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 10,
-          }}>
-            <HomeStat label="Projects" value={homeProjects.length} />
-            <HomeStat label="Ads" value={totalAds} />
-            <HomeStat label="Selected" value={selectedCount} />
-            <HomeStat label="Autosave" value={saveStatus.startsWith("Saved") || saveStatus.startsWith("Restored") ? "On" : "Ready"} />
-          </div>
-        </div>
-
-        {homeStatus && (
-          <div className="section" style={{ marginTop: -4 }}>
-            <div style={{
-              border: `1px solid ${ADS_BRAND.goldBorder}`,
-              background: ADS_BRAND.goldSoft,
-              color: ADS_BRAND.text2,
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: 13,
-            }}>
-              {homeStatus}
-            </div>
-          </div>
-        )}
-
-        {restoredAt && (
-          <div className="section" style={{ marginTop: homeStatus ? 10 : -4 }}>
-            <div className="glass-static" style={{ padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-                Autosave restored from {getDraftDate(restoredAt)}.
-              </span>
-              <button
-                style={buttonStyle(false)}
-                onClick={async () => {
-                  await clearDraft();
-                  setPhotos([]);
-                  setCreatives([]);
-                  setCurrentIndex(0);
-                  setCopyText(DEFAULT_COPY);
-                  setProjectName("Studio 2.0 Batch");
-                  setSelectedHomeProjects([]);
-                  setRestoredAt(null);
-                  setSaveStatus("Draft cleared");
-                }}
-              >
-                Start Fresh
-              </button>
-            </div>
-          </div>
-        )}
 
         <div className="section" style={{ display: "grid", gridTemplateColumns: "250px minmax(0, 1fr)", gap: 18 }}>
           <aside style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2139,61 +2059,22 @@ export default function Studio2Page() {
               ))}
               <button
                 className="studio2-folder-card"
-                onClick={() => setHomeStatus("Folder creation is a visual prototype until the project library is wired.")}
                 style={{ ...folderButtonStyle, borderStyle: "dashed", color: ADS_BRAND.text2 }}
               >
                 <FolderPlus size={15} />
                 New folder
               </button>
             </div>
-
-            <div style={homePanelStyle}>
-              <div style={{ ...labelStyle, marginBottom: 10 }}>
-                <HardDrive size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
-                Media Bank
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                <HomeMediaRow icon={ImagePlus} label="Photos" value={photos.length || 284} />
-                <HomeMediaRow icon={Film} label="Videos" value={96} />
-                <HomeMediaRow icon={CheckCircle2} label="Approved ads" value={creatives.filter((creative) => creative.approved).length || 30} />
-              </div>
-            </div>
           </aside>
 
           <main>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ marginBottom: 12 }}>
               <div>
                 <h2 className="section-title" style={{ marginBottom: 2 }}>
                   <Grid3X3 size={16} /> Projects
                 </h2>
                 <div style={{ color: ADS_BRAND.text3, fontSize: 12 }}>Recent Studio workspaces</div>
               </div>
-              <label style={{
-                width: 250,
-                height: 38,
-                border: `1px solid ${ADS_BRAND.border}`,
-                borderRadius: 8,
-                background: ADS_BRAND.panel,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "0 10px",
-                color: ADS_BRAND.text3,
-              }}>
-                <Search size={14} />
-                <input
-                  placeholder="Search projects"
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    outline: "none",
-                    background: "transparent",
-                    color: ADS_BRAND.text,
-                    fontFamily: "inherit",
-                    fontSize: 12,
-                  }}
-                />
-              </label>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14 }}>
@@ -2246,7 +2127,6 @@ export default function Studio2Page() {
                       aria-label="Project options"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setHomeStatus(`${project.name} options menu is shown in the design pass.`);
                       }}
                       style={{
                         position: "absolute",
@@ -2285,23 +2165,6 @@ export default function Studio2Page() {
                           {project.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}
                         </span>
                       )}
-                      <div style={{
-                        position: "absolute",
-                        left: 12,
-                        bottom: 10,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        borderRadius: 999,
-                        padding: "5px 8px",
-                        background: "rgba(0,0,0,0.58)",
-                        color: "#fff",
-                        fontSize: 11,
-                        fontWeight: 750,
-                      }}>
-                        {project.media.includes("Video") || project.media.includes("videos") ? <Film size={12} /> : <ImagePlus size={12} />}
-                        {project.media}
-                      </div>
                     </div>
                     <div style={{ padding: 12 }}>
                       {project.isActiveDraft ? (
@@ -2328,11 +2191,8 @@ export default function Studio2Page() {
                           {project.name}
                         </div>
                       )}
-                      <div style={{ color: ADS_BRAND.text3, fontSize: 11, marginTop: 7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {project.folder}
-                      </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-                        <ProjectMetric label="Ads" value={project.ads} />
+                        <ProjectMetric label="In Progress" value={Math.max(0, project.ads - project.approved)} />
                         <ProjectMetric label="Approved" value={project.approved} />
                       </div>
                       <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", color: ADS_BRAND.text3, fontSize: 11 }}>
@@ -3081,44 +2941,6 @@ function HomeMenuButton({
       <Icon size={16} />
       {label}
     </button>
-  );
-}
-
-function HomeStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <div style={{ color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
-        {label}
-      </div>
-      <div style={{ color: ADS_BRAND.text, fontSize: 18, fontWeight: 900, marginTop: 2 }}>{value}</div>
-    </div>
-  );
-}
-
-function HomeMediaRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ size?: number; color?: string }>;
-  label: string;
-  value: number;
-}) {
-  return (
-    <div style={{
-      height: 36,
-      border: `1px solid ${ADS_BRAND.border}`,
-      borderRadius: 7,
-      background: ADS_BRAND.panel3,
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      padding: "0 9px",
-    }}>
-      <Icon size={14} color={ADS_BRAND.gold} />
-      <span style={{ color: ADS_BRAND.text2, fontSize: 12, fontWeight: 750, flex: 1 }}>{label}</span>
-      <span style={{ color: ADS_BRAND.text, fontSize: 12, fontWeight: 850 }}>{value}</span>
-    </div>
   );
 }
 
