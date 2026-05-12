@@ -13,6 +13,7 @@ import {
 import { Trophy, Users } from "lucide-react";
 import type { Client, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
 import type { CoachPerformanceEntry, CoachingFeedbackEntry } from "@/lib/mock-data";
+import { boostPctForScore, type CoachScoreMap } from "@/lib/daily-coacher/coach-scores";
 
 interface Props {
   clients: Client[];
@@ -21,9 +22,12 @@ interface Props {
   eodReports: CoachEODReport[];
   coachPerformance: CoachPerformanceEntry[];
   feedback: CoachingFeedbackEntry[];
+  /** Daily Coacher Usage Scores keyed by coach name. May be empty while
+   *  loading or if the data fetch fails — in that case the boost is 0. */
+  dailyCoacherScores?: CoachScoreMap;
 }
 
-export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports }: Props) {
+export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports, dailyCoacherScores }: Props) {
   // Get unique coaches from clients
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
 
@@ -55,6 +59,18 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
     const relevantClients = activeClients.length + completedClients.length;
     const completionRate = relevantClients > 0 ? Math.round((completedClients.length / relevantClients) * 100) : 0;
 
+    // Daily Coacher Usage Score (0-10) and the percentage boost it adds
+    // to the coach's overall score. Hard-coded mapping per spec; see
+    // src/lib/daily-coacher/coach-scores.ts for the table.
+    const dcEntry = dailyCoacherScores?.[coachName];
+    const dailyCoacherScore = dcEntry?.score ?? 0;
+    const dailyCoacherBoost = dcEntry?.boostPct ?? boostPctForScore(dailyCoacherScore);
+
+    // Overall % = milestone % + Daily Coacher boost, capped at 100.
+    // Coaches still see the raw milestone % via the breakdown caption so
+    // the contribution of each part is transparent.
+    const overallScore = Math.min(100, milestoneRate + dailyCoacherBoost);
+
     return {
       name: coachName,
       totalClients: coachClients.length,
@@ -62,6 +78,9 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       completedClients: completedClients.length,
       completionRate,
       milestoneRate,
+      dailyCoacherScore,
+      dailyCoacherBoost,
+      overallScore,
       totalMeetings: coachMeetings.length,
       eodSubmissions: coachEODs.length,
       trustPilot: coachMilestones.filter((m) => m.trustPilotCompleted).length,
@@ -71,13 +90,13 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
     };
   });
 
-  // Sort by milestone rate for ranking
-  const ranked = [...coachData].sort((a, b) => b.milestoneRate - a.milestoneRate);
+  // Sort by overall score (which now includes the Daily Coacher boost)
+  const ranked = [...coachData].sort((a, b) => b.overallScore - a.overallScore);
 
   // Chart data for comparison
   const chartData = coachData.map((c) => ({
     name: c.name,
-    "Milestone %": c.milestoneRate,
+    "Overall %": c.overallScore,
     "Completion %": c.completionRate,
     "Active Clients": c.activeClients,
   }));
@@ -108,18 +127,26 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       <div className="section">
         <h2 className="section-title">
           <Trophy size={16} />
-          Coach Rankings (by Milestone Achievement)
+          Coach Rankings (Milestones + Daily Coacher boost)
         </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           {ranked.map((coach, idx) => (
             <div key={coach.name} className="glass-static" style={{ padding: 16, borderLeft: idx === 0 ? "3px solid var(--accent)" : "none" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 16 }}>
                   #{idx + 1} {coach.name}
                 </span>
                 <span style={{ color: "var(--accent)", fontWeight: 600, fontSize: 20 }}>
-                  {coach.milestoneRate}%
+                  {coach.overallScore}%
                 </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+                {coach.milestoneRate}% milestones
+                {coach.dailyCoacherBoost > 0 && (
+                  <span style={{ color: "var(--accent)" }}>
+                    {" "}+ {coach.dailyCoacherBoost}% Daily Coacher boost
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                 <span>Active Clients: <strong>{coach.activeClients}</strong></span>
@@ -130,6 +157,9 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <span>Videos: <strong>{coach.videoTestimonials}</strong></span>
                 <span>Retentions: <strong>{coach.retentions}</strong></span>
                 <span>Referrals: <strong>{coach.referrals}</strong></span>
+                <span style={{ gridColumn: "1 / -1" }}>
+                  Daily Coacher: <strong style={{ color: coach.dailyCoacherScore > 0 ? "var(--accent)" : "var(--text-muted)" }}>{coach.dailyCoacherScore}/10</strong>
+                </span>
               </div>
             </div>
           ))}
@@ -157,7 +187,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 }}
               />
               <Legend />
-              <Bar dataKey="Milestone %" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Overall %" fill="var(--accent)" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Completion %" fill="var(--success)" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Active Clients" fill="var(--tyson)" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -176,6 +206,8 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <th>Completed</th>
                 <th>Completion %</th>
                 <th>Milestone %</th>
+                <th>Daily Coacher</th>
+                <th>Overall %</th>
                 <th>TP</th>
                 <th>Video</th>
                 <th>Retention</th>
@@ -189,8 +221,19 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                   <td>{coach.activeClients}</td>
                   <td>{coach.completedClients}</td>
                   <td>{coach.completionRate}%</td>
-                  <td style={{ fontWeight: 600, color: coach.milestoneRate >= 50 ? "var(--success)" : "var(--warning)" }}>
-                    {coach.milestoneRate}%
+                  <td>{coach.milestoneRate}%</td>
+                  <td>
+                    <span style={{ color: coach.dailyCoacherScore > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+                      {coach.dailyCoacherScore}/10
+                    </span>
+                    {coach.dailyCoacherBoost > 0 && (
+                      <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}>
+                        (+{coach.dailyCoacherBoost}%)
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ fontWeight: 600, color: coach.overallScore >= 50 ? "var(--success)" : "var(--warning)" }}>
+                    {coach.overallScore}%
                   </td>
                   <td>{coach.trustPilot}</td>
                   <td>{coach.videoTestimonials}</td>

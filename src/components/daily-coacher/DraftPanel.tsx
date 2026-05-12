@@ -83,11 +83,21 @@ export default function DraftPanel({ clientId, selectedTopic }: Props) {
   }
 
   async function copyToClipboard(): Promise<void> {
-    if (!draft) return;
+    if (!draft || !selectedTopic) return;
     try {
       await navigator.clipboard.writeText(draft);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+      // Fire-and-forget: log this Copy as a Daily Coacher Usage event.
+      // Failure here only costs one point on the coach's score; we don't
+      // surface errors to keep the workflow uninterrupted.
+      void fetch(`/api/coaching/daily-coacher/${clientId}/log-tip-use`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: selectedTopic }),
+      }).catch(() => {
+        /* swallow */
+      });
     } catch {
       setError("Couldn't access clipboard. Select the text and copy manually.");
     }

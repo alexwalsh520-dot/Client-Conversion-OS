@@ -32,6 +32,7 @@ import {
   getExpenses,
   getNutritionIntakeForms,
 } from "@/lib/data";
+import { getCoachDailyCoacherScores } from "@/lib/daily-coacher/coach-scores";
 import { useAsyncData } from "@/lib/use-data";
 import type { CoachingTab, Client, CoachMeeting, CoachEODReport, Expense, NutritionIntakeForm } from "@/lib/types";
 
@@ -77,6 +78,7 @@ export default function CoachingPage() {
   const { data: milestoneActivity, refetch: refetchMilestoneActivity } = useAsyncData(getMilestoneActivity, []);
   const { data: expenses, refetch: refetchExpenses } = useAsyncData(getExpenses, []);
   const { data: nutritionForms, refetch: refetchNutritionForms } = useAsyncData(getNutritionIntakeForms, []);
+  const { data: dailyCoacherScores } = useAsyncData(getCoachDailyCoacherScores, {});
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -306,6 +308,7 @@ export default function CoachingPage() {
             eodReports={eodReports}
             coachPerformance={coachPerformance}
             feedback={feedback}
+            dailyCoacherScores={dailyCoacherScores}
           />
         )}
         {activeTab === "meetings" && (
