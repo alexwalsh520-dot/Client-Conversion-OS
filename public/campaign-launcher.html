@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Campaign Launcher — Client Conversion OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0a0a; --panel:#111; --panel-2:#141414; --panel-3:#0c0c0c;
+    --border:#1f1f1f; --border-2:#262626;
+    --text:#e8e8e8; --text-2:#a8a8a8; --text-3:#6b6b6b; --text-4:#4a4a4a;
+    --green:#7dd3a8; --green-bg:#0c1a12; --green-border:#1a2e22;
+    --red:#e89a94; --red-bg:#1a0e0e; --red-border:#3a1f1f;
+    --gold:#d4b27a; --gold-bg:#1a1608; --gold-border:#2a2417;
+    --blue:#7aa7d4;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13.5px;-webkit-font-smoothing:antialiased;letter-spacing:-0.005em;line-height:1.55;height:100vh;overflow:hidden}
+  button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  input,textarea,select{font-family:inherit;color:inherit;background:none;border:none;outline:none}
+  textarea{resize:none}
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#222;border-radius:4px}::-webkit-scrollbar-thumb:hover{background:#333}
+
+  .app{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;border-bottom:1px solid var(--border);background:#0c0c0c}
+  .crumb{font-size:11px;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-4);font-family:'JetBrains Mono',monospace}
+  .crumb a{color:var(--text-3);text-decoration:none}
+  .crumb .here{color:var(--gold)}
+  .crumb .sep{color:var(--text-4);margin:0 7px}
+  .top-title{font-size:14px;font-weight:600}
+  .top-actions{display:flex;gap:8px}
+  .btn-ghost{padding:6px 11px;border:1px solid var(--border-2);border-radius:5px;font-size:12px;color:var(--text-2);background:#0f0f0f}
+  .btn-ghost:hover{background:#141414;color:var(--text)}
+
+  .main{display:grid;grid-template-columns:1fr 280px;height:100%;overflow:hidden}
+
+  /* RAIL */
+  .rail{border-left:1px solid var(--border);background:#0c0c0c;display:flex;flex-direction:column;overflow:hidden;order:2}
+  .rail-head{padding:14px 18px;border-bottom:1px solid var(--border)}
+  .rail-head .lbl{font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-4);font-family:'JetBrains Mono',monospace;font-weight:500;margin-bottom:6px}
+  .rail-head .title{font-size:14px;color:var(--text);font-weight:600}
+  .rail-head .sub{font-size:11.5px;color:var(--text-3);margin-top:2px}
+
+  .rail-steps{padding:6px 0;flex:1;overflow-y:auto}
+  .rail-step{padding:10px 18px;cursor:pointer;border-left:2px solid transparent}
+  .rail-step:hover{background:#101010}
+  .rail-step.current{background:#0f0d08;border-left-color:var(--gold)}
+  .rail-step .row{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center}
+  .rs-num{display:grid;place-items:center;width:22px;height:22px;border-radius:99px;background:#0c0c0c;border:1px solid var(--border-2);font-size:11px;color:var(--text-3);font-family:'JetBrains Mono',monospace;font-weight:500}
+  .rail-step.done .rs-num{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+  .rail-step.current .rs-num{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold)}
+  .rail-step.blocked .rs-num{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}
+  .rs-name{font-size:13px;color:var(--text-2)}
+  .rail-step.current .rs-name{color:var(--text);font-weight:600}
+  .rail-step.done .rs-name{color:var(--text-3)}
+  .rs-meta{font-size:10.5px;color:var(--text-4);font-family:'JetBrains Mono',monospace}
+  .rs-meta.bad{color:var(--red)}.rs-meta.warn{color:var(--gold)}.rs-meta.ok{color:var(--green)}
+
+  /* substep dots — visible only on current */
+  .substeps{display:none;margin:8px 0 4px 32px;padding-left:10px;border-left:1px solid var(--border)}
+  .rail-step.current .substeps{display:block}
+  .ss{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;color:var(--text-3);cursor:pointer}
+  .ss:hover{color:var(--text-2)}
+  .ss .d{width:6px;height:6px;border-radius:99px;background:var(--border-2);flex-shrink:0}
+  .ss.done .d{background:var(--green)}
+  .ss.current{color:var(--text);font-weight:500}
+  .ss.current .d{background:var(--gold);box-shadow:0 0 8px var(--gold);animation:dot-pulse 1.8s ease-in-out infinite}
+  @keyframes dot-pulse{
+    0%,100%{box-shadow:0 0 6px var(--gold), 0 0 0 0 rgba(212,178,122,0.6)}
+    50%{box-shadow:0 0 10px var(--gold), 0 0 0 5px rgba(212,178,122,0)}
+  }
+  /* substep just-completed flash */
+  .ss.flash .d{animation:dot-flash .6s ease-out}
+  @keyframes dot-flash{
+    0%{background:var(--gold);box-shadow:0 0 0 0 rgba(212,178,122,0.9)}
+    100%{background:var(--green);box-shadow:0 0 0 12px rgba(125,211,168,0)}
+  }
+  .ss.locked{color:var(--text-4);cursor:not-allowed}
+
+  .rr-section{padding:14px 18px;border-top:1px solid var(--border)}
+  .rr-lbl{font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-4);font-family:'JetBrains Mono',monospace;font-weight:500;margin-bottom:8px}
+  .blocker-banner{padding:12px;border:1px solid var(--red-border);background:var(--red-bg);border-radius:7px}
+  .bb-title{font-size:13px;font-weight:600;color:var(--red);display:flex;align-items:center;gap:8px}
+  .bb-title .ico{width:18px;height:18px;border-radius:99px;background:#0a0a0a;border:1px solid var(--red-border);display:grid;place-items:center;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600}
+  .bb-list{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+  .bb-item{font-size:11.5px;color:var(--text-2);padding-left:13px;position:relative}
+  .bb-item::before{content:'';position:absolute;left:0;top:6px;width:5px;height:5px;border-radius:99px;background:var(--red)}
+
+  /* CENTER STAGE — single focused card */
+  .stage{overflow-y:auto;background:var(--bg);display:flex;flex-direction:column;align-items:center;position:relative}
+  .stage-inner{width:100%;max-width:640px;padding:36px 32px 24px;display:flex;flex-direction:column;align-items:stretch}
+
+  /* page-level progress hairline — fills as you advance */
+  .progress-hair{position:fixed;top:0;left:0;height:2px;width:0%;background:linear-gradient(90deg, transparent, var(--gold) 40%, var(--gold));box-shadow:0 0 12px rgba(212,178,122,0.6);z-index:50;transition:width .55s cubic-bezier(.2,.7,.2,1)}
+
+  /* focus card slide-in */
+  #focus{animation:focus-in .42s cubic-bezier(.2,.7,.2,1)}
+  @keyframes focus-in{
+    0%{opacity:0;transform:translateY(8px) scale(0.995)}
+    100%{opacity:1;transform:translateY(0) scale(1)}
+  }
+  /* gold glow underlay on the focus card on entry */
+  .focus-card{position:relative}
+  .focus-card.entering::before{content:'';position:absolute;inset:-1px;border-radius:11px;background:radial-gradient(60% 50% at 50% 0%, rgba(212,178,122,0.18), transparent 70%);pointer-events:none;animation:card-glow 1.1s ease-out forwards}
+  @keyframes card-glow{
+    0%{opacity:1}
+    100%{opacity:0}
+  }
+
+  /* particle layer — glowing emissions from card edges */
+  .confetti-layer{position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden}
+  .particle{position:absolute;width:6px;height:6px;border-radius:99px;background:#f0d9a8;box-shadow:0 0 8px 2px rgba(240,217,168,0.9), 0 0 18px 4px rgba(212,178,122,0.55);will-change:transform,opacity;animation:p-drift var(--dur,2.2s) ease-out forwards}
+  @keyframes p-drift{
+    0%{transform:translate3d(0,0,0) scale(0.4);opacity:0}
+    20%{opacity:1}
+    100%{transform:translate3d(var(--dx,0),var(--dy,-40px),0) scale(1);opacity:0}
+  }
+  /* card-edge halo — soft outer bloom locked to card edge */
+  .card-halo{position:fixed;border-radius:10px;pointer-events:none;z-index:54;opacity:0;animation:card-halo 1.7s ease-out forwards}
+  @keyframes card-halo{
+    0%{opacity:0;box-shadow:0 0 0 0 rgba(212,178,122,0), 0 0 0 0 rgba(212,178,122,0)}
+    25%{opacity:1;box-shadow:0 0 30px 4px rgba(212,178,122,0.6), 0 0 70px 12px rgba(212,178,122,0.32)}
+    100%{opacity:0;box-shadow:0 0 80px 24px rgba(212,178,122,0), 0 0 140px 40px rgba(212,178,122,0)}
+  }
+
+  /* rail step "just completed" green pop */
+  .rail-step.just-done{animation:row-pop .55s ease-out}
+  @keyframes row-pop{
+    0%{background:rgba(125,211,168,0.18)}
+    100%{background:transparent}
+  }
+
+  /* Completed step summary chips at top */
+  .summary-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;min-height:24px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--green-border);background:var(--green-bg);border-radius:99px;font-size:11.5px;color:var(--green);cursor:pointer}
+  .chip:hover{filter:brightness(1.15)}
+  .chip .d{width:5px;height:5px;border-radius:99px;background:var(--green)}
+  .chip .v{color:var(--text);font-weight:500}
+
+  .focus-eyebrow{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gold);font-family:'JetBrains Mono',monospace;font-weight:500;margin-bottom:8px}
+  .focus-title{font-size:26px;font-weight:600;letter-spacing:-0.02em;margin:0;line-height:1.2}
+  .focus-help{font-size:14px;color:var(--text-3);margin-top:8px;line-height:1.55}
+
+  .focus-card{margin-top:22px;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:22px;display:flex;flex-direction:column;gap:14px}
+  .focus-card.tight{padding:0;overflow:hidden}
+
+  .input-row{display:flex;flex-direction:column;gap:7px}
+  .input-row .lbl{font-size:12px;color:var(--text-3);font-weight:500}
+  .input-row .lbl .opt{font-size:11px;color:var(--text-4);margin-left:6px;font-family:'JetBrains Mono',monospace}
+  .field-input{width:100%;padding:12px 14px;background:#0a0a0a;border:1px solid var(--border-2);border-radius:6px;font-size:15px;color:var(--text)}
+  .field-input:focus{border-color:var(--gold);background:#0c0b08}
+  .field-input.select{cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .field-input.select .caret{color:var(--text-4);font-size:11px}
+  textarea.field-input{min-height:140px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;letter-spacing:0.04em;resize:vertical}
+
+  .uploader{padding:30px 18px;text-align:center;border:1.5px dashed var(--border-2);border-radius:8px;background:#0a0a0a;cursor:pointer}
+  .uploader:hover{border-color:var(--gold);background:#0c0b08}
+  .uploader .glyph{font-size:24px;color:var(--text-3);font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:8px}
+  .uploader .head{font-size:14px;color:var(--text);font-weight:500}
+  .uploader .sub{font-size:12px;color:var(--text-4);margin-top:4px}
+  .thumbs-inline{display:flex;gap:5px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+  .thumb-mini{width:32px;height:32px;border-radius:4px;border:1px solid var(--border-2);overflow:hidden}
+  .thumb-mini svg{width:100%;height:100%;display:block}
+  .thumb-mini.more{display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-4);border-style:dashed}
+
+  /* Generated name preview — calmer */
+  .gen-card{padding:18px 22px;background:#0c0b08;border:1px solid var(--gold-border);border-radius:8px;margin-top:18px}
+  .gen-card .l{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);font-family:'JetBrains Mono',monospace;font-weight:500;margin-bottom:7px}
+  .gen-card .v{font-size:15px;color:var(--text);font-weight:500;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .gen-card .v .copy{padding:4px 10px;font-size:11px;border:1px solid var(--gold-border);border-radius:4px;color:var(--gold);font-family:'JetBrains Mono',monospace;background:transparent}
+
+  /* STEP 2 single-substep card */
+  .meta-task{display:flex;flex-direction:column;gap:14px}
+  .meta-task .where{font-size:12.5px;color:var(--text-3);font-family:'JetBrains Mono',monospace;letter-spacing:0.02em;display:flex;align-items:center;gap:7px}
+  .meta-task .where .arrow{color:var(--text-4)}
+  .meta-task .where .crumb-bit{color:var(--text-2)}
+  .meta-task .where .crumb-bit.last{color:var(--gold)}
+
+  .field-block{padding:14px 16px;border:1px solid var(--border-2);border-radius:7px;background:#0a0a0a;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .field-block .l{font-size:11px;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-3);font-family:'JetBrains Mono',monospace;font-weight:500;flex-shrink:0;width:90px}
+  .field-block .v{font-size:14px;color:var(--text);font-weight:500;font-family:'JetBrains Mono',monospace;flex:1;min-width:0;word-break:break-all}
+  .field-block.set{padding:10px 14px}
+  .field-block .copy{padding:5px 10px;font-size:11px;border:1px solid var(--border-2);border-radius:4px;color:var(--text-3);font-family:'JetBrains Mono',monospace;background:transparent}
+  .field-block .copy:hover{background:#141414;color:var(--text)}
+  .field-block.toggle{background:var(--red-bg);border-color:var(--red-border)}
+  .field-block.toggle .l{color:var(--red)}
+  .field-block.toggle .v{color:var(--text)}
+
+  .greeting-box{padding:16px;border:1px solid var(--border-2);border-radius:7px;background:#0a0a0a}
+  .greeting-box .l{font-size:11px;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-3);font-family:'JetBrains Mono',monospace;margin-bottom:8px}
+  .greeting-box .body{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text);line-height:1.65;white-space:pre-wrap;background:#141414;border:1px solid var(--border-2);border-radius:5px;padding:12px 14px}
+  .greeting-box .actions{margin-top:10px;display:flex;justify-content:flex-end}
+
+  /* STEP 3 single check */
+  .check-block{display:flex;flex-direction:column;gap:14px}
+  .check-status{padding:18px 20px;border-radius:8px;display:flex;align-items:center;gap:14px}
+  .check-status.ok{background:var(--green-bg);border:1px solid var(--green-border)}
+  .check-status.bad{background:var(--red-bg);border:1px solid var(--red-border)}
+  .check-status.warn{background:var(--gold-bg);border:1px solid var(--gold-border)}
+  .check-status .ic{width:30px;height:30px;border-radius:99px;background:#0a0a0a;display:grid;place-items:center;font-size:14px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0}
+  .check-status.ok .ic{color:var(--green);border:1px solid var(--green-border)}
+  .check-status.bad .ic{color:var(--red);border:1px solid var(--red-border)}
+  .check-status.warn .ic{color:var(--gold);border:1px solid var(--gold-border)}
+  .check-status .body{flex:1;min-width:0}
+  .check-status .head{font-size:15px;font-weight:600;letter-spacing:-0.005em}
+  .check-status.ok .head{color:var(--green)}
+  .check-status.bad .head{color:var(--red)}
+  .check-status.warn .head{color:var(--gold)}
+  .check-status .sub{font-size:13px;color:var(--text-2);margin-top:3px;line-height:1.5}
+  .check-status .sub strong{color:var(--text);font-weight:600}
+
+  .check-instr{padding:16px 18px;border:1px solid var(--border-2);border-radius:7px;background:#0a0a0a}
+  .check-instr .l{font-size:11px;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-3);font-family:'JetBrains Mono',monospace;margin-bottom:8px}
+  .check-instr .steps{display:flex;flex-direction:column;gap:9px}
+  .check-instr .stp{display:flex;align-items:flex-start;gap:11px;font-size:13px;color:var(--text-2);line-height:1.55}
+  .check-instr .stp .n{width:20px;height:20px;border-radius:99px;background:#141414;border:1px solid var(--border-2);display:grid;place-items:center;font-size:11px;color:var(--gold);font-family:'JetBrains Mono',monospace;font-weight:600;flex-shrink:0}
+  .check-instr .stp strong{color:var(--text);font-weight:600}
+
+  .group-progress{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
+  .group-progress .dots{display:flex;gap:4px}
+  .group-progress .dot{width:6px;height:6px;border-radius:99px;background:var(--border-2)}
+  .group-progress .dot.ok{background:var(--green)}
+  .group-progress .dot.bad{background:var(--red)}
+  .group-progress .dot.cur{background:var(--gold);box-shadow:0 0 4px var(--gold)}
+
+  /* Plan / launch / done — same as before but lighter */
+  .plan-summary{padding:18px 20px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:#0c0c0c}
+  .plan-summary .num{font-size:24px;font-weight:600;color:var(--text);letter-spacing:-0.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .plan-summary .num.green{color:var(--green)}
+  .plan-summary .lbl{font-size:13px;color:var(--text-2);margin-right:6px}
+  .plan-summary .sep{color:var(--text-4);margin:0 4px}
+  .plan-table-wrap{max-height:380px;overflow-y:auto}
+  table.plan{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+  table.plan thead th{padding:9px 14px;font-size:10.5px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-3);font-weight:500;background:#0c0c0c;text-align:left;border-bottom:1px solid var(--border-2);position:sticky;top:0;z-index:1}
+  table.plan tbody td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .pl-thumb{width:28px;height:28px;border-radius:4px;border:1px solid var(--border-2);overflow:hidden;background:#0c0c0c}
+  .pl-thumb svg{width:100%;height:100%;display:block}
+  .pl-kw{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.06em;color:var(--text);font-weight:500}
+  .pl-action{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500}
+  .pl-action .d{width:6px;height:6px;border-radius:99px}
+  .pl-action.create{color:var(--green)}.pl-action.create .d{background:var(--green)}
+  .pl-action.keep{color:var(--blue)}.pl-action.keep .d{background:var(--blue)}
+  .pl-msg{font-size:12px;color:var(--text-2)}
+  .pl-msg .gold{color:var(--gold);font-family:'JetBrains Mono',monospace}
+
+  .pg-grid{display:grid;grid-template-columns:repeat(2,1fr)}
+  .pg-cell{padding:18px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .pg-cell:nth-child(2n){border-right:none}.pg-cell:nth-last-child(-n+2){border-bottom:none}
+  .pg-lbl{font-size:11px;color:var(--text-3);margin-bottom:8px}
+  .pg-num{display:flex;align-items:baseline;gap:6px}
+  .pg-num .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+  .pg-num .v.active{color:var(--gold)}.pg-num .v.idle{color:var(--text-4)}
+  .pg-num .total{font-size:13px;color:var(--text-4);font-family:'JetBrains Mono',monospace}
+  .pg-bar{height:3px;background:#161616;border-radius:99px;margin-top:8px;overflow:hidden}
+  .pg-bar > span{display:block;height:100%;background:linear-gradient(90deg,#8a7348,var(--gold))}
+  .pg-current{padding:13px 18px;background:#0a0a0a;font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
+  .pg-current .what{font-family:'JetBrains Mono',monospace;color:var(--text)}
+
+  .done-head{padding:22px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--border)}
+  .done-seal{width:40px;height:40px;border-radius:99px;background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);display:grid;place-items:center;font-size:18px;flex-shrink:0;font-weight:700}
+  .done-row{padding:11px 22px;display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--text-2)}
+  .done-row .ic{width:18px;color:var(--green);text-align:center;font-weight:600;font-family:'JetBrains Mono',monospace}
+  .done-row .ic.warn{color:var(--gold)}
+  .done-row strong{color:var(--text);font-weight:500}
+  .done-actions{padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;background:#0c0c0c}
+
+  /* BOTTOM ACTION BAR */
+  .actionbar{display:flex;align-items:center;gap:14px;padding:14px 22px;border-top:1px solid var(--border);background:#0c0c0c}
+  .ab-context{font-size:13px;color:var(--text-3);flex:1;min-width:0}
+  .ab-context strong{color:var(--text);font-weight:500}
+  .ab-context.bad strong{color:var(--red)}
+  .ab-shortcut{font-size:11px;color:var(--text-4);font-family:'JetBrains Mono',monospace;letter-spacing:0.04em}
+  .ab-shortcut kbd{display:inline-block;padding:1px 6px;border:1px solid var(--border-2);border-radius:3px;background:#141414;color:var(--text-2);font-size:10.5px}
+  /* PRIMARY BUTTON — alive, glowing */
+  .btn-primary{padding:11px 22px;background:var(--gold);color:#0a0a0a;border-radius:7px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;position:relative;transition:transform .12s ease, filter .15s ease;box-shadow:0 0 24px -2px rgba(212,178,122,0.55), 0 0 0 1px rgba(212,178,122,0.4), inset 0 1px 0 rgba(255,255,255,0.18)}
+  .btn-primary::before{content:'';position:absolute;inset:-6px;border-radius:11px;background:radial-gradient(closest-side, rgba(212,178,122,0.55), rgba(212,178,122,0));z-index:-1;animation:btn-breathe 2.4s ease-in-out infinite;pointer-events:none}
+  .btn-primary:hover{transform:translateY(-1px);filter:brightness(1.08)}
+  .btn-primary:active{transform:translateY(0);filter:brightness(0.95)}
+  .btn-primary:disabled{background:#161616;color:var(--text-4);cursor:not-allowed;border:1px solid var(--border-2);box-shadow:none;filter:none}
+  .btn-primary:disabled::before{display:none}
+  @keyframes btn-breathe{
+    0%,100%{opacity:0.55;transform:scale(1)}
+    50%{opacity:1;transform:scale(1.08)}
+  }
+  .btn-primary.flash::after{content:'';position:absolute;inset:-3px;border-radius:9px;border:2px solid var(--gold);animation:btn-flash .55s ease-out forwards;pointer-events:none}
+  @keyframes btn-flash{
+    0%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.22)}
+  }
+  .btn-secondary{padding:10px 14px;background:#0f0f0f;border:1px solid var(--border-2);border-radius:6px;color:var(--text-2);font-size:13px;font-weight:500}
+  .btn-secondary:hover{background:#141414;color:var(--text)}
+  .btn-back{padding:10px 14px;background:transparent;color:var(--text-3);font-size:13px}
+  .btn-back:hover{color:var(--text)}
+
+  .fix-btn{padding:7px 12px;font-size:12px;border:1px solid var(--border-2);border-radius:4px;background:#0c0c0c;color:var(--text-2);font-weight:500}
+  .fix-btn.primary{background:var(--gold);color:#0a0a0a;border-color:var(--gold);font-weight:600}
+
+  @media (max-width:1100px){
+    body{height:auto;overflow:auto}
+    .app{height:auto;display:flex;flex-direction:column}
+    .main{display:flex;flex-direction:column}
+  }
+</style>
+</head>
+<body>
+
+<template id="__bundler_thumbnail" data-bg-color="#0a0a0a">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0a0a0a"/>
+    <rect x="80" y="120" width="760" height="600" rx="14" fill="#111" stroke="#1f1f1f" stroke-width="2"/>
+    <text x="120" y="180" font-family="Inter, sans-serif" font-size="32" fill="#e8e8e8" font-weight="600">Campaign Launcher</text>
+    <text x="120" y="210" font-family="JetBrains Mono, monospace" font-size="13" fill="#d4b27a" letter-spacing="2">FOCUS-MODE WIZARD</text>
+  </svg>
+</template>
+
+<div class="progress-hair" id="progressHair"></div>
+<div class="confetti-layer" id="confettiLayer"></div>
+
+<div class="app">
+
+  <div class="topbar">
+    <div class="crumb">
+      <a href="/ads" target="_top">CCOS</a><span class="sep">/</span><a href="/ads" target="_top">Ads</a><span class="sep">/</span><span class="here">Campaign Launcher</span>
+    </div>
+    <div class="top-title">Summer Shred — Tyson</div>
+    <div class="top-actions">
+      <button class="btn-ghost">Run history</button>
+      <button class="btn-ghost">Save draft</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="stage">
+      <div class="stage-inner">
+        <div class="summary-strip" id="summaryStrip"></div>
+        <div id="focus"></div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <div class="rail-head">
+        <div class="lbl">Launch</div>
+        <div class="title">Summer Shred</div>
+        <div class="sub">Tyson · Meta</div>
+      </div>
+      <div class="rail-steps" id="railSteps"></div>
+      <div class="rr-section" id="railStatus"></div>
+    </div>
+  </div>
+
+  <div class="actionbar">
+    <button class="btn-back" id="btnBack">← Back</button>
+    <div class="ab-context" id="abContext"></div>
+
+    <button class="btn-secondary" id="btnSecondary" style="display:none"></button>
+    <button class="btn-primary" id="btnPrimary"></button>
+  </div>
+</div>
+
+<script>
+  // =========================================================================
+  // FLOW MODEL
+  // =========================================================================
+  const FLOW = [
+    { id:'inputs', name:'Inputs', substeps:[
+      { id:'client', label:'Who & what' },
+      { id:'plan',   label:'Plan & seed' },
+      { id:'media',  label:'Images & keywords' },
+      { id:'review', label:'Confirm name' }
+    ]},
+    { id:'meta', name:'Build in Meta', substeps:[
+      { id:'campaign',  label:'Campaign' },
+      { id:'adset',     label:'Ad set' },
+      { id:'audience',  label:'Audience' },
+      { id:'placement', label:'Placement' },
+      { id:'seed',      label:'Seed ad' },
+      { id:'message',   label:'Message template' },
+      { id:'toggles',   label:'Manual toggles' }
+    ]},
+    { id:'check', name:'Setup check', substeps:[
+      { id:'campaign',  label:'Campaign'  },
+      { id:'adset',     label:'Ad set'    },
+      { id:'seed',      label:'Seed ad'   },
+      { id:'message',   label:'Message'   },
+      { id:'toggles',   label:'Toggles'   }
+    ]},
+    { id:'plan', name:'Launch plan' },
+    { id:'launch', name:'Launch' },
+    { id:'done', name:'Done' }
+  ];
+
+  // VA's mental progress — start at the first input so the launch has one clean path.
+  const state = {
+    step: 1,           // 0-indexed step
+    sub: 0,            // 0-indexed substep within step
+    completed: {}
+  };
+
+  function isStepFullyDone(stepIdx){
+    const step = FLOW[stepIdx];
+    if (!step.substeps) return (state.completed[stepIdx] && state.completed[stepIdx].length > 0);
+    return (state.completed[stepIdx] || []).length === step.substeps.length;
+  }
+  function isSubDone(stepIdx, subIdx){
+    return (state.completed[stepIdx] || []).includes(subIdx);
+  }
+  function markSubDone(stepIdx, subIdx){
+    state.completed[stepIdx] = state.completed[stepIdx] || [];
+    if (!state.completed[stepIdx].includes(subIdx)) state.completed[stepIdx].push(subIdx);
+  }
+
+  // =========================================================================
+  // CONTENT — one focused card per (step, sub)
+  // =========================================================================
+  const CONTENT = {};
+
+  // ---------- STEP 1 — INPUTS ----------
+  CONTENT['inputs.client'] = () => `
+    <h1 class="focus-title">Who is this campaign for?</h1>
+    <div class="focus-card">
+      <div class="input-row"><div class="lbl">Client</div><div class="field-input select"><span>Tyson</span><span class="caret">▾</span></div></div>
+      <div class="input-row"><div class="lbl">Challenge</div><input class="field-input" value="Summer Shred" autofocus></div>
+    </div>`;
+
+  CONTENT['inputs.plan'] = () => `
+    <h1 class="focus-title">How will it run?</h1>
+    <div class="focus-card">
+      <div class="input-row"><div class="lbl">Campaign date</div><input class="field-input" value="5/7" autofocus></div>
+      <div class="input-row"><div class="lbl">Audience</div><div class="field-input select"><span>Warm</span><span class="caret">▾</span></div></div>
+      <div class="input-row"><div class="lbl">Budget type</div><div class="field-input select"><span>ABO</span><span class="caret">▾</span></div></div>
+      <div class="input-row"><div class="lbl">Media type</div><div class="field-input select"><span>Story Images</span><span class="caret">▾</span></div></div>
+      <div class="input-row"><div class="lbl">Seed keyword</div><input class="field-input" value="EDGE"></div>
+    </div>`;
+
+  CONTENT['inputs.media'] = () => `
+    <h1 class="focus-title">Drop your images and keywords</h1>
+    <div class="focus-help">Counts must match.</div>
+    <div class="focus-card">
+      <div class="uploader">
+        <div class="glyph">↑</div>
+        <div class="head">Drop ad images, or <span style="color:var(--gold)">browse</span></div>
+        <div class="sub">jpg, png, mp4 · Stories ratio</div>
+        <div class="thumbs-inline">
+          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1a1608"/><circle cx="30" cy="22" r="9" fill="#2a2417"/></svg></div>
+          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#0e1420"/><polygon points="30,16 44,44 16,44" fill="#1c2a3e"/></svg></div>
+          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#0c1a12"/><rect x="18" y="18" width="24" height="24" fill="#1a2e22"/></svg></div>
+          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1a0e0e"/><rect x="20" y="20" width="20" height="20" fill="#3a1f1f" transform="rotate(45 30 30)"/></svg></div>
+          <div class="thumb-mini more">+26</div>
+        </div>
+      </div>
+      <div class="input-row" style="margin-top:6px"><div class="lbl">Keywords <span class="opt">one per line · UPPERCASE</span></div>
+        <textarea class="field-input">EDGE
+HUSTLE
+GRIND
+RESULTS
+SCULPT
+FOCUS
+CONFIDENCE
+APEX
+PROUD
+FORGE</textarea></div>
+      <div style="font-size:12.5px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ 30 images · 30 keywords · counts match</div>
+    </div>`;
+
+  CONTENT['inputs.review'] = () => `
+    <h1 class="focus-title">Use this name in Meta</h1>
+    <div class="focus-help">Codex looks for this exact name. Copy it now.</div>
+    <div class="gen-card" style="margin-top:0">
+      <div class="v">5/7 - Summer Shred - ABO - Warm - Story Images <button class="copy">Copy</button></div>
+    </div>`;
+
+  // ---------- STEP 2 — META BUILD (one substep at a time) ----------
+  function metaScreen({where, fields, toggles, greeting}){
+    return `
+      <div class="meta-task">
+        <div class="where">
+          ${where.map((w,i)=>`<span class="crumb-bit ${i===where.length-1?'last':''}">${w}</span>${i<where.length-1?'<span class="arrow">›</span>':''}`).join('')}
+        </div>
+        ${fields.map(f => `
+          <div class="field-block ${f.toggle?'toggle':''}">
+            <span class="l">${f.label}</span>
+            <span class="v">${f.value}</span>
+            ${f.copy ? '<button class="copy">Copy</button>' : ''}
+          </div>`).join('')}
+        ${toggles ? toggles.map(t => `
+          <div class="field-block toggle"><span class="l">Turn off</span><span class="v">${t}</span></div>`).join('') : ''}
+        ${greeting ? `
+          <div class="greeting-box">
+            <div class="l">Greeting text</div>
+            <div class="body">${greeting}</div>
+            <div class="actions"><button class="copy fix-btn">Copy greeting</button></div>
+          </div>` : ''}
+      </div>`;
+  }
+
+  CONTENT['meta.campaign'] = () => `
+    <h1 class="focus-title">Create the campaign</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Ads Manager','+ Create','Campaign'],
+        fields:[
+          {label:'Objective', value:'Engagement', copy:true},
+          {label:'Type', value:'Manual engagement campaign'},
+          {label:'Name', value:'5/7 - Summer Shred - ABO - Warm - Story Images', copy:true},
+          {label:'Budget', value:'Ad set budget'}
+        ],
+        toggles:['Share some of your budget with other ad sets']
+      })}
+    </div>`;
+
+  CONTENT['meta.adset'] = () => `
+    <h1 class="focus-title">Add the ad set</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Campaign','Ad set'],
+        fields:[
+          {label:'Name', value:'Warm Audience Stack', copy:true},
+          {label:'Conversion', value:'Message destinations'},
+          {label:'Destination', value:'Instagram only'},
+          {label:'Daily budget', value:'$350', copy:true},
+          {label:'Start time', value:'5:00 AM PDT / 8:00 AM EST'},
+          {label:'Location', value:'United States'},
+          {label:'Age', value:'24–65'}
+        ]
+      })}
+    </div>`;
+
+  CONTENT['meta.audience'] = () => `
+    <h1 class="focus-title">Pick the audience</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Ad set','Audience'],
+        fields:[{label:'Custom', value:'All 15-sec video viewers · 365 Days ANY Visited · Engaged · DM · All IG Followers'}],
+        toggles:['Use as suggestion']
+      })}
+    </div>`;
+
+  CONTENT['meta.placement'] = () => `
+    <h1 class="focus-title">Lock placement to Stories</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Ad set','Placements'],
+        fields:[{label:'Placement', value:'Instagram Stories only'}]
+      })}
+    </div>`;
+
+  CONTENT['meta.seed'] = () => `
+    <h1 class="focus-title">Build the seed ad</h1>
+    <div class="focus-help">The other 29 are cloned from this one.</div>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Ad set','Ad'],
+        fields:[
+          {label:'Ad name', value:'EDGE', copy:true},
+          {label:'Format', value:'Single image or video'},
+          {label:'Related media', value:'0 selected'}
+        ]
+      })}
+    </div>`;
+
+  CONTENT['meta.message'] = () => `
+    <h1 class="focus-title">Set up the DM message</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Seed ad','Message template'],
+        fields:[{label:'Type', value:'Start conversations'}],
+        greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "EDGE" and I'll send you the link 👇`
+      })}
+      <div class="field-block"><span class="l">Question #1</span><span class="v">EDGE</span><button class="copy">Copy</button></div>
+    </div>`;
+
+  CONTENT['meta.toggles'] = () => `
+    <h1 class="focus-title">Turn off these 4 settings, then publish</h1>
+    <div class="focus-card">
+      ${metaScreen({
+        where:['Seed ad','Settings'],
+        fields:[],
+        toggles:['Multi-advertiser ads','Advantage+ creative enhancements','AI generated image labels','Language translation','Related media','Advantage+ text generation','Essential enhancements']
+      })}
+    </div>`;
+
+  // ---------- STEP 3 — CHECK (one group at a time, with the only failing item if any) ----------
+  CONTENT['check.campaign'] = () => `
+    <h1 class="focus-title">Campaign — all good</h1>
+    <div class="focus-card">
+      <div class="check-status ok">
+        <div class="ic">✓</div>
+        <div class="body">
+          <div class="head">4 of 4 checks passed</div>
+          <div class="sub">Found · name matches · objective is Engagement · published.</div>
+        </div>
+      </div>
+    </div>`;
+
+  CONTENT['check.adset'] = () => `
+    <h1 class="focus-title">Feed is still turned on</h1>
+    <div class="focus-help">Placement should be Instagram Stories only.</div>
+    <div class="focus-card">
+      <div class="check-instr">
+        <div class="steps">
+          <div class="stp"><span class="n">1</span><div>Open <strong>Ad set › Placements</strong>.</div></div>
+          <div class="stp"><span class="n">2</span><div>Uncheck <strong>Feed</strong>.</div></div>
+          <div class="stp"><span class="n">3</span><div>Publish, then re-scan.</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  CONTENT['check.seed'] = () => `
+    <h1 class="focus-title">Seed ad — all good</h1>
+    <div class="focus-card">
+      <div class="check-status ok">
+        <div class="ic">✓</div>
+        <div class="body">
+          <div class="head">5 of 5 checks passed</div>
+          <div class="sub">Found · named EDGE · single image · creative present · primary text set.</div>
+        </div>
+      </div>
+    </div>`;
+
+  CONTENT['check.message'] = () => `
+    <h1 class="focus-title">Greeting says "Spring Shred"</h1>
+    <div class="focus-help">Should say Summer Shredding Challenge.</div>
+    <div class="focus-card">
+      <div class="check-instr">
+        <div class="steps">
+          <div class="stp"><span class="n">1</span><div>Open <strong>Seed ad › Message template › Greeting</strong>.</div></div>
+          <div class="stp"><span class="n">2</span><div>Replace <strong>Spring Shred</strong> with <strong>Summer Shredding Challenge</strong>.</div></div>
+          <div class="stp"><span class="n">3</span><div>Save, then re-scan.</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  CONTENT['check.toggles'] = () => `
+    <h1 class="focus-title">Confirm Related media is off</h1>
+    <div class="focus-help">Codex can't see this one through the API.</div>
+    <div class="focus-card">
+      <div class="check-instr">
+        <div class="steps">
+          <div class="stp"><span class="n">1</span><div>Open the seed ad in Meta.</div></div>
+          <div class="stp"><span class="n">2</span><div>Confirm <strong>Related media</strong> shows <strong>0 selected</strong>.</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  // ---------- STEPS 4–6 ----------
+  CONTENT['plan'] = () => {
+    const KW = ['EDGE','IRON','BURN','FIRE','VIBE','PUSH','JACKED','OWN','RIPPED','WARRIOR','DRIVE','SHRED','UNLEASH','MOVE','NEXT','QUICK','PEAK','HUSTLE','LEAN','TOUGH','GRIND','SCULPT','CUT','KEEN','RESULTS','FOCUS','CONFIDENCE','PROUD','RISE','CHISELED'];
+    const SW = ['#1a1608','#0e1420','#0c1a12','#1a0e0e','#0d0d0d','#0c0c0c'];
+    const AC = ['#2a2417','#1c2a3e','#1a2e22','#3a1f1f','#262626','#1f1f1f'];
+    const rows = KW.map((kw,i) => {
+      const action = i===0
+        ? '<span class="pl-action keep"><span class="d"></span>Keep seed</span>'
+        : '<span class="pl-action create"><span class="d"></span>Create</span>';
+      return `<tr>
+        <td><div class="pl-thumb"><svg viewBox="0 0 28 28"><rect width="28" height="28" fill="${SW[i%6]}"/><circle cx="14" cy="14" r="6" fill="${AC[i%6]}"/></svg></div></td>
+        <td><span class="pl-kw">${kw}</span></td>
+        <td>${action}</td>
+        <td><span class="pl-msg">Send <span class="gold">${kw}</span> and I will send you the link</span></td>
+      </tr>`;
+    }).join('');
+    return `
+      <h1 class="focus-title">Ready to launch</h1>
+      <div class="focus-card tight">
+        <div class="plan-summary">
+          <span class="num green">29</span><span class="lbl">ads will be created</span><span class="sep">·</span>
+          <span class="num">1</span><span class="lbl">seed kept</span><span class="sep">·</span>
+          <span class="num">30</span><span class="lbl">total</span>
+        </div>
+        <div class="plan-table-wrap"><table class="plan">
+          <thead><tr><th style="width:46px">Image</th><th style="width:140px">Keyword</th><th style="width:110px">Action</th><th>DM preview</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  };
+
+  CONTENT['launch'] = () => `
+    <h1 class="focus-title">Launching</h1>
+    <div class="focus-help">Keep this tab open.</div>
+    <div class="focus-card tight">
+      <div class="pg-grid">
+        <div class="pg-cell"><div class="pg-lbl">Uploading images</div><div class="pg-num"><span class="v active">14</span><span class="total">/ 30</span></div><div class="pg-bar"><span style="width:47%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Creating ads</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 29</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Updating DM messages</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 29</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Verifying ads</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 30</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
+      </div>
+      <div class="pg-current">↑ Uploading <span class="what">IRON.png</span></div>
+    </div>`;
+
+  CONTENT['done'] = () => `
+    <h1 class="focus-title">Launched</h1>
+    <div class="focus-card tight">
+      <div class="done-head">
+        <div class="done-seal">✓</div>
+        <div>
+          <div style="font-size:15px;font-weight:600">Summer Shred — 30 ads verified</div>
+          <div style="font-size:12.5px;color:var(--text-3);margin-top:2px">Finished in 2m 38s</div>
+        </div>
+      </div>
+      <div style="padding:8px 0">
+        <div class="done-row"><span class="ic">✓</span><strong>30 ads verified</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>30 unique images</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>30 matching keywords</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>DM greeting verified</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>All required toggles verified</strong></div>
+        <div class="done-row"><span class="ic warn">!</span>3 ads pending Meta review</div>
+      </div>
+      <div class="done-actions">
+        <button class="fix-btn primary">View in Meta</button>
+        <button class="fix-btn">Export report</button>
+        <button class="fix-btn">Start another launch</button>
+      </div>
+    </div>`;
+
+  // =========================================================================
+  // ACTION BAR — primary varies by where you are
+  // =========================================================================
+  function actionFor(){
+    const step = FLOW[state.step];
+    const subId = step.substeps ? step.substeps[state.sub].id : null;
+    const key = subId ? `${step.id}.${subId}` : step.id;
+
+    // setup-check overrides for the failing rows
+    if (key === 'check.adset')   return { primary:'Re-scan', secondary:'Open in Meta', context:'', ctx:'bad' };
+    if (key === 'check.message') return { primary:'Re-scan', secondary:'Open in Meta', context:'', ctx:'bad' };
+    if (key === 'check.toggles') return { primary:"Confirmed, it's off", secondary:'Open in Meta', context:'', ctx:'' };
+    if (key === 'check.campaign' || key === 'check.seed') return { primary:'Continue', context:'', ctx:'' };
+
+    if (state.step === 0) return { primary:'Continue', context:'', ctx:'' };
+    if (state.step === 1) return { primary:'Done — next', context:'', ctx:'' };
+    if (key === 'plan')   return { primary:'Launch campaign', context:'<strong>29 ads will be created</strong>', ctx:'' };
+    if (key === 'launch') return { primary:'Launching…', primaryDisabled:true, context:'', ctx:'' };
+    if (key === 'done')   return { primary:'View report', context:'', ctx:'' };
+    return { primary:'Continue' };
+  }
+
+  // =========================================================================
+  // RENDERERS
+  // =========================================================================
+  const focusEl = document.getElementById('focus');
+  const railStepsEl = document.getElementById('railSteps');
+  const railStatusEl = document.getElementById('railStatus');
+  const summaryEl = document.getElementById('summaryStrip');
+  const btnPrimary = document.getElementById('btnPrimary');
+  const btnSecondary = document.getElementById('btnSecondary');
+  const btnBack = document.getElementById('btnBack');
+  const abContext = document.getElementById('abContext');
+
+  function renderFocus(){
+    const step = FLOW[state.step];
+    const subId = step.substeps ? step.substeps[state.sub].id : null;
+    const key = subId ? `${step.id}.${subId}` : step.id;
+    focusEl.innerHTML = (CONTENT[key] || (() => `<div class="focus-help">Coming soon: ${key}</div>`))();
+    bindCopyButtons();
+  }
+
+  function bindCopyButtons(){
+    focusEl.querySelectorAll('.copy').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const fieldValue = btn.closest('.field-block')?.querySelector('.v');
+        const greetingValue = btn.closest('.greeting-box')?.querySelector('.body');
+        const generatedValue = btn.closest('.gen-card')?.querySelector('.v');
+        const raw = (fieldValue || greetingValue || generatedValue)?.textContent || '';
+        const value = raw.replace(/\bCopy\b/g, '').trim();
+        if (!value) return;
+        navigator.clipboard?.writeText(value);
+        const previous = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = previous; }, 900);
+      });
+    });
+  }
+
+  function renderRail(){
+    railStepsEl.innerHTML = FLOW.map((s, si) => {
+      const isCurrent = si === state.step;
+      const isDone = isStepFullyDone(si);
+      let meta = '';
+      if (isDone) meta = '<span class="rs-meta ok">done</span>';
+      else if (isCurrent && si === 2) meta = '<span class="rs-meta bad">2 fix</span>';
+      else if (isCurrent) meta = '<span class="rs-meta warn">in progress</span>';
+      const subs = s.substeps ? `<div class="substeps">${
+        s.substeps.map((ss, sj) => {
+          const done = isSubDone(si, sj);
+          const cur = isCurrent && sj === state.sub;
+          // unlock: done already, or current, or the one right after the latest done
+          const maxDone = Math.max(-1, ...(state.completed[si]||[]));
+          const unlocked = done || cur || sj <= maxDone + 1;
+          const cls = ['ss', done?'done':'', cur?'current':'', unlocked?'':'locked'].filter(Boolean).join(' ');
+          return `<div class="${cls}" data-step="${si}" data-sub="${sj}"><span class="d"></span>${ss.label}</div>`;
+        }).join('')
+      }</div>` : '';
+      return `<div class="rail-step ${isCurrent?'current':''} ${isDone?'done':''} ${isCurrent && si===2?'blocked':''}" data-step="${si}">
+        <div class="row">
+          <span class="rs-num">${isDone?'✓':si+1}</span>
+          <span class="rs-name">${s.name}</span>
+          ${meta}
+        </div>
+        ${subs}
+      </div>`;
+    }).join('');
+
+    railStepsEl.querySelectorAll('.rail-step').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('.ss')) return;
+        const si = +el.dataset.step;
+        if (isStepFullyDone(si) || si === state.step){ state.step = si; state.sub = 0; render(); }
+      });
+    });
+    railStepsEl.querySelectorAll('.ss').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        if (el.classList.contains('locked')) return;
+        state.step = +el.dataset.step;
+        state.sub = +el.dataset.sub;
+        render();
+      });
+    });
+  }
+
+  function renderStatus(){
+    if (state.step === 2){
+      railStatusEl.innerHTML = `
+        <div class="blocker-banner">
+          <div class="bb-title"><span class="ico">!</span>2 things to fix</div>
+          <div class="bb-list">
+            <div class="bb-item">Feed is on</div>
+            <div class="bb-item">Greeting says Spring Shred</div>
+          </div>
+        </div>`;
+    } else {
+      railStatusEl.innerHTML = '';
+    }
+  }
+
+  function renderSummaryStrip(){
+    summaryEl.innerHTML = '';
+  }
+
+  function renderActionBar(){
+    const a = actionFor();
+    btnPrimary.textContent = a.primary;
+    btnPrimary.disabled = !!a.primaryDisabled;
+    if (a.secondary){ btnSecondary.textContent = a.secondary; btnSecondary.style.display = ''; }
+    else btnSecondary.style.display = 'none';
+    abContext.innerHTML = a.context || '';
+    abContext.className = 'ab-context ' + (a.ctx||'');
+  }
+
+  function render(opts){
+    renderFocus();
+    renderRail();
+    renderStatus();
+    renderSummaryStrip();
+    renderActionBar();
+    updateProgressHair();
+    if (opts && opts.fresh){
+      const fc = document.querySelector('.focus-card');
+      if (fc){ fc.classList.add('entering'); setTimeout(()=>fc.classList.remove('entering'), 1200); }
+    }
+  }
+
+  // -------- progress hairline (overall completion %) --------
+  function updateProgressHair(){
+    const totalUnits = FLOW.reduce((n,s)=> n + (s.substeps ? s.substeps.length : 1), 0);
+    let done = 0;
+    FLOW.forEach((s, si) => {
+      const c = (state.completed[si]||[]).length;
+      done += c;
+    });
+    // also count current sub as half-progress for live feel
+    const cur = FLOW[state.step];
+    const subUnits = cur.substeps ? 1 : 1;
+    const halfBoost = 0.5;
+    const pct = Math.min(100, ((done + halfBoost) / totalUnits) * 100);
+    document.getElementById('progressHair').style.width = pct + '%';
+  }
+
+  // -------- glowing particle emissions from card edges --------
+  const COLORS = ['#f0d9a8','#e8c992','#d4b27a','#fff1d6'];
+  function emitFromCard(count){
+    const card = document.querySelector('.focus-card');
+    const layer = document.getElementById('confettiLayer');
+    if (!card || !layer) return;
+    const r = card.getBoundingClientRect();
+    const perim = 2*(r.width + r.height);
+    for (let i=0; i<count; i++){
+      // pick a point along the perimeter
+      let t = Math.random() * perim;
+      let x, y, nx, ny; // outward normal
+      if (t < r.width){ x = r.left + t; y = r.top; nx = 0; ny = -1; }
+      else if (t < r.width + r.height){ x = r.right; y = r.top + (t - r.width); nx = 1; ny = 0; }
+      else if (t < 2*r.width + r.height){ x = r.right - (t - r.width - r.height); y = r.bottom; nx = 0; ny = 1; }
+      else { x = r.left; y = r.bottom - (t - 2*r.width - r.height); nx = -1; ny = 0; }
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const dist = 28 + Math.random()*70;
+      const jitter = (Math.random()-0.5) * 30;
+      const dx = nx*dist + (-ny)*jitter;
+      const dy = ny*dist + (nx)*jitter;
+      const size = 4 + Math.random()*6;
+      p.style.width = size+'px'; p.style.height = size+'px';
+      p.style.left = x+'px'; p.style.top = y+'px';
+      p.style.background = COLORS[Math.floor(Math.random()*COLORS.length)];
+      p.style.setProperty('--dx', dx+'px');
+      p.style.setProperty('--dy', dy+'px');
+      p.style.setProperty('--dur', '1.7s');
+      layer.appendChild(p);
+      setTimeout(()=>p.remove(), 1800);
+    }
+  }
+  function celebrate(small){
+    const card = document.querySelector('.focus-card');
+    if (card){
+      const r = card.getBoundingClientRect();
+      const halo = document.createElement('div');
+      halo.className = 'card-halo';
+      halo.style.left = r.left+'px'; halo.style.top = r.top+'px';
+      halo.style.width = r.width+'px'; halo.style.height = r.height+'px';
+      document.body.appendChild(halo);
+      setTimeout(()=>halo.remove(), 1700);
+    }
+    emitFromCard(small ? 18 : 60);
+    if (!small){
+      // second wave for richness
+      setTimeout(()=>emitFromCard(40), 120);
+    }
+  }
+
+  function advance(){
+    const step = FLOW[state.step];
+    const wasLastSub = step.substeps && state.sub === step.substeps.length - 1;
+    btnPrimary.classList.remove('flash'); void btnPrimary.offsetWidth; btnPrimary.classList.add('flash');
+
+    let small = true;
+    if (step.substeps){
+      markSubDone(state.step, state.sub);
+      if (!wasLastSub){
+        state.sub++; small = true;
+      } else if (state.step < FLOW.length - 1){
+        state.step++; state.sub = 0; small = false;
+      } else {
+        small = false;
+      }
+    } else {
+      if (state.step < FLOW.length - 1){
+        state.step++; state.sub = 0; small = false;
+      }
+    }
+    render({fresh:true});
+    requestAnimationFrame(()=>requestAnimationFrame(()=>celebrate(small)));
+  }
+
+  function goBack(){
+    if (state.sub > 0){ state.sub--; }
+    else if (state.step > 0){
+      state.step--;
+      const prev = FLOW[state.step];
+      state.sub = prev.substeps ? prev.substeps.length - 1 : 0;
+    }
+    render();
+  }
+
+  btnPrimary.addEventListener('click', advance);
+  btnBack.addEventListener('click', goBack);
+  btnSecondary.addEventListener('click', () => {
+    window.open('https://business.facebook.com/adsmanager/manage/campaigns', '_blank', 'noopener,noreferrer');
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea')) return;
+    if (e.key === 'Enter' && !btnPrimary.disabled){ e.preventDefault(); advance(); }
+    if (e.key === 'Escape'){ goBack(); }
+  });
+
+  // Start at the beginning for the VA.
+  state.step = 0; state.sub = 0;
+  render();
+</script>
+
+</body>
+</html>
