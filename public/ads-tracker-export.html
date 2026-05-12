@@ -334,7 +334,7 @@
   .metric-board-btn.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
   .launch-campaign-btn{height:34px;display:inline-flex;align-items:center;gap:8px;padding:0 14px;border:1px solid rgba(212,178,122,.52);border-radius:7px;background:linear-gradient(180deg,#171307,#0d0b05);color:#ead2a8;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;box-shadow:0 0 0 1px rgba(212,178,122,.1),0 0 18px rgba(212,178,122,.18),inset 0 1px 0 rgba(255,255,255,.06);transition:background .14s,border-color .14s,box-shadow .14s,color .14s,transform .14s}
   .launch-campaign-btn:hover{background:linear-gradient(180deg,#211a0a,#121008);border-color:rgba(212,178,122,.72);color:#ffe5b5;box-shadow:0 0 0 1px rgba(212,178,122,.16),0 0 24px rgba(212,178,122,.3),inset 0 1px 0 rgba(255,255,255,.08);transform:translateY(-1px)}
-  .launch-campaign-icon{width:18px;height:18px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(212,178,122,.12);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(212,178,122,.22)}
+  .launch-campaign-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--gold)}
   .metric-grid{margin-top:0}
   .metric-support-grid{margin-top:18px}
   .tasks-grid{margin-top:0}
@@ -2623,14 +2623,16 @@ function TasksSection({dashboard, campaigns, onResolve, onToast}){
     <>
       <div className="metric-board-head">
         <h2 className="metric-board-title">Tasks</h2>
-        <a className="launch-campaign-btn" href="/ads/launcher" target="_top" aria-label="Launch campaign">
-          <span className="launch-campaign-icon"><IcBolt/></span>
-          Launch Campaign
-        </a>
       </div>
       <div className="grid-charts metric-support-grid tasks-grid">
         <div className="chart-column">
           <AttributionAlerts dashboard={dashboard} campaigns={campaigns} onResolve={onResolve} onToast={onToast}/>
+        </div>
+        <div className="chart-column">
+          <a className="launch-campaign-btn" href="/ads/launcher" target="_top" aria-label="Launch campaign">
+            <span className="launch-campaign-icon"><IcBolt/></span>
+            Launch Campaign
+          </a>
         </div>
       </div>
     </>

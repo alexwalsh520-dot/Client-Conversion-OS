@@ -4,7 +4,7 @@ export default function CampaignLauncherPage() {
       <style>{`
         .campaign-launcher-page{
           min-height:100vh;
-          background:#0a0a0a;
+          background:#050505;
           color:#e8e8e8;
           padding:28px;
           font-family:var(--font-geist-sans),Inter,system-ui,sans-serif;
