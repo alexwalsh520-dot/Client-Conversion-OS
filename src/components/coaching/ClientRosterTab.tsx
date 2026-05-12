@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil, Sparkles } from "lucide-react";
+import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil } from "lucide-react";
 import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport, NutritionIntakeForm } from "@/lib/types";
+import DailyCoacherIcon from "@/components/daily-coacher/DailyCoacherIcon";
 
 interface ClientNote {
   id?: number;
@@ -741,7 +742,8 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                       {client.id && (
                         <Link
                           href={`/coaching/daily-coacher/${client.id}`}
-                          title="Daily Coacher — AI draft messages for this client"
+                          prefetch={false}
+                          title="Daily Coacher: AI draft messages for this client"
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
@@ -752,7 +754,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                           onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
                           onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
                         >
-                          <Sparkles size={13} />
+                          <DailyCoacherIcon />
                         </Link>
                       )}
                       <button
