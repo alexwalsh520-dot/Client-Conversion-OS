@@ -36,9 +36,9 @@ const DB_STORE = "drafts";
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
 const IG_SAFE_ZONES = [
-  { id: "top" as const, y: 0, h: 190, label: "Instagram top bar" },
-  { id: "dm" as const, y: 1515, h: 275, label: "DM button area" },
-  { id: "bottom" as const, y: 1790, h: 130, label: "Bottom UI" },
+  { id: "top" as const, x: 0, y: 0, w: CANVAS_W, h: 150, label: "Instagram top bar" },
+  { id: "dm" as const, x: 170, y: 1590, w: 740, h: 195, label: "Send message button" },
+  { id: "bottom" as const, x: 0, y: 1830, w: 170, h: 82, label: "Ad label" },
 ];
 
 const FONT_OPTIONS = [
@@ -515,23 +515,22 @@ function drawSafeZones(ctx: CanvasRenderingContext2D, zones: SafeZoneId[]) {
     const zone = IG_SAFE_ZONES.find((z) => z.id === id);
     if (!zone) continue;
     ctx.fillStyle = "rgba(255, 51, 102, 0.13)";
-    ctx.fillRect(0, zone.y, CANVAS_W, zone.h);
+    ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
     ctx.strokeStyle = "rgba(255, 51, 102, 0.86)";
     ctx.lineWidth = 5;
     ctx.setLineDash([22, 14]);
     ctx.beginPath();
-    ctx.moveTo(0, zone.y + 2.5);
-    ctx.lineTo(CANVAS_W, zone.y + 2.5);
-    ctx.moveTo(0, zone.y + zone.h - 2.5);
-    ctx.lineTo(CANVAS_W, zone.y + zone.h - 2.5);
+    ctx.rect(zone.x + 2.5, zone.y + 2.5, Math.max(0, zone.w - 5), Math.max(0, zone.h - 5));
     ctx.stroke();
     ctx.setLineDash([]);
+    const labelW = Math.min(330, Math.max(130, zone.w - 28));
+    const labelX = Math.min(zone.x + 18, CANVAS_W - labelW - 18);
     ctx.fillStyle = "rgba(255,255,255,0.9)";
-    roundRect(ctx, 34, zone.y + zone.h / 2 - 27, 320, 54, 18);
+    roundRect(ctx, labelX, zone.y + zone.h / 2 - 27, labelW, 54, 18);
     ctx.fillStyle = "rgba(255, 51, 102, 0.9)";
     ctx.fill();
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(zone.label, 56, zone.y + zone.h / 2);
+    ctx.fillText(zone.label, labelX + 22, zone.y + zone.h / 2);
   }
 
   ctx.restore();
@@ -686,9 +685,22 @@ function snapTextPosition(
   };
 }
 
-function getSafeZoneHits(y: number, h: number): SafeZoneId[] {
+function rectsIntersect(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function getSafeZoneHits(x: number, y: number, metrics: BlockMetrics): SafeZoneId[] {
+  const textRects = metrics.lines.length
+    ? metrics.lines.map((line) => ({
+        x: x + (line.x - metrics.x),
+        y: y + (line.bgY - metrics.y),
+        w: line.bgW,
+        h: line.bgH,
+      }))
+    : [{ x, y, w: metrics.w, h: metrics.h }];
+
   return IG_SAFE_ZONES
-    .filter((zone) => y < zone.y + zone.h && y + h > zone.y)
+    .filter((zone) => textRects.some((rect) => rectsIntersect(rect, zone)))
     .map((zone) => zone.id);
 }
 
@@ -1480,7 +1492,7 @@ export default function Studio2Page() {
           ? snapTextPosition(rawX, rawY, drag.origMetrics, drag.blockId, currentCreative, getMeasureCtx())
           : { x: Math.round(rawX), y: Math.round(rawY), guides: { x: [], y: [] } };
         setActiveGuides(snapped.guides);
-        setActiveSafeZones(getSafeZoneHits(snapped.y, drag.origMetrics.h));
+        setActiveSafeZones(getSafeZoneHits(snapped.x, snapped.y, drag.origMetrics));
         setCanvasCursor("grabbing");
         updateCurrentCreative((creative) => ({
           ...creative,
