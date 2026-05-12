@@ -148,14 +148,14 @@
 	  .resolved-pill{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#555}
 	  .alert-option-meta{display:block;color:var(--text-4);font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-	  .alert-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:180}
-	  .alert-modal{width:560px;max-width:calc(100vw - 48px);background:#0f0f0f;border:1px solid var(--border-2);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden}
+		  .alert-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:7vh 18px 28px;z-index:180;overflow:auto}
+		  .alert-modal{width:620px;max-width:calc(100vw - 36px);max-height:88vh;background:#0f0f0f;border:1px solid var(--border-2);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden;display:flex;flex-direction:column}
 	  .alert-modal-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px 10px;border-bottom:1px solid var(--border)}
 	  .alert-modal-title{font-size:14px;line-height:1.2;font-weight:600;color:var(--text);letter-spacing:-0.01em}
 	  .alert-modal-sub{font-size:11px;color:var(--text-3);margin-top:3px;letter-spacing:0}
 	  .alert-modal-close{font-size:16px;line-height:1;color:var(--text-3);padding:4px 8px;border-radius:4px}
 	  .alert-modal-close:hover{background:#181818;color:var(--text)}
-	  .alert-modal-body{padding:16px 20px 20px}
+		  .alert-modal-body{padding:16px 20px 18px;overflow:auto}
 	  .alert-modal-info{border:1px solid var(--border);border-radius:6px;background:#0a0a0a;padding:12px 14px;margin-bottom:16px;display:grid;gap:10px}
 	  .alert-info-row{display:grid;grid-template-columns:92px 1fr;align-items:center;gap:12px}
 	  .alert-info-label{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-4)}
@@ -163,31 +163,33 @@
 	  .alert-info-pill{width:20px;height:6px;border-radius:999px;background:var(--gold)}
 	  .alert-info-pill.keith{background:var(--blue)}
 	  .alert-field-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
-		  .alert-mode-tabs{display:inline-flex;border:1px solid var(--border-2);border-radius:999px;background:#080808;padding:3px;margin-bottom:12px}
+			  .alert-mode-tabs{display:inline-flex;border:1px solid var(--border-2);border-radius:999px;background:#080808;padding:3px;margin:2px 0 14px}
 		  .alert-mode-tab{height:28px;padding:0 13px;border-radius:999px;color:var(--text-3);font-size:12px}
 		  .alert-mode-tab.active{background:#202020;color:var(--text)}
 		  .alert-search{width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#080808;color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;padding:0 12px;margin-bottom:10px}
-		  .alert-option-list{border:1px solid var(--border);border-radius:8px;background:#090909;max-height:300px;overflow:auto}
+			  .alert-option-list{border:1px solid var(--border);border-radius:8px;background:#090909;max-height:260px;overflow:auto}
 		  .alert-option-list::-webkit-scrollbar{width:7px}.alert-option-list::-webkit-scrollbar-thumb{background:#252525;border-radius:99px}
 		  .alert-option-group{border-top:1px solid #171717}.alert-option-group:first-child{border-top:none}
-		  .alert-option-group-head{display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 12px;background:#0f0f0f;color:var(--text-4);font-size:10px;text-transform:uppercase;letter-spacing:.12em}
-		  .alert-option-group-count{font-family:'JetBrains Mono',ui-monospace,monospace;color:#4f4f4f;letter-spacing:0}
-		  .alert-option-card{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 12px;border-top:1px solid #151515;color:var(--text-2)}
+			  .alert-option-group-head{display:flex;align-items:center;justify-content:space-between;gap:12px;height:28px;padding:0 12px;background:#0f0f0f;color:var(--text-4);font-size:10px;text-transform:uppercase;letter-spacing:.12em}
+			  .alert-option-group-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+			  .alert-option-group-count{font-family:'JetBrains Mono',ui-monospace,monospace;color:#4f4f4f;letter-spacing:0}
+			  .alert-option-card{width:100%;min-height:50px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:9px 12px;border-top:1px solid #151515;color:var(--text-2)}
 		  .alert-option-card:first-of-type{border-top:none}
 		  .alert-option-card:hover{background:#121212}
 		  .alert-option-card.active{background:#1a1812;color:var(--text);box-shadow:inset 3px 0 0 var(--gold)}
 		  .alert-option-main{min-width:0}
-		  .alert-option-keyword{font-size:13px;font-weight:650;color:var(--text);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-		  .alert-option-campaign{margin-top:4px;color:var(--text-4);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-		  .alert-option-pill{border:1px solid #2a2a2a;border-radius:999px;padding:4px 8px;color:#777;font-size:10px;white-space:nowrap}
+			  .alert-option-keyword{display:block;font-size:13px;font-weight:650;color:var(--text);letter-spacing:.02em;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+			  .alert-option-campaign{display:block;margin-top:5px;color:var(--text-4);font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+			  .alert-option-pill{border:1px solid #2a2a2a;border-radius:999px;padding:4px 8px;color:#777;font-size:10px;white-space:nowrap}
 		  .alert-option-pill.active{border-color:rgba(129,199,155,.35);color:#9bd2ae;background:rgba(129,199,155,.08)}
 		  .alert-option-pill.date{border-color:rgba(211,180,119,.35);color:var(--gold);background:rgba(211,180,119,.08)}
 		  .alert-option-empty{padding:14px 12px;color:var(--text-4);font-size:12px}
-		  .alert-no-keyword-box{border:1px solid var(--border);border-radius:8px;background:#090909;padding:12px;display:grid;gap:10px}
-		  .alert-no-keyword-choice{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #232323;border-radius:7px;background:#0e0e0e;color:var(--text-2);text-align:left}
-		  .alert-no-keyword-choice.active{border-color:rgba(211,180,119,.55);background:#1a1812;color:var(--text)}
-		  .alert-no-keyword-title{font-size:13px;font-weight:600;color:var(--text)}
-		  .alert-no-keyword-sub{font-size:11px;color:var(--text-4);margin-top:3px}
+			  .alert-no-keyword-box{border:1px solid var(--border);border-radius:8px;background:#090909;padding:10px;display:grid;gap:8px;max-height:300px;overflow:auto}
+			  .alert-no-keyword-choice{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid #232323;border-radius:7px;background:#0e0e0e;color:var(--text-2);text-align:left}
+			  .alert-no-keyword-choice.active{border-color:rgba(211,180,119,.55);background:#1a1812;color:var(--text)}
+			  .alert-no-keyword-choice-main{display:block;min-width:0}
+			  .alert-no-keyword-title{display:block;font-size:13px;font-weight:650;color:var(--text);line-height:1.2}
+			  .alert-no-keyword-sub{display:block;font-size:11px;color:var(--text-4);line-height:1.3;margin-top:5px;white-space:normal}
 		  .alert-note-toggle{margin-top:14px;color:var(--text-3);font-size:12px}
 	  .alert-note-toggle:hover{color:var(--text)}
 	  .alert-note-input{margin-top:10px;width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#0a0a0a;color:var(--text-2);font-size:12px;padding:0 12px}
@@ -3650,6 +3652,14 @@ function optionMatchesQuery(option, query){
   ].some(value=>String(value || "").toLowerCase().includes(q));
 }
 
+function keywordOptionSubLabel(option){
+  const adName = String(option.adName || "").trim();
+  const keyword = normalizeUiKeyword(option.keyword);
+  const normalizedAd = normalizeUiKeyword(adName);
+  if(adName && normalizedAd && normalizedAd!==keyword) return adName;
+  return "";
+}
+
 function AttributionAlertModal({alert, existing, campaigns, keywordOptions, campaignOptions, saving, onClose, onResolve}){
   const options = useMemo(() => {
     const provided = attributionOptionsFromProvided(keywordOptions, alert);
@@ -3761,16 +3771,17 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
               {groups.map(group=>(
                 <div className="alert-option-group" key={group.label}>
                   <div className="alert-option-group-head">
-                    <span>{group.label}</span>
+                    <span className="alert-option-group-title">{group.label}</span>
                     <span className="alert-option-group-count">{group.items.length}</span>
                   </div>
                   {group.items.map(option=>{
                     const status = optionStatus(option, safeIsoDate(alert?.date) || eventDateKeyFromIso(alert?.eventAt));
+                    const subLabel = keywordOptionSubLabel(option);
                     return (
                       <button key={option.id} className={"alert-option-card "+(selectedId===option.id?"active":"")} onClick={()=>setSelectedId(option.id)}>
                         <span className="alert-option-main">
                           <span className="alert-option-keyword">{option.keyword}</span>
-                          <span className="alert-option-campaign">{option.adName || option.campaignName}</span>
+                          {subLabel && <span className="alert-option-campaign">{subLabel}</span>}
                         </span>
                         <span className={"alert-option-pill "+status.cls}>{status.label}</span>
                       </button>
@@ -3782,9 +3793,9 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
           ) : (
             <div className="alert-no-keyword-box">
               <button className={"alert-no-keyword-choice "+(noKeywordTarget==="unknown"?"active":"")} onClick={()=>setNoKeywordTarget("unknown")}>
-                <span>
+                <span className="alert-no-keyword-choice-main">
                   <span className="alert-no-keyword-title">Paid ad, ad unknown</span>
-                  <span className="alert-no-keyword-sub">Counts as paid attributed cash, but not to a keyword.</span>
+                  <span className="alert-no-keyword-sub">Counts as paid. Does not get tied to a keyword.</span>
                 </span>
                 <span className="alert-option-pill">No keyword</span>
               </button>
@@ -3796,9 +3807,9 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
                     className={"alert-no-keyword-choice "+(noKeywordTarget==="campaign" && selectedCampaignId===option.id?"active":"")}
                     onClick={()=>{setNoKeywordTarget("campaign");setSelectedCampaignId(option.id);}}
                   >
-                    <span>
+                    <span className="alert-no-keyword-choice-main">
                       <span className="alert-no-keyword-title">{option.campaignName}</span>
-                      <span className="alert-no-keyword-sub">{clientLabel(option.clientKey)} · no keyword/ad visible</span>
+                      <span className="alert-no-keyword-sub">{clientLabel(option.clientKey)} · paid, no keyword</span>
                     </span>
                     <span className={"alert-option-pill "+status.cls}>{status.label}</span>
                   </button>
