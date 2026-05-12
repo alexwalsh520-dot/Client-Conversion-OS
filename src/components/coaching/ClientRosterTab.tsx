@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil } from "lucide-react";
+import Link from "next/link";
+import { Users, Plus, ExternalLink, Search, X, Trash2, CheckCircle, XCircle, Clock, Calendar, MessageSquare, Target, Pencil, Sparkles } from "lucide-react";
 import type { Client, ProgramPause, CoachMilestone, CoachMeeting, CoachEODReport, NutritionIntakeForm } from "@/lib/types";
 
 interface ClientNote {
@@ -736,12 +737,31 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                     )}
                   </td>
                   <td>
-                    <button
-                      onClick={() => startEdit(client)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12 }}
-                    >
-                      Edit
-                    </button>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      {client.id && (
+                        <Link
+                          href={`/coaching/daily-coacher/${client.id}`}
+                          title="Daily Coacher — AI draft messages for this client"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            color: "var(--accent)",
+                            textDecoration: "none",
+                            opacity: 0.8,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
+                        >
+                          <Sparkles size={13} />
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => startEdit(client)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12 }}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
