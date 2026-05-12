@@ -5,8 +5,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlignCenter,
+  AlignHorizontalJustifyCenter,
   AlignLeft,
   AlignRight,
+  AlignVerticalJustifyCenter,
   ArrowLeft,
   BringToFront,
   CheckCircle2,
@@ -2346,8 +2348,8 @@ export default function Studio2Page() {
               <MenuAction icon={ClipboardPaste} label="Paste style" disabled={!copiedStyle} onClick={pasteCopiedStyle} />
               <MenuAction icon={Trash2} label="Delete" shortcut="DEL" danger onClick={deleteSelectedBlock} />
               <MenuDivider />
-              <MenuAction icon={AlignCenter} label="Center horizontally" onClick={() => positionSelectedBlock("center-x")} />
-              <MenuAction icon={AlignCenter} label="Center vertically" onClick={() => positionSelectedBlock("center-y")} />
+              <MenuAction icon={AlignHorizontalJustifyCenter} label="Center horizontally" onClick={() => positionSelectedBlock("center-x")} />
+              <MenuAction icon={AlignVerticalJustifyCenter} label="Center vertically" onClick={() => positionSelectedBlock("center-y")} />
               <MenuAction icon={PanelTop} label="Move near top" onClick={() => positionSelectedBlock("top")} />
               <MenuAction icon={PanelBottom} label="Move near bottom" onClick={() => positionSelectedBlock("bottom")} />
               <MenuDivider />
