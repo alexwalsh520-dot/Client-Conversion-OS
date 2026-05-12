@@ -255,7 +255,15 @@ interface AttributionResolution {
   clientKey: string | null;
   keywordNormalized: string | null;
   keywordRaw: string | null;
+  noKeyword: boolean;
+  paidAttributionType: string | null;
   contactName: string | null;
+  subscriberId: string | null;
+  subscriberName: string | null;
+  appointmentId: string | null;
+  contactId: string | null;
+  eventAt: string | null;
+  saleDate: string | null;
   campaignId: string | null;
   campaignName: string | null;
   adId: string | null;
@@ -345,6 +353,9 @@ interface BackfillGroupHint {
 const SUPABASE_PAGE_SIZE = 1000;
 const ALERT_RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
 const AUTO_ATTRIBUTION_SOURCE = "ads_tracker_auto_sales_attribution";
+const NO_KEYWORD_ATTRIBUTION_KEYWORD = "no keyword / ad unknown";
+const NO_KEYWORD_ATTRIBUTION_LABEL = "No keyword / ad unknown";
+const NO_KEYWORD_ATTRIBUTION_AD_ID = "no-keyword-ad-unknown";
 const MANYCHAT_MISSING_KEYWORD_TAG_NAMES = [
   "needs_keyword_attribution",
   "needs keyword attribution",
@@ -1449,6 +1460,11 @@ function stringFromRecord(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function booleanFromRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return value === true || value === "true";
+}
+
 function campaignHintFromBackfillPayload(row: KeywordBackfillRow): BackfillGroupHint | null {
   if (!row.raw_payload || typeof row.raw_payload !== "object" || Array.isArray(row.raw_payload)) return null;
   const payload = row.raw_payload as Record<string, unknown>;
@@ -2182,6 +2198,7 @@ function parseAttributionResolution(row: AttributionExceptionRow): AttributionRe
   const saleKey = stringFromRecord(payload, "saleKey") || stringFromRecord(payload, "sale_key");
   const actionValue = stringFromRecord(payload, "action") || row.reason;
   if (!saleKey || !isResolutionAction(actionValue)) return null;
+  const salePayload = asObject(payload.sale);
 
   const keyword =
     normalizeKeyword(row.keyword_normalized) ||
@@ -2199,7 +2216,15 @@ function parseAttributionResolution(row: AttributionExceptionRow): AttributionRe
       stringFromRecord(payload, "keywordRaw") ||
       stringFromRecord(payload, "keyword") ||
       (keyword ? displayKeyword(keyword) : null),
+    noKeyword: booleanFromRecord(payload, "noKeyword"),
+    paidAttributionType: stringFromRecord(payload, "paidAttributionType"),
     contactName: row.contact_name || stringFromRecord(payload, "contactName"),
+    subscriberId: stringFromRecord(payload, "subscriberId"),
+    subscriberName: stringFromRecord(payload, "subscriberName"),
+    appointmentId: row.appointment_id || stringFromRecord(payload, "appointmentId"),
+    contactId: stringFromRecord(payload, "contactId"),
+    eventAt: stringFromRecord(payload, "eventAt"),
+    saleDate: salePayload ? stringFromRecord(salePayload, "date") : null,
     campaignId: stringFromRecord(payload, "campaignId"),
     campaignName: stringFromRecord(payload, "campaignName"),
     adId: stringFromRecord(payload, "adId"),
@@ -2383,6 +2408,23 @@ async function persistAutomaticSalesAttributions({
     .filter((value): value is AttributionResolution => Boolean(value));
 }
 
+function resolutionHasCampaignTarget(resolution: AttributionResolution) {
+  return Boolean(resolution.campaignId || resolution.campaignName || resolution.groupId);
+}
+
+function noKeywordEventAt(resolution: AttributionResolution, fallbackDate?: string | null) {
+  if (resolution.eventAt) return resolution.eventAt;
+  if (fallbackDate) return `${fallbackDate}T12:00:00.000Z`;
+  if (resolution.saleDate) return `${resolution.saleDate}T12:00:00.000Z`;
+  return resolution.resolvedAt || resolution.createdAt || new Date().toISOString();
+}
+
+function noKeywordAdId(resolution: AttributionResolution) {
+  return resolution.adId || `${NO_KEYWORD_ATTRIBUTION_AD_ID}:${normalizeKeyPart(
+    resolution.campaignId || resolution.campaignName || resolution.groupId || "unknown"
+  )}`;
+}
+
 function attributionOverrideEventForRow(
   row: SheetRow,
   resolution: AttributionResolution | undefined,
@@ -2393,7 +2435,9 @@ function attributionOverrideEventForRow(
 
   const keyword = normalizeKeyword(resolution.keywordNormalized || resolution.keywordRaw);
   const resolvedClientKey = resolution.clientKey || clientKey;
-  if (!keyword || !resolvedClientKey) return null;
+  const useNoKeyword = !keyword && resolution.noKeyword && resolutionHasCampaignTarget(resolution);
+  const eventKeyword = keyword || (useNoKeyword ? NO_KEYWORD_ATTRIBUTION_KEYWORD : null);
+  if (!eventKeyword || !resolvedClientKey) return null;
 
   return {
     source: "ghl",
@@ -2401,15 +2445,17 @@ function attributionOverrideEventForRow(
       ? "manual_attribution_override"
       : "manual_missing_booking_attribution_override",
     client_key: resolvedClientKey,
-    keyword_raw: resolution.keywordRaw || displayKeyword(keyword),
-    keyword_normalized: keyword,
+    keyword_raw: keyword
+      ? resolution.keywordRaw || displayKeyword(keyword)
+      : NO_KEYWORD_ATTRIBUTION_LABEL,
+    keyword_normalized: eventKeyword,
     override_group_id: resolution.groupId,
     override_group_name:
-      resolution.source === AUTO_ATTRIBUTION_SOURCE ? null : resolution.groupName,
+      resolution.source === AUTO_ATTRIBUTION_SOURCE || useNoKeyword ? null : resolution.groupName,
     override_campaign_id: resolution.campaignId,
     override_campaign_name: resolution.campaignName,
-    override_ad_id: resolution.adId,
-    override_ad_name: resolution.adName,
+    override_ad_id: useNoKeyword ? noKeywordAdId(resolution) : resolution.adId,
+    override_ad_name: useNoKeyword ? NO_KEYWORD_ATTRIBUTION_LABEL : resolution.adName,
     attribution_resolution_id: resolution.id,
     subscriber_id: null,
     subscriber_name: null,
@@ -2419,6 +2465,70 @@ function attributionOverrideEventForRow(
     contact_name: row.name || resolution.contactName,
     event_at: `${row.date}T12:00:00.000Z`,
   };
+}
+
+function attributionOverrideEventForStandaloneResolution(
+  resolution: AttributionResolution
+): KeywordEvent | null {
+  if (
+    resolution.action !== "attribute" ||
+    !resolution.noKeyword ||
+    !resolution.clientKey ||
+    !resolutionHasCampaignTarget(resolution)
+  ) {
+    return null;
+  }
+
+  if (resolution.alertType === "missing_dm_keyword") {
+    return {
+      source: "manychat",
+      event_type: "manual_messages",
+      client_key: resolution.clientKey,
+      keyword_raw: NO_KEYWORD_ATTRIBUTION_LABEL,
+      keyword_normalized: NO_KEYWORD_ATTRIBUTION_KEYWORD,
+      override_group_id: resolution.groupId,
+      override_group_name: null,
+      override_campaign_id: resolution.campaignId,
+      override_campaign_name: resolution.campaignName,
+      override_ad_id: noKeywordAdId(resolution),
+      override_ad_name: NO_KEYWORD_ATTRIBUTION_LABEL,
+      attribution_resolution_id: resolution.id,
+      value_cents: 1,
+      subscriber_id: resolution.subscriberId,
+      subscriber_name: resolution.subscriberName || resolution.contactName,
+      setter_name: null,
+      appointment_id: null,
+      contact_id: null,
+      contact_name: resolution.contactName,
+      event_at: noKeywordEventAt(resolution),
+    };
+  }
+
+  if (resolution.alertType === "missing_booking_keyword") {
+    return {
+      source: "ghl",
+      event_type: "manual_missing_booking_attribution_override",
+      client_key: resolution.clientKey,
+      keyword_raw: NO_KEYWORD_ATTRIBUTION_LABEL,
+      keyword_normalized: NO_KEYWORD_ATTRIBUTION_KEYWORD,
+      override_group_id: resolution.groupId,
+      override_group_name: null,
+      override_campaign_id: resolution.campaignId,
+      override_campaign_name: resolution.campaignName,
+      override_ad_id: noKeywordAdId(resolution),
+      override_ad_name: NO_KEYWORD_ATTRIBUTION_LABEL,
+      attribution_resolution_id: resolution.id,
+      subscriber_id: resolution.subscriberId,
+      subscriber_name: resolution.subscriberName,
+      setter_name: null,
+      appointment_id: resolution.appointmentId,
+      contact_id: resolution.contactId,
+      contact_name: resolution.contactName,
+      event_at: noKeywordEventAt(resolution),
+    };
+  }
+
+  return null;
 }
 
 function resolvedAlertForRow(
@@ -2895,6 +3005,22 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     ...automaticAttributionResolutions,
   ];
   const resolutionBySaleKey = latestResolutionsBySaleKey(allAttributionResolutions);
+  const manualStandaloneResolutionEvents = allAttributionResolutions
+    .map(attributionOverrideEventForStandaloneResolution)
+    .filter((event): event is KeywordEvent => Boolean(event))
+    .filter(
+      (event) =>
+        clientFilter.includes(event.client_key) &&
+        isWithinDashboardDateRange(event.event_at, query)
+    );
+  const alertManualStandaloneResolutionEvents = allAttributionResolutions
+    .map(attributionOverrideEventForStandaloneResolution)
+    .filter((event): event is KeywordEvent => Boolean(event))
+    .filter(
+      (event) =>
+        alertClientFilter.includes(event.client_key) &&
+        isWithinDashboardDateRange(event.event_at, alertQuery)
+    );
   const missingManychatKeywordAlerts = buildMissingManychatKeywordAlerts(
     alertMissingManychatKeywordEvents,
     resolutionBySaleKey
@@ -2935,7 +3061,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         hasRealGhlBooking
       );
     })
-    .filter((event): event is KeywordEvent => Boolean(event));
+    .filter((event): event is KeywordEvent => Boolean(event))
+    .concat(manualStandaloneResolutionEvents);
   const bookings = [
     ...manualAttributionBookings,
     ...attributionGhlBookings,
@@ -3005,6 +3132,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeUnmatchedSales,
   });
   const alertBookings = [
+    ...alertManualStandaloneResolutionEvents,
     ...alertGhlBookings,
     ...alertMissingGhlBookingKeywordEvents,
   ];

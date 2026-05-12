@@ -3948,7 +3948,7 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
 // ------- App
 function App(){
   const [account, setAccount] = useState("all");
-  const [status, setStatus] = useState("active");
+  const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7", todayEt()));
   const [dashboard, setDashboard] = useState(null);
