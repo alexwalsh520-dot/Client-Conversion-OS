@@ -286,7 +286,9 @@ interface ResolvedAttributionAlert {
 
 interface BuildPayloadOptions {
   unmatchedSales?: UnmatchedSale[];
+  financialUnmatchedSales?: UnmatchedSale[];
   resolvedAlerts?: ResolvedAttributionAlert[];
+  financialResolvedAlerts?: ResolvedAttributionAlert[];
   salesCollectedRevenue?: number;
   sourceStatus?: Record<string, unknown>;
   eventsHistory?: AttributionHistoryEvent[];
@@ -564,6 +566,20 @@ function eventDateKey(value: string | null | undefined): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+function todayEt(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function attributionAlertsStartDate(): string {
+  const configured = process.env.ADS_ATTRIBUTION_ALERTS_START_DATE;
+  return configured && /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : "2026-04-01";
 }
 
 function shiftDate(date: string, days: number): string {
@@ -1000,9 +1016,11 @@ function buildPayload(
   const totalSubscriptionClients = paidRows.reduce((sum, row) => sum + row.subscriptionClients, 0);
   const unmatchedSales = options.unmatchedSales || [];
   const resolvedAlerts = options.resolvedAlerts || [];
-  const unattributedRevenue = sumAlertRevenue(unmatchedSales);
-  const organicRevenue = sumResolvedRevenue(resolvedAlerts, "organic");
-  const ignoredRevenue = sumResolvedRevenue(resolvedAlerts, "ignore");
+  const financialUnmatchedSales = options.financialUnmatchedSales || unmatchedSales;
+  const financialResolvedAlerts = options.financialResolvedAlerts || resolvedAlerts;
+  const unattributedRevenue = sumAlertRevenue(financialUnmatchedSales);
+  const organicRevenue = sumResolvedRevenue(financialResolvedAlerts, "organic");
+  const ignoredRevenue = sumResolvedRevenue(financialResolvedAlerts, "ignore");
   const directSalesCollectedRevenue = options.salesCollectedRevenue;
   const totalCollectedRevenue =
     directSalesCollectedRevenue === undefined
@@ -2615,8 +2633,21 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     query.account === "all" ? ["tyson", "keith"] : [query.account];
   const eventQueryFrom = `${shiftDate(query.dateFrom, -120)}T00:00:00.000Z`;
   const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
-  const dashboardEventQueryFrom = `${query.dateFrom}T00:00:00.000Z`;
   const attributionDateFrom = shiftDate(query.dateFrom, -120);
+  const alertClientFilter = ["tyson", "keith"];
+  const alertDateFrom = attributionAlertsStartDate();
+  const alertDateTo = todayEt();
+  const alertAttributionDateFrom = shiftDate(alertDateFrom, -120);
+  const alertEventQueryFrom = `${alertAttributionDateFrom}T00:00:00.000Z`;
+  const alertEventQueryTo = `${shiftDate(alertDateTo, 1)}T23:59:59.999Z`;
+  const alertDashboardEventQueryFrom = `${alertDateFrom}T00:00:00.000Z`;
+  const alertQuery: AdsTrackerQuery = {
+    account: "all",
+    status: "all",
+    level: "ad",
+    dateFrom: alertDateFrom,
+    dateTo: alertDateTo,
+  };
 
   const [
     metaRows,
@@ -2626,7 +2657,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     { data: metaSyncRuns, error: syncRunError },
     backfillRows,
     attributionResolutions,
-    missingManychatKeywordEvents,
+    salesRows,
+    alertMetaRows,
+    alertKeywordEvents,
+    alertGhlAppointments,
+    alertBackfillRows,
+    alertMissingManychatKeywordEvents,
+    alertSalesRows,
   ] = await Promise.all([
       fetchMetaRows(db, query, clientFilter),
       fetchMetaRowsForDateRange(db, clientFilter, attributionDateFrom, query.dateTo),
@@ -2643,7 +2680,18 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .limit(20),
       fetchKeywordBackfillRows(db, query, clientFilter),
       fetchAttributionResolutions(db),
-      fetchManychatMissingKeywordEvents(db, clientFilter, dashboardEventQueryFrom, eventQueryTo),
+      fetchFreshSalesRows(db, query, clientFilter),
+      fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo),
+      fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo),
+      fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo),
+      fetchKeywordBackfillRows(db, alertQuery, alertClientFilter),
+      fetchManychatMissingKeywordEvents(
+        db,
+        alertClientFilter,
+        alertDashboardEventQueryFrom,
+        alertEventQueryTo
+      ),
+      fetchFreshSalesRows(db, alertQuery, alertClientFilter),
     ]);
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
@@ -2677,12 +2725,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const periodAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent | KeywordBackfillRow>(
     attributionRows,
     periodMetaGroupId,
-    (row, keyword) => `${row.client_key}:${keyword}`,
-    (row, keyword) => `${row.client_key}:${keyword}`
-  );
-  const periodAdAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent>(
-    attributionRows,
-    adGroupId,
     (row, keyword) => `${row.client_key}:${keyword}`,
     (row, keyword) => `${row.client_key}:${keyword}`
   );
@@ -2733,18 +2775,46 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (row) => campaignHintForBackfillRow(row, rows)
   );
 
-  const salesRows = await fetchFreshSalesRows(db, query, clientFilter);
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
   const attributionGhlBookings = attributionEvents.filter((event) => event.source === "ghl");
+  const alertBackfill = alertBackfillRows as KeywordBackfillRow[];
+  const alertBackfilledDateKeys = new Set(
+    alertBackfill.map((row) => `${row.client_key}:${row.date}`)
+  );
+  const alertBaseKeywordEvents = normalizeGhlKeywordEventDates(
+    alertKeywordEvents,
+    alertGhlAppointments
+  );
+  const alertSupplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
+    db,
+    alertGhlAppointments,
+    alertBaseKeywordEvents,
+    alertClientFilter
+  );
+  const alertAttributionEvents = [
+    ...alertBaseKeywordEvents,
+    ...alertSupplementalGhlEvents,
+  ]
+    .filter((event) => !isTestKeywordEvent(event))
+    .filter((event) => alertClientFilter.includes(event.client_key));
+  const alertAttributionRows = alertMetaRows.length ? alertMetaRows : attributionRows;
+  const alertPeriodAdAttributionGroupId = uniqueMetaGroupResolver<KeywordEvent>(
+    alertAttributionRows,
+    adGroupId,
+    (row, keyword) => `${row.client_key}:${keyword}`,
+    (row, keyword) => `${row.client_key}:${keyword}`
+  );
+  const alertAttributionSalesRows = alertSalesRows.filter((row) => !isTestSalesRow(row));
+  const alertGhlBookings = alertAttributionEvents.filter((event) => event.source === "ghl");
   const automaticAttributionResolutions = await persistAutomaticSalesAttributions({
     db,
-    salesRows: attributionSalesRows,
-    bookings: attributionGhlBookings,
-    clientFilter,
+    salesRows: alertAttributionSalesRows,
+    bookings: alertGhlBookings,
+    clientFilter: alertClientFilter,
     existingResolutionBySaleKey: latestResolutionsBySaleKey(attributionResolutions),
-    backfilledDateKeys,
-    attributionRows,
-    adAttributionGroupId: periodAdAttributionGroupId,
+    backfilledDateKeys: alertBackfilledDateKeys,
+    attributionRows: alertAttributionRows,
+    adAttributionGroupId: alertPeriodAdAttributionGroupId,
   });
   const allAttributionResolutions = [
     ...attributionResolutions,
@@ -2752,22 +2822,27 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   ];
   const resolutionBySaleKey = latestResolutionsBySaleKey(allAttributionResolutions);
   const missingManychatKeywordAlerts = buildMissingManychatKeywordAlerts(
-    missingManychatKeywordEvents,
+    alertMissingManychatKeywordEvents,
     resolutionBySaleKey
   );
-  const missingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
+  const dashboardMissingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
     ghlAppointments,
     clientFilter,
     resolutionBySaleKey
   );
+  const alertMissingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
+    alertGhlAppointments,
+    alertClientFilter,
+    resolutionBySaleKey
+  );
   const missingGhlBookingKeywordAlerts = buildMissingGhlBookingKeywordAlerts(
-    missingGhlBookingKeywordEvents,
+    alertMissingGhlBookingKeywordEvents,
     resolutionBySaleKey,
-    attributionSalesRows
+    alertAttributionSalesRows
   );
   const realGhlBookingsByName = bookingsByContactName([
     ...attributionGhlBookings,
-    ...missingGhlBookingKeywordEvents,
+    ...dashboardMissingGhlBookingKeywordEvents,
   ]);
   const manualAttributionBookings = attributionSalesRows
     .map((row) => {
@@ -2790,7 +2865,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const bookings = [
     ...manualAttributionBookings,
     ...attributionGhlBookings,
-    ...missingGhlBookingKeywordEvents,
+    ...dashboardMissingGhlBookingKeywordEvents,
   ];
   addKeywordEventsToGroups(
     groups,
@@ -2855,8 +2930,46 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
     includeUnmatchedSales,
   });
+  const alertBookings = [
+    ...alertGhlBookings,
+    ...alertMissingGhlBookingKeywordEvents,
+  ];
+  const includeUnmatchedAlertSales = (row: SheetRow, clientKey: string | null) =>
+    Boolean(clientKey && alertClientFilter.includes(clientKey)) &&
+    !alertBackfilledDateKeys.has(`${clientKey}:${row.date}`) &&
+    !resolutionBySaleKey.has(salesRowKey(row, clientKey));
+  const alertUnmatchedSales = applySalesToGroups(new Map<string, Group>(), alertAttributionSalesRows, alertBookings, {
+    groupId: (match) =>
+      resolvedAttributionGroupId(
+        match,
+        match.keyword_normalized || "",
+        "ad",
+        alertPeriodAdAttributionGroupId(
+          match,
+          match.keyword_normalized || "",
+          `${match.client_key}:keyword:${match.keyword_normalized || ""}`
+        )
+      ),
+    groupHint: (match) => {
+      const keyword = match.keyword_normalized || "";
+      const groupId = resolvedAttributionGroupId(
+        match,
+        keyword,
+        "ad",
+        alertPeriodAdAttributionGroupId(match, keyword, `${match.client_key}:keyword:${keyword}`)
+      );
+      return (
+        hintForAttributionGroupId(groupId, alertAttributionRows, keyword) ||
+        exactMetaHintForKeywordEvent(match, alertAttributionRows)
+      );
+    },
+    includeOutcomeMetrics: () => false,
+    includeCallTakenMetrics: () => false,
+    includeClientSplitMetrics: () => false,
+    includeUnmatchedSales: includeUnmatchedAlertSales,
+  });
   const attributionAlerts = [
-    ...unmatchedSales,
+    ...alertUnmatchedSales,
     ...missingManychatKeywordAlerts,
     ...missingGhlBookingKeywordAlerts,
   ].sort((a, b) =>
@@ -2955,7 +3068,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     query,
     events: [
       ...attributionEvents,
-      ...missingGhlBookingKeywordEvents,
+      ...dashboardMissingGhlBookingKeywordEvents,
       ...manualAttributionBookings.filter(
         (event) => event.event_type === "manual_missing_booking_attribution_override"
       ),
@@ -3053,7 +3166,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   return buildPayload(query, finalized, events, false, finalizedDaily, {
     unmatchedSales: attributionAlerts,
+    financialUnmatchedSales: unmatchedSales,
     resolvedAlerts,
+    financialResolvedAlerts: resolvedAlerts,
     salesCollectedRevenue,
     sourceStatus,
     eventsHistory,
