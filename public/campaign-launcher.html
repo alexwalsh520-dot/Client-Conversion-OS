@@ -170,8 +170,44 @@
   .upload-status.good{color:var(--green)}
   .thumbs-inline{display:flex;gap:5px;margin-top:14px;flex-wrap:wrap;justify-content:center}
   .thumb-mini{width:32px;height:32px;border-radius:4px;border:1px solid var(--border-2);overflow:hidden}
+  .thumb-mini img,.thumb-mini video{width:100%;height:100%;object-fit:cover;display:block}
   .thumb-mini svg{width:100%;height:100%;display:block}
   .thumb-mini.more{display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-4);border-style:dashed}
+  .file-list{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+  .file-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--border-2);background:#0a0a0a;border-radius:6px}
+  .file-row .name{font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file-row .meta{font-size:10.5px;color:var(--text-4);font-family:'JetBrains Mono',monospace}
+
+  .safe-panel{margin-top:14px;border:1px solid var(--border-2);border-radius:8px;background:#0a0a0a;overflow:hidden}
+  .safe-panel .safe-head{padding:12px 14px;border-bottom:1px solid var(--border-2);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .safe-panel .safe-title{font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-3);font-family:'JetBrains Mono',monospace;font-weight:500}
+  .safe-panel .safe-sub{font-size:11.5px;color:var(--text-4)}
+  .safe-list{display:flex;flex-direction:column}
+  .safe-row{display:grid;grid-template-columns:22px 1fr;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)}
+  .safe-row:last-child{border-bottom:none}
+  .safe-row .ic{width:20px;height:20px;border-radius:99px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;background:#111;border:1px solid var(--border-2)}
+  .safe-row.ok .ic{color:var(--green);border-color:var(--green-border);background:var(--green-bg)}
+  .safe-row.warn .ic{color:var(--gold);border-color:var(--gold-border);background:var(--gold-bg)}
+  .safe-row.bad .ic{color:var(--red);border-color:var(--red-border);background:var(--red-bg)}
+  .safe-row .txt{min-width:0}
+  .safe-row .main{font-size:13px;color:var(--text-2);display:block;overflow:hidden;text-overflow:ellipsis}
+  .safe-row.ok .main{color:var(--green)}
+  .safe-row.bad .main{color:var(--red)}
+  .safe-row.warn .main{color:var(--gold)}
+  .safe-row .sub{font-size:11.5px;color:var(--text-4);margin-top:2px}
+
+  .review-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .review-card{padding:13px 14px;border:1px solid var(--border-2);border-radius:7px;background:#0a0a0a}
+  .review-card .l{font-size:10.5px;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-4);font-family:'JetBrains Mono',monospace;margin-bottom:5px}
+  .review-card .v{font-size:14px;color:var(--text);font-weight:500}
+  .status-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border-radius:99px;border:1px solid var(--border-2);font-size:11.5px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
+  .status-pill.ok{border-color:var(--green-border);background:var(--green-bg);color:var(--green)}
+  .status-pill.warn{border-color:var(--gold-border);background:var(--gold-bg);color:var(--gold)}
+  .status-pill.bad{border-color:var(--red-border);background:var(--red-bg);color:var(--red)}
+  .mini-note{font-size:12.5px;color:var(--text-3);line-height:1.55}
+  .audit-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .audit-row{display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border:1px solid var(--border-2);border-radius:6px;background:#0a0a0a;font-size:12px;color:var(--text-2)}
+  .audit-row .time{font-family:'JetBrains Mono',monospace;color:var(--text-4);font-size:10.5px;white-space:nowrap}
 
   /* Generated name preview — calmer */
   .gen-card{padding:18px 22px;background:#0c0b08;border:1px solid var(--gold-border);border-radius:8px;margin-top:18px}
@@ -334,8 +370,8 @@
     </div>
     <div class="top-title" id="topTitle">Summer Shred — Tyson</div>
     <div class="top-actions">
-      <button class="btn-ghost">Run history</button>
-      <button class="btn-ghost">Save draft</button>
+      <button class="btn-ghost" id="runHistoryBtn">Run history</button>
+      <button class="btn-ghost" id="saveDraftBtn">Save draft</button>
     </div>
   </div>
 
@@ -403,8 +439,13 @@
   const state = {
     step: 0,           // 0-indexed step
     sub: 0,            // 0-indexed substep within step
-    completed: {}
+    completed: {},
+    audit: []
   };
+  const STORAGE_KEY = 'ccos_campaign_launcher_draft_v1';
+  const FALLBACK_RECENT_KEYWORDS = [
+    'IRON','BURN','FIRE','VIBE','PUSH','JACKED','OWN','RIPPED','WARRIOR','DRIVE','SHRED','UNLEASH','MOVE','NEXT','QUICK','PEAK','HUSTLE','EDGE','LEAN','TOUGH','GRIND','SCULPT','CUT','KEEN','RESULTS','FOCUS','CONFIDENCE','PROUD','RISE','CHISELED'
+  ];
   const draft = {
     client: 'Tyson',
     challenge: 'Summer Shred',
@@ -413,10 +454,27 @@
     budgetType: 'ABO',
     dailyBudget: '',
     mediaType: 'Story Images',
-    seedKeyword: 'EDGE',
+    seedKeyword: '',
     keywords: '',
     uploadedCount: 0,
-    uploadedNames: []
+    uploadedNames: [],
+    mediaItems: [],
+    lastSavedAt: null
+  };
+  const keywordUsage = {
+    loadedFor: null,
+    loading: false,
+    available: false,
+    error: null,
+    keywords: []
+  };
+  const metaVerify = {
+    checkedFor: null,
+    loading: false,
+    available: false,
+    error: null,
+    data: null,
+    manualConfirmed: {}
   };
   const CLIENT_OPTIONS = ['Tyson','Keith'];
   const AUDIENCE_OPTIONS = ['Warm','Cold'];
@@ -427,6 +485,57 @@
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[ch]));
+  }
+  function normalizeKeywordText(value){
+    return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  }
+  function formatBytes(size){
+    if (!Number.isFinite(size)) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  function nowLabel(){
+    return new Date().toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  }
+  function addAudit(text){
+    state.audit.unshift({ text, at: nowLabel() });
+    state.audit = state.audit.slice(0, 12);
+  }
+  function serializeDraft(){
+    const { mediaItems, ...rest } = draft;
+    return {
+      ...rest,
+      mediaItems: (mediaItems || []).map(item => ({
+        name: item.name,
+        type: item.type,
+        size: item.size
+      }))
+    };
+  }
+  function saveDraft(silent){
+    draft.lastSavedAt = new Date().toISOString();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      draft: serializeDraft(),
+      audit: state.audit
+    }));
+    if (!silent) addAudit('Draft saved');
+    updateShell();
+    renderActionBar();
+  }
+  function loadDraft(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      Object.assign(draft, saved.draft || {});
+      draft.mediaItems = (draft.mediaItems || []).map(item => ({ ...item, previewUrl:null }));
+      draft.uploadedNames = draft.mediaItems.map(item => item.name);
+      draft.uploadedCount = draft.mediaItems.length;
+      state.audit = Array.isArray(saved.audit) ? saved.audit.slice(0, 12) : [];
+    } catch (error) {
+      console.warn('[campaign-launcher] Could not load saved draft', error);
+    }
   }
   function campaignName(){
     return `${draft.date || 'DATE'} - ${draft.challenge || 'Challenge'} - ${draft.budgetType} - ${draft.audience} - ${draft.mediaType}`;
@@ -442,8 +551,80 @@
   function keywordList(){
     return draft.keywords
       .split(/\n+/)
-      .map(keyword => keyword.trim().toUpperCase())
+      .map(keyword => normalizeKeywordText(keyword))
       .filter(Boolean);
+  }
+  function keywordLines(){
+    return draft.keywords.split(/\r?\n/);
+  }
+  function recentKeywordMap(){
+    const map = new Map();
+    const fallback = FALLBACK_RECENT_KEYWORDS.map(keyword => ({
+      keyword,
+      lastSeen:'recent campaign',
+      source:'known last-30-day list'
+    }));
+    const rows = keywordUsage.available ? keywordUsage.keywords : fallback;
+    rows.forEach(row => {
+      const key = normalizeKeywordText(row.keyword);
+      if (key) map.set(key, row);
+    });
+    return map;
+  }
+  function validateDraft(){
+    const lines = keywordLines();
+    const keywords = keywordList();
+    const blanks = lines.length > 1 ? lines.filter(line => !line.trim()).length : 0;
+    const duplicateKeywords = keywords.filter((kw, idx) => keywords.indexOf(kw) !== idx);
+    const duplicateSet = [...new Set(duplicateKeywords)];
+    const recent = recentKeywordMap();
+    const reused = keywords.filter(kw => recent.has(kw));
+    const seed = normalizeKeywordText(draft.seedKeyword);
+    const errors = [];
+    const warnings = [];
+
+    if (!draft.client) errors.push('Pick a client.');
+    if (!draft.challenge.trim()) errors.push('Add the challenge name.');
+    if (!draft.date.trim()) errors.push('Add the campaign date label.');
+    if (!draft.dailyBudget.trim()) errors.push('Add the daily budget Alex gave you.');
+    if (!seed) errors.push('Add the seed keyword.');
+    if (!draft.uploadedCount) errors.push('Upload the ad media files.');
+    if (!keywords.length) errors.push('Add one keyword per file.');
+    if (blanks) errors.push('Remove blank keyword lines.');
+    if (duplicateSet.length) errors.push(`Remove duplicate keywords: ${duplicateSet.join(', ')}.`);
+    if (draft.uploadedCount && keywords.length && draft.uploadedCount !== keywords.length) {
+      errors.push(`Media count and keyword count must match: ${draft.uploadedCount} files, ${keywords.length} keywords.`);
+    }
+    if (seed && keywords.length && !keywords.includes(seed)) errors.push(`Seed keyword ${seed} must be included in the keyword list.`);
+    if (reused.length) errors.push(`Do not reuse recent keywords: ${[...new Set(reused)].join(', ')}.`);
+    if (!keywordUsage.available) warnings.push('Recent keyword check is using the saved safety list because live lookup is not available yet.');
+    if (draft.mediaItems.some(item => !/^image\//.test(item.type || '') && !/^video\//.test(item.type || ''))) {
+      warnings.push('Only image and video files should be used for Meta Stories ads.');
+    }
+
+    return { errors, warnings, keywords, reused };
+  }
+  function validationRows({ includeGood = true } = {}){
+    const v = validateDraft();
+    const rows = [];
+    if (includeGood && draft.uploadedCount && v.keywords.length && draft.uploadedCount === v.keywords.length) rows.push({type:'ok', text:'Image count matches keyword count'});
+    if (includeGood && draft.dailyBudget.trim()) rows.push({type:'ok', text:'Daily budget is filled in'});
+    if (includeGood && normalizeKeywordText(draft.seedKeyword) && v.keywords.includes(normalizeKeywordText(draft.seedKeyword))) rows.push({type:'ok', text:'Seed keyword is included in the keyword list'});
+    v.errors.forEach(text => rows.push({type:'bad', text}));
+    v.warnings.forEach(text => rows.push({type:'warn', text}));
+    if (!rows.length) rows.push({type:'warn', text:'Add the launch info to start the safety check.'});
+    return rows;
+  }
+  function safetyPanel(title='Safety checks', subtitle='The app stops if anything is unsafe.'){
+    const rows = validationRows();
+    return `<div class="safe-panel">
+      <div class="safe-head"><div class="safe-title">${esc(title)}</div><div class="safe-sub">${esc(subtitle)}</div></div>
+      <div class="safe-list">${rows.map(row => `
+        <div class="safe-row ${row.type}">
+          <div class="ic">${row.type === 'ok' ? '✓' : row.type === 'bad' ? '!' : '?'}</div>
+          <div class="txt"><div class="main">${esc(row.text)}</div>${row.sub ? `<div class="sub">${esc(row.sub)}</div>` : ''}</div>
+        </div>`).join('')}</div>
+    </div>`;
   }
   function uploadStatus(){
     if (!draft.uploadedCount) return 'No files selected yet';
@@ -452,10 +633,20 @@
   function uploadThumbs(){
     if (!draft.uploadedCount) return '';
     const shown = Math.min(draft.uploadedCount, 4);
-    const thumbs = Array.from({length: shown}, (_, i) => `
-      <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="${['#1a1608','#0e1420','#0c1a12','#1a0e0e'][i % 4]}"/><circle cx="30" cy="30" r="10" fill="${['#2a2417','#1c2a3e','#1a2e22','#3a1f1f'][i % 4]}"/></svg></div>
-    `).join('');
+    const thumbs = (draft.mediaItems || []).slice(0, shown).map((item, i) => {
+      if (item.previewUrl && /^image\//.test(item.type || '')) return `<div class="thumb-mini"><img src="${esc(item.previewUrl)}" alt=""></div>`;
+      if (item.previewUrl && /^video\//.test(item.type || '')) return `<div class="thumb-mini"><video src="${esc(item.previewUrl)}" muted></video></div>`;
+      return `<div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="${['#1a1608','#0e1420','#0c1a12','#1a0e0e'][i % 4]}"/><circle cx="30" cy="30" r="10" fill="${['#2a2417','#1c2a3e','#1a2e22','#3a1f1f'][i % 4]}"/></svg></div>`;
+    }).join('');
     return `${thumbs}${draft.uploadedCount > 4 ? `<div class="thumb-mini more">+${draft.uploadedCount - 4}</div>` : ''}`;
+  }
+  function fileList(){
+    if (!draft.mediaItems?.length) return '';
+    return `<div class="file-list">${draft.mediaItems.map((item, index) => `
+      <div class="file-row">
+        <div class="name">${String(index + 1).padStart(2,'0')} · ${esc(item.name)}</div>
+        <div class="meta">${esc(formatBytes(item.size))}</div>
+      </div>`).join('')}</div>`;
   }
 
   function isStepFullyDone(stepIdx){
@@ -479,10 +670,12 @@
   // ---------- STEP 1 — INPUTS ----------
   CONTENT['inputs.client'] = () => `
     <h1 class="focus-title">Who is this campaign for?</h1>
+    <div class="focus-help">This tells the app which ad account and recent keyword history to check.</div>
     <div class="focus-card">
       ${selectField('Client', 'client', CLIENT_OPTIONS)}
       ${textField('Challenge', 'challenge', 'autofocus')}
-    </div>`;
+    </div>
+    ${safetyPanel('What the app needs', 'Fill this in first.')}`;
 
   CONTENT['inputs.plan'] = () => `
     <h1 class="focus-title">How will it run?</h1>
@@ -492,8 +685,9 @@
       ${selectField('Budget type', 'budgetType', BUDGET_TYPE_OPTIONS)}
       <div class="input-row"><div class="lbl">Daily budget <span class="opt">from Alex / launch brief</span></div><input class="field-input" data-draft="dailyBudget" value="${esc(draft.dailyBudget)}" placeholder="$ amount for this launch"></div>
       ${selectField('Media type', 'mediaType', MEDIA_TYPE_OPTIONS)}
-      ${textField('Seed keyword', 'seedKeyword')}
-    </div>`;
+      ${textField('Seed keyword', 'seedKeyword', 'placeholder="first keyword used on the starter ad"')}
+    </div>
+    ${safetyPanel('Plan safety', 'Budget and seed keyword are required.')}`;
 
   CONTENT['inputs.media'] = () => `
     <h1 class="focus-title">Drop your images and keywords</h1>
@@ -507,17 +701,29 @@
         <div class="thumbs-inline" data-upload-thumbs>${uploadThumbs()}</div>
         <div class="upload-status ${draft.uploadedCount ? 'good' : ''}" data-upload-status>${uploadStatus()}</div>
       </label>
+      <div data-file-list>${fileList()}</div>
       <div class="input-row" style="margin-top:6px"><div class="lbl">Keywords <span class="opt">one per line · UPPERCASE</span></div>
         <textarea class="field-input" data-draft="keywords" placeholder="EDGE&#10;FOCUS&#10;RISE">${esc(draft.keywords)}</textarea></div>
-      <div style="font-size:12.5px;color:${draft.uploadedCount && keywordList().length === draft.uploadedCount ? 'var(--green)' : 'var(--text-3)'};font-family:'JetBrains Mono',monospace">${draft.uploadedCount || 0} files · ${keywordList().length} keywords${draft.uploadedCount && keywordList().length === draft.uploadedCount ? ' · counts match' : ''}</div>
-    </div>`;
+      <div data-count-summary style="font-size:12.5px;color:${draft.uploadedCount && keywordList().length === draft.uploadedCount ? 'var(--green)' : 'var(--text-3)'};font-family:'JetBrains Mono',monospace">${draft.uploadedCount || 0} files · ${keywordList().length} keywords${draft.uploadedCount && keywordList().length === draft.uploadedCount ? ' · counts match' : ''}</div>
+    </div>
+    ${safetyPanel('Image and keyword check', keywordUsage.loading ? 'Checking recent keyword history…' : keywordUsage.available ? 'Live recent keyword check loaded.' : 'Using saved recent keyword safety list.')}`;
 
   CONTENT['inputs.review'] = () => `
-    <h1 class="focus-title">Use this name in Meta</h1>
-    <div class="focus-help">Codex looks for this exact name. Copy it now.</div>
+    <h1 class="focus-title">Review before Meta</h1>
+    <div class="focus-help">If any safety check is red, do not build in Meta yet.</div>
     <div class="gen-card" style="margin-top:0">
+      <div class="l">Campaign name</div>
       <div class="v">${esc(campaignName())} <button class="copy">Copy</button></div>
-    </div>`;
+    </div>
+    <div class="focus-card">
+      <div class="review-grid">
+        <div class="review-card"><div class="l">Client</div><div class="v">${esc(draft.client)}</div></div>
+        <div class="review-card"><div class="l">Budget</div><div class="v">${esc(draft.dailyBudget || 'Missing')}</div></div>
+        <div class="review-card"><div class="l">Files</div><div class="v">${draft.uploadedCount}</div></div>
+        <div class="review-card"><div class="l">Keywords</div><div class="v">${keywordList().length}</div></div>
+      </div>
+    </div>
+    ${safetyPanel('Pre-flight result', validateDraft().errors.length ? 'Fix these before Meta.' : 'Ready for the VA to build the starter ad in Meta.')}`;
 
   // ---------- STEP 2 — META BUILD (one substep at a time) ----------
   function metaScreen({where, fields, toggles, greeting}){
@@ -540,6 +746,43 @@
             <div class="body">${greeting}</div>
             <div class="actions"><button class="copy fix-btn">Copy greeting</button></div>
           </div>` : ''}
+      </div>`;
+  }
+
+  function metaReadStatus(){
+    if (metaVerify.loading) return { type:'warn', title:'Checking Meta now', sub:'The app is doing one safe read-only scan.' };
+    if (metaVerify.available && metaVerify.data) {
+      const checks = metaVerify.data.checks || {};
+      const campaignOk = !!checks.campaignFound;
+      const seedOk = !!checks.seedAdFound;
+      if (campaignOk && seedOk) return { type:'ok', title:'Meta read check found the campaign and seed ad', sub:`${metaVerify.data.counts?.matchingCampaignAds || 0} ad rows found in this campaign.` };
+      if (!campaignOk) return { type:'bad', title:'Campaign not found in Meta yet', sub:'Publish the starter campaign in Meta, then re-scan.' };
+      if (!seedOk) return { type:'bad', title:'Seed ad not found in Meta yet', sub:'Make sure the seed ad name exactly matches the seed keyword.' };
+    }
+    if (metaVerify.error) return { type:'warn', title:'Live Meta read is not available', sub:metaVerify.error };
+    return { type:'warn', title:'Not scanned yet', sub:'Click Re-scan after the VA publishes the starter campaign in Meta.' };
+  }
+
+  function checkScreen(title, statusSub, steps, options={}){
+    const status = options.useMetaRead ? metaReadStatus() : { type:'warn', title:'Manual check required', sub:statusSub };
+    return `
+      <h1 class="focus-title">${esc(title)}</h1>
+      <div class="focus-help">This step is intentionally strict. If it is not clean, stop and fix Meta first.</div>
+      <div class="focus-card">
+        <div class="check-status ${status.type}">
+          <div class="ic">${status.type === 'ok' ? '✓' : status.type === 'bad' ? '!' : '?'}</div>
+          <div class="body">
+            <div class="head">${esc(status.title)}</div>
+            <div class="sub">${esc(status.sub)}</div>
+          </div>
+        </div>
+        <div class="check-instr">
+          <div class="l">VA must verify</div>
+          <div class="steps">${steps.map((step, index) => `
+            <div class="stp"><span class="n">${index + 1}</span><div>${step}</div></div>
+          `).join('')}</div>
+        </div>
+        ${options.extra || ''}
       </div>`;
   }
 
@@ -596,12 +839,12 @@
 
   CONTENT['meta.seed'] = () => `
     <h1 class="focus-title">Build the seed ad</h1>
-    <div class="focus-help">The other 29 are cloned from this one.</div>
+    <div class="focus-help">The other ads will eventually be cloned from this one after checks pass.</div>
     <div class="focus-card">
       ${metaScreen({
         where:['Ad set','Ad'],
         fields:[
-          {label:'Ad name', value:esc(draft.seedKeyword || 'EDGE'), copy:true},
+          {label:'Ad name', value:esc(draft.seedKeyword || 'SEED KEYWORD'), copy:true},
           {label:'Format', value:'Single image or video'},
           {label:'Related media', value:'0 selected'}
         ]
@@ -614,9 +857,9 @@
       ${metaScreen({
         where:['Seed ad','Message template'],
         fields:[{label:'Type', value:'Start conversations'}],
-        greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "${esc(draft.seedKeyword || 'EDGE')}" and I'll send you the link 👇`
+        greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "${esc(draft.seedKeyword || 'SEED KEYWORD')}" and I'll send you the link 👇`
       })}
-      <div class="field-block"><span class="l">Question #1</span><span class="v">${esc(draft.seedKeyword || 'EDGE')}</span><button class="copy">Copy</button></div>
+      <div class="field-block"><span class="l">Question #1</span><span class="v">${esc(draft.seedKeyword || 'SEED KEYWORD')}</span><button class="copy">Copy</button></div>
       <div class="field-block toggle"><span class="l">Turn off</span><span class="v">Automated follow-up message</span></div>
     </div>`;
 
@@ -631,100 +874,78 @@
     </div>`;
 
   // ---------- STEP 3 — CHECK (one group at a time, with the only failing item if any) ----------
-  CONTENT['check.campaign'] = () => `
-    <h1 class="focus-title">Campaign — all good</h1>
-    <div class="focus-card">
-      <div class="check-status ok">
-        <div class="ic">✓</div>
-        <div class="body">
-          <div class="head">4 of 4 checks passed</div>
-          <div class="sub">Found · name matches · objective is Engagement · published.</div>
-        </div>
-      </div>
-    </div>`;
+  CONTENT['check.campaign'] = () => checkScreen('Check campaign', 'Name, objective, and publish state must match.', [
+    `Campaign name exactly equals <strong>${esc(campaignName())}</strong>.`,
+    'Objective is <strong>Engagement</strong>.',
+    'Campaign is published so the app can see it.'
+  ], { useMetaRead:true });
 
-  CONTENT['check.adset'] = () => `
-    <h1 class="focus-title">Feed is still turned on</h1>
-    <div class="focus-help">Placement should be Instagram Stories only.</div>
-    <div class="focus-card">
-      <div class="check-instr">
-        <div class="steps">
-          <div class="stp"><span class="n">1</span><div>Open <strong>Ad set › Placements</strong>.</div></div>
-          <div class="stp"><span class="n">2</span><div>Uncheck <strong>Feed</strong>.</div></div>
-          <div class="stp"><span class="n">3</span><div>Publish, then re-scan.</div></div>
-        </div>
-      </div>
-    </div>`;
+  CONTENT['check.adset'] = () => checkScreen('Check ad set', 'These settings are manual for now and must be spotless.', [
+    'Ad set name is <strong>Warm Audience Stack</strong> unless Alex gave a different name.',
+    `Budget type is <strong>${esc(draft.budgetType)}</strong> and daily budget is <strong>${esc(draft.dailyBudget || 'filled in')}</strong>.`,
+    'Message destination is <strong>Instagram only</strong>.',
+    'Age is <strong>24-65</strong> and location is <strong>United States</strong>.'
+  ]);
 
-  CONTENT['check.seed'] = () => `
-    <h1 class="focus-title">Seed ad — all good</h1>
-    <div class="focus-card">
-      <div class="check-status ok">
-        <div class="ic">✓</div>
-        <div class="body">
-          <div class="head">5 of 5 checks passed</div>
-          <div class="sub">Found · named EDGE · single image · creative present · primary text set.</div>
-        </div>
-      </div>
-    </div>`;
+  CONTENT['check.seed'] = () => checkScreen('Check seed ad', 'The seed ad is the only ad the VA builds by hand.', [
+    `Seed ad name exactly equals <strong>${esc(draft.seedKeyword || 'SEED KEYWORD')}</strong>.`,
+    'Format is <strong>single image or video</strong>.',
+    'Correct starter media is selected.',
+    'Primary text is filled in, even though Stories usually hides it.'
+  ], { useMetaRead:true });
 
-  CONTENT['check.message'] = () => `
-    <h1 class="focus-title">Greeting says "Spring Shred"</h1>
-    <div class="focus-help">Should say Summer Shredding Challenge.</div>
-    <div class="focus-card">
-      <div class="check-instr">
-        <div class="steps">
-          <div class="stp"><span class="n">1</span><div>Open <strong>Seed ad › Message template › Greeting</strong>.</div></div>
-          <div class="stp"><span class="n">2</span><div>Replace <strong>Spring Shred</strong> with <strong>Summer Shredding Challenge</strong>.</div></div>
-          <div class="stp"><span class="n">3</span><div>Save, then re-scan.</div></div>
-        </div>
-      </div>
-    </div>`;
+  CONTENT['check.message'] = () => checkScreen('Check DM message', 'The keyword must match the seed ad exactly.', [
+    'Template type is <strong>Start conversations</strong>.',
+    `Greeting says <strong>Send "${esc(draft.seedKeyword || 'SEED KEYWORD')}"</strong>.`,
+    `Question #1 is exactly <strong>${esc(draft.seedKeyword || 'SEED KEYWORD')}</strong>.`,
+    'Automated follow-up message is turned off at the bottom.'
+  ]);
 
-  CONTENT['check.toggles'] = () => `
-    <h1 class="focus-title">Confirm Related media is off</h1>
-    <div class="focus-help">Codex can't see this one through the API.</div>
-    <div class="focus-card">
-      <div class="check-instr">
-        <div class="steps">
-          <div class="stp"><span class="n">1</span><div>Open the seed ad in Meta.</div></div>
-          <div class="stp"><span class="n">2</span><div>Confirm <strong>Related media</strong> shows <strong>0 selected</strong>.</div></div>
-        </div>
-      </div>
-    </div>`;
+  CONTENT['check.toggles'] = () => checkScreen('Check risky Meta toggles', 'The app treats these as manual safety checks.', [
+    'Multi-advertiser ads is off.',
+    'Advantage+ creative enhancements is off.',
+    'AI generated image labels is not selected.',
+    'Language translation is not selected.',
+    'Related media shows 0 selected.',
+    'Advantage+ text generation and Essential enhancements are off.'
+  ]);
 
   // ---------- STEPS 4–6 ----------
   CONTENT['plan'] = () => {
     const KW = keywordList();
+    const validation = validateDraft();
     const SW = ['#1a1608','#0e1420','#0c1a12','#1a0e0e','#0d0d0d','#0c0c0c'];
     const AC = ['#2a2417','#1c2a3e','#1a2e22','#3a1f1f','#262626','#1f1f1f'];
-    if (!KW.length) {
+    if (validation.errors.length) {
       return `
-        <h1 class="focus-title">Add keywords first</h1>
-        <div class="focus-help">The launch plan needs one approved keyword per media file.</div>
+        <h1 class="focus-title">Launch plan is blocked</h1>
+        <div class="focus-help">The app will not create a launch plan until every red item is fixed.</div>
         <div class="focus-card">
-          <div class="check-status warn">
+          <div class="check-status bad">
             <div class="ic">!</div>
             <div class="body">
-              <div class="head">No keywords entered yet</div>
-              <div class="sub">Go back to Images & keywords, add the keyword list, then return here.</div>
+              <div class="head">${validation.errors.length} blocker${validation.errors.length === 1 ? '' : 's'} found</div>
+              <div class="sub">Go back to Inputs and fix the launch plan before touching Meta automation.</div>
             </div>
           </div>
-        </div>`;
+        </div>
+        ${safetyPanel('Blocked items', 'Fix every red row.')}`;
     }
     const rows = KW.map((kw,i) => {
       const action = kw === (draft.seedKeyword || '').trim().toUpperCase()
         ? '<span class="pl-action keep"><span class="d"></span>Keep seed</span>'
         : '<span class="pl-action create"><span class="d"></span>Create</span>';
+      const fileName = draft.mediaItems[i]?.name || draft.uploadedNames[i] || `File ${i + 1}`;
       return `<tr>
-        <td><div class="pl-thumb"><svg viewBox="0 0 28 28"><rect width="28" height="28" fill="${SW[i%6]}"/><circle cx="14" cy="14" r="6" fill="${AC[i%6]}"/></svg></div></td>
+        <td><div class="pl-thumb">${draft.mediaItems[i]?.previewUrl && /^image\//.test(draft.mediaItems[i].type || '') ? `<img src="${esc(draft.mediaItems[i].previewUrl)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<svg viewBox="0 0 28 28"><rect width="28" height="28" fill="${SW[i%6]}"/><circle cx="14" cy="14" r="6" fill="${AC[i%6]}"/></svg>`}</div></td>
         <td><span class="pl-kw">${kw}</span></td>
         <td>${action}</td>
-        <td><span class="pl-msg">Send <span class="gold">${kw}</span> and I will send you the link</span></td>
+        <td><span class="pl-msg">${esc(fileName)} · Send <span class="gold">${kw}</span> and I will send you the link</span></td>
       </tr>`;
     }).join('');
     return `
-      <h1 class="focus-title">Ready to launch</h1>
+      <h1 class="focus-title">Final review</h1>
+      <div class="focus-help">This is the exact ad list. Nothing should be created unless this looks clean.</div>
       <div class="focus-card tight">
         <div class="plan-summary">
           <span class="num green">${Math.max(0, KW.length - 1)}</span><span class="lbl">ads will be created</span><span class="sep">·</span>
@@ -735,44 +956,57 @@
           <thead><tr><th style="width:46px">Image</th><th style="width:140px">Keyword</th><th style="width:110px">Action</th><th>DM preview</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
+      </div>
+      <div class="safe-panel">
+        <div class="safe-head"><div class="safe-title">Publish safety</div><div class="safe-sub">Human stays in control.</div></div>
+        <div class="safe-list">
+          <div class="safe-row warn"><div class="ic">!</div><div class="txt"><div class="main">Live Meta write automation is still locked</div><div class="sub">This app will not publish or duplicate ads until that API is tested separately.</div></div></div>
+          <div class="safe-row ok"><div class="ic">✓</div><div class="txt"><div class="main">Use this screen as the VA's final checklist</div><div class="sub">Keyword, media, and DM message pairs are visible before any launch work.</div></div></div>
+        </div>
       </div>`;
   };
 
   CONTENT['launch'] = () => `
-    <h1 class="focus-title">Launching</h1>
-    <div class="focus-help">Keep this tab open.</div>
+    <h1 class="focus-title">Manual publish only</h1>
+    <div class="focus-help">The account-safe version stops here. No Meta changes were made by the app.</div>
     <div class="focus-card tight">
       <div class="pg-grid">
-        <div class="pg-cell"><div class="pg-lbl">Uploading images</div><div class="pg-num"><span class="v active">14</span><span class="total">/ 30</span></div><div class="pg-bar"><span style="width:47%"></span></div></div>
-        <div class="pg-cell"><div class="pg-lbl">Creating ads</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 29</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
-        <div class="pg-cell"><div class="pg-lbl">Updating DM messages</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 29</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
-        <div class="pg-cell"><div class="pg-lbl">Verifying ads</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 30</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Images checked</div><div class="pg-num"><span class="v active">${draft.uploadedCount}</span><span class="total">/ ${keywordList().length}</span></div><div class="pg-bar"><span style="width:${keywordList().length ? Math.min(100, draft.uploadedCount / keywordList().length * 100) : 0}%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Keywords checked</div><div class="pg-num"><span class="v active">${keywordList().length}</span><span class="total">/ ${draft.uploadedCount}</span></div><div class="pg-bar"><span style="width:${draft.uploadedCount ? Math.min(100, keywordList().length / draft.uploadedCount * 100) : 0}%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Meta writes</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ ${Math.max(0, keywordList().length - 1)}</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
+        <div class="pg-cell"><div class="pg-lbl">Publish status</div><div class="pg-num"><span class="v idle">0</span><span class="total">/ 1</span></div><div class="pg-bar"><span style="width:0%"></span></div></div>
       </div>
-      <div class="pg-current">↑ Uploading <span class="what">IRON.png</span></div>
+      <div class="pg-current">Safety lock <span class="what">Human must publish after reviewing Meta</span></div>
+    </div>
+    <div class="safe-panel">
+      <div class="safe-head"><div class="safe-title">Why this is blocked</div><div class="safe-sub">Ad account safety first.</div></div>
+      <div class="safe-list">
+        <div class="safe-row warn"><div class="ic">!</div><div class="txt"><div class="main">Duplication API is not connected in this safe build</div><div class="sub">The app will not spam Meta or guess at hidden Advantage+ settings.</div></div></div>
+        <div class="safe-row ok"><div class="ic">✓</div><div class="txt"><div class="main">VA can use the checklist and final review today</div><div class="sub">This keeps launch work organized while we add write automation carefully.</div></div></div>
+      </div>
     </div>`;
 
   CONTENT['done'] = () => `
-    <h1 class="focus-title">Launched</h1>
+    <h1 class="focus-title">Ready for human publish</h1>
     <div class="focus-card tight">
       <div class="done-head">
         <div class="done-seal">✓</div>
         <div>
-          <div style="font-size:15px;font-weight:600">Summer Shred — 30 ads verified</div>
-          <div style="font-size:12.5px;color:var(--text-3);margin-top:2px">Finished in 2m 38s</div>
+          <div style="font-size:15px;font-weight:600">${esc(draft.challenge || 'Campaign')} — checklist complete</div>
+          <div style="font-size:12.5px;color:var(--text-3);margin-top:2px">No live Meta writes were performed by the app.</div>
         </div>
       </div>
       <div style="padding:8px 0">
-        <div class="done-row"><span class="ic">✓</span><strong>30 ads verified</strong></div>
-        <div class="done-row"><span class="ic">✓</span><strong>30 unique images</strong></div>
-        <div class="done-row"><span class="ic">✓</span><strong>30 matching keywords</strong></div>
-        <div class="done-row"><span class="ic">✓</span><strong>DM greeting verified</strong></div>
-        <div class="done-row"><span class="ic">✓</span><strong>All required toggles verified</strong></div>
-        <div class="done-row"><span class="ic warn">!</span>3 ads pending Meta review</div>
+        <div class="done-row"><span class="ic">✓</span><strong>${draft.uploadedCount} media files checked</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>${keywordList().length} matching keywords checked</strong></div>
+        <div class="done-row"><span class="ic">✓</span><strong>Campaign name generated</strong></div>
+        <div class="done-row"><span class="ic warn">!</span>Human still needs to complete / publish in Meta</div>
       </div>
+      ${state.audit.length ? `<div class="audit-list" style="padding:0 18px 14px">${state.audit.map(row => `<div class="audit-row"><span>${esc(row.text)}</span><span class="time">${esc(row.at)}</span></div>`).join('')}</div>` : ''}
       <div class="done-actions">
-        <button class="fix-btn primary">View in Meta</button>
-        <button class="fix-btn">Export report</button>
-        <button class="fix-btn">Start another launch</button>
+        <button class="fix-btn primary" data-open-meta>View in Meta</button>
+        <button class="fix-btn" data-export-report>Export report</button>
+        <button class="fix-btn" data-reset-launch>Start another launch</button>
       </div>
     </div>`;
 
@@ -783,22 +1017,34 @@
     const step = FLOW[state.step];
     const subId = step.substeps ? step.substeps[state.sub].id : null;
     const key = subId ? `${step.id}.${subId}` : step.id;
+    const validation = validateDraft();
 
-    // setup-check overrides for the failing rows
-    if (key === 'check.adset')   return { primary:'Re-scan', secondary:'Open in Meta', context:'', ctx:'bad' };
-    if (key === 'check.message') return { primary:'Re-scan', secondary:'Open in Meta', context:'', ctx:'bad' };
-    if (key === 'check.toggles') return { primary:"Confirmed, it's off", secondary:'Open in Meta', context:'', ctx:'' };
-    if (key === 'check.campaign' || key === 'check.seed') return { primary:'Continue', context:'', ctx:'' };
+    if (key === 'inputs.client') {
+      const blocked = !draft.client || !draft.challenge.trim();
+      return { primary:'Continue', primaryDisabled:blocked, context: blocked ? '<strong>Add client and challenge first</strong>' : '<strong>Saved as you go</strong>', ctx: blocked ? 'bad' : '' };
+    }
+    if (key === 'inputs.plan') {
+      const blocked = !draft.date.trim() || !draft.dailyBudget.trim() || !normalizeKeywordText(draft.seedKeyword);
+      return { primary:'Continue', primaryDisabled:blocked, context: blocked ? '<strong>Date, budget, and seed keyword are required</strong>' : '<strong>Plan basics ready</strong>', ctx: blocked ? 'bad' : '' };
+    }
+    if (key === 'inputs.media' || key === 'inputs.review') {
+      const blocked = validation.errors.length > 0;
+      return { primary:'Continue', primaryDisabled:blocked, context: blocked ? `<strong>${validation.errors.length} blocker${validation.errors.length === 1 ? '' : 's'} to fix</strong>` : '<strong>Safe to continue</strong>', ctx: blocked ? 'bad' : '' };
+    }
+
+    if (state.step === 2) {
+      const secondary = key === 'check.campaign' || key === 'check.seed' ? 'Re-scan Meta' : 'Open in Meta';
+      return { primary:'I checked this — next', secondary, secondaryAction: secondary === 'Re-scan Meta' ? 'verify' : 'openMeta', context:'<strong>Manual confirmation is required</strong>', ctx:'' };
+    }
 
     if (state.step === 0) return { primary:'Continue', context:'', ctx:'' };
     if (state.step === 1) return { primary:'Done — next', context:'', ctx:'' };
     if (key === 'plan') {
-      const count = keywordList().length;
-      if (!count) return { primary:'Add keywords first', primaryDisabled:true, context:'<strong>No keywords entered yet</strong>', ctx:'bad' };
-      return { primary:'Launch campaign', context:`<strong>${Math.max(0, count - 1)} ads will be created</strong>`, ctx:'' };
+      if (validation.errors.length) return { primary:'Fix blockers first', primaryDisabled:true, context:`<strong>${validation.errors.length} blocker${validation.errors.length === 1 ? '' : 's'} remaining</strong>`, ctx:'bad' };
+      return { primary:'Final safety check', context:`<strong>${Math.max(0, keywordList().length - 1)} ads planned · human publish only</strong>`, ctx:'' };
     }
-    if (key === 'launch') return { primary:'Launching…', primaryDisabled:true, context:'', ctx:'' };
-    if (key === 'done')   return { primary:'View report', context:'', ctx:'' };
+    if (key === 'launch') return { primary:'Mark ready for manual publish', context:'<strong>No Meta writes will run</strong>', ctx:'' };
+    if (key === 'done')   return { primary:'View report', secondary:'Open in Meta', secondaryAction:'openMeta', context:'', ctx:'' };
     return { primary:'Continue' };
   }
 
@@ -813,9 +1059,12 @@
   const btnSecondary = document.getElementById('btnSecondary');
   const btnBack = document.getElementById('btnBack');
   const abContext = document.getElementById('abContext');
+  const saveDraftBtn = document.getElementById('saveDraftBtn');
+  const runHistoryBtn = document.getElementById('runHistoryBtn');
   const topTitleEl = document.getElementById('topTitle');
   const railTitleEl = document.getElementById('railTitle');
   const railSubEl = document.getElementById('railSub');
+  let currentSecondaryAction = null;
 
   function renderFocus(){
     const step = FLOW[state.step];
@@ -824,6 +1073,7 @@
     focusEl.innerHTML = (CONTENT[key] || (() => `<div class="focus-help">Coming soon: ${key}</div>`))();
     bindDraftInputs();
     bindCopyButtons();
+    bindUtilityButtons();
     bindUploader();
     updateShell();
   }
@@ -832,13 +1082,25 @@
     focusEl.querySelectorAll('[data-draft]').forEach(input => {
       input.addEventListener('input', () => {
         draft[input.dataset.draft] = input.value;
+        updateInlineCounts();
         updateShell();
+        renderActionBar();
       });
       input.addEventListener('change', () => {
         draft[input.dataset.draft] = input.value;
+        if (input.dataset.draft === 'client') refreshKeywordUsage();
         updateShell();
+        renderActionBar();
       });
     });
+  }
+
+  function updateInlineCounts(){
+    const countEl = focusEl.querySelector('[data-count-summary]');
+    if (!countEl) return;
+    const ok = draft.uploadedCount && keywordList().length === draft.uploadedCount;
+    countEl.textContent = `${draft.uploadedCount || 0} files · ${keywordList().length} keywords${ok ? ' · counts match' : ''}`;
+    countEl.style.color = ok ? 'var(--green)' : 'var(--text-3)';
   }
 
   function bindUploader(){
@@ -847,15 +1109,29 @@
     if (!input || !uploader) return;
     const applyFiles = files => {
       const list = Array.from(files || []);
+      (draft.mediaItems || []).forEach(item => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
       draft.uploadedCount = list.length;
       draft.uploadedNames = list.map(file => file.name);
+      draft.mediaItems = list.map(file => ({
+        name:file.name,
+        type:file.type,
+        size:file.size,
+        previewUrl: URL.createObjectURL(file)
+      }));
+      addAudit(`${list.length} media file${list.length === 1 ? '' : 's'} selected`);
       const status = focusEl.querySelector('[data-upload-status]');
       const thumbs = focusEl.querySelector('[data-upload-thumbs]');
+      const fileListEl = focusEl.querySelector('[data-file-list]');
       if (status) {
         status.textContent = uploadStatus();
         status.classList.toggle('good', draft.uploadedCount > 0);
       }
       if (thumbs) thumbs.innerHTML = uploadThumbs();
+      if (fileListEl) fileListEl.innerHTML = fileList();
+      renderFocus();
+      renderActionBar();
     };
     input.addEventListener('change', () => applyFiles(input.files));
     uploader.addEventListener('dragover', event => {
@@ -875,6 +1151,9 @@
     if (topTitleEl) topTitleEl.textContent = `${title} — ${draft.client}`;
     if (railTitleEl) railTitleEl.textContent = title;
     if (railSubEl) railSubEl.textContent = `${draft.client} · Meta`;
+    if (saveDraftBtn) {
+      saveDraftBtn.textContent = draft.lastSavedAt ? `Saved ${new Date(draft.lastSavedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}` : 'Save draft';
+    }
   }
 
   function bindCopyButtons(){
@@ -896,13 +1175,98 @@
     });
   }
 
+  function bindUtilityButtons(){
+    focusEl.querySelectorAll('[data-open-meta]').forEach(btn => {
+      btn.addEventListener('click', () => window.open('https://business.facebook.com/adsmanager/manage/campaigns', '_blank', 'noopener,noreferrer'));
+    });
+    focusEl.querySelectorAll('[data-export-report]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const report = {
+          exportedAt: new Date().toISOString(),
+          campaignName: campaignName(),
+          draft: serializeDraft(),
+          validation: validateDraft(),
+          audit: state.audit,
+          safety: 'No Meta write or publish action was performed by this app.'
+        };
+        const blob = new Blob([JSON.stringify(report, null, 2)], { type:'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${campaignName().replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'') || 'campaign-launch'}-report.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 500);
+      });
+    });
+    focusEl.querySelectorAll('[data-reset-launch]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        location.reload();
+      });
+    });
+  }
+
+  async function refreshKeywordUsage(){
+    const client = String(draft.client || '').toLowerCase();
+    if (!client || keywordUsage.loading || keywordUsage.loadedFor === client) return;
+    keywordUsage.loading = true;
+    keywordUsage.error = null;
+    renderActionBar();
+    try {
+      const res = await fetch(`/api/ads/launcher/keywords?client=${encodeURIComponent(client)}`, { cache:'no-store' });
+      const data = await res.json();
+      keywordUsage.loadedFor = client;
+      keywordUsage.available = !!data.available;
+      keywordUsage.keywords = Array.isArray(data.keywords) ? data.keywords : [];
+      keywordUsage.error = data.error || null;
+      addAudit(keywordUsage.available ? `Loaded ${keywordUsage.keywords.length} recent keywords` : 'Recent keyword lookup unavailable');
+    } catch (error) {
+      keywordUsage.loadedFor = client;
+      keywordUsage.available = false;
+      keywordUsage.keywords = [];
+      keywordUsage.error = error instanceof Error ? error.message : 'Keyword lookup failed';
+    } finally {
+      keywordUsage.loading = false;
+      render();
+    }
+  }
+
+  async function refreshMetaVerification(){
+    const client = String(draft.client || '').toLowerCase();
+    const verifyKey = `${client}:${campaignName()}:${normalizeKeywordText(draft.seedKeyword)}`;
+    metaVerify.loading = true;
+    metaVerify.error = null;
+    render();
+    try {
+      const params = new URLSearchParams({
+        client,
+        campaignName: campaignName(),
+        seedKeyword: normalizeKeywordText(draft.seedKeyword)
+      });
+      const res = await fetch(`/api/ads/launcher/verify?${params.toString()}`, { cache:'no-store' });
+      const data = await res.json();
+      metaVerify.checkedFor = verifyKey;
+      metaVerify.available = !!data.available;
+      metaVerify.data = data;
+      metaVerify.error = data.error || null;
+      addAudit(metaVerify.available ? 'Meta read-only scan completed' : 'Meta read-only scan unavailable');
+    } catch (error) {
+      metaVerify.checkedFor = verifyKey;
+      metaVerify.available = false;
+      metaVerify.data = null;
+      metaVerify.error = error instanceof Error ? error.message : 'Meta verification failed';
+    } finally {
+      metaVerify.loading = false;
+      render();
+    }
+  }
+
   function renderRail(){
     railStepsEl.innerHTML = FLOW.map((s, si) => {
       const isCurrent = si === state.step;
       const isDone = isStepFullyDone(si);
       let meta = '';
       if (isDone) meta = '<span class="rs-meta ok">done</span>';
-      else if (isCurrent && si === 2) meta = '<span class="rs-meta bad">2 fix</span>';
+      else if (isCurrent && si === 2) meta = '<span class="rs-meta warn">manual</span>';
       else if (isCurrent) meta = '<span class="rs-meta warn">in progress</span>';
       const subs = s.substeps ? `<div class="substeps">${
         s.substeps.map((ss, sj) => {
@@ -915,7 +1279,7 @@
           return `<div class="${cls}" data-step="${si}" data-sub="${sj}"><span class="d"></span>${ss.label}</div>`;
         }).join('')
       }</div>` : '';
-      return `<div class="rail-step ${isCurrent?'current':''} ${isDone?'done':''} ${isCurrent && si===2?'blocked':''}" data-step="${si}">
+      return `<div class="rail-step ${isCurrent?'current':''} ${isDone?'done':''}" data-step="${si}">
         <div class="row">
           <span class="rs-num">${isDone?'✓':si+1}</span>
           <span class="rs-name">${s.name}</span>
@@ -944,13 +1308,20 @@
   }
 
   function renderStatus(){
-    if (state.step === 2){
+    const validation = validateDraft();
+    if (validation.errors.length){
       railStatusEl.innerHTML = `
         <div class="blocker-banner">
-          <div class="bb-title"><span class="ico">!</span>2 things to fix</div>
+          <div class="bb-title"><span class="ico">!</span>${validation.errors.length} launch blocker${validation.errors.length === 1 ? '' : 's'}</div>
           <div class="bb-list">
-            <div class="bb-item">Feed is on</div>
-            <div class="bb-item">Greeting says Spring Shred</div>
+            ${validation.errors.slice(0, 4).map(error => `<div class="bb-item">${esc(error)}</div>`).join('')}
+          </div>
+        </div>`;
+    } else if (state.step === 2) {
+      railStatusEl.innerHTML = `
+        <div class="safe-panel" style="margin-top:0">
+          <div class="safe-list">
+            <div class="safe-row warn"><div class="ic">?</div><div class="txt"><div class="main">Manual Meta checks required</div><div class="sub">The app can read campaign/seed basics, but hidden toggles stay human-confirmed.</div></div></div>
           </div>
         </div>`;
     } else {
@@ -966,6 +1337,7 @@
     const a = actionFor();
     btnPrimary.textContent = a.primary;
     btnPrimary.disabled = !!a.primaryDisabled;
+    currentSecondaryAction = a.secondaryAction || null;
     if (a.secondary){ btnSecondary.textContent = a.secondary; btnSecondary.style.display = ''; }
     else btnSecondary.style.display = 'none';
     abContext.innerHTML = a.context || '';
@@ -1053,8 +1425,11 @@
   }
 
   function advance(){
+    if (btnPrimary.disabled) return;
     const step = FLOW[state.step];
     const wasLastSub = step.substeps && state.sub === step.substeps.length - 1;
+    const subId = step.substeps ? step.substeps[state.sub].id : null;
+    const key = subId ? `${step.id}.${subId}` : step.id;
     btnPrimary.classList.remove('flash'); void btnPrimary.offsetWidth; btnPrimary.classList.add('flash');
 
     let small = true;
@@ -1072,6 +1447,10 @@
         state.step++; state.sub = 0; small = false;
       }
     }
+    if (key.startsWith('check.')) addAudit(`${subId || 'Meta'} check confirmed`);
+    if (key === 'plan') addAudit('Final launch plan reviewed');
+    if (key === 'launch') addAudit('Marked ready for manual publish');
+    saveDraft(true);
     render({fresh:true});
     requestAnimationFrame(()=>requestAnimationFrame(()=>celebrate(small)));
   }
@@ -1089,7 +1468,20 @@
   btnPrimary.addEventListener('click', advance);
   btnBack.addEventListener('click', goBack);
   btnSecondary.addEventListener('click', () => {
+    if (currentSecondaryAction === 'verify') {
+      refreshMetaVerification();
+      return;
+    }
     window.open('https://business.facebook.com/adsmanager/manage/campaigns', '_blank', 'noopener,noreferrer');
+  });
+  saveDraftBtn?.addEventListener('click', () => {
+    saveDraft();
+    render();
+  });
+  runHistoryBtn?.addEventListener('click', () => {
+    state.step = 5;
+    state.sub = 0;
+    render();
   });
 
   document.addEventListener('keydown', e => {
@@ -1099,8 +1491,10 @@
   });
 
   // Start at the beginning for the VA.
+  loadDraft();
   state.step = 0; state.sub = 0;
   render();
+  refreshKeywordUsage();
 </script>
 
 </body>
