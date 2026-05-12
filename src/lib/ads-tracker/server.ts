@@ -290,8 +290,11 @@ interface BuildPayloadOptions {
   resolvedAlerts?: ResolvedAttributionAlert[];
   financialResolvedAlerts?: ResolvedAttributionAlert[];
   salesCollectedRevenue?: number;
+  allTimePaidAttributedRevenue?: number;
   sourceStatus?: Record<string, unknown>;
   eventsHistory?: AttributionHistoryEvent[];
+  attributionKeywordOptions?: Record<string, unknown>[];
+  attributionCampaignOptions?: Record<string, unknown>[];
 }
 
 interface AttributionHistoryEvent {
@@ -1021,6 +1024,7 @@ function buildPayload(
   const unattributedRevenue = sumAlertRevenue(financialUnmatchedSales);
   const organicRevenue = sumResolvedRevenue(financialResolvedAlerts, "organic");
   const ignoredRevenue = sumResolvedRevenue(financialResolvedAlerts, "ignore");
+  const allTimePaidAttributedRevenue = options.allTimePaidAttributedRevenue ?? totalCollected;
   const directSalesCollectedRevenue = options.salesCollectedRevenue;
   const totalCollectedRevenue =
     directSalesCollectedRevenue === undefined
@@ -1057,6 +1061,7 @@ function buildPayload(
       adSpend: totalSpend,
       collectedRevenue: totalCollected,
       paidAttributedRevenue: totalCollected,
+      allTimePaidAttributedRevenue,
       unattributedRevenue: finalUnattributedRevenue,
       organicRevenue,
       ignoredRevenue,
@@ -1083,6 +1088,7 @@ function buildPayload(
     },
     attribution: {
       paidAttributedRevenue: totalCollected,
+      allTimePaidAttributedRevenue,
       unattributedRevenue: finalUnattributedRevenue,
       organicRevenue,
       ignoredRevenue,
@@ -1090,6 +1096,8 @@ function buildPayload(
       totalCollectedRevenue,
       unmatchedSales,
       resolvedAlerts,
+      keywordOptions: options.attributionKeywordOptions || [],
+      campaignOptions: options.attributionCampaignOptions || [],
     },
     sourceStatus: options.sourceStatus || null,
     rows,
@@ -1367,6 +1375,72 @@ function hintFromMetaRow(row: MetaRow, keyword: string): BackfillGroupHint {
     campaignName: row.campaign_name,
     adId: row.ad_id,
     adName: row.ad_name || displayKeyword(keyword),
+  };
+}
+
+function attributionPickerOptionsFromMetaRows(rows: MetaRow[]) {
+  const keywordOptions = new Map<string, Record<string, unknown>>();
+  const campaignOptions = new Map<string, Record<string, unknown>>();
+
+  for (const row of rows) {
+    const keyword = normalizeKeyword(row.keyword_normalized || row.keyword_raw) || keywordFromAdName(row.ad_name);
+    const campaignId = row.campaign_id || row.campaign_name || "campaign";
+    const campaignKey = `${row.client_key}:${campaignId}`;
+    const campaignStatus = metaRowStatus(row);
+    const campaignName = row.campaign_name || campaignDisplayName(row);
+    const adId = row.ad_id || keyword || row.ad_name || "ad";
+    const groupId = keyword ? adGroupId(row, keyword) : `${campaignKey}:${adId}`;
+    const spend = dollars(row.spend_cents || 0);
+
+    const campaign = campaignOptions.get(campaignKey) || {
+      id: campaignKey,
+      clientKey: row.client_key,
+      campaignId: row.campaign_id,
+      campaignName,
+      name: campaignName,
+      firstDate: row.date,
+      lastDate: row.date,
+      status: "finished",
+      spend: 0,
+    };
+    if (row.date < String(campaign.firstDate)) campaign.firstDate = row.date;
+    if (row.date > String(campaign.lastDate)) campaign.lastDate = row.date;
+    if (campaignStatus === "active") campaign.status = "active";
+    campaign.spend = Number(campaign.spend || 0) + spend;
+    campaignOptions.set(campaignKey, campaign);
+
+    if (!keyword) continue;
+    const key = `${row.client_key}:${groupId}:${keyword}`;
+    const option = keywordOptions.get(key) || {
+      id: key,
+      clientKey: row.client_key,
+      keyword: displayKeyword(keyword),
+      campaignId: row.campaign_id,
+      campaignName,
+      adId: row.ad_id,
+      adName: row.ad_name || displayKeyword(keyword),
+      groupId,
+      groupName: row.ad_name || displayKeyword(keyword),
+      firstDate: row.date,
+      lastDate: row.date,
+      status: "finished",
+      spend: 0,
+    };
+    if (row.date < String(option.firstDate)) option.firstDate = row.date;
+    if (row.date > String(option.lastDate)) option.lastDate = row.date;
+    if (campaignStatus === "active") option.status = "active";
+    option.spend = Number(option.spend || 0) + spend;
+    keywordOptions.set(key, option);
+  }
+
+  const sortOptions = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    String(b.lastDate || "").localeCompare(String(a.lastDate || "")) ||
+    Number(b.spend || 0) - Number(a.spend || 0) ||
+    String(a.keyword || a.campaignName || "").localeCompare(String(b.keyword || b.campaignName || ""));
+
+  return {
+    keywordOptions: Array.from(keywordOptions.values()).sort(sortOptions),
+    campaignOptions: Array.from(campaignOptions.values()).sort(sortOptions),
   };
 }
 
@@ -3139,6 +3213,18 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (sum, row) => sum + (row.cashCollected || 0),
     0
   );
+  const allTimeBackfillPaidRevenue = alertBackfill.reduce(
+    (sum, row) => sum + dollars(row.collected_revenue_cents || 0),
+    0
+  );
+  const allTimeResolvedPaidRevenue = alertAttributionSalesRows.reduce((sum, row) => {
+    const clientKey = clientFromOffer(row);
+    if (!clientKey || alertBackfilledDateKeys.has(`${clientKey}:${row.date}`)) return sum;
+    const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+    return resolution?.action === "attribute" ? sum + saleAmount(row) : sum;
+  }, 0);
+  const allTimePaidAttributedRevenue = allTimeBackfillPaidRevenue + allTimeResolvedPaidRevenue;
+  const attributionPickerOptions = attributionPickerOptionsFromMetaRows(alertAttributionRows);
   const sourceStatus = {
     meta: {
       rowCount: rows.length,
@@ -3170,6 +3256,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     resolvedAlerts,
     financialResolvedAlerts: resolvedAlerts,
     salesCollectedRevenue,
+    allTimePaidAttributedRevenue,
+    attributionKeywordOptions: attributionPickerOptions.keywordOptions,
+    attributionCampaignOptions: attributionPickerOptions.campaignOptions,
     sourceStatus,
     eventsHistory,
   });

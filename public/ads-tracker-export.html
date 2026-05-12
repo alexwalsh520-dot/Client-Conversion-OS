@@ -163,8 +163,32 @@
 	  .alert-info-pill{width:20px;height:6px;border-radius:999px;background:var(--gold)}
 	  .alert-info-pill.keith{background:var(--blue)}
 	  .alert-field-label{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-3);font-weight:500;margin-bottom:8px}
-	  .alert-keyword-select{width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#0a0a0a;color:var(--text-2);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;padding:0 12px;appearance:auto}
-	  .alert-note-toggle{margin-top:14px;color:var(--text-3);font-size:12px}
+		  .alert-mode-tabs{display:inline-flex;border:1px solid var(--border-2);border-radius:999px;background:#080808;padding:3px;margin-bottom:12px}
+		  .alert-mode-tab{height:28px;padding:0 13px;border-radius:999px;color:var(--text-3);font-size:12px}
+		  .alert-mode-tab.active{background:#202020;color:var(--text)}
+		  .alert-search{width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#080808;color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;padding:0 12px;margin-bottom:10px}
+		  .alert-option-list{border:1px solid var(--border);border-radius:8px;background:#090909;max-height:300px;overflow:auto}
+		  .alert-option-list::-webkit-scrollbar{width:7px}.alert-option-list::-webkit-scrollbar-thumb{background:#252525;border-radius:99px}
+		  .alert-option-group{border-top:1px solid #171717}.alert-option-group:first-child{border-top:none}
+		  .alert-option-group-head{display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 12px;background:#0f0f0f;color:var(--text-4);font-size:10px;text-transform:uppercase;letter-spacing:.12em}
+		  .alert-option-group-count{font-family:'JetBrains Mono',ui-monospace,monospace;color:#4f4f4f;letter-spacing:0}
+		  .alert-option-card{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 12px;border-top:1px solid #151515;color:var(--text-2)}
+		  .alert-option-card:first-of-type{border-top:none}
+		  .alert-option-card:hover{background:#121212}
+		  .alert-option-card.active{background:#1a1812;color:var(--text);box-shadow:inset 3px 0 0 var(--gold)}
+		  .alert-option-main{min-width:0}
+		  .alert-option-keyword{font-size:13px;font-weight:650;color:var(--text);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+		  .alert-option-campaign{margin-top:4px;color:var(--text-4);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+		  .alert-option-pill{border:1px solid #2a2a2a;border-radius:999px;padding:4px 8px;color:#777;font-size:10px;white-space:nowrap}
+		  .alert-option-pill.active{border-color:rgba(129,199,155,.35);color:#9bd2ae;background:rgba(129,199,155,.08)}
+		  .alert-option-pill.date{border-color:rgba(211,180,119,.35);color:var(--gold);background:rgba(211,180,119,.08)}
+		  .alert-option-empty{padding:14px 12px;color:var(--text-4);font-size:12px}
+		  .alert-no-keyword-box{border:1px solid var(--border);border-radius:8px;background:#090909;padding:12px;display:grid;gap:10px}
+		  .alert-no-keyword-choice{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #232323;border-radius:7px;background:#0e0e0e;color:var(--text-2);text-align:left}
+		  .alert-no-keyword-choice.active{border-color:rgba(211,180,119,.55);background:#1a1812;color:var(--text)}
+		  .alert-no-keyword-title{font-size:13px;font-weight:600;color:var(--text)}
+		  .alert-no-keyword-sub{font-size:11px;color:var(--text-4);margin-top:3px}
+		  .alert-note-toggle{margin-top:14px;color:var(--text-3);font-size:12px}
 	  .alert-note-toggle:hover{color:var(--text)}
 	  .alert-note-input{margin-top:10px;width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#0a0a0a;color:var(--text-2);font-size:12px;padding:0 12px}
 	  .alert-modal-foot{border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:#0c0c0c}
@@ -3351,7 +3375,7 @@ function recentEntriesFromDashboard(dashboard){
 function AttributionSummaryTiles({dashboard, alerts}){
   const summary = dashboard?.summary || {};
   const attribution = dashboard?.attribution || {};
-  const paid = Number(attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
+  const paid = Number(attribution.allTimePaidAttributedRevenue ?? summary.allTimePaidAttributedRevenue ?? attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
   const unresolved = (alerts || []).reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
   const organic = Number(attribution.organicRevenue ?? summary.organicRevenue ?? 0);
   const unattributedIsClear = unresolved <= 0;
@@ -3426,6 +3450,114 @@ function normalizeUiKeyword(value){
   return String(value || "").trim().replace(/\s+/g," ").toUpperCase();
 }
 
+function safeIsoDate(value){
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : "";
+}
+
+function daysBetweenIso(a,b){
+  const aMs = Date.parse(`${a}T00:00:00Z`);
+  const bMs = Date.parse(`${b}T00:00:00Z`);
+  if(!Number.isFinite(aMs) || !Number.isFinite(bMs)) return 9999;
+  return Math.abs(Math.round((bMs-aMs)/86400000));
+}
+
+function optionDateDistance(option, alertDate){
+  if(!alertDate) return 9999;
+  const first = safeIsoDate(option.firstDate);
+  const last = safeIsoDate(option.lastDate);
+  if(first && last && first <= alertDate && alertDate <= last) return 0;
+  if(last && last < alertDate) return daysBetweenIso(last, alertDate);
+  if(first && first > alertDate) return daysBetweenIso(first, alertDate);
+  return 9999;
+}
+
+function optionStatus(option, alertDate){
+  if(optionDateDistance(option, alertDate) === 0) return {label:"On date", cls:"date", score:0};
+  if(option.status === "active") return {label:"Active", cls:"active", score:1};
+  const distance = optionDateDistance(option, alertDate);
+  if(distance <= 30) return {label:`${distance}d away`, cls:"", score:2};
+  return {label:"Off", cls:"", score:3};
+}
+
+function rankAttributionOptions(options, alert){
+  const alertDate = safeIsoDate(alert?.date) || eventDateKeyFromIso(alert?.eventAt);
+  const alertKeyword = normalizeUiKeyword(alert?.keyword || alert?.adName);
+  return options.slice().sort((a,b)=>{
+    const aStatus = optionStatus(a, alertDate);
+    const bStatus = optionStatus(b, alertDate);
+    const aKw = alertKeyword && a.keyword===alertKeyword ? 0 : 1;
+    const bKw = alertKeyword && b.keyword===alertKeyword ? 0 : 1;
+    if(aKw!==bKw) return aKw-bKw;
+    if(aStatus.score!==bStatus.score) return aStatus.score-bStatus.score;
+    const dist = optionDateDistance(a, alertDate) - optionDateDistance(b, alertDate);
+    if(dist!==0) return dist;
+    return String(b.lastDate || "").localeCompare(String(a.lastDate || "")) || String(a.keyword || a.campaignName || "").localeCompare(String(b.keyword || b.campaignName || ""));
+  });
+}
+
+function normalizeKeywordOption(option, alert){
+  const keyword = normalizeUiKeyword(option.keyword || option.groupName || option.adName);
+  if(!keyword || keyword==="UNKNOWN") return null;
+  const clientKey = option.clientKey || alert?.clientKey || "";
+  const campaignId = option.campaignId || "";
+  const adId = option.adId || option.groupId || option.id || keyword;
+  const groupId = option.groupId || `${clientKey}:${campaignId || option.campaignName || "campaign"}:${adId}`;
+  return {
+    id: option.id || `${clientKey}:${groupId}:${keyword}`,
+    clientKey,
+    keyword,
+    campaignId,
+    campaignName: option.campaignName || option.meta || "",
+    adId: String(adId),
+    adName: option.adName || option.groupName || keyword,
+    groupId,
+    groupName: option.groupName || option.adName || keyword,
+    firstDate: option.firstDate || option.dateFrom || "",
+    lastDate: option.lastDate || option.dateTo || "",
+    status: option.status || "finished",
+    label: `${keyword} · ${clientLabel(clientKey)}`,
+    meta: option.campaignName || option.meta || "",
+    spend: Number(option.spend || 0),
+  };
+}
+
+function normalizeCampaignOption(option, alert){
+  const clientKey = option.clientKey || alert?.clientKey || "";
+  const campaignName = option.campaignName || option.name || "";
+  const campaignId = option.campaignId || option.id || campaignName;
+  if(!campaignName && !campaignId) return null;
+  return {
+    id: option.id || `${clientKey}:${campaignId}`,
+    clientKey,
+    campaignId,
+    campaignName: campaignName || campaignId,
+    groupId: option.groupId || `${clientKey}:${campaignId}`,
+    groupName: campaignName || campaignId,
+    firstDate: option.firstDate || "",
+    lastDate: option.lastDate || option.latestIso || "",
+    status: option.status || "finished",
+    spend: Number(option.spend || 0),
+  };
+}
+
+function attributionOptionsFromProvided(options, alert){
+  const clientKey = alert?.clientKey;
+  const normalized = (options || [])
+    .map(o=>normalizeKeywordOption(o, alert))
+    .filter(Boolean)
+    .filter(o=>!clientKey || o.clientKey===clientKey);
+  return rankAttributionOptions(normalized, alert);
+}
+
+function campaignOptionsFromProvided(options, alert){
+  const clientKey = alert?.clientKey;
+  const normalized = (options || [])
+    .map(o=>normalizeCampaignOption(o, alert))
+    .filter(Boolean)
+    .filter(o=>!clientKey || o.clientKey===clientKey);
+  return rankAttributionOptions(normalized, alert);
+}
+
 function attributionOptionsFromCampaigns(campaigns, alert){
   const clientKey = alert?.clientKey;
   const options = [];
@@ -3453,6 +3585,7 @@ function attributionOptionsFromCampaigns(campaigns, alert){
       const key = `${campaign.clientKey}:${groupId}:${keyword}`;
       if(seen.has(key)) continue;
       seen.add(key);
+      const firstDate = (campaign.rows || []).reduce((min,row)=>!min || String(row.iso || "") < min ? String(row.iso || "") : min, "");
       options.push({
         id: key,
         clientKey: campaign.clientKey,
@@ -3465,47 +3598,107 @@ function attributionOptionsFromCampaigns(campaigns, alert){
         groupName: keyword,
         label: `${keyword} · ${clientLabel(campaign.clientKey)}`,
         meta: campaign.name || campaign.short || "",
+        firstDate,
+        lastDate: campaign.latestIso || "",
+        status: campaign.status || "finished",
       });
     }
   }
 
-  const alertClient = clientKey || "";
-  const alertKeyword = normalizeUiKeyword(alert?.keyword || alert?.adName);
-  options.sort((a,b)=>{
-    const aKw = alertKeyword && a.keyword===alertKeyword ? 0 : 1;
-    const bKw = alertKeyword && b.keyword===alertKeyword ? 0 : 1;
-    if(aKw!==bKw) return aKw-bKw;
-    const aClient = alertClient && a.clientKey===alertClient ? 0 : 1;
-    const bClient = alertClient && b.clientKey===alertClient ? 0 : 1;
-    if(aClient!==bClient) return aClient-bClient;
-    return a.keyword.localeCompare(b.keyword);
-  });
-  return options;
+  return rankAttributionOptions(options, alert);
 }
 
-function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onResolve}){
-  const options = useMemo(() => attributionOptionsFromCampaigns(campaigns, alert), [campaigns, alert]);
+function campaignOptionsFromCampaigns(campaigns, alert){
+  const clientKey = alert?.clientKey;
+  const options = (campaigns || [])
+    .filter(c=>!clientKey || c.clientKey===clientKey)
+    .map(c=>{
+      const firstDate = (c.rows || []).reduce((min,row)=>!min || String(row.iso || "") < min ? String(row.iso || "") : min, "");
+      return normalizeCampaignOption({
+        id:c.id,
+        clientKey:c.clientKey,
+        campaignId:String(c.id || "").includes(":") ? String(c.id).split(":").slice(1).join(":") : c.id,
+        campaignName:c.name,
+        firstDate,
+        lastDate:c.latestIso || "",
+        status:c.status || "finished",
+      }, alert);
+    })
+    .filter(Boolean);
+  return rankAttributionOptions(options, alert);
+}
+
+function groupedKeywordOptions(options){
+  const groups = new Map();
+  for(const option of options){
+    const key = `${clientLabel(option.clientKey)} · ${option.campaignName || "Unknown campaign"}`;
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(option);
+  }
+  return Array.from(groups.entries()).map(([label, items])=>({label, items}));
+}
+
+function optionMatchesQuery(option, query){
+  const q = String(query || "").trim().toLowerCase();
+  if(!q) return true;
+  return [
+    option.keyword,
+    option.campaignName,
+    option.adName,
+    option.groupName,
+    clientLabel(option.clientKey),
+  ].some(value=>String(value || "").toLowerCase().includes(q));
+}
+
+function AttributionAlertModal({alert, existing, campaigns, keywordOptions, campaignOptions, saving, onClose, onResolve}){
+  const options = useMemo(() => {
+    const provided = attributionOptionsFromProvided(keywordOptions, alert);
+    return provided.length ? provided : attributionOptionsFromCampaigns(campaigns, alert);
+  }, [campaigns, keywordOptions, alert]);
+  const campaignChoices = useMemo(() => {
+    const provided = campaignOptionsFromProvided(campaignOptions, alert);
+    return provided.length ? provided : campaignOptionsFromCampaigns(campaigns, alert);
+  }, [campaigns, campaignOptions, alert]);
   const initialOptionId = existing?.groupId
     ? options.find(o=>o.groupId===existing.groupId)?.id
     : options.find(o=>o.keyword===normalizeUiKeyword(existing?.keyword || alert?.keyword))?.id;
   const [selectedId, setSelectedId] = useState(initialOptionId || options[0]?.id || "");
+  const [mode, setMode] = useState(initialOptionId ? "keyword" : "keyword");
+  const [query, setQuery] = useState("");
+  const [noKeywordTarget, setNoKeywordTarget] = useState("unknown");
+  const [selectedCampaignId, setSelectedCampaignId] = useState(campaignChoices[0]?.id || "");
   const [noteOpen, setNoteOpen] = useState(Boolean(existing?.note));
   const [note, setNote] = useState(existing?.note || "");
+  useEffect(()=>{
+    if(!options.find(o=>o.id===selectedId)) setSelectedId(options[0]?.id || "");
+  }, [options]);
+  useEffect(()=>{
+    if(!campaignChoices.find(o=>o.id===selectedCampaignId)) setSelectedCampaignId(campaignChoices[0]?.id || "");
+  }, [campaignChoices]);
   const selected = options.find(o=>o.id===selectedId) || null;
+  const selectedCampaign = campaignChoices.find(o=>o.id===selectedCampaignId) || null;
   const keyword = normalizeUiKeyword(selected?.keyword || "");
+  const filteredOptions = options.filter(option=>optionMatchesQuery(option, query)).slice(0,36);
+  const filteredCampaigns = campaignChoices.filter(option=>optionMatchesQuery({...option, keyword:""}, query)).slice(0,12);
+  const groups = groupedKeywordOptions(filteredOptions);
+  const paidReady = mode==="keyword" ? Boolean(keyword) : noKeywordTarget==="unknown" || Boolean(selectedCampaign);
   const submit = (action) => {
+    const paidNoKeyword = action==="attribute" && mode==="noKeyword";
+    const paidSelection = paidNoKeyword ? selectedCampaign : selected;
     const payload = {
       resolutionId: existing?.id || null,
       saleKey: alertSaleKey(alert),
       action,
-      clientKey: alert.clientKey || selected?.clientKey || existing?.clientKey || null,
-      keyword: action==="attribute" ? keyword : null,
-      campaignId: action==="attribute" ? selected?.campaignId || null : null,
-      campaignName: action==="attribute" ? selected?.campaignName || null : null,
-      adId: action==="attribute" ? selected?.adId || null : null,
-      adName: action==="attribute" ? selected?.adName || keyword : null,
-      groupId: action==="attribute" ? selected?.groupId || null : null,
-      groupName: action==="attribute" ? selected?.groupName || keyword : null,
+      clientKey: alert.clientKey || paidSelection?.clientKey || existing?.clientKey || null,
+      keyword: action==="attribute" && mode==="keyword" ? keyword : null,
+      noKeyword: paidNoKeyword,
+      noKeywordTarget: paidNoKeyword ? noKeywordTarget : null,
+      campaignId: action==="attribute" ? paidSelection?.campaignId || null : null,
+      campaignName: action==="attribute" ? paidSelection?.campaignName || null : null,
+      adId: action==="attribute" && mode==="keyword" ? selected?.adId || null : null,
+      adName: action==="attribute" && mode==="keyword" ? selected?.adName || keyword : null,
+      groupId: action==="attribute" ? paidSelection?.groupId || null : null,
+      groupName: action==="attribute" ? paidSelection?.groupName || (paidNoKeyword ? "No keyword" : keyword) : null,
       alertType: alert.alertType || null,
       subscriberId: alert.subscriberId || null,
       subscriberName: alert.name || null,
@@ -3551,13 +3744,68 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
               <div className="alert-info-value mono">{alertTimestampLabel(alert)}</div>
             </div>
           </div>
-          <div className="alert-field-label">Which keyword did they use?</div>
-          <select className="alert-keyword-select" value={selectedId} onChange={e=>setSelectedId(e.target.value)}>
-            <option value="" disabled>Select keyword…</option>
-            {options.map(o=>(
-              <option key={o.id} value={o.id}>{o.keyword} · {o.meta}</option>
-            ))}
-          </select>
+          <div className="alert-mode-tabs">
+            <button className={"alert-mode-tab "+(mode==="keyword"?"active":"")} onClick={()=>setMode("keyword")}>Keyword</button>
+            <button className={"alert-mode-tab "+(mode==="noKeyword"?"active":"")} onClick={()=>setMode("noKeyword")}>No keyword</button>
+          </div>
+          <div className="alert-field-label">{mode==="keyword" ? "Which keyword did they use?" : "They came from an ad, but no keyword"}</div>
+          <input
+            className="alert-search"
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            placeholder={mode==="keyword" ? "Search keyword or campaign..." : "Search campaign if you know it..."}
+          />
+          {mode==="keyword" ? (
+            <div className="alert-option-list">
+              {groups.length === 0 && <div className="alert-option-empty">No matching keywords.</div>}
+              {groups.map(group=>(
+                <div className="alert-option-group" key={group.label}>
+                  <div className="alert-option-group-head">
+                    <span>{group.label}</span>
+                    <span className="alert-option-group-count">{group.items.length}</span>
+                  </div>
+                  {group.items.map(option=>{
+                    const status = optionStatus(option, safeIsoDate(alert?.date) || eventDateKeyFromIso(alert?.eventAt));
+                    return (
+                      <button key={option.id} className={"alert-option-card "+(selectedId===option.id?"active":"")} onClick={()=>setSelectedId(option.id)}>
+                        <span className="alert-option-main">
+                          <span className="alert-option-keyword">{option.keyword}</span>
+                          <span className="alert-option-campaign">{option.adName || option.campaignName}</span>
+                        </span>
+                        <span className={"alert-option-pill "+status.cls}>{status.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="alert-no-keyword-box">
+              <button className={"alert-no-keyword-choice "+(noKeywordTarget==="unknown"?"active":"")} onClick={()=>setNoKeywordTarget("unknown")}>
+                <span>
+                  <span className="alert-no-keyword-title">Paid ad, ad unknown</span>
+                  <span className="alert-no-keyword-sub">Counts as paid attributed cash, but not to a keyword.</span>
+                </span>
+                <span className="alert-option-pill">No keyword</span>
+              </button>
+              {filteredCampaigns.map(option=>{
+                const status = optionStatus(option, safeIsoDate(alert?.date) || eventDateKeyFromIso(alert?.eventAt));
+                return (
+                  <button
+                    key={option.id}
+                    className={"alert-no-keyword-choice "+(noKeywordTarget==="campaign" && selectedCampaignId===option.id?"active":"")}
+                    onClick={()=>{setNoKeywordTarget("campaign");setSelectedCampaignId(option.id);}}
+                  >
+                    <span>
+                      <span className="alert-no-keyword-title">{option.campaignName}</span>
+                      <span className="alert-no-keyword-sub">{clientLabel(option.clientKey)} · no keyword/ad visible</span>
+                    </span>
+                    <span className={"alert-option-pill "+status.cls}>{status.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {noteOpen ? (
             <input
               className="alert-note-input"
@@ -3574,7 +3822,7 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
           <button className="alert-ignore" onClick={()=>submit("ignore")} disabled={saving}>Ignore</button>
           <div className="alert-foot-actions">
             <button className="alert-outline-btn" onClick={()=>submit("organic")} disabled={saving}>Mark organic</button>
-            <button className="alert-paid-btn" onClick={()=>submit("attribute")} disabled={saving || !keyword}>
+            <button className="alert-paid-btn" onClick={()=>submit("attribute")} disabled={saving || !paidReady}>
               {saving ? "Saving…" : "Mark as paid"}
             </button>
           </div>
@@ -3587,6 +3835,8 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
 function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
   const attribution = dashboard?.attribution || {};
   const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
+  const keywordOptions = Array.isArray(attribution.keywordOptions) ? attribution.keywordOptions : [];
+  const campaignOptions = Array.isArray(attribution.campaignOptions) ? attribution.campaignOptions : [];
   const [filter, setFilter] = useState("all");
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -3673,6 +3923,8 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
           alert={modal.alert}
           existing={modal.existing}
           campaigns={campaigns}
+          keywordOptions={keywordOptions}
+          campaignOptions={campaignOptions}
           saving={saving}
           onClose={()=>setModal(null)}
           onResolve={saveResolution}

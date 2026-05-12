@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
     : {};
   const clientKey = cleanString(body.clientKey) || cleanString(sale.clientKey);
   const keyword = normalizeKeyword(body.keyword);
+  const noKeyword = action === "attribute" && body.noKeyword === true && !keyword;
   const alertType = cleanString(body.alertType);
   const isMissingDmKeywordAlert = alertType === MISSING_DM_KEYWORD_ALERT;
   const isMissingBookingKeywordAlert = alertType === MISSING_BOOKING_KEYWORD_ALERT;
@@ -66,8 +67,8 @@ export async function POST(req: NextRequest) {
   if (clientKey && !isClientKey(clientKey)) {
     return NextResponse.json({ error: "clientKey must be tyson or keith" }, { status: 400 });
   }
-  if (action === "attribute" && !keyword) {
-    return NextResponse.json({ error: "keyword is required when attributing" }, { status: 400 });
+  if (action === "attribute" && !keyword && !noKeyword) {
+    return NextResponse.json({ error: "keyword is required unless this is marked as paid with no keyword" }, { status: 400 });
   }
   if ((isMissingDmKeywordAlert || isMissingBookingKeywordAlert) && !clientKey) {
     return NextResponse.json({ error: "clientKey is required for missing keyword alerts" }, { status: 400 });
@@ -191,6 +192,8 @@ export async function POST(req: NextRequest) {
     clientKey,
     keyword: keyword ? displayKeyword(keyword) : null,
     keywordRaw: cleanString(body.keyword) || (keyword ? displayKeyword(keyword) : null),
+    noKeyword,
+    paidAttributionType: noKeyword ? "paid_no_keyword" : keyword ? "paid_keyword" : null,
     campaignId: cleanString(body.campaignId),
     campaignName: cleanString(body.campaignName),
     adId: cleanString(body.adId),
