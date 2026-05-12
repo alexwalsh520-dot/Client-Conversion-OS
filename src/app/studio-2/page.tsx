@@ -785,6 +785,15 @@ function buttonStyle(active = false): React.CSSProperties {
   };
 }
 
+function approveButtonStyle(approved = false): React.CSSProperties {
+  return {
+    ...buttonStyle(false),
+    border: approved ? "1px solid rgba(52, 211, 153, 0.72)" : "1px solid rgba(255,255,255,0.08)",
+    background: approved ? "#34d399" : "rgba(255,255,255,0.05)",
+    color: approved ? "#06140f" : "rgba(255,255,255,0.72)",
+  };
+}
+
 function segmentedButtonStyle(active = false): React.CSSProperties {
   return {
     width: 42,
@@ -1977,7 +1986,11 @@ export default function Studio2Page() {
         <button style={buttonStyle(false)} onClick={exportCurrent}>
           <Download size={14} /> Export
         </button>
-        <button style={buttonStyle(!!currentCreative?.approved)} onClick={toggleCurrentApproved}>
+        <button
+          aria-pressed={!!currentCreative?.approved}
+          style={approveButtonStyle(!!currentCreative?.approved)}
+          onClick={toggleCurrentApproved}
+        >
           <CheckCircle2 size={14} /> {currentCreative?.approved ? "Approved" : "Approve"}
         </button>
         <button style={buttonStyle(true)} onClick={openExportModal}>
