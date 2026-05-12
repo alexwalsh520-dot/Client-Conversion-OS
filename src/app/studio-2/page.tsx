@@ -25,6 +25,7 @@ const AUTOSAVE_KEY = "active-draft";
 const DB_NAME = "ccos-studio-2";
 const DB_STORE = "drafts";
 const DRAG_THRESHOLD = 5;
+const SNAP_THRESHOLD = 10;
 
 const FONT_OPTIONS = [
   { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
@@ -122,6 +123,11 @@ interface BlockMetrics {
   lines: RenderedLine[];
 }
 
+interface AlignmentGuides {
+  x: number[];
+  y: number[];
+}
+
 type DragState =
   | {
       kind: "move-text";
@@ -131,6 +137,7 @@ type DragState =
       startY: number;
       origX: number;
       origY: number;
+      origMetrics: BlockMetrics;
     }
   | {
       kind: "resize-text";
@@ -430,12 +437,14 @@ function drawOverlay(
   ctx: CanvasRenderingContext2D,
   creative: Creative | undefined,
   selectedLayer: SelectedLayer,
+  activeGuides: AlignmentGuides,
   measureCtx: CanvasRenderingContext2D,
   pixelRatio: number
 ) {
   ctx.save();
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  drawAlignmentGuides(ctx, activeGuides);
 
   if (!creative || !selectedLayer) {
     ctx.restore();
@@ -465,6 +474,33 @@ function drawOverlay(
   ctx.strokeRect(m.x, m.y, m.w, m.h);
   ctx.shadowBlur = 0;
   drawTextHandles(ctx, m);
+  ctx.restore();
+}
+
+function drawAlignmentGuides(ctx: CanvasRenderingContext2D, guides: AlignmentGuides) {
+  if (!guides.x.length && !guides.y.length) return;
+
+  ctx.save();
+  ctx.strokeStyle = "#BFA7FF";
+  ctx.lineWidth = 4;
+  ctx.shadowColor = "rgba(124,92,252,0.8)";
+  ctx.shadowBlur = 12;
+  ctx.setLineDash([18, 12]);
+
+  for (const x of guides.x) {
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x) + 0.5, -30);
+    ctx.lineTo(Math.round(x) + 0.5, CANVAS_H + 30);
+    ctx.stroke();
+  }
+
+  for (const y of guides.y) {
+    ctx.beginPath();
+    ctx.moveTo(-30, Math.round(y) + 0.5);
+    ctx.lineTo(CANVAS_W + 30, Math.round(y) + 0.5);
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
@@ -528,6 +564,66 @@ function hitImageHandle(point: { x: number; y: number }): ResizeHandle | null {
 
 function pointInMetrics(point: { x: number; y: number }, m: BlockMetrics) {
   return point.x >= m.x && point.x <= m.x + m.w && point.y >= m.y && point.y <= m.y + m.h;
+}
+
+function cursorForResizeHandle(handle: ResizeHandle) {
+  if (handle === "e" || handle === "w") return "ew-resize";
+  if (handle === "nw" || handle === "se") return "nwse-resize";
+  return "nesw-resize";
+}
+
+function findBestSnap(position: number, size: number, targets: number[]) {
+  let best: { position: number; guide: number; dist: number } | null = null;
+
+  for (const target of targets) {
+    const candidates = [
+      { edge: position, snapped: target },
+      { edge: position + size, snapped: target - size },
+      { edge: position + size / 2, snapped: target - size / 2 },
+    ];
+
+    for (const candidate of candidates) {
+      const dist = Math.abs(candidate.edge - target);
+      if (dist <= SNAP_THRESHOLD && (!best || dist < best.dist)) {
+        best = { position: candidate.snapped, guide: target, dist };
+      }
+    }
+  }
+
+  return best;
+}
+
+function snapTextPosition(
+  rawX: number,
+  rawY: number,
+  metrics: BlockMetrics,
+  blockId: string,
+  creative: Creative,
+  measureCtx: CanvasRenderingContext2D
+) {
+  const targetsX = [0, CANVAS_W / 2, CANVAS_W];
+  const targetsY = [0, CANVAS_H / 2, CANVAS_H];
+
+  for (const block of creative.textBlocks) {
+    if (block.id === blockId) continue;
+    const other = measureTextBlock(measureCtx, block);
+    targetsX.push(other.x, other.x + other.w, other.x + other.w / 2);
+    targetsY.push(other.y, other.y + other.h, other.y + other.h / 2);
+  }
+
+  const snapX = findBestSnap(rawX, metrics.w, targetsX);
+  const snapY = findBestSnap(rawY, metrics.h, targetsY);
+  const x = Math.round(clamp(snapX ? snapX.position : rawX, -metrics.w * 0.3, CANVAS_W - metrics.w * 0.3));
+  const y = Math.round(clamp(snapY ? snapY.position : rawY, -metrics.h * 0.3, CANVAS_H - metrics.h * 0.3));
+
+  return {
+    x,
+    y,
+    guides: {
+      x: snapX ? [snapX.guide] : [],
+      y: snapY ? [snapY.guide] : [],
+    },
+  };
 }
 
 function parseCopyIntoAds(raw: string): string[][][] {
@@ -656,6 +752,8 @@ export default function Studio2Page() {
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   const [undoStack, setUndoStack] = useState<Creative[][]>([]);
   const [redoStack, setRedoStack] = useState<Creative[][]>([]);
+  const [activeGuides, setActiveGuides] = useState<AlignmentGuides>({ x: [], y: [] });
+  const [canvasCursor, setCanvasCursor] = useState("default");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -789,8 +887,8 @@ export default function Studio2Page() {
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
-    drawOverlay(overlayCtx, currentCreative, selectedLayer, getMeasureCtx(), dpr);
-  }, [currentCreative, currentImage, selectedLayer, getMeasureCtx]);
+    drawOverlay(overlayCtx, currentCreative, selectedLayer, activeGuides, getMeasureCtx(), dpr);
+  }, [activeGuides, currentCreative, currentImage, selectedLayer, getMeasureCtx]);
 
   useEffect(() => {
     renderPreview();
@@ -973,6 +1071,36 @@ export default function Studio2Page() {
     [currentCreative, getMeasureCtx]
   );
 
+  const getHoverCursor = useCallback(
+    (point: { x: number; y: number }) => {
+      if (!currentCreative) return "default";
+      const ctx = getMeasureCtx();
+
+      if (selectedLayer?.type === "text") {
+        const block = currentCreative.textBlocks.find((b) => b.id === selectedLayer.id);
+        if (block) {
+          const metrics = measureTextBlock(ctx, block);
+          const handle = hitTextHandle(point, metrics);
+          if (handle) return cursorForResizeHandle(handle);
+          if (pointInMetrics(point, metrics)) return "grab";
+        }
+      }
+
+      if (selectedLayer?.type === "image") {
+        const handle = hitImageHandle(point);
+        if (handle) return cursorForResizeHandle(handle);
+      }
+
+      for (let i = currentCreative.textBlocks.length - 1; i >= 0; i--) {
+        const metrics = measureTextBlock(ctx, currentCreative.textBlocks[i]);
+        if (pointInMetrics(point, metrics)) return "grab";
+      }
+
+      return "grab";
+    },
+    [currentCreative, getMeasureCtx, selectedLayer]
+  );
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       if (event.button !== 0) return;
@@ -980,6 +1108,7 @@ export default function Studio2Page() {
       event.currentTarget.setPointerCapture(event.pointerId);
       const point = pointFromEvent(event);
       const ctx = getMeasureCtx();
+      setActiveGuides({ x: [], y: [] });
 
       if (selectedLayer?.type === "text") {
         const block = currentCreative.textBlocks.find((b) => b.id === selectedLayer.id);
@@ -997,6 +1126,7 @@ export default function Studio2Page() {
               orig: { ...block, lines: [...block.lines] },
               origMetrics: metrics,
             };
+            setCanvasCursor(cursorForResizeHandle(handle));
             return;
           }
         }
@@ -1012,6 +1142,7 @@ export default function Studio2Page() {
           orig: { ...currentCreative.imageTransform },
           startDistance: Math.max(1, Math.hypot(point.x - CANVAS_W / 2, point.y - CANVAS_H / 2)),
         };
+        setCanvasCursor(cursorForResizeHandle(imageHandle));
         return;
       }
 
@@ -1027,7 +1158,9 @@ export default function Studio2Page() {
             startY: point.y,
             origX: hit.x,
             origY: hit.y,
+            origMetrics: measureTextBlock(ctx, hit),
           };
+          setCanvasCursor("grabbing");
         }
         return;
       }
@@ -1040,6 +1173,7 @@ export default function Studio2Page() {
         startY: point.y,
         orig: { ...currentCreative.imageTransform },
       };
+      setCanvasCursor("grabbing");
     },
     [currentCreative, findHitBlock, getMeasureCtx, selectedLayer]
   );
@@ -1047,7 +1181,12 @@ export default function Studio2Page() {
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const drag = dragRef.current;
-      if (!drag) return;
+      if (!drag) {
+        const point = pointFromEvent(event);
+        const nextCursor = getHoverCursor(point);
+        setCanvasCursor((current) => (current === nextCursor ? current : nextCursor));
+        return;
+      }
       event.preventDefault();
       const point = pointFromEvent(event);
       const dx = point.x - drag.startX;
@@ -1060,14 +1199,21 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "move-text") {
+        const rawX = drag.origX + dx;
+        const rawY = drag.origY + dy;
+        const snapped = currentCreative
+          ? snapTextPosition(rawX, rawY, drag.origMetrics, drag.blockId, currentCreative, getMeasureCtx())
+          : { x: Math.round(rawX), y: Math.round(rawY), guides: { x: [], y: [] } };
+        setActiveGuides(snapped.guides);
+        setCanvasCursor("grabbing");
         updateCurrentCreative((creative) => ({
           ...creative,
           textBlocks: creative.textBlocks.map((block) =>
             block.id === drag.blockId
               ? {
                   ...block,
-                  x: clamp(Math.round(drag.origX + dx), -220, CANVAS_W - 80),
-                  y: clamp(Math.round(drag.origY + dy), -220, CANVAS_H - 60),
+                  x: snapped.x,
+                  y: snapped.y,
                 }
               : block
           ),
@@ -1075,6 +1221,8 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "resize-text") {
+        setActiveGuides({ x: [], y: [] });
+        setCanvasCursor(cursorForResizeHandle(drag.handle));
         const handle = drag.handle;
         const isCorner = handle.length === 2;
         const ctx = getMeasureCtx();
@@ -1122,6 +1270,8 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "move-image") {
+        setActiveGuides({ x: [], y: [] });
+        setCanvasCursor("grabbing");
         updateImage({
           offsetX: Math.round(drag.orig.offsetX + dx),
           offsetY: Math.round(drag.orig.offsetY + dy),
@@ -1129,13 +1279,15 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "resize-image") {
+        setActiveGuides({ x: [], y: [] });
+        setCanvasCursor("nwse-resize");
         const nextDistance = Math.max(1, Math.hypot(point.x - CANVAS_W / 2, point.y - CANVAS_H / 2));
         updateImage({
           scale: clamp(parseFloat((drag.orig.scale * (nextDistance / drag.startDistance)).toFixed(3)), 0.4, 4),
         });
       }
     },
-    [getMeasureCtx, pushUndo, updateCurrentCreative, updateImage]
+    [currentCreative, getHoverCursor, getMeasureCtx, pushUndo, updateCurrentCreative, updateImage]
   );
 
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1143,6 +1295,8 @@ export default function Studio2Page() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     dragRef.current = null;
+    setActiveGuides({ x: [], y: [] });
+    setCanvasCursor("default");
   }, []);
 
   useEffect(() => {
@@ -1527,13 +1681,16 @@ export default function Studio2Page() {
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
+              onPointerLeave={() => {
+                if (!dragRef.current) setCanvasCursor("default");
+              }}
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
                 touchAction: "none",
-                cursor: selectedLayer?.type === "image" ? "grab" : selectedLayer?.type === "text" ? "move" : "default",
+                cursor: canvasCursor,
               }}
             />
           </div>
