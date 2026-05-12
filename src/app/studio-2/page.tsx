@@ -2433,16 +2433,43 @@ function MenuAction({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+  const isInteractive = !disabled;
+  const background = !isInteractive
+    ? "transparent"
+    : isPressed
+      ? danger
+        ? "rgba(255, 105, 105, 0.22)"
+        : "rgba(255,255,255,0.15)"
+      : isHovered
+        ? danger
+          ? "rgba(255, 105, 105, 0.15)"
+          : "rgba(255,255,255,0.08)"
+        : "transparent";
+
   return (
     <button
       disabled={disabled}
       onClick={onClick}
+      onMouseEnter={() => isInteractive && setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setIsPressed(false);
+      }}
+      onMouseDown={() => isInteractive && setIsPressed(true)}
+      onMouseUp={() => setIsPressed(false)}
+      onFocus={() => isInteractive && setIsHovered(true)}
+      onBlur={() => {
+        setIsHovered(false);
+        setIsPressed(false);
+      }}
       style={{
         width: "100%",
         height: 42,
         border: "none",
         borderRadius: 8,
-        background: "transparent",
+        background,
         color: disabled ? "rgba(255,255,255,0.28)" : danger ? "#ffb4b4" : "rgba(255,255,255,0.9)",
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
@@ -2453,6 +2480,10 @@ function MenuAction({
         fontSize: 14,
         fontWeight: 650,
         textAlign: "left",
+        outline: "none",
+        boxShadow: isHovered && isInteractive ? "inset 0 0 0 1px rgba(255,255,255,0.06)" : "none",
+        transition: "background 120ms ease, box-shadow 120ms ease, transform 120ms ease",
+        transform: isPressed && isInteractive ? "scale(0.995)" : "scale(1)",
       }}
     >
       <Icon size={18} />
