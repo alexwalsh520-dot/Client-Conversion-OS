@@ -223,10 +223,12 @@ interface UnmatchedSale {
     | "ambiguous_or_missing_meta_match"
     | "missing_manychat_keyword";
   classification: "organic_or_unattributed" | "missing_keyword";
-  alertType?: "sale" | "call" | "missing_dm_keyword";
+  alertType?: "sale" | "call" | "missing_dm_keyword" | "missing_booking_keyword";
   subscriberId?: string | null;
   instagramHandle?: string | null;
   manychatUrl?: string | null;
+  appointmentId?: string | null;
+  contactId?: string | null;
   eventAt?: string | null;
 }
 
@@ -263,7 +265,7 @@ interface AttributionResolution {
   note: string | null;
   resolvedAt: string | null;
   createdAt: string | null;
-  alertType: "sale" | "call" | "missing_dm_keyword" | null;
+  alertType: "sale" | "call" | "missing_dm_keyword" | "missing_booking_keyword" | null;
 }
 
 interface ResolvedAttributionAlert {
@@ -316,7 +318,9 @@ interface AttributionHistoryEvent {
   reason: string | null;
   eventAt: string;
   saleKey?: string | null;
-  alertType?: "sale" | "call" | "missing_dm_keyword" | null;
+  alertType?: "sale" | "call" | "missing_dm_keyword" | "missing_booking_keyword" | null;
+  appointmentId?: string | null;
+  contactId?: string | null;
 }
 
 interface AdsSyncRunRow {
@@ -1941,6 +1945,106 @@ function buildMissingManychatKeywordAlerts(
   return alerts;
 }
 
+function adsClientKeyFromGhlClient(value: string | null | undefined): string | null {
+  const normalized = (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (normalized === "tyson" || normalized === "tyson_sonnek") return "tyson";
+  if (normalized === "keith" || normalized === "keith_holland") return "keith";
+  return null;
+}
+
+function missingGhlBookingKeywordAlertKey(
+  appointment: GhlAppointmentRow,
+  clientKey: string
+): string {
+  const stableId =
+    appointment.appointment_id ||
+    appointment.contact_id ||
+    appointmentBookingEventAt(appointment) ||
+    appointment.start_time ||
+    "unknown";
+  return `ghl_booking_missing_keyword:${clientKey}:${stableId}`;
+}
+
+function buildMissingGhlBookingKeywordEvents(
+  appointments: GhlAppointmentRow[],
+  clientFilter: string[],
+  resolutionBySaleKey: Map<string, AttributionResolution>
+): KeywordEvent[] {
+  const events: KeywordEvent[] = [];
+
+  for (const appointment of appointments) {
+    const clientKey = adsClientKeyFromGhlClient(appointment.client);
+    if (!clientKey || !clientFilter.includes(clientKey)) continue;
+    if (!appointment.appointment_id) continue;
+    if (!isBookableAppointment(appointment)) continue;
+    if (normalizeKeyword(appointment.keyword_normalized || appointment.keyword_raw)) continue;
+
+    const alertKey = missingGhlBookingKeywordAlertKey(appointment, clientKey);
+    if (resolutionBySaleKey.has(alertKey)) continue;
+
+    events.push({
+      source: "ghl",
+      event_type: "missing_booking_keyword",
+      client_key: clientKey,
+      keyword_raw: null,
+      keyword_normalized: null,
+      attribution_resolution_id: alertKey,
+      subscriber_id: extractManychatSubscriberId(appointment.raw_payload),
+      subscriber_name: null,
+      setter_name: null,
+      appointment_id: appointment.appointment_id,
+      contact_id: appointment.contact_id,
+      contact_name: appointment.contact_name,
+      event_at:
+        appointmentBookingEventAt(appointment) ||
+        appointment.created_at ||
+        appointment.start_time ||
+        new Date().toISOString(),
+    });
+  }
+
+  return events;
+}
+
+function buildMissingGhlBookingKeywordAlerts(
+  events: KeywordEvent[],
+  resolutionBySaleKey: Map<string, AttributionResolution>,
+  salesRows: SheetRow[] = []
+): UnmatchedSale[] {
+  const coveredBySalesAlert = new Set(
+    salesRows
+      .filter(shouldTrackUnmatchedSale)
+      .map((row) => normalizePersonName(row.name))
+      .filter((value): value is string => Boolean(value))
+  );
+
+  return events
+    .filter((event) => event.attribution_resolution_id)
+    .filter((event) => !resolutionBySaleKey.has(event.attribution_resolution_id as string))
+    .filter((event) => {
+      const name = normalizePersonName(event.contact_name);
+      return !name || !coveredBySalesAlert.has(name);
+    })
+    .map((event) => ({
+      key: event.attribution_resolution_id as string,
+      date: eventDateKey(event.event_at),
+      clientKey: event.client_key,
+      name: event.contact_name || event.appointment_id || "Unknown",
+      setter: "",
+      outcome: "",
+      callTaken: false,
+      contractedRevenue: 0,
+      collectedRevenue: 0,
+      amount: 0,
+      reason: "missing_booking_keyword" as const,
+      classification: "missing_keyword" as const,
+      alertType: "missing_booking_keyword" as const,
+      appointmentId: event.appointment_id,
+      contactId: event.contact_id,
+      eventAt: event.event_at,
+    }));
+}
+
 async function fetchGhlAppointments(
   db: ReturnType<typeof getServiceSupabase>,
   eventQueryFrom: string,
@@ -2018,7 +2122,14 @@ function parseAttributionResolution(row: AttributionExceptionRow): AttributionRe
 }
 
 function parseAlertType(value: string | null): AttributionResolution["alertType"] {
-  if (value === "sale" || value === "call" || value === "missing_dm_keyword") return value;
+  if (
+    value === "sale" ||
+    value === "call" ||
+    value === "missing_dm_keyword" ||
+    value === "missing_booking_keyword"
+  ) {
+    return value;
+  }
   return null;
 }
 
@@ -2354,10 +2465,17 @@ function buildAttributionEventsHistory({
       value: event.value_cents || null,
       name: event.contact_name || event.subscriber_name || "",
       setter: event.setter_name || "",
-      reason: status === "needs_review" ? "No unique Meta ad match" : null,
+      reason:
+        status === "missing_keyword"
+          ? "Booked call missing keyword"
+          : status === "needs_review"
+            ? "No unique Meta ad match"
+            : null,
       eventAt: event.event_at,
       saleKey: event.attribution_resolution_id || null,
-      alertType: null,
+      alertType: event.event_type === "missing_booking_keyword" ? "missing_booking_keyword" : null,
+      appointmentId: event.appointment_id,
+      contactId: event.contact_id,
     });
   }
 
@@ -2637,13 +2755,30 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     missingManychatKeywordEvents,
     resolutionBySaleKey
   );
-  const realGhlBookingsByName = bookingsByContactName(attributionGhlBookings);
+  const missingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
+    ghlAppointments,
+    clientFilter,
+    resolutionBySaleKey
+  );
+  const missingGhlBookingKeywordAlerts = buildMissingGhlBookingKeywordAlerts(
+    missingGhlBookingKeywordEvents,
+    resolutionBySaleKey,
+    attributionSalesRows
+  );
+  const realGhlBookingsByName = bookingsByContactName([
+    ...attributionGhlBookings,
+    ...missingGhlBookingKeywordEvents,
+  ]);
   const manualAttributionBookings = attributionSalesRows
     .map((row) => {
       const clientKey = clientFromOffer(row);
       if (!clientKey || !clientFilter.includes(clientKey)) return null;
       if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) return null;
-      const hasRealGhlBooking = Boolean(matchedBookingForSalesRow(row, realGhlBookingsByName));
+      const matchedGhlBooking = matchedBookingForSalesRow(row, realGhlBookingsByName);
+      const hasRealGhlBooking = Boolean(
+        matchedGhlBooking &&
+        normalizeKeyword(matchedGhlBooking.keyword_normalized || matchedGhlBooking.keyword_raw)
+      );
       return attributionOverrideEventForRow(
         row,
         resolutionBySaleKey.get(salesRowKey(row, clientKey)),
@@ -2655,6 +2790,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const bookings = [
     ...manualAttributionBookings,
     ...attributionGhlBookings,
+    ...missingGhlBookingKeywordEvents,
   ];
   addKeywordEventsToGroups(
     groups,
@@ -2719,7 +2855,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
     includeUnmatchedSales,
   });
-  const attributionAlerts = [...unmatchedSales, ...missingManychatKeywordAlerts].sort((a, b) =>
+  const attributionAlerts = [
+    ...unmatchedSales,
+    ...missingManychatKeywordAlerts,
+    ...missingGhlBookingKeywordAlerts,
+  ].sort((a, b) =>
     (b.eventAt || `${b.date}T12:00:00.000Z`).localeCompare(
       a.eventAt || `${a.date}T12:00:00.000Z`
     )
@@ -2815,6 +2955,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     query,
     events: [
       ...attributionEvents,
+      ...missingGhlBookingKeywordEvents,
       ...manualAttributionBookings.filter(
         (event) => event.event_type === "manual_missing_booking_attribution_override"
       ),

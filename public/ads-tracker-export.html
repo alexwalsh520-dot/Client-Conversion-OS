@@ -3271,7 +3271,9 @@ function alertFromHistoryEntry(entry){
     setter: entry.setter || "",
     amount: entry.eventType === "sale" ? Number(entry.value || 0) : 0,
     reason: entry.reason || "",
-    alertType: entry.alertType || (entry.eventType === "call_taken" || entry.eventType === "no_show" ? "call" : "sale"),
+    alertType: entry.alertType || (entry.eventType === "booked_call" ? "missing_booking_keyword" : entry.eventType === "call_taken" || entry.eventType === "no_show" ? "call" : "sale"),
+    appointmentId: entry.appointmentId || null,
+    contactId: entry.contactId || null,
   };
 }
 
@@ -3327,6 +3329,8 @@ function recentEntriesFromDashboard(dashboard){
       adName: event.adName || "",
       saleKey: event.saleKey || null,
       alertType: event.alertType || null,
+      appointmentId: event.appointmentId || null,
+      contactId: event.contactId || null,
       eventAt: event.eventAt || null,
       locked: true,
       id: "live-"+i,
@@ -3397,12 +3401,14 @@ function alertAmountLabel(alert){
   if(amount > 0) return fmtUsd(amount);
   if(alert?.alertType === "call" || alert?.callTaken) return "Call taken";
   if(alert?.alertType === "missing_dm_keyword") return "DM keyword";
+  if(alert?.alertType === "missing_booking_keyword") return "Booked call";
   return "No revenue";
 }
 
 function alertTitleLabel(alert){
   if(alert?.alertType === "call") return "Call attribution";
   if(alert?.alertType === "missing_dm_keyword") return "Keyword attribution";
+  if(alert?.alertType === "missing_booking_keyword") return "Booking attribution";
   return "Sale attribution";
 }
 
@@ -3495,6 +3501,9 @@ function AttributionAlertModal({alert, existing, campaigns, saving, onClose, onR
       subscriberName: alert.name || null,
       instagramHandle: alert.instagramHandle || null,
       manychatUrl: alert.manychatUrl || null,
+      appointmentId: alert.appointmentId || null,
+      contactId: alert.contactId || null,
+      contactName: alert.name || null,
       eventAt: alert.eventAt || null,
       note,
       sale: {

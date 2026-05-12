@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
 const ACTIONS = new Set(["attribute", "organic", "ignore"]);
 const MISSING_DM_KEYWORD_ALERT = "missing_dm_keyword";
+const MISSING_BOOKING_KEYWORD_ALERT = "missing_booking_keyword";
 
 function isClientKey(value: unknown): value is "tyson" | "keith" {
   return value === "tyson" || value === "keith";
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
   const keyword = normalizeKeyword(body.keyword);
   const alertType = cleanString(body.alertType);
   const isMissingDmKeywordAlert = alertType === MISSING_DM_KEYWORD_ALERT;
+  const isMissingBookingKeywordAlert = alertType === MISSING_BOOKING_KEYWORD_ALERT;
 
   if (!saleKey) {
     return NextResponse.json({ error: "alert key is required" }, { status: 400 });
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
   if (action === "attribute" && !keyword) {
     return NextResponse.json({ error: "keyword is required when attributing" }, { status: 400 });
   }
-  if (isMissingDmKeywordAlert && !clientKey) {
+  if ((isMissingDmKeywordAlert || isMissingBookingKeywordAlert) && !clientKey) {
     return NextResponse.json({ error: "clientKey is required for missing keyword alerts" }, { status: 400 });
   }
 
@@ -124,6 +126,56 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (isMissingBookingKeywordAlert && action === "attribute" && keyword) {
+    const eventAt = cleanString(body.eventAt) || now;
+    const appointmentId = cleanString(body.appointmentId);
+    const keywordEventPayload = {
+      source: "ghl",
+      source_event_id: `missing-booking-keyword-resolution:${saleKey}:${keyword}`,
+      event_type: "booked_call",
+      client_key: clientKey,
+      keyword_raw: cleanString(body.keyword) || displayKeyword(keyword),
+      keyword_normalized: keyword,
+      subscriber_id: null,
+      subscriber_name: null,
+      setter_name: cleanString(body.setterName) || cleanString(sale.setter),
+      appointment_id: appointmentId,
+      contact_id: cleanString(body.contactId),
+      contact_name: cleanString(body.contactName) || cleanString(sale.name),
+      event_at: eventAt,
+      raw_payload: {
+        manual: true,
+        alertType,
+        saleKey,
+        appointmentId,
+        contactId: cleanString(body.contactId),
+        note: cleanString(body.note),
+        created_from: "ads_tracker_missing_ghl_booking_keyword_resolution",
+        created_at: now,
+      },
+    };
+
+    const { error: keywordEventError } = await db
+      .from("ads_keyword_events")
+      .insert(keywordEventPayload);
+
+    if (keywordEventError && !duplicateEvent(keywordEventError)) {
+      if (missingColumn(keywordEventError, "source_event_id")) {
+        const { error: fallbackError } = await db
+          .from("ads_keyword_events")
+          .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
+
+        if (fallbackError && !duplicateEvent(fallbackError)) {
+          console.error("[ads-tracker] Missing GHL booking keyword repair insert failed", fallbackError);
+          return NextResponse.json({ error: fallbackError.message }, { status: 500 });
+        }
+      } else {
+        console.error("[ads-tracker] Missing GHL booking keyword repair insert failed", keywordEventError);
+        return NextResponse.json({ error: keywordEventError.message }, { status: 500 });
+      }
+    }
+  }
+
   const payload = {
     saleKey,
     action,
@@ -149,6 +201,9 @@ export async function POST(req: NextRequest) {
     subscriberName: cleanString(body.subscriberName),
     instagramHandle: cleanString(body.instagramHandle),
     manychatUrl: cleanString(body.manychatUrl),
+    appointmentId: cleanString(body.appointmentId),
+    contactId: cleanString(body.contactId),
+    contactName: cleanString(body.contactName),
     eventAt: cleanString(body.eventAt),
     note: cleanString(body.note),
     created_from: "ads_tracker_attribution_alerts",
@@ -163,7 +218,7 @@ export async function POST(req: NextRequest) {
       client_key: clientKey,
       keyword_normalized: keyword,
       contact_name: cleanString(sale.name) || cleanString(body.contactName),
-      appointment_id: null,
+      appointment_id: cleanString(body.appointmentId),
       payload,
       resolved_at: now,
     })
