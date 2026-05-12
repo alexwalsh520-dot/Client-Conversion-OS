@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenter,
   AlignHorizontalJustifyCenter,
@@ -11,23 +11,36 @@ import {
   AlignVerticalJustifyCenter,
   ArrowLeft,
   BringToFront,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardPaste,
+  Clock3,
   CopyPlus,
   Download,
+  FilePlus2,
+  Film,
+  Folder,
+  FolderPlus,
+  Grid3X3,
+  HardDrive,
   ImagePlus,
   Layers,
+  MoreHorizontal,
   MousePointer2,
   Paintbrush,
   PanelBottom,
   PanelTop,
+  Plus,
   Replace,
   RotateCcw,
+  Search,
   SendToBack,
   Sparkles,
   Trash2,
   Type,
   Upload,
+  Video,
 } from "lucide-react";
 
 const CANVAS_W = 1080;
@@ -90,6 +103,7 @@ DM to join before I start
 charging for this.`;
 
 type TextAlign = "left" | "center" | "right";
+type StudioView = "home" | "setup" | "editor";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked">;
@@ -141,7 +155,7 @@ interface DraftState {
   projectName: string;
   colorPreset: "dark" | "light";
   fontPreset: string;
-  view: "setup" | "editor";
+  view: StudioView;
 }
 
 interface RenderedLine {
@@ -857,10 +871,61 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
 };
 
+const homePanelStyle: React.CSSProperties = {
+  border: `1px solid ${ADS_BRAND.border}`,
+  borderRadius: 8,
+  background: ADS_BRAND.panel,
+  padding: 12,
+};
+
+const homeActionStyle: React.CSSProperties = {
+  minHeight: 78,
+  border: `1px solid ${ADS_BRAND.border}`,
+  borderRadius: 8,
+  background: ADS_BRAND.panel,
+  color: ADS_BRAND.text,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 9,
+};
+
+const folderButtonStyle: React.CSSProperties = {
+  width: "100%",
+  border: `1px solid ${ADS_BRAND.border}`,
+  borderRadius: 8,
+  background: ADS_BRAND.panel3,
+  color: ADS_BRAND.text,
+  cursor: "pointer",
+  padding: 9,
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  fontFamily: "inherit",
+  textAlign: "left",
+  marginBottom: 7,
+};
+
 const alignOptions = [
   { value: "left" as const, label: "Left", icon: AlignLeft },
   { value: "center" as const, label: "Center", icon: AlignCenter },
   { value: "right" as const, label: "Right", icon: AlignRight },
+];
+
+const HOME_FOLDERS = [
+  { id: "tyson", name: "Tyson summer shred", count: 18, tone: "#82c5c5" },
+  { id: "challenge", name: "Challenge launches", count: 9, tone: "#c9a96e" },
+  { id: "raw", name: "Raw client media", count: 142, tone: "#7ec9a0" },
+];
+
+const HOME_SAMPLE_PROJECTS = [
+  { id: "sample-tyson", name: "Tyson gym story ads", folder: "Tyson summer shred", ads: 30, media: "Photos + videos", updated: "Today", tone: "#82c5c5", approved: 22 },
+  { id: "sample-keith", name: "Keith DM retargeting", folder: "Challenge launches", ads: 14, media: "Photos", updated: "Yesterday", tone: "#c9a96e", approved: 8 },
+  { id: "sample-broll", name: "Summer b-roll cuts", folder: "Raw client media", ads: 0, media: "Videos", updated: "May 10", tone: "#7ec9a0", approved: 0 },
 ];
 
 export default function Studio2Page() {
@@ -869,7 +934,7 @@ export default function Studio2Page() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
   const [projectName, setProjectName] = useState("Studio 2.0 Batch");
-  const [view, setView] = useState<"setup" | "editor">("setup");
+  const [view, setView] = useState<StudioView>("home");
   const [colorPreset, setColorPreset] = useState<"dark" | "light">("dark");
   const [fontPreset, setFontPreset] = useState(FONT_OPTIONS[0].value);
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayer>(null);
@@ -890,11 +955,15 @@ export default function Studio2Page() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFolderName, setExportFolderName] = useState(projectName);
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [selectedHomeProjects, setSelectedHomeProjects] = useState<string[]>([]);
+  const [homeStatus, setHomeStatus] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const homeUploadInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
@@ -921,6 +990,34 @@ export default function Studio2Page() {
     ? imageCacheRef.current.get(currentCreative.photoUrl) ?? null
     : null;
 
+  const hasActiveDraft =
+    photos.length > 0 ||
+    creatives.length > 0 ||
+    projectName !== "Studio 2.0 Batch" ||
+    copyText !== DEFAULT_COPY;
+  const activeDraftCard = useMemo(
+    () => ({
+      id: "active-draft",
+      name: projectName || "Untitled Studio batch",
+      folder: "Active workspace",
+      ads: creatives.length,
+      media: `${photos.length} photo${photos.length === 1 ? "" : "s"}`,
+      updated: saveStatus.replace("Saved ", "").replace("Restored ", "") || "Autosave ready",
+      tone: ADS_BRAND.gold,
+      approved: creatives.filter((creative) => creative.approved).length,
+      thumb: currentCreative?.photoUrl || photos[0] || "",
+      isActiveDraft: true,
+    }),
+    [creatives, currentCreative?.photoUrl, photos, projectName, saveStatus]
+  );
+  const homeProjects = useMemo(
+    () => [
+      ...(hasActiveDraft ? [activeDraftCard] : []),
+      ...HOME_SAMPLE_PROJECTS.map((project) => ({ ...project, thumb: "", isActiveDraft: false })),
+    ],
+    [activeDraftCard, hasActiveDraft]
+  );
+
   useEffect(() => {
     if (!document.querySelector(`link[href="${GOOGLE_FONTS_URL}"]`)) {
       const link = document.createElement("link");
@@ -943,7 +1040,7 @@ export default function Studio2Page() {
         setProjectName(draft.projectName || "Studio 2.0 Batch");
         setColorPreset(draft.colorPreset || "dark");
         setFontPreset(draft.fontPreset || FONT_OPTIONS[0].value);
-        setView(draft.view === "editor" && draft.creatives?.length ? "editor" : "setup");
+        setView("home");
         setRestoredAt(draft.savedAt);
         setSaveStatus(`Restored ${getDraftDate(draft.savedAt)}`);
       })
@@ -1049,6 +1146,13 @@ export default function Studio2Page() {
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    const close = () => setCreateMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [createMenuOpen]);
 
   const pushUndo = useCallback(() => {
     setUndoStack((stack) => [...stack.slice(-29), cloneCreatives(creatives)]);
@@ -1769,14 +1873,502 @@ export default function Studio2Page() {
     setExportModalOpen(true);
   }, [projectName]);
 
+  const openSetupFlow = useCallback(() => {
+    setCreateMenuOpen(false);
+    setHomeStatus("");
+    setView("setup");
+  }, []);
+
+  const openHomeProject = useCallback(
+    (projectId: string) => {
+      if (projectId === "active-draft") {
+        setView(creatives.length ? "editor" : "setup");
+        return;
+      }
+      const project = HOME_SAMPLE_PROJECTS.find((item) => item.id === projectId);
+      setHomeStatus(`${project?.name || "Project"} is a UI preview until project storage is wired.`);
+    },
+    [creatives.length]
+  );
+
+  const toggleHomeProject = useCallback((projectId: string) => {
+    setSelectedHomeProjects((selected) =>
+      selected.includes(projectId)
+        ? selected.filter((id) => id !== projectId)
+        : [...selected, projectId]
+    );
+  }, []);
+
+  const downloadSelectedProjects = useCallback(async () => {
+    if (!selectedHomeProjects.length) return;
+    const includesActiveDraft = selectedHomeProjects.includes("active-draft");
+    const selectedSamples = selectedHomeProjects.filter((id) => id !== "active-draft").length;
+
+    if (includesActiveDraft && creatives.length) {
+      await exportAll(projectName, false);
+    } else if (includesActiveDraft) {
+      setHomeStatus("Open the batch setup and generate ads before downloading this draft.");
+      setView("setup");
+      return;
+    }
+
+    if (selectedSamples) {
+      setHomeStatus("Saved project downloads will turn on when the Supabase/R2 project library is wired.");
+    }
+  }, [creatives.length, exportAll, projectName, selectedHomeProjects]);
+
+  if (view === "home") {
+    const selectedCount = selectedHomeProjects.length;
+    const totalAds = creatives.length || HOME_SAMPLE_PROJECTS.reduce((sum, project) => sum + project.ads, 0);
+
+    return (
+      <div className="fade-up" style={{ paddingBottom: 40 }}>
+        <style>{`
+          .studio2-home-action:hover,
+          .studio2-project-card:hover,
+          .studio2-folder-card:hover {
+            border-color: ${ADS_BRAND.border2};
+            background: ${ADS_BRAND.panel2};
+            transform: translateY(-1px);
+          }
+          .studio2-project-card:hover .studio2-project-select,
+          .studio2-project-select[data-selected="true"] {
+            opacity: 1;
+          }
+          .studio2-project-title {
+            border: 1px solid transparent;
+          }
+          .studio2-project-title:hover,
+          .studio2-project-title:focus {
+            border-color: ${ADS_BRAND.border2};
+            background: ${ADS_BRAND.bg};
+          }
+          .studio2-create-menu button:hover {
+            background: ${ADS_BRAND.panel2};
+          }
+        `}</style>
+
+        <input
+          ref={homeUploadInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(event) => {
+            void handleFiles(event.target.files);
+            event.target.value = "";
+            setView("setup");
+          }}
+        />
+
+        <div className="page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18 }}>
+          <div>
+            <h1 className="page-title">Studio 2.0</h1>
+            <p className="page-subtitle">Projects, folders, media, and Canva-style batch creation.</p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
+            <button
+              style={buttonStyle(false)}
+              disabled={!selectedCount}
+              onClick={() => void downloadSelectedProjects()}
+            >
+              <Download size={14} /> Download{selectedCount ? ` ${selectedCount}` : ""}
+            </button>
+            <button
+              style={{ ...buttonStyle(true), padding: "10px 14px" }}
+              onClick={(event) => {
+                event.stopPropagation();
+                setCreateMenuOpen((open) => !open);
+              }}
+            >
+              <Plus size={16} /> Create <ChevronDown size={14} />
+            </button>
+            {createMenuOpen && (
+              <div
+                className="studio2-create-menu"
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: 46,
+                  width: 238,
+                  zIndex: 10,
+                  padding: 7,
+                  borderRadius: 8,
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel,
+                  boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
+                }}
+              >
+                <HomeMenuButton icon={FilePlus2} label="New batch of ads" onClick={openSetupFlow} />
+                <HomeMenuButton
+                  icon={ImagePlus}
+                  label="Upload photos"
+                  onClick={() => {
+                    setCreateMenuOpen(false);
+                    homeUploadInputRef.current?.click();
+                  }}
+                />
+                <HomeMenuButton
+                  icon={FolderPlus}
+                  label="Create folder"
+                  onClick={() => {
+                    setCreateMenuOpen(false);
+                    setHomeStatus("Folder creation is shown in the UI and will save when the project library is wired.");
+                  }}
+                />
+                <HomeMenuButton
+                  icon={Video}
+                  label="Upload videos"
+                  onClick={() => {
+                    setCreateMenuOpen(false);
+                    setHomeStatus("Video upload is planned for the R2 media library build.");
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+            <button className="studio2-home-action" onClick={openSetupFlow} style={homeActionStyle}>
+              <FilePlus2 size={20} color={ADS_BRAND.gold} />
+              <span>New batch of ads</span>
+            </button>
+            <button className="studio2-home-action" onClick={() => homeUploadInputRef.current?.click()} style={homeActionStyle}>
+              <Upload size={20} color={ADS_BRAND.gold} />
+              <span>Upload photos</span>
+            </button>
+            <button
+              className="studio2-home-action"
+              onClick={() => setHomeStatus("Video cards are ready visually. R2 video upload/export wiring comes next.")}
+              style={homeActionStyle}
+            >
+              <Film size={20} color={ADS_BRAND.gold} />
+              <span>Video project</span>
+            </button>
+          </div>
+
+          <div style={{
+            border: `1px solid ${ADS_BRAND.border}`,
+            borderRadius: 8,
+            background: ADS_BRAND.panel,
+            padding: 12,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}>
+            <HomeStat label="Projects" value={homeProjects.length} />
+            <HomeStat label="Ads" value={totalAds} />
+            <HomeStat label="Selected" value={selectedCount} />
+            <HomeStat label="Autosave" value={saveStatus.startsWith("Saved") || saveStatus.startsWith("Restored") ? "On" : "Ready"} />
+          </div>
+        </div>
+
+        {homeStatus && (
+          <div className="section" style={{ marginTop: -4 }}>
+            <div style={{
+              border: `1px solid ${ADS_BRAND.goldBorder}`,
+              background: ADS_BRAND.goldSoft,
+              color: ADS_BRAND.text2,
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 13,
+            }}>
+              {homeStatus}
+            </div>
+          </div>
+        )}
+
+        {restoredAt && (
+          <div className="section" style={{ marginTop: homeStatus ? 10 : -4 }}>
+            <div className="glass-static" style={{ padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+                Autosave restored from {getDraftDate(restoredAt)}.
+              </span>
+              <button
+                style={buttonStyle(false)}
+                onClick={async () => {
+                  await clearDraft();
+                  setPhotos([]);
+                  setCreatives([]);
+                  setCurrentIndex(0);
+                  setCopyText(DEFAULT_COPY);
+                  setProjectName("Studio 2.0 Batch");
+                  setSelectedHomeProjects([]);
+                  setRestoredAt(null);
+                  setSaveStatus("Draft cleared");
+                }}
+              >
+                Start Fresh
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="section" style={{ display: "grid", gridTemplateColumns: "250px minmax(0, 1fr)", gap: 18 }}>
+          <aside style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={homePanelStyle}>
+              <div style={{ ...labelStyle, marginBottom: 10 }}>
+                <Folder size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
+                Folders
+              </div>
+              {HOME_FOLDERS.map((folder) => (
+                <button key={folder.id} className="studio2-folder-card" style={folderButtonStyle}>
+                  <span style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 7,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: `${folder.tone}1A`,
+                    color: folder.tone,
+                    flexShrink: 0,
+                  }}>
+                    <Folder size={15} />
+                  </span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "block", color: ADS_BRAND.text, fontSize: 13, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {folder.name}
+                    </span>
+                    <span style={{ display: "block", color: ADS_BRAND.text3, fontSize: 11, marginTop: 2 }}>{folder.count} items</span>
+                  </span>
+                </button>
+              ))}
+              <button
+                className="studio2-folder-card"
+                onClick={() => setHomeStatus("Folder creation is a visual prototype until the project library is wired.")}
+                style={{ ...folderButtonStyle, borderStyle: "dashed", color: ADS_BRAND.text2 }}
+              >
+                <FolderPlus size={15} />
+                New folder
+              </button>
+            </div>
+
+            <div style={homePanelStyle}>
+              <div style={{ ...labelStyle, marginBottom: 10 }}>
+                <HardDrive size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
+                Media Bank
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <HomeMediaRow icon={ImagePlus} label="Photos" value={photos.length || 284} />
+                <HomeMediaRow icon={Film} label="Videos" value={96} />
+                <HomeMediaRow icon={CheckCircle2} label="Approved ads" value={creatives.filter((creative) => creative.approved).length || 30} />
+              </div>
+            </div>
+          </aside>
+
+          <main>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div>
+                <h2 className="section-title" style={{ marginBottom: 2 }}>
+                  <Grid3X3 size={16} /> Projects
+                </h2>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12 }}>Recent Studio workspaces</div>
+              </div>
+              <label style={{
+                width: 250,
+                height: 38,
+                border: `1px solid ${ADS_BRAND.border}`,
+                borderRadius: 8,
+                background: ADS_BRAND.panel,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "0 10px",
+                color: ADS_BRAND.text3,
+              }}>
+                <Search size={14} />
+                <input
+                  placeholder="Search projects"
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    outline: "none",
+                    background: "transparent",
+                    color: ADS_BRAND.text,
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                  }}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14 }}>
+              {homeProjects.map((project) => {
+                const selected = selectedHomeProjects.includes(project.id);
+                return (
+                  <div
+                    key={project.id}
+                    className="studio2-project-card"
+                    onClick={() => openHomeProject(project.id)}
+                    style={{
+                      position: "relative",
+                      border: `1px solid ${selected ? ADS_BRAND.goldBorder : ADS_BRAND.border}`,
+                      background: selected ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      cursor: "pointer",
+                      minHeight: 260,
+                    }}
+                  >
+                    <button
+                      aria-label={selected ? "Deselect project" : "Select project"}
+                      className="studio2-project-select"
+                      data-selected={selected}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleHomeProject(project.id);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        zIndex: 2,
+                        width: 26,
+                        height: 26,
+                        borderRadius: 6,
+                        border: `1px solid ${selected ? ADS_BRAND.gold : "rgba(255,255,255,0.24)"}`,
+                        background: selected ? ADS_BRAND.gold : "rgba(0,0,0,0.45)",
+                        color: selected ? ADS_BRAND.bgDeep : "#fff",
+                        opacity: selected ? 1 : 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {selected && <Check size={16} />}
+                    </button>
+                    <button
+                      aria-label="Project options"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setHomeStatus(`${project.name} options menu is shown in the design pass.`);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 2,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 6,
+                        border: "none",
+                        background: "rgba(0,0,0,0.46)",
+                        color: "#fff",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    <div style={{
+                      height: 142,
+                      background: project.thumb
+                        ? ADS_BRAND.bgDeep
+                        : `linear-gradient(135deg, ${project.tone}33, rgba(255,255,255,0.04) 42%, ${ADS_BRAND.bgDeep})`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      position: "relative",
+                      overflow: "hidden",
+                    }}>
+                      {project.thumb ? (
+                        <img src={project.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <span style={{ color: project.tone, fontSize: 34, fontWeight: 900, letterSpacing: 0 }}>
+                          {project.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}
+                        </span>
+                      )}
+                      <div style={{
+                        position: "absolute",
+                        left: 12,
+                        bottom: 10,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        borderRadius: 999,
+                        padding: "5px 8px",
+                        background: "rgba(0,0,0,0.58)",
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 750,
+                      }}>
+                        {project.media.includes("Video") || project.media.includes("videos") ? <Film size={12} /> : <ImagePlus size={12} />}
+                        {project.media}
+                      </div>
+                    </div>
+                    <div style={{ padding: 12 }}>
+                      {project.isActiveDraft ? (
+                        <input
+                          className="studio2-project-title"
+                          value={projectName}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setProjectName(event.target.value)}
+                          style={{
+                            width: "100%",
+                            height: 30,
+                            borderRadius: 6,
+                            background: "transparent",
+                            color: ADS_BRAND.text,
+                            fontFamily: "inherit",
+                            fontSize: 14,
+                            fontWeight: 850,
+                            outline: "none",
+                            padding: "0 6px",
+                          }}
+                        />
+                      ) : (
+                        <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 850, lineHeight: 1.25, minHeight: 35 }}>
+                          {project.name}
+                        </div>
+                      )}
+                      <div style={{ color: ADS_BRAND.text3, fontSize: 11, marginTop: 7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {project.folder}
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+                        <ProjectMetric label="Ads" value={project.ads} />
+                        <ProjectMetric label="Approved" value={project.approved} />
+                      </div>
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", color: ADS_BRAND.text3, fontSize: 11 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <Clock3 size={12} /> {project.updated}
+                        </span>
+                        {project.isActiveDraft && (
+                          <span style={{ color: ADS_BRAND.gold, fontWeight: 800 }}>
+                            {creatives.length ? "Open editor" : "Open setup"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   if (view === "setup") {
     return (
       <div className="fade-up" style={{ paddingBottom: 40 }}>
-        <div className="page-header">
-          <h1 className="page-title">Studio 2.0</h1>
-          <p className="page-subtitle">
-            A new canvas-first ad builder where preview and export use the same renderer.
-          </p>
+        <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16 }}>
+          <div>
+            <h1 className="page-title">Studio 2.0</h1>
+            <p className="page-subtitle">
+              A new canvas-first ad builder where preview and export use the same renderer.
+            </p>
+          </div>
+          <button style={buttonStyle(false)} onClick={() => setView("home")}>
+            <Grid3X3 size={14} /> Home
+          </button>
         </div>
 
         {restoredAt && (
@@ -1974,6 +2566,9 @@ export default function Studio2Page() {
         borderBottom: `1px solid ${ADS_BRAND.border}`,
         background: ADS_BRAND.bg,
       }}>
+        <button style={buttonStyle(false)} onClick={() => setView("home")}>
+          <Grid3X3 size={14} /> Home
+        </button>
         <button style={buttonStyle(false)} onClick={() => setView("setup")}>
           <ArrowLeft size={14} /> Setup
         </button>
@@ -2449,6 +3044,96 @@ export default function Studio2Page() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function HomeMenuButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%",
+        height: 38,
+        border: "none",
+        borderRadius: 7,
+        background: "transparent",
+        color: ADS_BRAND.text,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "0 9px",
+        fontFamily: "inherit",
+        fontSize: 13,
+        fontWeight: 750,
+        textAlign: "left",
+      }}
+    >
+      <Icon size={16} />
+      {label}
+    </button>
+  );
+}
+
+function HomeStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <div style={{ color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        {label}
+      </div>
+      <div style={{ color: ADS_BRAND.text, fontSize: 18, fontWeight: 900, marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+function HomeMediaRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div style={{
+      height: 36,
+      border: `1px solid ${ADS_BRAND.border}`,
+      borderRadius: 7,
+      background: ADS_BRAND.panel3,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "0 9px",
+    }}>
+      <Icon size={14} color={ADS_BRAND.gold} />
+      <span style={{ color: ADS_BRAND.text2, fontSize: 12, fontWeight: 750, flex: 1 }}>{label}</span>
+      <span style={{ color: ADS_BRAND.text, fontSize: 12, fontWeight: 850 }}>{value}</span>
+    </div>
+  );
+}
+
+function ProjectMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{
+      border: `1px solid ${ADS_BRAND.border}`,
+      borderRadius: 7,
+      background: ADS_BRAND.panel3,
+      padding: "7px 8px",
+    }}>
+      <div style={{ color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        {label}
+      </div>
+      <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginTop: 1 }}>{value}</div>
     </div>
   );
 }
