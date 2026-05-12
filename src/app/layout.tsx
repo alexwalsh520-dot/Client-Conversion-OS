@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import AccessGate from "@/components/AccessGate";
-import AskClaudeButton from "@/components/AskClaudeButton";
 import GlassGlow from "@/components/GlassGlow";
 import SessionWrapper from "@/components/SessionWrapper";
 
@@ -45,7 +44,6 @@ export default function RootLayout({
               <AccessGate>{children}</AccessGate>
             </main>
           </div>
-          <AskClaudeButton />
           <GlassGlow />
         </SessionWrapper>
       </body>
