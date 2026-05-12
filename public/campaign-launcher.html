@@ -155,13 +155,19 @@
   .field-input:focus{border-color:var(--gold);background:#0c0b08}
   .field-input.select{cursor:pointer;display:flex;justify-content:space-between;align-items:center}
   .field-input.select .caret{color:var(--text-4);font-size:11px}
+  .field-input.select-native{cursor:pointer;color:var(--text);background:#0a0a0a}
+  .field-input.select-native option{background:#111;color:var(--text)}
   textarea.field-input{min-height:140px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;letter-spacing:0.04em;resize:vertical}
 
-  .uploader{padding:30px 18px;text-align:center;border:1.5px dashed var(--border-2);border-radius:8px;background:#0a0a0a;cursor:pointer}
+  .uploader{padding:30px 18px;text-align:center;border:1.5px dashed var(--border-2);border-radius:8px;background:#0a0a0a;cursor:pointer;display:block}
   .uploader:hover{border-color:var(--gold);background:#0c0b08}
+  .uploader.dragging{border-color:var(--gold);background:#0f0d08}
+  .upload-input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
   .uploader .glyph{font-size:24px;color:var(--text-3);font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:8px}
   .uploader .head{font-size:14px;color:var(--text);font-weight:500}
   .uploader .sub{font-size:12px;color:var(--text-4);margin-top:4px}
+  .upload-status{font-size:12px;color:var(--text-3);font-family:'JetBrains Mono',monospace;margin-top:12px}
+  .upload-status.good{color:var(--green)}
   .thumbs-inline{display:flex;gap:5px;margin-top:14px;flex-wrap:wrap;justify-content:center}
   .thumb-mini{width:32px;height:32px;border-radius:4px;border:1px solid var(--border-2);overflow:hidden}
   .thumb-mini svg{width:100%;height:100%;display:block}
@@ -326,7 +332,7 @@
     <div class="crumb">
       <a href="/ads" target="_top">CCOS</a><span class="sep">/</span><a href="/ads" target="_top">Ads</a><span class="sep">/</span><span class="here">Campaign Launcher</span>
     </div>
-    <div class="top-title">Summer Shred — Tyson</div>
+    <div class="top-title" id="topTitle">Summer Shred — Tyson</div>
     <div class="top-actions">
       <button class="btn-ghost">Run history</button>
       <button class="btn-ghost">Save draft</button>
@@ -344,8 +350,8 @@
     <div class="rail">
       <div class="rail-head">
         <div class="lbl">Launch</div>
-        <div class="title">Summer Shred</div>
-        <div class="sub">Tyson · Meta</div>
+        <div class="title" id="railTitle">Summer Shred</div>
+        <div class="sub" id="railSub">Tyson · Meta</div>
       </div>
       <div class="rail-steps" id="railSteps"></div>
       <div class="rr-section" id="railStatus"></div>
@@ -395,10 +401,62 @@
 
   // VA's mental progress — start at the first input so the launch has one clean path.
   const state = {
-    step: 1,           // 0-indexed step
+    step: 0,           // 0-indexed step
     sub: 0,            // 0-indexed substep within step
     completed: {}
   };
+  const draft = {
+    client: 'Tyson',
+    challenge: 'Summer Shred',
+    date: '5/7',
+    audience: 'Warm',
+    budgetType: 'ABO',
+    dailyBudget: '',
+    mediaType: 'Story Images',
+    seedKeyword: 'EDGE',
+    keywords: '',
+    uploadedCount: 0,
+    uploadedNames: []
+  };
+  const CLIENT_OPTIONS = ['Tyson','Keith'];
+  const AUDIENCE_OPTIONS = ['Warm','Cold'];
+  const BUDGET_TYPE_OPTIONS = ['ABO','CBO'];
+  const MEDIA_TYPE_OPTIONS = ['Story Images','Story Video','Story Images/Video'];
+
+  function esc(value){
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[ch]));
+  }
+  function campaignName(){
+    return `${draft.date || 'DATE'} - ${draft.challenge || 'Challenge'} - ${draft.budgetType} - ${draft.audience} - ${draft.mediaType}`;
+  }
+  function selectField(label, key, options){
+    return `<div class="input-row"><div class="lbl">${label}</div><select class="field-input select-native" data-draft="${key}">${
+      options.map(option => `<option value="${esc(option)}" ${draft[key] === option ? 'selected' : ''}>${esc(option)}</option>`).join('')
+    }</select></div>`;
+  }
+  function textField(label, key, attrs=''){
+    return `<div class="input-row"><div class="lbl">${label}</div><input class="field-input" data-draft="${key}" value="${esc(draft[key])}" ${attrs}></div>`;
+  }
+  function keywordList(){
+    return draft.keywords
+      .split(/\n+/)
+      .map(keyword => keyword.trim().toUpperCase())
+      .filter(Boolean);
+  }
+  function uploadStatus(){
+    if (!draft.uploadedCount) return 'No files selected yet';
+    return `✓ ${draft.uploadedCount} file${draft.uploadedCount === 1 ? '' : 's'} selected`;
+  }
+  function uploadThumbs(){
+    if (!draft.uploadedCount) return '';
+    const shown = Math.min(draft.uploadedCount, 4);
+    const thumbs = Array.from({length: shown}, (_, i) => `
+      <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="${['#1a1608','#0e1420','#0c1a12','#1a0e0e'][i % 4]}"/><circle cx="30" cy="30" r="10" fill="${['#2a2417','#1c2a3e','#1a2e22','#3a1f1f'][i % 4]}"/></svg></div>
+    `).join('');
+    return `${thumbs}${draft.uploadedCount > 4 ? `<div class="thumb-mini more">+${draft.uploadedCount - 4}</div>` : ''}`;
+  }
 
   function isStepFullyDone(stepIdx){
     const step = FLOW[stepIdx];
@@ -422,56 +480,43 @@
   CONTENT['inputs.client'] = () => `
     <h1 class="focus-title">Who is this campaign for?</h1>
     <div class="focus-card">
-      <div class="input-row"><div class="lbl">Client</div><div class="field-input select"><span>Tyson</span><span class="caret">▾</span></div></div>
-      <div class="input-row"><div class="lbl">Challenge</div><input class="field-input" value="Summer Shred" autofocus></div>
+      ${selectField('Client', 'client', CLIENT_OPTIONS)}
+      ${textField('Challenge', 'challenge', 'autofocus')}
     </div>`;
 
   CONTENT['inputs.plan'] = () => `
     <h1 class="focus-title">How will it run?</h1>
     <div class="focus-card">
-      <div class="input-row"><div class="lbl">Campaign date</div><input class="field-input" value="5/7" autofocus></div>
-      <div class="input-row"><div class="lbl">Audience</div><div class="field-input select"><span>Warm</span><span class="caret">▾</span></div></div>
-      <div class="input-row"><div class="lbl">Budget type</div><div class="field-input select"><span>ABO</span><span class="caret">▾</span></div></div>
-      <div class="input-row"><div class="lbl">Daily budget <span class="opt">from Alex / launch brief</span></div><input class="field-input" placeholder="$ amount for this launch"></div>
-      <div class="input-row"><div class="lbl">Media type</div><div class="field-input select"><span>Story Images</span><span class="caret">▾</span></div></div>
-      <div class="input-row"><div class="lbl">Seed keyword</div><input class="field-input" value="EDGE"></div>
+      ${textField('Campaign date', 'date', 'autofocus')}
+      ${selectField('Audience', 'audience', AUDIENCE_OPTIONS)}
+      ${selectField('Budget type', 'budgetType', BUDGET_TYPE_OPTIONS)}
+      <div class="input-row"><div class="lbl">Daily budget <span class="opt">from Alex / launch brief</span></div><input class="field-input" data-draft="dailyBudget" value="${esc(draft.dailyBudget)}" placeholder="$ amount for this launch"></div>
+      ${selectField('Media type', 'mediaType', MEDIA_TYPE_OPTIONS)}
+      ${textField('Seed keyword', 'seedKeyword')}
     </div>`;
 
   CONTENT['inputs.media'] = () => `
     <h1 class="focus-title">Drop your images and keywords</h1>
     <div class="focus-help">Counts must match.</div>
     <div class="focus-card">
-      <div class="uploader">
+      <label class="uploader" for="mediaUpload">
+        <input class="upload-input" id="mediaUpload" type="file" multiple accept="image/*,video/*">
         <div class="glyph">↑</div>
         <div class="head">Drop ad images, or <span style="color:var(--gold)">browse</span></div>
         <div class="sub">jpg, png, mp4 · Stories ratio</div>
-        <div class="thumbs-inline">
-          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1a1608"/><circle cx="30" cy="22" r="9" fill="#2a2417"/></svg></div>
-          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#0e1420"/><polygon points="30,16 44,44 16,44" fill="#1c2a3e"/></svg></div>
-          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#0c1a12"/><rect x="18" y="18" width="24" height="24" fill="#1a2e22"/></svg></div>
-          <div class="thumb-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1a0e0e"/><rect x="20" y="20" width="20" height="20" fill="#3a1f1f" transform="rotate(45 30 30)"/></svg></div>
-          <div class="thumb-mini more">+26</div>
-        </div>
-      </div>
+        <div class="thumbs-inline" data-upload-thumbs>${uploadThumbs()}</div>
+        <div class="upload-status ${draft.uploadedCount ? 'good' : ''}" data-upload-status>${uploadStatus()}</div>
+      </label>
       <div class="input-row" style="margin-top:6px"><div class="lbl">Keywords <span class="opt">one per line · UPPERCASE</span></div>
-        <textarea class="field-input">EDGE
-HUSTLE
-GRIND
-RESULTS
-SCULPT
-FOCUS
-CONFIDENCE
-APEX
-PROUD
-FORGE</textarea></div>
-      <div style="font-size:12.5px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ 30 images · 30 keywords · counts match</div>
+        <textarea class="field-input" data-draft="keywords" placeholder="EDGE&#10;FOCUS&#10;RISE">${esc(draft.keywords)}</textarea></div>
+      <div style="font-size:12.5px;color:${draft.uploadedCount && keywordList().length === draft.uploadedCount ? 'var(--green)' : 'var(--text-3)'};font-family:'JetBrains Mono',monospace">${draft.uploadedCount || 0} files · ${keywordList().length} keywords${draft.uploadedCount && keywordList().length === draft.uploadedCount ? ' · counts match' : ''}</div>
     </div>`;
 
   CONTENT['inputs.review'] = () => `
     <h1 class="focus-title">Use this name in Meta</h1>
     <div class="focus-help">Codex looks for this exact name. Copy it now.</div>
     <div class="gen-card" style="margin-top:0">
-      <div class="v">5/7 - Summer Shred - ABO - Warm - Story Images <button class="copy">Copy</button></div>
+      <div class="v">${esc(campaignName())} <button class="copy">Copy</button></div>
     </div>`;
 
   // ---------- STEP 2 — META BUILD (one substep at a time) ----------
@@ -506,8 +551,8 @@ FORGE</textarea></div>
         fields:[
           {label:'Objective', value:'Choose Engagement'},
           {label:'Type', value:'Manual engagement campaign'},
-          {label:'Name', value:'5/7 - Summer Shred - ABO - Warm - Story Images', copy:true},
-          {label:'Budget', value:'Ad set budget'}
+          {label:'Name', value:esc(campaignName()), copy:true},
+          {label:'Budget', value:draft.budgetType === 'CBO' ? 'Campaign budget' : 'Ad set budget'}
         ],
         toggles:['Share some of your budget with other ad sets']
       })}
@@ -522,7 +567,7 @@ FORGE</textarea></div>
           {label:'Name', value:'Warm Audience Stack', copy:true},
           {label:'Conversion', value:'Message destinations'},
           {label:'Destination', value:'Instagram only'},
-          {label:'Daily budget', value:'Use the launch-specific budget from Alex'},
+          {label:'Daily budget', value:draft.dailyBudget ? esc(draft.dailyBudget) : 'Use the launch-specific budget from Alex'},
           {label:'Start time', value:'5:00 AM PDT / 8:00 AM EST'},
           {label:'Location', value:'United States'},
           {label:'Age', value:'24–65'}
@@ -556,7 +601,7 @@ FORGE</textarea></div>
       ${metaScreen({
         where:['Ad set','Ad'],
         fields:[
-          {label:'Ad name', value:'EDGE', copy:true},
+          {label:'Ad name', value:esc(draft.seedKeyword || 'EDGE'), copy:true},
           {label:'Format', value:'Single image or video'},
           {label:'Related media', value:'0 selected'}
         ]
@@ -569,10 +614,10 @@ FORGE</textarea></div>
       ${metaScreen({
         where:['Seed ad','Message template'],
         fields:[{label:'Type', value:'Start conversations'}],
-        toggles:['Automated follow-up message'],
-        greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "EDGE" and I'll send you the link 👇`
+        greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "${esc(draft.seedKeyword || 'EDGE')}" and I'll send you the link 👇`
       })}
-      <div class="field-block"><span class="l">Question #1</span><span class="v">EDGE</span><button class="copy">Copy</button></div>
+      <div class="field-block"><span class="l">Question #1</span><span class="v">${esc(draft.seedKeyword || 'EDGE')}</span><button class="copy">Copy</button></div>
+      <div class="field-block toggle"><span class="l">Turn off</span><span class="v">Automated follow-up message</span></div>
     </div>`;
 
   CONTENT['meta.toggles'] = () => `
@@ -650,11 +695,25 @@ FORGE</textarea></div>
 
   // ---------- STEPS 4–6 ----------
   CONTENT['plan'] = () => {
-    const KW = ['EDGE','IRON','BURN','FIRE','VIBE','PUSH','JACKED','OWN','RIPPED','WARRIOR','DRIVE','SHRED','UNLEASH','MOVE','NEXT','QUICK','PEAK','HUSTLE','LEAN','TOUGH','GRIND','SCULPT','CUT','KEEN','RESULTS','FOCUS','CONFIDENCE','PROUD','RISE','CHISELED'];
+    const KW = keywordList();
     const SW = ['#1a1608','#0e1420','#0c1a12','#1a0e0e','#0d0d0d','#0c0c0c'];
     const AC = ['#2a2417','#1c2a3e','#1a2e22','#3a1f1f','#262626','#1f1f1f'];
+    if (!KW.length) {
+      return `
+        <h1 class="focus-title">Add keywords first</h1>
+        <div class="focus-help">The launch plan needs one approved keyword per media file.</div>
+        <div class="focus-card">
+          <div class="check-status warn">
+            <div class="ic">!</div>
+            <div class="body">
+              <div class="head">No keywords entered yet</div>
+              <div class="sub">Go back to Images & keywords, add the keyword list, then return here.</div>
+            </div>
+          </div>
+        </div>`;
+    }
     const rows = KW.map((kw,i) => {
-      const action = i===0
+      const action = kw === (draft.seedKeyword || '').trim().toUpperCase()
         ? '<span class="pl-action keep"><span class="d"></span>Keep seed</span>'
         : '<span class="pl-action create"><span class="d"></span>Create</span>';
       return `<tr>
@@ -668,9 +727,9 @@ FORGE</textarea></div>
       <h1 class="focus-title">Ready to launch</h1>
       <div class="focus-card tight">
         <div class="plan-summary">
-          <span class="num green">29</span><span class="lbl">ads will be created</span><span class="sep">·</span>
+          <span class="num green">${Math.max(0, KW.length - 1)}</span><span class="lbl">ads will be created</span><span class="sep">·</span>
           <span class="num">1</span><span class="lbl">seed kept</span><span class="sep">·</span>
-          <span class="num">30</span><span class="lbl">total</span>
+          <span class="num">${KW.length}</span><span class="lbl">total</span>
         </div>
         <div class="plan-table-wrap"><table class="plan">
           <thead><tr><th style="width:46px">Image</th><th style="width:140px">Keyword</th><th style="width:110px">Action</th><th>DM preview</th></tr></thead>
@@ -733,7 +792,11 @@ FORGE</textarea></div>
 
     if (state.step === 0) return { primary:'Continue', context:'', ctx:'' };
     if (state.step === 1) return { primary:'Done — next', context:'', ctx:'' };
-    if (key === 'plan')   return { primary:'Launch campaign', context:'<strong>29 ads will be created</strong>', ctx:'' };
+    if (key === 'plan') {
+      const count = keywordList().length;
+      if (!count) return { primary:'Add keywords first', primaryDisabled:true, context:'<strong>No keywords entered yet</strong>', ctx:'bad' };
+      return { primary:'Launch campaign', context:`<strong>${Math.max(0, count - 1)} ads will be created</strong>`, ctx:'' };
+    }
     if (key === 'launch') return { primary:'Launching…', primaryDisabled:true, context:'', ctx:'' };
     if (key === 'done')   return { primary:'View report', context:'', ctx:'' };
     return { primary:'Continue' };
@@ -750,13 +813,68 @@ FORGE</textarea></div>
   const btnSecondary = document.getElementById('btnSecondary');
   const btnBack = document.getElementById('btnBack');
   const abContext = document.getElementById('abContext');
+  const topTitleEl = document.getElementById('topTitle');
+  const railTitleEl = document.getElementById('railTitle');
+  const railSubEl = document.getElementById('railSub');
 
   function renderFocus(){
     const step = FLOW[state.step];
     const subId = step.substeps ? step.substeps[state.sub].id : null;
     const key = subId ? `${step.id}.${subId}` : step.id;
     focusEl.innerHTML = (CONTENT[key] || (() => `<div class="focus-help">Coming soon: ${key}</div>`))();
+    bindDraftInputs();
     bindCopyButtons();
+    bindUploader();
+    updateShell();
+  }
+
+  function bindDraftInputs(){
+    focusEl.querySelectorAll('[data-draft]').forEach(input => {
+      input.addEventListener('input', () => {
+        draft[input.dataset.draft] = input.value;
+        updateShell();
+      });
+      input.addEventListener('change', () => {
+        draft[input.dataset.draft] = input.value;
+        updateShell();
+      });
+    });
+  }
+
+  function bindUploader(){
+    const input = focusEl.querySelector('#mediaUpload');
+    const uploader = focusEl.querySelector('.uploader');
+    if (!input || !uploader) return;
+    const applyFiles = files => {
+      const list = Array.from(files || []);
+      draft.uploadedCount = list.length;
+      draft.uploadedNames = list.map(file => file.name);
+      const status = focusEl.querySelector('[data-upload-status]');
+      const thumbs = focusEl.querySelector('[data-upload-thumbs]');
+      if (status) {
+        status.textContent = uploadStatus();
+        status.classList.toggle('good', draft.uploadedCount > 0);
+      }
+      if (thumbs) thumbs.innerHTML = uploadThumbs();
+    };
+    input.addEventListener('change', () => applyFiles(input.files));
+    uploader.addEventListener('dragover', event => {
+      event.preventDefault();
+      uploader.classList.add('dragging');
+    });
+    uploader.addEventListener('dragleave', () => uploader.classList.remove('dragging'));
+    uploader.addEventListener('drop', event => {
+      event.preventDefault();
+      uploader.classList.remove('dragging');
+      applyFiles(event.dataTransfer.files);
+    });
+  }
+
+  function updateShell(){
+    const title = draft.challenge || 'New campaign';
+    if (topTitleEl) topTitleEl.textContent = `${title} — ${draft.client}`;
+    if (railTitleEl) railTitleEl.textContent = title;
+    if (railSubEl) railSubEl.textContent = `${draft.client} · Meta`;
   }
 
   function bindCopyButtons(){
