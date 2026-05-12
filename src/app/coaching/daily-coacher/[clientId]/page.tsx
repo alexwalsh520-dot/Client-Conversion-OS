@@ -13,6 +13,7 @@
 
 import { notFound } from "next/navigation";
 import { gatherSummaryInputs, isSummaryStale } from "@/lib/daily-coacher/summary-inputs";
+import { getClientDailyCoacherScore } from "@/lib/daily-coacher/coach-scores";
 import DailyCoacherView from "@/components/daily-coacher/DailyCoacherView";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,14 @@ export default async function DailyCoacherPage({
     notFound();
   }
 
+  // Fetch the per-client Daily Coacher Usage Score in parallel with the
+  // summary inputs (already done — kicked off above). If it fails we just
+  // hide the row rather than blocking the page.
+  const clientScore = await getClientDailyCoacherScore(
+    inputs.client.id,
+    inputs.client.name
+  );
+
   return (
     <DailyCoacherView
       clientId={clientId}
@@ -44,6 +53,7 @@ export default async function DailyCoacherPage({
       initialSummary={inputs.client.daily_coacher_summary ?? null}
       initialSummaryUpdatedAt={inputs.client.daily_coacher_summary_updated_at ?? null}
       initialStale={isSummaryStale(inputs)}
+      clientScore={clientScore}
     />
   );
 }

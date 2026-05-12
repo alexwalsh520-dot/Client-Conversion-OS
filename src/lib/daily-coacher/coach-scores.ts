@@ -165,6 +165,82 @@ export async function getCoachDailyCoacherScores(): Promise<CoachScoreMap> {
 }
 
 // ---------------------------------------------------------------------------
+// Per-client score (used by the Daily Coacher per-client view)
+// ---------------------------------------------------------------------------
+
+export interface ClientScoreEntry {
+  /** 0-10 raw score (NOT rounded) — caller decides whether to round for display. */
+  score: number;
+  /** Score rounded to nearest whole number (0-10). */
+  scoreRounded: number;
+  /** Total event count contributing (uncapped). */
+  totalEvents: number;
+  /** True if the score is at the cap (10). Coach has nothing to gain by adding more events for this client. */
+  capped: boolean;
+  breakdown: {
+    tipUses: number;
+    notes: number;
+    meetingsWithNotes: number;
+  };
+}
+
+/**
+ * Returns the Daily Coacher Usage Score for a single client. Cheaper than
+ * computing the whole coach-wide map; intended for the per-client view.
+ *
+ * Returns null only on hard failure (network/db error) — callers should
+ * render a quiet fallback rather than block the page.
+ */
+export async function getClientDailyCoacherScore(
+  clientId: number,
+  clientName: string
+): Promise<ClientScoreEntry | null> {
+  try {
+    const [tipUsesRes, notesRes, meetingsRes] = await Promise.all([
+      supabase
+        .from("daily_coacher_tip_uses")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId),
+      supabase
+        .from("client_notes")
+        .select("id", { count: "exact", head: true })
+        .eq("client_name", clientName),
+      supabase
+        .from("coach_meetings")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .not("notes", "is", null)
+        .neq("notes", ""),
+    ]);
+
+    if (tipUsesRes.error) throw tipUsesRes.error;
+    if (notesRes.error) throw notesRes.error;
+    if (meetingsRes.error) throw meetingsRes.error;
+
+    const tipUses = tipUsesRes.count ?? 0;
+    const notes = notesRes.count ?? 0;
+    const meetingsWithNotes = meetingsRes.count ?? 0;
+    const totalEvents = tipUses + notes + meetingsWithNotes;
+    const cappedEvents = Math.min(EVENT_CAP, totalEvents);
+    const score = cappedEvents * EVENT_WEIGHT;
+
+    return {
+      score,
+      scoreRounded: Math.max(0, Math.min(10, Math.round(score))),
+      totalEvents,
+      capped: totalEvents >= EVENT_CAP,
+      breakdown: { tipUses, notes, meetingsWithNotes },
+    };
+  } catch (err) {
+    console.warn(
+      `[daily-coacher/coach-scores] Failed to compute client score for ${clientId}:`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

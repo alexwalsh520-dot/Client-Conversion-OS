@@ -12,8 +12,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import type { ProgramProgress } from "@/lib/daily-coacher/summary-inputs";
+import type { ClientScoreEntry } from "@/lib/daily-coacher/coach-scores";
 import type { TopicKey } from "@/lib/daily-coacher/topics";
 import SummaryPanel from "./SummaryPanel";
+import ClientScoreRow from "./ClientScoreRow";
 import TopicSelector from "./TopicSelector";
 import CoachNotesInput from "./CoachNotesInput";
 import LiveMessagesInput from "./LiveMessagesInput";
@@ -29,6 +31,9 @@ interface Props {
   initialSummary: string | null;
   initialSummaryUpdatedAt: string | null;
   initialStale: boolean;
+  /** Per-client Daily Coacher Usage Score. Null if the fetch failed; in
+   *  that case the row is hidden and the page continues to function. */
+  clientScore: ClientScoreEntry | null;
 }
 
 export default function DailyCoacherView({
@@ -41,6 +46,7 @@ export default function DailyCoacherView({
   initialSummary,
   initialSummaryUpdatedAt,
   initialStale,
+  clientScore,
 }: Props) {
   const [selectedTopic, setSelectedTopic] = useState<TopicKey | null>(null);
 
@@ -110,6 +116,18 @@ export default function DailyCoacherView({
         initialUpdatedAt={initialSummaryUpdatedAt}
         initialStale={initialStale}
       />
+
+      {/* Per-client Daily Coacher Usage Score */}
+      {clientScore && (
+        <ClientScoreRow
+          scoreRounded={clientScore.scoreRounded}
+          totalEvents={clientScore.totalEvents}
+          capped={clientScore.capped}
+          tipUses={clientScore.breakdown.tipUses}
+          notes={clientScore.breakdown.notes}
+          meetingsWithNotes={clientScore.breakdown.meetingsWithNotes}
+        />
+      )}
 
       {/* Topic selector */}
       <div style={{ marginTop: 24 }}>
