@@ -432,6 +432,7 @@
       <div class="input-row"><div class="lbl">Campaign date</div><input class="field-input" value="5/7" autofocus></div>
       <div class="input-row"><div class="lbl">Audience</div><div class="field-input select"><span>Warm</span><span class="caret">▾</span></div></div>
       <div class="input-row"><div class="lbl">Budget type</div><div class="field-input select"><span>ABO</span><span class="caret">▾</span></div></div>
+      <div class="input-row"><div class="lbl">Daily budget <span class="opt">from Alex / launch brief</span></div><input class="field-input" placeholder="$ amount for this launch"></div>
       <div class="input-row"><div class="lbl">Media type</div><div class="field-input select"><span>Story Images</span><span class="caret">▾</span></div></div>
       <div class="input-row"><div class="lbl">Seed keyword</div><input class="field-input" value="EDGE"></div>
     </div>`;
@@ -503,7 +504,7 @@ FORGE</textarea></div>
       ${metaScreen({
         where:['Ads Manager','+ Create','Campaign'],
         fields:[
-          {label:'Objective', value:'Engagement', copy:true},
+          {label:'Objective', value:'Choose Engagement'},
           {label:'Type', value:'Manual engagement campaign'},
           {label:'Name', value:'5/7 - Summer Shred - ABO - Warm - Story Images', copy:true},
           {label:'Budget', value:'Ad set budget'}
@@ -521,7 +522,7 @@ FORGE</textarea></div>
           {label:'Name', value:'Warm Audience Stack', copy:true},
           {label:'Conversion', value:'Message destinations'},
           {label:'Destination', value:'Instagram only'},
-          {label:'Daily budget', value:'$350', copy:true},
+          {label:'Daily budget', value:'Use the launch-specific budget from Alex'},
           {label:'Start time', value:'5:00 AM PDT / 8:00 AM EST'},
           {label:'Location', value:'United States'},
           {label:'Age', value:'24–65'}
@@ -568,13 +569,14 @@ FORGE</textarea></div>
       ${metaScreen({
         where:['Seed ad','Message template'],
         fields:[{label:'Type', value:'Start conversations'}],
+        toggles:['Automated follow-up message'],
         greeting:`Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend "EDGE" and I'll send you the link 👇`
       })}
       <div class="field-block"><span class="l">Question #1</span><span class="v">EDGE</span><button class="copy">Copy</button></div>
     </div>`;
 
   CONTENT['meta.toggles'] = () => `
-    <h1 class="focus-title">Turn off these 4 settings, then publish</h1>
+    <h1 class="focus-title">Turn off these settings, then publish</h1>
     <div class="focus-card">
       ${metaScreen({
         where:['Seed ad','Settings'],
