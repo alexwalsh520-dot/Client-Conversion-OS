@@ -8,11 +8,20 @@ import {
   AlignLeft,
   AlignRight,
   ArrowLeft,
+  BringToFront,
+  CheckCircle2,
+  ClipboardPaste,
+  CopyPlus,
   Download,
   ImagePlus,
   Layers,
   MousePointer2,
+  Paintbrush,
+  PanelBottom,
+  PanelTop,
+  Replace,
   RotateCcw,
+  SendToBack,
   Sparkles,
   Trash2,
   Type,
@@ -26,6 +35,11 @@ const DB_NAME = "ccos-studio-2";
 const DB_STORE = "drafts";
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
+const IG_SAFE_ZONES = [
+  { id: "top" as const, y: 0, h: 190, label: "Instagram top bar" },
+  { id: "dm" as const, y: 1515, h: 275, label: "DM button area" },
+  { id: "bottom" as const, y: 1790, h: 130, label: "Bottom UI" },
+];
 
 const FONT_OPTIONS = [
   { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
@@ -55,6 +69,8 @@ charging for this.`;
 
 type TextAlign = "left" | "center" | "right";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
+type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
+type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked">;
 
 interface TextBlock {
   id: string;
@@ -90,6 +106,7 @@ interface Creative {
   textBlocks: TextBlock[];
   imageTransform: ImageTransform;
   status: "draft" | "exported";
+  approved?: boolean;
 }
 
 interface DraftState {
@@ -126,6 +143,12 @@ interface BlockMetrics {
 interface AlignmentGuides {
   x: number[];
   y: number[];
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  target: SelectedLayer;
 }
 
 type DragState =
@@ -400,7 +423,8 @@ function drawArtwork(
   ctx: CanvasRenderingContext2D,
   creative: Creative,
   image: HTMLImageElement | null,
-  pixelRatio: number
+  pixelRatio: number,
+  editingTextBlockId?: string | null
 ) {
   ctx.save();
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -425,6 +449,7 @@ function drawArtwork(
     }
 
     for (const line of metrics.lines) {
+      if (block.id === editingTextBlockId) continue;
       ctx.fillStyle = block.textColor;
       ctx.fillText(line.text, line.x + block.paddingH, line.textY);
     }
@@ -438,12 +463,14 @@ function drawOverlay(
   creative: Creative | undefined,
   selectedLayer: SelectedLayer,
   activeGuides: AlignmentGuides,
+  activeSafeZones: SafeZoneId[],
   measureCtx: CanvasRenderingContext2D,
   pixelRatio: number
 ) {
   ctx.save();
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  drawSafeZones(ctx, activeSafeZones);
   drawAlignmentGuides(ctx, activeGuides);
 
   if (!creative || !selectedLayer) {
@@ -474,6 +501,39 @@ function drawOverlay(
   ctx.strokeRect(m.x, m.y, m.w, m.h);
   ctx.shadowBlur = 0;
   drawTextHandles(ctx, m);
+  ctx.restore();
+}
+
+function drawSafeZones(ctx: CanvasRenderingContext2D, zones: SafeZoneId[]) {
+  if (!zones.length) return;
+
+  ctx.save();
+  ctx.font = "800 28px Inter, system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+
+  for (const id of zones) {
+    const zone = IG_SAFE_ZONES.find((z) => z.id === id);
+    if (!zone) continue;
+    ctx.fillStyle = "rgba(255, 51, 102, 0.13)";
+    ctx.fillRect(0, zone.y, CANVAS_W, zone.h);
+    ctx.strokeStyle = "rgba(255, 51, 102, 0.86)";
+    ctx.lineWidth = 5;
+    ctx.setLineDash([22, 14]);
+    ctx.beginPath();
+    ctx.moveTo(0, zone.y + 2.5);
+    ctx.lineTo(CANVAS_W, zone.y + 2.5);
+    ctx.moveTo(0, zone.y + zone.h - 2.5);
+    ctx.lineTo(CANVAS_W, zone.y + zone.h - 2.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    roundRect(ctx, 34, zone.y + zone.h / 2 - 27, 320, 54, 18);
+    ctx.fillStyle = "rgba(255, 51, 102, 0.9)";
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(zone.label, 56, zone.y + zone.h / 2);
+  }
+
   ctx.restore();
 }
 
@@ -626,6 +686,30 @@ function snapTextPosition(
   };
 }
 
+function getSafeZoneHits(y: number, h: number): SafeZoneId[] {
+  return IG_SAFE_ZONES
+    .filter((zone) => y < zone.y + zone.h && y + h > zone.y)
+    .map((zone) => zone.id);
+}
+
+function getTextStyle(block: TextBlock): TextStyle {
+  return {
+    fontSize: block.fontSize,
+    fontFamily: block.fontFamily,
+    fontWeight: block.fontWeight,
+    textColor: block.textColor,
+    bgColor: block.bgColor,
+    bgOpacity: block.bgOpacity,
+    borderRadius: block.borderRadius,
+    paddingH: block.paddingH,
+    paddingV: block.paddingV,
+    align: block.align,
+    lineGap: block.lineGap,
+    lineHeight: block.lineHeight,
+    maxWidth: block.maxWidth,
+  };
+}
+
 function parseCopyIntoAds(raw: string): string[][][] {
   if (!raw.trim()) return [];
   const separatorRe = /^[\-=~]{3,}\s*$/;
@@ -753,12 +837,23 @@ export default function Studio2Page() {
   const [undoStack, setUndoStack] = useState<Creative[][]>([]);
   const [redoStack, setRedoStack] = useState<Creative[][]>([]);
   const [activeGuides, setActiveGuides] = useState<AlignmentGuides>({ x: [], y: [] });
+  const [activeSafeZones, setActiveSafeZones] = useState<SafeZoneId[]>([]);
   const [canvasCursor, setCanvasCursor] = useState("default");
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [editingOriginalLines, setEditingOriginalLines] = useState<string[] | null>(null);
+  const [copiedStyle, setCopiedStyle] = useState<TextStyle | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFolderName, setExportFolderName] = useState(projectName);
+  const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceImageInputRef = useRef<HTMLInputElement>(null);
+  const inlineEditRef = useRef<HTMLTextAreaElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
   const [, bumpImageVersion] = useState(0);
   const dragRef = useRef<DragState | null>(null);
@@ -770,6 +865,9 @@ export default function Studio2Page() {
     selectedLayer?.type === "text"
       ? currentCreative?.textBlocks.find((b) => b.id === selectedLayer.id)
       : undefined;
+  const editingBlock = editingBlockId
+    ? currentCreative?.textBlocks.find((block) => block.id === editingBlockId)
+    : undefined;
 
   const getMeasureCtx = useCallback(() => {
     if (!measureCanvasRef.current) measureCanvasRef.current = document.createElement("canvas");
@@ -879,7 +977,7 @@ export default function Studio2Page() {
     const ctx = canvas.getContext("2d")!;
     const overlayCtx = overlay.getContext("2d")!;
     if (currentCreative) {
-      drawArtwork(ctx, currentCreative, currentImage, dpr);
+      drawArtwork(ctx, currentCreative, currentImage, dpr, editingBlockId);
     } else {
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -887,12 +985,27 @@ export default function Studio2Page() {
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
-    drawOverlay(overlayCtx, currentCreative, selectedLayer, activeGuides, getMeasureCtx(), dpr);
-  }, [activeGuides, currentCreative, currentImage, selectedLayer, getMeasureCtx]);
+    drawOverlay(overlayCtx, currentCreative, selectedLayer, activeGuides, activeSafeZones, getMeasureCtx(), dpr);
+  }, [activeGuides, activeSafeZones, currentCreative, currentImage, selectedLayer, editingBlockId, getMeasureCtx]);
 
   useEffect(() => {
     renderPreview();
   }, [renderPreview, viewScale]);
+
+  useEffect(() => {
+    if (!editingBlockId) return;
+    window.setTimeout(() => {
+      inlineEditRef.current?.focus();
+      inlineEditRef.current?.select();
+    }, 0);
+  }, [editingBlockId]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [contextMenu]);
 
   const pushUndo = useCallback(() => {
     setUndoStack((stack) => [...stack.slice(-29), cloneCreatives(creatives)]);
@@ -1015,6 +1128,113 @@ export default function Studio2Page() {
     setPhotos((prev) => [...prev, ...urls]);
   }, []);
 
+  const replaceCurrentImage = useCallback(
+    async (file: File | null) => {
+      if (!file || !currentCreative) return;
+      const url = await fileToDataUrl(file);
+      pushUndo();
+      setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        photoUrl: url,
+        imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
+      }));
+      setSelectedLayer({ type: "image" });
+      setContextMenu(null);
+    },
+    [currentCreative, pushUndo, updateCurrentCreative]
+  );
+
+  const duplicateSelectedBlock = useCallback(() => {
+    if (!selectedBlock) return;
+    pushUndo();
+    const copy = {
+      ...selectedBlock,
+      id: uid(),
+      x: clamp(selectedBlock.x + 36, -160, CANVAS_W - 120),
+      y: clamp(selectedBlock.y + 36, -160, CANVAS_H - 120),
+      lines: [...selectedBlock.lines],
+    };
+    updateCurrentCreative((creative) => ({
+      ...creative,
+      textBlocks: [...creative.textBlocks, copy],
+    }));
+    setSelectedLayer({ type: "text", id: copy.id });
+    setContextMenu(null);
+  }, [pushUndo, selectedBlock, updateCurrentCreative]);
+
+  const deleteSelectedBlock = useCallback(() => {
+    if (!selectedBlock) return;
+    pushUndo();
+    updateCurrentCreative((creative) => ({
+      ...creative,
+      textBlocks: creative.textBlocks.filter((block) => block.id !== selectedBlock.id),
+    }));
+    setSelectedLayer(null);
+    setContextMenu(null);
+  }, [pushUndo, selectedBlock, updateCurrentCreative]);
+
+  const copySelectedStyle = useCallback(() => {
+    if (!selectedBlock) return;
+    setCopiedStyle(getTextStyle(selectedBlock));
+    setContextMenu(null);
+  }, [selectedBlock]);
+
+  const pasteCopiedStyle = useCallback(() => {
+    if (!selectedBlock || !copiedStyle) return;
+    pushUndo();
+    updateSelectedBlock(copiedStyle);
+    setContextMenu(null);
+  }, [copiedStyle, pushUndo, selectedBlock, updateSelectedBlock]);
+
+  const positionSelectedBlock = useCallback(
+    (position: "center-x" | "center-y" | "top" | "bottom") => {
+      if (!selectedBlock) return;
+      pushUndo();
+      const metrics = measureTextBlock(getMeasureCtx(), selectedBlock);
+      const updates: Partial<TextBlock> = {};
+      if (position === "center-x") updates.x = Math.round((CANVAS_W - selectedBlock.maxWidth) / 2);
+      if (position === "center-y") updates.y = Math.round((CANVAS_H - metrics.h) / 2);
+      if (position === "top") updates.y = 210;
+      if (position === "bottom") updates.y = Math.round(CANVAS_H - metrics.h - 360);
+      updateSelectedBlock(updates);
+      setContextMenu(null);
+    },
+    [getMeasureCtx, pushUndo, selectedBlock, updateSelectedBlock]
+  );
+
+  const moveSelectedLayer = useCallback(
+    (direction: "front" | "back" | "forward" | "backward") => {
+      if (!selectedBlock) return;
+      pushUndo();
+      updateCurrentCreative((creative) => {
+        const index = creative.textBlocks.findIndex((block) => block.id === selectedBlock.id);
+        if (index < 0) return creative;
+        const blocks = [...creative.textBlocks];
+        const [block] = blocks.splice(index, 1);
+        if (!block) return creative;
+        let nextIndex = index;
+        if (direction === "front") nextIndex = blocks.length;
+        if (direction === "back") nextIndex = 0;
+        if (direction === "forward") nextIndex = clamp(index + 1, 0, blocks.length);
+        if (direction === "backward") nextIndex = clamp(index - 1, 0, blocks.length);
+        blocks.splice(nextIndex, 0, block);
+        return { ...creative, textBlocks: blocks };
+      });
+      setContextMenu(null);
+    },
+    [pushUndo, selectedBlock, updateCurrentCreative]
+  );
+
+  const toggleCurrentApproved = useCallback(() => {
+    if (!currentCreative) return;
+    setCreatives((prev) =>
+      prev.map((creative, index) =>
+        index === currentIndex ? { ...creative, approved: !creative.approved } : creative
+      )
+    );
+  }, [currentCreative, currentIndex]);
+
   const buildBlocksForSections = useCallback(
     (sections: string[][]) =>
       layoutBlocks(
@@ -1050,7 +1270,7 @@ export default function Studio2Page() {
     setView("editor");
   }, [buildBlocksForSections, copyText, photos]);
 
-  const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
+  const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
       x: ((event.clientX - rect.left) / rect.width) * CANVAS_W,
@@ -1101,6 +1321,60 @@ export default function Studio2Page() {
     [currentCreative, getMeasureCtx, selectedLayer]
   );
 
+  const startInlineEdit = useCallback(
+    (block: TextBlock) => {
+      if (block.locked) return;
+      pushUndo();
+      setEditingBlockId(block.id);
+      setEditingText(block.lines.join("\n"));
+      setEditingOriginalLines([...block.lines]);
+      setSelectedLayer({ type: "text", id: block.id });
+      setContextMenu(null);
+    },
+    [pushUndo]
+  );
+
+  const commitInlineEdit = useCallback(() => {
+    setEditingBlockId(null);
+    setEditingOriginalLines(null);
+  }, []);
+
+  const cancelInlineEdit = useCallback(() => {
+    if (editingBlockId && editingOriginalLines) {
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          block.id === editingBlockId ? { ...block, lines: editingOriginalLines } : block
+        ),
+      }));
+    }
+    setEditingBlockId(null);
+    setEditingOriginalLines(null);
+  }, [editingBlockId, editingOriginalLines, updateCurrentCreative]);
+
+  const handleDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!currentCreative) return;
+      const point = pointFromEvent(event);
+      const hit = findHitBlock(point);
+      if (hit) startInlineEdit(hit);
+    },
+    [currentCreative, findHitBlock, startInlineEdit]
+  );
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!currentCreative) return;
+      event.preventDefault();
+      const point = pointFromEvent(event);
+      const hit = findHitBlock(point);
+      const target: SelectedLayer = hit ? { type: "text", id: hit.id } : { type: "image" };
+      setSelectedLayer(target);
+      setContextMenu({ x: event.clientX, y: event.clientY, target });
+    },
+    [currentCreative, findHitBlock]
+  );
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       if (event.button !== 0) return;
@@ -1109,6 +1383,7 @@ export default function Studio2Page() {
       const point = pointFromEvent(event);
       const ctx = getMeasureCtx();
       setActiveGuides({ x: [], y: [] });
+      setActiveSafeZones([]);
 
       if (selectedLayer?.type === "text") {
         const block = currentCreative.textBlocks.find((b) => b.id === selectedLayer.id);
@@ -1205,6 +1480,7 @@ export default function Studio2Page() {
           ? snapTextPosition(rawX, rawY, drag.origMetrics, drag.blockId, currentCreative, getMeasureCtx())
           : { x: Math.round(rawX), y: Math.round(rawY), guides: { x: [], y: [] } };
         setActiveGuides(snapped.guides);
+        setActiveSafeZones(getSafeZoneHits(snapped.y, drag.origMetrics.h));
         setCanvasCursor("grabbing");
         updateCurrentCreative((creative) => ({
           ...creative,
@@ -1222,6 +1498,7 @@ export default function Studio2Page() {
 
       if (drag.kind === "resize-text") {
         setActiveGuides({ x: [], y: [] });
+        setActiveSafeZones([]);
         setCanvasCursor(cursorForResizeHandle(drag.handle));
         const handle = drag.handle;
         const isCorner = handle.length === 2;
@@ -1271,6 +1548,7 @@ export default function Studio2Page() {
 
       if (drag.kind === "move-image") {
         setActiveGuides({ x: [], y: [] });
+        setActiveSafeZones([]);
         setCanvasCursor("grabbing");
         updateImage({
           offsetX: Math.round(drag.orig.offsetX + dx),
@@ -1280,6 +1558,7 @@ export default function Studio2Page() {
 
       if (drag.kind === "resize-image") {
         setActiveGuides({ x: [], y: [] });
+        setActiveSafeZones([]);
         setCanvasCursor("nwse-resize");
         const nextDistance = Math.max(1, Math.hypot(point.x - CANVAS_W / 2, point.y - CANVAS_H / 2));
         updateImage({
@@ -1296,6 +1575,7 @@ export default function Studio2Page() {
     }
     dragRef.current = null;
     setActiveGuides({ x: [], y: [] });
+    setActiveSafeZones([]);
     setCanvasCursor("default");
   }, []);
 
@@ -1313,19 +1593,24 @@ export default function Studio2Page() {
         return;
       }
 
+      if (!typing && meta && event.key.toLowerCase() === "d" && selectedLayer?.type === "text") {
+        event.preventDefault();
+        duplicateSelectedBlock();
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+
       if (!typing && selectedLayer?.type === "text" && (event.key === "Delete" || event.key === "Backspace")) {
         event.preventDefault();
-        pushUndo();
-        updateCurrentCreative((creative) => ({
-          ...creative,
-          textBlocks: creative.textBlocks.filter((block) => block.id !== selectedLayer.id),
-        }));
-        setSelectedLayer(null);
+        deleteSelectedBlock();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pushUndo, redo, selectedLayer, undo, updateCurrentCreative, view]);
+  }, [deleteSelectedBlock, duplicateSelectedBlock, redo, selectedLayer, undo, view]);
 
   const renderCreativeToCanvas = useCallback(
     async (creative: Creative, pixelRatio = 2) => {
@@ -1358,21 +1643,30 @@ export default function Studio2Page() {
     setExportStatus("");
   }, [currentCreative, currentIndex, renderCreativeToCanvas]);
 
-  const exportAll = useCallback(async () => {
-    if (!creatives.length) return;
-    setExportStatus(`Exporting 1 of ${creatives.length}...`);
+  const exportAll = useCallback(async (folderLabel?: string, approvedOnly = false) => {
+    const creativesToExport = approvedOnly
+      ? creatives.filter((creative) => creative.approved)
+      : creatives;
+    if (!creativesToExport.length) {
+      setExportStatus(approvedOnly ? "No approved ads yet." : "");
+      window.setTimeout(() => setExportStatus(""), 1600);
+      return;
+    }
+    setExportModalOpen(false);
+    setExportStatus(`Exporting 1 of ${creativesToExport.length}...`);
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
-    const folderName = `${projectName || "Studio 2.0 Ads"} - ${new Date()
+    const baseName = (folderLabel || projectName || "Studio 2.0 Ads").trim();
+    const folderName = `${baseName} - ${new Date()
       .toISOString()
       .slice(0, 16)
       .replace("T", " ")
       .replace(":", "-")}`;
     const folder = zip.folder(folderName)!;
 
-    for (let i = 0; i < creatives.length; i++) {
-      setExportStatus(`Exporting ${i + 1} of ${creatives.length}...`);
-      const canvas = await renderCreativeToCanvas(creatives[i], 2);
+    for (let i = 0; i < creativesToExport.length; i++) {
+      setExportStatus(`Exporting ${i + 1} of ${creativesToExport.length}...`);
+      const canvas = await renderCreativeToCanvas(creativesToExport[i], 2);
       const blob = await new Promise<Blob>((resolve) => {
         canvas.toBlob((b) => resolve(b!), "image/png");
       });
@@ -1416,6 +1710,21 @@ export default function Studio2Page() {
       )
     );
   }, [currentCreative, currentIndex, pushUndo]);
+
+  const handleCanvasDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
+      if (file) await replaceCurrentImage(file);
+    },
+    [replaceCurrentImage]
+  );
+
+  const openExportModal = useCallback(() => {
+    setExportFolderName(projectName || "Studio 2.0 Ads");
+    setExportApprovedOnly(false);
+    setExportModalOpen(true);
+  }, [projectName]);
 
   if (view === "setup") {
     return (
@@ -1569,6 +1878,9 @@ export default function Studio2Page() {
     );
   }
 
+  const editingMetrics = editingBlock ? measureTextBlock(getMeasureCtx(), editingBlock) : null;
+  const approvedCount = creatives.filter((creative) => creative.approved).length;
+
   return (
     <div className="ad-studio-fullbleed" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <style>{`
@@ -1600,6 +1912,16 @@ export default function Studio2Page() {
           box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
       `}</style>
+      <input
+        ref={replaceImageInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(event) => {
+          void replaceCurrentImage(event.target.files?.[0] ?? null);
+          event.target.value = "";
+        }}
+      />
       <div style={{
         height: 58,
         display: "flex",
@@ -1641,13 +1963,20 @@ export default function Studio2Page() {
         <button style={buttonStyle(false)} onClick={exportCurrent}>
           <Download size={14} /> Export
         </button>
-        <button style={buttonStyle(true)} onClick={exportAll}>
+        <button style={buttonStyle(!!currentCreative?.approved)} onClick={toggleCurrentApproved}>
+          <CheckCircle2 size={14} /> {currentCreative?.approved ? "Approved" : "Approve"}
+        </button>
+        <button style={buttonStyle(true)} onClick={openExportModal}>
           <Download size={14} /> Export All
         </button>
       </div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        <div ref={canvasAreaRef} style={{
+        <div
+          ref={canvasAreaRef}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={handleCanvasDrop}
+          style={{
           flex: 1,
           minWidth: 0,
           display: "flex",
@@ -1681,6 +2010,8 @@ export default function Studio2Page() {
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
+              onDoubleClick={handleDoubleClick}
+              onContextMenu={handleContextMenu}
               onPointerLeave={() => {
                 if (!dragRef.current) setCanvasCursor("default");
               }}
@@ -1693,6 +2024,56 @@ export default function Studio2Page() {
                 cursor: canvasCursor,
               }}
             />
+            {editingBlock && editingMetrics && (
+              <textarea
+                ref={inlineEditRef}
+                value={editingText}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setEditingText(next);
+                  updateCurrentCreative((creative) => ({
+                    ...creative,
+                    textBlocks: creative.textBlocks.map((block) =>
+                      block.id === editingBlock.id ? { ...block, lines: next.split("\n") } : block
+                    ),
+                  }));
+                }}
+                onBlur={commitInlineEdit}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelInlineEdit();
+                  }
+                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "enter") {
+                    event.preventDefault();
+                    commitInlineEdit();
+                  }
+                }}
+                spellCheck={false}
+                style={{
+                  position: "absolute",
+                  left: editingMetrics.x * viewScale,
+                  top: editingMetrics.y * viewScale,
+                  width: editingMetrics.w * viewScale,
+                  minHeight: Math.max(editingMetrics.h * viewScale, editingBlock.fontSize * viewScale * 2.1),
+                  border: `${Math.max(1, 2 * viewScale)}px solid rgba(191,167,255,0.95)`,
+                  boxShadow: "0 0 0 3px rgba(124,92,252,0.25), 0 10px 26px rgba(0,0,0,0.28)",
+                  borderRadius: Math.max(6, editingBlock.borderRadius * viewScale),
+                  background: "transparent",
+                  color: editingBlock.textColor,
+                  fontFamily: editingBlock.fontFamily,
+                  fontSize: editingBlock.fontSize * viewScale,
+                  fontWeight: editingBlock.fontWeight,
+                  lineHeight: editingBlock.lineHeight,
+                  padding: `${editingBlock.paddingV * viewScale}px ${editingBlock.paddingH * viewScale}px`,
+                  textAlign: editingBlock.align,
+                  resize: "none",
+                  overflow: "hidden",
+                  outline: "none",
+                  zIndex: 3,
+                }}
+              />
+            )}
           </div>
 
           <div style={{ height: 92, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, overflowX: "auto", padding: "14px 18px" }}>
@@ -1704,6 +2085,7 @@ export default function Studio2Page() {
                   setSelectedLayer(null);
                 }}
                 style={{
+                  position: "relative",
                   width: 42,
                   height: 74,
                   borderRadius: 6,
@@ -1717,6 +2099,23 @@ export default function Studio2Page() {
                 title={`Ad ${index + 1}`}
               >
                 <img src={creative.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {creative.approved && (
+                  <span style={{
+                    position: "absolute",
+                    right: 2,
+                    bottom: 2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: "50%",
+                    background: "#34d399",
+                    color: "#06140f",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}>
+                    <CheckCircle2 size={12} />
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -1834,6 +2233,18 @@ export default function Studio2Page() {
                   ))}
                 </div>
               </Control>
+              <Control label="Position">
+                <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-x")}>Center X</button>
+                <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-y")}>Center Y</button>
+              </Control>
+              <Control label="Layer">
+                <button style={buttonStyle(false)} onClick={() => moveSelectedLayer("front")}>
+                  <BringToFront size={13} /> Front
+                </button>
+                <button style={buttonStyle(false)} onClick={() => moveSelectedLayer("back")}>
+                  <SendToBack size={13} /> Back
+                </button>
+              </Control>
             </div>
           )}
 
@@ -1846,6 +2257,12 @@ export default function Studio2Page() {
                 <input type="number" value={currentCreative.imageTransform.offsetX} onFocus={pushUndo} onChange={(e) => updateImage({ offsetX: parseInt(e.target.value) || 0 })} style={inputStyle} />
                 <input type="number" value={currentCreative.imageTransform.offsetY} onFocus={pushUndo} onChange={(e) => updateImage({ offsetY: parseInt(e.target.value) || 0 })} style={inputStyle} />
               </Control>
+              <button
+                style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
+                onClick={() => replaceImageInputRef.current?.click()}
+              >
+                <Replace size={13} /> Replace Image
+              </button>
               <button
                 style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
                 onClick={() => {
@@ -1894,8 +2311,158 @@ export default function Studio2Page() {
           </div>
         </aside>
       </div>
+      {contextMenu && (
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: typeof window === "undefined" ? contextMenu.x : Math.min(contextMenu.x, window.innerWidth - 292),
+            top: typeof window === "undefined" ? contextMenu.y : Math.min(contextMenu.y, window.innerHeight - 470),
+            width: 276,
+            padding: 8,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(35,37,48,0.98)",
+            boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+            zIndex: 40,
+          }}
+        >
+          {contextMenu.target?.type === "text" && (
+            <>
+              <MenuAction icon={CopyPlus} label="Duplicate" shortcut="⌘D" onClick={duplicateSelectedBlock} />
+              <MenuAction icon={Paintbrush} label="Copy style" onClick={copySelectedStyle} />
+              <MenuAction icon={ClipboardPaste} label="Paste style" disabled={!copiedStyle} onClick={pasteCopiedStyle} />
+              <MenuAction icon={Trash2} label="Delete" shortcut="DEL" danger onClick={deleteSelectedBlock} />
+              <MenuDivider />
+              <MenuAction icon={AlignCenter} label="Center horizontally" onClick={() => positionSelectedBlock("center-x")} />
+              <MenuAction icon={AlignCenter} label="Center vertically" onClick={() => positionSelectedBlock("center-y")} />
+              <MenuAction icon={PanelTop} label="Move near top" onClick={() => positionSelectedBlock("top")} />
+              <MenuAction icon={PanelBottom} label="Move near bottom" onClick={() => positionSelectedBlock("bottom")} />
+              <MenuDivider />
+              <MenuAction icon={BringToFront} label="Bring to front" onClick={() => moveSelectedLayer("front")} />
+              <MenuAction icon={SendToBack} label="Send to back" onClick={() => moveSelectedLayer("back")} />
+            </>
+          )}
+          {contextMenu.target?.type === "image" && (
+            <>
+              <MenuAction icon={Replace} label="Replace image" onClick={() => replaceImageInputRef.current?.click()} />
+              <MenuAction
+                icon={RotateCcw}
+                label="Reset image crop"
+                onClick={() => {
+                  pushUndo();
+                  updateImage({ scale: 1, rotate: 0, offsetX: 0, offsetY: 0 });
+                  setContextMenu(null);
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
+      {exportModalOpen && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.58)",
+          zIndex: 45,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 20,
+        }}>
+          <div style={{
+            width: 390,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(23,21,34,0.98)",
+            boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+            padding: 18,
+          }}>
+            <div style={{ color: "#fff", fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Name export folder</div>
+            <input
+              value={exportFolderName}
+              onChange={(event) => setExportFolderName(event.target.value)}
+              style={{ ...inputStyle, height: 40, marginBottom: 12 }}
+              autoFocus
+            />
+            <label style={{ display: "flex", gap: 8, alignItems: "center", color: "rgba(255,255,255,0.72)", fontSize: 12, marginBottom: 14 }}>
+              <input
+                type="checkbox"
+                checked={exportApprovedOnly}
+                onChange={(event) => setExportApprovedOnly(event.target.checked)}
+              />
+              Export approved ads only ({approvedCount} approved)
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button style={buttonStyle(false)} onClick={() => setExportModalOpen(false)}>Cancel</button>
+              <button style={buttonStyle(true)} onClick={() => exportAll(exportFolderName, exportApprovedOnly)}>
+                <Download size={14} /> Export
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function MenuAction({
+  icon: Icon,
+  label,
+  shortcut,
+  danger = false,
+  disabled = false,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number }>;
+  label: string;
+  shortcut?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: "100%",
+        height: 42,
+        border: "none",
+        borderRadius: 8,
+        background: "transparent",
+        color: disabled ? "rgba(255,255,255,0.28)" : danger ? "#ffb4b4" : "rgba(255,255,255,0.9)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "0 10px",
+        fontFamily: "inherit",
+        fontSize: 14,
+        fontWeight: 650,
+        textAlign: "left",
+      }}
+    >
+      <Icon size={18} />
+      <span style={{ flex: 1 }}>{label}</span>
+      {shortcut && (
+        <span style={{
+          color: "rgba(255,255,255,0.72)",
+          background: "rgba(255,255,255,0.12)",
+          borderRadius: 6,
+          padding: "4px 7px",
+          fontSize: 11,
+          fontWeight: 800,
+        }}>
+          {shortcut}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div style={{ height: 1, background: "rgba(255,255,255,0.1)", margin: "7px -8px" }} />;
 }
 
 function Control({ label, children }: { label: string; children: React.ReactNode }) {
