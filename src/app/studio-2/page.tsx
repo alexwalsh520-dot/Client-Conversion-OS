@@ -1063,6 +1063,10 @@ export default function Studio2Page() {
   const [uploadDropActive, setUploadDropActive] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
+  const [folderPickerProjectId, setFolderPickerProjectId] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [folderPickerStatus, setFolderPickerStatus] = useState("");
+  const [savingFolderPick, setSavingFolderPick] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -2418,17 +2422,11 @@ export default function Studio2Page() {
     [fetchStudioHome, getHomeProjectDetail]
   );
 
-  const resolveFolderForProject = useCallback(async () => {
-    const folderNames = cloudFolders.map((folder) => folder.name).join(", ");
-    const promptText = folderNames
-      ? `Type an existing folder name or a new folder name:\n${folderNames}`
-      : "Folder name";
-    const name = window.prompt(promptText);
-    if (!name?.trim()) return null;
+  const createStudioFolder = useCallback(async (name: string) => {
     const trimmed = name.trim();
+    if (!trimmed) return null;
     const existing = cloudFolders.find((folder) => folder.name.toLowerCase() === trimmed.toLowerCase());
     if (existing) return existing.id;
-
     const res = await fetch("/api/studio-2/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2437,13 +2435,13 @@ export default function Studio2Page() {
     if (!res.ok) throw new Error("Folder create failed");
     const data = await res.json() as { folder?: StudioFolder };
     if (!data.folder?.id) throw new Error("Folder create failed");
+    setCloudFolders((prev) => [...prev, data.folder!].sort((a, b) => a.name.localeCompare(b.name)));
     return data.folder.id;
   }, [cloudFolders]);
 
   const addHomeProjectToFolder = useCallback(
-    async (cardId: string) => {
+    async (cardId: string, folderId: string) => {
       try {
-        const folderId = await resolveFolderForProject();
         if (!folderId) return;
 
         let targetId = cardId;
@@ -2475,14 +2473,32 @@ export default function Studio2Page() {
         });
         if (!res.ok) throw new Error("Folder update failed");
         setCardMenuId(null);
+        setFolderPickerProjectId(null);
+        setFolderPickerStatus("");
+        setNewFolderName("");
         setCloudStatus("Project added to folder.");
         void fetchStudioHome();
       } catch {
-        setCloudStatus("Could not add that project to a folder.");
+        setFolderPickerStatus("Could not add that project to a folder.");
       }
     },
-    [activeDraftId, buildDraftState, fetchStudioHome, projectId, resolveFolderForProject]
+    [activeDraftId, buildDraftState, fetchStudioHome, projectId]
   );
+
+  const addHomeProjectToNewFolder = useCallback(async () => {
+    if (!folderPickerProjectId || !newFolderName.trim() || savingFolderPick) return;
+    setSavingFolderPick(true);
+    setFolderPickerStatus("Creating folder...");
+    try {
+      const folderId = await createStudioFolder(newFolderName);
+      if (!folderId) return;
+      await addHomeProjectToFolder(folderPickerProjectId, folderId);
+    } catch {
+      setFolderPickerStatus("Could not create that folder.");
+    } finally {
+      setSavingFolderPick(false);
+    }
+  }, [addHomeProjectToFolder, createStudioFolder, folderPickerProjectId, newFolderName, savingFolderPick]);
 
   const deleteHomeProject = useCallback(
     async (cardId: string) => {
@@ -2737,14 +2753,9 @@ export default function Studio2Page() {
                     setCreateMenuOpen(false);
                     const name = window.prompt("Folder name");
                     if (!name?.trim()) return;
-                    void fetch("/api/studio-2/folders", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ name: name.trim() }),
-                    })
-                      .then((res) => res.json())
-                      .then((data: { folder?: StudioFolder }) => {
-                        if (data.folder?.id) setSelectedFolderId(data.folder.id);
+                    void createStudioFolder(name)
+                      .then((folderId) => {
+                        if (folderId) setSelectedFolderId(folderId);
                         void fetchStudioHome();
                       })
                       .catch(() => setCloudStatus("Folder save failed."));
@@ -2878,11 +2889,16 @@ export default function Studio2Page() {
                           boxShadow: "0 18px 48px rgba(0,0,0,0.52)",
                         }}
                       >
-                        <HomeMenuButton
-                          icon={FolderPlus}
-                          label="Add to folder"
-                          onClick={() => void addHomeProjectToFolder(project.id)}
-                        />
+                      <HomeMenuButton
+                        icon={FolderPlus}
+                        label="Add to folder"
+                        onClick={() => {
+                          setCardMenuId(null);
+                          setFolderPickerProjectId(project.id);
+                          setFolderPickerStatus("");
+                          setNewFolderName("");
+                        }}
+                      />
                         <HomeMenuButton
                           icon={CopyPlus}
                           label="Duplicate"
@@ -4057,10 +4073,100 @@ export default function Studio2Page() {
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
-}
+        )}
+        {folderPickerProjectId && (
+          <div
+            onClick={() => {
+              setFolderPickerProjectId(null);
+              setFolderPickerStatus("");
+              setNewFolderName("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.58)",
+              zIndex: 47,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 420,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Add to folder</div>
+              <div style={{ display: "grid", gap: 7, marginBottom: 16, maxHeight: 220, overflowY: "auto" }}>
+                {cloudFolders.length ? cloudFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    disabled={savingFolderPick}
+                    onClick={() => void addHomeProjectToFolder(folderPickerProjectId, folder.id)}
+                    style={{
+                      width: "100%",
+                      height: 40,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 8,
+                      background: ADS_BRAND.panel3,
+                      color: ADS_BRAND.text,
+                      cursor: savingFolderPick ? "wait" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "0 11px",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      fontWeight: 650,
+                      textAlign: "left",
+                    }}
+                  >
+                    <Folder size={15} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                  </button>
+                )) : (
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "4px 2px" }}>No folders yet.</div>
+                )}
+              </div>
+              <div style={{ height: 1, background: ADS_BRAND.border, marginBottom: 14 }} />
+              <label style={{ ...labelStyle, display: "block", marginBottom: 7 }}>Create New Folder</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  placeholder="Folder name"
+                  style={{ ...inputStyle, height: 40, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  disabled={!newFolderName.trim() || savingFolderPick}
+                  onClick={() => void addHomeProjectToNewFolder()}
+                  style={{
+                    ...buttonStyle(true),
+                    opacity: newFolderName.trim() && !savingFolderPick ? 1 : 0.4,
+                    cursor: newFolderName.trim() && !savingFolderPick ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Create
+                </button>
+              </div>
+              {folderPickerStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 12 }}>{folderPickerStatus}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
 function HomeMenuButton({
   icon: Icon,
