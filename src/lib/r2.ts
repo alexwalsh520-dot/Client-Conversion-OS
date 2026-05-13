@@ -18,11 +18,11 @@ interface PresignedPutInput {
 }
 
 export function getR2Config(): R2Config {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  const bucketName = process.env.R2_BUCKET_NAME;
-  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
+  const accountId = process.env.R2_ACCOUNT_ID?.trim();
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+  const bucketName = process.env.R2_BUCKET_NAME?.trim();
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim();
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !publicBaseUrl) {
     throw new Error("R2 env vars not configured");
