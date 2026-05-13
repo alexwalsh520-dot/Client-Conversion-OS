@@ -142,8 +142,9 @@ interface Creative {
 }
 
 interface DraftState {
-  version: 1;
+  version: 1 | 2;
   savedAt: number;
+  projectId?: string | null;
   photos: string[];
   creatives: Creative[];
   currentIndex: number;
@@ -152,6 +153,29 @@ interface DraftState {
   colorPreset: "dark" | "light";
   fontPreset: string;
   view: StudioView;
+}
+
+interface StudioFolder {
+  id: string;
+  name: string;
+}
+
+interface StudioProjectSummary {
+  id: string;
+  folderId: string | null;
+  name: string;
+  thumbnailUrl: string | null;
+  status: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
+interface HomeProjectCard {
+  id: string;
+  name: string;
+  updated: string;
+  thumb: string;
+  isActiveDraft: boolean;
 }
 
 interface RenderedLine {
@@ -318,13 +342,73 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+async function uploadStudioMedia(file: File, projectId?: string | null, folderId?: string | null): Promise<string> {
+  const contentType = file.type || "application/octet-stream";
+  const presignRes = await fetch("/api/studio-2/media/upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType,
+      fileSize: file.size,
+      projectId,
+      folderId,
+    }),
+  });
+
+  if (!presignRes.ok) throw new Error("R2 upload URL failed");
+  const presign = await presignRes.json() as {
+    key: string;
+    publicUrl: string;
+    uploadUrl: string;
+    headers?: Record<string, string>;
+  };
+
+  const uploadRes = await fetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: presign.headers || { "Content-Type": contentType },
+    body: file,
+  });
+
+  if (!uploadRes.ok) throw new Error("R2 upload failed");
+
+  void fetch("/api/studio-2/media/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: presign.key,
+      publicUrl: presign.publicUrl,
+      filename: file.name,
+      contentType,
+      fileSize: file.size,
+      projectId,
+      folderId,
+    }),
+  }).catch(() => undefined);
+
+  return presign.publicUrl;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    const resolvedSrc = getCanvasImageSrc(src);
+    if (/^https?:\/\//i.test(resolvedSrc)) img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Image failed to load"));
-    img.src = src;
+    img.src = resolvedSrc;
   });
+}
+
+function getCanvasImageSrc(src: string) {
+  if (!/^https?:\/\//i.test(src) || typeof window === "undefined") return src;
+  try {
+    const url = new URL(src);
+    if (url.origin === window.location.origin) return src;
+    return `/api/studio-2/media/proxy?url=${encodeURIComponent(src)}`;
+  } catch {
+    return src;
+  }
 }
 
 function hexToRgb(hex: string): string {
@@ -797,6 +881,16 @@ function getDraftDate(savedAt: number) {
   });
 }
 
+function formatProjectDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function buttonStyle(active = false): React.CSSProperties {
   return {
     border: active ? `1px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
@@ -886,25 +980,13 @@ const alignOptions = [
   { value: "right" as const, label: "Right", icon: AlignRight },
 ];
 
-const HOME_FOLDERS = [
-  { id: "all", name: "All designs" },
-  { id: "tyson", name: "Tyson summer shred" },
-  { id: "challenge", name: "Challenge launches" },
-  { id: "raw", name: "Raw client media" },
-];
-
-const HOME_SAMPLE_PROJECTS = [
-  { id: "sample-tyson", name: "Tyson gym story ads", updated: "May 13, 2026" },
-  { id: "sample-keith", name: "Keith DM retargeting", updated: "May 12, 2026" },
-  { id: "sample-broll", name: "Summer b-roll cuts", updated: "May 10, 2026" },
-];
-
 export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
   const [projectName, setProjectName] = useState("Studio 2.0 Batch");
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [view, setView] = useState<StudioView>("home");
   const [colorPreset, setColorPreset] = useState<"dark" | "light">("dark");
   const [fontPreset, setFontPreset] = useState(FONT_OPTIONS[0].value);
@@ -928,12 +1010,18 @@ export default function Studio2Page() {
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [cloudFolders, setCloudFolders] = useState<StudioFolder[]>([]);
+  const [cloudProjects, setCloudProjects] = useState<StudioProjectSummary[]>([]);
+  const [cloudStatus, setCloudStatus] = useState("Loading designs...");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const homeUploadInputRef = useRef<HTMLInputElement>(null);
+  const homeVideoInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
@@ -963,24 +1051,104 @@ export default function Studio2Page() {
   const hasActiveDraft =
     photos.length > 0 ||
     creatives.length > 0 ||
+    !!projectId ||
     projectName !== "Studio 2.0 Batch" ||
     copyText !== DEFAULT_COPY;
+  const activeDraftId = projectId || "active-draft";
   const activeDraftCard = useMemo(
-    () => ({
-      id: "active-draft",
+    (): HomeProjectCard => ({
+      id: activeDraftId,
       name: projectName || "Untitled Studio batch",
       updated: "May 13, 2026",
       thumb: currentCreative?.photoUrl || photos[0] || "",
       isActiveDraft: true,
     }),
-    [currentCreative?.photoUrl, photos, projectName]
+    [activeDraftId, currentCreative?.photoUrl, photos, projectName]
   );
+  const visibleCloudProjects = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return cloudProjects.filter((project) => {
+      if (project.id === projectId) return false;
+      if (selectedFolderId && project.folderId !== selectedFolderId) return false;
+      if (normalizedSearch && !project.name.toLowerCase().includes(normalizedSearch)) return false;
+      return true;
+    });
+  }, [cloudProjects, projectId, searchTerm, selectedFolderId]);
   const homeProjects = useMemo(
-    () => [
+    (): HomeProjectCard[] => [
       ...(hasActiveDraft ? [activeDraftCard] : []),
-      ...HOME_SAMPLE_PROJECTS.map((project) => ({ ...project, thumb: "", isActiveDraft: false })),
+      ...visibleCloudProjects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        updated: formatProjectDate(project.updatedAt),
+        thumb: project.thumbnailUrl || "",
+        isActiveDraft: false,
+      })),
     ],
-    [activeDraftCard, hasActiveDraft]
+    [activeDraftCard, hasActiveDraft, visibleCloudProjects]
+  );
+  const folderOptions = useMemo(
+    () => [
+      { id: null, name: "All designs" },
+      ...cloudFolders.map((folder) => ({ id: folder.id, name: folder.name })),
+    ],
+    [cloudFolders]
+  );
+
+  const buildDraftState = useCallback(
+    (overrides: Partial<DraftState> = {}): DraftState => ({
+      version: 2,
+      savedAt: Date.now(),
+      projectId,
+      photos,
+      creatives,
+      currentIndex,
+      copyText,
+      projectName,
+      colorPreset,
+      fontPreset,
+      view,
+      ...overrides,
+    }),
+    [colorPreset, copyText, creatives, currentIndex, fontPreset, photos, projectId, projectName, view]
+  );
+
+  const fetchStudioHome = useCallback(async () => {
+    try {
+      const res = await fetch("/api/studio-2/projects", { cache: "no-store" });
+      if (!res.ok) throw new Error("Project library unavailable");
+      const data = await res.json() as { projects?: StudioProjectSummary[]; folders?: StudioFolder[] };
+      setCloudProjects(data.projects || []);
+      setCloudFolders(data.folders || []);
+      setCloudStatus("");
+    } catch {
+      setCloudStatus("Cloud library unavailable. Local autosave is still on.");
+    }
+  }, []);
+
+  const persistProjectToCloud = useCallback(
+    async (draft: DraftState, refreshHome = false) => {
+      const thumbnailUrl = draft.creatives[0]?.photoUrl || draft.photos[0] || null;
+      const body = {
+        name: draft.projectName || "Untitled design",
+        copyText: draft.copyText,
+        draft,
+        thumbnailUrl,
+        folderId: selectedFolderId,
+        status: draft.creatives.length ? "in_progress" : "draft",
+      };
+      const res = await fetch(projectId ? `/api/studio-2/projects/${projectId}` : "/api/studio-2/projects", {
+        method: projectId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Cloud project save failed");
+      const data = await res.json() as { project?: { id?: string } };
+      if (!projectId && data.project?.id) setProjectId(data.project.id);
+      if (refreshHome) void fetchStudioHome();
+      return data.project;
+    },
+    [fetchStudioHome, projectId, selectedFolderId]
   );
 
   useEffect(() => {
@@ -1003,6 +1171,7 @@ export default function Studio2Page() {
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
         setProjectName(draft.projectName || "Studio 2.0 Batch");
+        setProjectId(draft.projectId || null);
         setColorPreset(draft.colorPreset || "dark");
         setFontPreset(draft.fontPreset || FONT_OPTIONS[0].value);
         setView("home");
@@ -1019,26 +1188,27 @@ export default function Studio2Page() {
   }, []);
 
   useEffect(() => {
+    void fetchStudioHome();
+  }, [fetchStudioHome]);
+
+  useEffect(() => {
     if (!hydratedRef.current) return;
     const handle = window.setTimeout(() => {
-      const draft: DraftState = {
-        version: 1,
-        savedAt: Date.now(),
-        photos,
-        creatives,
-        currentIndex,
-        copyText,
-        projectName,
-        colorPreset,
-        fontPreset,
-        view,
-      };
+      const draft = buildDraftState();
       saveDraft(draft)
         .then(() => setSaveStatus(`Saved ${getDraftDate(draft.savedAt)}`))
         .catch(() => setSaveStatus("Autosave failed"));
     }, 700);
     return () => window.clearTimeout(handle);
-  }, [photos, creatives, currentIndex, copyText, projectName, colorPreset, fontPreset, view]);
+  }, [buildDraftState]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || !projectId) return;
+    const handle = window.setTimeout(() => {
+      void persistProjectToCloud(buildDraftState(), true).catch(() => undefined);
+    }, 1800);
+    return () => window.clearTimeout(handle);
+  }, [buildDraftState, persistProjectToCloud, projectId]);
 
   useEffect(() => {
     const updateScale = () => {
@@ -1239,14 +1409,36 @@ export default function Studio2Page() {
 
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
-    const urls = await Promise.all(Array.from(files).map(fileToDataUrl));
+    const urls = await Promise.all(
+      Array.from(files).map(async (file) => {
+        try {
+          return await uploadStudioMedia(file, projectId, selectedFolderId);
+        } catch {
+          return fileToDataUrl(file);
+        }
+      })
+    );
     setPhotos((prev) => [...prev, ...urls]);
-  }, []);
+    void fetchStudioHome();
+  }, [fetchStudioHome, projectId, selectedFolderId]);
+
+  const handleMediaOnlyUpload = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return;
+    await Promise.all(
+      Array.from(files).map((file) => uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""))
+    );
+    void fetchStudioHome();
+  }, [fetchStudioHome, projectId, selectedFolderId]);
 
   const replaceCurrentImage = useCallback(
     async (file: File | null) => {
       if (!file || !currentCreative) return;
-      const url = await fileToDataUrl(file);
+      let url: string;
+      try {
+        url = await uploadStudioMedia(file, projectId, selectedFolderId);
+      } catch {
+        url = await fileToDataUrl(file);
+      }
       pushUndo();
       setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
       updateCurrentCreative((creative) => ({
@@ -1256,8 +1448,9 @@ export default function Studio2Page() {
       }));
       setSelectedLayer({ type: "image" });
       setContextMenu(null);
+      void fetchStudioHome();
     },
-    [currentCreative, pushUndo, updateCurrentCreative]
+    [currentCreative, fetchStudioHome, projectId, pushUndo, selectedFolderId, updateCurrentCreative]
   );
 
   const duplicateSelectedBlock = useCallback(() => {
@@ -1383,7 +1576,13 @@ export default function Studio2Page() {
     setUndoStack([]);
     setRedoStack([]);
     setView("editor");
-  }, [buildBlocksForSections, copyText, photos]);
+    const draft = buildDraftState({
+      creatives: nextCreatives,
+      currentIndex: 0,
+      view: "editor",
+    });
+    void persistProjectToCloud(draft, true).catch(() => setCloudStatus("Saved locally. Cloud save failed."));
+  }, [buildBlocksForSections, buildDraftState, copyText, persistProjectToCloud, photos]);
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1844,17 +2043,57 @@ export default function Studio2Page() {
   const openSetupFlow = useCallback(() => {
     setCreateMenuOpen(false);
     setFolderMenuOpen(false);
+    setProjectId(null);
+    setPhotos([]);
+    setCreatives([]);
+    setCurrentIndex(0);
+    setCopyText(DEFAULT_COPY);
+    setProjectName("Untitled design");
+    setSelectedLayer(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    setRestoredAt(null);
     setView("setup");
   }, []);
 
   const openHomeProject = useCallback(
-    (projectId: string) => {
-      if (projectId === "active-draft") {
+    async (cardId: string) => {
+      if (cardId === activeDraftId) {
         setView(creatives.length ? "editor" : "setup");
         return;
       }
+      try {
+        const res = await fetch(`/api/studio-2/projects/${cardId}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("Project load failed");
+        const data = await res.json() as {
+          project?: {
+            id: string;
+            name: string;
+            copyText?: string;
+            draft?: Partial<DraftState>;
+          };
+        };
+        const project = data.project;
+        if (!project) throw new Error("Project not found");
+        const draft = project.draft || {};
+        const nextCreatives = (draft.creatives || []).map(normalizeCreative);
+        setProjectId(project.id);
+        setPhotos(draft.photos || []);
+        setCreatives(nextCreatives);
+        setCurrentIndex(draft.currentIndex || 0);
+        setCopyText(draft.copyText || project.copyText || DEFAULT_COPY);
+        setProjectName(draft.projectName || project.name || "Untitled design");
+        setColorPreset(draft.colorPreset || "dark");
+        setFontPreset(draft.fontPreset || FONT_OPTIONS[0].value);
+        setSelectedLayer(null);
+        setUndoStack([]);
+        setRedoStack([]);
+        setView(nextCreatives.length ? "editor" : "setup");
+      } catch {
+        setCloudStatus("Could not open that cloud project yet.");
+      }
     },
-    [creatives.length]
+    [activeDraftId, creatives.length]
   );
 
   if (view === "home") {
@@ -1899,6 +2138,17 @@ export default function Studio2Page() {
             setView("setup");
           }}
         />
+        <input
+          ref={homeVideoInputRef}
+          type="file"
+          accept="video/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(event) => {
+            void handleMediaOnlyUpload(event.target.files);
+            event.target.value = "";
+          }}
+        />
 
         <div style={{
           height: 80,
@@ -1927,6 +2177,8 @@ export default function Studio2Page() {
             }}>
               <Search size={17} />
               <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search designs..."
                 style={{
                   width: "100%",
@@ -1994,12 +2246,15 @@ export default function Studio2Page() {
                   boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
                 }}
               >
-                {HOME_FOLDERS.map((folder) => (
+                {folderOptions.map((folder) => (
                   <HomeMenuButton
-                    key={folder.id}
+                    key={folder.id || "all"}
                     icon={Folder}
                     label={folder.name}
-                    onClick={() => setFolderMenuOpen(false)}
+                    onClick={() => {
+                      setSelectedFolderId(folder.id);
+                      setFolderMenuOpen(false);
+                    }}
                   />
                 ))}
               </div>
@@ -2035,6 +2290,19 @@ export default function Studio2Page() {
                   label="Create folder"
                   onClick={() => {
                     setCreateMenuOpen(false);
+                    const name = window.prompt("Folder name");
+                    if (!name?.trim()) return;
+                    void fetch("/api/studio-2/folders", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: name.trim() }),
+                    })
+                      .then((res) => res.json())
+                      .then((data: { folder?: StudioFolder }) => {
+                        if (data.folder?.id) setSelectedFolderId(data.folder.id);
+                        void fetchStudioHome();
+                      })
+                      .catch(() => setCloudStatus("Folder save failed."));
                   }}
                 />
                 <HomeMenuButton
@@ -2042,6 +2310,7 @@ export default function Studio2Page() {
                   label="Upload videos"
                   onClick={() => {
                     setCreateMenuOpen(false);
+                    homeVideoInputRef.current?.click();
                   }}
                 />
               </div>
@@ -2093,7 +2362,7 @@ export default function Studio2Page() {
                   <div
                     key={project.id}
                     className="studio2-design-card"
-                    onClick={() => openHomeProject(project.id)}
+                    onClick={() => void openHomeProject(project.id)}
                     style={{
                       position: "relative",
                       border: `1px solid ${ADS_BRAND.border}`,
@@ -2154,6 +2423,11 @@ export default function Studio2Page() {
                 );
               })}
             </div>
+            {cloudStatus && cloudStatus !== "Loading designs..." && (
+              <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 18 }}>
+                {cloudStatus}
+              </div>
+            )}
         </main>
       </div>
     );
