@@ -101,6 +101,58 @@ export function createPresignedPutUrl({ key, contentType, expiresSeconds = 900 }
   };
 }
 
+export async function deleteR2Object(key: string) {
+  const config = getR2Config();
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const host = `${config.accountId}.r2.cloudflarestorage.com`;
+  const canonicalUri = `/${config.bucketName}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const payloadHash = sha256Hex("");
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalHeaders = [
+    `host:${host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`,
+    "",
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${R2_REGION}/${R2_SERVICE}/aws4_request`;
+  const canonicalRequest = [
+    "DELETE",
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const signingKey = getSigningKey(config.secretAccessKey, dateStamp);
+  const signature = hmacHex(signingKey, stringToSign);
+  const authorization = [
+    `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}`,
+    `SignedHeaders=${signedHeaders}`,
+    `Signature=${signature}`,
+  ].join(", ");
+
+  const res = await fetch(`https://${host}${canonicalUri}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: authorization,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": amzDate,
+    },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`R2 delete failed: ${res.status}`);
+  }
+}
+
 function getSafeExtension(filename: string, contentType: string) {
   const fromName = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (fromName && fromName.length <= 8) return fromName;

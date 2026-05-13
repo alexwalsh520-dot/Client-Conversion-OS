@@ -13,7 +13,7 @@ export async function GET() {
         .order("updated_at", { ascending: false }),
       sb
         .from("studio2_folders")
-        .select("id, name, updated_at, created_at")
+        .select("id, name, folder_type, parent_id, updated_at, created_at")
         .order("name", { ascending: true }),
     ]);
 
@@ -34,7 +34,14 @@ export async function GET() {
         updatedAt: project.updated_at,
         createdAt: project.created_at,
       })),
-      folders: foldersResult.data || [],
+      folders: (foldersResult.data || []).map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        folderType: folder.folder_type || "design",
+        parentId: folder.parent_id || null,
+        updatedAt: folder.updated_at,
+        createdAt: folder.created_at,
+      })),
     });
   } catch (err) {
     console.error("Studio 2 project list error:", err);

@@ -103,6 +103,8 @@ charging for this.`;
 
 type TextAlign = "left" | "center" | "right";
 type StudioView = "home" | "setup" | "editor";
+type StudioHomeMode = "designs" | "media";
+type StudioFolderType = "design" | "media";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked">;
@@ -163,6 +165,8 @@ interface DraftState {
 interface StudioFolder {
   id: string;
   name: string;
+  folderType?: StudioFolderType;
+  parentId?: string | null;
 }
 
 interface StudioProjectSummary {
@@ -1013,6 +1017,172 @@ const studioHomeIconButtonStyle: React.CSSProperties = {
   justifyContent: "center",
 };
 
+const homeBackButtonStyle: React.CSSProperties = {
+  height: 36,
+  border: `1px solid ${ADS_BRAND.border2}`,
+  borderRadius: 8,
+  background: ADS_BRAND.panel,
+  color: ADS_BRAND.text2,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  padding: "0 11px",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 650,
+};
+
+const homeKickerStyle: React.CSSProperties = {
+  color: ADS_BRAND.text3,
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+};
+
+const homeCrumbTitleStyle: React.CSSProperties = {
+  color: ADS_BRAND.text,
+  fontSize: 18,
+  fontWeight: 700,
+};
+
+const homeGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))",
+  gap: 20,
+  maxWidth: 1040,
+  marginBottom: 34,
+};
+
+const folderCardStyle: React.CSSProperties = {
+  border: `1px solid ${ADS_BRAND.border}`,
+  borderRadius: 12,
+  background: ADS_BRAND.panel,
+  cursor: "pointer",
+  padding: 0,
+  overflow: "hidden",
+  fontFamily: "inherit",
+  textAlign: "left",
+  minHeight: 228,
+};
+
+const folderThumbStyle: React.CSSProperties = {
+  height: 150,
+  background: ADS_BRAND.panel2,
+  borderRadius: "12px 12px 0 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: ADS_BRAND.text4,
+};
+
+const homeCardBodyStyle: React.CSSProperties = {
+  padding: "17px 18px 18px",
+};
+
+const homeCardTitleStyle: React.CSSProperties = {
+  color: ADS_BRAND.text2,
+  fontSize: 15,
+  fontWeight: 600,
+  lineHeight: 1.25,
+  letterSpacing: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const homeCardSubtleStyle: React.CSSProperties = {
+  color: ADS_BRAND.text3,
+  fontSize: 13,
+  fontWeight: 400,
+  marginTop: 8,
+};
+
+const cardMenuButtonStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 9,
+  right: 9,
+  zIndex: 5,
+  width: 30,
+  height: 30,
+  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(0,0,0,0.56)",
+  color: ADS_BRAND.text2,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+};
+
+const cardMenuStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 44,
+  right: 9,
+  zIndex: 20,
+  width: 180,
+  padding: 7,
+  borderRadius: 8,
+  border: `1px solid ${ADS_BRAND.border2}`,
+  background: ADS_BRAND.panel,
+  boxShadow: "0 18px 48px rgba(0,0,0,0.52)",
+};
+
+const mediaCardStyle: React.CSSProperties = {
+  position: "relative",
+  border: `1px solid ${ADS_BRAND.border}`,
+  background: ADS_BRAND.panel,
+  borderRadius: 12,
+  overflow: "visible",
+  minHeight: 228,
+};
+
+const mediaVideoBadgeStyle: React.CSSProperties = {
+  position: "absolute",
+  left: 9,
+  top: 9,
+  width: 24,
+  height: 24,
+  borderRadius: 8,
+  background: "rgba(0,0,0,0.62)",
+  color: "#fff",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+function projectThumbStyle(hasThumb?: string): React.CSSProperties {
+  return {
+    height: 150,
+    background: hasThumb ? ADS_BRAND.bgDeep : ADS_BRAND.panel2,
+    borderRadius: "12px 12px 0 0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    overflow: "hidden",
+  };
+}
+
+function selectBadgeStyle(isSelected: boolean): React.CSSProperties {
+  return {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    zIndex: 5,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.28)"}`,
+    background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.48)",
+    color: isSelected ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+}
+
 const alignOptions = [
   { value: "left" as const, label: "Left", icon: AlignLeft },
   { value: "center" as const, label: "Center", icon: AlignCenter },
@@ -1052,7 +1222,10 @@ export default function Studio2Page() {
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+  const [homeMode, setHomeMode] = useState<StudioHomeMode>("designs");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedMediaFolderId, setSelectedMediaFolderId] = useState<string | null>(null);
+  const [setupMediaFolderId, setSetupMediaFolderId] = useState<string | null>(null);
   const [cloudFolders, setCloudFolders] = useState<StudioFolder[]>([]);
   const [cloudProjects, setCloudProjects] = useState<StudioProjectSummary[]>([]);
   const [cloudStatus, setCloudStatus] = useState("Loading designs...");
@@ -1077,6 +1250,10 @@ export default function Studio2Page() {
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteProjectStatus, setDeleteProjectStatus] = useState("");
   const [deletingProject, setDeletingProject] = useState(false);
+  const [mediaCardMenuId, setMediaCardMenuId] = useState<string | null>(null);
+  const [deleteMediaId, setDeleteMediaId] = useState<string | null>(null);
+  const [deleteMediaStatus, setDeleteMediaStatus] = useState("");
+  const [deletingMedia, setDeletingMedia] = useState(false);
   const [editorTitleFocused, setEditorTitleFocused] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1117,6 +1294,18 @@ export default function Studio2Page() {
     () => mediaAssets.filter((asset) => asset.kind === "video").length,
     [mediaAssets]
   );
+  const designFolders = useMemo(
+    () => cloudFolders.filter((folder) => (folder.folderType || "design") === "design"),
+    [cloudFolders]
+  );
+  const mediaFolders = useMemo(
+    () => cloudFolders.filter((folder) => folder.folderType === "media"),
+    [cloudFolders]
+  );
+  const setupLibraryMedia = useMemo(
+    () => libraryMedia.filter((asset) => (asset.folderId || null) === setupMediaFolderId),
+    [libraryMedia, setupMediaFolderId]
+  );
   const setupMediaAssets = useMemo(() => {
     const imageAssets = photos.map((photo, index) => {
       const existing = mediaAssets.find((asset) => asset.kind === "image" && asset.url === photo);
@@ -1129,12 +1318,12 @@ export default function Studio2Page() {
     });
     const videoAssets = mediaAssets.filter((asset) => asset.kind === "video");
     const seen = new Set<string>();
-    return [...imageAssets, ...videoAssets, ...libraryMedia].filter((asset) => {
+    return [...imageAssets, ...videoAssets, ...setupLibraryMedia].filter((asset) => {
       if (seen.has(asset.url)) return false;
       seen.add(asset.url);
       return true;
     });
-  }, [libraryMedia, mediaAssets, photos]);
+  }, [mediaAssets, photos, setupLibraryMedia]);
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -1157,11 +1346,12 @@ export default function Studio2Page() {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return cloudProjects.filter((project) => {
       if (project.id === projectId) return false;
+      if (homeMode !== "designs") return false;
       if (selectedFolderId && project.folderId !== selectedFolderId) return false;
       if (normalizedSearch && !project.name.toLowerCase().includes(normalizedSearch)) return false;
       return true;
     });
-  }, [cloudProjects, projectId, searchTerm, selectedFolderId]);
+  }, [cloudProjects, homeMode, projectId, searchTerm, selectedFolderId]);
   const homeProjects = useMemo(
     (): HomeProjectCard[] => [
       ...(hasActiveDraft ? [activeDraftCard] : []),
@@ -1179,12 +1369,51 @@ export default function Studio2Page() {
     () => homeProjects.find((project) => project.id === deleteProjectId) || null,
     [deleteProjectId, homeProjects]
   );
+  const visibleDesignFolders = useMemo(() => {
+    if (homeMode !== "designs" || selectedFolderId) return [];
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return designFolders.filter((folder) => !normalizedSearch || folder.name.toLowerCase().includes(normalizedSearch));
+  }, [designFolders, homeMode, searchTerm, selectedFolderId]);
+  const currentMediaFolder = useMemo(
+    () => mediaFolders.find((folder) => folder.id === selectedMediaFolderId) || null,
+    [mediaFolders, selectedMediaFolderId]
+  );
+  const visibleMediaFolders = useMemo(() => {
+    if (homeMode !== "media") return [];
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return mediaFolders.filter((folder) => {
+      if ((folder.parentId || null) !== selectedMediaFolderId) return false;
+      if (normalizedSearch && !folder.name.toLowerCase().includes(normalizedSearch)) return false;
+      return true;
+    });
+  }, [homeMode, mediaFolders, searchTerm, selectedMediaFolderId]);
+  const visibleLibraryMedia = useMemo(() => {
+    if (homeMode !== "media") return [];
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return libraryMedia.filter((asset) => {
+      if ((asset.folderId || null) !== selectedMediaFolderId) return false;
+      if (normalizedSearch && !asset.filename.toLowerCase().includes(normalizedSearch)) return false;
+      return true;
+    });
+  }, [homeMode, libraryMedia, searchTerm, selectedMediaFolderId]);
+  const deleteMedia = useMemo(
+    () => libraryMedia.find((asset) => asset.id === deleteMediaId) || null,
+    [deleteMediaId, libraryMedia]
+  );
+  const setupMediaFolder = useMemo(
+    () => mediaFolders.find((folder) => folder.id === setupMediaFolderId) || null,
+    [mediaFolders, setupMediaFolderId]
+  );
+  const setupMediaFolderOptions = useMemo(
+    () => mediaFolders.filter((folder) => !folder.parentId),
+    [mediaFolders]
+  );
   const folderOptions = useMemo(
     () => [
       { id: null, name: "All designs" },
-      ...cloudFolders.map((folder) => ({ id: folder.id, name: folder.name })),
+      ...designFolders.map((folder) => ({ id: folder.id, name: folder.name })),
     ],
-    [cloudFolders]
+    [designFolders]
   );
   const selectedFolder = useMemo(
     () => cloudFolders.find((folder) => folder.id === selectedFolderId) || null,
@@ -1572,7 +1801,7 @@ export default function Studio2Page() {
     const uploaded = await Promise.all(
       mediaFiles.map(async (file) => ({
         file,
-        url: await uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""),
+        url: await uploadStudioMedia(file, projectId, setupMediaFolderId).catch(() => ""),
       }))
     );
     const savedVideos = uploaded.filter((item) => item.url);
@@ -1601,7 +1830,7 @@ export default function Studio2Page() {
     );
     void fetchStudioMedia();
     void fetchStudioHome();
-  }, [fetchStudioHome, fetchStudioMedia, projectId, selectedFolderId]);
+  }, [fetchStudioHome, fetchStudioMedia, projectId, setupMediaFolderId]);
 
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files?.length) return;
@@ -1615,7 +1844,7 @@ export default function Studio2Page() {
     const urls = await Promise.all(
       imageFiles.map(async (file) => {
         try {
-          return { file, url: await uploadStudioMedia(file, projectId, selectedFolderId) };
+          return { file, url: await uploadStudioMedia(file, projectId, setupMediaFolderId) };
         } catch {
           return { file, url: await fileToDataUrl(file) };
         }
@@ -1641,7 +1870,7 @@ export default function Studio2Page() {
     });
     void fetchStudioMedia();
     void fetchStudioHome();
-  }, [fetchStudioHome, fetchStudioMedia, handleMediaOnlyUpload, projectId, selectedFolderId]);
+  }, [fetchStudioHome, fetchStudioMedia, handleMediaOnlyUpload, projectId, setupMediaFolderId]);
 
   const updatePhotoCopyCount = useCallback((photo: string, delta: number) => {
     setPhotoCopies((prev) => ({
@@ -1741,7 +1970,7 @@ export default function Studio2Page() {
     const uploaded = await Promise.all(
       mediaFiles.map(async (file) => {
         try {
-          const url = await uploadStudioMedia(file, null, null);
+          const url = await uploadStudioMedia(file, null, homeMode === "media" ? selectedMediaFolderId : null);
           return { file, url };
         } catch {
           return { file, url: "" };
@@ -1752,7 +1981,7 @@ export default function Studio2Page() {
     await fetchStudioMedia();
     void fetchStudioHome();
     return savedCount;
-  }, [fetchStudioHome, fetchStudioMedia]);
+  }, [fetchStudioHome, fetchStudioMedia, homeMode, selectedMediaFolderId]);
 
   const handleUploadModalDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -1801,7 +2030,7 @@ export default function Studio2Page() {
       if (!file || !currentCreative) return;
       let url: string;
       try {
-        url = await uploadStudioMedia(file, projectId, selectedFolderId);
+        url = await uploadStudioMedia(file, projectId, setupMediaFolderId);
       } catch {
         url = await fileToDataUrl(file);
       }
@@ -1823,7 +2052,7 @@ export default function Studio2Page() {
       void fetchStudioMedia();
       void fetchStudioHome();
     },
-    [currentCreative, fetchStudioHome, fetchStudioMedia, projectId, pushUndo, selectedFolderId, updateCurrentCreative]
+    [currentCreative, fetchStudioHome, fetchStudioMedia, projectId, pushUndo, setupMediaFolderId, updateCurrentCreative]
   );
 
   const duplicateSelectedBlock = useCallback(() => {
@@ -2431,6 +2660,7 @@ export default function Studio2Page() {
     setUndoStack([]);
     setRedoStack([]);
     setRestoredAt(null);
+    setSetupMediaFolderId(null);
     setView("setup");
   }, []);
 
@@ -2507,15 +2737,23 @@ export default function Studio2Page() {
     [fetchStudioHome, getHomeProjectDetail]
   );
 
-  const createStudioFolder = useCallback(async (name: string) => {
+  const createStudioFolder = useCallback(async (
+    name: string,
+    folderType: StudioFolderType = "design",
+    parentId: string | null = null
+  ) => {
     const trimmed = name.trim();
     if (!trimmed) return null;
-    const existing = cloudFolders.find((folder) => folder.name.toLowerCase() === trimmed.toLowerCase());
+    const existing = cloudFolders.find((folder) =>
+      folder.name.toLowerCase() === trimmed.toLowerCase() &&
+      (folder.folderType || "design") === folderType &&
+      (folder.parentId || null) === parentId
+    );
     if (existing) return existing.id;
     const res = await fetch("/api/studio-2/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
+      body: JSON.stringify({ name: trimmed, folderType, parentId }),
     });
     if (!res.ok) throw new Error("Folder create failed");
     const data = await res.json() as { folder?: StudioFolder };
@@ -2590,8 +2828,12 @@ export default function Studio2Page() {
     setSavingHomeFolder(true);
     setHomeFolderStatus("Creating folder...");
     try {
-      const folderId = await createStudioFolder(homeFolderName);
-      if (folderId) setSelectedFolderId(folderId);
+      const folderId = await createStudioFolder(
+        homeFolderName,
+        homeMode === "media" ? "media" : "design",
+        homeMode === "media" ? selectedMediaFolderId : null
+      );
+      if (folderId && homeMode === "designs") setSelectedFolderId(folderId);
       setHomeFolderName("");
       setHomeFolderStatus("");
       setCreateFolderModalOpen(false);
@@ -2602,7 +2844,7 @@ export default function Studio2Page() {
     } finally {
       setSavingHomeFolder(false);
     }
-  }, [createStudioFolder, fetchStudioHome, homeFolderName, savingHomeFolder]);
+  }, [createStudioFolder, fetchStudioHome, homeFolderName, homeMode, savingHomeFolder, selectedMediaFolderId]);
 
   const confirmDeleteHomeProject = useCallback(
     async () => {
@@ -2653,6 +2895,36 @@ export default function Studio2Page() {
     [activeDraftId, deleteProjectId, deletingProject, fetchStudioHome, projectId]
   );
 
+  const confirmDeleteMedia = useCallback(async () => {
+    const mediaId = deleteMediaId;
+    if (!mediaId || deletingMedia) return;
+    setDeletingMedia(true);
+    setDeleteMediaStatus("Deleting...");
+    try {
+      const target = libraryMedia.find((asset) => asset.id === mediaId);
+      const res = await fetch(`/api/studio-2/media/${mediaId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Media delete failed");
+      if (target) {
+        setPhotos((prev) => prev.filter((photo) => photo !== target.url));
+        setMediaAssets((prev) => prev.filter((asset) => asset.url !== target.url));
+        setPhotoCopies((prev) => {
+          const next = { ...prev };
+          delete next[target.url];
+          return next;
+        });
+      }
+      setDeleteMediaId(null);
+      setDeleteMediaStatus("");
+      setMediaCardMenuId(null);
+      setCloudStatus("Media deleted.");
+      await fetchStudioMedia();
+    } catch {
+      setDeleteMediaStatus("Could not delete that media.");
+    } finally {
+      setDeletingMedia(false);
+    }
+  }, [deleteMediaId, deletingMedia, fetchStudioMedia, libraryMedia]);
+
   if (view === "home") {
     return (
       <div
@@ -2661,6 +2933,7 @@ export default function Studio2Page() {
           setCreateMenuOpen(false);
           setFolderMenuOpen(false);
           setCardMenuId(null);
+          setMediaCardMenuId(null);
         }}
         style={{
           minHeight: "100vh",
@@ -2705,7 +2978,7 @@ export default function Studio2Page() {
           padding: "0 40px",
         }}>
           <h1 style={{ margin: 0, color: ADS_BRAND.text, fontSize: 26, fontWeight: 600, letterSpacing: 0 }}>
-            Designs
+            Studio 2.0
           </h1>
           <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
             <label style={{
@@ -2724,7 +2997,7 @@ export default function Studio2Page() {
               <input
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search designs..."
+                placeholder={homeMode === "media" ? "Search media..." : "Search designs..."}
                 style={{
                   width: "100%",
                   border: "none",
@@ -2737,42 +3010,44 @@ export default function Studio2Page() {
                 }}
               />
             </label>
-            <button
-              style={{
-                height: 42,
-                border: `1px solid ${selectMode ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
-                borderRadius: 8,
-                background: selectMode ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
-                color: selectMode ? ADS_BRAND.gold : ADS_BRAND.text2,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "0 12px",
-                fontFamily: "inherit",
-                fontSize: 14,
-                fontWeight: 650,
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                setSelectMode((active) => {
-                  if (active) setSelectedDesignIds([]);
-                  return !active;
-                });
-                setCreateMenuOpen(false);
-                setFolderMenuOpen(false);
-                setCardMenuId(null);
-              }}
-            >
-              <Square size={16} />
-              {selectMode && selectedDesignIds.length ? `${selectedDesignIds.length} Selected` : "Select"}
-            </button>
+            {homeMode === "designs" && (
+              <button
+                style={{
+                  height: 42,
+                  border: `1px solid ${selectMode ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                  borderRadius: 8,
+                  background: selectMode ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
+                  color: selectMode ? ADS_BRAND.gold : ADS_BRAND.text2,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "0 12px",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  fontWeight: 650,
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectMode((active) => {
+                    if (active) setSelectedDesignIds([]);
+                    return !active;
+                  });
+                  setCreateMenuOpen(false);
+                  setFolderMenuOpen(false);
+                  setCardMenuId(null);
+                }}
+              >
+                <Square size={16} />
+                {selectMode && selectedDesignIds.length ? `${selectedDesignIds.length} Selected` : "Select"}
+              </button>
+            )}
             <button
               aria-label="Folders"
               style={{
                 ...studioHomeIconButtonStyle,
-                border: `1px solid ${selectedFolderId ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
-                color: selectedFolderId ? ADS_BRAND.gold : ADS_BRAND.text2,
+                border: `1px solid ${selectedFolderId || homeMode === "media" ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                color: selectedFolderId || homeMode === "media" ? ADS_BRAND.gold : ADS_BRAND.text2,
               }}
               onClick={(event) => {
                 event.stopPropagation();
@@ -2825,13 +3100,38 @@ export default function Studio2Page() {
                   boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
                 }}
               >
-                {folderOptions.map((folder) => (
+                <HomeMenuButton
+                  icon={Folder}
+                  label="All designs"
+                  onClick={() => {
+                    setHomeMode("designs");
+                    setSelectedFolderId(null);
+                    setSelectedMediaFolderId(null);
+                    setFolderMenuOpen(false);
+                  }}
+                />
+                <HomeMenuButton
+                  icon={Folder}
+                  label="Media Library"
+                  onClick={() => {
+                    setHomeMode("media");
+                    setSelectedFolderId(null);
+                    setSelectedMediaFolderId(null);
+                    setSelectMode(false);
+                    setSelectedDesignIds([]);
+                    setFolderMenuOpen(false);
+                  }}
+                />
+                <div style={{ height: 1, background: ADS_BRAND.border, margin: "7px 3px" }} />
+                {folderOptions.filter((folder) => folder.id).map((folder) => (
                   <HomeMenuButton
-                    key={folder.id || "all"}
+                    key={folder.id || folder.name}
                     icon={Folder}
                     label={folder.name}
                     onClick={() => {
+                      setHomeMode("designs");
                       setSelectedFolderId(folder.id);
+                      setSelectedMediaFolderId(null);
                       setFolderMenuOpen(false);
                     }}
                   />
@@ -2855,16 +3155,20 @@ export default function Studio2Page() {
                   boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
                 }}
               >
-                <HomeMenuButton icon={FilePlus2} label="New design" onClick={openSetupFlow} />
-                <HomeMenuButton
-                  icon={Upload}
-                  label="Upload media"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setUploadModalOpen(true);
-                    setUploadStatus("");
-                  }}
-                />
+                {homeMode === "designs" && (
+                  <HomeMenuButton icon={FilePlus2} label="New design" onClick={openSetupFlow} />
+                )}
+                {homeMode === "media" && (
+                  <HomeMenuButton
+                    icon={Upload}
+                    label="Upload media"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setUploadModalOpen(true);
+                      setUploadStatus("");
+                    }}
+                  />
+                )}
                 <HomeMenuButton
                   icon={FolderPlus}
                   label="Create folder"
@@ -2881,242 +3185,241 @@ export default function Studio2Page() {
         </div>
 
         <main style={{ padding: "34px 40px 70px" }}>
-            {selectedFolder && (
+            {homeMode === "designs" && selectedFolder && (
               <div style={{ marginBottom: 28, display: "flex", alignItems: "center", gap: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFolderId(null)}
-                  style={{
-                    height: 36,
-                    border: `1px solid ${ADS_BRAND.border2}`,
-                    borderRadius: 8,
-                    background: ADS_BRAND.panel,
-                    color: ADS_BRAND.text2,
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 7,
-                    padding: "0 11px",
-                    fontFamily: "inherit",
-                    fontSize: 13,
-                    fontWeight: 650,
-                  }}
-                >
+                <button type="button" onClick={() => setSelectedFolderId(null)} style={homeBackButtonStyle}>
                   <ArrowLeft size={15} /> Back to home
                 </button>
                 <div>
-                  <div style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                    Folder
-                  </div>
-                  <div style={{ color: ADS_BRAND.text, fontSize: 18, fontWeight: 700 }}>
-                    {selectedFolder.name}
-                  </div>
+                  <div style={homeKickerStyle}>Design folder</div>
+                  <div style={homeCrumbTitleStyle}>{selectedFolder.name}</div>
                 </div>
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 20, maxWidth: 1040 }}>
-              <button
-                className="studio2-design-card"
-                onClick={openSetupFlow}
-                style={{
-                  minHeight: 228,
-                  border: `1px dashed ${ADS_BRAND.border2}`,
-                  borderRadius: 12,
-                  background: ADS_BRAND.panel3,
-                  cursor: "pointer",
-                  padding: 0,
-                  overflow: "hidden",
-                  fontFamily: "inherit",
-                  textAlign: "left",
-                }}
-              >
-                <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
-                  <span style={{
-                    width: 58,
-                    height: 58,
-                    borderRadius: 16,
-                    background: ADS_BRAND.active,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}>
-                    <Plus size={27} />
-                  </span>
+
+            {homeMode === "media" && (
+              <div style={{ marginBottom: 28, display: "flex", alignItems: "center", gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentMediaFolder?.parentId) {
+                      setSelectedMediaFolderId(currentMediaFolder.parentId);
+                      return;
+                    }
+                    setSelectedMediaFolderId(null);
+                    if (!currentMediaFolder) setHomeMode("designs");
+                  }}
+                  style={homeBackButtonStyle}
+                >
+                  <ArrowLeft size={15} /> {currentMediaFolder ? "Back to media library" : "Back to designs"}
+                </button>
+                <div>
+                  <div style={homeKickerStyle}>Media Library</div>
+                  <div style={homeCrumbTitleStyle}>{currentMediaFolder?.name || "All media"}</div>
                 </div>
-                <div style={{ padding: "18px 18px 20px" }}>
-                  <div style={{ color: ADS_BRAND.text2, fontSize: 15, fontWeight: 600, letterSpacing: 0 }}>
-                    New Design
-                  </div>
-                  <div style={{ color: ADS_BRAND.text3, fontSize: 13, fontWeight: 400, marginTop: 7 }}>
-                    Create a design project
-                  </div>
-                </div>
-              </button>
-              {homeProjects.map((project) => {
-                const isSelected = selectedDesignIds.includes(project.id);
-                return (
-                  <div
-                    key={project.id}
-                    className="studio2-design-card"
-                    onClick={() => void openHomeProject(project.id)}
-                    style={{
-                      position: "relative",
-                      border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
-                      background: ADS_BRAND.panel,
-                      borderRadius: 12,
-                      overflow: "visible",
-                      cursor: "pointer",
-                      minHeight: 228,
-                      boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
-                    }}
-                  >
-                    <button
-                      className="studio2-card-menu-button"
-                      aria-label="Project options"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setCardMenuId((openId) => (openId === project.id ? null : project.id));
-                        setCreateMenuOpen(false);
-                        setFolderMenuOpen(false);
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 9,
-                        right: 9,
-                        zIndex: 5,
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        background: "rgba(0,0,0,0.56)",
-                        color: ADS_BRAND.text2,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <MoreHorizontal size={17} />
-                    </button>
-                    {selectMode && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          left: 10,
-                          zIndex: 5,
-                          width: 24,
-                          height: 24,
-                          borderRadius: 7,
-                          border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.28)"}`,
-                          background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.48)",
-                          color: isSelected ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
+              </div>
+            )}
+
+            {homeMode === "designs" ? (
+              <>
+                <HomeSectionTitle title="Folders" />
+                {visibleDesignFolders.length > 0 && (
+                  <div style={homeGridStyle}>
+                    {visibleDesignFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        className="studio2-design-card"
+                        onClick={() => setSelectedFolderId(folder.id)}
+                        style={folderCardStyle}
                       >
-                        {isSelected && <CheckCircle2 size={15} />}
-                      </span>
-                    )}
-                    {cardMenuId === project.id && (
+                        <div style={folderThumbStyle}>
+                          <Folder size={38} strokeWidth={1.7} />
+                        </div>
+                        <div style={homeCardBodyStyle}>
+                          <div style={homeCardTitleStyle}>{folder.name}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <HomeSectionTitle title="Designs" />
+                <div style={homeGridStyle}>
+                  {homeProjects.map((project) => {
+                    const isSelected = selectedDesignIds.includes(project.id);
+                    return (
                       <div
-                        className="studio2-create-menu"
-                        onClick={(event) => event.stopPropagation()}
+                        key={project.id}
+                        className="studio2-design-card"
+                        onClick={() => void openHomeProject(project.id)}
                         style={{
-                          position: "absolute",
-                          top: 44,
-                          right: 9,
-                          zIndex: 20,
-                          width: 180,
-                          padding: 7,
-                          borderRadius: 8,
-                          border: `1px solid ${ADS_BRAND.border2}`,
+                          position: "relative",
+                          border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
                           background: ADS_BRAND.panel,
-                          boxShadow: "0 18px 48px rgba(0,0,0,0.52)",
+                          borderRadius: 12,
+                          overflow: "visible",
+                          cursor: "pointer",
+                          minHeight: 228,
+                          boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
                         }}
                       >
-                      <HomeMenuButton
-                        icon={FolderPlus}
-                        label="Add to folder"
-                        onClick={() => {
-                          setCardMenuId(null);
-                          setFolderPickerProjectId(project.id);
-                          setFolderPickerStatus("");
-                          setNewFolderName("");
-                        }}
-                      />
-                        <HomeMenuButton
-                          icon={CopyPlus}
-                          label="Duplicate"
-                          onClick={() => void duplicateHomeProject(project.id)}
-                        />
-                        <HomeMenuButton
-                          icon={Trash2}
-                          label="Delete"
-                          onClick={() => {
-                            setCardMenuId(null);
-                            setDeleteProjectId(project.id);
-                            setDeleteProjectStatus("");
+                        <button
+                          className="studio2-card-menu-button"
+                          aria-label="Project options"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCardMenuId((openId) => (openId === project.id ? null : project.id));
+                            setCreateMenuOpen(false);
+                            setFolderMenuOpen(false);
                           }}
-                        />
+                          style={cardMenuButtonStyle}
+                        >
+                          <MoreHorizontal size={17} />
+                        </button>
+                        {selectMode && (
+                          <span style={selectBadgeStyle(isSelected)}>
+                            {isSelected && <CheckCircle2 size={15} />}
+                          </span>
+                        )}
+                        {cardMenuId === project.id && (
+                          <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                            <HomeMenuButton
+                              icon={FolderPlus}
+                              label="Add to folder"
+                              onClick={() => {
+                                setCardMenuId(null);
+                                setFolderPickerProjectId(project.id);
+                                setFolderPickerStatus("");
+                                setNewFolderName("");
+                              }}
+                            />
+                            <HomeMenuButton icon={CopyPlus} label="Duplicate" onClick={() => void duplicateHomeProject(project.id)} />
+                            <HomeMenuButton
+                              icon={Trash2}
+                              label="Delete"
+                              onClick={() => {
+                                setCardMenuId(null);
+                                setDeleteProjectId(project.id);
+                                setDeleteProjectStatus("");
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div style={projectThumbStyle(project.thumb)}>
+                          {project.thumb ? (
+                            <img src={project.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <span style={{ color: ADS_BRAND.text4 }}>
+                              <Palette size={38} strokeWidth={1.7} />
+                            </span>
+                          )}
+                        </div>
+                        <div style={homeCardBodyStyle}>
+                          {project.isActiveDraft ? (
+                            <input
+                              className="studio2-project-title"
+                              value={projectName}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => setProjectName(event.target.value)}
+                              style={{
+                                width: "100%",
+                                height: 30,
+                                borderRadius: 6,
+                                background: "transparent",
+                                color: ADS_BRAND.text,
+                                fontFamily: "inherit",
+                                fontSize: 15,
+                                fontWeight: 600,
+                                outline: "none",
+                                padding: "0 6px",
+                              }}
+                            />
+                          ) : (
+                            <div style={homeCardTitleStyle}>{project.name}</div>
+                          )}
+                          <div style={homeCardSubtleStyle}>{project.updated}</div>
+                        </div>
                       </div>
-                    )}
-                    <div style={{
-                      height: 150,
-                      background: project.thumb ? ADS_BRAND.bgDeep : ADS_BRAND.panel2,
-                      borderRadius: "12px 12px 0 0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}>
-                      {project.thumb ? (
-                        <img src={project.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <span style={{ color: ADS_BRAND.text4 }}>
-                          <Palette size={38} strokeWidth={1.7} />
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ padding: "17px 18px 18px" }}>
-                      {project.isActiveDraft ? (
-                        <input
-                          className="studio2-project-title"
-                          value={projectName}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => setProjectName(event.target.value)}
-                          style={{
-                            width: "100%",
-                            height: 30,
-                            borderRadius: 6,
-                            background: "transparent",
-                            color: ADS_BRAND.text,
-                            fontFamily: "inherit",
-                            fontSize: 15,
-                            fontWeight: 600,
-                            outline: "none",
-                            padding: "0 6px",
-                          }}
-                        />
-                      ) : (
-                        <div style={{ color: ADS_BRAND.text2, fontSize: 15, fontWeight: 600, lineHeight: 1.25, letterSpacing: 0 }}>
-                          {project.name}
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <HomeSectionTitle title="Folders" />
+                {visibleMediaFolders.length > 0 && (
+                  <div style={homeGridStyle}>
+                    {visibleMediaFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        className="studio2-design-card"
+                        onClick={() => setSelectedMediaFolderId(folder.id)}
+                        style={folderCardStyle}
+                      >
+                        <div style={folderThumbStyle}>
+                          <Folder size={38} strokeWidth={1.7} />
+                        </div>
+                        <div style={homeCardBodyStyle}>
+                          <div style={homeCardTitleStyle}>{folder.name}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <HomeSectionTitle title="Media" />
+                <div style={homeGridStyle}>
+                  {visibleLibraryMedia.map((asset) => (
+                    <div key={asset.id} className="studio2-design-card" style={mediaCardStyle}>
+                      <button
+                        className="studio2-card-menu-button"
+                        aria-label="Media options"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setMediaCardMenuId((openId) => (openId === asset.id ? null : asset.id));
+                          setCreateMenuOpen(false);
+                          setFolderMenuOpen(false);
+                        }}
+                        style={cardMenuButtonStyle}
+                      >
+                        <MoreHorizontal size={17} />
+                      </button>
+                      {mediaCardMenuId === asset.id && (
+                        <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                          <HomeMenuButton
+                            icon={Trash2}
+                            label="Delete"
+                            onClick={() => {
+                              setMediaCardMenuId(null);
+                              setDeleteMediaId(asset.id);
+                              setDeleteMediaStatus("");
+                            }}
+                          />
                         </div>
                       )}
-                      <div style={{ color: ADS_BRAND.text3, fontSize: 13, fontWeight: 400, marginTop: 8 }}>
-                        {project.updated}
+                      <div style={projectThumbStyle(asset.url)}>
+                        {asset.kind === "video" ? (
+                          <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        )}
+                        {asset.kind === "video" && (
+                          <span style={mediaVideoBadgeStyle}>
+                            <Video size={12} />
+                          </span>
+                        )}
+                      </div>
+                      <div style={homeCardBodyStyle}>
+                        <div style={homeCardTitleStyle}>{asset.filename}</div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {cloudStatus && cloudStatus !== "Loading designs..." && (
-              <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 18 }}>
-                {cloudStatus}
-              </div>
+              <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 18 }}>{cloudStatus}</div>
             )}
         </main>
         {uploadModalOpen && (
@@ -3282,7 +3585,9 @@ export default function Studio2Page() {
                 padding: 18,
               }}
             >
-              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Create folder</div>
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>
+                {homeMode === "media" ? "Create media folder" : "Create design folder"}
+              </div>
               <input
                 value={homeFolderName}
                 onChange={(event) => setHomeFolderName(event.target.value)}
@@ -3392,6 +3697,162 @@ export default function Studio2Page() {
             </div>
           </div>
         )}
+        {folderPickerProjectId && (
+          <div
+            onClick={() => {
+              setFolderPickerProjectId(null);
+              setFolderPickerStatus("");
+              setNewFolderName("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.58)",
+              zIndex: 47,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 420,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Add to folder</div>
+              <div style={{ display: "grid", gap: 7, marginBottom: 16, maxHeight: 220, overflowY: "auto" }}>
+                {designFolders.length ? designFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    className="studio2-folder-choice"
+                    disabled={savingFolderPick}
+                    onClick={() => void addHomeProjectToFolder(folderPickerProjectId, folder.id)}
+                    style={{
+                      width: "100%",
+                      height: 40,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 8,
+                      background: ADS_BRAND.panel3,
+                      color: ADS_BRAND.text,
+                      cursor: savingFolderPick ? "wait" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "0 11px",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      fontWeight: 650,
+                      textAlign: "left",
+                    }}
+                  >
+                    <Folder size={15} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                  </button>
+                )) : (
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "4px 2px" }}>No design folders yet.</div>
+                )}
+              </div>
+              <div style={{ height: 1, background: ADS_BRAND.border, marginBottom: 14 }} />
+              <label style={{ ...labelStyle, display: "block", marginBottom: 7 }}>Create New Folder</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  placeholder="Folder name"
+                  style={{ ...inputStyle, height: 40, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  disabled={!newFolderName.trim() || savingFolderPick}
+                  onClick={() => void addHomeProjectToNewFolder()}
+                  style={{
+                    ...buttonStyle(true),
+                    opacity: newFolderName.trim() && !savingFolderPick ? 1 : 0.4,
+                    cursor: newFolderName.trim() && !savingFolderPick ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Create
+                </button>
+              </div>
+              {folderPickerStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 12 }}>{folderPickerStatus}</div>
+              )}
+            </div>
+          </div>
+        )}
+        {deleteMediaId && (
+          <div
+            onClick={() => {
+              if (deletingMedia) return;
+              setDeleteMediaId(null);
+              setDeleteMediaStatus("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.62)",
+              zIndex: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 410,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.58)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 8 }}>Delete media?</div>
+              <div style={{ color: ADS_BRAND.text3, fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
+                This will remove {deleteMedia?.filename ? <strong style={{ color: ADS_BRAND.text2 }}>{deleteMedia.filename}</strong> : "this file"} from the Media Library.
+              </div>
+              {deleteMediaStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{deleteMediaStatus}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  style={buttonStyle(false)}
+                  disabled={deletingMedia}
+                  onClick={() => {
+                    setDeleteMediaId(null);
+                    setDeleteMediaStatus("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingMedia}
+                  onClick={() => void confirmDeleteMedia()}
+                  style={{
+                    ...buttonStyle(false),
+                    border: "1px solid rgba(255,107,107,0.55)",
+                    background: deletingMedia ? "rgba(255,107,107,0.15)" : "#ff6b6b",
+                    color: deletingMedia ? "#ffb3b3" : "#190606",
+                    cursor: deletingMedia ? "wait" : "pointer",
+                  }}
+                >
+                  <Trash2 size={14} /> {deletingMedia ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3487,7 +3948,64 @@ export default function Studio2Page() {
 
             <div style={{ marginTop: 16 }}>
               <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-                Uploaded media
+                Media folders
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setSetupMediaFolderId(null)}
+                  style={{
+                    height: 42,
+                    border: `1px solid ${!setupMediaFolderId ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                    borderRadius: 8,
+                    background: !setupMediaFolderId ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+                    color: !setupMediaFolderId ? ADS_BRAND.gold : ADS_BRAND.text2,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "0 10px",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    minWidth: 0,
+                  }}
+                >
+                  <ImagePlus size={14} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Loose media</span>
+                </button>
+                {setupMediaFolderOptions.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => setSetupMediaFolderId(folder.id)}
+                    style={{
+                      height: 42,
+                      border: `1px solid ${setupMediaFolderId === folder.id ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                      borderRadius: 8,
+                      background: setupMediaFolderId === folder.id ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+                      color: setupMediaFolderId === folder.id ? ADS_BRAND.gold : ADS_BRAND.text2,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "0 10px",
+                      fontFamily: "inherit",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      minWidth: 0,
+                    }}
+                  >
+                    <Folder size={14} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                {setupMediaFolder ? setupMediaFolder.name : "Uploaded media"}
               </div>
               <div
                 style={{
@@ -3503,7 +4021,7 @@ export default function Studio2Page() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(76px, 86px))",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
                       gap: 9,
                       justifyContent: "start",
                     }}
@@ -3527,7 +4045,7 @@ export default function Studio2Page() {
                           }}
                           style={{
                             position: "relative",
-                            width: 86,
+                            width: "100%",
                             aspectRatio: "9 / 16",
                             borderRadius: 8,
                             overflow: "hidden",
@@ -3541,36 +4059,6 @@ export default function Studio2Page() {
                             <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
                             <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          )}
-                          {isSelected && (
-                            <button
-                              type="button"
-                              aria-label="Remove media from design"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleSetupMediaAsset(asset);
-                              }}
-                              style={{
-                                position: "absolute",
-                                top: 5,
-                                right: 5,
-                                width: 18,
-                                height: 18,
-                                borderRadius: "50%",
-                                border: "none",
-                                background: "rgba(0,0,0,0.68)",
-                                color: "#fff",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 14,
-                                lineHeight: 1,
-                                padding: 0,
-                              }}
-                            >
-                              ×
-                            </button>
                           )}
                           {asset.kind === "video" && (
                             <span
@@ -4464,7 +4952,7 @@ export default function Studio2Page() {
             >
               <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Add to folder</div>
               <div style={{ display: "grid", gap: 7, marginBottom: 16, maxHeight: 220, overflowY: "auto" }}>
-                {cloudFolders.length ? cloudFolders.map((folder) => (
+                {designFolders.length ? designFolders.map((folder) => (
                   <button
                     key={folder.id}
                     type="button"
@@ -4493,7 +4981,7 @@ export default function Studio2Page() {
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
                   </button>
                 )) : (
-                  <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "4px 2px" }}>No folders yet.</div>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "4px 2px" }}>No design folders yet.</div>
                 )}
               </div>
               <div style={{ height: 1, background: ADS_BRAND.border, marginBottom: 14 }} />
@@ -4561,6 +5049,22 @@ function HomeMenuButton({
       <Icon size={16} />
       {label}
     </button>
+  );
+}
+
+function HomeSectionTitle({ title }: { title: string }) {
+  return (
+    <h2
+      style={{
+        margin: "0 0 14px",
+        color: ADS_BRAND.text,
+        fontSize: 16,
+        fontWeight: 650,
+        letterSpacing: 0,
+      }}
+    >
+      {title}
+    </h2>
   );
 }
 
