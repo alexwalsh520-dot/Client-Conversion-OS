@@ -20,9 +20,11 @@ import {
   Folder,
   FolderPlus,
   Grid3X3,
+  Home,
   ImagePlus,
   Layers,
   Minus,
+  MoreHorizontal,
   MousePointer2,
   Palette,
   Paintbrush,
@@ -33,6 +35,7 @@ import {
   RotateCcw,
   Search,
   SendToBack,
+  SquareCheckBig,
   Sparkles,
   Trash2,
   Type,
@@ -178,6 +181,16 @@ interface HomeProjectCard {
   updated: string;
   thumb: string;
   isActiveDraft: boolean;
+}
+
+interface StudioProjectDetail {
+  id: string;
+  folderId: string | null;
+  name: string;
+  copyText: string;
+  draft: Partial<DraftState>;
+  thumbnailUrl: string | null;
+  status: string;
 }
 
 interface RenderedLine {
@@ -1021,6 +1034,9 @@ export default function Studio2Page() {
   const [cloudStatus, setCloudStatus] = useState("Loading designs...");
   const [searchTerm, setSearchTerm] = useState("");
   const [setupDropActive, setSetupDropActive] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
+  const [cardMenuId, setCardMenuId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1161,6 +1177,37 @@ export default function Studio2Page() {
     },
     [fetchStudioHome, projectId, selectedFolderId]
   );
+
+  const getHomeProjectDetail = useCallback(async (cardId: string): Promise<StudioProjectDetail | null> => {
+    const isActive = cardId === activeDraftId;
+    if (isActive) {
+      return {
+        id: projectId || activeDraftId,
+        folderId: selectedFolderId,
+        name: projectName || "Untitled design",
+        copyText,
+        draft: buildDraftState(),
+        thumbnailUrl: currentCreative?.photoUrl || photos[0] || null,
+        status: creatives.length ? "in_progress" : "draft",
+      };
+    }
+
+    const res = await fetch(`/api/studio-2/projects/${cardId}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Project load failed");
+    const data = await res.json() as { project?: StudioProjectDetail };
+    if (!data.project) throw new Error("Project not found");
+    return data.project;
+  }, [
+    activeDraftId,
+    buildDraftState,
+    copyText,
+    creatives.length,
+    currentCreative?.photoUrl,
+    photos,
+    projectId,
+    projectName,
+    selectedFolderId,
+  ]);
 
   useEffect(() => {
     if (!document.querySelector(`link[href="${GOOGLE_FONTS_URL}"]`)) {
@@ -2152,22 +2199,18 @@ export default function Studio2Page() {
 
   const openHomeProject = useCallback(
     async (cardId: string) => {
+      if (selectMode) {
+        setSelectedDesignIds((prev) =>
+          prev.includes(cardId) ? prev.filter((id) => id !== cardId) : [...prev, cardId]
+        );
+        return;
+      }
       if (cardId === activeDraftId) {
         setView(creatives.length ? "editor" : "setup");
         return;
       }
       try {
-        const res = await fetch(`/api/studio-2/projects/${cardId}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("Project load failed");
-        const data = await res.json() as {
-          project?: {
-            id: string;
-            name: string;
-            copyText?: string;
-            draft?: Partial<DraftState>;
-          };
-        };
-        const project = data.project;
+        const project = await getHomeProjectDetail(cardId);
         if (!project) throw new Error("Project not found");
         const draft = project.draft || {};
         const nextCreatives = (draft.creatives || []).map(normalizeCreative);
@@ -2188,13 +2231,158 @@ export default function Studio2Page() {
         setCloudStatus("Could not open that cloud project yet.");
       }
     },
-    [activeDraftId, creatives.length]
+    [activeDraftId, creatives.length, getHomeProjectDetail, selectMode]
+  );
+
+  const duplicateHomeProject = useCallback(
+    async (cardId: string) => {
+      try {
+        const project = await getHomeProjectDetail(cardId);
+        if (!project) throw new Error("Project not found");
+        const copyName = `${project.name || "Untitled design"} copy`;
+        const draft = {
+          ...(project.draft || {}),
+          projectId: null,
+          projectName: copyName,
+          savedAt: Date.now(),
+        };
+        const res = await fetch("/api/studio-2/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folderId: project.folderId || null,
+            name: copyName,
+            copyText: project.copyText || "",
+            draft,
+            thumbnailUrl: project.thumbnailUrl || null,
+            status: project.status || "draft",
+          }),
+        });
+        if (!res.ok) throw new Error("Duplicate failed");
+        setCardMenuId(null);
+        setCloudStatus("Project duplicated.");
+        void fetchStudioHome();
+      } catch {
+        setCloudStatus("Could not duplicate that project.");
+      }
+    },
+    [fetchStudioHome, getHomeProjectDetail]
+  );
+
+  const resolveFolderForProject = useCallback(async () => {
+    const folderNames = cloudFolders.map((folder) => folder.name).join(", ");
+    const promptText = folderNames
+      ? `Type an existing folder name or a new folder name:\n${folderNames}`
+      : "Folder name";
+    const name = window.prompt(promptText);
+    if (!name?.trim()) return null;
+    const trimmed = name.trim();
+    const existing = cloudFolders.find((folder) => folder.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id;
+
+    const res = await fetch("/api/studio-2/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (!res.ok) throw new Error("Folder create failed");
+    const data = await res.json() as { folder?: StudioFolder };
+    if (!data.folder?.id) throw new Error("Folder create failed");
+    return data.folder.id;
+  }, [cloudFolders]);
+
+  const addHomeProjectToFolder = useCallback(
+    async (cardId: string) => {
+      try {
+        const folderId = await resolveFolderForProject();
+        if (!folderId) return;
+
+        let targetId = cardId;
+        if (cardId === activeDraftId && !projectId) {
+          const draft = buildDraftState();
+          const res = await fetch("/api/studio-2/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folderId,
+              name: draft.projectName || "Untitled design",
+              copyText: draft.copyText,
+              draft: { ...draft, folderId },
+              thumbnailUrl: draft.creatives[0]?.photoUrl || draft.photos[0] || null,
+              status: draft.creatives.length ? "in_progress" : "draft",
+            }),
+          });
+          if (!res.ok) throw new Error("Project save failed");
+          const data = await res.json() as { project?: { id?: string } };
+          if (!data.project?.id) throw new Error("Project save failed");
+          targetId = data.project.id;
+          setProjectId(targetId);
+        }
+
+        const res = await fetch(`/api/studio-2/projects/${targetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId }),
+        });
+        if (!res.ok) throw new Error("Folder update failed");
+        setCardMenuId(null);
+        setCloudStatus("Project added to folder.");
+        void fetchStudioHome();
+      } catch {
+        setCloudStatus("Could not add that project to a folder.");
+      }
+    },
+    [activeDraftId, buildDraftState, fetchStudioHome, projectId, resolveFolderForProject]
+  );
+
+  const deleteHomeProject = useCallback(
+    async (cardId: string) => {
+      const confirmed = window.confirm("Delete this project?");
+      if (!confirmed) return;
+      try {
+        if (cardId === activeDraftId && !projectId) {
+          await clearDraft();
+          setPhotos([]);
+          setPhotoCopies({});
+          setCreatives([]);
+          setProjectId(null);
+          setProjectName("Untitled design");
+          setCardMenuId(null);
+          setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
+          setCloudStatus("Project deleted.");
+          return;
+        }
+
+        const res = await fetch(`/api/studio-2/projects/${cardId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Delete failed");
+        if (cardId === projectId) {
+          await clearDraft();
+          setPhotos([]);
+          setPhotoCopies({});
+          setCreatives([]);
+          setProjectId(null);
+          setProjectName("Untitled design");
+        }
+        setCardMenuId(null);
+        setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
+        setCloudStatus("Project deleted.");
+        void fetchStudioHome();
+      } catch {
+        setCloudStatus("Could not delete that project.");
+      }
+    },
+    [activeDraftId, fetchStudioHome, projectId]
   );
 
   if (view === "home") {
     return (
       <div
         className="ad-studio-fullbleed"
+        onClick={() => {
+          setCreateMenuOpen(false);
+          setFolderMenuOpen(false);
+          setCardMenuId(null);
+        }}
         style={{
           minHeight: "100vh",
           background: ADS_BRAND.bg,
@@ -2218,6 +2406,10 @@ export default function Studio2Page() {
           }
           .studio2-create-menu button:hover {
             background: ${ADS_BRAND.panel2};
+          }
+          .studio2-card-menu-button:hover {
+            background: rgba(0,0,0,0.76);
+            color: ${ADS_BRAND.text};
           }
         `}</style>
 
@@ -2287,6 +2479,36 @@ export default function Studio2Page() {
                 }}
               />
             </label>
+            <button
+              style={{
+                height: 42,
+                border: `1px solid ${selectMode ? ADS_BRAND.goldBorder : "transparent"}`,
+                borderRadius: 8,
+                background: selectMode ? ADS_BRAND.goldSoft : "transparent",
+                color: selectMode ? ADS_BRAND.gold : ADS_BRAND.text2,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "0 12px",
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 650,
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectMode((active) => {
+                  if (active) setSelectedDesignIds([]);
+                  return !active;
+                });
+                setCreateMenuOpen(false);
+                setFolderMenuOpen(false);
+                setCardMenuId(null);
+              }}
+            >
+              <SquareCheckBig size={17} />
+              {selectMode && selectedDesignIds.length ? `${selectedDesignIds.length} Selected` : "Select"}
+            </button>
             <button
               aria-label="Folders"
               style={studioHomeIconButtonStyle}
@@ -2453,6 +2675,7 @@ export default function Studio2Page() {
                 </div>
               </button>
               {homeProjects.map((project) => {
+                const isSelected = selectedDesignIds.includes(project.id);
                 return (
                   <div
                     key={project.id}
@@ -2460,17 +2683,102 @@ export default function Studio2Page() {
                     onClick={() => void openHomeProject(project.id)}
                     style={{
                       position: "relative",
-                      border: `1px solid ${ADS_BRAND.border}`,
+                      border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
                       background: ADS_BRAND.panel,
                       borderRadius: 12,
-                      overflow: "hidden",
+                      overflow: "visible",
                       cursor: "pointer",
                       minHeight: 228,
+                      boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
                     }}
                   >
+                    <button
+                      className="studio2-card-menu-button"
+                      aria-label="Project options"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setCardMenuId((openId) => (openId === project.id ? null : project.id));
+                        setCreateMenuOpen(false);
+                        setFolderMenuOpen(false);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 9,
+                        right: 9,
+                        zIndex: 5,
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "rgba(0,0,0,0.56)",
+                        color: ADS_BRAND.text2,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <MoreHorizontal size={17} />
+                    </button>
+                    {selectMode && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          left: 10,
+                          zIndex: 5,
+                          width: 24,
+                          height: 24,
+                          borderRadius: 7,
+                          border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.28)"}`,
+                          background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.48)",
+                          color: isSelected ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {isSelected && <CheckCircle2 size={15} />}
+                      </span>
+                    )}
+                    {cardMenuId === project.id && (
+                      <div
+                        className="studio2-create-menu"
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          top: 44,
+                          right: 9,
+                          zIndex: 20,
+                          width: 180,
+                          padding: 7,
+                          borderRadius: 8,
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          background: ADS_BRAND.panel,
+                          boxShadow: "0 18px 48px rgba(0,0,0,0.52)",
+                        }}
+                      >
+                        <HomeMenuButton
+                          icon={FolderPlus}
+                          label="Add to folder"
+                          onClick={() => void addHomeProjectToFolder(project.id)}
+                        />
+                        <HomeMenuButton
+                          icon={CopyPlus}
+                          label="Duplicate"
+                          onClick={() => void duplicateHomeProject(project.id)}
+                        />
+                        <HomeMenuButton
+                          icon={Trash2}
+                          label="Delete"
+                          onClick={() => void deleteHomeProject(project.id)}
+                        />
+                      </div>
+                    )}
                     <div style={{
                       height: 150,
                       background: project.thumb ? ADS_BRAND.bgDeep : ADS_BRAND.panel2,
+                      borderRadius: "12px 12px 0 0",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -2546,7 +2854,7 @@ export default function Studio2Page() {
             </p>
           </div>
           <button style={buttonStyle(false)} onClick={() => setView("home")}>
-            <Grid3X3 size={14} /> Home
+            <Home size={14} /> Home
           </button>
         </div>
 

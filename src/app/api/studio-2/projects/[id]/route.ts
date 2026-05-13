@@ -83,3 +83,26 @@ export async function PATCH(
     return NextResponse.json({ error: "Failed to update Studio 2 project" }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const sb = getServiceSupabase();
+    const { error } = await sb
+      .from("studio2_projects")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Studio 2 project delete error:", err);
+    return NextResponse.json({ error: "Failed to delete Studio 2 project" }, { status: 500 });
+  }
+}
