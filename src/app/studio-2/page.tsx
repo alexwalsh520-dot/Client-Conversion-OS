@@ -19,7 +19,6 @@ import {
   FilePlus2,
   Folder,
   FolderPlus,
-  Grid3X3,
   Home,
   ImagePlus,
   Layers,
@@ -3431,13 +3430,31 @@ export default function Studio2Page() {
         background: ADS_BRAND.bg,
       }}>
         <button style={buttonStyle(false)} onClick={() => setView("home")}>
-          <Grid3X3 size={14} /> Home
+          <Home size={14} /> Home
         </button>
         <button style={buttonStyle(false)} onClick={() => setView("setup")}>
           <ArrowLeft size={14} /> Setup
         </button>
         <div style={{ height: 24, width: 1, background: ADS_BRAND.border2 }} />
-        <strong style={{ color: "var(--text-primary)", fontSize: 14 }}>{projectName}</strong>
+        <input
+          className="studio2-project-title"
+          aria-label="Design name"
+          value={projectName}
+          onChange={(event) => setProjectName(event.target.value)}
+          style={{
+            width: Math.max(170, Math.min(360, projectName.length * 9 + 30)),
+            height: 34,
+            borderRadius: 7,
+            border: "1px solid transparent",
+            background: "transparent",
+            color: "var(--text-primary)",
+            fontFamily: "inherit",
+            fontSize: 14,
+            fontWeight: 800,
+            outline: "none",
+            padding: "0 8px",
+          }}
+        />
         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Ad {currentIndex + 1} of {creatives.length}</span>
         <span style={{ color: ADS_BRAND.gold, fontSize: 11, fontWeight: 700, marginLeft: 4 }}>
           {saveStatus}
