@@ -19,6 +19,7 @@ import {
   X,
   Monitor,
   Sparkles,
+  BookOpen,
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/accountant", label: "Accountant", icon: Calculator },
+  { href: "/sop", label: "SOPs", icon: BookOpen },
 ];
 
 export default function Sidebar() {
