@@ -35,7 +35,7 @@ import {
   RotateCcw,
   Search,
   SendToBack,
-  SquareCheckBig,
+  Square,
   Sparkles,
   Trash2,
   Type,
@@ -151,6 +151,7 @@ interface DraftState {
   projectId?: string | null;
   photos: string[];
   photoCopies?: Record<string, number>;
+  mediaAssets?: StudioMediaAsset[];
   creatives: Creative[];
   currentIndex: number;
   copyText: string;
@@ -181,6 +182,13 @@ interface HomeProjectCard {
   updated: string;
   thumb: string;
   isActiveDraft: boolean;
+}
+
+interface StudioMediaAsset {
+  id: string;
+  url: string;
+  kind: "image" | "video";
+  filename: string;
 }
 
 interface StudioProjectDetail {
@@ -360,7 +368,7 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 async function uploadStudioMedia(file: File, projectId?: string | null, folderId?: string | null): Promise<string> {
-  const contentType = file.type || "application/octet-stream";
+  const contentType = getUploadContentType(file);
   const presignRes = await fetch("/api/studio-2/media/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -404,6 +412,19 @@ async function uploadStudioMedia(file: File, projectId?: string | null, folderId
   }).catch(() => undefined);
 
   return presign.publicUrl;
+}
+
+function getUploadContentType(file: File) {
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  if (ext === "mov" || ext === "qt") return "video/quicktime";
+  if (ext === "mp4" || ext === "m4v") return "video/mp4";
+  if (ext === "webm") return "video/webm";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  return "application/octet-stream";
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -1000,6 +1021,7 @@ const alignOptions = [
 export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoCopies, setPhotoCopies] = useState<Record<string, number>>({});
+  const [mediaAssets, setMediaAssets] = useState<StudioMediaAsset[]>([]);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
@@ -1037,13 +1059,17 @@ export default function Studio2Page() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
   const [cardMenuId, setCardMenuId] = useState<string | null>(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<File[]>([]);
+  const [uploadDropActive, setUploadDropActive] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const homeUploadInputRef = useRef<HTMLInputElement>(null);
-  const homeVideoInputRef = useRef<HTMLInputElement>(null);
+  const uploadQueueInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
@@ -1073,6 +1099,19 @@ export default function Studio2Page() {
     () => photos.reduce((total, photo) => total + getPhotoCopies(photoCopies, photo), 0),
     [photoCopies, photos]
   );
+  const setupMediaAssets = useMemo(() => {
+    const imageAssets = photos.map((photo, index) => {
+      const existing = mediaAssets.find((asset) => asset.kind === "image" && asset.url === photo);
+      return existing || {
+        id: `photo-${index}-${photo.slice(0, 16)}`,
+        url: photo,
+        kind: "image" as const,
+        filename: `Image ${index + 1}`,
+      };
+    });
+    const videoAssets = mediaAssets.filter((asset) => asset.kind === "video");
+    return [...imageAssets, ...videoAssets];
+  }, [mediaAssets, photos]);
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -1128,6 +1167,7 @@ export default function Studio2Page() {
       projectId,
       photos,
       photoCopies,
+      mediaAssets,
       creatives,
       currentIndex,
       copyText,
@@ -1137,7 +1177,7 @@ export default function Studio2Page() {
       view,
       ...overrides,
     }),
-    [colorPreset, copyText, creatives, currentIndex, fontPreset, photoCopies, photos, projectId, projectName, view]
+    [colorPreset, copyText, creatives, currentIndex, fontPreset, mediaAssets, photoCopies, photos, projectId, projectName, view]
   );
 
   const fetchStudioHome = useCallback(async () => {
@@ -1241,6 +1281,7 @@ export default function Studio2Page() {
         if (!draft || cancelled) return;
         setPhotos(draft.photos || []);
         setPhotoCopies(draft.photoCopies || {});
+        setMediaAssets(draft.mediaAssets || []);
         setCreatives((draft.creatives || []).map(normalizeCreative));
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
@@ -1483,15 +1524,36 @@ export default function Studio2Page() {
 
   const handleMediaOnlyUpload = useCallback(async (files: FileList | File[] | null) => {
     if (!files?.length) return;
-    const mediaFiles = Array.from(files).filter((file) => file.type.startsWith("video/"));
+    const mediaFiles = Array.from(files).filter((file) => getUploadContentType(file).startsWith("video/"));
     if (!mediaFiles.length) return;
     const uploaded = await Promise.all(
-      mediaFiles.map((file) => uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""))
+      mediaFiles.map(async (file) => ({
+        file,
+        url: await uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""),
+      }))
     );
-    const savedCount = uploaded.filter(Boolean).length;
+    const savedVideos = uploaded.filter((item) => item.url);
+    if (savedVideos.length) {
+      setMediaAssets((prev) => [
+        ...prev,
+        ...savedVideos.map((item) => ({
+          id: uid(),
+          url: item.url,
+          kind: "video" as const,
+          filename: item.file.name,
+        })),
+      ]);
+      setPhotoCopies((prev) => {
+        const next = { ...prev };
+        savedVideos.forEach((item) => {
+          if (!next[item.url]) next[item.url] = 1;
+        });
+        return next;
+      });
+    }
     setCloudStatus(
-      savedCount
-        ? `${savedCount} video${savedCount === 1 ? "" : "s"} uploaded to the media library.`
+      savedVideos.length
+        ? `${savedVideos.length} video${savedVideos.length === 1 ? "" : "s"} uploaded to Media.`
         : "Video upload failed."
     );
     void fetchStudioHome();
@@ -1500,26 +1562,36 @@ export default function Studio2Page() {
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     const fileList = Array.from(files);
-    const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
-    const videoFiles = fileList.filter((file) => file.type.startsWith("video/"));
+    const imageFiles = fileList.filter((file) => getUploadContentType(file).startsWith("image/"));
+    const videoFiles = fileList.filter((file) => getUploadContentType(file).startsWith("video/"));
 
-    if (videoFiles.length) void handleMediaOnlyUpload(videoFiles);
+    if (videoFiles.length) await handleMediaOnlyUpload(videoFiles);
     if (!imageFiles.length) return;
 
     const urls = await Promise.all(
       imageFiles.map(async (file) => {
         try {
-          return await uploadStudioMedia(file, projectId, selectedFolderId);
+          return { file, url: await uploadStudioMedia(file, projectId, selectedFolderId) };
         } catch {
-          return fileToDataUrl(file);
+          return { file, url: await fileToDataUrl(file) };
         }
       })
     );
-    setPhotos((prev) => [...prev, ...urls]);
+    const uploadedImages = urls.filter((item) => item.url);
+    setPhotos((prev) => [...prev, ...uploadedImages.map((item) => item.url)]);
+    setMediaAssets((prev) => [
+      ...prev,
+      ...uploadedImages.map((item) => ({
+        id: uid(),
+        url: item.url,
+        kind: "image" as const,
+        filename: item.file.name,
+      })),
+    ]);
     setPhotoCopies((prev) => {
       const next = { ...prev };
-      urls.forEach((url) => {
-        if (!next[url]) next[url] = 1;
+      uploadedImages.forEach((item) => {
+        if (!next[item.url]) next[item.url] = 1;
       });
       return next;
     });
@@ -1535,12 +1607,29 @@ export default function Studio2Page() {
 
   const removeSetupPhoto = useCallback((photo: string, index: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setMediaAssets((prev) => prev.filter((asset) => asset.url !== photo));
     setPhotoCopies((prev) => {
       const next = { ...prev };
       delete next[photo];
       return next;
     });
   }, []);
+
+  const removeMediaAsset = useCallback((asset: StudioMediaAsset) => {
+    if (asset.kind === "image") {
+      const photoIndex = photos.findIndex((photo) => photo === asset.url);
+      if (photoIndex >= 0) {
+        removeSetupPhoto(asset.url, photoIndex);
+        return;
+      }
+    }
+    setMediaAssets((prev) => prev.filter((item) => item.id !== asset.id));
+    setPhotoCopies((prev) => {
+      const next = { ...prev };
+      delete next[asset.url];
+      return next;
+    });
+  }, [photos, removeSetupPhoto]);
 
   const handleSetupDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -1566,6 +1655,60 @@ export default function Studio2Page() {
     [handleFiles]
   );
 
+  const addQueuedUploadFiles = useCallback((files: FileList | File[] | null) => {
+    if (!files?.length) return;
+    const nextFiles = Array.from(files).filter((file) => {
+      const contentType = getUploadContentType(file);
+      return contentType.startsWith("image/") || contentType.startsWith("video/");
+    });
+    if (!nextFiles.length) {
+      setUploadStatus("Only image and video files are supported.");
+      return;
+    }
+    setUploadQueue((prev) => [...prev, ...nextFiles]);
+    setUploadStatus("");
+  }, []);
+
+  const handleUploadModalDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setUploadDropActive(true);
+  }, []);
+
+  const handleUploadModalDragLeave = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setUploadDropActive(false);
+    }
+  }, []);
+
+  const handleUploadModalDrop = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setUploadDropActive(false);
+      addQueuedUploadFiles(event.dataTransfer.files);
+    },
+    [addQueuedUploadFiles]
+  );
+
+  const uploadQueuedMedia = useCallback(async () => {
+    if (!uploadQueue.length || uploadingQueuedMedia) return;
+    setUploadingQueuedMedia(true);
+    setUploadStatus(`Uploading ${uploadQueue.length} file${uploadQueue.length === 1 ? "" : "s"}...`);
+    try {
+      await handleFiles(uploadQueue);
+      setUploadStatus(`${uploadQueue.length} file${uploadQueue.length === 1 ? "" : "s"} uploaded to Media.`);
+      setUploadQueue([]);
+      setView("setup");
+      setUploadModalOpen(false);
+    } catch {
+      setUploadStatus("Upload failed. Try again.");
+    } finally {
+      setUploadingQueuedMedia(false);
+    }
+  }, [handleFiles, uploadQueue, uploadingQueuedMedia]);
+
   const replaceCurrentImage = useCallback(
     async (file: File | null) => {
       if (!file || !currentCreative) return;
@@ -1577,6 +1720,11 @@ export default function Studio2Page() {
       }
       pushUndo();
       setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      setMediaAssets((prev) =>
+        prev.some((asset) => asset.url === url)
+          ? prev
+          : [...prev, { id: uid(), url, kind: "image", filename: file.name }]
+      );
       setPhotoCopies((prev) => (prev[url] ? prev : { ...prev, [url]: 1 }));
       updateCurrentCreative((creative) => ({
         ...creative,
@@ -2186,6 +2334,7 @@ export default function Studio2Page() {
     setProjectId(null);
     setPhotos([]);
     setPhotoCopies({});
+    setMediaAssets([]);
     setCreatives([]);
     setCurrentIndex(0);
     setCopyText(DEFAULT_COPY);
@@ -2217,6 +2366,7 @@ export default function Studio2Page() {
         setProjectId(project.id);
         setPhotos(draft.photos || []);
         setPhotoCopies(draft.photoCopies || {});
+        setMediaAssets(draft.mediaAssets || []);
         setCreatives(nextCreatives);
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || project.copyText || DEFAULT_COPY);
@@ -2344,6 +2494,7 @@ export default function Studio2Page() {
           await clearDraft();
           setPhotos([]);
           setPhotoCopies({});
+          setMediaAssets([]);
           setCreatives([]);
           setProjectId(null);
           setProjectName("Untitled design");
@@ -2359,6 +2510,7 @@ export default function Studio2Page() {
           await clearDraft();
           setPhotos([]);
           setPhotoCopies({});
+          setMediaAssets([]);
           setCreatives([]);
           setProjectId(null);
           setProjectName("Untitled design");
@@ -2413,30 +2565,6 @@ export default function Studio2Page() {
           }
         `}</style>
 
-        <input
-          ref={homeUploadInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: "none" }}
-          onChange={(event) => {
-            void handleFiles(event.target.files);
-            event.target.value = "";
-            setView("setup");
-          }}
-        />
-        <input
-          ref={homeVideoInputRef}
-          type="file"
-          accept="video/*"
-          multiple
-          style={{ display: "none" }}
-          onChange={(event) => {
-            void handleMediaOnlyUpload(event.target.files);
-            event.target.value = "";
-          }}
-        />
-
         <div style={{
           height: 80,
           borderBottom: `1px solid ${ADS_BRAND.border}`,
@@ -2482,9 +2610,9 @@ export default function Studio2Page() {
             <button
               style={{
                 height: 42,
-                border: `1px solid ${selectMode ? ADS_BRAND.goldBorder : "transparent"}`,
+                border: `1px solid ${selectMode ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
                 borderRadius: 8,
-                background: selectMode ? ADS_BRAND.goldSoft : "transparent",
+                background: selectMode ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
                 color: selectMode ? ADS_BRAND.gold : ADS_BRAND.text2,
                 cursor: "pointer",
                 display: "inline-flex",
@@ -2506,7 +2634,7 @@ export default function Studio2Page() {
                 setCardMenuId(null);
               }}
             >
-              <SquareCheckBig size={17} />
+              <Square size={16} />
               {selectMode && selectedDesignIds.length ? `${selectedDesignIds.length} Selected` : "Select"}
             </button>
             <button
@@ -2595,11 +2723,12 @@ export default function Studio2Page() {
               >
                 <HomeMenuButton icon={FilePlus2} label="New batch of ads" onClick={openSetupFlow} />
                 <HomeMenuButton
-                  icon={ImagePlus}
-                  label="Upload photos"
+                  icon={Upload}
+                  label="Upload media"
                   onClick={() => {
                     setCreateMenuOpen(false);
-                    homeUploadInputRef.current?.click();
+                    setUploadModalOpen(true);
+                    setUploadStatus("");
                   }}
                 />
                 <HomeMenuButton
@@ -2620,14 +2749,6 @@ export default function Studio2Page() {
                         void fetchStudioHome();
                       })
                       .catch(() => setCloudStatus("Folder save failed."));
-                  }}
-                />
-                <HomeMenuButton
-                  icon={Video}
-                  label="Upload videos"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    homeVideoInputRef.current?.click();
                   }}
                 />
               </div>
@@ -2832,6 +2953,139 @@ export default function Studio2Page() {
               </div>
             )}
         </main>
+        {uploadModalOpen && (
+          <div
+            onClick={() => setUploadModalOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.58)",
+              zIndex: 46,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 480,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Upload media</div>
+              <input
+                ref={uploadQueueInputRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  addQueuedUploadFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => uploadQueueInputRef.current?.click()}
+                onDragEnter={handleUploadModalDragOver}
+                onDragOver={handleUploadModalDragOver}
+                onDragLeave={handleUploadModalDragLeave}
+                onDrop={handleUploadModalDrop}
+                style={{
+                  width: "100%",
+                  minHeight: 132,
+                  border: `2px dashed ${uploadDropActive ? ADS_BRAND.gold : "rgba(255,255,255,0.16)"}`,
+                  borderRadius: 10,
+                  background: uploadDropActive ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+                  color: ADS_BRAND.text2,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <Upload size={26} />
+                <span style={{ fontSize: 14, fontWeight: 750 }}>Drop photos or videos here</span>
+                <span style={{ fontSize: 12, color: ADS_BRAND.text3 }}>or click to choose files</span>
+              </button>
+              {uploadQueue.length > 0 && (
+                <div style={{ maxHeight: 190, overflowY: "auto", marginBottom: 12, display: "grid", gap: 7 }}>
+                  {uploadQueue.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.size}-${index}`}
+                      style={{
+                        height: 38,
+                        border: `1px solid ${ADS_BRAND.border2}`,
+                        borderRadius: 8,
+                        background: ADS_BRAND.panel3,
+                        color: ADS_BRAND.text2,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "0 9px",
+                        fontSize: 12,
+                      }}
+                    >
+                      {getUploadContentType(file).startsWith("video/") ? <Video size={15} /> : <ImagePlus size={15} />}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+                      <button
+                        type="button"
+                        aria-label="Remove queued file"
+                        onClick={() => setUploadQueue((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: ADS_BRAND.text3,
+                          cursor: "pointer",
+                          fontSize: 18,
+                          lineHeight: 1,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {uploadStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{uploadStatus}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  style={buttonStyle(false)}
+                  onClick={() => {
+                    setUploadModalOpen(false);
+                    setUploadDropActive(false);
+                    setUploadStatus("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  style={{
+                    ...buttonStyle(true),
+                    opacity: uploadQueue.length && !uploadingQueuedMedia ? 1 : 0.4,
+                    cursor: uploadQueue.length && !uploadingQueuedMedia ? "pointer" : "not-allowed",
+                  }}
+                  disabled={!uploadQueue.length || uploadingQueuedMedia}
+                  onClick={() => void uploadQueuedMedia()}
+                >
+                  <Upload size={14} /> {uploadingQueuedMedia ? "Uploading..." : "Upload"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2870,6 +3124,7 @@ export default function Studio2Page() {
                   await clearDraft();
                   setPhotos([]);
                   setPhotoCopies({});
+                  setMediaAssets([]);
                   setCreatives([]);
                   setCurrentIndex(0);
                   setCopyText(DEFAULT_COPY);
@@ -2886,7 +3141,7 @@ export default function Studio2Page() {
         <div className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 18 }}>
           <div className="glass-static" style={{ padding: 22 }}>
             <h2 className="section-title" style={{ marginBottom: 16 }}>
-              <ImagePlus size={16} /> Photos
+              <ImagePlus size={16} /> Media
             </h2>
             <button
               type="button"
@@ -2907,9 +3162,9 @@ export default function Studio2Page() {
               }}
             >
               <Upload size={30} style={{ marginBottom: 8 }} />
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop photos here or click to upload</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop media here or click to upload</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-                Images become ads. Videos upload to the media library.
+                Images can create ads. Videos are saved here for the project.
               </div>
             </button>
             <input
@@ -2924,98 +3179,135 @@ export default function Studio2Page() {
               }}
             />
 
-            {photos.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginTop: 16 }}>
-                {photos.map((photo, index) => {
-                  const copyCount = getPhotoCopies(photoCopies, photo);
+            {setupMediaAssets.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(82px, 92px))",
+                  gap: 9,
+                  marginTop: 16,
+                  justifyContent: "start",
+                }}
+              >
+                {setupMediaAssets.map((asset, index) => {
+                  const copyCount = getPhotoCopies(photoCopies, asset.url);
                   return (
                     <div
-                      key={`${photo.slice(0, 24)}-${index}`}
+                      key={`${asset.id}-${index}`}
                       style={{
                         position: "relative",
+                        width: 92,
                         aspectRatio: "9 / 16",
                         borderRadius: 7,
                         overflow: "hidden",
                         background: ADS_BRAND.bgDeep,
                       }}
                     >
-                      <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      {asset.kind === "video" ? (
+                        <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      )}
                       <button
-                        aria-label="Remove photo"
-                        onClick={() => removeSetupPhoto(photo, index)}
+                        aria-label="Remove media"
+                        onClick={() => removeMediaAsset(asset)}
                         style={{
                           position: "absolute",
-                          top: 4,
-                          right: 4,
-                          width: 22,
-                          height: 22,
+                          top: 5,
+                          right: 5,
+                          width: 18,
+                          height: 18,
                           borderRadius: "50%",
                           border: "none",
-                          background: "rgba(0,0,0,0.72)",
+                          background: "rgba(0,0,0,0.62)",
                           color: "#fff",
                           cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 14,
+                          lineHeight: 1,
+                          padding: 0,
                         }}
                       >
                         ×
                       </button>
+                      {asset.kind === "video" && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: 5,
+                            top: 5,
+                            width: 18,
+                            height: 18,
+                            borderRadius: "50%",
+                            background: "rgba(0,0,0,0.62)",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Video size={10} />
+                        </span>
+                      )}
                       <div
                         style={{
                           position: "absolute",
-                          left: 5,
-                          right: 5,
-                          bottom: 5,
-                          height: 26,
+                          left: 6,
+                          right: 6,
+                          bottom: 6,
+                          height: 21,
                           display: "grid",
-                          gridTemplateColumns: "24px 1fr 24px",
+                          gridTemplateColumns: "18px 1fr 18px",
                           alignItems: "center",
-                          gap: 3,
-                          borderRadius: 7,
-                          background: "rgba(0,0,0,0.72)",
+                          borderRadius: 999,
+                          background: "rgba(0,0,0,0.58)",
                           border: "1px solid rgba(255,255,255,0.12)",
                           color: "#fff",
-                          padding: 2,
+                          backdropFilter: "blur(8px)",
                         }}
                       >
                         <button
                           type="button"
                           aria-label="Use fewer copies"
-                          onClick={() => updatePhotoCopyCount(photo, -1)}
+                          onClick={() => updatePhotoCopyCount(asset.url, -1)}
                           style={{
-                            width: 22,
-                            height: 22,
+                            width: 18,
+                            height: 19,
                             border: "none",
-                            borderRadius: 5,
-                            background: "rgba(255,255,255,0.12)",
-                            color: "#fff",
+                            background: "transparent",
+                            color: "rgba(255,255,255,0.88)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             cursor: "pointer",
+                            padding: 0,
                           }}
                         >
-                          <Minus size={13} />
+                          <Minus size={11} />
                         </button>
-                        <span style={{ textAlign: "center", fontSize: 11, fontWeight: 800 }}>
+                        <span style={{ textAlign: "center", fontSize: 10, fontWeight: 800 }}>
                           {copyCount}x
                         </span>
                         <button
                           type="button"
                           aria-label="Use more copies"
-                          onClick={() => updatePhotoCopyCount(photo, 1)}
+                          onClick={() => updatePhotoCopyCount(asset.url, 1)}
                           style={{
-                            width: 22,
-                            height: 22,
+                            width: 18,
+                            height: 19,
                             border: "none",
-                            borderRadius: 5,
-                            background: ADS_BRAND.gold,
-                            color: "#0b0b0b",
+                            background: "transparent",
+                            color: ADS_BRAND.gold,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             cursor: "pointer",
+                            padding: 0,
                           }}
                         >
-                          <Plus size={13} />
+                          <Plus size={11} />
                         </button>
                       </div>
                     </div>
@@ -3024,7 +3316,7 @@ export default function Studio2Page() {
               </div>
             )}
             <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>
-              {photos.length} photo{photos.length === 1 ? "" : "s"} ready · {plannedAdCount} ad{plannedAdCount === 1 ? "" : "s"} planned
+              {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} · {plannedAdCount} image ad{plannedAdCount === 1 ? "" : "s"} planned
             </div>
           </div>
 
@@ -3571,6 +3863,139 @@ export default function Studio2Page() {
               />
             </>
           )}
+        </div>
+      )}
+      {uploadModalOpen && (
+        <div
+          onClick={() => setUploadModalOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.58)",
+            zIndex: 46,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 480,
+              borderRadius: 12,
+              border: `1px solid ${ADS_BRAND.border2}`,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+              padding: 18,
+            }}
+          >
+            <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Upload media</div>
+            <input
+              ref={uploadQueueInputRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(event) => {
+                addQueuedUploadFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => uploadQueueInputRef.current?.click()}
+              onDragEnter={handleUploadModalDragOver}
+              onDragOver={handleUploadModalDragOver}
+              onDragLeave={handleUploadModalDragLeave}
+              onDrop={handleUploadModalDrop}
+              style={{
+                width: "100%",
+                minHeight: 132,
+                border: `2px dashed ${uploadDropActive ? ADS_BRAND.gold : "rgba(255,255,255,0.16)"}`,
+                borderRadius: 10,
+                background: uploadDropActive ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+                color: ADS_BRAND.text2,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <Upload size={26} />
+              <span style={{ fontSize: 14, fontWeight: 750 }}>Drop photos or videos here</span>
+              <span style={{ fontSize: 12, color: ADS_BRAND.text3 }}>or click to choose files</span>
+            </button>
+            {uploadQueue.length > 0 && (
+              <div style={{ maxHeight: 190, overflowY: "auto", marginBottom: 12, display: "grid", gap: 7 }}>
+                {uploadQueue.map((file, index) => (
+                  <div
+                    key={`${file.name}-${file.size}-${index}`}
+                    style={{
+                      height: 38,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 8,
+                      background: ADS_BRAND.panel3,
+                      color: ADS_BRAND.text2,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "0 9px",
+                      fontSize: 12,
+                    }}
+                  >
+                    {getUploadContentType(file).startsWith("video/") ? <Video size={15} /> : <ImagePlus size={15} />}
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+                    <button
+                      type="button"
+                      aria-label="Remove queued file"
+                      onClick={() => setUploadQueue((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: ADS_BRAND.text3,
+                        cursor: "pointer",
+                        fontSize: 18,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {uploadStatus && (
+              <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{uploadStatus}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                style={buttonStyle(false)}
+                onClick={() => {
+                  setUploadModalOpen(false);
+                  setUploadDropActive(false);
+                  setUploadStatus("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  ...buttonStyle(true),
+                  opacity: uploadQueue.length && !uploadingQueuedMedia ? 1 : 0.4,
+                  cursor: uploadQueue.length && !uploadingQueuedMedia ? "pointer" : "not-allowed",
+                }}
+                disabled={!uploadQueue.length || uploadingQueuedMedia}
+                onClick={() => void uploadQueuedMedia()}
+              >
+                <Upload size={14} /> {uploadingQueuedMedia ? "Uploading..." : "Upload"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {exportModalOpen && (
