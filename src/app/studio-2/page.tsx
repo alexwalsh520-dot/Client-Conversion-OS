@@ -11,11 +11,9 @@ import {
   AlignVerticalJustifyCenter,
   ArrowLeft,
   BringToFront,
-  Check,
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
-  Clock3,
   CopyPlus,
   Download,
   FilePlus2,
@@ -24,8 +22,8 @@ import {
   Grid3X3,
   ImagePlus,
   Layers,
-  MoreHorizontal,
   MousePointer2,
+  Palette,
   Paintbrush,
   PanelBottom,
   PanelTop,
@@ -869,27 +867,17 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
 };
 
-const homePanelStyle: React.CSSProperties = {
-  border: `1px solid ${ADS_BRAND.border}`,
+const studioHomeIconButtonStyle: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  border: `1px solid ${ADS_BRAND.border2}`,
   borderRadius: 8,
   background: ADS_BRAND.panel,
-  padding: 12,
-};
-
-const folderButtonStyle: React.CSSProperties = {
-  width: "100%",
-  border: `1px solid ${ADS_BRAND.border}`,
-  borderRadius: 8,
-  background: ADS_BRAND.panel3,
-  color: ADS_BRAND.text,
+  color: ADS_BRAND.text2,
   cursor: "pointer",
-  padding: 9,
-  display: "flex",
+  display: "inline-flex",
   alignItems: "center",
-  gap: 9,
-  fontFamily: "inherit",
-  textAlign: "left",
-  marginBottom: 7,
+  justifyContent: "center",
 };
 
 const alignOptions = [
@@ -899,15 +887,16 @@ const alignOptions = [
 ];
 
 const HOME_FOLDERS = [
-  { id: "tyson", name: "Tyson summer shred", count: 18, tone: "#82c5c5" },
-  { id: "challenge", name: "Challenge launches", count: 9, tone: "#c9a96e" },
-  { id: "raw", name: "Raw client media", count: 142, tone: "#7ec9a0" },
+  { id: "all", name: "All designs" },
+  { id: "tyson", name: "Tyson summer shred" },
+  { id: "challenge", name: "Challenge launches" },
+  { id: "raw", name: "Raw client media" },
 ];
 
 const HOME_SAMPLE_PROJECTS = [
-  { id: "sample-tyson", name: "Tyson gym story ads", folder: "Tyson summer shred", ads: 30, media: "Photos + videos", updated: "Today", tone: "#82c5c5", approved: 22 },
-  { id: "sample-keith", name: "Keith DM retargeting", folder: "Challenge launches", ads: 14, media: "Photos", updated: "Yesterday", tone: "#c9a96e", approved: 8 },
-  { id: "sample-broll", name: "Summer b-roll cuts", folder: "Raw client media", ads: 0, media: "Videos", updated: "May 10", tone: "#7ec9a0", approved: 0 },
+  { id: "sample-tyson", name: "Tyson gym story ads", updated: "May 13, 2026" },
+  { id: "sample-keith", name: "Keith DM retargeting", updated: "May 12, 2026" },
+  { id: "sample-broll", name: "Summer b-roll cuts", updated: "May 10, 2026" },
 ];
 
 export default function Studio2Page() {
@@ -938,7 +927,7 @@ export default function Studio2Page() {
   const [exportFolderName, setExportFolderName] = useState(projectName);
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [selectedHomeProjects, setSelectedHomeProjects] = useState<string[]>([]);
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -980,16 +969,11 @@ export default function Studio2Page() {
     () => ({
       id: "active-draft",
       name: projectName || "Untitled Studio batch",
-      folder: "Active workspace",
-      ads: creatives.length,
-      media: `${photos.length} photo${photos.length === 1 ? "" : "s"}`,
-      updated: saveStatus.replace("Saved ", "").replace("Restored ", "") || "Autosave ready",
-      tone: ADS_BRAND.gold,
-      approved: creatives.filter((creative) => creative.approved).length,
+      updated: "May 13, 2026",
       thumb: currentCreative?.photoUrl || photos[0] || "",
       isActiveDraft: true,
     }),
-    [creatives, currentCreative?.photoUrl, photos, projectName, saveStatus]
+    [currentCreative?.photoUrl, photos, projectName]
   );
   const homeProjects = useMemo(
     () => [
@@ -1129,11 +1113,14 @@ export default function Studio2Page() {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!createMenuOpen) return;
-    const close = () => setCreateMenuOpen(false);
+    if (!createMenuOpen && !folderMenuOpen) return;
+    const close = () => {
+      setCreateMenuOpen(false);
+      setFolderMenuOpen(false);
+    };
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
-  }, [createMenuOpen]);
+  }, [createMenuOpen, folderMenuOpen]);
 
   const pushUndo = useCallback(() => {
     setUndoStack((stack) => [...stack.slice(-29), cloneCreatives(creatives)]);
@@ -1856,6 +1843,7 @@ export default function Studio2Page() {
 
   const openSetupFlow = useCallback(() => {
     setCreateMenuOpen(false);
+    setFolderMenuOpen(false);
     setView("setup");
   }, []);
 
@@ -1869,41 +1857,22 @@ export default function Studio2Page() {
     [creatives.length]
   );
 
-  const toggleHomeProject = useCallback((projectId: string) => {
-    setSelectedHomeProjects((selected) =>
-      selected.includes(projectId)
-        ? selected.filter((id) => id !== projectId)
-        : [...selected, projectId]
-    );
-  }, []);
-
-  const downloadSelectedProjects = useCallback(async () => {
-    if (!selectedHomeProjects.length) return;
-    const includesActiveDraft = selectedHomeProjects.includes("active-draft");
-
-    if (includesActiveDraft && creatives.length) {
-      await exportAll(projectName, false);
-    } else if (includesActiveDraft) {
-      setView("setup");
-      return;
-    }
-  }, [creatives.length, exportAll, projectName, selectedHomeProjects]);
-
   if (view === "home") {
-    const selectedCount = selectedHomeProjects.length;
-
     return (
-      <div className="fade-up" style={{ paddingBottom: 40 }}>
+      <div
+        className="ad-studio-fullbleed"
+        style={{
+          minHeight: "100vh",
+          background: ADS_BRAND.bg,
+          color: ADS_BRAND.text,
+          fontFamily: "var(--font-geist-sans), system-ui, -apple-system, sans-serif",
+        }}
+      >
         <style>{`
-          .studio2-project-card:hover,
-          .studio2-folder-card:hover {
+          .studio2-design-card:hover {
             border-color: ${ADS_BRAND.border2};
             background: ${ADS_BRAND.panel2};
             transform: translateY(-1px);
-          }
-          .studio2-project-card:hover .studio2-project-select,
-          .studio2-project-select[data-selected="true"] {
-            opacity: 1;
           }
           .studio2-project-title {
             border: 1px solid transparent;
@@ -1931,46 +1900,34 @@ export default function Studio2Page() {
           }}
         />
 
-        <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18 }}>
-          <div>
-            <h1 className="page-title">Studio 2.0</h1>
-            <p className="page-subtitle">Projects, folders, media, and Canva-style batch creation.</p>
-          </div>
-          <div style={{ width: 280, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, position: "relative" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              {selectedCount > 0 && (
-                <button
-                  style={buttonStyle(false)}
-                  onClick={() => void downloadSelectedProjects()}
-                >
-                  <Download size={14} /> Download {selectedCount}
-                </button>
-              )}
-              <button
-                style={{ ...buttonStyle(true), padding: "10px 14px" }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setCreateMenuOpen((open) => !open);
-                }}
-              >
-                <Plus size={16} /> Create <ChevronDown size={14} />
-              </button>
-            </div>
+        <div style={{
+          height: 80,
+          borderBottom: `1px solid ${ADS_BRAND.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          padding: "0 40px",
+        }}>
+          <h1 style={{ margin: 0, color: ADS_BRAND.text, fontSize: 26, fontWeight: 600, letterSpacing: 0 }}>
+            Designs
+          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
             <label style={{
-              width: "100%",
-              height: 38,
-              border: `1px solid ${ADS_BRAND.border}`,
+              width: 330,
+              height: 42,
+              border: `1px solid ${ADS_BRAND.border2}`,
               borderRadius: 8,
               background: ADS_BRAND.panel,
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              padding: "0 10px",
+              gap: 9,
+              padding: "0 12px",
               color: ADS_BRAND.text3,
             }}>
-              <Search size={14} />
+              <Search size={17} />
               <input
-                placeholder="Search projects"
+                placeholder="Search designs..."
                 style={{
                   width: "100%",
                   border: "none",
@@ -1978,10 +1935,75 @@ export default function Studio2Page() {
                   background: "transparent",
                   color: ADS_BRAND.text,
                   fontFamily: "inherit",
-                  fontSize: 12,
+                  fontSize: 15,
+                  fontWeight: 400,
                 }}
               />
             </label>
+            <button
+              aria-label="Folders"
+              style={studioHomeIconButtonStyle}
+              onClick={(event) => {
+                event.stopPropagation();
+                setFolderMenuOpen((open) => !open);
+                setCreateMenuOpen(false);
+              }}
+            >
+              <Folder size={17} />
+            </button>
+            <div style={{ position: "relative" }}>
+              <button
+                style={{
+                  height: 42,
+                  border: "none",
+                  borderRadius: 8,
+                  background: ADS_BRAND.gold,
+                  color: ADS_BRAND.bgDeep,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "0 16px",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCreateMenuOpen((open) => !open);
+                  setFolderMenuOpen(false);
+                }}
+              >
+                <Plus size={16} /> Create <ChevronDown size={14} />
+              </button>
+            </div>
+            {folderMenuOpen && (
+              <div
+                className="studio2-create-menu"
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  right: 138,
+                  top: 50,
+                  width: 224,
+                  zIndex: 10,
+                  padding: 7,
+                  borderRadius: 8,
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel,
+                  boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
+                }}
+              >
+                {HOME_FOLDERS.map((folder) => (
+                  <HomeMenuButton
+                    key={folder.id}
+                    icon={Folder}
+                    label={folder.name}
+                    onClick={() => setFolderMenuOpen(false)}
+                  />
+                ))}
+              </div>
+            )}
             {createMenuOpen && (
               <div
                 className="studio2-create-menu"
@@ -1989,7 +2011,7 @@ export default function Studio2Page() {
                 style={{
                   position: "absolute",
                   right: 0,
-                  top: 46,
+                  top: 50,
                   width: 238,
                   zIndex: 10,
                   padding: 7,
@@ -2027,131 +2049,64 @@ export default function Studio2Page() {
           </div>
         </div>
 
-        <div className="section" style={{ display: "grid", gridTemplateColumns: "250px minmax(0, 1fr)", gap: 18 }}>
-          <aside style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={homePanelStyle}>
-              <div style={{ ...labelStyle, marginBottom: 10 }}>
-                <Folder size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
-                Folders
-              </div>
-              {HOME_FOLDERS.map((folder) => (
-                <button key={folder.id} className="studio2-folder-card" style={folderButtonStyle}>
+        <main style={{ padding: "70px 40px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 20, maxWidth: 1040 }}>
+              <button
+                className="studio2-design-card"
+                onClick={openSetupFlow}
+                style={{
+                  minHeight: 228,
+                  border: `1px dashed ${ADS_BRAND.border2}`,
+                  borderRadius: 12,
+                  background: ADS_BRAND.panel3,
+                  cursor: "pointer",
+                  padding: 0,
+                  overflow: "hidden",
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
                   <span style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 7,
+                    width: 58,
+                    height: 58,
+                    borderRadius: 16,
+                    background: ADS_BRAND.active,
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: `${folder.tone}1A`,
-                    color: folder.tone,
-                    flexShrink: 0,
                   }}>
-                    <Folder size={15} />
+                    <Plus size={27} />
                   </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", color: ADS_BRAND.text, fontSize: 13, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {folder.name}
-                    </span>
-                    <span style={{ display: "block", color: ADS_BRAND.text3, fontSize: 11, marginTop: 2 }}>{folder.count} items</span>
-                  </span>
-                </button>
-              ))}
-              <button
-                className="studio2-folder-card"
-                style={{ ...folderButtonStyle, borderStyle: "dashed", color: ADS_BRAND.text2 }}
-              >
-                <FolderPlus size={15} />
-                New folder
+                </div>
+                <div style={{ padding: "18px 18px 20px" }}>
+                  <div style={{ color: ADS_BRAND.text2, fontSize: 15, fontWeight: 600, letterSpacing: 0 }}>
+                    New Design
+                  </div>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 13, fontWeight: 400, marginTop: 7 }}>
+                    Create a design project
+                  </div>
+                </div>
               </button>
-            </div>
-          </aside>
-
-          <main>
-            <div style={{ marginBottom: 12 }}>
-              <div>
-                <h2 className="section-title" style={{ marginBottom: 2 }}>
-                  <Grid3X3 size={16} /> Projects
-                </h2>
-                <div style={{ color: ADS_BRAND.text3, fontSize: 12 }}>Recent Studio workspaces</div>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14 }}>
               {homeProjects.map((project) => {
-                const selected = selectedHomeProjects.includes(project.id);
                 return (
                   <div
                     key={project.id}
-                    className="studio2-project-card"
+                    className="studio2-design-card"
                     onClick={() => openHomeProject(project.id)}
                     style={{
                       position: "relative",
-                      border: `1px solid ${selected ? ADS_BRAND.goldBorder : ADS_BRAND.border}`,
-                      background: selected ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
-                      borderRadius: 8,
+                      border: `1px solid ${ADS_BRAND.border}`,
+                      background: ADS_BRAND.panel,
+                      borderRadius: 12,
                       overflow: "hidden",
                       cursor: "pointer",
-                      minHeight: 260,
+                      minHeight: 228,
                     }}
                   >
-                    <button
-                      aria-label={selected ? "Deselect project" : "Select project"}
-                      className="studio2-project-select"
-                      data-selected={selected}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleHomeProject(project.id);
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        left: 10,
-                        zIndex: 2,
-                        width: 26,
-                        height: 26,
-                        borderRadius: 6,
-                        border: `1px solid ${selected ? ADS_BRAND.gold : "rgba(255,255,255,0.24)"}`,
-                        background: selected ? ADS_BRAND.gold : "rgba(0,0,0,0.45)",
-                        color: selected ? ADS_BRAND.bgDeep : "#fff",
-                        opacity: selected ? 1 : 0,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {selected && <Check size={16} />}
-                    </button>
-                    <button
-                      aria-label="Project options"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        right: 10,
-                        zIndex: 2,
-                        width: 28,
-                        height: 28,
-                        borderRadius: 6,
-                        border: "none",
-                        background: "rgba(0,0,0,0.46)",
-                        color: "#fff",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
                     <div style={{
-                      height: 142,
-                      background: project.thumb
-                        ? ADS_BRAND.bgDeep
-                        : `linear-gradient(135deg, ${project.tone}33, rgba(255,255,255,0.04) 42%, ${ADS_BRAND.bgDeep})`,
+                      height: 150,
+                      background: project.thumb ? ADS_BRAND.bgDeep : ADS_BRAND.panel2,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -2161,12 +2116,12 @@ export default function Studio2Page() {
                       {project.thumb ? (
                         <img src={project.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       ) : (
-                        <span style={{ color: project.tone, fontSize: 34, fontWeight: 900, letterSpacing: 0 }}>
-                          {project.name.split(" ").slice(0, 2).map((part) => part[0]).join("")}
+                        <span style={{ color: ADS_BRAND.text4 }}>
+                          <Palette size={38} strokeWidth={1.7} />
                         </span>
                       )}
                     </div>
-                    <div style={{ padding: 12 }}>
+                    <div style={{ padding: "17px 18px 18px" }}>
                       {project.isActiveDraft ? (
                         <input
                           className="studio2-project-title"
@@ -2180,38 +2135,26 @@ export default function Studio2Page() {
                             background: "transparent",
                             color: ADS_BRAND.text,
                             fontFamily: "inherit",
-                            fontSize: 14,
-                            fontWeight: 850,
+                            fontSize: 15,
+                            fontWeight: 600,
                             outline: "none",
                             padding: "0 6px",
                           }}
                         />
                       ) : (
-                        <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 850, lineHeight: 1.25, minHeight: 35 }}>
+                        <div style={{ color: ADS_BRAND.text2, fontSize: 15, fontWeight: 600, lineHeight: 1.25, letterSpacing: 0 }}>
                           {project.name}
                         </div>
                       )}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-                        <ProjectMetric label="In Progress" value={Math.max(0, project.ads - project.approved)} />
-                        <ProjectMetric label="Approved" value={project.approved} />
-                      </div>
-                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", color: ADS_BRAND.text3, fontSize: 11 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                          <Clock3 size={12} /> {project.updated}
-                        </span>
-                        {project.isActiveDraft && (
-                          <span style={{ color: ADS_BRAND.gold, fontWeight: 800 }}>
-                            {creatives.length ? "Open editor" : "Open setup"}
-                          </span>
-                        )}
+                      <div style={{ color: ADS_BRAND.text3, fontSize: 13, fontWeight: 400, marginTop: 8 }}>
+                        {project.updated}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </main>
-        </div>
+        </main>
       </div>
     );
   }
@@ -2941,22 +2884,6 @@ function HomeMenuButton({
       <Icon size={16} />
       {label}
     </button>
-  );
-}
-
-function ProjectMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div style={{
-      border: `1px solid ${ADS_BRAND.border}`,
-      borderRadius: 7,
-      background: ADS_BRAND.panel3,
-      padding: "7px 8px",
-    }}>
-      <div style={{ color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
-        {label}
-      </div>
-      <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginTop: 1 }}>{value}</div>
-    </div>
   );
 }
 
