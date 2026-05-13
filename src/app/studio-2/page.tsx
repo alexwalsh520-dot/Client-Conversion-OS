@@ -188,6 +188,8 @@ interface StudioMediaAsset {
   url: string;
   kind: "image" | "video";
   filename: string;
+  folderId?: string | null;
+  createdAt?: string;
 }
 
 interface StudioProjectDetail {
@@ -396,7 +398,7 @@ async function uploadStudioMedia(file: File, projectId?: string | null, folderId
 
   if (!uploadRes.ok) throw new Error("R2 upload failed");
 
-  void fetch("/api/studio-2/media/complete", {
+  await fetch("/api/studio-2/media/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1021,6 +1023,7 @@ export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoCopies, setPhotoCopies] = useState<Record<string, number>>({});
   const [mediaAssets, setMediaAssets] = useState<StudioMediaAsset[]>([]);
+  const [libraryMedia, setLibraryMedia] = useState<StudioMediaAsset[]>([]);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
@@ -1067,6 +1070,7 @@ export default function Studio2Page() {
   const [newFolderName, setNewFolderName] = useState("");
   const [folderPickerStatus, setFolderPickerStatus] = useState("");
   const [savingFolderPick, setSavingFolderPick] = useState(false);
+  const [editorTitleFocused, setEditorTitleFocused] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1102,6 +1106,10 @@ export default function Studio2Page() {
     () => photos.reduce((total, photo) => total + getPhotoCopies(photoCopies, photo), 0),
     [photoCopies, photos]
   );
+  const selectedVideoCount = useMemo(
+    () => mediaAssets.filter((asset) => asset.kind === "video").length,
+    [mediaAssets]
+  );
   const setupMediaAssets = useMemo(() => {
     const imageAssets = photos.map((photo, index) => {
       const existing = mediaAssets.find((asset) => asset.kind === "image" && asset.url === photo);
@@ -1113,8 +1121,13 @@ export default function Studio2Page() {
       };
     });
     const videoAssets = mediaAssets.filter((asset) => asset.kind === "video");
-    return [...imageAssets, ...videoAssets];
-  }, [mediaAssets, photos]);
+    const seen = new Set<string>();
+    return [...imageAssets, ...videoAssets, ...libraryMedia].filter((asset) => {
+      if (seen.has(asset.url)) return false;
+      seen.add(asset.url);
+      return true;
+    });
+  }, [libraryMedia, mediaAssets, photos]);
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -1162,6 +1175,10 @@ export default function Studio2Page() {
     ],
     [cloudFolders]
   );
+  const selectedFolder = useMemo(
+    () => cloudFolders.find((folder) => folder.id === selectedFolderId) || null,
+    [cloudFolders, selectedFolderId]
+  );
 
   const buildDraftState = useCallback(
     (overrides: Partial<DraftState> = {}): DraftState => ({
@@ -1193,6 +1210,17 @@ export default function Studio2Page() {
       setCloudStatus("");
     } catch {
       setCloudStatus("Cloud library unavailable. Local autosave is still on.");
+    }
+  }, []);
+
+  const fetchStudioMedia = useCallback(async () => {
+    try {
+      const res = await fetch("/api/studio-2/media", { cache: "no-store" });
+      if (!res.ok) throw new Error("Media library unavailable");
+      const data = await res.json() as { media?: StudioMediaAsset[] };
+      setLibraryMedia(data.media || []);
+    } catch {
+      setLibraryMedia([]);
     }
   }, []);
 
@@ -1307,7 +1335,8 @@ export default function Studio2Page() {
 
   useEffect(() => {
     void fetchStudioHome();
-  }, [fetchStudioHome]);
+    void fetchStudioMedia();
+  }, [fetchStudioHome, fetchStudioMedia]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -1559,8 +1588,9 @@ export default function Studio2Page() {
         ? `${savedVideos.length} video${savedVideos.length === 1 ? "" : "s"} uploaded to Media.`
         : "Video upload failed."
     );
+    void fetchStudioMedia();
     void fetchStudioHome();
-  }, [fetchStudioHome, projectId, selectedFolderId]);
+  }, [fetchStudioHome, fetchStudioMedia, projectId, selectedFolderId]);
 
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files?.length) return;
@@ -1598,8 +1628,9 @@ export default function Studio2Page() {
       });
       return next;
     });
+    void fetchStudioMedia();
     void fetchStudioHome();
-  }, [fetchStudioHome, handleMediaOnlyUpload, projectId, selectedFolderId]);
+  }, [fetchStudioHome, fetchStudioMedia, handleMediaOnlyUpload, projectId, selectedFolderId]);
 
   const updatePhotoCopyCount = useCallback((photo: string, delta: number) => {
     setPhotoCopies((prev) => ({
@@ -1618,21 +1649,37 @@ export default function Studio2Page() {
     });
   }, []);
 
-  const removeMediaAsset = useCallback((asset: StudioMediaAsset) => {
-    if (asset.kind === "image") {
-      const photoIndex = photos.findIndex((photo) => photo === asset.url);
-      if (photoIndex >= 0) {
-        removeSetupPhoto(asset.url, photoIndex);
+  const toggleSetupMediaAsset = useCallback((asset: StudioMediaAsset) => {
+    const isSelected =
+      asset.kind === "image"
+        ? photos.includes(asset.url)
+        : mediaAssets.some((item) => item.url === asset.url);
+
+    if (isSelected) {
+      if (asset.kind === "image") {
+        const photoIndex = photos.findIndex((photo) => photo === asset.url);
+        if (photoIndex >= 0) removeSetupPhoto(asset.url, photoIndex);
         return;
       }
+      setMediaAssets((prev) => prev.filter((item) => item.url !== asset.url));
+      setPhotoCopies((prev) => {
+        const next = { ...prev };
+        delete next[asset.url];
+        return next;
+      });
+      return;
     }
-    setMediaAssets((prev) => prev.filter((item) => item.id !== asset.id));
-    setPhotoCopies((prev) => {
-      const next = { ...prev };
-      delete next[asset.url];
-      return next;
-    });
-  }, [photos, removeSetupPhoto]);
+
+    if (asset.kind === "image") {
+      setPhotos((prev) => (prev.includes(asset.url) ? prev : [...prev, asset.url]));
+    }
+    setMediaAssets((prev) =>
+      prev.some((item) => item.url === asset.url)
+        ? prev
+        : [...prev, { ...asset, id: asset.id || uid() }]
+    );
+    setPhotoCopies((prev) => (prev[asset.url] ? prev : { ...prev, [asset.url]: 1 }));
+  }, [mediaAssets, photos, removeSetupPhoto]);
 
   const handleSetupDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -1672,6 +1719,30 @@ export default function Studio2Page() {
     setUploadStatus("");
   }, []);
 
+  const uploadLibraryFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files?.length) return 0;
+    const mediaFiles = Array.from(files).filter((file) => {
+      const contentType = getUploadContentType(file);
+      return contentType.startsWith("image/") || contentType.startsWith("video/");
+    });
+    if (!mediaFiles.length) return 0;
+
+    const uploaded = await Promise.all(
+      mediaFiles.map(async (file) => {
+        try {
+          const url = await uploadStudioMedia(file, null, null);
+          return { file, url };
+        } catch {
+          return { file, url: "" };
+        }
+      })
+    );
+    const savedCount = uploaded.filter((item) => item.url).length;
+    await fetchStudioMedia();
+    void fetchStudioHome();
+    return savedCount;
+  }, [fetchStudioHome, fetchStudioMedia]);
+
   const handleUploadModalDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
     event.preventDefault();
@@ -1700,17 +1771,19 @@ export default function Studio2Page() {
     setUploadingQueuedMedia(true);
     setUploadStatus(`Uploading ${uploadQueue.length} file${uploadQueue.length === 1 ? "" : "s"}...`);
     try {
-      await handleFiles(uploadQueue);
-      setUploadStatus(`${uploadQueue.length} file${uploadQueue.length === 1 ? "" : "s"} uploaded to Media.`);
+      const savedCount = await uploadLibraryFiles(uploadQueue);
+      if (!savedCount) throw new Error("No media uploaded");
+      setUploadStatus("Upload complete.");
+      setCloudStatus("Upload complete.");
       setUploadQueue([]);
-      setView("setup");
       setUploadModalOpen(false);
+      setView("home");
     } catch {
       setUploadStatus("Upload failed. Try again.");
     } finally {
       setUploadingQueuedMedia(false);
     }
-  }, [handleFiles, uploadQueue, uploadingQueuedMedia]);
+  }, [uploadLibraryFiles, uploadQueue, uploadingQueuedMedia]);
 
   const replaceCurrentImage = useCallback(
     async (file: File | null) => {
@@ -1736,9 +1809,10 @@ export default function Studio2Page() {
       }));
       setSelectedLayer({ type: "image" });
       setContextMenu(null);
+      void fetchStudioMedia();
       void fetchStudioHome();
     },
-    [currentCreative, fetchStudioHome, projectId, pushUndo, selectedFolderId, updateCurrentCreative]
+    [currentCreative, fetchStudioHome, fetchStudioMedia, projectId, pushUndo, selectedFolderId, updateCurrentCreative]
   );
 
   const duplicateSelectedBlock = useCallback(() => {
@@ -2572,11 +2646,14 @@ export default function Studio2Page() {
             background: ${ADS_BRAND.bg};
           }
           .studio2-create-menu button:hover {
-            background: ${ADS_BRAND.panel2};
+            background: ${ADS_BRAND.panel2} !important;
           }
           .studio2-card-menu-button:hover {
             background: rgba(0,0,0,0.76);
             color: ${ADS_BRAND.text};
+          }
+          .studio2-folder-choice:hover {
+            background: ${ADS_BRAND.panel2} !important;
           }
         `}</style>
 
@@ -2654,7 +2731,11 @@ export default function Studio2Page() {
             </button>
             <button
               aria-label="Folders"
-              style={studioHomeIconButtonStyle}
+              style={{
+                ...studioHomeIconButtonStyle,
+                border: `1px solid ${selectedFolderId ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                color: selectedFolderId ? ADS_BRAND.gold : ADS_BRAND.text2,
+              }}
               onClick={(event) => {
                 event.stopPropagation();
                 setFolderMenuOpen((open) => !open);
@@ -2736,7 +2817,7 @@ export default function Studio2Page() {
                   boxShadow: "0 22px 70px rgba(0,0,0,0.45)",
                 }}
               >
-                <HomeMenuButton icon={FilePlus2} label="New batch of ads" onClick={openSetupFlow} />
+                <HomeMenuButton icon={FilePlus2} label="New design" onClick={openSetupFlow} />
                 <HomeMenuButton
                   icon={Upload}
                   label="Upload media"
@@ -2766,7 +2847,40 @@ export default function Studio2Page() {
           </div>
         </div>
 
-        <main style={{ padding: "70px 40px" }}>
+        <main style={{ padding: "34px 40px 70px" }}>
+            {selectedFolder && (
+              <div style={{ marginBottom: 28, display: "flex", alignItems: "center", gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolderId(null)}
+                  style={{
+                    height: 36,
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    borderRadius: 8,
+                    background: ADS_BRAND.panel,
+                    color: ADS_BRAND.text2,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "0 11px",
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    fontWeight: 650,
+                  }}
+                >
+                  <ArrowLeft size={15} /> Back to home
+                </button>
+                <div>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                    Folder
+                  </div>
+                  <div style={{ color: ADS_BRAND.text, fontSize: 18, fontWeight: 700 }}>
+                    {selectedFolder.name}
+                  </div>
+                </div>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 20, maxWidth: 1040 }}>
               <button
                 className="studio2-design-card"
@@ -3194,144 +3308,202 @@ export default function Studio2Page() {
               }}
             />
 
-            {setupMediaAssets.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                Uploaded media
+              </div>
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(82px, 92px))",
-                  gap: 9,
-                  marginTop: 16,
-                  justifyContent: "start",
+                  height: 278,
+                  overflowY: "auto",
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  borderRadius: 10,
+                  background: ADS_BRAND.panel3,
+                  padding: 10,
                 }}
               >
-                {setupMediaAssets.map((asset, index) => {
-                  const copyCount = getPhotoCopies(photoCopies, asset.url);
-                  return (
-                    <div
-                      key={`${asset.id}-${index}`}
-                      style={{
-                        position: "relative",
-                        width: 92,
-                        aspectRatio: "9 / 16",
-                        borderRadius: 7,
-                        overflow: "hidden",
-                        background: ADS_BRAND.bgDeep,
-                      }}
-                    >
-                      {asset.kind === "video" ? (
-                        <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      )}
-                      <button
-                        aria-label="Remove media"
-                        onClick={() => removeMediaAsset(asset)}
-                        style={{
-                          position: "absolute",
-                          top: 5,
-                          right: 5,
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          border: "none",
-                          background: "rgba(0,0,0,0.62)",
-                          color: "#fff",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 14,
-                          lineHeight: 1,
-                          padding: 0,
-                        }}
-                      >
-                        ×
-                      </button>
-                      {asset.kind === "video" && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            left: 5,
-                            top: 5,
-                            width: 18,
-                            height: 18,
-                            borderRadius: "50%",
-                            background: "rgba(0,0,0,0.62)",
-                            color: "#fff",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
+                {setupMediaAssets.length > 0 ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(76px, 86px))",
+                      gap: 9,
+                      justifyContent: "start",
+                    }}
+                  >
+                    {setupMediaAssets.map((asset, index) => {
+                      const copyCount = getPhotoCopies(photoCopies, asset.url);
+                      const isSelected = asset.kind === "image"
+                        ? photos.includes(asset.url)
+                        : mediaAssets.some((item) => item.url === asset.url);
+                      return (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          key={`${asset.id}-${index}`}
+                          onClick={() => toggleSetupMediaAsset(asset)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              toggleSetupMediaAsset(asset);
+                            }
                           }}
-                        >
-                          <Video size={10} />
-                        </span>
-                      )}
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: 6,
-                          right: 6,
-                          bottom: 6,
-                          height: 21,
-                          display: "grid",
-                          gridTemplateColumns: "18px 1fr 18px",
-                          alignItems: "center",
-                          borderRadius: 999,
-                          background: "rgba(0,0,0,0.58)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          color: "#fff",
-                          backdropFilter: "blur(8px)",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          aria-label="Use fewer copies"
-                          onClick={() => updatePhotoCopyCount(asset.url, -1)}
                           style={{
-                            width: 18,
-                            height: 19,
-                            border: "none",
-                            background: "transparent",
-                            color: "rgba(255,255,255,0.88)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
+                            position: "relative",
+                            width: 86,
+                            aspectRatio: "9 / 16",
+                            borderRadius: 8,
+                            overflow: "hidden",
+                            background: ADS_BRAND.bgDeep,
+                            border: `2px solid ${isSelected ? ADS_BRAND.gold : "transparent"}`,
                             cursor: "pointer",
                             padding: 0,
                           }}
                         >
-                          <Minus size={11} />
-                        </button>
-                        <span style={{ textAlign: "center", fontSize: 10, fontWeight: 800 }}>
-                          {copyCount}x
-                        </span>
-                        <button
-                          type="button"
-                          aria-label="Use more copies"
-                          onClick={() => updatePhotoCopyCount(asset.url, 1)}
-                          style={{
-                            width: 18,
-                            height: 19,
-                            border: "none",
-                            background: "transparent",
-                            color: ADS_BRAND.gold,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                            padding: 0,
-                          }}
-                        >
-                          <Plus size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                          {asset.kind === "video" ? (
+                            <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          )}
+                          {isSelected && (
+                            <button
+                              type="button"
+                              aria-label="Remove media from design"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleSetupMediaAsset(asset);
+                              }}
+                              style={{
+                                position: "absolute",
+                                top: 5,
+                                right: 5,
+                                width: 18,
+                                height: 18,
+                                borderRadius: "50%",
+                                border: "none",
+                                background: "rgba(0,0,0,0.68)",
+                                color: "#fff",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 14,
+                                lineHeight: 1,
+                                padding: 0,
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                          {asset.kind === "video" && (
+                            <span
+                              style={{
+                                position: "absolute",
+                                left: 5,
+                                top: 5,
+                                width: 18,
+                                height: 18,
+                                borderRadius: "50%",
+                                background: "rgba(0,0,0,0.68)",
+                                color: "#fff",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Video size={10} />
+                            </span>
+                          )}
+                          {isSelected && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 6,
+                                right: 6,
+                                bottom: 6,
+                                height: 20,
+                                display: "grid",
+                                gridTemplateColumns: "18px 1fr 18px",
+                                alignItems: "center",
+                                borderRadius: 999,
+                                background: "rgba(0,0,0,0.62)",
+                                border: "1px solid rgba(255,255,255,0.14)",
+                                color: "#fff",
+                                backdropFilter: "blur(8px)",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                aria-label="Use fewer copies"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  updatePhotoCopyCount(asset.url, -1);
+                                }}
+                                style={{
+                                  width: 18,
+                                  height: 19,
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "rgba(255,255,255,0.88)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <Minus size={10} />
+                              </button>
+                              <span style={{ textAlign: "center", fontSize: 10, fontWeight: 800 }}>
+                                {copyCount}x
+                              </span>
+                              <button
+                                type="button"
+                                aria-label="Use more copies"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  updatePhotoCopyCount(asset.url, 1);
+                                }}
+                                style={{
+                                  width: 18,
+                                  height: 19,
+                                  border: "none",
+                                  background: "transparent",
+                                  color: ADS_BRAND.gold,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <Plus size={10} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "column",
+                    gap: 8,
+                    color: ADS_BRAND.text3,
+                    fontSize: 13,
+                  }}>
+                    <Palette size={28} strokeWidth={1.7} />
+                    No media uploaded yet
+                  </div>
+                )}
               </div>
-            )}
+            </div>
             <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>
-              {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} · {plannedAdCount} image ad{plannedAdCount === 1 ? "" : "s"} planned
+              {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} · {photos.length + selectedVideoCount} selected · {plannedAdCount} image ad{plannedAdCount === 1 ? "" : "s"} planned
             </div>
           </div>
 
@@ -3456,13 +3628,23 @@ export default function Studio2Page() {
           className="studio2-project-title"
           aria-label="Design name"
           value={projectName}
+          onFocus={() => setEditorTitleFocused(true)}
+          onBlur={() => setEditorTitleFocused(false)}
           onChange={(event) => setProjectName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              setEditorTitleFocused(false);
+              setSaveStatus(`Saved ${getDraftDate(Date.now())}`);
+              event.currentTarget.blur();
+            }
+          }}
           style={{
             width: Math.max(170, Math.min(360, projectName.length * 9 + 30)),
             height: 34,
             borderRadius: 7,
-            border: "1px solid transparent",
-            background: "transparent",
+            border: `1px solid ${editorTitleFocused ? ADS_BRAND.goldBorder : "transparent"}`,
+            background: editorTitleFocused ? ADS_BRAND.panel : "transparent",
             color: "var(--text-primary)",
             fontFamily: "inherit",
             fontSize: 14,
@@ -4109,6 +4291,7 @@ export default function Studio2Page() {
                   <button
                     key={folder.id}
                     type="button"
+                    className="studio2-folder-choice"
                     disabled={savingFolderPick}
                     onClick={() => void addHomeProjectToFolder(folderPickerProjectId, folder.id)}
                     style={{
