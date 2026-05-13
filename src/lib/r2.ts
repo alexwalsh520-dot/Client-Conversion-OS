@@ -62,9 +62,10 @@ export function createPresignedPutUrl({ key, contentType, expiresSeconds = 900 }
   const host = `${config.accountId}.r2.cloudflarestorage.com`;
   const credentialScope = `${dateStamp}/${R2_REGION}/${R2_SERVICE}/aws4_request`;
   const canonicalUri = `/${config.bucketName}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  const signedHeaders = "content-type;host";
+  const signedHeaders = "host";
   const query: Record<string, string> = {
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
     "X-Amz-Credential": `${config.accessKeyId}/${credentialScope}`,
     "X-Amz-Date": amzDate,
     "X-Amz-Expires": String(expiresSeconds),
@@ -72,7 +73,7 @@ export function createPresignedPutUrl({ key, contentType, expiresSeconds = 900 }
   };
   const canonicalQuery = canonicalizeQuery(query);
   const normalizedContentType = contentType || "application/octet-stream";
-  const canonicalHeaders = `content-type:${normalizedContentType}\nhost:${host}\n`;
+  const canonicalHeaders = `host:${host}\n`;
   const canonicalRequest = [
     "PUT",
     canonicalUri,
