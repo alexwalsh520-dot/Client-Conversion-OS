@@ -87,6 +87,7 @@ export default function Sidebar() {
   };
 
   // Don't render on login or public pages
+  if (pathname.startsWith("/super-doc/")) return null;
   if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") return null;
 
   const isActive = (href: string) => {

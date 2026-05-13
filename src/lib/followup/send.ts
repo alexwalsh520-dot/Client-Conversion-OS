@@ -47,13 +47,19 @@ export async function sendVariantAsDM(params: {
 
   // Build the ManyChat message content block. ManyChat expects an array of
   // messages; each has a type (text | image | audio) and the payload.
-  let message: Record<string, unknown>;
+  let messages: Record<string, unknown>[];
   if (params.variant.type === 'text' && params.variant.body) {
-    message = { type: 'text', text: params.variant.body };
+    messages = [{ type: 'text', text: params.variant.body }];
   } else if (params.variant.type === 'meme' && params.variant.media_url) {
-    message = { type: 'image', url: params.variant.media_url };
+    messages = [{ type: 'image', url: params.variant.media_url }];
+    if (params.variant.body?.trim()) {
+      messages.push({ type: 'text', text: params.variant.body.trim() });
+    }
   } else if (params.variant.type === 'voicenote' && params.variant.media_url) {
-    message = { type: 'audio', url: params.variant.media_url };
+    messages = [{ type: 'audio', url: params.variant.media_url }];
+    if (params.variant.body?.trim()) {
+      messages.push({ type: 'text', text: params.variant.body.trim() });
+    }
   } else {
     throw new Error(`Variant ${params.variant.id} is misconfigured`);
   }
@@ -68,7 +74,7 @@ export async function sendVariantAsDM(params: {
       subscriber_id: params.subscriberId,
       data: {
         version: 'v2',
-        content: { messages: [message] },
+        content: { messages },
       },
     }),
   });

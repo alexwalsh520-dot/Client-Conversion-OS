@@ -1,5 +1,15 @@
 {
   "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/manychat-tag",
+      "destination": "/api/manychat-tag"
+    },
+    {
+      "source": "/instagram-webhook",
+      "destination": "/api/instagram-webhook"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/mozi-sync",

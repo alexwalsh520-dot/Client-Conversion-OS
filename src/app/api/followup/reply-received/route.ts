@@ -1,17 +1,44 @@
 // POST /api/followup/reply-received
-// Called by ManyChat's "user replies in conversation" rule (filtered by
-// tag AI-FOLLOWUP). Cancels all pending follow-up jobs for this subscriber,
-// attributes the reply to the most recent send, and removes the
-// AI-FOLLOWUP tag so setters see a clean slate in ManyChat.
+// Backup reply hook from ManyChat. The Instagram webhook is still the main
+// stop signal, but this keeps the queue from hanging if ManyChat catches it
+// first.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cancelPendingAndAttributeReply, removeManyChatFollowupTag } from '@/lib/followup/scheduler';
 
 export const runtime = 'nodejs';
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+    ;
+}
+
+function asString(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return '';
+}
+
+function hasValidWebhookSecret(req: NextRequest) {
+  const expected = [
+    process.env.MANYCHAT_WEBHOOK_SECRET?.trim(),
+    process.env.WEBHOOK_SHARED_SECRET?.trim(),
+  ].filter(Boolean);
+  const authorization = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
+  const provided = [
+    req.headers.get('x-manychat-secret')?.trim(),
+    req.headers.get('x-forge-secret')?.trim(),
+    authorization,
+  ].filter(Boolean);
+
+  if (expected.length === 0) return false;
+  return provided.some((value) => expected.includes(value));
+}
+
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-manychat-secret');
-  if (secret !== process.env.MANYCHAT_WEBHOOK_SECRET) {
+  if (!hasValidWebhookSecret(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -22,30 +49,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
-  const client = String(body.client ?? 'tyson_sonnek');
-  const subscriberId = String(body.subscriber_id ?? '').trim();
-  const replyText = body.reply_text ? String(body.reply_text) : null;
+  const contact = asRecord(body.contact);
+  const client = asString(body.client) || 'tyson_sonnek';
+  const manychatSubscriberId =
+    asString(body.subscriber_id) ||
+    asString(body.contact_id) ||
+    asString(body.manychat_subscriber_id) ||
+    asString(contact?.id);
+  const internalLeadId =
+    asString(body.ig_user_id) ||
+    asString(body.instagram_user_id) ||
+    asString(contact?.ig_id) ||
+    manychatSubscriberId;
+  const replyText =
+    asString(body.reply_text) ||
+    asString(body.text) ||
+    asString(body.message) ||
+    null;
 
-  if (!subscriberId) {
-    return NextResponse.json({ error: 'subscriber_id required' }, { status: 400 });
+  if (!internalLeadId) {
+    return NextResponse.json(
+      { error: 'subscriber_id or ig_user_id required' },
+      { status: 400 },
+    );
   }
 
   try {
     const result = await cancelPendingAndAttributeReply({
-      subscriberId,
+      subscriberId: internalLeadId,
       replyText,
       receivedAt: new Date().toISOString(),
     });
 
-    // Belt-and-suspenders: remove AI-FOLLOWUP tag in ManyChat so the setter
-    // UI shows the lead as no longer under AI management. If the ManyChat
-    // rule already does this, the call is a no-op.
     let tagRemoved: boolean | string = false;
-    try {
-      await removeManyChatFollowupTag(client, subscriberId);
-      tagRemoved = true;
-    } catch (err) {
-      tagRemoved = err instanceof Error ? err.message : String(err);
+    if (manychatSubscriberId) {
+      try {
+        await removeManyChatFollowupTag(client, manychatSubscriberId);
+        tagRemoved = true;
+      } catch (err) {
+        tagRemoved = err instanceof Error ? err.message : String(err);
+      }
     }
 
     return NextResponse.json({

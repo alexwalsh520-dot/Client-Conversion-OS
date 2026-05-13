@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
+const ALLOWED_SLOTS = [2, 3, 4, 5, 6] as const;
+const MAX_ACTIVE_VARIANTS_PER_SLOT = 3;
 
 export async function GET(req: NextRequest) {
   const sb = getServiceSupabase();
@@ -55,8 +57,8 @@ export async function POST(req: NextRequest) {
   const mediaUrl = body.media_url ? String(body.media_url) : null;
   const note = body.note ? String(body.note) : null;
 
-  if (![2, 3, 4, 5].includes(slot)) {
-    return NextResponse.json({ error: 'slot must be 2, 3, 4, or 5' }, { status: 400 });
+  if (!ALLOWED_SLOTS.includes(slot as (typeof ALLOWED_SLOTS)[number])) {
+    return NextResponse.json({ error: 'slot must be 2, 3, 4, 5, or 6' }, { status: 400 });
   }
   if (!['text', 'meme', 'voicenote'].includes(type)) {
     return NextResponse.json({ error: 'type must be text | meme | voicenote' }, { status: 400 });
@@ -66,6 +68,22 @@ export async function POST(req: NextRequest) {
   }
   if ((type === 'meme' || type === 'voicenote') && !mediaUrl) {
     return NextResponse.json({ error: 'media_url required for meme/voicenote' }, { status: 400 });
+  }
+
+  const { count, error: countError } = await sb
+    .from('followup_variants')
+    .select('id', { head: true, count: 'exact' })
+    .eq('client', client)
+    .eq('slot', slot)
+    .eq('status', 'active');
+  if (countError) {
+    return NextResponse.json({ error: countError.message }, { status: 500 });
+  }
+  if ((count ?? 0) >= MAX_ACTIVE_VARIANTS_PER_SLOT) {
+    return NextResponse.json(
+      { error: `slot ${slot} already has ${MAX_ACTIVE_VARIANTS_PER_SLOT} active variants` },
+      { status: 409 },
+    );
   }
 
   const { data, error } = await sb

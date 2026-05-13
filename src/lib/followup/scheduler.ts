@@ -8,11 +8,124 @@ import { sendVariantAsDM } from './send';
 
 interface TagAddedInput {
   client: string;             // tyson_sonnek
-  subscriberId: string;       // Instagram user id
+  subscriberId: string;       // Internal lead id (prefer Instagram user id)
+  manychatSubscriberId?: string;
   setterName: string;         // amara
   leadName?: string;
   phone?: string;
   firstMsgAt: string;         // ISO — setter's first message timestamp
+}
+
+const DEFAULT_FOLLOWUP_TAGS = ['AI-FOLLOWUP', 'AI follow-up'];
+const DEFAULT_CLOSE_TAGS = ['AI-CLOSED', 'A closed'];
+
+function uniqueNames(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function getConfiguredTagNames(envValue: string | undefined, fallback: string[]) {
+  const configured = (envValue ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return uniqueNames(configured.length > 0 ? configured : fallback);
+}
+
+function getFollowupTagNames() {
+  return getConfiguredTagNames(process.env.MANYCHAT_FOLLOWUP_TAG_NAMES, DEFAULT_FOLLOWUP_TAGS);
+}
+
+function getCloseTagNames() {
+  return getConfiguredTagNames(process.env.MANYCHAT_CLOSE_TAG_NAMES, DEFAULT_CLOSE_TAGS);
+}
+
+function getPrimaryCloseTagName() {
+  return getCloseTagNames()[0] ?? DEFAULT_CLOSE_TAGS[0];
+}
+
+function normalizeTagName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function isOutsideMessagingWindowError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('without a message tag') ||
+    normalized.includes('last interaction was over') ||
+    normalized.includes('more than 24 hours ago') ||
+    normalized.includes('24-hour')
+  );
+}
+
+function resolveScheduleBaseTime(firstMsgAt: string) {
+  const parsed = new Date(firstMsgAt).getTime();
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function resolveManyChatSubscriberId(job: {
+  subscriber_id: string;
+  metadata?: { manychat_subscriber_id?: unknown } | null;
+}) {
+  const raw = job.metadata?.manychat_subscriber_id;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : job.subscriber_id;
+}
+
+function collectLeadAliases(params: {
+  subscriberId?: string | null;
+  manychatSubscriberId?: string | null;
+  metadata?: { manychat_subscriber_id?: unknown } | null;
+}) {
+  return uniqueNames([
+    params.subscriberId ?? '',
+    params.manychatSubscriberId ?? '',
+    typeof params.metadata?.manychat_subscriber_id === 'string'
+      ? params.metadata.manychat_subscriber_id
+      : '',
+  ]);
+}
+
+export async function cancelPendingFollowups(params: {
+  client: string;
+  subscriberId?: string | null;
+  manychatSubscriberId?: string | null;
+}) {
+  const sb = getServiceSupabase();
+  const aliases = collectLeadAliases(params);
+  if (aliases.length === 0) return 0;
+
+  const { data: pending, error: loadError } = await sb
+    .from('followup_jobs')
+    .select('id, subscriber_id, metadata')
+    .eq('client', params.client)
+    .eq('status', 'pending');
+
+  if (loadError) {
+    throw new Error(`cancelPendingFollowups load: ${loadError.message}`);
+  }
+
+  const aliasSet = new Set(aliases);
+  const idsToCancel = (pending ?? [])
+    .filter((job) =>
+      collectLeadAliases({
+        subscriberId: job.subscriber_id,
+        metadata: job.metadata as { manychat_subscriber_id?: unknown } | null,
+      }).some((value) => aliasSet.has(value)),
+    )
+    .map((job) => job.id);
+
+  if (idsToCancel.length === 0) return 0;
+
+  const { error: cancelError } = await sb
+    .from('followup_jobs')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .in('id', idsToCancel)
+    .eq('status', 'pending');
+
+  if (cancelError) {
+    throw new Error(`cancelPendingFollowups update: ${cancelError.message}`);
+  }
+
+  return idsToCancel.length;
 }
 
 // =============================================================
@@ -20,8 +133,22 @@ interface TagAddedInput {
 // =============================================================
 export async function scheduleFollowups(input: TagAddedInput) {
   const sb = getServiceSupabase();
-  const t0 = new Date(input.firstMsgAt).getTime();
-  const cadence = resolveCadence(input.client);
+  const t0 = resolveScheduleBaseTime(input.firstMsgAt);
+  const cadence = await resolveCadence(input.client);
+
+  await cancelPendingFollowups({
+    client: input.client,
+    subscriberId: input.subscriberId,
+    manychatSubscriberId: input.manychatSubscriberId,
+  });
+
+  if (input.manychatSubscriberId) {
+    try {
+      await removeManyChatCloseTag(input.client, input.manychatSubscriberId);
+    } catch (err) {
+      console.error('[followup] remove close tag on re-tag failed:', err);
+    }
+  }
 
   const rows = cadence.map((c) => ({
     client: input.client,
@@ -34,6 +161,7 @@ export async function scheduleFollowups(input: TagAddedInput) {
       setter_name: input.setterName,
       lead_name: input.leadName ?? null,
       phone: input.phone ?? null,
+      manychat_subscriber_id: input.manychatSubscriberId ?? null,
     },
   }));
 
@@ -60,30 +188,30 @@ export async function drainDueJobs(limit = 100) {
 
   let sent = 0, failed = 0, closed = 0, cancelled = 0;
 
-  // Per-subscriber cache of "does this lead still have the AI-FOLLOWUP tag?".
-  // Checked once per unique (client, subscriber) at the start of each loop
-  // iteration. If the tag has been removed (by the setter's reply rule,
-  // a manual untag, or anything else), we cancel every pending job for that
-  // lead and skip the rest of their jobs in this drain.
+  // Per-subscriber cache of "does this lead still have the AI follow-up tag?".
   const tagActiveCache = new Map<string, boolean>();
 
   for (const job of due ?? []) {
     try {
-      const cacheKey = `${job.client}:${job.subscriber_id}`;
+      const manychatSubscriberId = resolveManyChatSubscriberId(job);
+      const cacheKey = `${job.client}:${manychatSubscriberId}`;
       let stillActive = tagActiveCache.get(cacheKey);
       if (stillActive === undefined) {
         try {
-          stillActive = await hasFollowupTag(job.client, job.subscriber_id);
+          stillActive = await hasFollowupTag(job.client, manychatSubscriberId);
         } catch (err) {
           // Fail open: if ManyChat's API is down we'd rather send one extra
           // follow-up than silently stop a whole campaign.
-          // eslint-disable-next-line no-console
           console.error(`[followup] tag check failed for ${cacheKey}:`, err);
           stillActive = true;
         }
         tagActiveCache.set(cacheKey, stillActive);
         if (!stillActive) {
-          await sb.rpc('followup_cancel_pending', { p_subscriber_id: job.subscriber_id });
+          await cancelPendingFollowups({
+            client: job.client,
+            subscriberId: job.subscriber_id,
+            manychatSubscriberId,
+          });
         }
       }
       if (!stillActive) {
@@ -105,10 +233,8 @@ export async function drainDueJobs(limit = 100) {
       }
 
       if (job.type === 'close') {
-        // Close job: add the `AI-CLOSED` tag in ManyChat so their archive
-        // rule fires. subscriber_id is ManyChat's Contact Id (same value
-        // we use for sends), so this is a direct API call.
-        await addManyChatCloseTag(job.client, job.subscriber_id);
+        await removeManyChatFollowupTag(job.client, manychatSubscriberId);
+        await addManyChatCloseTag(job.client, manychatSubscriberId);
         await sb.from('followup_jobs').update({ status: 'sent', updated_at: new Date().toISOString() }).eq('id', job.id);
         closed++;
         continue;
@@ -124,7 +250,9 @@ export async function drainDueJobs(limit = 100) {
       const variant = pickVariantEpsilonGreedy(eligible);
       if (!variant) {
         await sb.from('followup_jobs').update({
-          status: 'failed', last_error: 'no eligible variants', updated_at: new Date().toISOString(),
+          status: 'failed',
+          last_error: 'no eligible variants',
+          updated_at: new Date().toISOString(),
         }).eq('id', job.id);
         failed++;
         continue;
@@ -132,7 +260,7 @@ export async function drainDueJobs(limit = 100) {
 
       const { messageId } = await sendVariantAsDM({
         client: job.client,
-        subscriberId: job.subscriber_id,
+        subscriberId: manychatSubscriberId,
         variant,
         setterName: (job.metadata?.setter_name as string) || 'amara',
       });
@@ -156,6 +284,21 @@ export async function drainDueJobs(limit = 100) {
       sent++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+
+      if (isOutsideMessagingWindowError(msg)) {
+        try {
+          const manychatSubscriberId = resolveManyChatSubscriberId(job);
+          await cancelPendingFollowups({
+            client: job.client,
+            subscriberId: job.subscriber_id,
+            manychatSubscriberId,
+          });
+          await removeManyChatFollowupTag(job.client, manychatSubscriberId);
+        } catch (cleanupErr) {
+          console.error('[followup] cleanup after messaging-window failure failed:', cleanupErr);
+        }
+      }
+
       await sb.from('followup_jobs').update({
         status: 'failed',
         last_error: msg,
@@ -203,25 +346,62 @@ async function manyChatTagCall(
       tag_name: tagName,
     }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`ManyChat ${endpoint} "${tagName}" failed (${res.status}): ${text}`);
+  const payload = (await res.json().catch(() => ({}))) as {
+    status?: 'success' | 'error';
+    message?: string;
+  };
+  if (!res.ok || payload.status === 'error') {
+    throw new Error(
+      `ManyChat ${endpoint} "${tagName}" failed (${res.status}): ${payload.message || 'unknown error'}`,
+    );
   }
 }
 
-// Add the AI-CLOSED tag in ManyChat when a close job fires.
-// ManyChat-side, a rule on this tag archives the conversation.
 async function addManyChatCloseTag(client: string, subscriberId: string) {
-  return manyChatTagCall('addTagByName', client, subscriberId, 'AI-CLOSED');
+  return manyChatTagCall('addTagByName', client, subscriberId, getPrimaryCloseTagName());
 }
 
-// Remove the AI-FOLLOWUP tag when a lead replies. Exported so the
+async function removeTagByAnyName(client: string, subscriberId: string, tagNames: string[]) {
+  let lastError: Error | null = null;
+
+  for (const tagName of uniqueNames(tagNames)) {
+    try {
+      await manyChatTagCall('removeTagByName', client, subscriberId, tagName);
+      return;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw lastError ?? new Error('No tag names configured');
+}
+
+async function removeManyChatCloseTag(client: string, subscriberId: string) {
+  try {
+    await removeTagByAnyName(client, subscriberId, getCloseTagNames());
+  } catch {
+    // Re-tag should still work even if the close tag is absent.
+  }
+}
+
+// Remove the follow-up tag when a lead replies. Exported so the
 // reply-received webhook can call it directly.
 export async function removeManyChatFollowupTag(client: string, subscriberId: string) {
-  return manyChatTagCall('removeTagByName', client, subscriberId, 'AI-FOLLOWUP');
+  try {
+    await removeTagByAnyName(client, subscriberId, getFollowupTagNames());
+    return;
+  } catch (removeErr) {
+    try {
+      const stillActive = await hasFollowupTag(client, subscriberId);
+      if (!stillActive) return;
+    } catch {
+      // fall through and surface the original removal error
+    }
+    throw removeErr;
+  }
 }
 
-// Check whether a ManyChat subscriber still has the AI-FOLLOWUP tag.
+// Check whether a ManyChat subscriber still has the active follow-up tag.
 // Returns true if present, false if not. Throws on network/API error.
 async function hasFollowupTag(client: string, subscriberId: string): Promise<boolean> {
   const key = getManyChatKey(client);
@@ -236,12 +416,13 @@ async function hasFollowupTag(client: string, subscriberId: string): Promise<boo
     data?: { tags?: Array<{ name: string }> };
   };
   const tags = data.data?.tags ?? [];
-  return tags.some((t) => t.name === 'AI-FOLLOWUP');
+  const expected = new Set(getFollowupTagNames().map(normalizeTagName));
+  return tags.some((tag) => expected.has(normalizeTagName(tag.name)));
 }
 
 // =============================================================
 // Cancel all pending jobs for a subscriber + attribute reply
-// + remove the AI-FOLLOWUP tag in ManyChat.
+// + remove the follow-up tag in ManyChat.
 // Called from the Instagram webhook when an inbound message arrives.
 // =============================================================
 export async function cancelPendingAndAttributeReply(params: {
@@ -262,22 +443,25 @@ export async function cancelPendingAndAttributeReply(params: {
   });
 
   // Best-effort: derive client from the most recent followup_job for this
-  // subscriber, then strip the AI-FOLLOWUP tag in ManyChat so the setter UI
-  // reflects that this lead has exited AI management. Non-fatal if it fails.
+  // subscriber, then strip the active follow-up tag in ManyChat so the setter
+  // UI reflects that this lead has exited AI management.
   try {
     const { data: recentJob } = await sb
       .from('followup_jobs')
-      .select('client')
+      .select('client, metadata')
       .eq('subscriber_id', params.subscriberId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (recentJob?.client) {
-      await removeManyChatFollowupTag(recentJob.client, params.subscriberId);
+      const manychatSubscriberId = resolveManyChatSubscriberId({
+        subscriber_id: params.subscriberId,
+        metadata: recentJob.metadata as { manychat_subscriber_id?: unknown } | null,
+      });
+      await removeManyChatFollowupTag(recentJob.client, manychatSubscriberId);
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[followup] remove AI-FOLLOWUP tag failed:', err);
+    console.error('[followup] remove AI follow-up tag failed:', err);
   }
 
   return {
