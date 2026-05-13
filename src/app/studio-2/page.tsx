@@ -22,6 +22,7 @@ import {
   Grid3X3,
   ImagePlus,
   Layers,
+  Minus,
   MousePointer2,
   Palette,
   Paintbrush,
@@ -146,6 +147,7 @@ interface DraftState {
   savedAt: number;
   projectId?: string | null;
   photos: string[];
+  photoCopies?: Record<string, number>;
   creatives: Creative[];
   currentIndex: number;
   copyText: string;
@@ -252,6 +254,8 @@ const uid = () =>
     : Math.random().toString(36).slice(2, 10);
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const getPhotoCopies = (photoCopies: Record<string, number>, photo: string) =>
+  Math.round(clamp(photoCopies[photo] || 1, 1, 30));
 
 const cloneCreatives = (creatives: Creative[]) =>
   JSON.parse(JSON.stringify(creatives)) as Creative[];
@@ -982,6 +986,7 @@ const alignOptions = [
 
 export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
+  const [photoCopies, setPhotoCopies] = useState<Record<string, number>>({});
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
@@ -1015,6 +1020,7 @@ export default function Studio2Page() {
   const [cloudProjects, setCloudProjects] = useState<StudioProjectSummary[]>([]);
   const [cloudStatus, setCloudStatus] = useState("Loading designs...");
   const [searchTerm, setSearchTerm] = useState("");
+  const [setupDropActive, setSetupDropActive] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1047,6 +1053,10 @@ export default function Studio2Page() {
   const currentImage = currentCreative
     ? imageCacheRef.current.get(currentCreative.photoUrl) ?? null
     : null;
+  const plannedAdCount = useMemo(
+    () => photos.reduce((total, photo) => total + getPhotoCopies(photoCopies, photo), 0),
+    [photoCopies, photos]
+  );
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -1101,6 +1111,7 @@ export default function Studio2Page() {
       savedAt: Date.now(),
       projectId,
       photos,
+      photoCopies,
       creatives,
       currentIndex,
       copyText,
@@ -1110,7 +1121,7 @@ export default function Studio2Page() {
       view,
       ...overrides,
     }),
-    [colorPreset, copyText, creatives, currentIndex, fontPreset, photos, projectId, projectName, view]
+    [colorPreset, copyText, creatives, currentIndex, fontPreset, photoCopies, photos, projectId, projectName, view]
   );
 
   const fetchStudioHome = useCallback(async () => {
@@ -1162,11 +1173,27 @@ export default function Studio2Page() {
   }, []);
 
   useEffect(() => {
+    const preventFileNavigation = (event: DragEvent) => {
+      if (Array.from(event.dataTransfer?.types || []).includes("Files")) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("dragover", preventFileNavigation);
+    window.addEventListener("drop", preventFileNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventFileNavigation);
+      window.removeEventListener("drop", preventFileNavigation);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     loadDraft()
       .then((draft) => {
         if (!draft || cancelled) return;
         setPhotos(draft.photos || []);
+        setPhotoCopies(draft.photoCopies || {});
         setCreatives((draft.creatives || []).map(normalizeCreative));
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
@@ -1407,10 +1434,33 @@ export default function Studio2Page() {
     [getMeasureCtx]
   );
 
-  const handleFiles = useCallback(async (files: FileList | null) => {
+  const handleMediaOnlyUpload = useCallback(async (files: FileList | File[] | null) => {
     if (!files?.length) return;
+    const mediaFiles = Array.from(files).filter((file) => file.type.startsWith("video/"));
+    if (!mediaFiles.length) return;
+    const uploaded = await Promise.all(
+      mediaFiles.map((file) => uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""))
+    );
+    const savedCount = uploaded.filter(Boolean).length;
+    setCloudStatus(
+      savedCount
+        ? `${savedCount} video${savedCount === 1 ? "" : "s"} uploaded to the media library.`
+        : "Video upload failed."
+    );
+    void fetchStudioHome();
+  }, [fetchStudioHome, projectId, selectedFolderId]);
+
+  const handleFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files?.length) return;
+    const fileList = Array.from(files);
+    const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
+    const videoFiles = fileList.filter((file) => file.type.startsWith("video/"));
+
+    if (videoFiles.length) void handleMediaOnlyUpload(videoFiles);
+    if (!imageFiles.length) return;
+
     const urls = await Promise.all(
-      Array.from(files).map(async (file) => {
+      imageFiles.map(async (file) => {
         try {
           return await uploadStudioMedia(file, projectId, selectedFolderId);
         } catch {
@@ -1419,16 +1469,55 @@ export default function Studio2Page() {
       })
     );
     setPhotos((prev) => [...prev, ...urls]);
+    setPhotoCopies((prev) => {
+      const next = { ...prev };
+      urls.forEach((url) => {
+        if (!next[url]) next[url] = 1;
+      });
+      return next;
+    });
     void fetchStudioHome();
-  }, [fetchStudioHome, projectId, selectedFolderId]);
+  }, [fetchStudioHome, handleMediaOnlyUpload, projectId, selectedFolderId]);
 
-  const handleMediaOnlyUpload = useCallback(async (files: FileList | null) => {
-    if (!files?.length) return;
-    await Promise.all(
-      Array.from(files).map((file) => uploadStudioMedia(file, projectId, selectedFolderId).catch(() => ""))
-    );
-    void fetchStudioHome();
-  }, [fetchStudioHome, projectId, selectedFolderId]);
+  const updatePhotoCopyCount = useCallback((photo: string, delta: number) => {
+    setPhotoCopies((prev) => ({
+      ...prev,
+      [photo]: Math.round(clamp(getPhotoCopies(prev, photo) + delta, 1, 30)),
+    }));
+  }, []);
+
+  const removeSetupPhoto = useCallback((photo: string, index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setPhotoCopies((prev) => {
+      const next = { ...prev };
+      delete next[photo];
+      return next;
+    });
+  }, []);
+
+  const handleSetupDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setSetupDropActive(true);
+  }, []);
+
+  const handleSetupDragLeave = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setSetupDropActive(false);
+    }
+  }, []);
+
+  const handleSetupDrop = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setSetupDropActive(false);
+      if (!event.dataTransfer.files.length) return;
+      void handleFiles(event.dataTransfer.files);
+    },
+    [handleFiles]
+  );
 
   const replaceCurrentImage = useCallback(
     async (file: File | null) => {
@@ -1441,6 +1530,7 @@ export default function Studio2Page() {
       }
       pushUndo();
       setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      setPhotoCopies((prev) => (prev[url] ? prev : { ...prev, [url]: 1 }));
       updateCurrentCreative((creative) => ({
         ...creative,
         photoUrl: url,
@@ -1557,10 +1647,13 @@ export default function Studio2Page() {
   );
 
   const generateAds = useCallback(() => {
-    if (!photos.length) return;
+    const expandedPhotos = photos.flatMap((photo) =>
+      Array.from({ length: getPhotoCopies(photoCopies, photo) }, () => photo)
+    );
+    if (!expandedPhotos.length) return;
     const groups = parseCopyIntoAds(copyText);
     const usableGroups = groups.length ? groups : parseCopyIntoAds(DEFAULT_COPY);
-    const nextCreatives = photos.map((photoUrl, index): Creative => {
+    const nextCreatives = expandedPhotos.map((photoUrl, index): Creative => {
       const sections = usableGroups[index % usableGroups.length];
       return {
         id: uid(),
@@ -1582,7 +1675,7 @@ export default function Studio2Page() {
       view: "editor",
     });
     void persistProjectToCloud(draft, true).catch(() => setCloudStatus("Saved locally. Cloud save failed."));
-  }, [buildBlocksForSections, buildDraftState, copyText, persistProjectToCloud, photos]);
+  }, [buildBlocksForSections, buildDraftState, copyText, persistProjectToCloud, photoCopies, photos]);
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2045,6 +2138,7 @@ export default function Studio2Page() {
     setFolderMenuOpen(false);
     setProjectId(null);
     setPhotos([]);
+    setPhotoCopies({});
     setCreatives([]);
     setCurrentIndex(0);
     setCopyText(DEFAULT_COPY);
@@ -2079,6 +2173,7 @@ export default function Studio2Page() {
         const nextCreatives = (draft.creatives || []).map(normalizeCreative);
         setProjectId(project.id);
         setPhotos(draft.photos || []);
+        setPhotoCopies(draft.photoCopies || {});
         setCreatives(nextCreatives);
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || project.copyText || DEFAULT_COPY);
@@ -2435,7 +2530,14 @@ export default function Studio2Page() {
 
   if (view === "setup") {
     return (
-      <div className="fade-up" style={{ paddingBottom: 40 }}>
+      <div
+        className="fade-up"
+        onDragEnter={handleSetupDragOver}
+        onDragOver={handleSetupDragOver}
+        onDragLeave={handleSetupDragLeave}
+        onDrop={handleSetupDrop}
+        style={{ paddingBottom: 40 }}
+      >
         <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16 }}>
           <div>
             <h1 className="page-title">Studio 2.0</h1>
@@ -2459,6 +2561,7 @@ export default function Studio2Page() {
                 onClick={async () => {
                   await clearDraft();
                   setPhotos([]);
+                  setPhotoCopies({});
                   setCreatives([]);
                   setCurrentIndex(0);
                   setCopyText(DEFAULT_COPY);
@@ -2478,59 +2581,143 @@ export default function Studio2Page() {
               <ImagePlus size={16} /> Photos
             </h2>
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
+              onDragEnter={handleSetupDragOver}
+              onDragOver={handleSetupDragOver}
+              onDrop={handleSetupDrop}
               style={{
                 width: "100%",
-                border: "2px dashed rgba(255,255,255,0.14)",
-                background: "rgba(255,255,255,0.03)",
+                border: `2px dashed ${setupDropActive ? ADS_BRAND.gold : "rgba(255,255,255,0.14)"}`,
+                background: setupDropActive ? ADS_BRAND.goldSoft : "rgba(255,255,255,0.03)",
                 borderRadius: 10,
                 padding: 34,
                 color: "var(--text-secondary)",
                 cursor: "pointer",
                 fontFamily: "inherit",
+                transition: "border-color 120ms ease, background 120ms ease",
               }}
             >
               <Upload size={30} style={{ marginBottom: 8 }} />
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Upload athlete photos</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Select multiple JPG or PNG images</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop photos here or click to upload</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                Images become ads. Videos upload to the media library.
+              </div>
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
               style={{ display: "none" }}
-              onChange={(event) => handleFiles(event.target.files)}
+              onChange={(event) => {
+                void handleFiles(event.target.files);
+                event.target.value = "";
+              }}
             />
 
             {photos.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginTop: 16 }}>
-                {photos.map((photo, index) => (
-                  <div key={`${photo.slice(0, 24)}-${index}`} style={{ position: "relative", aspectRatio: "9 / 16", borderRadius: 7, overflow: "hidden", background: ADS_BRAND.bgDeep }}>
-                    <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <button
-                      aria-label="Remove photo"
-                      onClick={() => setPhotos((prev) => prev.filter((_, i) => i !== index))}
+                {photos.map((photo, index) => {
+                  const copyCount = getPhotoCopies(photoCopies, photo);
+                  return (
+                    <div
+                      key={`${photo.slice(0, 24)}-${index}`}
                       style={{
-                        position: "absolute",
-                        top: 4,
-                        right: 4,
-                        width: 22,
-                        height: 22,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: "rgba(0,0,0,0.72)",
-                        color: "#fff",
-                        cursor: "pointer",
+                        position: "relative",
+                        aspectRatio: "9 / 16",
+                        borderRadius: 7,
+                        overflow: "hidden",
+                        background: ADS_BRAND.bgDeep,
                       }}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                      <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <button
+                        aria-label="Remove photo"
+                        onClick={() => removeSetupPhoto(photo, index)}
+                        style={{
+                          position: "absolute",
+                          top: 4,
+                          right: 4,
+                          width: 22,
+                          height: 22,
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "rgba(0,0,0,0.72)",
+                          color: "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 5,
+                          right: 5,
+                          bottom: 5,
+                          height: 26,
+                          display: "grid",
+                          gridTemplateColumns: "24px 1fr 24px",
+                          alignItems: "center",
+                          gap: 3,
+                          borderRadius: 7,
+                          background: "rgba(0,0,0,0.72)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          color: "#fff",
+                          padding: 2,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label="Use fewer copies"
+                          onClick={() => updatePhotoCopyCount(photo, -1)}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            border: "none",
+                            borderRadius: 5,
+                            background: "rgba(255,255,255,0.12)",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Minus size={13} />
+                        </button>
+                        <span style={{ textAlign: "center", fontSize: 11, fontWeight: 800 }}>
+                          {copyCount}x
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Use more copies"
+                          onClick={() => updatePhotoCopyCount(photo, 1)}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            border: "none",
+                            borderRadius: 5,
+                            background: ADS_BRAND.gold,
+                            color: "#0b0b0b",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>{photos.length} photo{photos.length === 1 ? "" : "s"} ready</div>
+            <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>
+              {photos.length} photo{photos.length === 1 ? "" : "s"} ready · {plannedAdCount} ad{plannedAdCount === 1 ? "" : "s"} planned
+            </div>
           </div>
 
           <div className="glass-static" style={{ padding: 22 }}>
@@ -2572,18 +2759,18 @@ export default function Studio2Page() {
 
         <div className="section" style={{ display: "flex", justifyContent: "center" }}>
           <button
-            disabled={!photos.length}
+            disabled={!plannedAdCount}
             onClick={generateAds}
             style={{
               ...buttonStyle(true),
               padding: "15px 44px",
               fontSize: 17,
-              opacity: photos.length ? 1 : 0.35,
-              cursor: photos.length ? "pointer" : "not-allowed",
+              opacity: plannedAdCount ? 1 : 0.35,
+              cursor: plannedAdCount ? "pointer" : "not-allowed",
             }}
           >
             <Sparkles size={19} />
-            Generate {photos.length || ""} Ad{photos.length === 1 ? "" : "s"}
+            Generate {plannedAdCount || ""} Ad{plannedAdCount === 1 ? "" : "s"}
           </button>
         </div>
       </div>
