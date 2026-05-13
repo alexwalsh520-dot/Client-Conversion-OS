@@ -153,6 +153,7 @@ interface DraftState {
   version: 1 | 2;
   savedAt: number;
   projectId?: string | null;
+  projectFolderId?: string | null;
   photos: string[];
   photoCopies?: Record<string, number>;
   mediaAssets?: StudioMediaAsset[];
@@ -460,6 +461,10 @@ function getCanvasImageSrc(src: string) {
 
 function getMediaPreviewSrc(src: string) {
   return getCanvasImageSrc(src);
+}
+
+function getDraftProjectFolderId(draft?: Partial<DraftState> & { folderId?: string | null }) {
+  return draft?.projectFolderId ?? draft?.folderId ?? null;
 }
 
 function setStudioCardDragImage(event: React.DragEvent<HTMLElement>) {
@@ -1224,6 +1229,7 @@ export default function Studio2Page() {
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
   const [projectName, setProjectName] = useState("Studio 2.0 Batch");
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectFolderId, setProjectFolderId] = useState<string | null>(null);
   const [view, setView] = useState<StudioView>("home");
   const [colorPreset, setColorPreset] = useState<"dark" | "light">("dark");
   const [fontPreset, setFontPreset] = useState(FONT_OPTIONS[0].value);
@@ -1369,6 +1375,11 @@ export default function Studio2Page() {
     projectName !== "Studio 2.0 Batch" ||
     copyText !== DEFAULT_COPY;
   const activeDraftId = projectId || "active-draft";
+  const currentCloudProject = useMemo(
+    () => cloudProjects.find((project) => project.id === projectId) || null,
+    [cloudProjects, projectId]
+  );
+  const activeProjectFolderId = projectFolderId ?? currentCloudProject?.folderId ?? null;
   const activeDraftCard = useMemo(
     (): HomeProjectCard => ({
       id: activeDraftId,
@@ -1379,13 +1390,17 @@ export default function Studio2Page() {
     }),
     [activeDraftId, currentCreative?.photoUrl, photos, projectName]
   );
+  const activeDraftVisible =
+    hasActiveDraft &&
+    homeMode === "designs" &&
+    (selectedFolderId ? activeProjectFolderId === selectedFolderId : !activeProjectFolderId);
   const selectedHomeCount = selectedDesignIds.length + selectedFolderIds.length;
   const selectedMediaHomeCount = selectedMediaIds.length + selectedMediaFolderIds.length;
   const selectedVisibleCount = homeMode === "media" ? selectedMediaHomeCount : selectedHomeCount;
   const visibleCloudProjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return cloudProjects.filter((project) => {
-      if (project.id === projectId && !selectedFolderId) return false;
+      if (project.id === projectId) return false;
       if (homeMode !== "designs") return false;
       if (selectedFolderId && project.folderId !== selectedFolderId) return false;
       if (!selectedFolderId && project.folderId) return false;
@@ -1395,7 +1410,7 @@ export default function Studio2Page() {
   }, [cloudProjects, homeMode, projectId, searchTerm, selectedFolderId]);
   const homeProjects = useMemo(
     (): HomeProjectCard[] => [
-      ...(hasActiveDraft && homeMode === "designs" && !selectedFolderId ? [activeDraftCard] : []),
+      ...(activeDraftVisible ? [activeDraftCard] : []),
       ...visibleCloudProjects.map((project) => ({
         id: project.id,
         name: project.name,
@@ -1404,7 +1419,7 @@ export default function Studio2Page() {
         isActiveDraft: false,
       })),
     ],
-    [activeDraftCard, hasActiveDraft, homeMode, selectedFolderId, visibleCloudProjects]
+    [activeDraftCard, activeDraftVisible, visibleCloudProjects]
   );
   const deleteProject = useMemo(
     () => homeProjects.find((project) => project.id === deleteProjectId) || null,
@@ -1474,6 +1489,7 @@ export default function Studio2Page() {
       version: 2,
       savedAt: Date.now(),
       projectId,
+      projectFolderId: activeProjectFolderId,
       photos,
       photoCopies,
       mediaAssets,
@@ -1486,7 +1502,7 @@ export default function Studio2Page() {
       view,
       ...overrides,
     }),
-    [colorPreset, copyText, creatives, currentIndex, fontPreset, mediaAssets, photoCopies, photos, projectId, projectName, view]
+    [activeProjectFolderId, colorPreset, copyText, creatives, currentIndex, fontPreset, mediaAssets, photoCopies, photos, projectId, projectName, view]
   );
 
   const fetchStudioHome = useCallback(async () => {
@@ -1521,7 +1537,7 @@ export default function Studio2Page() {
         copyText: draft.copyText,
         draft,
         thumbnailUrl,
-        folderId: selectedFolderId,
+        folderId: activeProjectFolderId,
         status: draft.creatives.length ? "in_progress" : "draft",
       };
       const res = await fetch(projectId ? `/api/studio-2/projects/${projectId}` : "/api/studio-2/projects", {
@@ -1535,7 +1551,7 @@ export default function Studio2Page() {
       if (refreshHome) void fetchStudioHome();
       return data.project;
     },
-    [fetchStudioHome, projectId, selectedFolderId]
+    [activeProjectFolderId, fetchStudioHome, projectId]
   );
 
   const getHomeProjectDetail = useCallback(async (cardId: string): Promise<StudioProjectDetail | null> => {
@@ -1543,7 +1559,7 @@ export default function Studio2Page() {
     if (isActive) {
       return {
         id: projectId || activeDraftId,
-        folderId: selectedFolderId,
+        folderId: activeProjectFolderId,
         name: projectName || "Untitled design",
         copyText,
         draft: buildDraftState(),
@@ -1565,8 +1581,8 @@ export default function Studio2Page() {
     currentCreative?.photoUrl,
     photos,
     projectId,
+    activeProjectFolderId,
     projectName,
-    selectedFolderId,
   ]);
 
   useEffect(() => {
@@ -1624,6 +1640,7 @@ export default function Studio2Page() {
         setCopyText(draft.copyText || DEFAULT_COPY);
         setProjectName(draft.projectName || "Studio 2.0 Batch");
         setProjectId(draft.projectId || null);
+        setProjectFolderId(getDraftProjectFolderId(draft));
         setColorPreset(draft.colorPreset || "dark");
         setFontPreset(draft.fontPreset || FONT_OPTIONS[0].value);
         setView("home");
@@ -2745,6 +2762,7 @@ export default function Studio2Page() {
     setCreateMenuOpen(false);
     setFolderMenuOpen(false);
     setProjectId(null);
+    setProjectFolderId(selectedFolderId);
     setPhotos([]);
     setPhotoCopies({});
     setMediaAssets([]);
@@ -2758,7 +2776,7 @@ export default function Studio2Page() {
     setRestoredAt(null);
     setSetupMediaFolderId(null);
     setView("setup");
-  }, []);
+  }, [selectedFolderId]);
 
   const openHomeProject = useCallback(
     async (cardId: string) => {
@@ -2778,6 +2796,7 @@ export default function Studio2Page() {
         const draft = project.draft || {};
         const nextCreatives = (draft.creatives || []).map(normalizeCreative);
         setProjectId(project.id);
+        setProjectFolderId(project.folderId || null);
         setPhotos(draft.photos || []);
         setPhotoCopies(draft.photoCopies || {});
         setMediaAssets(draft.mediaAssets || []);
@@ -2961,6 +2980,7 @@ export default function Studio2Page() {
       setLibraryMedia((prev) => prev.map((asset) => (
         asset.folderId && ids.includes(asset.folderId) ? { ...asset, folderId: null } : asset
       )));
+      setProjectFolderId((current) => (current && ids.includes(current) ? null : current));
       if (selectedFolderId && ids.includes(selectedFolderId)) setSelectedFolderId(null);
       if (selectedMediaFolderId && ids.includes(selectedMediaFolderId)) setSelectedMediaFolderId(null);
       if (setupMediaFolderId && ids.includes(setupMediaFolderId)) setSetupMediaFolderId(null);
@@ -2993,6 +3013,7 @@ export default function Studio2Page() {
         if (!folderId) return;
 
         let targetId = cardId;
+        const movingActiveProject = cardId === activeDraftId || cardId === projectId;
         if (cardId === activeDraftId && !projectId) {
           const draft = buildDraftState();
           const res = await fetch("/api/studio-2/projects", {
@@ -3002,7 +3023,7 @@ export default function Studio2Page() {
               folderId,
               name: draft.projectName || "Untitled design",
               copyText: draft.copyText,
-              draft: { ...draft, folderId },
+              draft: { ...draft, projectFolderId: folderId, folderId },
               thumbnailUrl: draft.creatives[0]?.photoUrl || draft.photos[0] || null,
               status: draft.creatives.length ? "in_progress" : "draft",
             }),
@@ -3023,6 +3044,7 @@ export default function Studio2Page() {
         setCloudProjects((prev) => prev.map((project) => (
           project.id === targetId ? { ...project, folderId } : project
         )));
+        if (movingActiveProject) setProjectFolderId(folderId);
         setCardMenuId(null);
         setFolderPickerProjectId(null);
         setFolderPickerStatus("");
@@ -3108,6 +3130,7 @@ export default function Studio2Page() {
           setMediaAssets([]);
           setCreatives([]);
           setProjectId(null);
+          setProjectFolderId(null);
           setProjectName("Untitled design");
           setCardMenuId(null);
           setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
@@ -3126,6 +3149,7 @@ export default function Studio2Page() {
           setMediaAssets([]);
           setCreatives([]);
           setProjectId(null);
+          setProjectFolderId(null);
           setProjectName("Untitled design");
         }
         setCardMenuId(null);
@@ -4634,6 +4658,7 @@ export default function Studio2Page() {
                   setPhotoCopies({});
                   setMediaAssets([]);
                   setCreatives([]);
+                  setProjectFolderId(null);
                   setCurrentIndex(0);
                   setCopyText(DEFAULT_COPY);
                   setRestoredAt(null);
