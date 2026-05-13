@@ -23,6 +23,7 @@ import {
   Home,
   ImagePlus,
   Layers,
+  Library,
   Minus,
   MoreHorizontal,
   MousePointer2,
@@ -458,7 +459,24 @@ function getCanvasImageSrc(src: string) {
 }
 
 function getMediaPreviewSrc(src: string) {
-  return getCanvasImageSrc(src);
+  return src;
+}
+
+function setStudioCardDragImage(event: React.DragEvent<HTMLElement>) {
+  const source = event.currentTarget;
+  const rect = source.getBoundingClientRect();
+  const ghost = source.cloneNode(true) as HTMLElement;
+  ghost.style.position = "fixed";
+  ghost.style.left = "-10000px";
+  ghost.style.top = "-10000px";
+  ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
+  ghost.style.pointerEvents = "none";
+  ghost.style.transform = "none";
+  ghost.style.opacity = "0.92";
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, Math.min(44, rect.width / 2), Math.min(44, rect.height / 2));
+  window.setTimeout(() => ghost.remove(), 0);
 }
 
 function hexToRgb(hex: string): string {
@@ -1148,7 +1166,7 @@ const mediaCardStyle: React.CSSProperties = {
 const mediaVideoBadgeStyle: React.CSSProperties = {
   position: "absolute",
   left: 9,
-  top: 9,
+  bottom: 9,
   width: 24,
   height: 24,
   borderRadius: 8,
@@ -1241,6 +1259,7 @@ export default function Studio2Page() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [selectedMediaFolderIds, setSelectedMediaFolderIds] = useState<string[]>([]);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [hiddenDesignFolderIds, setHiddenDesignFolderIds] = useState<string[]>([]);
   const [draggedDesignIds, setDraggedDesignIds] = useState<string[]>([]);
@@ -1265,6 +1284,7 @@ export default function Studio2Page() {
   const [deleteProjectStatus, setDeleteProjectStatus] = useState("");
   const [deletingProject, setDeletingProject] = useState(false);
   const [mediaCardMenuId, setMediaCardMenuId] = useState<string | null>(null);
+  const [previewMediaId, setPreviewMediaId] = useState<string | null>(null);
   const [deleteMediaId, setDeleteMediaId] = useState<string | null>(null);
   const [deleteMediaStatus, setDeleteMediaStatus] = useState("");
   const [deletingMedia, setDeletingMedia] = useState(false);
@@ -1360,7 +1380,8 @@ export default function Studio2Page() {
     [activeDraftId, currentCreative?.photoUrl, photos, projectName]
   );
   const selectedHomeCount = selectedDesignIds.length + selectedFolderIds.length;
-  const selectedVisibleCount = homeMode === "media" ? selectedMediaIds.length : selectedHomeCount;
+  const selectedMediaHomeCount = selectedMediaIds.length + selectedMediaFolderIds.length;
+  const selectedVisibleCount = homeMode === "media" ? selectedMediaHomeCount : selectedHomeCount;
   const visibleCloudProjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return cloudProjects.filter((project) => {
@@ -1426,6 +1447,10 @@ export default function Studio2Page() {
   const deleteMedia = useMemo(
     () => libraryMedia.find((asset) => asset.id === deleteMediaId) || null,
     [deleteMediaId, libraryMedia]
+  );
+  const previewMedia = useMemo(
+    () => libraryMedia.find((asset) => asset.id === previewMediaId) || null,
+    [libraryMedia, previewMediaId]
   );
   const deleteFolders = useMemo(
     () => cloudFolders.filter((folder) => deleteFolderIds.includes(folder.id)),
@@ -2845,6 +2870,44 @@ export default function Studio2Page() {
     );
   }, []);
 
+  const toggleDesignSelectionFromMenu = useCallback((designId: string) => {
+    setSelectMode(true);
+    setSelectedDesignIds((prev) =>
+      prev.includes(designId) ? prev.filter((id) => id !== designId) : [...prev, designId]
+    );
+    setCardMenuId(null);
+  }, []);
+
+  const toggleFolderSelectionFromMenu = useCallback((folderId: string) => {
+    setSelectMode(true);
+    setSelectedFolderIds((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+    );
+    setFolderCardMenuId(null);
+  }, []);
+
+  const toggleMediaFolderSelection = useCallback((folderId: string) => {
+    setSelectedMediaFolderIds((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+    );
+  }, []);
+
+  const toggleMediaFolderSelectionFromMenu = useCallback((folderId: string) => {
+    setSelectMode(true);
+    setSelectedMediaFolderIds((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+    );
+    setFolderCardMenuId(null);
+  }, []);
+
+  const toggleMediaSelectionFromMenu = useCallback((mediaId: string) => {
+    setSelectMode(true);
+    setSelectedMediaIds((prev) =>
+      prev.includes(mediaId) ? prev.filter((id) => id !== mediaId) : [...prev, mediaId]
+    );
+    setMediaCardMenuId(null);
+  }, []);
+
   const hideDesignFolder = useCallback((folderId: string) => {
     setHiddenDesignFolderIds((prev) => (prev.includes(folderId) ? prev : [...prev, folderId]));
     setSelectedFolderIds((prev) => prev.filter((id) => id !== folderId));
@@ -2902,6 +2965,7 @@ export default function Studio2Page() {
       if (selectedMediaFolderId && ids.includes(selectedMediaFolderId)) setSelectedMediaFolderId(null);
       if (setupMediaFolderId && ids.includes(setupMediaFolderId)) setSetupMediaFolderId(null);
       setSelectedFolderIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setSelectedMediaFolderIds((prev) => prev.filter((id) => !ids.includes(id)));
       setHiddenDesignFolderIds((prev) => prev.filter((id) => !ids.includes(id)));
       setFolderCardMenuId(null);
       setDeleteFolderIds([]);
@@ -2956,6 +3020,9 @@ export default function Studio2Page() {
           body: JSON.stringify({ folderId }),
         });
         if (!res.ok) throw new Error("Folder update failed");
+        setCloudProjects((prev) => prev.map((project) => (
+          project.id === targetId ? { ...project, folderId } : project
+        )));
         setCardMenuId(null);
         setFolderPickerProjectId(null);
         setFolderPickerStatus("");
@@ -2974,6 +3041,9 @@ export default function Studio2Page() {
     if (!ids.length) return;
     try {
       await Promise.all(ids.map((id) => addHomeProjectToFolder(id, folderId)));
+      setCloudProjects((prev) => prev.map((project) => (
+        ids.includes(project.id) ? { ...project, folderId } : project
+      )));
       setSelectedDesignIds((prev) => prev.filter((id) => !ids.includes(id)));
       setDraggedDesignIds([]);
       setDragOverFolderId(null);
@@ -3011,6 +3081,7 @@ export default function Studio2Page() {
       );
       if (folderId && homeMode === "designs") setSelectedFolderId(folderId);
       setSelectedFolderIds([]);
+      setSelectedMediaFolderIds([]);
       setHomeFolderName("");
       setHomeFolderStatus("");
       setCreateFolderModalOpen(false);
@@ -3211,6 +3282,7 @@ export default function Studio2Page() {
                     if (active) {
                       setSelectedDesignIds([]);
                       setSelectedFolderIds([]);
+                      setSelectedMediaFolderIds([]);
                       setSelectedMediaIds([]);
                     }
                     return !active;
@@ -3218,6 +3290,7 @@ export default function Studio2Page() {
                   setCreateMenuOpen(false);
                   setFolderMenuOpen(false);
                   setCardMenuId(null);
+                  setMediaCardMenuId(null);
                   setFolderCardMenuId(null);
                 }}
               >
@@ -3225,7 +3298,10 @@ export default function Studio2Page() {
                 {selectMode && selectedVisibleCount ? `${selectedVisibleCount} Selected` : "Select"}
               </button>
             )}
-            {homeMode === "designs" && selectMode && selectedFolderIds.length > 0 && (
+            {selectMode && (
+              (homeMode === "designs" && selectedFolderIds.length > 0) ||
+              (homeMode === "media" && selectedMediaFolderIds.length > 0)
+            ) && (
               <button
                 style={{
                   height: 42,
@@ -3244,7 +3320,7 @@ export default function Studio2Page() {
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setDeleteFolderIds(selectedFolderIds);
+                  setDeleteFolderIds(homeMode === "media" ? selectedMediaFolderIds : selectedFolderIds);
                   setDeleteFolderStatus("");
                 }}
               >
@@ -3324,6 +3400,7 @@ export default function Studio2Page() {
                       setSelectedFolderId(folder.id);
                       setSelectedMediaFolderId(null);
                       setSelectedFolderIds([]);
+                      setSelectedMediaFolderIds([]);
                       setSelectedMediaIds([]);
                       setFolderMenuOpen(false);
                     }}
@@ -3333,7 +3410,7 @@ export default function Studio2Page() {
                 )}
                 <div style={{ height: 1, background: ADS_BRAND.border, margin: "7px 3px" }} />
                 <HomeMenuButton
-                  icon={Folder}
+                  icon={Library}
                   label="Media Library"
                   onClick={() => {
                     setHomeMode("media");
@@ -3342,6 +3419,7 @@ export default function Studio2Page() {
                     setSelectMode(false);
                     setSelectedDesignIds([]);
                     setSelectedFolderIds([]);
+                    setSelectedMediaFolderIds([]);
                     setSelectedMediaIds([]);
                     setFolderMenuOpen(false);
                   }}
@@ -3403,6 +3481,7 @@ export default function Studio2Page() {
                     setSelectedFolderId(null);
                     setSelectedDesignIds([]);
                     setSelectedFolderIds([]);
+                    setSelectedMediaFolderIds([]);
                   }}
                   style={homeBackButtonStyle}
                 >
@@ -3422,9 +3501,13 @@ export default function Studio2Page() {
                   onClick={() => {
                     if (currentMediaFolder?.parentId) {
                       setSelectedMediaFolderId(currentMediaFolder.parentId);
+                      setSelectedMediaFolderIds([]);
+                      setSelectedMediaIds([]);
                       return;
                     }
                     setSelectedMediaFolderId(null);
+                    setSelectedMediaFolderIds([]);
+                    setSelectedMediaIds([]);
                     if (!currentMediaFolder) setHomeMode("designs");
                   }}
                   style={homeBackButtonStyle}
@@ -3454,6 +3537,7 @@ export default function Studio2Page() {
                         setSelectMode(false);
                         setSelectedDesignIds([]);
                         setSelectedFolderIds([]);
+                        setSelectedMediaFolderIds([]);
                         setSelectedMediaIds([]);
                       }}
                       onKeyDown={(event) => {
@@ -3465,13 +3549,14 @@ export default function Studio2Page() {
                           setSelectMode(false);
                           setSelectedDesignIds([]);
                           setSelectedFolderIds([]);
+                          setSelectedMediaFolderIds([]);
                           setSelectedMediaIds([]);
                         }
                       }}
                       style={{ ...folderCardStyle, position: "relative", overflow: "hidden" }}
                     >
                       <div style={folderThumbStyle}>
-                        <Folder size={38} strokeWidth={1.7} />
+                        <Library size={38} strokeWidth={1.7} />
                       </div>
                       <div style={homeCardBodyStyle}>
                         <div style={homeCardTitleStyle}>Media Library</div>
@@ -3556,6 +3641,11 @@ export default function Studio2Page() {
                           )}
                           {folderCardMenuId === folder.id && (
                             <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                              <HomeMenuButton
+                                icon={Square}
+                                label={isSelected ? "Deselect" : "Select"}
+                                onClick={() => toggleFolderSelectionFromMenu(folder.id)}
+                              />
                               {selectedDesignIds.length > 0 && (
                                 <HomeMenuButton
                                   icon={FolderPlus}
@@ -3602,12 +3692,17 @@ export default function Studio2Page() {
                       <div
                         key={project.id}
                         className="studio2-design-card"
-                        draggable
+                        draggable={selectMode && isSelected}
                         onDragStart={(event) => {
+                          if (!selectMode || !isSelected) {
+                            event.preventDefault();
+                            return;
+                          }
                           const ids = selectedDesignIds.includes(project.id) ? selectedDesignIds : [project.id];
                           setDraggedDesignIds(ids);
                           event.dataTransfer.effectAllowed = "move";
                           event.dataTransfer.setData("text/plain", ids.join(","));
+                          setStudioCardDragImage(event);
                         }}
                         onDragEnd={() => {
                           setDraggedDesignIds([]);
@@ -3620,7 +3715,7 @@ export default function Studio2Page() {
                           background: ADS_BRAND.panel,
                           borderRadius: 12,
                           overflow: "visible",
-                          cursor: "pointer",
+                          cursor: selectMode ? (isSelected ? "grab" : "pointer") : "pointer",
                           minHeight: 228,
                           boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
                         }}
@@ -3647,6 +3742,11 @@ export default function Studio2Page() {
                         {cardMenuId === project.id && (
                           <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
                             <HomeMenuButton
+                              icon={Square}
+                              label={isSelected ? "Deselect" : "Select"}
+                              onClick={() => toggleDesignSelectionFromMenu(project.id)}
+                            />
+                            <HomeMenuButton
                               icon={FolderPlus}
                               label="Add to folder"
                               onClick={() => {
@@ -3670,7 +3770,7 @@ export default function Studio2Page() {
                         )}
                         <div style={projectThumbStyle(project.thumb)}>
                           {project.thumb ? (
-                            <img src={getMediaPreviewSrc(project.thumb)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <img draggable={false} src={getMediaPreviewSrc(project.thumb)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
                             <span style={{ color: ADS_BRAND.text4 }}>
                               <Palette size={38} strokeWidth={1.7} />
@@ -3713,6 +3813,7 @@ export default function Studio2Page() {
                 {visibleMediaFolders.length > 0 && (
                   <div style={homeGridStyle}>
                     {visibleMediaFolders.map((folder) => {
+                      const isSelected = selectedMediaFolderIds.includes(folder.id);
                       const isDropTarget = dragOverFolderId === folder.id && draggedMediaIds.length > 0;
                       return (
                         <div
@@ -3720,11 +3821,18 @@ export default function Studio2Page() {
                           role="button"
                           tabIndex={0}
                           className="studio2-design-card"
-                          onClick={() => setSelectedMediaFolderId(folder.id)}
+                          onClick={() => {
+                            if (selectMode) {
+                              toggleMediaFolderSelection(folder.id);
+                              return;
+                            }
+                            setSelectedMediaFolderId(folder.id);
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
-                              setSelectedMediaFolderId(folder.id);
+                              if (selectMode) toggleMediaFolderSelection(folder.id);
+                              else setSelectedMediaFolderId(folder.id);
                             }
                           }}
                           onDragEnter={(event) => {
@@ -3754,9 +3862,11 @@ export default function Studio2Page() {
                             ...folderCardStyle,
                             position: "relative",
                             overflow: "visible",
-                            border: `1px solid ${isDropTarget ? ADS_BRAND.gold : ADS_BRAND.border}`,
+                            border: `1px solid ${isDropTarget || isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
                             background: isDropTarget ? ADS_BRAND.goldSoft : ADS_BRAND.panel,
-                            boxShadow: isDropTarget ? "0 0 0 3px rgba(212,178,122,0.18), 0 18px 50px rgba(0,0,0,0.35)" : "none",
+                            boxShadow: isDropTarget
+                              ? "0 0 0 3px rgba(212,178,122,0.18), 0 18px 50px rgba(0,0,0,0.35)"
+                              : isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
                           }}
                         >
                         <button
@@ -3774,8 +3884,18 @@ export default function Studio2Page() {
                         >
                           <MoreHorizontal size={17} />
                         </button>
+                        {selectMode && (
+                          <span style={selectBadgeStyle(isSelected)}>
+                            {isSelected && <CheckCircle2 size={15} />}
+                          </span>
+                        )}
                         {folderCardMenuId === folder.id && (
                           <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                            <HomeMenuButton
+                              icon={Square}
+                              label={isSelected ? "Deselect" : "Select"}
+                              onClick={() => toggleMediaFolderSelectionFromMenu(folder.id)}
+                            />
                             {selectedMediaIds.length > 0 && (
                               <HomeMenuButton
                                 icon={FolderPlus}
@@ -3817,25 +3937,36 @@ export default function Studio2Page() {
                     <div
                       key={asset.id}
                       className="studio2-design-card"
-                      draggable
+                      draggable={selectMode && isSelected}
                       onDragStart={(event) => {
+                        if (!selectMode || !isSelected) {
+                          event.preventDefault();
+                          return;
+                        }
                         const ids = selectedMediaIds.includes(asset.id) ? selectedMediaIds : [asset.id];
                         setDraggedMediaIds(ids);
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/plain", ids.join(","));
+                        setStudioCardDragImage(event);
                       }}
                       onDragEnd={() => {
                         setDraggedMediaIds([]);
                         setDragOverFolderId(null);
                       }}
                       onClick={() => {
-                        if (selectMode) toggleMediaSelection(asset.id);
+                        if (selectMode) {
+                          toggleMediaSelection(asset.id);
+                          return;
+                        }
+                        setPreviewMediaId(asset.id);
+                        setMediaCardMenuId(null);
+                        setFolderCardMenuId(null);
                       }}
                       style={{
                         ...mediaCardStyle,
                         border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
                         boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
-                        cursor: selectMode ? "pointer" : "grab",
+                        cursor: selectMode ? (isSelected ? "grab" : "pointer") : "pointer",
                       }}
                     >
                       <button
@@ -3860,6 +3991,11 @@ export default function Studio2Page() {
                       {mediaCardMenuId === asset.id && (
                         <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
                           <HomeMenuButton
+                            icon={Square}
+                            label={isSelected ? "Deselect" : "Select"}
+                            onClick={() => toggleMediaSelectionFromMenu(asset.id)}
+                          />
+                          <HomeMenuButton
                             icon={Trash2}
                             label="Delete"
                             onClick={() => {
@@ -3872,9 +4008,9 @@ export default function Studio2Page() {
                       )}
                       <div style={projectThumbStyle(asset.url)}>
                         {asset.kind === "video" ? (
-                          <video src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <video draggable={false} src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
-                          <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <img draggable={false} src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         )}
                         {asset.kind === "video" && (
                           <span style={mediaVideoBadgeStyle}>
@@ -3896,6 +4032,64 @@ export default function Studio2Page() {
               <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 18 }}>{cloudStatus}</div>
             )}
         </main>
+        {previewMedia && (
+          <div
+            onClick={() => setPreviewMediaId(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              background: "rgba(0,0,0,0.72)",
+              backdropFilter: "blur(10px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 32,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                maxWidth: "min(92vw, 980px)",
+                maxHeight: "88vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {previewMedia.kind === "video" ? (
+                <video
+                  draggable={false}
+                  src={getMediaPreviewSrc(previewMedia.url)}
+                  controls
+                  autoPlay
+                  playsInline
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "88vh",
+                    borderRadius: 12,
+                    background: ADS_BRAND.bgDeep,
+                    boxShadow: "0 28px 90px rgba(0,0,0,0.7)",
+                  }}
+                />
+              ) : (
+                <img
+                  draggable={false}
+                  src={getMediaPreviewSrc(previewMedia.url)}
+                  alt={previewMedia.filename}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "88vh",
+                    objectFit: "contain",
+                    borderRadius: 12,
+                    background: ADS_BRAND.bgDeep,
+                    boxShadow: "0 28px 90px rgba(0,0,0,0.7)",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
         {uploadModalOpen && (
           <div
             onClick={() => setUploadModalOpen(false)}
@@ -4603,9 +4797,9 @@ export default function Studio2Page() {
                           }}
                         >
                           {asset.kind === "video" ? (
-                            <video src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <video draggable={false} src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <img draggable={false} src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           )}
                           {asset.kind === "video" && (
                             <span
@@ -5037,7 +5231,7 @@ export default function Studio2Page() {
                 }}
                 title={`Ad ${index + 1}`}
               >
-                <img src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img draggable={false} src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 {creative.approved && (
                   <span style={{
                     position: "absolute",
