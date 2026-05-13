@@ -1070,6 +1070,13 @@ export default function Studio2Page() {
   const [newFolderName, setNewFolderName] = useState("");
   const [folderPickerStatus, setFolderPickerStatus] = useState("");
   const [savingFolderPick, setSavingFolderPick] = useState(false);
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
+  const [homeFolderName, setHomeFolderName] = useState("");
+  const [homeFolderStatus, setHomeFolderStatus] = useState("");
+  const [savingHomeFolder, setSavingHomeFolder] = useState(false);
+  const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
+  const [deleteProjectStatus, setDeleteProjectStatus] = useState("");
+  const [deletingProject, setDeletingProject] = useState(false);
   const [editorTitleFocused, setEditorTitleFocused] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1167,6 +1174,10 @@ export default function Studio2Page() {
       })),
     ],
     [activeDraftCard, hasActiveDraft, visibleCloudProjects]
+  );
+  const deleteProject = useMemo(
+    () => homeProjects.find((project) => project.id === deleteProjectId) || null,
+    [deleteProjectId, homeProjects]
   );
   const folderOptions = useMemo(
     () => [
@@ -2574,10 +2585,31 @@ export default function Studio2Page() {
     }
   }, [addHomeProjectToFolder, createStudioFolder, folderPickerProjectId, newFolderName, savingFolderPick]);
 
-  const deleteHomeProject = useCallback(
-    async (cardId: string) => {
-      const confirmed = window.confirm("Delete this project?");
-      if (!confirmed) return;
+  const createHomeFolder = useCallback(async () => {
+    if (!homeFolderName.trim() || savingHomeFolder) return;
+    setSavingHomeFolder(true);
+    setHomeFolderStatus("Creating folder...");
+    try {
+      const folderId = await createStudioFolder(homeFolderName);
+      if (folderId) setSelectedFolderId(folderId);
+      setHomeFolderName("");
+      setHomeFolderStatus("");
+      setCreateFolderModalOpen(false);
+      setCloudStatus("Folder created.");
+      void fetchStudioHome();
+    } catch {
+      setHomeFolderStatus("Could not create that folder.");
+    } finally {
+      setSavingHomeFolder(false);
+    }
+  }, [createStudioFolder, fetchStudioHome, homeFolderName, savingHomeFolder]);
+
+  const confirmDeleteHomeProject = useCallback(
+    async () => {
+      const cardId = deleteProjectId;
+      if (!cardId || deletingProject) return;
+      setDeletingProject(true);
+      setDeleteProjectStatus("Deleting...");
       try {
         if (cardId === activeDraftId && !projectId) {
           await clearDraft();
@@ -2589,6 +2621,8 @@ export default function Studio2Page() {
           setProjectName("Untitled design");
           setCardMenuId(null);
           setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
+          setDeleteProjectId(null);
+          setDeleteProjectStatus("");
           setCloudStatus("Project deleted.");
           return;
         }
@@ -2606,13 +2640,17 @@ export default function Studio2Page() {
         }
         setCardMenuId(null);
         setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
+        setDeleteProjectId(null);
+        setDeleteProjectStatus("");
         setCloudStatus("Project deleted.");
         void fetchStudioHome();
       } catch {
-        setCloudStatus("Could not delete that project.");
+        setDeleteProjectStatus("Could not delete that project.");
+      } finally {
+        setDeletingProject(false);
       }
     },
-    [activeDraftId, fetchStudioHome, projectId]
+    [activeDraftId, deleteProjectId, deletingProject, fetchStudioHome, projectId]
   );
 
   if (view === "home") {
@@ -2832,14 +2870,9 @@ export default function Studio2Page() {
                   label="Create folder"
                   onClick={() => {
                     setCreateMenuOpen(false);
-                    const name = window.prompt("Folder name");
-                    if (!name?.trim()) return;
-                    void createStudioFolder(name)
-                      .then((folderId) => {
-                        if (folderId) setSelectedFolderId(folderId);
-                        void fetchStudioHome();
-                      })
-                      .catch(() => setCloudStatus("Folder save failed."));
+                    setHomeFolderName("");
+                    setHomeFolderStatus("");
+                    setCreateFolderModalOpen(true);
                   }}
                 />
               </div>
@@ -3021,7 +3054,11 @@ export default function Studio2Page() {
                         <HomeMenuButton
                           icon={Trash2}
                           label="Delete"
-                          onClick={() => void deleteHomeProject(project.id)}
+                          onClick={() => {
+                            setCardMenuId(null);
+                            setDeleteProjectId(project.id);
+                            setDeleteProjectStatus("");
+                          }}
                         />
                       </div>
                     )}
@@ -3210,6 +3247,146 @@ export default function Studio2Page() {
                   onClick={() => void uploadQueuedMedia()}
                 >
                   <Upload size={14} /> {uploadingQueuedMedia ? "Uploading..." : "Upload"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {createFolderModalOpen && (
+          <div
+            onClick={() => {
+              if (savingHomeFolder) return;
+              setCreateFolderModalOpen(false);
+              setHomeFolderName("");
+              setHomeFolderStatus("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.58)",
+              zIndex: 47,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 390,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Create folder</div>
+              <input
+                value={homeFolderName}
+                onChange={(event) => setHomeFolderName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void createHomeFolder();
+                  }
+                }}
+                placeholder="Folder name"
+                style={{ ...inputStyle, height: 40, marginBottom: 12 }}
+                autoFocus
+              />
+              {homeFolderStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{homeFolderStatus}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  style={buttonStyle(false)}
+                  disabled={savingHomeFolder}
+                  onClick={() => {
+                    setCreateFolderModalOpen(false);
+                    setHomeFolderName("");
+                    setHomeFolderStatus("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!homeFolderName.trim() || savingHomeFolder}
+                  onClick={() => void createHomeFolder()}
+                  style={{
+                    ...buttonStyle(true),
+                    opacity: homeFolderName.trim() && !savingHomeFolder ? 1 : 0.4,
+                    cursor: homeFolderName.trim() && !savingHomeFolder ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {savingHomeFolder ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {deleteProjectId && (
+          <div
+            onClick={() => {
+              if (deletingProject) return;
+              setDeleteProjectId(null);
+              setDeleteProjectStatus("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.62)",
+              zIndex: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 410,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.58)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 8 }}>Delete design?</div>
+              <div style={{ color: ADS_BRAND.text3, fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
+                This will delete {deleteProject?.name ? <strong style={{ color: ADS_BRAND.text2 }}>{deleteProject.name}</strong> : "this design"} from Studio 2.
+              </div>
+              {deleteProjectStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{deleteProjectStatus}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  style={buttonStyle(false)}
+                  disabled={deletingProject}
+                  onClick={() => {
+                    setDeleteProjectId(null);
+                    setDeleteProjectStatus("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingProject}
+                  onClick={() => void confirmDeleteHomeProject()}
+                  style={{
+                    ...buttonStyle(false),
+                    border: "1px solid rgba(255,107,107,0.55)",
+                    background: deletingProject ? "rgba(255,107,107,0.15)" : "#ff6b6b",
+                    color: deletingProject ? "#ffb3b3" : "#190606",
+                    cursor: deletingProject ? "wait" : "pointer",
+                  }}
+                >
+                  <Trash2 size={14} /> {deletingProject ? "Deleting..." : "Delete"}
                 </button>
               </div>
             </div>
