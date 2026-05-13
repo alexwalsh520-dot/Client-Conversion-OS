@@ -16,7 +16,7 @@
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
+type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard" | "zoe_and_emily";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -48,6 +48,7 @@ export interface ManychatMetrics {
 const CLIENT_SETTERS: Record<Client, string[]> = {
   tyson_sonnek: ["amara", "kelechi", "debbie"],
   keith_holland: ["gideon"],
+  lucy_hubbard: [],
   zoe_and_emily: [],
 };
 
@@ -142,6 +143,7 @@ function matchesClientOffer(client: Client, offer: string | null | undefined): b
   const normalized = (offer || "").toLowerCase();
   if (client === "tyson_sonnek") return normalized.includes("tyson");
   if (client === "keith_holland") return normalized.includes("keith");
+  if (client === "lucy_hubbard") return normalized.includes("lucy") || normalized.includes("hubbard");
   if (client === "zoe_and_emily") return normalized.includes("zoe") || normalized.includes("emily");
   return false;
 }
@@ -422,7 +424,9 @@ export async function getTags(client: Client): Promise<{ id: number; name: strin
       ? process.env.MANYCHAT_API_KEY_TYSON
       : client === "keith_holland"
         ? process.env.MANYCHAT_API_KEY_KEITH
-        : process.env.MANYCHAT_API_KEY_ZOE_EMILY;
+        : client === "lucy_hubbard"
+          ? process.env.MANYCHAT_API_KEY_LUCY_HUBBARD
+          : process.env.MANYCHAT_API_KEY_ZOE_EMILY;
   if (!key) return [];
 
   try {
