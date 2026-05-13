@@ -140,6 +140,41 @@
 	  .alert-resolve{height:30px;min-width:84px;padding:0 12px;border:1px solid #303030;border-radius:999px;background:#1b1b1b;color:#f1f1f1;font-size:12px;font-weight:500;letter-spacing:0}
 	  .alert-resolve:hover{background:#242424;border-color:#3a3a3a;color:#fff}
 	  .alert-empty{padding:22px 20px;color:var(--text-4);font-size:12px}
+	  .alerts-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+	  .alert-workspace-btn{height:30px;padding:0 12px;border:1px solid rgba(211,180,119,.35);border-radius:999px;background:rgba(211,180,119,.08);color:var(--gold);font-size:12px;font-weight:500;white-space:nowrap}
+	  .alert-workspace-btn:hover{background:rgba(211,180,119,.14);border-color:rgba(211,180,119,.5);color:#e8ca91}
+	  .attribution-workspace{position:fixed;inset:0;z-index:150;background:#090909;display:flex;flex-direction:column;overflow:hidden}
+	  .workspace-top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:24px 28px 18px;border-bottom:1px solid var(--border);background:#0b0b0b}
+	  .workspace-kicker{font-size:10px;line-height:1;text-transform:uppercase;letter-spacing:.14em;color:var(--text-4);font-weight:500;margin-bottom:8px}
+	  .workspace-title{font-size:24px;line-height:1.08;font-weight:650;letter-spacing:-.035em;color:var(--text)}
+	  .workspace-sub{font-size:12px;color:var(--text-3);margin-top:7px}
+	  .workspace-close{height:34px;padding:0 14px;border:1px solid var(--border-2);border-radius:7px;background:#111;color:var(--text-2);font-size:12px;font-weight:500}
+	  .workspace-close:hover{background:#191919;color:var(--text)}
+	  .workspace-body{padding:18px 28px 28px;overflow:auto;display:grid;gap:14px}
+	  .workspace-toolbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
+	  .workspace-filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+	  .workspace-search{height:34px;min-width:280px;border:1px solid var(--border-2);border-radius:7px;background:#0f0f0f;color:var(--text);font-size:12px;padding:0 12px}
+	  .workspace-search:focus{border-color:#373737;background:#121212}
+	  .workspace-type-tabs{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--border-2);border-radius:999px;background:#070707}
+	  .workspace-type-tab{height:28px;padding:0 11px;border-radius:999px;color:var(--text-3);font-size:12px;display:inline-flex;align-items:center;gap:6px}
+	  .workspace-type-tab.active{background:#202020;color:var(--text)}
+	  .workspace-type-tab.active .alerts-tab-count{border-color:#3c331f;color:var(--gold)}
+	  .workspace-table{border:1px solid var(--border);border-radius:9px;background:var(--panel);overflow:hidden}
+	  .workspace-grid{display:grid;grid-template-columns:minmax(180px,1.25fr) 128px 120px 118px 104px minmax(190px,1.1fr) 154px;align-items:center;gap:12px}
+	  .workspace-table-head{min-height:44px;padding:0 20px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-4);font-weight:500}
+	  .workspace-row{min-height:68px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer}
+	  .workspace-row:last-child{border-bottom:none}
+	  .workspace-row:hover{background:#141414}
+	  .workspace-name{font-size:13px;line-height:1.15;font-weight:650;color:var(--text);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .workspace-meta{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.25;color:var(--text-3);margin-top:5px}
+	  .workspace-type-pill{height:24px;padding:0 9px;border:1px solid #2a2a2a;border-radius:999px;background:#111;color:var(--text-2);font-size:11px;display:inline-flex;align-items:center;width:max-content}
+	  .workspace-type-pill.revenue{border-color:rgba(211,180,119,.28);color:var(--gold);background:rgba(211,180,119,.06)}
+	  .workspace-type-pill.booking{border-color:rgba(122,167,212,.28);color:var(--blue);background:rgba(122,167,212,.06)}
+	  .workspace-type-pill.keyword{border-color:rgba(125,211,168,.24);color:var(--green);background:rgba(125,211,168,.055)}
+	  .workspace-issue{color:var(--text-3);font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  .workspace-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}
+	  .workspace-empty{padding:28px 20px;color:var(--text-4);font-size:12px}
+	  @media(max-width:1100px){.workspace-grid{grid-template-columns:minmax(180px,1fr) 108px 96px 88px 132px}.workspace-table-head .hide-mid,.workspace-row .hide-mid{display:none}.workspace-search{min-width:220px}}
 	  .resolved-strip{border-top:1px solid var(--border);background:#0c0c0c;padding:12px 20px}
 	  .resolved-head{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-4);margin-bottom:8px}
 	  .resolved-row{display:grid;grid-template-columns:minmax(0,1fr) 96px 80px;gap:12px;align-items:center;padding:9px 0;border-top:1px solid #171717}
@@ -149,7 +184,7 @@
 	  .alert-option-meta{display:block;color:var(--text-4);font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 		  .alert-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:7vh 18px 28px;z-index:180;overflow:auto}
-		  .alert-modal{width:620px;max-width:calc(100vw - 36px);max-height:88vh;background:#0f0f0f;border:1px solid var(--border-2);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden;display:flex;flex-direction:column}
+		  .alert-modal{width:880px;max-width:calc(100vw - 36px);max-height:90vh;background:#0f0f0f;border:1px solid var(--border-2);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden;display:flex;flex-direction:column}
 	  .alert-modal-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px 10px;border-bottom:1px solid var(--border)}
 	  .alert-modal-title{font-size:14px;line-height:1.2;font-weight:600;color:var(--text);letter-spacing:-0.01em}
 	  .alert-modal-sub{font-size:11px;color:var(--text-3);margin-top:3px;letter-spacing:0}
@@ -167,7 +202,7 @@
 		  .alert-mode-tab{height:28px;padding:0 13px;border-radius:999px;color:var(--text-3);font-size:12px}
 		  .alert-mode-tab.active{background:#202020;color:var(--text)}
 		  .alert-search{width:100%;height:38px;border:1px solid var(--border-2);border-radius:6px;background:#080808;color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;padding:0 12px;margin-bottom:10px}
-			  .alert-option-list{border:1px solid var(--border);border-radius:8px;background:#090909;max-height:260px;overflow:auto}
+			  .alert-option-list{border:1px solid var(--border);border-radius:8px;background:#090909;max-height:42vh;overflow:auto}
 		  .alert-option-list::-webkit-scrollbar{width:7px}.alert-option-list::-webkit-scrollbar-thumb{background:#252525;border-radius:99px}
 		  .alert-option-group{border-top:1px solid #171717}.alert-option-group:first-child{border-top:none}
 			  .alert-option-group-head{display:flex;align-items:center;justify-content:space-between;gap:12px;height:28px;padding:0 12px;background:#0f0f0f;color:var(--text-4);font-size:10px;text-transform:uppercase;letter-spacing:.12em}
@@ -184,7 +219,7 @@
 		  .alert-option-pill.active{border-color:rgba(129,199,155,.35);color:#9bd2ae;background:rgba(129,199,155,.08)}
 		  .alert-option-pill.date{border-color:rgba(211,180,119,.35);color:var(--gold);background:rgba(211,180,119,.08)}
 		  .alert-option-empty{padding:14px 12px;color:var(--text-4);font-size:12px}
-			  .alert-no-keyword-box{border:1px solid var(--border);border-radius:8px;background:#090909;padding:10px;display:grid;gap:8px;max-height:300px;overflow:auto}
+			  .alert-no-keyword-box{border:1px solid var(--border);border-radius:8px;background:#090909;padding:10px;display:grid;gap:8px;max-height:42vh;overflow:auto}
 			  .alert-no-keyword-choice{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid #232323;border-radius:7px;background:#0e0e0e;color:var(--text-2);text-align:left}
 			  .alert-no-keyword-choice.active{border-color:rgba(211,180,119,.55);background:#1a1812;color:var(--text)}
 			  .alert-no-keyword-choice-main{display:block;min-width:0}
@@ -201,7 +236,7 @@
 	  .alert-outline-btn:hover{background:#181818;color:var(--text)}
 	  .alert-paid-btn{height:34px;padding:0 14px;border-radius:6px;background:var(--gold);color:#070707;font-size:12px;font-weight:700}
 	  .alert-paid-btn:disabled{opacity:.45;cursor:not-allowed}
-	  @media(max-width:900px){.alerts-head{height:auto;padding:18px 20px;align-items:flex-start;gap:14px;flex-direction:column}.alerts-summary{grid-template-columns:1fr;padding:12px 18px}.alerts-grid{grid-template-columns:42px 1fr}.alerts-table-head{display:none}.alert-row{grid-template-columns:42px 1fr;gap:0;padding:14px 0}.alert-row .alert-campaign,.alert-row .alert-amount,.alert-row .alert-actions{grid-column:2;margin-top:9px}.alert-check{margin-left:18px}.alert-modal{max-width:calc(100vw - 28px)}.alert-modal-head,.alert-modal-body,.alert-modal-foot{padding-left:22px;padding-right:22px}.alert-modal-foot{height:auto;padding-top:18px;padding-bottom:18px;gap:16px;align-items:stretch;flex-direction:column}.alert-foot-actions{flex-direction:column}.alert-outline-btn,.alert-paid-btn{width:100%}}
+	  @media(max-width:900px){.alerts-head{height:auto;padding:18px 20px;align-items:flex-start;gap:14px;flex-direction:column}.alerts-head-actions{justify-content:flex-start}.alerts-summary{grid-template-columns:1fr;padding:12px 18px}.alerts-grid{grid-template-columns:42px 1fr}.alerts-table-head{display:none}.alert-row{grid-template-columns:42px 1fr;gap:0;padding:14px 0}.alert-row .alert-campaign,.alert-row .alert-amount,.alert-row .alert-actions{grid-column:2;margin-top:9px}.alert-check{margin-left:18px}.alert-modal{max-width:calc(100vw - 28px)}.alert-modal-head,.alert-modal-body,.alert-modal-foot{padding-left:22px;padding-right:22px}.alert-modal-foot{height:auto;padding-top:18px;padding-bottom:18px;gap:16px;align-items:stretch;flex-direction:column}.alert-foot-actions{flex-direction:column}.alert-outline-btn,.alert-paid-btn{width:100%}.workspace-top{padding:18px}.workspace-body{padding:14px 18px 22px}.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-table-head{display:none}.workspace-row{gap:9px;align-items:flex-start}.workspace-row .alert-campaign,.workspace-row .alert-amount,.workspace-row .workspace-actions{justify-content:flex-start}.workspace-search{width:100%;min-width:0}.workspace-toolbar{align-items:stretch}.workspace-filter-row{width:100%}}
 
 	  /* Table panel */
   .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
@@ -2644,7 +2679,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null}){
   );
 }
 
-function TasksSection({dashboard, campaigns, onResolve, onToast}){
+function TasksSection({dashboard, campaigns, onResolve, onToast, onOpenWorkspace}){
   return (
     <>
       <div className="metric-board-head">
@@ -2652,7 +2687,7 @@ function TasksSection({dashboard, campaigns, onResolve, onToast}){
       </div>
       <div className="grid-charts metric-support-grid tasks-grid">
         <div className="chart-column">
-          <AttributionAlerts dashboard={dashboard} campaigns={campaigns} onResolve={onResolve} onToast={onToast}/>
+          <AttributionAlerts dashboard={dashboard} campaigns={campaigns} onResolve={onResolve} onToast={onToast} onOpenWorkspace={onOpenWorkspace}/>
         </div>
         <div className="chart-column">
           <a className="launch-campaign-btn" href="/ads/launcher" target="_top" aria-label="Launch campaign">
@@ -3448,6 +3483,39 @@ function alertTitleLabel(alert){
   return "Sale attribution";
 }
 
+function alertWorkspaceKind(alert){
+  if(alert?.alertType === "missing_dm_keyword" || alert?.reason === "missing_manychat_keyword") return "keyword";
+  if(alert?.alertType === "missing_booking_keyword" || alert?.reason === "missing_booking_keyword") return "booking";
+  if(alert?.alertType === "call" || alert?.callTaken) return "call";
+  if(Number(alert?.amount || 0) > 0) return "revenue";
+  return "other";
+}
+
+function alertWorkspaceKindLabel(alert){
+  const kind = alertWorkspaceKind(alert);
+  if(kind === "revenue") return "Revenue";
+  if(kind === "booking") return "Booked call";
+  if(kind === "keyword") return "DM keyword";
+  if(kind === "call") return "Call";
+  return "Review";
+}
+
+function alertWorkspaceSearchText(alert){
+  return [
+    alert?.name,
+    alert?.setter,
+    alert?.keyword,
+    alert?.campaignName,
+    alert?.adName,
+    alert?.instagramHandle,
+    clientLabel(alert?.clientKey),
+    alertAmountLabel(alert),
+    alertTimestampLabel(alert),
+    alertReasonLabel(alert?.reason),
+    alertWorkspaceKindLabel(alert),
+  ].map(value=>String(value || "").toLowerCase()).join(" ");
+}
+
 function normalizeUiKeyword(value){
   return String(value || "").trim().replace(/\s+/g," ").toUpperCase();
 }
@@ -3843,7 +3911,7 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
   );
 }
 
-function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
+function AttributionAlerts({dashboard, campaigns, onResolve, onToast, onOpenWorkspace}){
   const attribution = dashboard?.attribution || {};
   const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
   const keywordOptions = Array.isArray(attribution.keywordOptions) ? attribution.keywordOptions : [];
@@ -3878,17 +3946,20 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
           <div className="alerts-title">Attribution alerts</div>
           <div className="alerts-sub">{alerts.length} unresolved · items without a clear source keyword</div>
         </div>
-        <div className="alerts-tabs">
-          {[
-            ["all","All",counts.all],
-            ["tyson","Tyson",counts.tyson],
-            ["keith","Keith",counts.keith],
-          ].map(([id,label,count])=>(
-            <button key={id} className={"alerts-tab "+(filter===id?"active":"")} onClick={()=>setFilter(id)}>
-              {label}
-              <span className="alerts-tab-count">{count}</span>
-            </button>
-          ))}
+        <div className="alerts-head-actions">
+          <div className="alerts-tabs">
+            {[
+              ["all","All",counts.all],
+              ["tyson","Tyson",counts.tyson],
+              ["keith","Keith",counts.keith],
+            ].map(([id,label,count])=>(
+              <button key={id} className={"alerts-tab "+(filter===id?"active":"")} onClick={()=>setFilter(id)}>
+                {label}
+                <span className="alerts-tab-count">{count}</span>
+              </button>
+            ))}
+          </div>
+          <button className="alert-workspace-btn" onClick={onOpenWorkspace}>Open workspace</button>
         </div>
       </div>
       <AttributionSummaryTiles dashboard={dashboard} alerts={alerts}/>
@@ -3945,6 +4016,169 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast}){
   );
 }
 
+function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose}){
+  const attribution = dashboard?.attribution || {};
+  const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
+  const keywordOptions = Array.isArray(attribution.keywordOptions) ? attribution.keywordOptions : [];
+  const campaignOptions = Array.isArray(attribution.campaignOptions) ? attribution.campaignOptions : [];
+  const [clientFilter, setClientFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(()=>{
+    const onKey = (event) => {
+      if(event.key === "Escape" && !modal) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, modal]);
+
+  const clientCounts = {
+    all: alerts.length,
+    tyson: alerts.filter(alert=>alert.clientKey==="tyson").length,
+    keith: alerts.filter(alert=>alert.clientKey==="keith").length,
+  };
+  const typeCounts = {
+    all: alerts.length,
+    revenue: alerts.filter(alert=>alertWorkspaceKind(alert)==="revenue").length,
+    booking: alerts.filter(alert=>alertWorkspaceKind(alert)==="booking").length,
+    keyword: alerts.filter(alert=>alertWorkspaceKind(alert)==="keyword").length,
+    other: alerts.filter(alert=>["call","other"].includes(alertWorkspaceKind(alert))).length,
+  };
+  const filteredAlerts = alerts.filter(alert => {
+    if(clientFilter !== "all" && alert.clientKey !== clientFilter) return false;
+    const kind = alertWorkspaceKind(alert);
+    if(typeFilter === "other" && !["call","other"].includes(kind)) return false;
+    if(typeFilter !== "all" && typeFilter !== "other" && kind !== typeFilter) return false;
+    const q = query.trim().toLowerCase();
+    if(q && !alertWorkspaceSearchText(alert).includes(q)) return false;
+    return true;
+  });
+
+  const saveResolution = async (payload) => {
+    if(!payload.saleKey) return;
+    setSaving(true);
+    try{
+      await onResolve(payload);
+      setModal(null);
+    }catch(err){
+      onToast && onToast(err?.message || "Attribution save failed");
+    }finally{
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="attribution-workspace">
+      <div className="workspace-top">
+        <div>
+          <div className="workspace-kicker">All-time task queue</div>
+          <div className="workspace-title">Attribution Workspace</div>
+          <div className="workspace-sub">{alerts.length} unresolved · every item must be paid, organic, ignored, or fixed</div>
+        </div>
+        <button className="workspace-close" onClick={onClose}>Back to dashboard</button>
+      </div>
+      <div className="workspace-body">
+        <AttributionSummaryTiles dashboard={dashboard} alerts={alerts}/>
+        <div className="workspace-toolbar">
+          <div className="workspace-filter-row">
+            <div className="alerts-tabs">
+              {[
+                ["all","All",clientCounts.all],
+                ["tyson","Tyson",clientCounts.tyson],
+                ["keith","Keith",clientCounts.keith],
+              ].map(([id,label,count])=>(
+                <button key={id} className={"alerts-tab "+(clientFilter===id?"active":"")} onClick={()=>setClientFilter(id)}>
+                  {label}
+                  <span className="alerts-tab-count">{count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="workspace-type-tabs">
+              {[
+                ["all","All",typeCounts.all],
+                ["revenue","Revenue",typeCounts.revenue],
+                ["booking","Booked",typeCounts.booking],
+                ["keyword","DM keywords",typeCounts.keyword],
+                ["other","Other",typeCounts.other],
+              ].map(([id,label,count])=>(
+                <button key={id} className={"workspace-type-tab "+(typeFilter===id?"active":"")} onClick={()=>setTypeFilter(id)}>
+                  {label}
+                  <span className="alerts-tab-count">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            className="workspace-search"
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            placeholder="Search customer, setter, issue, keyword..."
+          />
+        </div>
+        <div className="workspace-table">
+          <div className="workspace-table-head workspace-grid">
+            <div>Customer</div>
+            <div>Type</div>
+            <div>Account</div>
+            <div className="hide-mid">Time</div>
+            <div>Amount</div>
+            <div className="hide-mid">Issue</div>
+            <div></div>
+          </div>
+          {filteredAlerts.length === 0 ? (
+            <div className="workspace-empty">No unresolved attribution alerts match this view.</div>
+          ) : filteredAlerts.map(alert => {
+            const kind = alertWorkspaceKind(alert);
+            return (
+              <div className="workspace-row workspace-grid" key={alertSaleKey(alert)} onClick={()=>setModal({alert})}>
+                <div>
+                  <div className="workspace-name">{alert.name || "Unknown"}</div>
+                  <div className="workspace-meta">{alert.setter ? `Setter · ${alert.setter}` : alert.instagramHandle ? `IG · ${alert.instagramHandle}` : alertSaleKey(alert)}</div>
+                </div>
+                <div><span className={"workspace-type-pill "+kind}>{alertWorkspaceKindLabel(alert)}</span></div>
+                <div className="alert-campaign">
+                  <span className={"alert-campaign-dot "+(alert.clientKey==="keith"?"keith":"")}></span>
+                  {clientLabel(alert.clientKey)}
+                </div>
+                <div className="workspace-meta hide-mid">{alertTimestampLabel(alert)}</div>
+                <div className="alert-amount">{alertAmountLabel(alert)}</div>
+                <div className="workspace-issue hide-mid">{alertReasonLabel(alert.reason)}</div>
+                <div className="workspace-actions" onClick={e=>e.stopPropagation()}>
+                  {alert.manychatUrl && (
+                    <a
+                      className="alert-open-link"
+                      href={alert.manychatUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open ManyChat conversation"
+                    >↗</a>
+                  )}
+                  <button className="alert-resolve" onClick={()=>setModal({alert})}>Resolve →</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {modal && (
+        <AttributionAlertModal
+          alert={modal.alert}
+          existing={modal.existing}
+          campaigns={campaigns}
+          keywordOptions={keywordOptions}
+          campaignOptions={campaignOptions}
+          saving={saving}
+          onClose={()=>setModal(null)}
+          onResolve={saveResolution}
+        />
+      )}
+    </div>
+  );
+}
+
 // ------- App
 function App(){
   const [account, setAccount] = useState("all");
@@ -3957,6 +4191,7 @@ function App(){
   const [syncing, setSyncing] = useState(false);
   const [newEntries, setNewEntries] = useState([]);
   const [toast, setToast] = useState(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -4155,7 +4390,7 @@ function App(){
           {/* Charts */}
           <MetricCardBoard campaigns={metricCampaigns} dashboard={dashboard}/>
 
-          <TasksSection dashboard={dashboard} campaigns={resolveCampaigns} onResolve={onResolveAlert} onToast={showToast}/>
+          <TasksSection dashboard={dashboard} campaigns={resolveCampaigns} onResolve={onResolveAlert} onToast={showToast} onOpenWorkspace={()=>setWorkspaceOpen(true)}/>
 
           {/* Recent entries (collapsed) */}
           <RecentEntries
@@ -4185,6 +4420,15 @@ function App(){
             <span className="toast-dot"></span>
             {toast}
           </div>
+        )}
+        {workspaceOpen && (
+          <AttributionWorkspace
+            dashboard={dashboard}
+            campaigns={resolveCampaigns}
+            onResolve={onResolveAlert}
+            onToast={showToast}
+            onClose={()=>setWorkspaceOpen(false)}
+          />
         )}
     </div>
   );
