@@ -259,6 +259,7 @@ type DragState =
   | {
       kind: "move-image";
       active: boolean;
+      clearOnClick?: boolean;
       startX: number;
       startY: number;
       orig: ImageTransform;
@@ -452,6 +453,10 @@ function getCanvasImageSrc(src: string) {
   } catch {
     return src;
   }
+}
+
+function getMediaPreviewSrc(src: string) {
+  return getCanvasImageSrc(src);
 }
 
 function hexToRgb(hex: string): string {
@@ -1233,7 +1238,9 @@ export default function Studio2Page() {
   const [setupDropActive, setSetupDropActive] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [cardMenuId, setCardMenuId] = useState<string | null>(null);
+  const [folderCardMenuId, setFolderCardMenuId] = useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<File[]>([]);
   const [uploadDropActive, setUploadDropActive] = useState(false);
@@ -1254,6 +1261,9 @@ export default function Studio2Page() {
   const [deleteMediaId, setDeleteMediaId] = useState<string | null>(null);
   const [deleteMediaStatus, setDeleteMediaStatus] = useState("");
   const [deletingMedia, setDeletingMedia] = useState(false);
+  const [deleteFolderIds, setDeleteFolderIds] = useState<string[]>([]);
+  const [deleteFolderStatus, setDeleteFolderStatus] = useState("");
+  const [deletingFolder, setDeletingFolder] = useState(false);
   const [editorTitleFocused, setEditorTitleFocused] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1342,19 +1352,21 @@ export default function Studio2Page() {
     }),
     [activeDraftId, currentCreative?.photoUrl, photos, projectName]
   );
+  const selectedHomeCount = selectedDesignIds.length + selectedFolderIds.length;
   const visibleCloudProjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return cloudProjects.filter((project) => {
-      if (project.id === projectId) return false;
+      if (project.id === projectId && !selectedFolderId) return false;
       if (homeMode !== "designs") return false;
       if (selectedFolderId && project.folderId !== selectedFolderId) return false;
+      if (!selectedFolderId && project.folderId) return false;
       if (normalizedSearch && !project.name.toLowerCase().includes(normalizedSearch)) return false;
       return true;
     });
   }, [cloudProjects, homeMode, projectId, searchTerm, selectedFolderId]);
   const homeProjects = useMemo(
     (): HomeProjectCard[] => [
-      ...(hasActiveDraft ? [activeDraftCard] : []),
+      ...(hasActiveDraft && homeMode === "designs" && !selectedFolderId ? [activeDraftCard] : []),
       ...visibleCloudProjects.map((project) => ({
         id: project.id,
         name: project.name,
@@ -1363,7 +1375,7 @@ export default function Studio2Page() {
         isActiveDraft: false,
       })),
     ],
-    [activeDraftCard, hasActiveDraft, visibleCloudProjects]
+    [activeDraftCard, hasActiveDraft, homeMode, selectedFolderId, visibleCloudProjects]
   );
   const deleteProject = useMemo(
     () => homeProjects.find((project) => project.id === deleteProjectId) || null,
@@ -1400,6 +1412,10 @@ export default function Studio2Page() {
     () => libraryMedia.find((asset) => asset.id === deleteMediaId) || null,
     [deleteMediaId, libraryMedia]
   );
+  const deleteFolders = useMemo(
+    () => cloudFolders.filter((folder) => deleteFolderIds.includes(folder.id)),
+    [cloudFolders, deleteFolderIds]
+  );
   const setupMediaFolder = useMemo(
     () => mediaFolders.find((folder) => folder.id === setupMediaFolderId) || null,
     [mediaFolders, setupMediaFolderId]
@@ -1410,7 +1426,7 @@ export default function Studio2Page() {
   );
   const folderOptions = useMemo(
     () => [
-      { id: null, name: "All designs" },
+      { id: null, name: "Designs" },
       ...designFolders.map((folder) => ({ id: folder.id, name: folder.name })),
     ],
     [designFolders]
@@ -2359,15 +2375,25 @@ export default function Studio2Page() {
         return;
       }
 
+      if (selectedLayer?.type === "image") {
+        dragRef.current = {
+          kind: "move-image",
+          active: false,
+          clearOnClick: true,
+          startX: point.x,
+          startY: point.y,
+          orig: { ...currentCreative.imageTransform },
+        };
+        setCanvasCursor("grabbing");
+        return;
+      }
+
+      if (selectedLayer) {
+        setSelectedLayer(null);
+        return;
+      }
+
       setSelectedLayer({ type: "image" });
-      dragRef.current = {
-        kind: "move-image",
-        active: false,
-        startX: point.x,
-        startY: point.y,
-        orig: { ...currentCreative.imageTransform },
-      };
-      setCanvasCursor("grabbing");
     },
     [currentCreative, findHitBlock, getMeasureCtx, selectedLayer]
   );
@@ -2491,6 +2517,10 @@ export default function Studio2Page() {
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const drag = dragRef.current;
+    if (drag?.kind === "move-image" && drag.clearOnClick && !drag.active) {
+      setSelectedLayer(null);
     }
     dragRef.current = null;
     setActiveGuides({ x: [], y: [] });
@@ -2762,6 +2792,55 @@ export default function Studio2Page() {
     return data.folder.id;
   }, [cloudFolders]);
 
+  const toggleHomeFolderSelection = useCallback((folderId: string) => {
+    setSelectedFolderIds((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+    );
+  }, []);
+
+  const confirmDeleteFolders = useCallback(async () => {
+    const ids = deleteFolderIds;
+    if (!ids.length || deletingFolder) return;
+    setDeletingFolder(true);
+    setDeleteFolderStatus("Deleting...");
+    try {
+      await Promise.all(
+        ids.map(async (folderId) => {
+          const res = await fetch(`/api/studio-2/folders/${folderId}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Folder delete failed");
+        })
+      );
+      setCloudFolders((prev) => prev.filter((folder) => !ids.includes(folder.id)));
+      setCloudProjects((prev) => prev.map((project) => (
+        project.folderId && ids.includes(project.folderId) ? { ...project, folderId: null } : project
+      )));
+      setLibraryMedia((prev) => prev.map((asset) => (
+        asset.folderId && ids.includes(asset.folderId) ? { ...asset, folderId: null } : asset
+      )));
+      if (selectedFolderId && ids.includes(selectedFolderId)) setSelectedFolderId(null);
+      if (selectedMediaFolderId && ids.includes(selectedMediaFolderId)) setSelectedMediaFolderId(null);
+      if (setupMediaFolderId && ids.includes(setupMediaFolderId)) setSetupMediaFolderId(null);
+      setSelectedFolderIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setFolderCardMenuId(null);
+      setDeleteFolderIds([]);
+      setDeleteFolderStatus("");
+      setCloudStatus(ids.length === 1 ? "Folder deleted." : "Folders deleted.");
+      await Promise.all([fetchStudioHome(), fetchStudioMedia()]);
+    } catch {
+      setDeleteFolderStatus("Could not delete that folder.");
+    } finally {
+      setDeletingFolder(false);
+    }
+  }, [
+    deleteFolderIds,
+    deletingFolder,
+    fetchStudioHome,
+    fetchStudioMedia,
+    selectedFolderId,
+    selectedMediaFolderId,
+    setupMediaFolderId,
+  ]);
+
   const addHomeProjectToFolder = useCallback(
     async (cardId: string, folderId: string) => {
       try {
@@ -2834,6 +2913,7 @@ export default function Studio2Page() {
         homeMode === "media" ? selectedMediaFolderId : null
       );
       if (folderId && homeMode === "designs") setSelectedFolderId(folderId);
+      setSelectedFolderIds([]);
       setHomeFolderName("");
       setHomeFolderStatus("");
       setCreateFolderModalOpen(false);
@@ -2934,6 +3014,7 @@ export default function Studio2Page() {
           setFolderMenuOpen(false);
           setCardMenuId(null);
           setMediaCardMenuId(null);
+          setFolderCardMenuId(null);
         }}
         style={{
           minHeight: "100vh",
@@ -3030,16 +3111,47 @@ export default function Studio2Page() {
                 onClick={(event) => {
                   event.stopPropagation();
                   setSelectMode((active) => {
-                    if (active) setSelectedDesignIds([]);
+                    if (active) {
+                      setSelectedDesignIds([]);
+                      setSelectedFolderIds([]);
+                    }
                     return !active;
                   });
                   setCreateMenuOpen(false);
                   setFolderMenuOpen(false);
                   setCardMenuId(null);
+                  setFolderCardMenuId(null);
                 }}
               >
                 <Square size={16} />
-                {selectMode && selectedDesignIds.length ? `${selectedDesignIds.length} Selected` : "Select"}
+                {selectMode && selectedHomeCount ? `${selectedHomeCount} Selected` : "Select"}
+              </button>
+            )}
+            {homeMode === "designs" && selectMode && selectedFolderIds.length > 0 && (
+              <button
+                style={{
+                  height: 42,
+                  border: "1px solid rgba(255,107,107,0.45)",
+                  borderRadius: 8,
+                  background: "rgba(255,107,107,0.12)",
+                  color: "#ff9b9b",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "0 12px",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  fontWeight: 650,
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDeleteFolderIds(selectedFolderIds);
+                  setDeleteFolderStatus("");
+                }}
+              >
+                <Trash2 size={16} />
+                Delete
               </button>
             )}
             <button
@@ -3053,6 +3165,9 @@ export default function Studio2Page() {
                 event.stopPropagation();
                 setFolderMenuOpen((open) => !open);
                 setCreateMenuOpen(false);
+                setCardMenuId(null);
+                setMediaCardMenuId(null);
+                setFolderCardMenuId(null);
               }}
             >
               <Folder size={17} />
@@ -3078,6 +3193,7 @@ export default function Studio2Page() {
                   event.stopPropagation();
                   setCreateMenuOpen((open) => !open);
                   setFolderMenuOpen(false);
+                  setFolderCardMenuId(null);
                 }}
               >
                 <Plus size={16} /> Create <ChevronDown size={14} />
@@ -3102,11 +3218,12 @@ export default function Studio2Page() {
               >
                 <HomeMenuButton
                   icon={Folder}
-                  label="All designs"
+                  label="Designs"
                   onClick={() => {
                     setHomeMode("designs");
                     setSelectedFolderId(null);
                     setSelectedMediaFolderId(null);
+                    setSelectedFolderIds([]);
                     setFolderMenuOpen(false);
                   }}
                 />
@@ -3119,6 +3236,7 @@ export default function Studio2Page() {
                     setSelectedMediaFolderId(null);
                     setSelectMode(false);
                     setSelectedDesignIds([]);
+                    setSelectedFolderIds([]);
                     setFolderMenuOpen(false);
                   }}
                 />
@@ -3132,6 +3250,7 @@ export default function Studio2Page() {
                       setHomeMode("designs");
                       setSelectedFolderId(folder.id);
                       setSelectedMediaFolderId(null);
+                      setSelectedFolderIds([]);
                       setFolderMenuOpen(false);
                     }}
                   />
@@ -3187,7 +3306,15 @@ export default function Studio2Page() {
         <main style={{ padding: "34px 40px 70px" }}>
             {homeMode === "designs" && selectedFolder && (
               <div style={{ marginBottom: 28, display: "flex", alignItems: "center", gap: 12 }}>
-                <button type="button" onClick={() => setSelectedFolderId(null)} style={homeBackButtonStyle}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFolderId(null);
+                    setSelectedDesignIds([]);
+                    setSelectedFolderIds([]);
+                  }}
+                  style={homeBackButtonStyle}
+                >
                   <ArrowLeft size={15} /> Back to home
                 </button>
                 <div>
@@ -3215,35 +3342,92 @@ export default function Studio2Page() {
                 </button>
                 <div>
                   <div style={homeKickerStyle}>Media Library</div>
-                  <div style={homeCrumbTitleStyle}>{currentMediaFolder?.name || "All media"}</div>
+                  <div style={homeCrumbTitleStyle}>{currentMediaFolder?.name || "All Media"}</div>
                 </div>
               </div>
             )}
 
             {homeMode === "designs" ? (
               <>
-                <HomeSectionTitle title="Folders" />
-                {visibleDesignFolders.length > 0 && (
+                {!selectedFolder && <HomeSectionTitle title="Folders" />}
+                {!selectedFolder && visibleDesignFolders.length > 0 && (
                   <div style={homeGridStyle}>
-                    {visibleDesignFolders.map((folder) => (
-                      <button
-                        key={folder.id}
-                        className="studio2-design-card"
-                        onClick={() => setSelectedFolderId(folder.id)}
-                        style={folderCardStyle}
-                      >
-                        <div style={folderThumbStyle}>
-                          <Folder size={38} strokeWidth={1.7} />
+                    {visibleDesignFolders.map((folder) => {
+                      const isSelected = selectedFolderIds.includes(folder.id);
+                      return (
+                        <div
+                          key={folder.id}
+                          role="button"
+                          tabIndex={0}
+                          className="studio2-design-card"
+                          onClick={() => {
+                            if (selectMode) {
+                              toggleHomeFolderSelection(folder.id);
+                              return;
+                            }
+                            setSelectedFolderId(folder.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              if (selectMode) toggleHomeFolderSelection(folder.id);
+                              else setSelectedFolderId(folder.id);
+                            }
+                          }}
+                          style={{
+                            ...folderCardStyle,
+                            position: "relative",
+                            overflow: "visible",
+                            border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border}`,
+                            boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.16)" : "none",
+                          }}
+                        >
+                          <button
+                            className="studio2-card-menu-button"
+                            aria-label="Folder options"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setFolderCardMenuId((openId) => (openId === folder.id ? null : folder.id));
+                              setCardMenuId(null);
+                              setMediaCardMenuId(null);
+                              setCreateMenuOpen(false);
+                              setFolderMenuOpen(false);
+                            }}
+                            style={cardMenuButtonStyle}
+                          >
+                            <MoreHorizontal size={17} />
+                          </button>
+                          {selectMode && (
+                            <span style={selectBadgeStyle(isSelected)}>
+                              {isSelected && <CheckCircle2 size={15} />}
+                            </span>
+                          )}
+                          {folderCardMenuId === folder.id && (
+                            <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                              <HomeMenuButton
+                                icon={Trash2}
+                                label="Delete"
+                                onClick={() => {
+                                  setFolderCardMenuId(null);
+                                  setDeleteFolderIds([folder.id]);
+                                  setDeleteFolderStatus("");
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div style={folderThumbStyle}>
+                            <Folder size={38} strokeWidth={1.7} />
+                          </div>
+                          <div style={homeCardBodyStyle}>
+                            <div style={homeCardTitleStyle}>{folder.name}</div>
+                          </div>
                         </div>
-                        <div style={homeCardBodyStyle}>
-                          <div style={homeCardTitleStyle}>{folder.name}</div>
-                        </div>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
-                <HomeSectionTitle title="Designs" />
+                {!selectedFolder && <HomeSectionTitle title="Designs" />}
                 <div style={homeGridStyle}>
                   {homeProjects.map((project) => {
                     const isSelected = selectedDesignIds.includes(project.id);
@@ -3271,6 +3455,7 @@ export default function Studio2Page() {
                             setCardMenuId((openId) => (openId === project.id ? null : project.id));
                             setCreateMenuOpen(false);
                             setFolderMenuOpen(false);
+                            setFolderCardMenuId(null);
                           }}
                           style={cardMenuButtonStyle}
                         >
@@ -3307,7 +3492,7 @@ export default function Studio2Page() {
                         )}
                         <div style={projectThumbStyle(project.thumb)}>
                           {project.thumb ? (
-                            <img src={project.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <img src={getMediaPreviewSrc(project.thumb)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
                             <span style={{ color: ADS_BRAND.text4 }}>
                               <Palette size={38} strokeWidth={1.7} />
@@ -3350,19 +3535,55 @@ export default function Studio2Page() {
                 {visibleMediaFolders.length > 0 && (
                   <div style={homeGridStyle}>
                     {visibleMediaFolders.map((folder) => (
-                      <button
+                      <div
                         key={folder.id}
+                        role="button"
+                        tabIndex={0}
                         className="studio2-design-card"
                         onClick={() => setSelectedMediaFolderId(folder.id)}
-                        style={folderCardStyle}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedMediaFolderId(folder.id);
+                          }
+                        }}
+                        style={{ ...folderCardStyle, position: "relative", overflow: "visible" }}
                       >
+                        <button
+                          className="studio2-card-menu-button"
+                          aria-label="Folder options"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setFolderCardMenuId((openId) => (openId === folder.id ? null : folder.id));
+                            setCardMenuId(null);
+                            setMediaCardMenuId(null);
+                            setCreateMenuOpen(false);
+                            setFolderMenuOpen(false);
+                          }}
+                          style={cardMenuButtonStyle}
+                        >
+                          <MoreHorizontal size={17} />
+                        </button>
+                        {folderCardMenuId === folder.id && (
+                          <div className="studio2-create-menu" onClick={(event) => event.stopPropagation()} style={cardMenuStyle}>
+                            <HomeMenuButton
+                              icon={Trash2}
+                              label="Delete"
+                              onClick={() => {
+                                setFolderCardMenuId(null);
+                                setDeleteFolderIds([folder.id]);
+                                setDeleteFolderStatus("");
+                              }}
+                            />
+                          </div>
+                        )}
                         <div style={folderThumbStyle}>
                           <Folder size={38} strokeWidth={1.7} />
                         </div>
                         <div style={homeCardBodyStyle}>
                           <div style={homeCardTitleStyle}>{folder.name}</div>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -3379,6 +3600,7 @@ export default function Studio2Page() {
                           setMediaCardMenuId((openId) => (openId === asset.id ? null : asset.id));
                           setCreateMenuOpen(false);
                           setFolderMenuOpen(false);
+                          setFolderCardMenuId(null);
                         }}
                         style={cardMenuButtonStyle}
                       >
@@ -3399,9 +3621,9 @@ export default function Studio2Page() {
                       )}
                       <div style={projectThumbStyle(asset.url)}>
                         {asset.kind === "video" ? (
-                          <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <video src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
-                          <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         )}
                         {asset.kind === "video" && (
                           <span style={mediaVideoBadgeStyle}>
@@ -3788,6 +4010,79 @@ export default function Studio2Page() {
             </div>
           </div>
         )}
+        {deleteFolderIds.length > 0 && (
+          <div
+            onClick={() => {
+              if (deletingFolder) return;
+              setDeleteFolderIds([]);
+              setDeleteFolderStatus("");
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.62)",
+              zIndex: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 430,
+                borderRadius: 12,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 80px rgba(0,0,0,0.58)",
+                padding: 18,
+              }}
+            >
+              <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 8 }}>
+                Delete {deleteFolderIds.length === 1 ? "folder" : "folders"}?
+              </div>
+              <div style={{ color: ADS_BRAND.text3, fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
+                {deleteFolders.length === 1 ? (
+                  <>
+                    This deletes <strong style={{ color: ADS_BRAND.text2 }}>{deleteFolders[0]?.name}</strong>. Its contents will move back to {deleteFolders[0]?.folderType === "media" ? "All Media" : "Designs"}.
+                  </>
+                ) : (
+                  <>This deletes {deleteFolderIds.length} folders. Their contents will move back to Designs.</>
+                )}
+              </div>
+              {deleteFolderStatus && (
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginBottom: 12 }}>{deleteFolderStatus}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  style={buttonStyle(false)}
+                  disabled={deletingFolder}
+                  onClick={() => {
+                    setDeleteFolderIds([]);
+                    setDeleteFolderStatus("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingFolder}
+                  onClick={() => void confirmDeleteFolders()}
+                  style={{
+                    ...buttonStyle(false),
+                    border: "1px solid rgba(255,107,107,0.55)",
+                    background: deletingFolder ? "rgba(255,107,107,0.15)" : "#ff6b6b",
+                    color: deletingFolder ? "#ffb3b3" : "#190606",
+                    cursor: deletingFolder ? "wait" : "pointer",
+                  }}
+                >
+                  <Trash2 size={14} /> {deletingFolder ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {deleteMediaId && (
           <div
             onClick={() => {
@@ -3972,7 +4267,7 @@ export default function Studio2Page() {
                   }}
                 >
                   <ImagePlus size={14} />
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Loose media</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>All Media</span>
                 </button>
                 {setupMediaFolderOptions.map((folder) => (
                   <button
@@ -4005,7 +4300,7 @@ export default function Studio2Page() {
 
             <div style={{ marginTop: 16 }}>
               <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-                {setupMediaFolder ? setupMediaFolder.name : "Uploaded media"}
+                {setupMediaFolder ? setupMediaFolder.name : "All Media"}
               </div>
               <div
                 style={{
@@ -4056,9 +4351,9 @@ export default function Studio2Page() {
                           }}
                         >
                           {asset.kind === "video" ? (
-                            <video src={asset.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <video src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <img src={asset.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           )}
                           {asset.kind === "video" && (
                             <span
@@ -4484,7 +4779,7 @@ export default function Studio2Page() {
                 }}
                 title={`Ad ${index + 1}`}
               >
-                <img src={creative.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 {creative.approved && (
                   <span style={{
                     position: "absolute",
