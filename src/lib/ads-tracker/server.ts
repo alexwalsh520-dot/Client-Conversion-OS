@@ -299,6 +299,9 @@ interface BuildPayloadOptions {
   financialResolvedAlerts?: ResolvedAttributionAlert[];
   salesCollectedRevenue?: number;
   allTimePaidAttributedRevenue?: number;
+  allTimeUnattributedRevenue?: number;
+  allTimeOrganicRevenue?: number;
+  allTimeIgnoredRevenue?: number;
   sourceStatus?: Record<string, unknown>;
   eventsHistory?: AttributionHistoryEvent[];
   attributionKeywordOptions?: Record<string, unknown>[];
@@ -1036,6 +1039,10 @@ function buildPayload(
   const organicRevenue = sumResolvedRevenue(financialResolvedAlerts, "organic");
   const ignoredRevenue = sumResolvedRevenue(financialResolvedAlerts, "ignore");
   const allTimePaidAttributedRevenue = options.allTimePaidAttributedRevenue ?? totalCollected;
+  const allTimeUnattributedRevenue =
+    options.allTimeUnattributedRevenue ?? sumAlertRevenue(unmatchedSales);
+  const allTimeOrganicRevenue = options.allTimeOrganicRevenue ?? organicRevenue;
+  const allTimeIgnoredRevenue = options.allTimeIgnoredRevenue ?? ignoredRevenue;
   const directSalesCollectedRevenue = options.salesCollectedRevenue;
   const totalCollectedRevenue =
     directSalesCollectedRevenue === undefined
@@ -1076,6 +1083,11 @@ function buildPayload(
       unattributedRevenue: finalUnattributedRevenue,
       organicRevenue,
       ignoredRevenue,
+      potentialAttributedRevenue: totalCollected + finalUnattributedRevenue,
+      potentialRoi: safeDiv(totalCollected + finalUnattributedRevenue, totalSpend),
+      allTimeUnattributedRevenue,
+      allTimeOrganicRevenue,
+      allTimeIgnoredRevenue,
       organicUnattributedRevenue: finalUnattributedRevenue,
       totalCollectedRevenue,
       contractedRevenue: totalContracted,
@@ -1103,6 +1115,22 @@ function buildPayload(
       unattributedRevenue: finalUnattributedRevenue,
       organicRevenue,
       ignoredRevenue,
+      potentialAttributedRevenue: totalCollected + finalUnattributedRevenue,
+      potentialRoi: safeDiv(totalCollected + finalUnattributedRevenue, totalSpend),
+      selectedRange: {
+        paidAttributedRevenue: totalCollected,
+        unattributedRevenue: finalUnattributedRevenue,
+        organicRevenue,
+        ignoredRevenue,
+        potentialAttributedRevenue: totalCollected + finalUnattributedRevenue,
+        potentialRoi: safeDiv(totalCollected + finalUnattributedRevenue, totalSpend),
+      },
+      allTime: {
+        paidAttributedRevenue: allTimePaidAttributedRevenue,
+        unattributedRevenue: allTimeUnattributedRevenue,
+        organicRevenue: allTimeOrganicRevenue,
+        ignoredRevenue: allTimeIgnoredRevenue,
+      },
       organicUnattributedRevenue: finalUnattributedRevenue,
       totalCollectedRevenue,
       unmatchedSales,
@@ -3345,6 +3373,13 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (sum, row) => sum + dollars(row.collected_revenue_cents || 0),
     0
   );
+  const allTimeResolvedAlerts = alertAttributionSalesRows
+    .map((row) => {
+      const clientKey = clientFromOffer(row);
+      const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+      return resolution ? resolvedAlertForRow(row, clientKey, resolution) : null;
+    })
+    .filter((alert): alert is ResolvedAttributionAlert => Boolean(alert));
   const allTimeResolvedPaidRevenue = alertAttributionSalesRows.reduce((sum, row) => {
     const clientKey = clientFromOffer(row);
     if (!clientKey || alertBackfilledDateKeys.has(`${clientKey}:${row.date}`)) return sum;
@@ -3352,6 +3387,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     return resolution?.action === "attribute" ? sum + saleAmount(row) : sum;
   }, 0);
   const allTimePaidAttributedRevenue = allTimeBackfillPaidRevenue + allTimeResolvedPaidRevenue;
+  const allTimeOrganicRevenue = sumResolvedRevenue(allTimeResolvedAlerts, "organic");
+  const allTimeIgnoredRevenue = sumResolvedRevenue(allTimeResolvedAlerts, "ignore");
+  const allTimeUnattributedRevenue = sumAlertRevenue(attributionAlerts);
   const attributionPickerOptions = attributionPickerOptionsFromMetaRows(alertAttributionRows);
   const sourceStatus = {
     meta: {
@@ -3385,6 +3423,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     financialResolvedAlerts: resolvedAlerts,
     salesCollectedRevenue,
     allTimePaidAttributedRevenue,
+    allTimeUnattributedRevenue,
+    allTimeOrganicRevenue,
+    allTimeIgnoredRevenue,
     attributionKeywordOptions: attributionPickerOptions.keywordOptions,
     attributionCampaignOptions: attributionPickerOptions.campaignOptions,
     sourceStatus,

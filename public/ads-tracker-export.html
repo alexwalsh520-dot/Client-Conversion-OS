@@ -109,7 +109,11 @@
 	  .alerts-head{min-height:92px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 	  .alerts-title{font-size:11px;line-height:1.15;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-3)}
 	  .alerts-sub{font-size:11px;line-height:1.25;color:var(--text-4);margin-top:6px;font-weight:400;letter-spacing:0}
-	  .alerts-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 20px;border-bottom:1px solid var(--border);background:#0d0d0d}
+	  .alerts-summary-shell{padding:12px 20px;border-bottom:1px solid var(--border);background:#0d0d0d}
+	  .alerts-summary-scope{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+	  .alerts-summary-scope-label{font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.13em;color:var(--text-4);font-weight:500}
+	  .alerts-summary-scope-pill{height:20px;padding:0 8px;border:1px solid #2b2b2b;border-radius:999px;background:#101010;color:var(--text-3);display:inline-flex;align-items:center;font-size:10px;font-weight:500}
+	  .alerts-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 	  .alerts-summary-card{min-height:68px;border:1px solid var(--border);border-radius:7px;background:#101010;padding:11px 12px}
 	  .alerts-summary-card.good{border-color:rgba(125,211,168,.22);background:linear-gradient(180deg,rgba(125,211,168,.055),#101010 70%)}
 	  .alerts-summary-card.warn{border-color:rgba(232,154,148,.25);background:linear-gradient(180deg,rgba(232,154,148,.06),#101010 72%)}
@@ -118,6 +122,12 @@
 	  .alerts-summary-value.good{color:var(--green)}
 	  .alerts-summary-value.warn{color:var(--red)}
 	  .alerts-summary-note{font-size:10px;color:var(--text-4);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+	  .potential-roas-card{min-height:270px}
+	  .potential-roas-breakdown{display:grid;gap:10px;margin-top:26px;padding-top:18px;border-top:1px solid var(--border)}
+	  .potential-roas-row{display:flex;align-items:center;justify-content:space-between;gap:14px;color:var(--text-3);font-size:12px}
+	  .potential-roas-row strong{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+	  .potential-roas-row.warn strong{color:var(--red)}
+	  .potential-roas-row.gold strong{color:var(--gold)}
 	  .alerts-tabs{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--border-2);border-radius:999px;background:#090909}
 	  .alerts-tab{height:30px;padding:0 11px;border-radius:999px;color:var(--text-3);font-size:12px;display:inline-flex;align-items:center;gap:7px}
 	  .alerts-tab.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
@@ -1762,6 +1772,61 @@ function ROASChart({campaigns=CAMPAIGNS}){
   );
 }
 
+function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null}){
+  const labels = labelsFromCampaigns(campaigns);
+  const spend = seriesForCampaignKey("spend", "all", campaigns, labels);
+  const confirmedRevenue = seriesForCampaignKey("collected", "all", campaigns, labels);
+  const totalSpend = spend.reduce((a,b)=>a+b,0);
+  const confirmed = Number(
+    dashboard?.attribution?.selectedRange?.paidAttributedRevenue ??
+    dashboard?.summary?.paidAttributedRevenue ??
+    confirmedRevenue.reduce((a,b)=>a+b,0)
+  );
+  const unattributed = Number(
+    dashboard?.attribution?.selectedRange?.unattributedRevenue ??
+    dashboard?.summary?.unattributedRevenue ??
+    0
+  );
+  const potential = confirmed + unattributed;
+  const potentialRoas = totalSpend ? potential / totalSpend : 0;
+
+  return (
+    <div className="panel chart-card potential-roas-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">Potential ROAS</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{potentialRoas.toFixed(2)}×</span>
+            <span className="chart-sub-label">if unresolved is paid</span>
+          </div>
+        </div>
+      </div>
+      <div className="potential-roas-breakdown">
+        <div className="potential-roas-row gold">
+          <span>Confirmed paid revenue</span>
+          <strong>{fmtUsd(confirmed)}</strong>
+        </div>
+        <div className="potential-roas-row warn">
+          <span>Unattributed revenue</span>
+          <strong>{fmtUsd(unattributed)}</strong>
+        </div>
+        <div className="potential-roas-row">
+          <span>Ad spend</span>
+          <strong>{fmtUsd(totalSpend)}</strong>
+        </div>
+        <div className="potential-roas-row">
+          <span>Potential paid revenue</span>
+          <strong>{fmtUsd(potential)}</strong>
+        </div>
+      </div>
+      <div className="chart-legend">
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--gold)'}}></span>Confirmed</span>
+        <span className="chart-legend-item"><span className="chart-sw" style={{background:'var(--red)'}}></span>Unattributed</span>
+      </div>
+    </div>
+  );
+}
+
 // ------- Cost per DM chart
 // Attribute cost per DM either overall (spend / msgs aggregated) or per keyword (spend of keyword / msgs count)
 function seriesCpmOverall(client, campaigns=CAMPAIGNS, labels=DAY_LABELS){
@@ -2105,8 +2170,8 @@ function CACChart({campaigns=CAMPAIGNS}){
 }
 
 // ------- Customizable metric card board
-const METRIC_CARD_STORAGE_KEY = "ccos.adsTracker.metricCards.v1";
-const DEFAULT_METRIC_CARD_IDS = ["roas","ad_roas","cost_per_dm","cac"];
+const METRIC_CARD_STORAGE_KEY = "ccos.adsTracker.metricCards.v2";
+const DEFAULT_METRIC_CARD_IDS = ["roas","potential_roas","ad_roas","cost_per_dm","cac"];
 
 function safeRatio(num, den){
   return den ? num / den : 0;
@@ -2335,6 +2400,7 @@ function GenericMetricCard({metricId, campaigns=CAMPAIGNS}){
 
 const METRIC_CARD_DEFS = [
   {id:"roas", label:"ROAS", meta:"Revenue compared with ad spend", render:({campaigns})=><ROASChart campaigns={campaigns}/>},
+  {id:"potential_roas", label:"Potential ROAS", meta:"Confirmed plus unattributed revenue", render:({campaigns,dashboard})=><PotentialROASCard campaigns={campaigns} dashboard={dashboard}/>},
   {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns,dashboard})=><AdROASChart campaigns={campaigns} dashboard={dashboard}/>},
   {id:"cost_per_dm", label:"Cost per DM", meta:"Spend divided by messages", render:({campaigns})=><CostPerDMChart campaigns={campaigns}/>},
   {id:"cac", label:"CAC", meta:"Cost per client", render:({campaigns})=><CACChart campaigns={campaigns}/>},
@@ -3410,30 +3476,46 @@ function recentEntriesFromDashboard(dashboard){
   });
 }
 
-function AttributionSummaryTiles({dashboard, alerts}){
+function AttributionSummaryTiles({dashboard, alerts, scope="range"}){
   const summary = dashboard?.summary || {};
   const attribution = dashboard?.attribution || {};
-  const paid = Number(attribution.allTimePaidAttributedRevenue ?? summary.allTimePaidAttributedRevenue ?? attribution.paidAttributedRevenue ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
-  const unresolved = (alerts || []).reduce((sum, alert) => sum + Number(alert.amount || 0), 0);
-  const organic = Number(attribution.organicRevenue ?? summary.organicRevenue ?? 0);
+  const isAllTime = scope === "allTime";
+  const scopedTotals = isAllTime
+    ? (attribution.allTime || {})
+    : (attribution.selectedRange || {});
+  const query = dashboard?.query || {};
+  const alertsInRange = (alerts || []).filter(alert => {
+    if(isAllTime) return true;
+    if(!query.dateFrom || !query.dateTo || !alert?.date) return false;
+    return alert.date >= query.dateFrom && alert.date <= query.dateTo;
+  });
+  const paid = Number(scopedTotals.paidAttributedRevenue ?? (isAllTime ? attribution.allTimePaidAttributedRevenue : attribution.paidAttributedRevenue) ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
+  const unresolved = Number(scopedTotals.unattributedRevenue ?? (isAllTime ? attribution.allTimeUnattributedRevenue : attribution.unattributedRevenue) ?? alertsInRange.reduce((sum, alert) => sum + Number(alert.amount || 0), 0));
+  const organic = Number(scopedTotals.organicRevenue ?? (isAllTime ? attribution.allTimeOrganicRevenue : attribution.organicRevenue) ?? summary.organicRevenue ?? 0);
   const unattributedIsClear = unresolved <= 0;
 
   return (
-    <div className="alerts-summary">
-      <div className="alerts-summary-card">
-        <div className="alerts-summary-label">Attributed</div>
-        <div className="alerts-summary-value">{fmtUsd(paid)}</div>
-        <div className="alerts-summary-note">Tied to paid keywords</div>
+    <div className="alerts-summary-shell">
+      <div className="alerts-summary-scope">
+        <div className="alerts-summary-scope-label">Attribution totals</div>
+        <div className="alerts-summary-scope-pill">{isAllTime ? "All time" : "Selected range"}</div>
       </div>
-      <div className="alerts-summary-card">
-        <div className="alerts-summary-label">Organic</div>
-        <div className="alerts-summary-value">{fmtUsd(organic)}</div>
-        <div className="alerts-summary-note">Resolved as non-paid</div>
-      </div>
-      <div className={"alerts-summary-card "+(unattributedIsClear ? "good" : "warn")}>
-        <div className="alerts-summary-label">Unattributed</div>
-        <div className={"alerts-summary-value "+(unattributedIsClear ? "good" : "warn")}>{fmtUsd(unresolved)}</div>
-        <div className="alerts-summary-note">{alerts.length} unresolved item{alerts.length===1?"":"s"}</div>
+      <div className="alerts-summary">
+        <div className="alerts-summary-card">
+          <div className="alerts-summary-label">Attributed</div>
+          <div className="alerts-summary-value">{fmtUsd(paid)}</div>
+          <div className="alerts-summary-note">Tied to paid ads</div>
+        </div>
+        <div className="alerts-summary-card">
+          <div className="alerts-summary-label">Organic</div>
+          <div className="alerts-summary-value">{fmtUsd(organic)}</div>
+          <div className="alerts-summary-note">Resolved as non-paid</div>
+        </div>
+        <div className={"alerts-summary-card "+(unattributedIsClear ? "good" : "warn")}>
+          <div className="alerts-summary-label">Unattributed</div>
+          <div className={"alerts-summary-value "+(unattributedIsClear ? "good" : "warn")}>{fmtUsd(unresolved)}</div>
+          <div className="alerts-summary-note">{alertsInRange.length} unresolved item{alertsInRange.length===1?"":"s"}</div>
+        </div>
       </div>
     </div>
   );
@@ -3915,104 +3997,20 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
 function AttributionAlerts({dashboard, campaigns, onResolve, onToast, onOpenWorkspace}){
   const attribution = dashboard?.attribution || {};
   const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
-  const keywordOptions = Array.isArray(attribution.keywordOptions) ? attribution.keywordOptions : [];
-  const campaignOptions = Array.isArray(attribution.campaignOptions) ? attribution.campaignOptions : [];
-  const [filter, setFilter] = useState("all");
-  const [modal, setModal] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const counts = {
-    all: alerts.length,
-    tyson: alerts.filter(a=>a.clientKey==="tyson").length,
-    keith: alerts.filter(a=>a.clientKey==="keith").length,
-  };
-  const visibleAlerts = filter === "all" ? alerts : alerts.filter(a=>a.clientKey===filter);
-
-  const saveResolution = async (payload) => {
-    if(!payload.saleKey) return;
-    setSaving(true);
-    try{
-      await onResolve(payload);
-      setModal(null);
-    }catch(err){
-      onToast && onToast(err?.message || "Attribution save failed");
-    }finally{
-      setSaving(false);
-    }
-  };
+  const query = dashboard?.query || {};
 
   return (
     <div className="panel alerts-panel">
       <div className="alerts-head">
         <div>
           <div className="alerts-title">Attribution alerts</div>
-          <div className="alerts-sub">{alerts.length} unresolved · items without a clear source keyword</div>
+          <div className="alerts-sub">Preview follows {query.dateFrom && query.dateTo ? `${dateLabelFromIso(query.dateFrom)} - ${dateLabelFromIso(query.dateTo)}` : "selected range"}</div>
         </div>
         <div className="alerts-head-actions">
-          <div className="alerts-tabs">
-            {[
-              ["all","All",counts.all],
-              ["tyson","Tyson",counts.tyson],
-              ["keith","Keith",counts.keith],
-            ].map(([id,label,count])=>(
-              <button key={id} className={"alerts-tab "+(filter===id?"active":"")} onClick={()=>setFilter(id)}>
-                {label}
-                <span className="alerts-tab-count">{count}</span>
-              </button>
-            ))}
-          </div>
           <button className="alert-workspace-btn" onClick={onOpenWorkspace}>Open workspace</button>
         </div>
       </div>
-      <AttributionSummaryTiles dashboard={dashboard} alerts={alerts}/>
-      <div className="alerts-table-head alerts-grid">
-        <div><div className="alert-check"></div></div>
-        <div>Customer</div>
-        <div>Campaign</div>
-        <div>Amount</div>
-        <div></div>
-      </div>
-      <div>
-        {visibleAlerts.length === 0 && <div className="alert-empty">No unresolved attribution alerts.</div>}
-        {visibleAlerts.slice(0,8).map(alert => (
-          <div className="alert-row alerts-grid" key={alertSaleKey(alert)}>
-            <div><div className="alert-check"></div></div>
-            <div>
-              <div className="alert-name">{alert.name || "Unknown"}</div>
-              <div className="alert-meta">{alertTimestampLabel(alert)}</div>
-            </div>
-            <div className="alert-campaign">
-              <span className={"alert-campaign-dot "+(alert.clientKey==="keith"?"keith":"")}></span>
-              {clientLabel(alert.clientKey)}
-            </div>
-            <div className="alert-amount">{alertAmountLabel(alert)}</div>
-            <div className="alert-actions">
-              {alert.manychatUrl && (
-                <a
-                  className="alert-open-link"
-                  href={alert.manychatUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={e=>e.stopPropagation()}
-                  title="Open ManyChat conversation"
-                >↗</a>
-              )}
-              <button className="alert-resolve" onClick={()=>setModal({alert})}>Resolve →</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {modal && (
-        <AttributionAlertModal
-          alert={modal.alert}
-          existing={modal.existing}
-          campaigns={campaigns}
-          keywordOptions={keywordOptions}
-          campaignOptions={campaignOptions}
-          saving={saving}
-          onClose={()=>setModal(null)}
-          onResolve={saveResolution}
-        />
-      )}
+      <AttributionSummaryTiles dashboard={dashboard} alerts={alerts} scope="range"/>
     </div>
   );
 }
@@ -4082,7 +4080,7 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
         <button className="workspace-close" onClick={onClose}>Back to dashboard</button>
       </div>
       <div className="workspace-body">
-        <AttributionSummaryTiles dashboard={dashboard} alerts={alerts}/>
+        <AttributionSummaryTiles dashboard={dashboard} alerts={alerts} scope="allTime"/>
         <div className="workspace-toolbar">
           <div className="workspace-filter-row">
             <div className="alerts-tabs">
