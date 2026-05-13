@@ -459,7 +459,7 @@ function getCanvasImageSrc(src: string) {
 }
 
 function getMediaPreviewSrc(src: string) {
-  return src;
+  return getCanvasImageSrc(src);
 }
 
 function setStudioCardDragImage(event: React.DragEvent<HTMLElement>) {
