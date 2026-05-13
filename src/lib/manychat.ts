@@ -16,7 +16,7 @@
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson_sonnek" | "keith_holland" | "zoe_and_emily";
+type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
 
 // ── Types ─────────────────────────────────────────────────────────
 
