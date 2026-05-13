@@ -161,12 +161,13 @@
 	  .workspace-type-tab.active .alerts-tab-count{border-color:#3c331f;color:var(--gold)}
 	  .workspace-table{border:1px solid var(--border);border-radius:9px;background:var(--panel);overflow:hidden}
 	  .workspace-grid{display:grid;grid-template-columns:minmax(180px,1.25fr) 128px 120px 118px 104px minmax(190px,1.1fr) 154px;align-items:center;gap:12px}
+	  .workspace-grid>*{min-width:0}
 	  .workspace-table-head{min-height:44px;padding:0 20px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-4);font-weight:500}
 	  .workspace-row{min-height:68px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer}
 	  .workspace-row:last-child{border-bottom:none}
 	  .workspace-row:hover{background:#141414}
 	  .workspace-name{font-size:13px;line-height:1.15;font-weight:650;color:var(--text);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	  .workspace-meta{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.25;color:var(--text-3);margin-top:5px}
+	  .workspace-meta{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.25;color:var(--text-3);margin-top:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 	  .workspace-type-pill{height:24px;padding:0 9px;border:1px solid #2a2a2a;border-radius:999px;background:#111;color:var(--text-2);font-size:11px;display:inline-flex;align-items:center;width:max-content}
 	  .workspace-type-pill.revenue{border-color:rgba(211,180,119,.28);color:var(--gold);background:rgba(211,180,119,.06)}
 	  .workspace-type-pill.booking{border-color:rgba(122,167,212,.28);color:var(--blue);background:rgba(122,167,212,.06)}
