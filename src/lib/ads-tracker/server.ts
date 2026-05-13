@@ -232,7 +232,7 @@ interface UnmatchedSale {
   eventAt?: string | null;
 }
 
-type AttributionResolutionAction = "attribute" | "organic" | "ignore";
+type AttributionResolutionAction = "attribute" | "organic" | "unattributed" | "ignore";
 
 interface AttributionExceptionRow {
   id: string;
@@ -323,7 +323,7 @@ interface AttributionHistoryEvent {
     | "manual_calls_taken"
     | "manual_new_clients"
     | "manual_collected_revenue";
-  status: "attributed" | "needs_review" | "missing_keyword" | "organic" | "ignored";
+  status: "attributed" | "needs_review" | "missing_keyword" | "organic" | "unattributed" | "ignored";
   clientKey: string | null;
   keyword: string;
   campaignName: string | null;
@@ -1036,6 +1036,7 @@ function buildPayload(
   const financialUnmatchedSales = options.financialUnmatchedSales || unmatchedSales;
   const financialResolvedAlerts = options.financialResolvedAlerts || resolvedAlerts;
   const unattributedRevenue = sumAlertRevenue(financialUnmatchedSales);
+  const resolvedUnattributedRevenue = sumResolvedRevenue(financialResolvedAlerts, "unattributed");
   const organicRevenue = sumResolvedRevenue(financialResolvedAlerts, "organic");
   const ignoredRevenue = sumResolvedRevenue(financialResolvedAlerts, "ignore");
   const allTimePaidAttributedRevenue = options.allTimePaidAttributedRevenue ?? totalCollected;
@@ -1046,13 +1047,16 @@ function buildPayload(
   const directSalesCollectedRevenue = options.salesCollectedRevenue;
   const totalCollectedRevenue =
     directSalesCollectedRevenue === undefined
-      ? totalCollected + unattributedRevenue + organicRevenue + ignoredRevenue
+      ? totalCollected + unattributedRevenue + resolvedUnattributedRevenue + organicRevenue + ignoredRevenue
       : Math.max(totalCollected, directSalesCollectedRevenue);
   const impliedUnattributedRevenue = Math.max(
     0,
     totalCollectedRevenue - totalCollected - organicRevenue - ignoredRevenue
   );
-  const finalUnattributedRevenue = Math.max(unattributedRevenue, impliedUnattributedRevenue);
+  const finalUnattributedRevenue = Math.max(
+    unattributedRevenue + resolvedUnattributedRevenue,
+    impliedUnattributedRevenue
+  );
 
   const adRoas = paidRows
     .map((row) => ({
@@ -2216,7 +2220,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 function isResolutionAction(value: unknown): value is AttributionResolutionAction {
-  return value === "attribute" || value === "organic" || value === "ignore";
+  return value === "attribute" || value === "organic" || value === "unattributed" || value === "ignore";
 }
 
 function parseAttributionResolution(row: AttributionExceptionRow): AttributionResolution | null {
@@ -2606,6 +2610,7 @@ function historyStatusForResolution(
 ): AttributionHistoryEvent["status"] | null {
   if (!resolution) return null;
   if (resolution.action === "organic") return "organic";
+  if (resolution.action === "unattributed") return "unattributed";
   if (resolution.action === "ignore") return "ignored";
   return "attributed";
 }
@@ -2747,6 +2752,8 @@ function buildAttributionEventsHistory({
     const reason =
       resolutionStatus === "organic"
         ? "Resolved organic"
+        : resolutionStatus === "unattributed"
+          ? "Marked unattributed"
         : resolutionStatus === "ignored"
           ? "Ignored"
           : !row.name
@@ -3389,7 +3396,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const allTimePaidAttributedRevenue = allTimeBackfillPaidRevenue + allTimeResolvedPaidRevenue;
   const allTimeOrganicRevenue = sumResolvedRevenue(allTimeResolvedAlerts, "organic");
   const allTimeIgnoredRevenue = sumResolvedRevenue(allTimeResolvedAlerts, "ignore");
-  const allTimeUnattributedRevenue = sumAlertRevenue(attributionAlerts);
+  const allTimeUnattributedRevenue =
+    sumAlertRevenue(attributionAlerts) + sumResolvedRevenue(allTimeResolvedAlerts, "unattributed");
   const attributionPickerOptions = attributionPickerOptionsFromMetaRows(alertAttributionRows);
   const sourceStatus = {
     meta: {

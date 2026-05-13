@@ -6,7 +6,7 @@ import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
 export const dynamic = "force-dynamic";
 
 const RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
-const ACTIONS = new Set(["attribute", "organic", "ignore"]);
+const ACTIONS = new Set(["attribute", "organic", "unattributed", "ignore"]);
 const MISSING_DM_KEYWORD_ALERT = "missing_dm_keyword";
 const MISSING_BOOKING_KEYWORD_ALERT = "missing_booking_keyword";
 
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "alert key is required" }, { status: 400 });
   }
   if (!action || !ACTIONS.has(action)) {
-    return NextResponse.json({ error: "action must be attribute, organic, or ignore" }, { status: 400 });
+    return NextResponse.json({ error: "action must be attribute, organic, unattributed, or ignore" }, { status: 400 });
   }
   if (clientKey && !isClientKey(clientKey)) {
     return NextResponse.json({ error: "clientKey must be tyson or keith" }, { status: 400 });

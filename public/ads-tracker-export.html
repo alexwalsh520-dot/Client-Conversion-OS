@@ -597,6 +597,7 @@
   .event-status.attributed{color:var(--green);border-color:rgba(125,211,168,.22);background:rgba(125,211,168,.045)}
   .event-status.needs_review,.event-status.missing_keyword{color:var(--red);border-color:rgba(232,154,148,.22);background:rgba(232,154,148,.045)}
   .event-status.organic{color:var(--blue);border-color:rgba(122,167,212,.2);background:rgba(122,167,212,.04)}
+  .event-status.unattributed{color:var(--red);border-color:rgba(232,154,148,.22);background:rgba(232,154,148,.045)}
   .event-status.ignored{color:var(--text-4)}
 
   /* Chips in filter */
@@ -3278,6 +3279,7 @@ function RecentEntries({extra, includeFallback=false, campaigns=[], onManualSubm
                 needs_review:"Needs review",
                 missing_keyword:"Missing keyword",
                 organic:"Organic",
+                unattributed:"Unattributed",
                 ignored:"Ignored",
               }[e.status] || "Attributed";
               const canResolveLive = isLive && e.saleKey && (e.status === "needs_review" || e.status === "missing_keyword");
@@ -3983,8 +3985,8 @@ function AttributionAlertModal({alert, existing, campaigns, keywordOptions, camp
           )}
         </div>
         <div className="alert-modal-foot">
-          <button className="alert-ignore" onClick={()=>submit("ignore")} disabled={saving}>Ignore</button>
           <div className="alert-foot-actions">
+            <button className="alert-outline-btn" onClick={()=>submit("unattributed")} disabled={saving}>Mark unattributed</button>
             <button className="alert-outline-btn" onClick={()=>submit("organic")} disabled={saving}>Mark organic</button>
             <button className="alert-paid-btn" onClick={()=>submit("attribute")} disabled={saving || !paidReady}>
               {saving ? "Saving…" : "Mark as paid"}
@@ -4077,7 +4079,7 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
         <div>
           <div className="workspace-kicker">All-time task queue</div>
           <div className="workspace-title">Attribution Workspace</div>
-          <div className="workspace-sub">{alerts.length} unresolved · every item must be paid, organic, ignored, or fixed</div>
+          <div className="workspace-sub">{alerts.length} unresolved · every item must be paid, organic, unattributed, or fixed</div>
         </div>
         <button className="workspace-close" onClick={onClose}>Back to dashboard</button>
       </div>
