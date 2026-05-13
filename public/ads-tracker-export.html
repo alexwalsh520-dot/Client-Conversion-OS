@@ -123,11 +123,15 @@
 	  .alerts-summary-value.warn{color:var(--red)}
 	  .alerts-summary-note{font-size:10px;color:var(--text-4);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 	  .potential-roas-card{min-height:270px}
-	  .potential-roas-breakdown{display:grid;gap:10px;margin-top:26px;padding-top:18px;border-top:1px solid var(--border)}
+	  .potential-roas-breakdown{display:grid;gap:10px;margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}
 	  .potential-roas-row{display:flex;align-items:center;justify-content:space-between;gap:14px;color:var(--text-3);font-size:12px}
 	  .potential-roas-row strong{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
 	  .potential-roas-row.warn strong{color:var(--red)}
 	  .potential-roas-row.gold strong{color:var(--gold)}
+	  .potential-roas-row.total{color:var(--text);font-size:13px}
+	  .potential-roas-row.total strong{font-size:14px}
+	  .potential-roas-divider{height:1px;background:var(--border);margin:1px 0}
+	  .potential-roas-spacer{height:8px}
 	  .alerts-tabs{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--border-2);border-radius:999px;background:#090909}
 	  .alerts-tab{height:30px;padding:0 11px;border-radius:999px;color:var(--text-3);font-size:12px;display:inline-flex;align-items:center;gap:7px}
 	  .alerts-tab.active{background:#1b1b1b;color:#f1f1f1;box-shadow:inset 0 0 0 1px #303030}
@@ -1807,16 +1811,18 @@ function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null}){
           <strong>{fmtUsd(confirmed)}</strong>
         </div>
         <div className="potential-roas-row warn">
-          <span>Unattributed revenue</span>
+          <span>+ Unattributed revenue</span>
           <strong>{fmtUsd(unattributed)}</strong>
         </div>
+        <div className="potential-roas-divider"></div>
+        <div className="potential-roas-row total">
+          <span>Potential paid revenue</span>
+          <strong>{fmtUsd(potential)}</strong>
+        </div>
+        <div className="potential-roas-spacer"></div>
         <div className="potential-roas-row">
           <span>Ad spend</span>
           <strong>{fmtUsd(totalSpend)}</strong>
-        </div>
-        <div className="potential-roas-row">
-          <span>Potential paid revenue</span>
-          <strong>{fmtUsd(potential)}</strong>
         </div>
       </div>
     </div>
