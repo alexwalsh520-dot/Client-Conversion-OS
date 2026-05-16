@@ -1908,7 +1908,10 @@ function resolvedAttributionGroupId(
     return `${match.client_key}:${campaignIdentity}:${match.override_ad_id || keyword}`;
   }
 
-  return match.override_group_id || fallbackId;
+  if (match.override_group_id && !isFallbackAttributionGroupId(match.override_group_id)) {
+    return match.override_group_id;
+  }
+  return fallbackId;
 }
 
 function dailyResolvedAttributionGroupId(
@@ -1922,7 +1925,9 @@ function dailyResolvedAttributionGroupId(
   if (campaignIdentity) {
     return `${date}:${resolvedAttributionGroupId(match, keyword, level, fallbackId)}`;
   }
-  if (match.override_group_id) return `${date}:${match.override_group_id}`;
+  if (match.override_group_id && !isFallbackAttributionGroupId(match.override_group_id)) {
+    return `${date}:${match.override_group_id}`;
+  }
   return fallbackId.startsWith(`${date}:`) ? fallbackId : `${date}:${fallbackId}`;
 }
 
