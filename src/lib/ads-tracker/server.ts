@@ -955,6 +955,13 @@ function isFallbackAttributionGroupId(groupId: string) {
   return groupId.includes(":keyword:");
 }
 
+function hasFallbackAttributionOverride(row: unknown) {
+  if (!row || typeof row !== "object") return false;
+  if (!("override_group_id" in row)) return false;
+  const groupId = (row as { override_group_id?: unknown }).override_group_id;
+  return typeof groupId === "string" && isFallbackAttributionGroupId(groupId);
+}
+
 function applySalesToGroups(
   groups: Map<string, Group>,
   salesRows: SheetRow[],
@@ -1370,6 +1377,7 @@ function uniqueMetaGroupResolver<T>(
 
     const attributionDate = attributionDateForResolver(row);
     const isLiveAttribution = isLiveKeywordAttributionRow(row);
+    const shouldUseDateHandoff = isLiveAttribution || hasFallbackAttributionOverride(row);
 
     if (candidates.length === 1) {
       const candidate = candidates[0];
@@ -1404,7 +1412,7 @@ function uniqueMetaGroupResolver<T>(
 
       if (exactDateCandidates[0]) return exactDateCandidates[0].id;
 
-      if (isLiveAttribution) {
+      if (shouldUseDateHandoff) {
         const activeCandidates = candidates.filter((candidate) => candidate.active);
         if (activeCandidates.length === 1) return activeCandidates[0].id;
         if (activeCandidates.length > 1) return fallbackId;
@@ -1432,7 +1440,7 @@ function uniqueMetaGroupResolver<T>(
       }
     }
 
-    if (isLiveAttribution) return fallbackId;
+    if (shouldUseDateHandoff) return fallbackId;
 
     const activeCandidates = candidates.filter((candidate) => candidate.active);
     if (activeCandidates.length === 1) return activeCandidates[0].id;
