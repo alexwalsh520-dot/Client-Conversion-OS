@@ -304,8 +304,23 @@ interface BuildPayloadOptions {
   allTimeIgnoredRevenue?: number;
   sourceStatus?: Record<string, unknown>;
   eventsHistory?: AttributionHistoryEvent[];
+  calendarEvents?: AdsTrackerCalendarEvent[];
   attributionKeywordOptions?: Record<string, unknown>[];
   attributionCampaignOptions?: Record<string, unknown>[];
+}
+
+interface AdsTrackerCalendarEvent {
+  id: string;
+  clientKey: string | null;
+  name: string;
+  campaignName: string | null;
+  adName: string | null;
+  keyword: string;
+  status: "upcoming" | "show" | "no_show" | "needs_review" | "missing_keyword";
+  eventAt: string;
+  appointmentId?: string | null;
+  contactId?: string | null;
+  saleKey?: string | null;
 }
 
 interface AttributionHistoryEvent {
@@ -358,6 +373,7 @@ const ALERT_RESOLUTION_SOURCE = "ads_tracker_alert_resolution";
 const AUTO_ATTRIBUTION_SOURCE = "ads_tracker_auto_sales_attribution";
 const NO_KEYWORD_ATTRIBUTION_KEYWORD = "no keyword / ad unknown";
 const NO_KEYWORD_ATTRIBUTION_LABEL = "No keyword / ad unknown";
+const MANYCHAT_SOURCE_LOOKBACK_DAYS = 45;
 const NO_KEYWORD_ATTRIBUTION_AD_ID = "no-keyword-ad-unknown";
 const MANYCHAT_MISSING_KEYWORD_TAG_NAMES = [
   "needs_keyword_attribution",
@@ -1153,6 +1169,7 @@ function buildPayload(
       collectedRoi: row.collectedRoi,
     })),
     eventsHistory: options.eventsHistory || [],
+    calendarEvents: options.calendarEvents || [],
     recentEvents: events
       .slice()
       .sort((a, b) => b.event_at.localeCompare(a.event_at))
@@ -1219,6 +1236,34 @@ function addMetaRowsToGroups(
     group.dateLabel = dateLabelForRow(row);
     groups.set(id, group);
   }
+}
+
+function isLiveKeywordAttributionRow(row: unknown) {
+  if (!row || typeof row !== "object") return false;
+  const source = "source" in row ? (row as { source?: unknown }).source : null;
+  if (source !== "manychat" && source !== "ghl") return false;
+  const eventType = "event_type" in row ? String((row as { event_type?: unknown }).event_type || "") : "";
+  if (eventType.startsWith("manual_")) return false;
+  return !(
+    "override_group_id" in row && (row as { override_group_id?: unknown }).override_group_id
+  ) && !(
+    "override_campaign_id" in row && (row as { override_campaign_id?: unknown }).override_campaign_id
+  ) && !(
+    "override_campaign_name" in row && (row as { override_campaign_name?: unknown }).override_campaign_name
+  );
+}
+
+function candidateHasDeliveryOnDate(
+  candidate: {
+    dateMetrics: Map<string, { spendCents: number; impressions: number; linkClicks: number }>;
+  },
+  date: string
+) {
+  const metrics = candidate.dateMetrics.get(date);
+  return Boolean(
+    metrics &&
+      (metrics.spendCents > 0 || metrics.impressions > 0 || metrics.linkClicks > 0)
+  );
 }
 
 function uniqueMetaGroupResolver<T>(
@@ -1296,9 +1341,19 @@ function uniqueMetaGroupResolver<T>(
       candidatesByKeyword.get(keyForAttributionRow(row, keyword))?.values() || []
     );
     if (candidates.length === 0) return fallbackId;
-    if (candidates.length === 1) return candidates[0].id;
 
     const attributionDate = attributionDateForResolver(row);
+    const isLiveAttribution = isLiveKeywordAttributionRow(row);
+
+    if (candidates.length === 1) {
+      const candidate = candidates[0];
+      if (!isLiveAttribution) return candidate.id;
+      if (attributionDate && candidateHasDeliveryOnDate(candidate, attributionDate)) {
+        return candidate.id;
+      }
+      return candidate.active ? candidate.id : fallbackId;
+    }
+
     if (attributionDate) {
       const exactDateCandidates = candidates
         .map((candidate) => {
@@ -1323,6 +1378,11 @@ function uniqueMetaGroupResolver<T>(
 
       if (exactDateCandidates[0]) return exactDateCandidates[0].id;
 
+      if (isLiveAttribution) {
+        const activeCandidates = candidates.filter((candidate) => candidate.active);
+        return activeCandidates.length === 1 ? activeCandidates[0].id : fallbackId;
+      }
+
       const rankedByDate = candidates
         .map((candidate) => ({
           ...candidate,
@@ -1343,6 +1403,8 @@ function uniqueMetaGroupResolver<T>(
         return rankedByDate[0].id;
       }
     }
+
+    if (isLiveAttribution) return fallbackId;
 
     const activeCandidates = candidates.filter((candidate) => candidate.active);
     if (activeCandidates.length === 1) return activeCandidates[0].id;
@@ -1638,6 +1700,61 @@ function hintForAttributionGroupId(
     );
 
   return candidates[0] ? hintFromMetaRow(candidates[0], normalizedKeyword) : null;
+}
+
+function carryManychatSourceAttributionToGhlEvents(
+  events: KeywordEvent[],
+  metaRows: MetaRow[],
+  groupIdForEvent: (event: KeywordEvent, keyword: string, fallbackId: string) => string
+) {
+  const manychatEvents = events
+    .filter((event) => event.source === "manychat")
+    .filter((event) => Boolean(event.subscriber_id))
+    .filter((event) => Boolean(normalizeKeyword(event.keyword_normalized || event.keyword_raw)))
+    .sort((a, b) => b.event_at.localeCompare(a.event_at));
+
+  return events.map((event) => {
+    if (event.source !== "ghl") return event;
+    if (event.override_group_id || event.override_campaign_id || event.override_campaign_name) return event;
+    if (!event.subscriber_id) return event;
+
+    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+    if (!keyword) return event;
+
+    const bookingTime = new Date(event.event_at).getTime();
+    if (!Number.isFinite(bookingTime)) return event;
+
+    const sourceEvent = manychatEvents.find((candidate) => {
+      if (candidate.subscriber_id !== event.subscriber_id) return false;
+      if (candidate.client_key !== event.client_key) return false;
+      const candidateKeyword = normalizeKeyword(candidate.keyword_normalized || candidate.keyword_raw);
+      if (candidateKeyword !== keyword) return false;
+      const candidateTime = new Date(candidate.event_at).getTime();
+      if (!Number.isFinite(candidateTime)) return false;
+      if (candidateTime > eventTimeWithLag(event.event_at)) return false;
+      return daysBetween(eventDateKey(candidate.event_at), eventDateKey(event.event_at)) <= MANYCHAT_SOURCE_LOOKBACK_DAYS;
+    });
+
+    if (!sourceEvent) return event;
+
+    const sourceGroupId = groupIdForEvent(sourceEvent, keyword, `${sourceEvent.client_key}:keyword:${keyword}`);
+    if (isFallbackAttributionGroupId(sourceGroupId)) return event;
+
+    const hint =
+      hintForAttributionGroupId(sourceGroupId, metaRows, keyword) ||
+      exactMetaHintForKeywordEvent(sourceEvent, metaRows);
+
+    if (!hint?.campaignName && !hint?.adName) return event;
+
+    return {
+      ...event,
+      override_group_id: sourceGroupId,
+      override_campaign_id: hint.campaignId,
+      override_campaign_name: hint.campaignName,
+      override_ad_id: hint.adId,
+      override_ad_name: hint.adName,
+    };
+  });
 }
 
 function appointmentBookingEventAt(appointment: GhlAppointmentRow | null | undefined): string | null {
@@ -2804,6 +2921,101 @@ function buildAttributionEventsHistory({
     .slice(0, 200);
 }
 
+function buildAdsTrackerCalendarEvents({
+  query,
+  appointments,
+  bookings,
+  salesRows,
+  attributionRows,
+  periodAttributionGroupId,
+}: {
+  query: AdsTrackerQuery;
+  appointments: GhlAppointmentRow[];
+  bookings: KeywordEvent[];
+  salesRows: SheetRow[];
+  attributionRows: MetaRow[];
+  periodAttributionGroupId: (
+    row: KeywordEvent,
+    keyword: string,
+    fallbackId: string
+  ) => string;
+}): AdsTrackerCalendarEvent[] {
+  const bookingsByAppointmentId = new Map(
+    bookings
+      .filter((event) => event.source === "ghl" && event.appointment_id)
+      .map((event) => [event.appointment_id as string, event])
+  );
+  const salesRowsByName = new Map<string, SheetRow[]>();
+  for (const row of salesRows.filter((item) => !isTestSalesRow(item))) {
+    const name = normalizePersonName(row.name);
+    if (!name) continue;
+    const list = salesRowsByName.get(name) || [];
+    list.push(row);
+    salesRowsByName.set(name, list);
+  }
+
+  return appointments
+    .filter(isBookableAppointment)
+    .map((appointment): AdsTrackerCalendarEvent | null => {
+      const clientKey = adsClientKeyFromGhlClient(appointment.client);
+      if (!clientKey) return null;
+      const eventAt =
+        appointment.start_time ||
+        appointmentBookingEventAt(appointment) ||
+        appointment.created_at ||
+        null;
+      if (!eventAt || !isWithinDashboardDateRange(eventAt, query)) return null;
+
+      const booking = appointment.appointment_id
+        ? bookingsByAppointmentId.get(appointment.appointment_id)
+        : null;
+      const keyword = normalizeKeyword(
+        booking?.keyword_normalized ||
+          booking?.keyword_raw ||
+          appointment.keyword_normalized ||
+          appointment.keyword_raw
+      );
+      const fallbackId = keyword && booking ? `${booking.client_key}:keyword:${keyword}` : "";
+      const groupId =
+        keyword && booking
+          ? booking.override_group_id || periodAttributionGroupId(booking, keyword, fallbackId)
+          : "";
+      const hint =
+        keyword && booking
+          ? historyEventHintForKeywordEvent(booking, keyword, groupId, attributionRows)
+          : null;
+      const matchedSalesRow = (salesRowsByName.get(normalizePersonName(appointment.contact_name) || "") || [])
+        .find((row) => clientFromOffer(row) === clientKey) || null;
+      const status: AdsTrackerCalendarEvent["status"] = matchedSalesRow
+        ? isNoShow(matchedSalesRow)
+          ? "no_show"
+          : matchedSalesRow.callTaken
+            ? "show"
+            : "upcoming"
+        : !keyword
+          ? "missing_keyword"
+          : !booking || isFallbackAttributionGroupId(groupId)
+            ? "needs_review"
+            : "upcoming";
+
+      return {
+        id: appointment.appointment_id || `${clientKey}:${appointment.contact_id || appointment.contact_name || eventAt}:${eventAt}`,
+        clientKey,
+        name: appointment.contact_name || booking?.contact_name || "Unknown",
+        campaignName: hint?.campaignName || booking?.override_campaign_name || null,
+        adName: hint?.adName || booking?.override_ad_name || null,
+        keyword: historyKeyword(keyword),
+        status,
+        eventAt,
+        appointmentId: appointment.appointment_id,
+        contactId: appointment.contact_id,
+        saleKey: matchedSalesRow ? salesRowKey(matchedSalesRow, clientKey) : null,
+      };
+    })
+    .filter((event): event is AdsTrackerCalendarEvent => Boolean(event))
+    .sort((a, b) => a.eventAt.localeCompare(b.eventAt));
+}
+
 function applyOverrideMetadata(group: Group, match: KeywordEvent) {
   group.campaignId = match.override_campaign_id || group.campaignId;
   group.campaignName = match.override_campaign_name || group.campaignName;
@@ -2929,14 +3141,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const backfilledDateKeys = new Set(
     backfill.map((row) => `${row.client_key}:${row.date}`)
   );
-  const attributionEvents = [...baseKeywordEvents, ...supplementalGhlEvents]
+  const rawAttributionEvents = [...baseKeywordEvents, ...supplementalGhlEvents]
     .filter((event) => !isTestKeywordEvent(event))
     .filter((event) => clientFilter.includes(event.client_key));
-  const allEvents = attributionEvents
-    .filter((event) => isWithinDashboardDateRange(event.event_at, query));
-  const events = allEvents.filter(
-    (event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`)
-  );
   const periodMetaGroupId = (row: MetaRow, keyword: string) =>
     query.level === "campaign" ? campaignGroupId(row) : adGroupId(row, keyword);
   const dailyMetaGroupId = (row: MetaRow, keyword: string) =>
@@ -2965,6 +3172,16 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     const identity = dailyAttributionIdentity(row, keyword, fallbackIdentity);
     return `${date}:${identity}`;
   };
+  const attributionEvents = carryManychatSourceAttributionToGhlEvents(
+    rawAttributionEvents,
+    attributionRows,
+    (event, keyword, fallbackId) => periodAttributionGroupId(event, keyword, fallbackId)
+  );
+  const allEvents = attributionEvents
+    .filter((event) => isWithinDashboardDateRange(event.event_at, query));
+  const events = allEvents.filter(
+    (event) => !backfilledDateKeys.has(`${event.client_key}:${eventDateKey(event.event_at)}`)
+  );
 
   addMetaRowsToGroups(
     groups,
@@ -3010,7 +3227,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     alertBaseKeywordEvents,
     alertClientFilter
   );
-  const alertAttributionEvents = [
+  const rawAlertAttributionEvents = [
     ...alertBaseKeywordEvents,
     ...alertSupplementalGhlEvents,
   ]
@@ -3022,6 +3239,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     adGroupId,
     (row, keyword) => `${row.client_key}:${keyword}`,
     (row, keyword) => `${row.client_key}:${keyword}`
+  );
+  const alertAttributionEvents = carryManychatSourceAttributionToGhlEvents(
+    rawAlertAttributionEvents,
+    alertAttributionRows,
+    (event, keyword, fallbackId) => alertPeriodAdAttributionGroupId(event, keyword, fallbackId)
   );
   const alertAttributionSalesRows = alertSalesRows.filter((row) => !isTestSalesRow(row));
   const alertGhlBookings = alertAttributionEvents.filter((event) => event.source === "ghl");
@@ -3316,6 +3538,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     attributionRows,
     periodAttributionGroupId,
   });
+  const calendarEvents = buildAdsTrackerCalendarEvents({
+    query,
+    appointments: ghlAppointments,
+    bookings,
+    salesRows: attributionSalesRows,
+    attributionRows,
+    periodAttributionGroupId,
+  });
 
   const finalized = Array.from(groups.values())
     .map(finalizeGroup)
@@ -3438,5 +3668,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     attributionCampaignOptions: attributionPickerOptions.campaignOptions,
     sourceStatus,
     eventsHistory,
+    calendarEvents,
   });
 }
