@@ -3,6 +3,40 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const sb = getServiceSupabase();
+
+    const { data, error } = await sb
+      .from("studio2_folders")
+      .select("id, name, folder_type, parent_id, created_at, updated_at")
+      .eq("id", id)
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message || "Folder not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      folder: {
+        id: data.id,
+        name: data.name,
+        folderType: data.folder_type || "design",
+        parentId: data.parent_id || null,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      },
+    });
+  } catch (err) {
+    console.error("Studio 2 folder read error:", err);
+    return NextResponse.json({ error: "Failed to load Studio 2 folder" }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

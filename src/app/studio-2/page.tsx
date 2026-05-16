@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
+  Copy,
   CopyPlus,
   Download,
   EyeOff,
@@ -24,6 +25,7 @@ import {
   ImagePlus,
   Layers,
   Library,
+  Link2,
   Minus,
   MoreHorizontal,
   MousePointer2,
@@ -31,6 +33,8 @@ import {
   Paintbrush,
   PanelBottom,
   PanelTop,
+  Pause,
+  Play,
   Plus,
   Replace,
   RotateCcw,
@@ -108,6 +112,7 @@ type TextAlign = "left" | "center" | "right";
 type StudioView = "home" | "setup" | "editor";
 type StudioHomeMode = "designs" | "media";
 type StudioFolderType = "design" | "media";
+type MediaKind = "image" | "video";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked">;
@@ -143,6 +148,7 @@ interface ImageTransform {
 interface Creative {
   id: string;
   photoUrl: string;
+  mediaKind?: MediaKind;
   textBlocks: TextBlock[];
   imageTransform: ImageTransform;
   status: "draft" | "exported";
@@ -194,7 +200,7 @@ interface HomeProjectCard {
 interface StudioMediaAsset {
   id: string;
   url: string;
-  kind: "image" | "video";
+  kind: MediaKind;
   filename: string;
   folderId?: string | null;
   createdAt?: string;
@@ -318,6 +324,7 @@ function normalizeTextBlock(block: TextBlock): TextBlock {
 function normalizeCreative(creative: Creative): Creative {
   return {
     ...creative,
+    mediaKind: creative.mediaKind || "image",
     textBlocks: creative.textBlocks.map(normalizeTextBlock),
   };
 }
@@ -445,6 +452,34 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Image failed to load"));
     img.src = resolvedSrc;
+  });
+}
+
+function loadVideoFrame(src: string): Promise<HTMLVideoElement> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const resolvedSrc = getCanvasImageSrc(src);
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve(video);
+    };
+
+    if (/^https?:\/\//i.test(resolvedSrc)) video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.onloadeddata = finish;
+    video.oncanplay = finish;
+    video.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Video failed to load"));
+    };
+    video.src = resolvedSrc;
+    video.load();
   });
 }
 
@@ -587,7 +622,26 @@ function drawCoverImage(
   image: HTMLImageElement,
   transform: ImageTransform
 ) {
-  const imageRatio = image.naturalWidth / image.naturalHeight;
+  drawCoverMedia(ctx, image, image.naturalWidth, image.naturalHeight, transform);
+}
+
+function drawCoverVideo(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  transform: ImageTransform
+) {
+  if (!video.videoWidth || !video.videoHeight) return;
+  drawCoverMedia(ctx, video, video.videoWidth, video.videoHeight, transform);
+}
+
+function drawCoverMedia(
+  ctx: CanvasRenderingContext2D,
+  media: CanvasImageSource,
+  mediaWidth: number,
+  mediaHeight: number,
+  transform: ImageTransform
+) {
+  const imageRatio = mediaWidth / mediaHeight;
   const canvasRatio = CANVAS_W / CANVAS_H;
   let drawW = CANVAS_W;
   let drawH = CANVAS_H;
@@ -604,25 +658,35 @@ function drawCoverImage(
   ctx.translate(CANVAS_W / 2 + transform.offsetX, CANVAS_H / 2 + transform.offsetY);
   ctx.rotate((transform.rotate * Math.PI) / 180);
   ctx.scale(transform.scale, transform.scale);
-  ctx.drawImage(image, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.drawImage(media, -drawW / 2, -drawH / 2, drawW, drawH);
   ctx.restore();
 }
 
 function drawArtwork(
   ctx: CanvasRenderingContext2D,
   creative: Creative,
-  image: HTMLImageElement | null,
+  media: HTMLImageElement | HTMLVideoElement | null,
   pixelRatio: number,
   editingTextBlockId?: string | null
 ) {
   ctx.save();
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  ctx.fillStyle = ADS_BRAND.bgDeep;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  const isVideoCreative = (creative.mediaKind || "image") === "video";
+  const hasVideoMedia =
+    media && typeof HTMLVideoElement !== "undefined" && media instanceof HTMLVideoElement;
 
-  if (image) {
-    drawCoverImage(ctx, image, creative.imageTransform);
+  if (!isVideoCreative || media) {
+    ctx.fillStyle = ADS_BRAND.bgDeep;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
+
+  if (media) {
+    if (hasVideoMedia) {
+      drawCoverVideo(ctx, media, creative.imageTransform);
+    } else {
+      drawCoverImage(ctx, media as HTMLImageElement, creative.imageTransform);
+    }
   }
 
   for (const block of creative.textBlocks) {
@@ -1277,6 +1341,8 @@ export default function Studio2Page() {
   const [uploadQueue, setUploadQueue] = useState<File[]>([]);
   const [uploadDropActive, setUploadDropActive] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null);
+  const [shareLinkStatus, setShareLinkStatus] = useState("");
   const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
   const [folderPickerProjectId, setFolderPickerProjectId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
@@ -1301,6 +1367,7 @@ export default function Studio2Page() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
@@ -1311,6 +1378,7 @@ export default function Studio2Page() {
   const dragRef = useRef<DragState | null>(null);
   const hydratedRef = useRef(false);
   const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(true);
 
   const currentCreative = creatives[currentIndex];
   const selectedBlock =
@@ -1326,17 +1394,9 @@ export default function Studio2Page() {
     return measureCanvasRef.current.getContext("2d")!;
   }, []);
 
-  const currentImage = currentCreative
+  const currentImage = currentCreative && (currentCreative.mediaKind || "image") === "image"
     ? imageCacheRef.current.get(currentCreative.photoUrl) ?? null
     : null;
-  const plannedAdCount = useMemo(
-    () => photos.reduce((total, photo) => total + getPhotoCopies(photoCopies, photo), 0),
-    [photoCopies, photos]
-  );
-  const selectedVideoCount = useMemo(
-    () => mediaAssets.filter((asset) => asset.kind === "video").length,
-    [mediaAssets]
-  );
   const designFolders = useMemo(
     () => cloudFolders.filter((folder) => (folder.folderType || "design") === "design"),
     [cloudFolders]
@@ -1345,6 +1405,30 @@ export default function Studio2Page() {
     () => cloudFolders.filter((folder) => folder.folderType === "media"),
     [cloudFolders]
   );
+  const selectedMediaForAds = useMemo(() => {
+    const media = [
+      ...photos.map((url) => ({ url, kind: "image" as MediaKind })),
+      ...mediaAssets.filter((asset) => asset.kind === "video").map((asset) => ({
+        url: asset.url,
+        kind: "video" as MediaKind,
+      })),
+    ];
+    const seen = new Set<string>();
+    return media.filter((item) => {
+      if (seen.has(item.url)) return false;
+      seen.add(item.url);
+      return true;
+    });
+  }, [mediaAssets, photos]);
+  const plannedAdCount = useMemo(
+    () => selectedMediaForAds.reduce((total, media) => total + getPhotoCopies(photoCopies, media.url), 0),
+    [photoCopies, selectedMediaForAds]
+  );
+  const selectedMediaCount = selectedMediaForAds.length;
+  const uploadShareUrl = useMemo(() => {
+    if (!uploadTargetFolderId || typeof window === "undefined") return "";
+    return `${window.location.origin}/studio-2/upload/${uploadTargetFolderId}`;
+  }, [uploadTargetFolderId]);
   const setupLibraryMedia = useMemo(
     () => libraryMedia.filter((asset) => (asset.folderId || null) === setupMediaFolderId),
     [libraryMedia, setupMediaFolderId]
@@ -1696,7 +1780,10 @@ export default function Studio2Page() {
   }, []);
 
   useEffect(() => {
-    const urls = new Set([...photos, ...creatives.map((c) => c.photoUrl)]);
+    const urls = new Set([
+      ...photos,
+      ...creatives.filter((creative) => (creative.mediaKind || "image") === "image").map((c) => c.photoUrl),
+    ]);
     urls.forEach((url) => {
       if (imageCacheRef.current.has(url)) return;
       loadImage(url)
@@ -1738,7 +1825,7 @@ export default function Studio2Page() {
   }, [renderPreview, viewScale]);
 
   useEffect(() => {
-    if (view !== "editor" || !currentCreative?.photoUrl) return;
+    if (view !== "editor" || !currentCreative?.photoUrl || (currentCreative.mediaKind || "image") === "video") return;
     const url = currentCreative.photoUrl;
     let cancelled = false;
     loadImage(url)
@@ -1751,7 +1838,12 @@ export default function Studio2Page() {
     return () => {
       cancelled = true;
     };
-  }, [currentCreative?.photoUrl, view]);
+  }, [currentCreative?.mediaKind, currentCreative?.photoUrl, view]);
+
+  useEffect(() => {
+    if (view !== "editor" || (currentCreative?.mediaKind || "image") !== "video") return;
+    setVideoPreviewPlaying(true);
+  }, [currentCreative?.id, currentCreative?.mediaKind, view]);
 
   useEffect(() => {
     if (!editingBlockId) return;
@@ -2069,7 +2161,8 @@ export default function Studio2Page() {
     const uploaded = await Promise.all(
       mediaFiles.map(async (file) => {
         try {
-          const url = await uploadStudioMedia(file, null, homeMode === "media" ? selectedMediaFolderId : null);
+          const targetFolderId = uploadTargetFolderId || (homeMode === "media" ? selectedMediaFolderId : null);
+          const url = await uploadStudioMedia(file, null, targetFolderId);
           return { file, url };
         } catch {
           return { file, url: "" };
@@ -2080,7 +2173,7 @@ export default function Studio2Page() {
     await fetchStudioMedia();
     void fetchStudioHome();
     return savedCount;
-  }, [fetchStudioHome, fetchStudioMedia, homeMode, selectedMediaFolderId]);
+  }, [fetchStudioHome, fetchStudioMedia, homeMode, selectedMediaFolderId, uploadTargetFolderId]);
 
   const handleUploadModalDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -2116,6 +2209,7 @@ export default function Studio2Page() {
       setCloudStatus("Upload complete.");
       setUploadQueue([]);
       setUploadModalOpen(false);
+      setShareLinkStatus("");
       setView("home");
     } catch {
       setUploadStatus("Upload failed. Try again.");
@@ -2124,9 +2218,40 @@ export default function Studio2Page() {
     }
   }, [uploadLibraryFiles, uploadQueue, uploadingQueuedMedia]);
 
+  const openUploadMediaModal = useCallback(
+    (folderId?: string | null) => {
+      setCreateMenuOpen(false);
+      setFolderMenuOpen(false);
+      setFolderCardMenuId(null);
+      setUploadTargetFolderId(folderId ?? (homeMode === "media" ? selectedMediaFolderId : null));
+      setUploadQueue([]);
+      setUploadDropActive(false);
+      setUploadStatus("");
+      setShareLinkStatus("");
+      setUploadModalOpen(true);
+    },
+    [homeMode, selectedMediaFolderId]
+  );
+
+  const copyUploadShareLink = useCallback(async () => {
+    if (!uploadShareUrl) {
+      setShareLinkStatus("Pick a media folder first.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(uploadShareUrl);
+      setShareLinkStatus("Share link copied.");
+    } catch {
+      setShareLinkStatus("Copy failed. You can select the link and copy it.");
+    }
+  }, [uploadShareUrl]);
+
   const replaceCurrentImage = useCallback(
     async (file: File | null) => {
       if (!file || !currentCreative) return;
+      const contentType = getUploadContentType(file);
+      const mediaKind: MediaKind = contentType.startsWith("video/") ? "video" : "image";
+      if (!contentType.startsWith("image/") && !contentType.startsWith("video/")) return;
       let url: string;
       try {
         url = await uploadStudioMedia(file, projectId, setupMediaFolderId);
@@ -2134,16 +2259,19 @@ export default function Studio2Page() {
         url = await fileToDataUrl(file);
       }
       pushUndo();
-      setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      if (mediaKind === "image") {
+        setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      }
       setMediaAssets((prev) =>
         prev.some((asset) => asset.url === url)
           ? prev
-          : [...prev, { id: uid(), url, kind: "image", filename: file.name }]
+          : [...prev, { id: uid(), url, kind: mediaKind, filename: file.name }]
       );
       setPhotoCopies((prev) => (prev[url] ? prev : { ...prev, [url]: 1 }));
       updateCurrentCreative((creative) => ({
         ...creative,
         photoUrl: url,
+        mediaKind,
         imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
       }));
       setSelectedLayer({ type: "image" });
@@ -2258,17 +2386,18 @@ export default function Studio2Page() {
   );
 
   const generateAds = useCallback(() => {
-    const expandedPhotos = photos.flatMap((photo) =>
-      Array.from({ length: getPhotoCopies(photoCopies, photo) }, () => photo)
+    const expandedMedia = selectedMediaForAds.flatMap((media) =>
+      Array.from({ length: getPhotoCopies(photoCopies, media.url) }, () => media)
     );
-    if (!expandedPhotos.length) return;
+    if (!expandedMedia.length) return;
     const groups = parseCopyIntoAds(copyText);
     const usableGroups = groups.length ? groups : parseCopyIntoAds(DEFAULT_COPY);
-    const nextCreatives = expandedPhotos.map((photoUrl, index): Creative => {
+    const nextCreatives = expandedMedia.map((media, index): Creative => {
       const sections = usableGroups[index % usableGroups.length];
       return {
         id: uid(),
-        photoUrl,
+        photoUrl: media.url,
+        mediaKind: media.kind,
         textBlocks: buildBlocksForSections(sections),
         imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
         status: "draft",
@@ -2286,7 +2415,7 @@ export default function Studio2Page() {
       view: "editor",
     });
     void persistProjectToCloud(draft, true).catch(() => setCloudStatus("Saved locally. Cloud save failed."));
-  }, [buildBlocksForSections, buildDraftState, copyText, persistProjectToCloud, photoCopies, photos]);
+  }, [buildBlocksForSections, buildDraftState, copyText, persistProjectToCloud, photoCopies, selectedMediaForAds]);
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2650,12 +2779,18 @@ export default function Studio2Page() {
       canvas.width = CANVAS_W * pixelRatio;
       canvas.height = CANVAS_H * pixelRatio;
       const ctx = canvas.getContext("2d")!;
-      let image = imageCacheRef.current.get(creative.photoUrl) ?? null;
-      if (!image) {
-        image = await loadImage(creative.photoUrl);
-        imageCacheRef.current.set(creative.photoUrl, image);
+      let media: HTMLImageElement | HTMLVideoElement | null = null;
+      if ((creative.mediaKind || "image") === "video") {
+        media = await loadVideoFrame(creative.photoUrl);
+      } else {
+        let image = imageCacheRef.current.get(creative.photoUrl) ?? null;
+        if (!image) {
+          image = await loadImage(creative.photoUrl);
+          imageCacheRef.current.set(creative.photoUrl, image);
+        }
+        media = image;
       }
-      drawArtwork(ctx, creative, image, pixelRatio);
+      drawArtwork(ctx, creative, media, pixelRatio);
       return canvas;
     },
     []
@@ -2746,7 +2881,10 @@ export default function Studio2Page() {
   const handleCanvasDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
+      const file = Array.from(event.dataTransfer.files).find((item) => {
+        const contentType = getUploadContentType(item);
+        return contentType.startsWith("image/") || contentType.startsWith("video/");
+      });
       if (file) await replaceCurrentImage(file);
     },
     [replaceCurrentImage]
@@ -3197,6 +3335,66 @@ export default function Studio2Page() {
     }
   }, [deleteMediaId, deletingMedia, fetchStudioMedia, libraryMedia]);
 
+  const renderUploadDestinationControls = () => (
+    <div
+      style={{
+        border: `1px solid ${ADS_BRAND.border2}`,
+        borderRadius: 10,
+        background: ADS_BRAND.panel3,
+        padding: 12,
+        marginBottom: 14,
+      }}
+    >
+      <label style={{ ...labelStyle, display: "block", marginBottom: 7 }}>Media folder</label>
+      <select
+        value={uploadTargetFolderId || ""}
+        onChange={(event) => {
+          setUploadTargetFolderId(event.target.value || null);
+          setShareLinkStatus("");
+        }}
+        style={{ ...inputStyle, height: 38, marginBottom: 10 }}
+      >
+        <option value="">All Media</option>
+        {mediaFolders.map((folder) => (
+          <option key={folder.id} value={folder.id}>
+            {folder.parentId ? "- " : ""}{folder.name}
+          </option>
+        ))}
+      </select>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          readOnly
+          value={uploadShareUrl || "Pick a folder to create a client upload link"}
+          onFocus={(event) => event.currentTarget.select()}
+          style={{
+            ...inputStyle,
+            height: 38,
+            flex: 1,
+            color: uploadShareUrl ? ADS_BRAND.text2 : ADS_BRAND.text3,
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void copyUploadShareLink()}
+          disabled={!uploadShareUrl}
+          style={{
+            ...buttonStyle(false),
+            height: 38,
+            opacity: uploadShareUrl ? 1 : 0.42,
+            cursor: uploadShareUrl ? "pointer" : "not-allowed",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Copy size={14} /> Copy link
+        </button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, color: ADS_BRAND.text3, fontSize: 11, marginTop: 8 }}>
+        <Link2 size={12} />
+        <span>{shareLinkStatus || "The link only opens a media upload page for this folder."}</span>
+      </div>
+    </div>
+  );
+
   if (view === "home") {
     return (
       <div
@@ -3468,17 +3666,20 @@ export default function Studio2Page() {
                 }}
               >
                 {homeMode === "designs" && (
-                  <HomeMenuButton icon={FilePlus2} label="New design" onClick={openSetupFlow} />
+                  <>
+                    <HomeMenuButton icon={FilePlus2} label="New design" onClick={openSetupFlow} />
+                    <HomeMenuButton
+                      icon={Upload}
+                      label="Upload media"
+                      onClick={() => openUploadMediaModal(null)}
+                    />
+                  </>
                 )}
                 {homeMode === "media" && (
                   <HomeMenuButton
                     icon={Upload}
                     label="Upload media"
-                    onClick={() => {
-                      setCreateMenuOpen(false);
-                      setUploadModalOpen(true);
-                      setUploadStatus("");
-                    }}
+                    onClick={() => openUploadMediaModal(selectedMediaFolderId)}
                   />
                 )}
                 <HomeMenuButton
@@ -4140,6 +4341,7 @@ export default function Studio2Page() {
               }}
             >
               <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Upload media</div>
+              {renderUploadDestinationControls()}
               <input
                 ref={uploadQueueInputRef}
                 type="file"
@@ -4228,6 +4430,7 @@ export default function Studio2Page() {
                     setUploadModalOpen(false);
                     setUploadDropActive(false);
                     setUploadStatus("");
+                    setShareLinkStatus("");
                   }}
                 >
                   Cancel
@@ -4934,7 +5137,7 @@ export default function Studio2Page() {
               </div>
             </div>
             <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>
-              {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} · {photos.length + selectedVideoCount} selected · {plannedAdCount} image ad{plannedAdCount === 1 ? "" : "s"} planned
+              {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} - {selectedMediaCount} selected - {plannedAdCount} ad{plannedAdCount === 1 ? "" : "s"} planned
             </div>
           </div>
 
@@ -5032,7 +5235,7 @@ export default function Studio2Page() {
       <input
         ref={replaceImageInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         style={{ display: "none" }}
         onChange={(event) => {
           void replaceCurrentImage(event.target.files?.[0] ?? null);
@@ -5152,6 +5355,68 @@ export default function Studio2Page() {
             boxShadow: "0 22px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)",
             background: ADS_BRAND.bgDeep,
           }}>
+            {currentCreative?.mediaKind === "video" && (
+              <>
+                <video
+                  key={currentCreative.id}
+                  ref={videoPreviewRef}
+                  src={getMediaPreviewSrc(currentCreative.photoUrl)}
+                  muted
+                  loop
+                  autoPlay
+                  playsInline
+                  onPlay={() => setVideoPreviewPlaying(true)}
+                  onPause={() => setVideoPreviewPlaying(false)}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    transform: `translate(${currentCreative.imageTransform.offsetX * viewScale}px, ${currentCreative.imageTransform.offsetY * viewScale}px) scale(${currentCreative.imageTransform.scale}) rotate(${currentCreative.imageTransform.rotate}deg)`,
+                    transformOrigin: "center",
+                    pointerEvents: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const video = videoPreviewRef.current;
+                    if (!video) return;
+                    if (video.paused) {
+                      void video.play();
+                      setVideoPreviewPlaying(true);
+                    } else {
+                      video.pause();
+                      setVideoPreviewPlaying(false);
+                    }
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: 10,
+                    bottom: 10,
+                    zIndex: 4,
+                    height: 34,
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background: "rgba(0,0,0,0.64)",
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "0 11px",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  {videoPreviewPlaying ? <Pause size={13} /> : <Play size={13} />}
+                  {videoPreviewPlaying ? "Pause" : "Play"}
+                </button>
+              </>
+            )}
             <canvas
               ref={canvasRef}
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
@@ -5235,12 +5500,14 @@ export default function Studio2Page() {
                 onClick={() => {
                   setCurrentIndex(index);
                   setSelectedLayer(null);
-                  loadImage(creative.photoUrl)
-                    .then((img) => {
-                      imageCacheRef.current.set(creative.photoUrl, img);
-                      bumpImageVersion((v) => v + 1);
-                    })
-                    .catch(() => undefined);
+                  if ((creative.mediaKind || "image") === "image") {
+                    loadImage(creative.photoUrl)
+                      .then((img) => {
+                        imageCacheRef.current.set(creative.photoUrl, img);
+                        bumpImageVersion((v) => v + 1);
+                      })
+                      .catch(() => undefined);
+                  }
                 }}
                 style={{
                   position: "relative",
@@ -5256,7 +5523,16 @@ export default function Studio2Page() {
                 }}
                 title={`Ad ${index + 1}`}
               >
-                <img draggable={false} src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {(creative.mediaKind || "image") === "video" ? (
+                  <>
+                    <video draggable={false} src={getMediaPreviewSrc(creative.photoUrl)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <span style={mediaVideoBadgeStyle}>
+                      <Video size={11} />
+                    </span>
+                  </>
+                ) : (
+                  <img draggable={false} src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                )}
                 {creative.approved && (
                   <span style={{
                     position: "absolute",
@@ -5408,7 +5684,9 @@ export default function Studio2Page() {
 
           {selectedLayer?.type === "image" && currentCreative && (
             <div style={panelStyle}>
-              <span style={{ ...labelStyle, display: "block", marginBottom: 10 }}>Image Crop</span>
+              <span style={{ ...labelStyle, display: "block", marginBottom: 10 }}>
+                {currentCreative.mediaKind === "video" ? "Video Crop" : "Image Crop"}
+              </span>
               <Slider label="Zoom" min={40} max={400} value={Math.round(currentCreative.imageTransform.scale * 100)} onStart={pushUndo} onChange={(value) => updateImage({ scale: value / 100 })} suffix="%" />
               <Slider label="Rotate" min={-180} max={180} value={currentCreative.imageTransform.rotate} onStart={pushUndo} onChange={(value) => updateImage({ rotate: value })} suffix="°" />
               <Control label="Offset">
@@ -5419,7 +5697,7 @@ export default function Studio2Page() {
                 style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
                 onClick={() => replaceImageInputRef.current?.click()}
               >
-                <Replace size={13} /> Replace Image
+                <Replace size={13} /> Replace Media
               </button>
               <button
                 style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
@@ -5428,7 +5706,7 @@ export default function Studio2Page() {
                   updateImage({ scale: 1, rotate: 0, offsetX: 0, offsetY: 0 });
                 }}
               >
-                <RotateCcw size={13} /> Reset Image
+                <RotateCcw size={13} /> Reset Media
               </button>
             </div>
           )}
@@ -5442,7 +5720,7 @@ export default function Studio2Page() {
               style={{ ...buttonStyle(selectedLayer?.type === "image"), width: "100%", justifyContent: "flex-start", marginBottom: 5 }}
               onClick={() => setSelectedLayer({ type: "image" })}
             >
-              <ImagePlus size={13} /> Background Image
+              <ImagePlus size={13} /> Background Media
             </button>
             {currentCreative?.textBlocks.map((block) => (
               <button
@@ -5503,7 +5781,7 @@ export default function Studio2Page() {
           )}
           {contextMenu.target?.type === "image" && (
             <>
-              <MenuAction icon={Replace} label="Replace image" onClick={() => replaceImageInputRef.current?.click()} />
+              <MenuAction icon={Replace} label="Replace media" onClick={() => replaceImageInputRef.current?.click()} />
               <MenuAction
                 icon={RotateCcw}
                 label="Reset image crop"
@@ -5543,6 +5821,7 @@ export default function Studio2Page() {
             }}
           >
             <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Upload media</div>
+            {renderUploadDestinationControls()}
             <input
               ref={uploadQueueInputRef}
               type="file"
@@ -5631,6 +5910,7 @@ export default function Studio2Page() {
                   setUploadModalOpen(false);
                   setUploadDropActive(false);
                   setUploadStatus("");
+                  setShareLinkStatus("");
                 }}
               >
                 Cancel
