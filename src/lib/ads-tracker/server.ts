@@ -1886,12 +1886,11 @@ function dailySalesGroupIdFromSaleDate(
   keyword: string,
   periodAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string
 ) {
-  const resolvedBookingIdentity = match.override_group_id ||
-    periodAttributionGroupId(
-      match,
-      keyword,
-      `${match.client_key}:keyword:${keyword}`
-    );
+  const fallbackIdentity = `${match.client_key}:keyword:${keyword}`;
+  const resolvedBookingIdentity =
+    match.override_group_id && !isFallbackAttributionGroupId(match.override_group_id)
+      ? match.override_group_id
+      : periodAttributionGroupId(match, keyword, fallbackIdentity);
 
   return `${row.date}:${resolvedBookingIdentity}`;
 }
