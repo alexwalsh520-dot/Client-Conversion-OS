@@ -4,12 +4,13 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
+import { allowsMarketingBrainPreviewAccess } from "@/lib/marketing-brain/preview-access";
 
 export default function AccessGate({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
-  const isPublicPage = pathname === "/login" || pathname === "/review" || pathname === "/voice-notes" || pathname === "/outreach-test" || pathname === "/outreach-run" || pathname.startsWith("/super-doc/");
+  const isPublicPage = pathname === "/login" || pathname === "/review" || pathname === "/voice-notes" || pathname === "/outreach-test" || pathname === "/outreach-run" || pathname.startsWith("/super-doc/") || allowsMarketingBrainPreviewAccess(pathname);
 
   // Redirect to login when not authenticated (must be before conditional returns for hooks rules)
   useEffect(() => {

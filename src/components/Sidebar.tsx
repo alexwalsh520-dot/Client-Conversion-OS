@@ -22,6 +22,7 @@ import {
   BookOpen,
   BrainCircuit,
 } from "lucide-react";
+import { allowsMarketingBrainPreviewAccess } from "@/lib/marketing-brain/preview-access";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
@@ -45,22 +46,28 @@ export default function Sidebar() {
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
+  const isPublicMarketingBrainPreview = allowsMarketingBrainPreviewAccess(pathname) && !session?.user;
 
   // Persist collapsed state in localStorage
   useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored !== null) {
-      setCollapsed(stored === "true");
-    }
-    const storedDesktop = localStorage.getItem("force-desktop-view");
-    if (storedDesktop === "true") {
-      setForceDesktop(true);
-    }
+    const timer = window.setTimeout(() => {
+      const stored = localStorage.getItem("sidebar-collapsed");
+      if (stored !== null) {
+        setCollapsed(stored === "true");
+      }
+      const storedDesktop = localStorage.getItem("force-desktop-view");
+      if (storedDesktop === "true") {
+        setForceDesktop(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Close mobile menu on route change
   useEffect(() => {
-    setMobileOpen(false);
+    const timer = window.setTimeout(() => setMobileOpen(false), 0);
+    return () => window.clearTimeout(timer);
   }, [pathname]);
 
   // Apply/remove force-desktop class on html element
@@ -91,6 +98,7 @@ export default function Sidebar() {
   // Don't render on login or public pages
   if (pathname.startsWith("/super-doc/")) return null;
   if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") return null;
+  if (isPublicMarketingBrainPreview) return null;
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
