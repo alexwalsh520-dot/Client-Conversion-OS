@@ -20,12 +20,14 @@ import {
   Monitor,
   Sparkles,
   BookOpen,
+  BrainCircuit,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/marketing-brain", label: "Marketing Brain", icon: BrainCircuit },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
