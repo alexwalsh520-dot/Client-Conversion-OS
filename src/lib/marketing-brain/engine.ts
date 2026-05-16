@@ -7,6 +7,7 @@ import {
   type AdIntel,
   type AntiAvatar,
   type Avatar,
+  type BrainSourceStatus,
   type CallBrief,
   type CallHistory,
   type CampaignBrief,
@@ -142,12 +143,14 @@ type AdsDashboardPayload = {
 };
 
 type LiveSources = {
+  hasDb: boolean;
   salesRows: SalesRow[];
   appointments: AppointmentRow[];
   dmMessages: DmMessageRow[];
   dmTranscripts: DmTranscriptRow[];
   fathomCalls: FathomCallRow[];
   adsDashboard: AdsDashboardPayload | null;
+  sourceStatus: BrainSourceStatus[];
 };
 
 type StoredOcrMap = Record<string, { text: string; imageUrl?: string | null; updatedAt: string; confidence?: number }>;
@@ -254,6 +257,64 @@ async function readRows<T>(
   } catch (error) {
     console.warn(`[marketing-brain] ${label} failed:`, error);
     return [];
+  }
+}
+
+function missingSource(id: BrainSourceStatus["id"], label: string): BrainSourceStatus {
+  return {
+    id,
+    label,
+    status: "missing",
+    count: 0,
+    detail: "This runtime is missing Supabase service credentials.",
+  };
+}
+
+function sourceStatus(
+  id: BrainSourceStatus["id"],
+  label: string,
+  rows: unknown[],
+  detail: string,
+  latest?: string | null,
+): BrainSourceStatus {
+  return {
+    id,
+    label,
+    status: rows.length ? "connected" : "empty",
+    count: rows.length,
+    detail,
+    latest,
+  };
+}
+
+async function readLiveRows<T>(
+  id: BrainSourceStatus["id"],
+  label: string,
+  detail: string,
+  run: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  latestFrom?: (rows: T[]) => string | null | undefined,
+): Promise<{ rows: T[]; status: BrainSourceStatus }> {
+  try {
+    const { data, error } = await run();
+    if (error) {
+      console.warn(`[marketing-brain] ${label} unavailable: ${error.message}`);
+      return {
+        rows: [],
+        status: { id, label, status: "error", count: 0, detail: error.message },
+      };
+    }
+    const rows = data ?? [];
+    return {
+      rows,
+      status: sourceStatus(id, label, rows, detail, latestFrom?.(rows) ?? null),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown read failure";
+    console.warn(`[marketing-brain] ${label} failed:`, error);
+    return {
+      rows: [],
+      status: { id, label, status: "error", count: 0, detail: message },
+    };
   }
 }
 
@@ -550,7 +611,7 @@ function buildAds(adsDashboard: AdsDashboardPayload | null, ocr: StoredOcrMap): 
     })
     .slice(0, 10);
 
-  if (!rows.length) return cloneOverview().ads;
+  if (!rows.length) return [];
 
   return rows.map((row) => {
     const key = row.adId || row.id || row.keyword;
@@ -648,9 +709,9 @@ function buildCalls(
   }
 
   return {
-    upcoming: upcoming.length ? upcoming : cloneOverview().upcoming,
-    callsHistory: callsHistory.length ? callsHistory : cloneOverview().callsHistory,
-    callBriefs: Object.keys(callBriefs).length ? { ...cloneOverview().callBriefs, ...callBriefs } : cloneOverview().callBriefs,
+    upcoming,
+    callsHistory,
+    callBriefs,
   };
 }
 
@@ -739,14 +800,15 @@ function buildAvatars(salesRows: SalesRow[]): Avatar[] {
     rowsByAvatar.set(id, [...(rowsByAvatar.get(id) ?? []), row]);
   }
 
-  const avatars = base.avatars.map((avatar) => {
-    const rows = rowsByAvatar.get(avatar.id) ?? [];
-    if (!rows.length) return avatar;
+  const avatars = Array.from(rowsByAvatar.entries()).map(([id, rows]) => {
+    const template = base.avatars.find((avatar) => avatar.id === id) ?? base.avatars[0];
     const closed = rows.filter((row) => outcomeStatus(row.outcome) === "closed");
     const revenueCents = closed.reduce((sum, row) => sum + (row.collected_revenue_cents || row.contracted_revenue_cents || 0), 0);
     const avgCents = closed.length ? revenueCents / closed.length : 0;
     return {
-      ...avatar,
+      ...template,
+      id,
+      name: avatarName(id),
       calls: rows.length,
       closeRate: Math.round((closed.length / rows.length) * 100),
       avgDeal: moneyFromCents(avgCents),
@@ -773,20 +835,26 @@ function buildAntiAvatars(salesRows: SalesRow[]): AntiAvatar[] {
     if (!id) continue;
     rowsByAnti.set(id, [...(rowsByAnti.get(id) ?? []), row]);
   }
-  return base.antiAvatars.map((anti) => {
-    const rows = rowsByAnti.get(anti.id) ?? [];
-    if (!rows.length) return anti;
+  return Array.from(rowsByAnti.entries()).map(([id, rows]) => {
+    const anti = base.antiAvatars.find((item) => item.id === id) ?? base.antiAvatars[0];
     const lostCents = rows.reduce((sum, row) => sum + Math.max(row.contracted_revenue_cents || 0, 400000), 0);
     return {
       ...anti,
+      id,
       calls: rows.length,
       lostRevenue: moneyFromCents(lostCents),
       examples: rows.map((row) => row.objection || row.call_notes || row.outcome || "Lost call").slice(0, 3),
     };
-  });
+  }).sort((a, b) => parseMoney(b.lostRevenue) - parseMoney(a.lostRevenue));
 }
 
-function buildPhrases(salesRows: SalesRow[], dmMessages: DmMessageRow[], fathomCalls: FathomCallRow[], ads: AdIntel[]): { up: Phrase[]; down: Phrase[] } {
+function buildPhrases(
+  salesRows: SalesRow[],
+  dmMessages: DmMessageRow[],
+  dmTranscripts: DmTranscriptRow[],
+  fathomCalls: FathomCallRow[],
+  ads: AdIntel[],
+): { up: Phrase[]; down: Phrase[] } {
   const closedTexts = salesRows
     .filter((row) => outcomeStatus(row.outcome) === "closed")
     .map((row) => textOf(row.offer, row.outcome, row.objection, row.call_notes, row.prospect_name));
@@ -794,9 +862,10 @@ function buildPhrases(salesRows: SalesRow[], dmMessages: DmMessageRow[], fathomC
     .filter((row) => outcomeStatus(row.outcome) === "lost")
     .map((row) => textOf(row.offer, row.outcome, row.objection, row.call_notes, row.prospect_name));
   const dmText = dmMessages.map((message) => message.body ?? "").join(" ").toLowerCase();
+  const dmTranscriptText = dmTranscripts.map((transcript) => `${transcript.transcript ?? ""} ${transcript.review_result ?? ""}`).join(" ").toLowerCase();
   const fathomText = fathomCalls.map((call) => `${call.summary ?? ""} ${call.transcript ?? ""}`).join(" ").toLowerCase();
   const adText = ads.map((ad) => `${ad.copy} ${ad.imageText}`).join(" ").toLowerCase();
-  const closed = `${closedTexts.join(" ")} ${dmText} ${fathomText} ${adText}`;
+  const closed = `${closedTexts.join(" ")} ${dmText} ${dmTranscriptText} ${fathomText} ${adText}`;
   const lost = lostTexts.join(" ");
 
   const scored = PHRASE_BANK.map((phrase) => {
@@ -817,8 +886,8 @@ function buildPhrases(salesRows: SalesRow[], dmMessages: DmMessageRow[], fathomC
     .map((item) => ({ phrase: item.phrase, lift: `${item.score}%` }));
 
   return {
-    up: up.length ? up : cloneOverview().phrasesUp,
-    down: down.length ? down : cloneOverview().phrasesDown,
+    up,
+    down,
   };
 }
 
@@ -836,7 +905,6 @@ function prettyPhrase(value: string) {
 }
 
 function buildBriefs(avatars: Avatar[], phrasesUp: Phrase[], phrasesDown: Phrase[], stored: CampaignBrief[]): CampaignBrief[] {
-  const base = cloneOverview().briefs;
   const topAvatar = avatars[0];
   const generated: CampaignBrief[] = topAvatar ? [{
     id: `live-${slug(topAvatar.name)}`,
@@ -853,7 +921,7 @@ function buildBriefs(avatars: Avatar[], phrasesUp: Phrase[], phrasesDown: Phrase
     budget: "Start as a controlled sibling test. Scale only when cash quality and show rate hold.",
   }] : [];
 
-  const merged = [...stored, ...generated, ...base];
+  const merged = [...stored, ...generated];
   return Array.from(new Map(merged.map((brief) => [brief.id, brief])).values()).slice(0, 8);
 }
 
@@ -937,11 +1005,75 @@ function buildVerdicts(ads: AdIntel[], avatars: Avatar[], antiAvatars: AntiAvata
     });
   }
 
-  return verdicts.length ? verdicts.slice(0, 5) : cloneOverview().verdicts;
+  if (verdicts.length) return verdicts.slice(0, 5);
+
+  return [{
+    id: "watch-more-live-signal",
+    type: "watch",
+    when: "synced just now",
+    claim: "The Brain needs more live signal before making a scaling call.",
+    why: "The data pipes are connected, but the current window does not have enough closed/lost calls tied to ads and DMs to produce a strong verdict.",
+    basis: `${ads.length} ads, ${avatars.reduce((sum, avatar) => sum + avatar.calls, 0)} sales rows, ${phrasesUp.length + phrasesDown.length} scored phrases`,
+    action: "Run sync now",
+    receipts: [
+      { type: "stats", title: "Current signal", items: [
+        { label: "Ads ranked", value: String(ads.length) },
+        { label: "Buyer avatars", value: String(avatars.length) },
+        { label: "Filter patterns", value: String(antiAvatars.length) },
+      ] },
+    ],
+  }];
+}
+
+function buildOperationalVerdicts(sources: LiveSources): Verdict[] {
+  const supabase = sources.sourceStatus.find((source) => source.id === "supabase");
+  const errorSources = sources.sourceStatus.filter((source) => source.status === "error");
+  if (!sources.hasDb || supabase?.status === "missing") {
+    return [{
+      id: "connect-supabase-preview",
+      type: "fix",
+      when: "now",
+      claim: "Connect Supabase before judging the Brain.",
+      why: "This deployment has no Supabase service credentials, so it cannot read sales calls, DMs, Fathom calls, or ad tracker rows. Showing fake buyer data here would be lying.",
+      basis: "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are missing in this runtime",
+      action: "Open cost + sync status",
+      receipts: [
+        { type: "text", title: "What this means", body: "The frontend is running, but the live data layer is disconnected in this environment. Add the Supabase env vars to Preview or run this branch in an environment that has them." },
+      ],
+    }];
+  }
+
+  if (errorSources.length) {
+    return [{
+      id: "fix-source-errors",
+      type: "fix",
+      when: "synced just now",
+      claim: "Fix the source reads before trusting Marketing Brain output.",
+      why: "At least one live source returned an error. The Brain is built to show this instead of silently falling back to prototype data.",
+      basis: errorSources.map((source) => `${source.label}: ${source.detail}`).join(" | "),
+      action: "Run sync now",
+      receipts: [
+        { type: "stats", title: "Source errors", items: errorSources.map((source) => ({ label: source.label, value: source.status })) },
+      ],
+    }];
+  }
+
+  return [{
+    id: "waiting-for-live-rows",
+    type: "watch",
+    when: "synced just now",
+    claim: "The Brain is connected, but no live marketing rows are in this window yet.",
+    why: "Sales tracker, booked calls, DMs, Fathom calls, and ad tracker rows all came back empty for the current analysis window.",
+    basis: sources.sourceStatus.map((source) => `${source.label}: ${source.count}`).join(" | "),
+    action: "Run sync now",
+    receipts: [
+      { type: "stats", title: "Source counts", items: sources.sourceStatus.map((source) => ({ label: source.label, value: String(source.count) })) },
+    ],
+  }];
 }
 
 function buildTrends(calls: CallHistory[]): MarketingBrainData["trends"] {
-  if (calls.length < 4) return cloneOverview().trends;
+  if (calls.length < 4) return emptyTrends();
   const weeks = Array.from({ length: 12 }, () => ({ closed: 0, total: 0, avatars: new Map<string, number>(), anti: new Map<string, number>() }));
   const now = new Date();
   for (const call of calls) {
@@ -962,24 +1094,56 @@ function buildTrends(calls: CallHistory[]): MarketingBrainData["trends"] {
   };
 }
 
+function emptyTrends(): MarketingBrainData["trends"] {
+  return {
+    closeRate: Array.from({ length: 12 }, () => 0),
+    phrases: [],
+    avatarMix: {
+      stages: [],
+      colors: [],
+      weeks: Array.from({ length: 12 }, () => []),
+    },
+    antiICP: [],
+  };
+}
+
 async function collectLiveSources(db: ServiceDb | null): Promise<LiveSources> {
   if (!db) {
-    return { salesRows: [], appointments: [], dmMessages: [], dmTranscripts: [], fathomCalls: [], adsDashboard: null };
+    return {
+      hasDb: false,
+      salesRows: [],
+      appointments: [],
+      dmMessages: [],
+      dmTranscripts: [],
+      fathomCalls: [],
+      adsDashboard: null,
+      sourceStatus: [
+        missingSource("supabase", "Supabase"),
+        missingSource("sales", "Sales tracker"),
+        missingSource("appointments", "Booked calls"),
+        missingSource("dm_messages", "DM messages"),
+        missingSource("dm_transcripts", "DM transcripts"),
+        missingSource("fathom", "Fathom calls"),
+        missingSource("ads", "Ads tracker"),
+        missingSource("ocr", "Ad OCR"),
+      ],
+    };
   }
 
   const today = todayIso();
   const from = shiftDate(today, -120);
   const to = shiftDate(today, 14);
-  const [salesRows, appointments, dmMessages, dmTranscripts, fathomCalls, adsDashboard] = await Promise.all([
-    readRows<SalesRow>("sales tracker rows", () =>
+  const [sales, appointmentsResult, dmMessagesResult, dmTranscriptsResult, fathomCallsResult, adsResult] = await Promise.all([
+    readLiveRows<SalesRow>("sales", "Sales tracker", "Closed/lost/follow-up call outcomes from sales_tracker_rows.", () =>
       db
         .from("sales_tracker_rows")
         .select("id,date,prospect_name,prospect_name_normalized,call_taken,call_taken_status,outcome,closer,objection,contracted_revenue_cents,collected_revenue_cents,setter,call_notes,recording_link,offer")
         .gte("date", from)
         .order("date", { ascending: false })
         .limit(300),
+      (rows) => rows[0]?.date,
     ),
-    readRows<AppointmentRow>("GHL appointments", () =>
+    readLiveRows<AppointmentRow>("appointments", "Booked calls", "Upcoming and recent booked calls from ghl_appointments.", () =>
       db
         .from("ghl_appointments")
         .select("appointment_id,contact_id,contact_name,start_time,status,event_type,closer_name,client,keyword_raw,keyword_normalized,raw_payload")
@@ -987,49 +1151,84 @@ async function collectLiveSources(db: ServiceDb | null): Promise<LiveSources> {
         .lte("start_time", `${to}T23:59:59.999Z`)
         .order("start_time", { ascending: true })
         .limit(300),
+      (rows) => rows[rows.length - 1]?.start_time,
     ),
-    readRows<DmMessageRow>("DM conversation messages", () =>
+    readLiveRows<DmMessageRow>("dm_messages", "DM messages", "Message-level IG/GHL DM context before booked calls.", () =>
       db
         .from("dm_conversation_messages")
         .select("client,subscriber_id,contact_id,setter_name,conversation_id,direction,body,sent_at")
         .gte("sent_at", `${from}T00:00:00.000Z`)
         .order("sent_at", { ascending: false })
         .limit(1000),
+      (rows) => rows[0]?.sent_at,
     ),
-    readRows<DmTranscriptRow>("DM transcripts", () =>
+    readLiveRows<DmTranscriptRow>("dm_transcripts", "DM transcripts", "Legacy/summary DM transcripts and review notes.", () =>
       db
         .from("dm_transcripts")
         .select("setter_name,client,transcript,submitted_at,review_result")
         .gte("submitted_at", `${from}T00:00:00.000Z`)
         .order("submitted_at", { ascending: false })
         .limit(200),
+      (rows) => rows[0]?.submitted_at,
     ),
-    readRows<FathomCallRow>("Fathom calls", () =>
+    readLiveRows<FathomCallRow>("fathom", "Fathom calls", "Stored Fathom transcripts and summaries captured by webhook.", () =>
       db
         .from("marketing_brain_fathom_calls")
         .select("meeting_id,title,share_url,transcript,summary,recorded_at")
         .gte("recorded_at", `${from}T00:00:00.000Z`)
         .order("recorded_at", { ascending: false })
         .limit(300),
+      (rows) => rows[0]?.recorded_at,
     ),
     loadAdsDashboard(from, today),
   ]);
 
-  return { salesRows, appointments, dmMessages, dmTranscripts, fathomCalls, adsDashboard };
+  return {
+    hasDb: true,
+    salesRows: sales.rows,
+    appointments: appointmentsResult.rows,
+    dmMessages: dmMessagesResult.rows,
+    dmTranscripts: dmTranscriptsResult.rows,
+    fathomCalls: fathomCallsResult.rows,
+    adsDashboard: adsResult.dashboard,
+    sourceStatus: [
+      { id: "supabase", label: "Supabase", status: "connected", count: 1, detail: "Service role connected for server-side synthesis." },
+      sales.status,
+      appointmentsResult.status,
+      dmMessagesResult.status,
+      dmTranscriptsResult.status,
+      fathomCallsResult.status,
+      adsResult.status,
+    ],
+  };
 }
 
-async function loadAdsDashboard(dateFrom: string, dateTo: string): Promise<AdsDashboardPayload | null> {
+async function loadAdsDashboard(dateFrom: string, dateTo: string): Promise<{ dashboard: AdsDashboardPayload | null; status: BrainSourceStatus }> {
   try {
-    return await getAdsTrackerDashboard({
+    const dashboard = await getAdsTrackerDashboard({
       account: "all",
       status: "all",
       level: "ad",
       dateFrom,
       dateTo,
     }) as AdsDashboardPayload;
+    const rows = dashboard.rows ?? [];
+    return {
+      dashboard,
+      status: sourceStatus("ads", "Ads tracker", rows, "Ads tracker attribution rows at ad level.", dashboard.sourceStatus?.meta?.latestSyncedAt ?? null),
+    };
   } catch (error) {
     console.warn("[marketing-brain] Ads tracker unavailable:", error);
-    return null;
+    return {
+      dashboard: null,
+      status: {
+        id: "ads",
+        label: "Ads tracker",
+        status: "error",
+        count: 0,
+        detail: error instanceof Error ? error.message : "Ads tracker unavailable",
+      },
+    };
   }
 }
 
@@ -1051,16 +1250,31 @@ export async function getMarketingBrainOverview(): Promise<MarketingBrainData> {
     readStoredBriefs(db),
     readStoredOcr(db),
   ]);
-  const sources = await collectLiveSources(db);
+  const collected = await collectLiveSources(db);
+  const sources: LiveSources = {
+    ...collected,
+    sourceStatus: [
+      ...collected.sourceStatus.filter((source) => source.id !== "ocr"),
+      {
+        id: "ocr",
+        label: "Ad OCR",
+        status: Object.keys(ocr).length ? "connected" : collected.hasDb ? "empty" : "missing",
+        count: Object.keys(ocr).length,
+        detail: Object.keys(ocr).length ? "Stored image text from ad creatives." : collected.hasDb ? "No ad image text has been extracted yet." : "This runtime is missing Supabase service credentials.",
+      },
+    ],
+  };
 
   if (!hasLiveData(sources)) {
-    const base = cloneOverview();
     return {
-      ...base,
+      ...emptyBrainData(sources),
+      verdicts: buildOperationalVerdicts(sources),
       rules: storedRules,
-      briefs: mergeBriefs(storedBriefs, base.briefs),
+      briefs: storedBriefs,
       cost: {
-        ...base.cost,
+        spend: "$0",
+        cap: "$250",
+        perCall: "$0.00",
         backfill: db ? "ready" : "connect Supabase",
       },
     };
@@ -1071,7 +1285,7 @@ export async function getMarketingBrainOverview(): Promise<MarketingBrainData> {
   const { callsHistory, upcoming, callBriefs } = buildCalls(sources.salesRows, sources.appointments, sources.dmMessages, sources.fathomCalls, rates);
   const avatars = buildAvatars(sources.salesRows);
   const antiAvatars = buildAntiAvatars(sources.salesRows);
-  const phrases = buildPhrases(sources.salesRows, sources.dmMessages, sources.fathomCalls, ads);
+  const phrases = buildPhrases(sources.salesRows, sources.dmMessages, sources.dmTranscripts, sources.fathomCalls, ads);
   const briefs = buildBriefs(avatars, phrases.up, phrases.down, storedBriefs);
   const verdicts = buildVerdicts(ads, avatars, antiAvatars, phrases.up, phrases.down);
 
@@ -1091,11 +1305,50 @@ export async function getMarketingBrainOverview(): Promise<MarketingBrainData> {
     trends: buildTrends(callsHistory),
     rules: storedRules,
     cost: buildCost(sources),
+    sourceStatus: buildSourceStatus(sources),
   };
 }
 
-function mergeBriefs(primary: CampaignBrief[], fallback: CampaignBrief[]) {
-  return Array.from(new Map([...primary, ...fallback].map((brief) => [brief.id, brief])).values());
+function emptyBrainData(sources: LiveSources): MarketingBrainData {
+  return {
+    ...cloneOverview(),
+    syncLabel: sources.hasDb ? "connected, no rows" : "not connected",
+    verdicts: [],
+    avatars: [],
+    antiAvatars: [],
+    phrasesUp: [],
+    phrasesDown: [],
+    ads: [],
+    briefs: [],
+    upcoming: [],
+    callBriefs: {},
+    callsHistory: [],
+    trends: emptyTrends(),
+    neural: cloneOverview().neural,
+    rules: [],
+    cost: {
+      spend: "$0",
+      cap: "$250",
+      perCall: "$0.00",
+      backfill: sources.hasDb ? "ready" : "connect Supabase",
+    },
+    sourceStatus: buildSourceStatus(sources),
+  };
+}
+
+function buildSourceStatus(sources: LiveSources): MarketingBrainData["sourceStatus"] {
+  const hasErrors = sources.sourceStatus.some((source) => source.status === "error");
+  const hasLive = hasLiveData(sources);
+  return {
+    runtime: {
+      mode: !sources.hasDb ? "not_connected" : hasErrors || !hasLive ? "partial" : "live",
+      generatedAt: new Date().toISOString(),
+      window: "last 120 days + next 14 days",
+      hasDb: sources.hasDb,
+      hasLiveData: hasLive,
+    },
+    sources: sources.sourceStatus,
+  };
 }
 
 function buildCost(sources: LiveSources): MarketingBrainData["cost"] {

@@ -153,6 +153,23 @@ export type NeuralEdge = {
   emphasis?: boolean;
 };
 
+export type BrainSourceStatus = {
+  id: "supabase" | "sales" | "appointments" | "dm_messages" | "dm_transcripts" | "fathom" | "ads" | "ocr";
+  label: string;
+  status: "connected" | "empty" | "missing" | "error";
+  count: number;
+  detail: string;
+  latest?: string | null;
+};
+
+export type BrainRuntimeStatus = {
+  mode: "live" | "partial" | "not_connected";
+  generatedAt: string;
+  window: string;
+  hasDb: boolean;
+  hasLiveData: boolean;
+};
+
 export type MarketingBrainData = {
   syncLabel: string;
   verdicts: Verdict[];
@@ -177,6 +194,10 @@ export type MarketingBrainData = {
     perCall: string;
     backfill: string;
   };
+  sourceStatus: {
+    runtime: BrainRuntimeStatus;
+    sources: BrainSourceStatus[];
+  };
 };
 
 const commonDm = [
@@ -187,6 +208,25 @@ const commonDm = [
 
 export const marketingBrainOverview: MarketingBrainData = {
   syncLabel: "synced just now",
+  sourceStatus: {
+    runtime: {
+      mode: "live",
+      generatedAt: "prototype",
+      window: "prototype",
+      hasDb: true,
+      hasLiveData: true,
+    },
+    sources: [
+      { id: "supabase", label: "Supabase", status: "connected", count: 1, detail: "Prototype data object" },
+      { id: "sales", label: "Sales tracker", status: "connected", count: 64, detail: "Prototype closed/lost calls" },
+      { id: "appointments", label: "Booked calls", status: "connected", count: 4, detail: "Prototype upcoming calls" },
+      { id: "dm_messages", label: "DM messages", status: "connected", count: 28, detail: "Prototype DM excerpts" },
+      { id: "dm_transcripts", label: "DM transcripts", status: "empty", count: 0, detail: "Prototype uses message excerpts" },
+      { id: "fathom", label: "Fathom calls", status: "connected", count: 64, detail: "Prototype transcript excerpts" },
+      { id: "ads", label: "Ads tracker", status: "connected", count: 7, detail: "Prototype ad rows" },
+      { id: "ocr", label: "Ad OCR", status: "connected", count: 4, detail: "Prototype image text" },
+    ],
+  },
   cost: {
     spend: "$41",
     cap: "$250",

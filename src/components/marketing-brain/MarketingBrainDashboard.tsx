@@ -79,10 +79,50 @@ function PaneHead({ title, sub, action }: { title: string; sub: string; action?:
   );
 }
 
+function runtimeLabel(mode: MarketingBrainData["sourceStatus"]["runtime"]["mode"]) {
+  if (mode === "live") return "Live data";
+  if (mode === "partial") return "Partial data";
+  return "Not connected";
+}
+
+function SourceStatusBar({ data }: { data: MarketingBrainData }) {
+  const { runtime, sources } = data.sourceStatus;
+  const connected = sources.filter((source) => source.status === "connected").length;
+  return (
+    <section className={`mb-source-strip ${runtime.mode}`}>
+      <div className="mb-source-main">
+        <span>{runtimeLabel(runtime.mode)}</span>
+        <strong>{connected}/{sources.length} sources connected</strong>
+        <em>{runtime.window}</em>
+      </div>
+      <div className="mb-source-pills">
+        {sources.map((source) => (
+          <span className={`mb-source-pill ${source.status}`} title={source.detail} key={source.id}>
+            {source.label}
+            <strong>{source.count}</strong>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="mb-empty-state">
+      <h3>{title}</h3>
+      <p>{body}</p>
+    </div>
+  );
+}
+
 function VerdictsPane({ data, open }: { data: MarketingBrainData; open: (modal: ModalState) => void }) {
   return (
     <section>
       <PaneHead title="Verdicts" sub="What the brain thinks you should do this week" />
+      {!data.verdicts.length && (
+        <EmptyState title="No verdicts yet" body="The Brain needs connected source data before it can make a useful call." />
+      )}
       <div className="mb-verdicts-feed">
         {data.verdicts.map((verdict) => (
           <button className="mb-verdict" key={verdict.id} onClick={() => open({ kind: "verdict", item: verdict })}>
@@ -107,6 +147,9 @@ function PrecallPane({ data, open }: { data: MarketingBrainData; open: (modal: M
   return (
     <section>
       <PaneHead title="Pre-call briefs" sub="Today's booked calls - click any to read the full packet" />
+      {!data.upcoming.length && (
+        <EmptyState title="No booked calls in the Brain yet" body="Once GHL appointments and DM threads are connected, each booked call will show a score and closer packet here." />
+      )}
       <div className="mb-precall-list">
         {data.upcoming.map((call) => (
           <button className={`mb-pc-row ${scoreTier(call.score)}`} key={call.name} onClick={() => open({ kind: "call", item: call })}>
@@ -145,6 +188,12 @@ function PeoplePane({ data, peopleTab, setPeopleTab, open }: {
           Filter out <TabCount count={data.antiAvatars.length} />
         </button>
       </div>
+      {showingBuyers && !data.avatars.length && (
+        <EmptyState title="No buyer avatars yet" body="Buyer avatars will appear after closed and lost calls are available from the sales tracker." />
+      )}
+      {!showingBuyers && !data.antiAvatars.length && (
+        <EmptyState title="No filter-out patterns yet" body="Anti-avatar patterns will appear after enough lost-call reasons and DM context are connected." />
+      )}
       <div className="mb-card-grid">
         {showingBuyers
           ? data.avatars.map((avatar) => (
@@ -191,6 +240,10 @@ function PeoplePane({ data, peopleTab, setPeopleTab, open }: {
 }
 
 function CallsPane({ data, open }: { data: MarketingBrainData; open: (modal: ModalState) => void }) {
+  if (!data.callsHistory.length) {
+    return <EmptyState title="No calls loaded" body="Sales tracker rows and booked appointments are not reaching this Brain yet." />;
+  }
+
   return (
     <div className="mb-table-shell">
       <div className="mb-table-head">
@@ -228,6 +281,10 @@ function CallsPane({ data, open }: { data: MarketingBrainData; open: (modal: Mod
 }
 
 function PhrasesPane({ data }: { data: MarketingBrainData }) {
+  if (!data.phrasesUp.length && !data.phrasesDown.length) {
+    return <EmptyState title="No phrase lift yet" body="The Brain needs real ad copy, DM language, call transcripts, and outcomes before phrase scoring is meaningful." />;
+  }
+
   return (
     <div className="mb-phrases-grid">
       <PhrasePanel title="Closes" label="up lift" phrases={data.phrasesUp} />
@@ -254,6 +311,10 @@ function PhrasePanel({ title, label, phrases, negative }: { title: string; label
 }
 
 function AdsPane({ data }: { data: MarketingBrainData }) {
+  if (!data.ads.length) {
+    return <EmptyState title="No ads loaded" body="Ads tracker rows are not reaching Marketing Brain in this environment yet." />;
+  }
+
   return (
     <div className="mb-table-shell">
       <div className="mb-table-head">
@@ -289,6 +350,10 @@ function AdsPane({ data }: { data: MarketingBrainData }) {
 }
 
 function BriefsPane({ data, open }: { data: MarketingBrainData; open: (modal: ModalState) => void }) {
+  if (!data.briefs.length) {
+    return <EmptyState title="No campaign briefs yet" body="Approved and generated briefs will appear after live avatars, phrases, and ad results exist." />;
+  }
+
   return (
     <div className="mb-card-grid">
       {data.briefs.map((brief) => (
@@ -312,6 +377,10 @@ function BriefsPane({ data, open }: { data: MarketingBrainData; open: (modal: Mo
 }
 
 function TrendsPane({ data }: { data: MarketingBrainData }) {
+  if (!data.callsHistory.length) {
+    return <EmptyState title="No trend history yet" body="Weekly charts need live calls with dated outcomes before they can say anything useful." />;
+  }
+
   return (
     <div className="mb-trends-grid">
       <LineChart title="Close rate - last 12 weeks" sub="Weekly close rate from sales tracker outcomes." values={data.trends.closeRate} color="#d4b27a" suffix="%" />
@@ -767,6 +836,18 @@ function CostDetail({ data }: { data: MarketingBrainData }) {
       </div>
       <Block label="Rule"><p className="mb-body-text">Read big files once. Save small facts. Reuse forever.</p></Block>
       <Block label="OCR note"><p className="mb-body-text">Ad image text should be extracted once when the creative enters the catalog, then stored beside the ad copy for phrase mining.</p></Block>
+      <Block label="Live source status">
+        <div className="mb-source-list">
+          {data.sourceStatus.sources.map((source) => (
+            <div className={`mb-source-row ${source.status}`} key={source.id}>
+              <span>{source.label}</span>
+              <strong>{source.count}</strong>
+              <em>{source.status}</em>
+              <p>{source.detail}</p>
+            </div>
+          ))}
+        </div>
+      </Block>
     </>
   );
 }
@@ -1031,6 +1112,11 @@ export default function MarketingBrainDashboard({ data }: { data: MarketingBrain
         setModal(null);
         return;
       }
+      if (modal.kind === "verdict" && /sync|status|cost/i.test(modal.item.action)) {
+        await applyResponse(await postJson("/api/marketing-brain/sync"), "Sync complete. The Brain recomputed the loop.");
+        setModal(null);
+        return;
+      }
       setNotice("This action is wired, but the downstream sibling system is not connected on this branch yet.");
       window.setTimeout(() => setNotice(null), 3200);
     } catch (error) {
@@ -1053,7 +1139,7 @@ export default function MarketingBrainDashboard({ data }: { data: MarketingBrain
               </button>
             ))}
           </div>
-          <button className="mb-sync" onClick={() => setModal({ kind: "cost" })} type="button">
+          <button className={`mb-sync ${dataView.sourceStatus.runtime.mode}`} onClick={() => setModal({ kind: "cost" })} type="button">
             <span />
             {dataView.syncLabel}
             <em>cost {dataView.cost.spend}/{dataView.cost.cap}</em>
@@ -1062,6 +1148,7 @@ export default function MarketingBrainDashboard({ data }: { data: MarketingBrain
       </nav>
       {notice && <div className="mb-notice">{notice}</div>}
       <main className="mb-page">
+        <SourceStatusBar data={dataView} />
         {activeTab === "verdicts" && <VerdictsPane data={dataView} open={setModal} />}
         {activeTab === "precall" && <PrecallPane data={dataView} open={setModal} />}
         {activeTab === "library" && <LibraryPane data={dataView} open={setModal} />}
