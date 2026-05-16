@@ -173,6 +173,7 @@ interface SalesAttributionOptions {
   dateLabel?: (match: KeywordEvent, row: SheetRow) => string;
   groupName?: (match: KeywordEvent, row: SheetRow) => string;
   groupHint?: (match: KeywordEvent, row: SheetRow) => BackfillGroupHint | null;
+  groupLevel?: AdsTrackerLevel;
   includeOutcomeMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeCallTakenMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeClientSplitMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
@@ -1013,9 +1014,9 @@ function applySalesToGroups(
         match.client_key,
         options.groupName?.(match, row) || displayKeyword(match.keyword_normalized),
         displayKeyword(match.keyword_normalized)
-      );
+    );
     applyOverrideMetadata(group, match);
-    applyBackfillHint(group, options.groupHint?.(match, row) || null, "ad");
+    applyBackfillHint(group, options.groupHint?.(match, row) || null, options.groupLevel || "ad");
     group.dateLabel = options.dateLabel?.(match, row) || group.dateLabel;
     groups.set(groupId, group);
 
@@ -1510,6 +1511,12 @@ function campaignDisplayName(row: Pick<MetaRow, "client_name" | "client_key" | "
   return row.campaign_name ? `${clientName} · ${row.campaign_name}` : clientName;
 }
 
+function clientDisplayName(clientKey: string) {
+  if (clientKey === "tyson") return "Tyson";
+  if (clientKey === "keith") return "Keith";
+  return clientKey;
+}
+
 function hintFromMetaRow(row: MetaRow, keyword: string): BackfillGroupHint {
   return {
     campaignId: row.campaign_id,
@@ -1942,6 +1949,10 @@ function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: 
   if (!hint) return;
   group.campaignId = group.campaignId || hint.campaignId;
   group.campaignName = group.campaignName || hint.campaignName;
+  if (level === "campaign" && hint.campaignName) {
+    group.name = `${clientDisplayName(group.clientKey)} · ${hint.campaignName}`;
+    group.keyword = hint.campaignName;
+  }
   if (level === "ad") {
     group.adId = group.adId || hint.adId;
     group.adName = group.adName || hint.adName;
@@ -1953,6 +1964,7 @@ function addKeywordEventsToGroups(
   events: KeywordEvent[],
   groupIdForEvent: (event: KeywordEvent, keyword: string) => string,
   dateLabelForEvent: (event: KeywordEvent) => string,
+  level: AdsTrackerLevel = "ad",
   hintForEvent?: (event: KeywordEvent, keyword: string, groupId: string) => BackfillGroupHint | null
 ) {
   for (const event of events) {
@@ -1967,7 +1979,7 @@ function addKeywordEventsToGroups(
 
     const group = groups.get(id) || emptyGroup(id, event.client_key, displayKeyword(keyword), displayKeyword(keyword));
     applyOverrideMetadata(group, event);
-    applyBackfillHint(group, hint, "ad");
+    applyBackfillHint(group, hint, level);
     const manualValue = Number(event.value_cents || 0);
 
     if (event.event_type === "manual_messages") {
@@ -2699,6 +2711,7 @@ function attributionOverrideEventForRow(
   const useNoKeyword = !keyword && resolution.noKeyword && resolutionHasCampaignTarget(resolution);
   const eventKeyword = keyword || (useNoKeyword ? NO_KEYWORD_ATTRIBUTION_KEYWORD : null);
   if (!eventKeyword || !resolvedClientKey) return null;
+  const isAutoResolution = resolution.source === AUTO_ATTRIBUTION_SOURCE;
 
   return {
     source: "ghl",
@@ -2710,13 +2723,21 @@ function attributionOverrideEventForRow(
       ? resolution.keywordRaw || displayKeyword(keyword)
       : NO_KEYWORD_ATTRIBUTION_LABEL,
     keyword_normalized: eventKeyword,
-    override_group_id: resolution.groupId,
+    override_group_id: isAutoResolution ? null : resolution.groupId,
     override_group_name:
-      resolution.source === AUTO_ATTRIBUTION_SOURCE || useNoKeyword ? null : resolution.groupName,
-    override_campaign_id: resolution.campaignId,
-    override_campaign_name: resolution.campaignName,
-    override_ad_id: useNoKeyword ? noKeywordAdId(resolution) : resolution.adId,
-    override_ad_name: useNoKeyword ? NO_KEYWORD_ATTRIBUTION_LABEL : resolution.adName,
+      isAutoResolution || useNoKeyword ? null : resolution.groupName,
+    override_campaign_id: isAutoResolution ? null : resolution.campaignId,
+    override_campaign_name: isAutoResolution ? null : resolution.campaignName,
+    override_ad_id: isAutoResolution
+      ? null
+      : useNoKeyword
+        ? noKeywordAdId(resolution)
+        : resolution.adId,
+    override_ad_name: isAutoResolution
+      ? null
+      : useNoKeyword
+        ? NO_KEYWORD_ATTRIBUTION_LABEL
+        : resolution.adName,
     attribution_resolution_id: resolution.id,
     subscriber_id: null,
     subscriber_name: null,
@@ -3309,6 +3330,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     (event, keyword) =>
       periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
     () => `${query.dateFrom} - ${query.dateTo}`,
+    query.level,
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
       exactMetaHintForKeywordEvent(event, attributionRows)
@@ -3454,6 +3476,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`)
       ),
     () => `${query.dateFrom} - ${query.dateTo}`,
+    query.level,
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
       exactMetaHintForKeywordEvent(event, attributionRows)
@@ -3501,6 +3524,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         exactMetaHintForKeywordEvent(match, attributionRows)
       );
     },
+    groupLevel: query.level,
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
@@ -3574,6 +3598,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
       ),
     (event) => eventDateKey(event.event_at),
+    query.level,
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
       exactMetaHintForKeywordEvent(event, attributionRows)
@@ -3603,6 +3628,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         )
       ),
     (event) => eventDateKey(event.event_at),
+    query.level,
     (event, keyword, groupId) =>
       hintForAttributionGroupId(groupId, attributionRows, keyword) ||
       exactMetaHintForKeywordEvent(event, attributionRows)
@@ -3636,6 +3662,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         exactMetaHintForKeywordEvent(match, attributionRows)
       );
     },
+    groupLevel: query.level,
     includeOutcomeMetrics: includeSalesOutcomeMetrics,
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
