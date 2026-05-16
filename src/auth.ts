@@ -38,7 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = (profile?.email ?? token?.email ?? "").toString().toLowerCase();
       if (!email) return token;
 
-      const ALL_TABS = ["/","/mozi-metrics","/sales","/coaching","/onboarding","/ads","/studio","/studio-2","/outreach","/leads","/outreach-runs","/sales-hub","/media-buyer","/accountant","/intelligence","/log","/settings","/sop"];
+      const ALL_TABS = ["/","/mozi-metrics","/sales","/coaching","/onboarding","/ads","/marketing-brain","/studio","/studio-2","/outreach","/leads","/outreach-runs","/sales-hub","/media-buyer","/accountant","/intelligence","/log","/settings","/sop"];
 
       // Check app_users table first
       try {
