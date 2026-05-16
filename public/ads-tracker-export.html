@@ -4306,7 +4306,7 @@ function App(){
   const [account, setAccount] = useState("all");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last7", todayEt()));
+  const [dateRange, setDateRange] = useState(()=>rangeForPreset("mtd", todayEt()));
   const [dashboard, setDashboard] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
