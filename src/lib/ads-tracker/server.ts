@@ -1266,6 +1266,32 @@ function candidateHasDeliveryOnDate(
   );
 }
 
+function latestStartedCandidateForDate<
+  T extends {
+    firstDate: string;
+    lastDate: string;
+    spendCents: number;
+    impressions: number;
+    linkClicks: number;
+  },
+>(candidates: T[], date: string): T | null {
+  const started = candidates.filter((candidate) => candidate.firstDate <= date);
+  if (started.length === 0) return null;
+
+  const inWindow = started.filter((candidate) => candidate.lastDate >= date);
+  const pool = inWindow.length ? inWindow : started;
+  return pool
+    .slice()
+    .sort(
+      (a, b) =>
+        b.lastDate.localeCompare(a.lastDate) ||
+        b.firstDate.localeCompare(a.firstDate) ||
+        b.spendCents - a.spendCents ||
+        b.impressions - a.impressions ||
+        b.linkClicks - a.linkClicks
+    )[0] || null;
+}
+
 function uniqueMetaGroupResolver<T>(
   rows: MetaRow[],
   groupIdForRow: (row: MetaRow, keyword: string) => string,
@@ -1351,7 +1377,7 @@ function uniqueMetaGroupResolver<T>(
       if (attributionDate && candidateHasDeliveryOnDate(candidate, attributionDate)) {
         return candidate.id;
       }
-      return candidate.active ? candidate.id : fallbackId;
+      return candidate.id;
     }
 
     if (attributionDate) {
@@ -1380,7 +1406,9 @@ function uniqueMetaGroupResolver<T>(
 
       if (isLiveAttribution) {
         const activeCandidates = candidates.filter((candidate) => candidate.active);
-        return activeCandidates.length === 1 ? activeCandidates[0].id : fallbackId;
+        if (activeCandidates.length === 1) return activeCandidates[0].id;
+        if (activeCandidates.length > 1) return fallbackId;
+        return latestStartedCandidateForDate(candidates, attributionDate)?.id || fallbackId;
       }
 
       const rankedByDate = candidates
