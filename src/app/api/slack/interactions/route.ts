@@ -48,9 +48,15 @@ interface SlackInteractionPayload {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawBody = await req.text();
 
-  // 1. Verify signature
+  // 1. Verify signature. Prefer the coaching-specific signing secret
+  // (matches SLACK_BOT_TOKEN_COACHING). Falls back to the generic
+  // SLACK_SIGNING_SECRET if only that one is set, so this endpoint
+  // remains usable across either env layout.
   const ok = verifyRequestSignature({
-    signingSecret: process.env.SLACK_SIGNING_SECRET ?? "",
+    signingSecret:
+      process.env.SLACK_SIGNING_SECRET_COACHING ??
+      process.env.SLACK_SIGNING_SECRET ??
+      "",
     signatureHeader: req.headers.get("x-slack-signature"),
     timestampHeader: req.headers.get("x-slack-request-timestamp"),
     rawBody,
