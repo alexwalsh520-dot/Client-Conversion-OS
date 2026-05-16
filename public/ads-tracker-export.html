@@ -426,13 +426,13 @@
   .calendar-day-head{height:19px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
   .calendar-day-num{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--text-3)}
   .calendar-day-count{font-size:9px;color:var(--gold);border:1px solid rgba(212,178,122,.22);border-radius:999px;background:rgba(212,178,122,.055);padding:2px 6px;white-space:nowrap}
-  .calendar-call{width:100%;display:block;text-align:left;padding:8px 9px;margin-bottom:6px;border:1px solid rgba(255,255,255,.055);border-radius:8px;background:#141414;box-shadow:inset 3px 0 0 var(--text-4);transition:background .14s,border-color .14s,transform .14s}
-  .calendar-call:hover{background:#191919;border-color:#333;transform:translateY(-1px)}
+  .calendar-call{width:100%;display:block;text-align:left;padding:9px 10px;margin-bottom:7px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:linear-gradient(180deg,#171717,#111);box-shadow:0 1px 0 rgba(255,255,255,.035) inset,0 8px 18px rgba(0,0,0,.16);transition:background .14s,border-color .14s,transform .14s,box-shadow .14s}
+  .calendar-call:hover{background:linear-gradient(180deg,#1c1c1c,#131313);border-color:#343434;box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 12px 24px rgba(0,0,0,.22);transform:translateY(-1px)}
   .calendar-call:focus-visible{outline:1px solid rgba(212,178,122,.75);outline-offset:2px}
-  .calendar-call.status-upcoming{box-shadow:inset 3px 0 0 var(--gold)}
-  .calendar-call.status-show{box-shadow:inset 3px 0 0 var(--green)}
-  .calendar-call.status-no_show{box-shadow:inset 3px 0 0 var(--red)}
-  .calendar-call.status-needs_review,.calendar-call.status-missing_keyword{box-shadow:inset 3px 0 0 var(--blue)}
+  .calendar-call.status-upcoming{border-color:rgba(212,178,122,.18);background:radial-gradient(circle at 86% -20%,rgba(212,178,122,.13),transparent 42%),linear-gradient(180deg,#181714,#111)}
+  .calendar-call.status-show{border-color:rgba(125,211,168,.16);background:radial-gradient(circle at 86% -20%,rgba(125,211,168,.11),transparent 42%),linear-gradient(180deg,#151817,#111)}
+  .calendar-call.status-no_show{border-color:rgba(232,154,148,.17);background:radial-gradient(circle at 86% -20%,rgba(232,154,148,.12),transparent 42%),linear-gradient(180deg,#181514,#111)}
+  .calendar-call.status-needs_review,.calendar-call.status-missing_keyword{border-color:rgba(122,167,212,.18);background:radial-gradient(circle at 86% -20%,rgba(122,167,212,.13),transparent 42%),linear-gradient(180deg,#14171a,#111)}
   .calendar-call-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .calendar-dot{width:7px;height:7px;border-radius:99px;margin-top:4px;background:var(--text-4)}
   .calendar-dot.upcoming{background:var(--gold)}
@@ -2836,21 +2836,16 @@ function TasksSection({dashboard, campaigns, onResolve, onToast, onOpenWorkspace
   );
 }
 
-function calendarMonthDays(monthIso){
-  const days = [];
-  const monthDate = new Date(monthIso+"T00:00:00");
-  const firstDow = monthDate.getDay();
-  const monthDays = daysInMonth(monthIso);
-  for(let i=0;i<firstDow;i++){
-    const iso = shiftIso(monthIso, i-firstDow);
-    days.push({iso, muted:true});
-  }
-  for(let d=1; d<=monthDays; d++) days.push({iso:isoForMonthDay(monthIso,d), muted:false});
-  while(days.length % 7 !== 0){
-    const last = days[days.length-1].iso;
-    days.push({iso:shiftIso(last,1), muted:true});
-  }
-  return days;
+function calendarSevenDays(endIso){
+  const end = endIso || todayEt();
+  return Array.from({length:7}, (_, i) => ({iso:shiftIso(end, i - 6), muted:false}));
+}
+
+function weekdayLabelFromIso(value){
+  if(!value) return "";
+  const d = new Date(value+"T00:00:00");
+  if(Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", {weekday:"short"});
 }
 
 function calendarStatusLabel(status){
@@ -2935,8 +2930,13 @@ function CalendarAppointmentModal({call, onClose, onOpenWorkspace}){
 function CalendarSection({dashboard, dateRange, onOpenWorkspace}){
   const events = Array.isArray(dashboard?.calendarEvents) ? dashboard.calendarEvents : [];
   const [selectedCall, setSelectedCall] = useState(null);
-  const monthIso = monthStartIso(dateRange?.dateFrom || todayEt());
-  const days = calendarMonthDays(monthIso);
+  const weekEnd = dateRange?.dateTo || todayEt();
+  const days = calendarSevenDays(weekEnd);
+  const weekStart = days[0]?.iso || weekEnd;
+  const visibleEvents = events.filter(event => {
+    const iso = isoFromAnyDate(event.eventAt);
+    return iso && iso >= weekStart && iso <= weekEnd;
+  });
   const eventsByDay = events.reduce((map, event) => {
     const iso = isoFromAnyDate(event.eventAt);
     if(!iso) return map;
@@ -2945,60 +2945,54 @@ function CalendarSection({dashboard, dateRange, onOpenWorkspace}){
     return map;
   }, {});
   const today = todayEt();
-  const dow = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const reviewCount = events.filter(event => event.status === "needs_review" || event.status === "missing_keyword").length;
+  const reviewCount = visibleEvents.filter(event => event.status === "needs_review" || event.status === "missing_keyword").length;
+  const weekLabel = `${dateLabelFromIso(weekStart)} - ${dateLabelFromIso(weekEnd)}`;
   return (
     <div className="section">
       <div className="section-head">
         <div className="section-label">Calendar</div>
-        <div className="section-meta">{monthTitle(monthIso)} · {events.length} booked call{events.length===1?"":"s"}</div>
+        <div className="section-meta">{weekLabel} · {visibleEvents.length} booked call{visibleEvents.length===1?"":"s"}</div>
       </div>
       <div className="calendar-panel">
-        {events.length === 0 ? (
-          <div className="calendar-empty">No booked calls in this date range.</div>
-        ) : (
-          <>
-            <div className="calendar-summary">
-              <div>
-                <div className="calendar-summary-title">Booked calls by day</div>
-                <div className="calendar-summary-meta">{reviewCount ? `${reviewCount} need attribution` : "All visible calls are attributed or pending"}</div>
-              </div>
-              <div className="calendar-summary-meta">Click any appointment</div>
-            </div>
-            <div className="calendar-board">
-              {dow.map(day=><div key={day} className="calendar-dow">{day}</div>)}
-              {days.map(day=>{
-                const calls = (eventsByDay[day.iso] || []).slice().sort((a,b)=>String(a.eventAt).localeCompare(String(b.eventAt)));
-                return (
-                  <div key={day.iso} className={"calendar-cell "+(day.muted?"muted ":"")+(day.iso===today?"today":"")}>
-                    <div className="calendar-day-head">
-                      <div className="calendar-day-num">{Number(day.iso.slice(-2))}</div>
-                      {calls.length > 0 && <div className="calendar-day-count">{calls.length}</div>}
+        <div className="calendar-summary">
+          <div>
+            <div className="calendar-summary-title">7-day booked call view</div>
+            <div className="calendar-summary-meta">{visibleEvents.length === 0 ? "No booked calls visible" : reviewCount ? `${reviewCount} need attribution` : "All visible calls are attributed or pending"}</div>
+          </div>
+          <div className="calendar-summary-meta">{visibleEvents.length ? "Click any appointment" : weekLabel}</div>
+        </div>
+        <div className="calendar-board">
+          {days.map(day=><div key={"dow-"+day.iso} className="calendar-dow">{weekdayLabelFromIso(day.iso)}</div>)}
+          {days.map(day=>{
+            const calls = (eventsByDay[day.iso] || []).slice().sort((a,b)=>String(a.eventAt).localeCompare(String(b.eventAt)));
+            return (
+              <div key={day.iso} className={"calendar-cell "+(day.muted?"muted ":"")+(day.iso===today?"today":"")}>
+                <div className="calendar-day-head">
+                  <div className="calendar-day-num">{Number(day.iso.slice(-2))}</div>
+                  {calls.length > 0 && <div className="calendar-day-count">{calls.length}</div>}
+                </div>
+                {calls.map(call=>(
+                  <button
+                    key={call.id}
+                    type="button"
+                    className={"calendar-call status-"+(call.status || "upcoming")}
+                    title={`${call.name || "Unknown"} · ${call.campaignName || "Needs attribution"}`}
+                    onClick={()=>setSelectedCall(call)}
+                  >
+                    <div className="calendar-call-top">
+                      <div className="calendar-call-name">{call.name || "Unknown"}</div>
+                      <span className={"calendar-status-pill "+(call.status || "upcoming")}>{calendarStatusLabel(call.status)}</span>
                     </div>
-                    {calls.map(call=>(
-                      <button
-                        key={call.id}
-                        type="button"
-                        className={"calendar-call status-"+(call.status || "upcoming")}
-                        title={`${call.name || "Unknown"} · ${call.campaignName || "Needs attribution"}`}
-                        onClick={()=>setSelectedCall(call)}
-                      >
-                        <div className="calendar-call-top">
-                          <div className="calendar-call-name">{call.name || "Unknown"}</div>
-                          <span className={"calendar-status-pill "+(call.status || "upcoming")}>{calendarStatusLabel(call.status)}</span>
-                        </div>
-                        <div className="calendar-call-time">{timeFromAnyDate(call.eventAt)}</div>
-                        <div className="calendar-call-meta">
-                          {call.campaignName || "Needs attribution"}{call.keyword ? ` · ${call.keyword}` : ""}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                    <div className="calendar-call-time">{timeFromAnyDate(call.eventAt)}</div>
+                    <div className="calendar-call-meta">
+                      {call.campaignName || "Needs attribution"}{call.keyword ? ` · ${call.keyword}` : ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
       {selectedCall && (
         <CalendarAppointmentModal
