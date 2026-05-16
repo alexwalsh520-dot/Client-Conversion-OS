@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AntiAvatar,
   Avatar,
@@ -88,7 +88,7 @@ function VerdictsPane({ data, open }: { data: MarketingBrainData; open: (modal: 
             <div className="mb-v-why">{verdict.why}</div>
             <div className="mb-v-foot">
               <span>{verdict.basis}</span>
-              <span>Open receipts</span>
+              <span>open -&gt;</span>
             </div>
           </button>
         ))}
@@ -376,7 +376,8 @@ function NeuralPane({ data }: { data: MarketingBrainData }) {
   const nodeW = 174;
   const nodeH = 60;
   const colX = [20, 270, 540, 810, 1080];
-  const rowY = (row: number) => 48 + row * 82;
+  const rowY = (row: number) => 56 + row * 92;
+  const activeRules = data.rules.filter((rule) => rule.active).length;
   const positioned = data.neural.nodes.map((node) => ({
     ...node,
     x: colX[node.col],
@@ -402,12 +403,49 @@ function NeuralPane({ data }: { data: MarketingBrainData }) {
   const connected = new Set([focusedId ?? "", ...inbound.map((edge) => edge.from), ...outbound.map((edge) => edge.to)]);
   const isEdgeOn = (edge: NeuralEdge) => focusedId ? edge.from === focusedId || edge.to === focusedId : false;
 
+  useEffect(() => {
+    if (!focusedId) return undefined;
+    const release = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocusedId(null);
+    };
+    window.addEventListener("keydown", release);
+    return () => window.removeEventListener("keydown", release);
+  }, [focusedId]);
+
   return (
-    <section>
-      <PaneHead title="Neural network" sub="How the brain is wired - inputs flow through processing into the outputs you see" />
-      <div className="mb-neural-wrap">
-        <div className="mb-nn-live">live</div>
-        <svg className={`mb-nn-svg ${focusedId ? "focused" : ""}`} viewBox="0 0 1274 520" preserveAspectRatio="xMidYMid meet">
+    <section className="mb-neural-page">
+      <div className="mb-neural-bg" aria-hidden="true">
+        <span className="glow one" />
+        <span className="glow two" />
+        <span className="glow three" />
+        <span className="grid" />
+        <span className="noise" />
+      </div>
+      <header className="mb-neural-hero">
+        <div className="mb-neural-eyebrow"><span />Marketing Brain</div>
+        <h1>Neural <em>network</em></h1>
+        <p>How the brain is wired - every input, every rule, every output, and the relationships between them. This is the map of what feeds what.</p>
+        <div className="mb-neural-status">
+          <span className="pulse" />
+          <span>Live</span>
+          <span className="sep">{"\u00b7"}</span>
+          <span>{data.syncLabel}</span>
+          <span className="sep">{"\u00b7"}</span>
+          <span><strong>{activeRules}</strong> active rules</span>
+          <span className="sep">{"\u00b7"}</span>
+          <span><strong>{data.neural.nodes.length}</strong> nodes</span>
+          <span className="sep">{"\u00b7"}</span>
+          <span><strong>{data.neural.edges.length}</strong> connections</span>
+        </div>
+      </header>
+      <div className="mb-neural-wrap" onClick={(event) => {
+        if (!(event.target as Element).closest(".mb-nn-node, .mb-nn-detail")) setFocusedId(null);
+      }}>
+        <div className="mb-nn-tools">
+          <span className="live"><span />Live</span>
+          <span className="hint">Click any node <kbd>{"\u00b7"}</kbd> Esc to release</span>
+        </div>
+        <svg className={`mb-nn-svg ${focusedId ? "focused" : ""}`} viewBox="0 0 1274 484" preserveAspectRatio="xMidYMid meet">
           {["Inputs", "Mined data", "Rules", "Synthesis", "Outputs"].map((label, index) => (
             <text className="mb-nn-label" x={colX[index] + nodeW / 2} y="22" textAnchor="middle" key={label}>{label}</text>
           ))}
@@ -430,7 +468,7 @@ function NeuralPane({ data }: { data: MarketingBrainData }) {
             const isOn = focusedId ? connected.has(node.id) : false;
             return (
               <g
-                className={`mb-nn-node ${node.type} ${isOn ? "on" : ""}`}
+                className={`mb-nn-node node-${node.type} ${isOn ? "on" : ""}`}
                 data-id={node.id}
                 key={node.id}
                 onClick={(event) => {
@@ -442,10 +480,10 @@ function NeuralPane({ data }: { data: MarketingBrainData }) {
                 transform={`translate(${node.x}, ${node.y})`}
               >
                 <rect width={nodeW} height={nodeH} rx="9" />
-                <text x="14" y="22" className="node-title">{node.label}</text>
-                <text x="14" y="40" className="node-sub">{node.sub}</text>
-                <circle cx={nodeW - 14} cy="22" r="3" />
-                <text x={nodeW - 28} y="44" className="node-glyph" textAnchor="end">{node.glyph}</text>
+                <text x="14" y="22" className="n-label">{node.label}</text>
+                <text x="14" y="40" className="n-sub">{node.sub}</text>
+                <circle cx={nodeW - 14} cy="22" r="3" className="n-dot" />
+                <text x={nodeW - 28} y="44" className="n-glyph" textAnchor="end">{node.glyph}</text>
               </g>
             );
           })}
@@ -469,6 +507,7 @@ function NeuralPane({ data }: { data: MarketingBrainData }) {
           </aside>
         )}
       </div>
+      <div className="mb-neural-signature">Marketing Brain - architecture map</div>
     </section>
   );
 }
@@ -798,20 +837,40 @@ function MultiLineChart({ title, sub, series }: { title: string; sub: string; se
 }
 
 function StackBars({ title, sub, data }: { title: string; sub: string; data: MarketingBrainData["trends"]["avatarMix"] }) {
+  const width = 460;
+  const height = 180;
+  const padL = 24;
+  const padR = 16;
+  const padT = 14;
+  const padB = 26;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const totals = data.weeks.map((week) => week.reduce((sum, value) => sum + value, 0));
+  const maxTotal = Math.max(...totals, 1);
+  const x = (index: number) => padL + (index / Math.max(data.weeks.length - 1, 1)) * plotW;
+  const y = (value: number) => padT + (1 - value / maxTotal) * plotH;
+  const areas = data.stages.map((stage, stageIndex) => {
+    const tops = data.weeks.map((week) => week.slice(0, stageIndex + 1).reduce((sum, value) => sum + value, 0));
+    const bottoms = data.weeks.map((week) => week.slice(0, stageIndex).reduce((sum, value) => sum + value, 0));
+    let d = `M ${x(0)} ${y(tops[0])}`;
+    for (let index = 1; index < data.weeks.length; index += 1) d += ` L ${x(index)} ${y(tops[index])}`;
+    for (let index = data.weeks.length - 1; index >= 0; index -= 1) d += ` L ${x(index)} ${y(bottoms[index])}`;
+    return { stage, d: `${d} Z`, color: data.colors[stageIndex] };
+  });
+
   return (
     <section className="mb-chart-card">
       <h3>{title}</h3>
       <p>{sub}</p>
-      <div className="mb-stack-bars">
-        {data.weeks.map((week, index) => {
-          const total = week.reduce((sum, value) => sum + value, 0);
-          return (
-            <div className="mb-stack" key={index}>
-              {week.map((value, innerIndex) => <span key={`${index}-${data.stages[innerIndex]}`} style={{ height: `${(value / total) * 100}%`, background: data.colors[innerIndex] }} />)}
-            </div>
-          );
+      <svg viewBox={`0 0 ${width} ${height}`} className="mb-chart-svg">
+        {areas.map((area) => <path d={area.d} fill={area.color} fillOpacity="0.78" key={area.stage} />)}
+        {[0, 1, 2].map((tick) => {
+          const value = maxTotal * tick / 2;
+          return <text x={padL - 6} y={y(value) + 3.5} textAnchor="end" className="mb-chart-axis" key={tick}>{Math.round(value)}</text>;
         })}
-      </div>
+        <text x={x(0)} y={height - 8} textAnchor="start" className="mb-chart-axis">12wk ago</text>
+        <text x={x(data.weeks.length - 1)} y={height - 8} textAnchor="end" className="mb-chart-axis">now</text>
+      </svg>
       <div className="mb-chart-legend">{data.stages.map((stage, index) => <span key={stage}><i style={{ background: data.colors[index] }} />{stage}</span>)}</div>
     </section>
   );
