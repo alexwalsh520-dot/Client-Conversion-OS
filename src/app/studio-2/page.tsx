@@ -53,6 +53,8 @@ const CANVAS_H = 1920;
 const AUTOSAVE_KEY = "active-draft";
 const DB_NAME = "ccos-studio-2";
 const DB_STORE = "drafts";
+const DEFAULT_PROJECT_NAME = "Studio 2.0 Batch";
+const EMPTY_PROJECT_NAME = "Untitled design";
 const HIDDEN_FOLDERS_KEY = "ccos-studio2-hidden-design-folders";
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
@@ -296,6 +298,11 @@ const getPhotoCopies = (photoCopies: Record<string, number>, photo: string) =>
 
 const cloneCreatives = (creatives: Creative[]) =>
   JSON.parse(JSON.stringify(creatives)) as Creative[];
+
+function hasMeaningfulProjectName(projectName: string) {
+  const trimmed = projectName.trim();
+  return !!trimmed && trimmed !== DEFAULT_PROJECT_NAME && trimmed !== EMPTY_PROJECT_NAME;
+}
 
 function normalizeTextBlock(block: TextBlock): TextBlock {
   const fontSize = block.fontSize || 44;
@@ -1291,7 +1298,7 @@ export default function Studio2Page() {
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copyText, setCopyText] = useState(DEFAULT_COPY);
-  const [projectName, setProjectName] = useState("Studio 2.0 Batch");
+  const [projectName, setProjectName] = useState(DEFAULT_PROJECT_NAME);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectFolderId, setProjectFolderId] = useState<string | null>(null);
   const [view, setView] = useState<StudioView>("home");
@@ -1454,9 +1461,10 @@ export default function Studio2Page() {
 
   const hasActiveDraft =
     photos.length > 0 ||
+    mediaAssets.length > 0 ||
     creatives.length > 0 ||
     !!projectId ||
-    projectName !== "Studio 2.0 Batch" ||
+    hasMeaningfulProjectName(projectName) ||
     copyText !== DEFAULT_COPY;
   const activeDraftId = projectId || "active-draft";
   const currentCloudProject = useMemo(
@@ -1617,7 +1625,7 @@ export default function Studio2Page() {
     async (draft: DraftState, refreshHome = false) => {
       const thumbnailUrl = draft.creatives[0]?.photoUrl || draft.photos[0] || null;
       const body = {
-        name: draft.projectName || "Untitled design",
+        name: draft.projectName || EMPTY_PROJECT_NAME,
         copyText: draft.copyText,
         draft,
         thumbnailUrl,
@@ -1644,7 +1652,7 @@ export default function Studio2Page() {
       return {
         id: projectId || activeDraftId,
         folderId: activeProjectFolderId,
-        name: projectName || "Untitled design",
+        name: projectName || EMPTY_PROJECT_NAME,
         copyText,
         draft: buildDraftState(),
         thumbnailUrl: currentCreative?.photoUrl || photos[0] || null,
@@ -1722,7 +1730,7 @@ export default function Studio2Page() {
         setCreatives((draft.creatives || []).map(normalizeCreative));
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
-        setProjectName(draft.projectName || "Studio 2.0 Batch");
+        setProjectName(draft.projectName || DEFAULT_PROJECT_NAME);
         setProjectId(draft.projectId || null);
         setProjectFolderId(getDraftProjectFolderId(draft));
         setColorPreset(draft.colorPreset || "dark");
@@ -1747,6 +1755,12 @@ export default function Studio2Page() {
 
   useEffect(() => {
     if (!hydratedRef.current) return;
+    if (!hasActiveDraft) {
+      void clearDraft().catch(() => undefined);
+      setSaveStatus("");
+      return;
+    }
+
     const handle = window.setTimeout(() => {
       const draft = buildDraftState();
       saveDraft(draft)
@@ -1754,7 +1768,7 @@ export default function Studio2Page() {
         .catch(() => setSaveStatus("Autosave failed"));
     }, 700);
     return () => window.clearTimeout(handle);
-  }, [buildDraftState]);
+  }, [buildDraftState, hasActiveDraft]);
 
   useEffect(() => {
     if (!hydratedRef.current || !projectId) return;
@@ -2896,6 +2910,23 @@ export default function Studio2Page() {
     setExportModalOpen(true);
   }, [projectName]);
 
+  const resetLocalDraftState = useCallback(() => {
+    setPhotos([]);
+    setPhotoCopies({});
+    setMediaAssets([]);
+    setCreatives([]);
+    setCurrentIndex(0);
+    setCopyText(DEFAULT_COPY);
+    setProjectId(null);
+    setProjectFolderId(null);
+    setProjectName(DEFAULT_PROJECT_NAME);
+    setSelectedLayer(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    setRestoredAt(null);
+    setSetupMediaFolderId(null);
+  }, []);
+
   const openSetupFlow = useCallback(() => {
     setCreateMenuOpen(false);
     setFolderMenuOpen(false);
@@ -2907,7 +2938,7 @@ export default function Studio2Page() {
     setCreatives([]);
     setCurrentIndex(0);
     setCopyText(DEFAULT_COPY);
-    setProjectName("Untitled design");
+    setProjectName(EMPTY_PROJECT_NAME);
     setSelectedLayer(null);
     setUndoStack([]);
     setRedoStack([]);
@@ -2941,7 +2972,7 @@ export default function Studio2Page() {
         setCreatives(nextCreatives);
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || project.copyText || DEFAULT_COPY);
-        setProjectName(draft.projectName || project.name || "Untitled design");
+        setProjectName(draft.projectName || project.name || EMPTY_PROJECT_NAME);
         setColorPreset(draft.colorPreset || "dark");
         setFontPreset(draft.fontPreset || FONT_OPTIONS[0].value);
         setSelectedLayer(null);
@@ -2960,7 +2991,7 @@ export default function Studio2Page() {
       try {
         const project = await getHomeProjectDetail(cardId);
         if (!project) throw new Error("Project not found");
-        const copyName = `${project.name || "Untitled design"} copy`;
+        const copyName = `${project.name || EMPTY_PROJECT_NAME} copy`;
         const draft = {
           ...(project.draft || {}),
           projectId: null,
@@ -3159,7 +3190,7 @@ export default function Studio2Page() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               folderId,
-              name: draft.projectName || "Untitled design",
+              name: draft.projectName || EMPTY_PROJECT_NAME,
               copyText: draft.copyText,
               draft: { ...draft, projectFolderId: folderId, folderId },
               thumbnailUrl: draft.creatives[0]?.photoUrl || draft.photos[0] || null,
@@ -3263,13 +3294,7 @@ export default function Studio2Page() {
       try {
         if (cardId === activeDraftId && !projectId) {
           await clearDraft();
-          setPhotos([]);
-          setPhotoCopies({});
-          setMediaAssets([]);
-          setCreatives([]);
-          setProjectId(null);
-          setProjectFolderId(null);
-          setProjectName("Untitled design");
+          resetLocalDraftState();
           setCardMenuId(null);
           setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
           setDeleteProjectId(null);
@@ -3280,15 +3305,10 @@ export default function Studio2Page() {
 
         const res = await fetch(`/api/studio-2/projects/${cardId}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Delete failed");
+        setCloudProjects((prev) => prev.filter((project) => project.id !== cardId));
         if (cardId === projectId) {
           await clearDraft();
-          setPhotos([]);
-          setPhotoCopies({});
-          setMediaAssets([]);
-          setCreatives([]);
-          setProjectId(null);
-          setProjectFolderId(null);
-          setProjectName("Untitled design");
+          resetLocalDraftState();
         }
         setCardMenuId(null);
         setSelectedDesignIds((prev) => prev.filter((id) => id !== cardId));
@@ -3302,7 +3322,7 @@ export default function Studio2Page() {
         setDeletingProject(false);
       }
     },
-    [activeDraftId, deleteProjectId, deletingProject, fetchStudioHome, projectId]
+    [activeDraftId, deleteProjectId, deletingProject, fetchStudioHome, projectId, resetLocalDraftState]
   );
 
   const confirmDeleteMedia = useCallback(async () => {
@@ -4857,14 +4877,7 @@ export default function Studio2Page() {
                 style={buttonStyle(false)}
                 onClick={async () => {
                   await clearDraft();
-                  setPhotos([]);
-                  setPhotoCopies({});
-                  setMediaAssets([]);
-                  setCreatives([]);
-                  setProjectFolderId(null);
-                  setCurrentIndex(0);
-                  setCopyText(DEFAULT_COPY);
-                  setRestoredAt(null);
+                  resetLocalDraftState();
                   setSaveStatus("Draft cleared");
                 }}
               >
