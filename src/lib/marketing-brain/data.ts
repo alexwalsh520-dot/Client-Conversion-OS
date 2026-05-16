@@ -1,461 +1,657 @@
-export type BrainTab = "overview" | "avatars" | "copy" | "briefs" | "leads" | "cost";
+export type BrainTab = "verdicts" | "precall" | "library" | "rules" | "neural";
+export type LibraryTab = "people" | "calls" | "phrases" | "ads" | "briefs" | "trends";
+export type PeopleTab = "buyers" | "filter";
 
-export type BrainMetric = {
-  label: string;
-  value: string;
-  unit: string;
-  meta: string;
-  tone: "gold" | "green" | "blue" | "red";
+export type ReceiptBlock =
+  | { type: "text"; title: string; body: string }
+  | { type: "stats"; title: string; items: Array<{ label: string; value: string }> }
+  | { type: "compare"; title: string; headers: [string, string]; items: Array<{ label: string; a: string; b: string }> }
+  | { type: "quotes"; title: string; items: Array<{ source: string; text: string }> }
+  | { type: "phrases"; title: string; items: Array<{ phrase: string; lift: string; negative?: boolean }> };
+
+export type Verdict = {
+  id: string;
+  type: "kill" | "scale" | "test" | "watch" | "fix";
+  when: string;
+  claim: string;
+  why: string;
+  basis: string;
+  action: string;
+  receipts: ReceiptBlock[];
 };
 
-export type BrainSource = {
-  name: string;
-  status: "live" | "planned" | "scaffold";
-  detail: string;
-};
-
-export type BrainAvatar = {
+export type Avatar = {
   id: string;
   name: string;
-  glyph: string;
-  color: "gold" | "green" | "blue" | "violet" | "teal";
-  confidence: "Strong" | "Emerging" | "Forming";
+  age: string;
   calls: number;
-  revenue: string;
+  closeRate: number;
   avgDeal: string;
-  closeRate: string;
+  revenue: string;
   ltv: string;
-  traits: string[];
+  rank: number;
+  desc: string;
+  closesOn: string;
+  who: string[];
+  hooks: Array<{ text: string; lift: string }>;
   quote: string;
-  evidence: string;
-  trend: string;
+  targeting: string;
 };
 
 export type AntiAvatar = {
+  id: string;
   name: string;
-  calls: number;
   lostRevenue: string;
-  share: string;
-  quote: string;
-  filter: string;
+  calls: number;
+  desc: string;
+  why: string[];
+  action: string;
+  examples: string[];
 };
 
-export type CopyPhrase = {
+export type Phrase = {
   phrase: string;
-  result: string;
-  source: string;
-  tone: "win" | "loss";
+  lift: string;
 };
 
-export type WinningAd = {
-  keyword: string;
-  hook: string;
-  avatar: string;
-  spend: string;
-  cash: string;
-  note: string;
+export type AdIntel = {
+  id: string;
+  copy: string;
+  imageText: string;
+  calls: number;
+  closed: number;
+  rate: number;
 };
 
 export type CampaignBrief = {
   id: string;
+  status: "draft" | "approved";
   title: string;
-  status: "Draft" | "Ready" | "Live";
-  avatar: string;
+  generated: string;
+  calls: number;
+  ads: number;
   summary: string;
-  proof: string;
-  hooks: string[];
+  audience: string;
+  hooks: Array<{ text: string; lift: string }>;
   avoid: string[];
   creative: string;
+  budget: string;
 };
 
-export type LeadScore = {
+export type UpcomingCall = {
   name: string;
-  time: string;
   score: number;
   avatar: string;
   source: string;
-  dmSignal: string;
-  flag: string;
+  time: string;
+  angle: string;
+};
+
+export type CallBrief = {
+  takeaway: string;
+  avatarMatch: string;
+  breakdown: Array<{ label: string; value: number; positive: boolean }>;
+  pains: string[];
+  goals: string[];
+  dm: Array<{ time: string; text: string }>;
+  dmMeta: string;
   opener: string;
+  ask: string[];
+  dont: string[];
 };
 
-export type CostControl = {
-  label: string;
-  value: string;
-  detail: string;
-  tone: "green" | "gold" | "blue" | "red";
-};
-
-export type CostRule = {
+export type CallHistory = {
   name: string;
-  detail: string;
-  status: string;
+  date: string;
+  time?: string;
+  status: "upcoming" | "closed" | "lost" | "followup";
+  score: number;
+  avatar: string;
+  source: string;
+  deal: string | null;
+  detail?: {
+    dm: Array<{ time: string; text: string }>;
+    outcome: string;
+    quote: string;
+  };
 };
 
-export type BrainOverview = {
-  updatedAt: string;
-  metrics: BrainMetric[];
-  sources: BrainSource[];
-  avatars: BrainAvatar[];
+export type Trends = {
+  closeRate: number[];
+  phrases: Array<{ name: string; color: string; data: number[] }>;
+  avatarMix: {
+    stages: string[];
+    colors: string[];
+    weeks: number[][];
+  };
+  antiICP: Array<{ name: string; color: string; data: number[] }>;
+};
+
+export type DecisionRule = {
+  id: string;
+  category: "scoring" | "copy" | "filtering" | "strategy";
+  active: boolean;
+  text: string;
+  basis: string;
+  edited: string;
+};
+
+export type NeuralNode = {
+  id: string;
+  col: number;
+  row: number;
+  label: string;
+  sub: string;
+  type: "input" | "data" | "rules" | "synth" | "output";
+  glyph: string;
+  desc: string;
+};
+
+export type NeuralEdge = {
+  from: string;
+  to: string;
+  emphasis?: boolean;
+};
+
+export type MarketingBrainData = {
+  syncLabel: string;
+  verdicts: Verdict[];
+  avatars: Avatar[];
   antiAvatars: AntiAvatar[];
-  copyPhrases: CopyPhrase[];
-  winningAds: WinningAd[];
+  phrasesUp: Phrase[];
+  phrasesDown: Phrase[];
+  ads: AdIntel[];
   briefs: CampaignBrief[];
-  leadScores: LeadScore[];
-  costControls: CostControl[];
-  costRules: CostRule[];
+  upcoming: UpcomingCall[];
+  callBriefs: Record<string, CallBrief>;
+  callsHistory: CallHistory[];
+  trends: Trends;
+  rules: DecisionRule[];
+  neural: {
+    nodes: NeuralNode[];
+    edges: NeuralEdge[];
+  };
+  cost: {
+    spend: string;
+    cap: string;
+    perCall: string;
+    backfill: string;
+  };
 };
 
-export const marketingBrainOverview: BrainOverview = {
-  updatedAt: "May 16, 2026",
-  metrics: [
+const commonDm = [
+  { time: "9:12 AM", text: "I know what to do. I just cannot stay consistent when work gets crazy." },
+  { time: "9:18 AM", text: "The ad about needing a system hit me. That is exactly it." },
+  { time: "9:21 AM", text: "I am not looking for a free plan. I want someone to actually keep me on track." },
+];
+
+export const marketingBrainOverview: MarketingBrainData = {
+  syncLabel: "synced just now",
+  cost: {
+    spend: "$41",
+    cap: "$250",
+    perCall: "$0.28",
+    backfill: "locked",
+  },
+  verdicts: [
     {
-      label: "Calls analyzed",
-      value: "147",
-      unit: "last 60 days",
-      meta: "23 new calls ready to process",
-      tone: "gold",
+      id: "scale-system-copy",
+      type: "scale",
+      when: "today",
+      claim: "Scale the system-not-discipline angle before launching new hooks.",
+      why: "It is winning in ads, DMs, and closed calls. The same phrase keeps showing up before high-quality buyers book.",
+      basis: "64 calls, 7 ads, 28 closed deals",
+      action: "Send to Campaign Launcher",
+      receipts: [
+        { type: "stats", title: "Pattern strength", items: [
+          { label: "Close rate when phrase appears", value: "67%" },
+          { label: "Baseline close rate", value: "22%" },
+          { label: "Cash tied to angle", value: "$126k" },
+        ] },
+        { type: "quotes", title: "Buyer language", items: [
+          { source: "Closed call", text: "I do not need more knowledge. I need a system that keeps me honest." },
+          { source: "DM", text: "The discipline line is what made me book." },
+        ] },
+        { type: "phrases", title: "Language lift", items: [
+          { phrase: "You are not lacking discipline. You are lacking a system.", lift: "+47%" },
+          { phrase: "Who is checking on you now?", lift: "+38%" },
+        ] },
+      ],
     },
     {
-      label: "Buyer avatars",
-      value: "5",
-      unit: "real patterns",
-      meta: "2 strong, 2 emerging, 1 forming",
-      tone: "green",
+      id: "kill-free-plan",
+      type: "kill",
+      when: "yesterday",
+      claim: "Stop feeding free-plan seekers into booked calls.",
+      why: "They create volume, but the Brain sees them converting into low intent calls and dead follow-up threads.",
+      basis: "19 lost calls, $72k missed pipeline",
+      action: "Add filter to DM flow",
+      receipts: [
+        { type: "compare", title: "Lead quality", headers: ["Free plan", "Paid intent"], items: [
+          { label: "Close rate", a: "14%", b: "61%" },
+          { label: "Show rate", a: "58%", b: "84%" },
+          { label: "Avg deal", a: "$2.1k", b: "$5.4k" },
+        ] },
+        { type: "quotes", title: "Lost-call tells", items: [
+          { source: "Lost call", text: "Can you just send me the workout first so I can see if I like it?" },
+        ] },
+      ],
     },
     {
-      label: "Revenue mapped",
-      value: "$384k",
-      unit: "closed deals",
-      meta: "94% tied to an avatar",
-      tone: "blue",
+      id: "test-new-dad",
+      type: "test",
+      when: "2 days ago",
+      claim: "Test a New Dad brief as a sibling to the Marine and Athlete winners.",
+      why: "Dad language appears inside two winning avatars, but the trigger is strong enough to deserve its own controlled test.",
+      basis: "21 calls, $72k revenue, 57% close",
+      action: "Generate campaign brief",
+      receipts: [
+        { type: "text", title: "What changed", body: "The dad trigger is no longer just a trait. It is behaving like a buying moment." },
+        { type: "quotes", title: "Trigger quote", items: [
+          { source: "Closed call", text: "I want to be the dad who runs with them, not the one watching from the bench." },
+        ] },
+      ],
     },
     {
-      label: "AI spend",
-      value: "$41",
-      unit: "this month",
-      meta: "$250 cap, backfill locked",
-      tone: "green",
-    },
-  ],
-  sources: [
-    {
-      name: "Fathom",
-      status: "scaffold",
-      detail: "Call transcript facts, objections, buyer language, proof quotes",
-    },
-    {
-      name: "Sales tracker",
-      status: "live",
-      detail: "Closed, lost, follow-up, cash collected, closer, objection",
-    },
-    {
-      name: "Ads Tracker",
-      status: "live",
-      detail: "Keyword, spend, clicks, DMs, booked calls, close, cash",
-    },
-    {
-      name: "DM threads",
-      status: "scaffold",
-      detail: "Lead intent, urgency, budget signal, no-show risk, pre-call notes",
-    },
-    {
-      name: "LTV",
-      status: "planned",
-      detail: "Retention, referrals, refunds, long-term value by avatar",
+      id: "fix-ad-image-text",
+      type: "fix",
+      when: "today",
+      claim: "Ad images need OCR before copy intel can be trusted.",
+      why: "Some winning ads carry the hook inside the image, not the primary text. The Brain has to read on-image text to score the real message.",
+      basis: "Meta image ads + source attribution",
+      action: "Wire creative OCR",
+      receipts: [
+        { type: "text", title: "Rule", body: "Every image creative should store extracted text beside primary text before phrase mining runs." },
+        { type: "stats", title: "Current coverage", items: [
+          { label: "Ads with primary text", value: "100%" },
+          { label: "Ads with image text extracted", value: "planned" },
+          { label: "OCR cost mode", value: "analyze once" },
+        ] },
+      ],
     },
   ],
   avatars: [
     {
-      id: "busy-dad",
-      name: "Busy Dad",
-      glyph: "BD",
-      color: "gold",
-      confidence: "Strong",
+      id: "marine",
+      name: "The Plateaued Marine",
+      age: "25-35",
       calls: 41,
-      revenue: "$148k",
+      closeRate: 68,
       avgDeal: "$5.2k",
-      closeRate: "68%",
+      revenue: "$148k",
       ltv: "$7.9k",
-      traits: ["Kids at home", "Low energy", "Wants structure", "Feels behind"],
-      quote: "I am tired of being the tired dad after work.",
-      evidence: "28 closed, 13 lost, strongest LTV path",
-      trend: "+$24k this month",
+      rank: 1,
+      desc: "Active-duty Marines and Army Reserve, plateaued 1-2 years despite high effort. Stable income and strong response to structure.",
+      closesOn: "You are not lacking discipline. You are lacking a system.",
+      who: [
+        "Military 25-35: Marines, Army Reserve, Combat Engineer, Artillery.",
+        "Plateaued 1-2 years despite high effort and lost structured PT.",
+        "Stable income: housing allowance, dual income, or $60k+ household.",
+        "Often married with kids under 5; dad identity is the trigger.",
+      ],
+      hooks: [
+        { text: "You are not lacking discipline. You are lacking a system.", lift: "+47%" },
+        { text: "Your sergeant is not checking on you anymore. Who is?", lift: "+38%" },
+        { text: "Still in shape, or did civilian life catch up?", lift: "+24%" },
+      ],
+      quote: "I know what to do. I just cannot stay consistent without someone holding me to it.",
+      targeting: "age: 25-35\ngender: male\ninterests: tactical fitness, military lifestyle\nbehaviors: active military OR veteran\nHH income: $60k+\nexclude: students, fixed income",
     },
     {
-      id: "wedding-deadline",
-      name: "Deadline Shred",
-      glyph: "DS",
-      color: "green",
-      confidence: "Strong",
+      id: "athlete",
+      name: "The Returning Athlete",
+      age: "25-35",
       calls: 33,
+      closeRate: 61,
+      avgDeal: "$4.0k",
       revenue: "$96k",
-      avgDeal: "$4.0k",
-      closeRate: "61%",
-      ltv: "$5.4k",
-      traits: ["Wedding or trip", "Date on calendar", "High urgency", "Photo fear"],
-      quote: "I have four months and I do not want to hate the pictures.",
-      evidence: "24 closed, 9 lost, high show rate",
-      trend: "+$18k this month",
-    },
-    {
-      id: "former-athlete",
-      name: "Former Athlete",
-      glyph: "FA",
-      color: "violet",
-      confidence: "Emerging",
-      calls: 21,
-      revenue: "$72k",
-      avgDeal: "$6.0k",
-      closeRate: "57%",
       ltv: "$6.8k",
-      traits: ["Used to compete", "Hates starting over", "Needs identity back"],
-      quote: "I know what fit feels like. I just cannot get myself there again.",
-      evidence: "12 closed, 9 lost, strong coach fit",
-      trend: "+$12k this month",
+      rank: 2,
+      desc: "Former college athletes hitting their first real plateau post-sport. Built a base before, then fell off.",
+      closesOn: "You do not need to start from zero. You need to rebuild the base.",
+      who: [
+        "Soccer, football, and lacrosse backgrounds.",
+        "Feels worse at 30 than at 22; identity changed faster than habits.",
+        "Old injuries create hesitation: ACL, SLAP, hamstring, shoulder.",
+        "Wants strong, lean, athletic; not bulky or beginner-coded.",
+      ],
+      hooks: [
+        { text: "You do not need to start from zero. You need to rebuild the base.", lift: "+31%" },
+        { text: "You are not the same athlete. Your training should not be either.", lift: "+22%" },
+        { text: "Strong, lean, athletic. Not beefy.", lift: "+18%" },
+      ],
+      quote: "I played D1 soccer. I know how to train. I just do not have a sport anymore.",
+      targeting: "age: 25-35\ngender: male\ninterests: college sports alumni, hybrid training\nlookalike: former athlete closed deals\nexclude: free challenge leads",
     },
     {
-      id: "busy-operator",
-      name: "Busy Operator",
-      glyph: "BO",
-      color: "blue",
-      confidence: "Emerging",
+      id: "dad",
+      name: "The New Dad",
+      age: "28-38",
+      calls: 21,
+      closeRate: 57,
+      avgDeal: "$6.0k",
+      revenue: "$72k",
+      ltv: "$8.4k",
+      rank: 3,
+      desc: "Kid under 5. The trigger is not abs; it is being the dad who can still run, play, and last.",
+      closesOn: "Be the dad who runs with them, not the one watching from the bench.",
+      who: [
+        "First or second kid, identity shift in motion.",
+        "Does not want his kid to think this is what dad looks like.",
+        "Often overlaps Marine or Athlete, but dad trigger is dominant.",
+        "Long-term health beats short-term aesthetic framing.",
+      ],
+      hooks: [
+        { text: "Be the dad who runs with them, not the one watching from the bench.", lift: "+29%" },
+        { text: "If nothing changes in 12 months, where are you?", lift: "+21%" },
+      ],
+      quote: "I want to be the dad who is still chasing them around when they are teenagers.",
+      targeting: "age: 28-38\nlife event: new parent\ninterests: dad content, baby brands\ncreative: garage, kitchen, family schedule\navoid: abs-first framing",
+    },
+    {
+      id: "trade",
+      name: "The Trade Operator",
+      age: "28-45",
       calls: 19,
-      revenue: "$48k",
+      closeRate: 63,
       avgDeal: "$4.0k",
-      closeRate: "63%",
+      revenue: "$48k",
       ltv: "$5.9k",
-      traits: ["Long work days", "Travels", "Wants simple meals"],
-      quote: "I need something that works when my week gets messy.",
-      evidence: "12 closed, 7 lost, low refund risk",
-      trend: "flat",
+      rank: 4,
+      desc: "Police, electricians, firefighters, and tradesmen. They pay for expertise because they are the expertise.",
+      closesOn: "You would not let YouTube rewire your house. Why do it to your body?",
+      who: [
+        "Skilled trades, union or commission, $60k-$90k income.",
+        "Shift work, on-call weeks, and unpredictable eating windows.",
+        "Values done-for-you expertise and dislikes vague coaching.",
+      ],
+      hooks: [
+        { text: "A system that works around 16-hour shifts. Not against them.", lift: "+26%" },
+        { text: "Be a client when it is your turn.", lift: "+19%" },
+      ],
+      quote: "I charge people for what I know. I would rather pay you for what you know.",
+      targeting: "age: 28-45\njob titles: trades, police, fire\ninterests: union member, truck owner\nexclude: free PDF intent",
     },
     {
-      id: "quiet-restart",
-      name: "Quiet Restart",
-      glyph: "QR",
-      color: "teal",
-      confidence: "Forming",
+      id: "hybrid",
+      name: "The Hybrid Athlete",
+      age: "26-38",
       calls: 8,
-      revenue: "$20k",
+      closeRate: 50,
       avgDeal: "$5.0k",
-      closeRate: "50%",
+      revenue: "$20k",
       ltv: "$5.1k",
-      traits: ["Ashamed to start", "Avoids gym", "Needs private win"],
-      quote: "I do not want anyone watching me figure this out.",
-      evidence: "4 closed, 4 lost, needs more proof",
-      trend: "new pattern",
+      rank: 5,
+      desc: "Runs, lifts, climbs, and wants strong plus functional with a deadline-driven aesthetic goal.",
+      closesOn: "You are not choosing between performance and looking sharp.",
+      who: [
+        "Mixes running, lifting, and outdoor activities.",
+        "Deadline-driven: trip, race, or event.",
+        "Needs sharper proof before scaling.",
+      ],
+      hooks: [
+        { text: "Strong enough to perform. Lean enough to like the photos.", lift: "+14%" },
+      ],
+      quote: "I want to look athletic, not just be lighter.",
+      targeting: "age: 26-38\ninterests: hybrid training, trail running, climbing\nstatus: forming\nbudget: test only",
     },
   ],
   antiAvatars: [
     {
-      name: "Free Plan Guy",
-      calls: 14,
+      id: "free-plan",
+      name: "The Free Plan Collector",
       lostRevenue: "$58k",
-      share: "37%",
-      quote: "Can you just send me the workout first?",
-      filter: "Ask budget and paid-coaching intent before booking.",
+      calls: 14,
+      desc: "Looks like volume, but turns into requests for PDFs, free trials, and comparison shopping.",
+      why: ["Asks for workouts before talking price.", "Avoids paid-coaching intent questions.", "Shows low urgency after booking."],
+      action: "Ask paid intent before calendar link. If unclear, keep in nurture.",
+      examples: ["Can you send me the workout first?", "I just want to see what you would recommend."],
     },
     {
-      name: "Tomorrow Starter",
-      calls: 11,
+      id: "exact-proof",
+      name: "The Exact Proof Seeker",
       lostRevenue: "$42k",
-      share: "27%",
-      quote: "I love it, I just need to wait until life calms down.",
-      filter: "Make urgency real in DMs or keep them in nurture.",
+      calls: 11,
+      desc: "Needs perfect niche-specific proof before making any decision.",
+      why: ["Requests a case study matching every life detail.", "Delays decision even after proof.", "Often compares five programs."],
+      action: "Pre-empt with broad proof and decision timeline in DMs.",
+      examples: ["Do you have someone exactly like me?", "I need to compare a few options."],
     },
     {
-      name: "Info Shopper",
-      calls: 8,
-      lostRevenue: "$28k",
-      share: "18%",
-      quote: "I have been on a few calls and I am comparing options.",
-      filter: "Push proof and decision timeline before calendar link.",
-    },
-    {
-      name: "Injury Escape Hatch",
-      calls: 5,
+      id: "injury-exit",
+      name: "The Injury Exit Hatch",
       lostRevenue: "$26k",
-      share: "17%",
-      quote: "I would start, but my knee might flare up again.",
-      filter: "Route to medical-safe qualification and coach notes.",
+      calls: 5,
+      desc: "Uses old injuries as a reason to avoid commitment, not as a constraint to solve.",
+      why: ["Brings up injury repeatedly.", "Does not complete screening.", "Wants guarantee before sharing details."],
+      action: "Route to safety screening and only book if they will complete the intake.",
+      examples: ["My knee might flare up again.", "I do not want to risk anything."],
     },
   ],
-  copyPhrases: [
-    {
-      phrase: "I need energy for my kids",
-      result: "+31% close lift",
-      source: "Fathom calls and DM replies",
-      tone: "win",
-    },
-    {
-      phrase: "I know what to do, I just need the system",
-      result: "+24% close lift",
-      source: "Closed call transcripts",
-      tone: "win",
-    },
-    {
-      phrase: "free workout plan",
-      result: "-38% cash quality",
-      source: "DM thread and lost calls",
-      tone: "loss",
-    },
-    {
-      phrase: "six-pack transformation",
-      result: "-19% close rate",
-      source: "Ad copy vs closed revenue",
-      tone: "loss",
-    },
+  phrasesUp: [
+    { phrase: "You are not lacking discipline. You are lacking a system.", lift: "+47%" },
+    { phrase: "Who is checking on you now?", lift: "+38%" },
+    { phrase: "Be the dad who runs with them.", lift: "+29%" },
+    { phrase: "A system that works around 16-hour shifts.", lift: "+26%" },
   ],
-  winningAds: [
+  phrasesDown: [
+    { phrase: "Free 6-week challenge", lift: "-42%" },
+    { phrase: "Unlock your hidden potential", lift: "-31%" },
+    { phrase: "Transform in 12 weeks", lift: "-24%" },
+    { phrase: "Risk-free workout PDF", lift: "-19%" },
+  ],
+  ads: [
     {
-      keyword: "FORGE-01",
-      hook: "Stop being the tired dad",
-      avatar: "Busy Dad",
-      spend: "$3.2k",
-      cash: "$42k",
-      note: "Lower lead volume, highest cash quality",
+      id: "IRON",
+      copy: "You do not lack discipline. You lack a system. We rebuild it for active-duty guys who already know what to do.",
+      imageText: "DISCIPLINE IS NOT THE PROBLEM",
+      calls: 24,
+      closed: 16,
+      rate: 67,
     },
     {
-      keyword: "IRON-04",
-      hook: "System, not more fitness knowledge",
-      avatar: "Former Athlete",
-      spend: "$2.6k",
-      cash: "$31k",
-      note: "Best close rate with warm DMs",
+      id: "GRIND",
+      copy: "Your sergeant is not checking on you anymore. Who is? 24-week structured programs for vets.",
+      imageText: "WHO IS CHECKING ON YOU NOW?",
+      calls: 19,
+      closed: 12,
+      rate: 63,
     },
     {
-      keyword: "EDGE-07",
-      hook: "Four months until the pictures",
-      avatar: "Deadline Shred",
-      spend: "$1.9k",
-      cash: "$24k",
-      note: "Strong urgency, short sales cycle",
+      id: "FORGE",
+      copy: "Be the dad who runs with them, not the one watching from the bench. Built for fathers, by fathers.",
+      imageText: "BE THE DAD WHO CAN KEEP UP",
+      calls: 16,
+      closed: 9,
+      rate: 56,
+    },
+    {
+      id: "BLAZE",
+      copy: "Free 6-week challenge. Try our approach risk-free. Get the workout PDF and see what you think.",
+      imageText: "FREE 6 WEEK CHALLENGE",
+      calls: 22,
+      closed: 3,
+      rate: 14,
     },
   ],
   briefs: [
     {
-      id: "dad-energy",
-      title: "Busy Dad Energy Reset",
-      status: "Ready",
-      avatar: "Busy Dad",
-      summary: "Lead with daily energy, kids, and being proud in family photos. Do not lead with abs.",
-      proof: "Built from 41 calls, 4 top ads, and 28 closed deals.",
-      hooks: ["Stop being the tired dad", "Your kids see the version you bring home", "Energy first, weight loss second"],
-      avoid: ["Six-pack", "grind harder", "free plan"],
-      creative: "Real dad after work, kitchen or garage gym, warm but not soft.",
+      id: "marine-system",
+      status: "approved",
+      title: "Plateaued Marine - System Reset",
+      generated: "today",
+      calls: 41,
+      ads: 4,
+      summary: "Scale structure, accountability, and post-military system language. Do not lead with motivation.",
+      audience: "age: 25-35\ngender: male\nmilitary/veteran interests\nHH income: $60k+\nexclude: free challenge engagers",
+      hooks: [
+        { text: "You are not lacking discipline. You are lacking a system.", lift: "+47%" },
+        { text: "Your sergeant is not checking on you anymore. Who is?", lift: "+38%" },
+      ],
+      avoid: ["Free challenge", "motivation", "beginner transformation"],
+      creative: "Garage gym, base housing, tactical but not corny. Use real closer testimonial clips.",
+      budget: "$150/day test, scale at 2.2x cash ROAS",
     },
     {
-      id: "deadline-shred",
-      title: "Deadline Shred Sprint",
-      status: "Draft",
-      avatar: "Deadline Shred",
-      summary: "Use the date on the calendar. The event makes action feel obvious.",
-      proof: "33 calls and 24 closed deals show deadline pain moves fast.",
-      hooks: ["Four months until the pictures", "Do not wait until the trip is three weeks away", "Make the deadline useful"],
-      avoid: ["Lifetime change", "slow journey", "whenever you are ready"],
-      creative: "Calendar, suitcase, wedding mirror, real progress screenshots.",
-    },
-    {
-      id: "athlete-identity",
-      title: "Former Athlete Identity",
-      status: "Live",
-      avatar: "Former Athlete",
-      summary: "This person buys back identity. They do not want beginner language.",
-      proof: "21 calls, high AOV, strong coach-led close pattern.",
-      hooks: ["You are not lazy, your old system expired", "Get the athlete back without training like college", "Stop restarting from zero"],
-      avoid: ["Beginner friendly", "easy mode", "newbie"],
-      creative: "Training floor, old team photo, simple performance tracking.",
+      id: "new-dad",
+      status: "draft",
+      title: "New Dad Longevity Test",
+      generated: "today",
+      calls: 21,
+      ads: 2,
+      summary: "Test dad identity as its own avatar, not just a trait inside Marine/Athlete segments.",
+      audience: "age: 28-38\nnew parent signals\nengaged with dad content\nexclude: abs-first engagers",
+      hooks: [
+        { text: "Be the dad who runs with them, not the one watching from the bench.", lift: "+29%" },
+      ],
+      avoid: ["six-pack", "shredded dad", "no excuses"],
+      creative: "Kitchen, stroller, evening routine, family time. Quiet pride, not hype.",
+      budget: "$75/day proof test",
     },
   ],
-  leadScores: [
-    {
-      name: "Daniel Reyes",
-      time: "10:30 AM",
-      score: 92,
-      avatar: "Busy Dad",
-      source: "FORGE-01",
-      dmSignal: "Said he has no energy after work and wants to keep up with his kids.",
-      flag: "Money objection possible, no anti-avatar match.",
-      opener: "Start with his after-work energy, then tie it to the dad he wants to be.",
-    },
-    {
-      name: "Mike Calloway",
-      time: "11:15 AM",
-      score: 88,
-      avatar: "Deadline Shred",
-      source: "EDGE-07",
-      dmSignal: "Wedding in 16 weeks, asked about weekly check-ins.",
-      flag: "Strong urgency, needs belief in timeline.",
-      opener: "Anchor the call around the date and the weekly plan.",
-    },
-    {
-      name: "Sam Kestrel",
-      time: "2:30 PM",
-      score: 71,
-      avatar: "Former Athlete",
-      source: "IRON-04",
-      dmSignal: "Old ACL injury came up twice.",
-      flag: "Injury Escape Hatch risk.",
-      opener: "Respect the injury first, then ask what training used to feel like.",
-    },
-    {
-      name: "Brent McCullough",
-      time: "4:00 PM",
-      score: 48,
-      avatar: "No clean match",
-      source: "BLAZE-02",
-      dmSignal: "Asked for free plan and did not answer budget question.",
-      flag: "Free Plan Guy match.",
-      opener: "Qualify paid-coaching intent in the first five minutes.",
-    },
+  upcoming: [
+    { name: "Daniel Reyes", score: 92, avatar: "Plateaued Marine", source: "IRON", time: "10:30 AM", angle: "System problem, not knowledge problem. Open with structure and accountability." },
+    { name: "Mike Calloway", score: 88, avatar: "New Dad", source: "FORGE", time: "11:15 AM", angle: "New dad. Open with being around and able at 70, not looking shredded." },
+    { name: "Renata Ortiz", score: 84, avatar: "Trade Operator", source: "PHOENIX", time: "1:00 PM", angle: "Values expertise. Open with shift work and paying a pro to solve a real constraint." },
+    { name: "Brent McCullough", score: 48, avatar: "Filter risk", source: "BLAZE", time: "4:00 PM", angle: "Free-plan language. Qualify paid intent in the first five minutes." },
   ],
-  costControls: [
-    {
-      label: "AI spend this month",
-      value: "$41",
-      detail: "$250 monthly cap",
-      tone: "green",
+  callBriefs: {
+    "Daniel Reyes": {
+      takeaway: "High-intent Marine match. He already believes knowledge is not the issue.",
+      avatarMatch: "92% Marine - strong system language",
+      breakdown: [
+        { label: "Avatar match", value: 37, positive: true },
+        { label: "Paid intent", value: 24, positive: true },
+        { label: "Free-plan risk", value: -4, positive: false },
+        { label: "Source ad quality", value: 35, positive: true },
+      ],
+      pains: ["Fell off after losing structured PT.", "Work schedule creates chaos.", "Wants someone checking in."],
+      goals: ["Consistency", "Energy", "Look like himself again"],
+      dm: commonDm,
+      dmMeta: "Source ad carried both primary text and image text: DISCIPLINE IS NOT THE PROBLEM.",
+      opener: "Daniel, you told us this is a system problem, not a knowledge problem. That is exactly the right diagnosis. Walk me through what has been getting in the way.",
+      ask: ["What changed when structured PT left?", "Who currently sees whether you follow through?", "What happens if nothing changes in 12 months?"],
+      dont: ["Do not pitch motivation.", "Do not call him a beginner.", "Do not lead with transformation language."],
     },
-    {
-      label: "Average per call",
-      value: "$0.28",
-      detail: "Transcript read once",
-      tone: "gold",
+    "Mike Calloway": {
+      takeaway: "New Dad trigger is the strongest signal. Keep the call on longevity and identity.",
+      avatarMatch: "88% New Dad - Marine overlap",
+      breakdown: [
+        { label: "Dad trigger", value: 34, positive: true },
+        { label: "Urgency", value: 20, positive: true },
+        { label: "Source ad quality", value: 26, positive: true },
+      ],
+      pains: ["Second kid born recently.", "Feels energy dropping.", "Does not want health to drift."],
+      goals: ["Play with kids", "Energy after work", "Long-term health"],
+      dm: [
+        { time: "8:02 AM", text: "I just had my second. The dad ad hit hard." },
+        { time: "8:05 AM", text: "I do not care about abs as much as being around and able." },
+      ],
+      dmMeta: "Booked from FORGE. Image text: BE THE DAD WHO CAN KEEP UP.",
+      opener: "Mike, congrats on the new baby. Your ad mentioned being the dad who can run with them. What does that look like to you five years from now?",
+      ask: ["What are you worried your kids will see if nothing changes?", "What would a normal week need to look like?", "What support does your schedule actually need?"],
+      dont: ["Do not lead with aesthetics.", "Do not use aggressive no-excuses framing."],
     },
-    {
-      label: "Backfill status",
-      value: "Locked",
-      detail: "Needs approval before old calls run",
-      tone: "blue",
+    "Renata Ortiz": {
+      takeaway: "Trade Operator. She values expertise and a plan that respects rotating shifts.",
+      avatarMatch: "84% Trade Operator",
+      breakdown: [
+        { label: "Expertise fit", value: 29, positive: true },
+        { label: "Schedule constraint", value: 21, positive: true },
+        { label: "Injury concern", value: -6, positive: false },
+      ],
+      pains: ["Rotating shifts.", "Shoulder history.", "Meals collapse on night weeks."],
+      goals: ["Feel athletic", "Simple meals", "No shoulder flare-up"],
+      dm: [
+        { time: "12:15 PM", text: "I work rotating shifts so normal plans do not work." },
+        { time: "12:19 PM", text: "Also have a shoulder thing from last year." },
+      ],
+      dmMeta: "Source ad used the tradesman expertise frame.",
+      opener: "Renata, you asked about shifts and your shoulder. Both matter. Let's start with shifts: what does a typical two-week cycle look like?",
+      ask: ["What weeks usually break the plan?", "What shoulder movements are off limits?", "What have you already paid for that did not adapt?"],
+      dont: ["Do not say just meal prep.", "Do not skip the shoulder screen."],
     },
-    {
-      label: "Daily max",
-      value: "$18",
-      detail: "Auto-pause at cap",
-      tone: "red",
+    "Brent McCullough": {
+      takeaway: "Low-intent lead. Treat this as qualification before pitch.",
+      avatarMatch: "48% match - Free Plan Collector risk",
+      breakdown: [
+        { label: "Source ad quality", value: -22, positive: false },
+        { label: "Paid intent", value: -16, positive: false },
+        { label: "Urgency", value: 10, positive: true },
+      ],
+      pains: ["Wants a plan to try first.", "Avoided budget question.", "No clear urgency."],
+      goals: ["Lose weight", "Get a workout", "See if coaching fits"],
+      dm: [
+        { time: "3:42 PM", text: "Can you send the workout first?" },
+        { time: "3:46 PM", text: "I might book if I like the plan." },
+      ],
+      dmMeta: "Booked from BLAZE. Image text: FREE 6 WEEK CHALLENGE.",
+      opener: "Brent, I want to be respectful of your time. What would have to be true on this call for you to say yes to coaching today?",
+      ask: ["Are you looking for coaching or a plan to try alone?", "What budget did you have in mind?", "Why now?"],
+      dont: ["Do not spend 40 minutes diagnosing.", "Do not send a free plan after the call."],
     },
+  },
+  callsHistory: [
+    { name: "Daniel Reyes", date: "Today", time: "10:30 AM", status: "upcoming", score: 92, avatar: "Plateaued Marine", source: "IRON", deal: null },
+    { name: "Mike Calloway", date: "Today", time: "11:15 AM", status: "upcoming", score: 88, avatar: "New Dad", source: "FORGE", deal: null },
+    { name: "Aaron Price", date: "May 15", status: "closed", score: 90, avatar: "Plateaued Marine", source: "GRIND", deal: "$6,400", detail: { dm: commonDm, outcome: "Closed at pay-in-full after system/accountability frame.", quote: "I need someone to keep the system from falling apart." } },
+    { name: "Sam Kestrel", date: "May 14", status: "followup", score: 71, avatar: "Returning Athlete", source: "EDGE", deal: null, detail: { dm: commonDm.slice(0, 2), outcome: "Follow-up. Injury concern needs proof and safety screen.", quote: "I know what fit feels like. I just do not trust my knee." } },
+    { name: "Brent McCullough", date: "Today", time: "4:00 PM", status: "upcoming", score: 48, avatar: "Filter risk", source: "BLAZE", deal: null },
   ],
-  costRules: [
-    {
-      name: "Analyze once",
-      detail: "Big transcripts are read one time, then saved as tiny facts.",
-      status: "On",
+  trends: {
+    closeRate: [22, 25, 27, 31, 29, 33, 36, 41, 39, 46, 52, 57],
+    phrases: [
+      { name: "system", color: "#d4b27a", data: [8, 12, 18, 22, 27, 31, 36, 41, 45, 47, 48, 47] },
+      { name: "free", color: "#e89a94", data: [-8, -12, -17, -19, -24, -29, -31, -35, -38, -41, -42, -42] },
+    ],
+    avatarMix: {
+      stages: ["Marine", "Athlete", "Dad", "Trade"],
+      colors: ["#d4b27a", "#7aa7d4", "#7dd3a8", "#a98fd0"],
+      weeks: [
+        [4, 3, 1, 1], [5, 3, 1, 2], [5, 4, 2, 2], [6, 4, 2, 2],
+        [7, 4, 3, 2], [6, 5, 4, 3], [7, 6, 4, 3], [8, 6, 5, 4],
+        [8, 6, 6, 4], [9, 7, 6, 5], [10, 7, 7, 5], [11, 8, 7, 6],
+      ],
     },
-    {
-      name: "Cheap model first",
-      detail: "Simple extraction jobs use cheaper models before premium strategy runs.",
-      status: "On",
-    },
-    {
-      name: "No silent backfills",
-      detail: "Old call processing cannot start without a human approval click.",
-      status: "Locked",
-    },
-    {
-      name: "Evidence reuse",
-      detail: "Briefs use stored facts and quotes instead of re-reading every source.",
-      status: "On",
-    },
+    antiICP: [
+      { name: "free plan", color: "#e89a94", data: [8, 7, 9, 8, 7, 6, 6, 5, 5, 4, 4, 3] },
+      { name: "exact proof", color: "#c4a370", data: [3, 4, 4, 5, 5, 4, 4, 4, 3, 3, 2, 2] },
+    ],
+  },
+  rules: [
+    { id: "winning", category: "strategy", active: true, text: "If an ad is winning on cash quality, do not turn it off. Test sibling angles around it first.", basis: "User paradigm", edited: "today" },
+    { id: "ocr", category: "copy", active: true, text: "Treat on-image text as ad copy. Run OCR on image creatives before phrase mining.", basis: "Image ads carry hooks", edited: "today" },
+    { id: "free", category: "filtering", active: true, text: "Free-plan language lowers lead score unless paid intent is explicit in DMs.", basis: "19 lost calls", edited: "yesterday" },
+    { id: "ltv", category: "scoring", active: true, text: "Long-term value beats raw close rate when choosing what avatar to scale.", basis: "Retention + referrals", edited: "this week" },
   ],
+  neural: {
+    nodes: [
+      { id: "fathom", col: 0, row: 0, label: "Fathom", sub: "call transcripts", type: "input", glyph: "F", desc: "Every sales call transcript. Buyer language, objections, proof, and what actually made people buy." },
+      { id: "dms", col: 0, row: 1, label: "IG DMs", sub: "pre-call threads", type: "input", glyph: "DM", desc: "The full thread before a booked call. This is the best pre-call intent signal." },
+      { id: "sales", col: 0, row: 2, label: "Sales tracker", sub: "outcomes + deals", type: "input", glyph: "$", desc: "Closed, lost, follow-up, deal size, closer, source ad, and cash collected." },
+      { id: "meta", col: 0, row: 3, label: "Meta Ads", sub: "copy + spend", type: "input", glyph: "M", desc: "Primary text, spend, clicks, and attribution from ads into DMs and calls." },
+      { id: "images", col: 0, row: 4, label: "Ad images", sub: "creative PNG/JPG", type: "input", glyph: "IMG", desc: "Image ads often contain the real hook. These files need OCR before copy mining is trusted." },
+      { id: "phrases", col: 1, row: 0, label: "Phrases", sub: "closes + flops", type: "data", glyph: "P", desc: "Words and phrases scored by lift across ads, transcripts, DMs, and image text." },
+      { id: "avatars", col: 1, row: 1, label: "Avatars", sub: "buyers + filter-out", type: "data", glyph: "AV", desc: "Clustered buyer and anti-buyer patterns derived from real calls and outcomes." },
+      { id: "calls", col: 1, row: 2, label: "Calls history", sub: "every booked call", type: "data", glyph: "#", desc: "The unified call ledger with source ad, DM context, score, and outcome." },
+      { id: "ads", col: 1, row: 3, label: "Ads catalog", sub: "every ad shipped", type: "data", glyph: "A", desc: "Each ad with copy, OCR image text, spend, calls, close rate, and cash quality." },
+      { id: "ocr", col: 1, row: 4, label: "Creative OCR", sub: "image text reader", type: "data", glyph: "OCR", desc: "Extracts the words inside PNG/JPG creatives so the Brain knows what the actual ad said." },
+      { id: "rules", col: 2, row: 2, label: "Decision rules", sub: "user-editable", type: "rules", glyph: "R", desc: "The user's marketing paradigms. These rules shape verdicts, lead scores, and brief generation." },
+      { id: "verdictSynth", col: 3, row: 0.5, label: "Verdict synthesis", sub: "recommendations", type: "synth", glyph: "V", desc: "Looks across all data and active rules to decide what to scale, kill, test, watch, or fix." },
+      { id: "scorer", col: 3, row: 2, label: "Pre-call scorer", sub: "score + brief", type: "synth", glyph: "S", desc: "Scores each booked call using DMs, source ad, avatar match, and filter flags." },
+      { id: "briefGen", col: 3, row: 3.5, label: "Brief generator", sub: "audience + hooks", type: "synth", glyph: "B", desc: "Builds campaign briefs from avatars, phrases, ad winners, image text, and rules." },
+      { id: "verdictsOut", col: 4, row: 0.5, label: "Verdicts feed", sub: "what to do", type: "output", glyph: "!", desc: "The top-level Brain output: what the marketing department should do next." },
+      { id: "precallOut", col: 4, row: 2, label: "Pre-call briefs", sub: "closer view", type: "output", glyph: ">", desc: "The closer's packet before each call: score, context, opener, questions, and warnings." },
+      { id: "briefsOut", col: 4, row: 3.5, label: "Campaign briefs", sub: "media buyer view", type: "output", glyph: "->", desc: "Approved marketing briefs that can move downstream to Campaign Launcher." },
+    ],
+    edges: [
+      { from: "fathom", to: "phrases" }, { from: "fathom", to: "avatars" }, { from: "fathom", to: "calls" },
+      { from: "dms", to: "phrases" }, { from: "dms", to: "calls" }, { from: "sales", to: "avatars" }, { from: "sales", to: "calls" },
+      { from: "meta", to: "ads" }, { from: "images", to: "ocr" }, { from: "ocr", to: "phrases" }, { from: "ocr", to: "ads" },
+      { from: "phrases", to: "verdictSynth" }, { from: "avatars", to: "verdictSynth" }, { from: "calls", to: "verdictSynth" }, { from: "ads", to: "verdictSynth" }, { from: "rules", to: "verdictSynth", emphasis: true },
+      { from: "avatars", to: "scorer" }, { from: "phrases", to: "scorer" }, { from: "calls", to: "scorer" }, { from: "dms", to: "scorer" }, { from: "rules", to: "scorer", emphasis: true },
+      { from: "avatars", to: "briefGen" }, { from: "phrases", to: "briefGen" }, { from: "ads", to: "briefGen" }, { from: "ocr", to: "briefGen" }, { from: "rules", to: "briefGen", emphasis: true },
+      { from: "verdictSynth", to: "verdictsOut" }, { from: "scorer", to: "precallOut" }, { from: "briefGen", to: "briefsOut" },
+    ],
+  },
 };

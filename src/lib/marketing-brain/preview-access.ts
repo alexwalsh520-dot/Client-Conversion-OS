@@ -6,7 +6,7 @@ export function allowsMarketingBrainPreviewAccess(pathname: string | null | unde
   if (!isMarketingBrainPath(pathname)) return false;
 
   const explicitPreview = process.env.NEXT_PUBLIC_MARKETING_BRAIN_PREVIEW === "true";
-  const vercelPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
+  const vercelPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" || process.env.VERCEL_ENV === "preview";
   const localDevelopment = process.env.NODE_ENV === "development";
 
   return explicitPreview || vercelPreview || localDevelopment;
