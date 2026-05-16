@@ -1919,9 +1919,15 @@ function addKeywordEventsToGroups(
     const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
     if (!keyword) continue;
     const id = groupIdForEvent(event, keyword);
+    const hint = hintForEvent?.(event, keyword, id) || null;
+    const hasRealTarget =
+      Boolean(event.override_campaign_id || event.override_campaign_name || event.override_ad_id || event.override_ad_name) ||
+      Boolean(hint?.campaignName || hint?.adName);
+    if (isFallbackAttributionGroupId(id) && !hasRealTarget) continue;
+
     const group = groups.get(id) || emptyGroup(id, event.client_key, displayKeyword(keyword), displayKeyword(keyword));
     applyOverrideMetadata(group, event);
-    applyBackfillHint(group, hintForEvent?.(event, keyword, id) || null, "ad");
+    applyBackfillHint(group, hint, "ad");
     const manualValue = Number(event.value_cents || 0);
 
     if (event.event_type === "manual_messages") {
