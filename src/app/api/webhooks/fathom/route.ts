@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateFathomWebhook } from "@/lib/fathom";
+import { getMeetingTranscript, validateFathomWebhook } from "@/lib/fathom";
+import { getServiceSupabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,12 +48,41 @@ export async function POST(req: NextRequest) {
 
     // Log the event for now
     const eventType = payload.event || payload.type || "unknown";
-    const meetingId = payload.meetingId || payload.meeting_id || null;
+    const meetingId = stringField(payload.meetingId) || stringField(payload.meeting_id) || stringField(payload.id);
     console.log("[fathom-webhook] Received event:", {
       eventType,
       meetingId,
       webhookId,
     });
+
+    if (meetingId) {
+      let transcript: string | null = null;
+      try {
+        transcript = await getMeetingTranscript(meetingId);
+      } catch (error) {
+        console.warn(`[fathom-webhook] Transcript fetch skipped for ${meetingId}:`, error);
+      }
+
+      try {
+        const db = getServiceSupabase();
+        const { error } = await db.from("marketing_brain_fathom_calls").upsert(
+          {
+            meeting_id: meetingId,
+            title: stringField(payload.title) || stringField(payload.meeting_title),
+            share_url: stringField(payload.share_url) || stringField(payload.url),
+            transcript,
+            summary: stringField(payload.summary) || stringField(payload.default_summary),
+            recorded_at: stringField(payload.created_at) || stringField(payload.recorded_at) || new Date().toISOString(),
+            raw_payload: payload,
+            synced_at: new Date().toISOString(),
+          },
+          { onConflict: "meeting_id" },
+        );
+        if (error) console.warn("[fathom-webhook] Brain storage failed:", error.message);
+      } catch (error) {
+        console.warn("[fathom-webhook] Brain storage unavailable:", error);
+      }
+    }
 
     // Return 200 to acknowledge receipt
     return NextResponse.json({ received: true, eventType });
@@ -63,4 +93,8 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function stringField(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

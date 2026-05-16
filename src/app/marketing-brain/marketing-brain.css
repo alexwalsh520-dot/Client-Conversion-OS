@@ -923,6 +923,11 @@
   background: rgba(212, 178, 122, 0.14);
 }
 
+.mb-btn-primary:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .mb-btn-ghost {
   border: 1px solid var(--mb-border-2);
   background: #141414;
@@ -2023,19 +2028,38 @@
   line-height: 1.55;
 }
 
+.mb-notice {
+  position: sticky;
+  top: 58px;
+  z-index: 29;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 32px 0;
+  color: var(--mb-gold);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .mb-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.mb-chip-row span {
+.mb-chip-row button {
   padding: 7px 10px;
   border: 1px solid var(--mb-border);
   border-radius: 999px;
   background: #141414;
   color: var(--mb-text-2);
   font-size: 12px;
+}
+
+.mb-chip-row button.active,
+.mb-chip-row button:hover {
+  border-color: rgba(212, 178, 122, 0.42);
+  color: var(--mb-gold);
 }
 
 @media (max-width: 1040px) {

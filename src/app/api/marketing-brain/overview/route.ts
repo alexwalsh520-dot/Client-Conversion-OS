@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { marketingBrainOverview } from "@/lib/marketing-brain/data";
+import { getMarketingBrainOverview } from "@/lib/marketing-brain/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,8 @@ const NO_STORE_HEADERS = {
 };
 
 export async function GET() {
-  return NextResponse.json(marketingBrainOverview, {
+  const overview = await getMarketingBrainOverview();
+  return NextResponse.json(overview, {
     headers: NO_STORE_HEADERS,
   });
 }

@@ -29,6 +29,12 @@ type ModalState =
   | { kind: "cost" }
   | null;
 
+type MutationResponse = {
+  success?: boolean;
+  data?: MarketingBrainData;
+  error?: string;
+};
+
 const brainTabs: Array<{ id: BrainTab; label: string }> = [
   { id: "verdicts", label: "Verdicts" },
   { id: "precall", label: "Pre-call briefs" },
@@ -535,7 +541,27 @@ function NodeLinks({ title, edges, direction, nodeById, setFocusedId }: {
   );
 }
 
-function Modal({ modal, data, close }: { modal: ModalState; data: MarketingBrainData; close: () => void }) {
+function Modal({
+  modal,
+  data,
+  close,
+  onPrimary,
+  busy,
+  newRuleText,
+  setNewRuleText,
+  newRuleCategory,
+  setNewRuleCategory,
+}: {
+  modal: ModalState;
+  data: MarketingBrainData;
+  close: () => void;
+  onPrimary: () => void;
+  busy: boolean;
+  newRuleText: string;
+  setNewRuleText: (value: string) => void;
+  newRuleCategory: DecisionRule["category"];
+  setNewRuleCategory: (value: DecisionRule["category"]) => void;
+}) {
   if (!modal) return null;
 
   return (
@@ -548,11 +574,18 @@ function Modal({ modal, data, close }: { modal: ModalState; data: MarketingBrain
           </div>
           <button className="mb-modal-close" onClick={close} type="button">x</button>
         </div>
-        <div className="mb-modal-body">{modalBody(modal, data)}</div>
+        <div className="mb-modal-body">{modalBody(modal, data, {
+          newRuleText,
+          setNewRuleText,
+          newRuleCategory,
+          setNewRuleCategory,
+        })}</div>
         <div className="mb-modal-foot">
           <span />
           <button className="mb-btn-ghost" onClick={close} type="button">Close</button>
-          <button className="mb-btn-primary" type="button">{modalAction(modal)}</button>
+          <button className="mb-btn-primary" disabled={busy} onClick={onPrimary} type="button">
+            {busy ? "Working..." : modalAction(modal)}
+          </button>
         </div>
       </div>
     </div>
@@ -591,14 +624,20 @@ function modalTag(modal: Exclude<ModalState, null>) {
 
 function modalAction(modal: Exclude<ModalState, null>) {
   if (modal.kind === "verdict") return modal.item.action;
-  if (modal.kind === "brief") return "Push to Campaign Launcher";
+  if (modal.kind === "brief") return modal.item.status === "draft" ? "Approve brief" : "Push to Campaign Launcher";
   if (modal.kind === "call") return "Open transcript";
   if (modal.kind === "newRule") return "Save rule";
-  if (modal.kind === "cost") return "Approve backfill";
+  if (modal.kind === "cost") return "Run sync now";
+  if (modal.kind === "rule") return modal.item.active ? "Deactivate rule" : "Activate rule";
   return "Use in Brain";
 }
 
-function modalBody(modal: Exclude<ModalState, null>, data: MarketingBrainData) {
+function modalBody(modal: Exclude<ModalState, null>, data: MarketingBrainData, newRule: {
+  newRuleText: string;
+  setNewRuleText: (value: string) => void;
+  newRuleCategory: DecisionRule["category"];
+  setNewRuleCategory: (value: DecisionRule["category"]) => void;
+}) {
   if (modal.kind === "verdict") return <VerdictReceipt verdict={modal.item} />;
   if (modal.kind === "avatar") return <AvatarDetail avatar={modal.item} />;
   if (modal.kind === "anti") return <AntiDetail anti={modal.item} />;
@@ -606,7 +645,7 @@ function modalBody(modal: Exclude<ModalState, null>, data: MarketingBrainData) {
   if (modal.kind === "call") return <CallDetail item={modal.item} data={data} />;
   if (modal.kind === "rule") return <RuleDetail rule={modal.item} />;
   if (modal.kind === "cost") return <CostDetail data={data} />;
-  return <NewRuleForm />;
+  return <NewRuleForm {...newRule} />;
 }
 
 function VerdictReceipt({ verdict }: { verdict: Verdict }) {
@@ -732,11 +771,42 @@ function CostDetail({ data }: { data: MarketingBrainData }) {
   );
 }
 
-function NewRuleForm() {
+function NewRuleForm({
+  newRuleText,
+  setNewRuleText,
+  newRuleCategory,
+  setNewRuleCategory,
+}: {
+  newRuleText: string;
+  setNewRuleText: (value: string) => void;
+  newRuleCategory: DecisionRule["category"];
+  setNewRuleCategory: (value: DecisionRule["category"]) => void;
+}) {
+  const categories: DecisionRule["category"][] = ["scoring", "copy", "filtering", "strategy"];
   return (
     <>
-      <Block label="Rule text"><textarea className="mb-rule-textarea" placeholder="Example: If an ad is winning on cash quality, do not turn it off. Test sibling variations first." /></Block>
-      <Block label="Category"><div className="mb-chip-row"><span>Scoring</span><span>Copy</span><span>Filtering</span><span>Strategy</span></div></Block>
+      <Block label="Rule text">
+        <textarea
+          className="mb-rule-textarea"
+          onChange={(event) => setNewRuleText(event.target.value)}
+          placeholder="Example: If an ad is winning on cash quality, do not turn it off. Test sibling variations first."
+          value={newRuleText}
+        />
+      </Block>
+      <Block label="Category">
+        <div className="mb-chip-row">
+          {categories.map((category) => (
+            <button
+              className={newRuleCategory === category ? "active" : ""}
+              key={category}
+              onClick={() => setNewRuleCategory(category)}
+              type="button"
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </Block>
     </>
   );
 }
@@ -879,11 +949,96 @@ function StackBars({ title, sub, data }: { title: string; sub: string; data: Mar
 export default function MarketingBrainDashboard({ data }: { data: MarketingBrainData }) {
   const [activeTab, setActiveTab] = useState<BrainTab>("verdicts");
   const [modal, setModal] = useState<ModalState>(null);
+  const [brainData, setBrainData] = useState(data);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [newRuleText, setNewRuleText] = useState("");
+  const [newRuleCategory, setNewRuleCategory] = useState<DecisionRule["category"]>("strategy");
+  const dataView = brainData;
   const tabCounts: Partial<Record<BrainTab, number>> = {
-    verdicts: data.verdicts.length,
-    precall: data.upcoming.length,
-    rules: data.rules.length,
+    verdicts: dataView.verdicts.length,
+    precall: dataView.upcoming.length,
+    rules: dataView.rules.length,
   };
+
+  useEffect(() => {
+    setBrainData(data);
+  }, [data]);
+
+  async function applyResponse(response: Response, successMessage: string) {
+    const payload = await response.json() as MutationResponse;
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.error || "Marketing Brain action failed");
+    }
+    if (payload.data) setBrainData(payload.data);
+    setNotice(successMessage);
+    window.setTimeout(() => setNotice(null), 3200);
+  }
+
+  async function postJson(url: string, body?: unknown) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
+  async function handlePrimaryAction() {
+    if (!modal || busy) return;
+    setBusy(true);
+    try {
+      if (modal.kind === "newRule") {
+        await applyResponse(
+          await postJson("/api/marketing-brain/rules", { text: newRuleText, category: newRuleCategory }),
+          "Rule saved. The Brain will use it on the next synthesis.",
+        );
+        setNewRuleText("");
+        setNewRuleCategory("strategy");
+        setModal(null);
+        return;
+      }
+      if (modal.kind === "rule") {
+        await applyResponse(
+          await fetch(`/api/marketing-brain/rules/${encodeURIComponent(modal.item.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ active: !modal.item.active }),
+          }),
+          modal.item.active ? "Rule deactivated." : "Rule activated.",
+        );
+        setModal(null);
+        return;
+      }
+      if (modal.kind === "cost") {
+        await applyResponse(await postJson("/api/marketing-brain/sync"), "Sync complete. The Brain recomputed the loop.");
+        setModal(null);
+        return;
+      }
+      if (modal.kind === "brief" && modal.item.status === "draft") {
+        await applyResponse(
+          await postJson(`/api/marketing-brain/briefs/${encodeURIComponent(modal.item.id)}/approve`),
+          "Brief approved.",
+        );
+        setModal(null);
+        return;
+      }
+      if (modal.kind === "verdict" && /brief/i.test(modal.item.action)) {
+        await applyResponse(
+          await postJson("/api/marketing-brain/briefs/generate", { verdictId: modal.item.id }),
+          "Campaign brief generated from this verdict.",
+        );
+        setActiveTab("library");
+        setModal(null);
+        return;
+      }
+      setNotice("This action is wired, but the downstream sibling system is not connected on this branch yet.");
+      window.setTimeout(() => setNotice(null), 3200);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Marketing Brain action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="marketing-brain mb-v11">
@@ -900,19 +1055,30 @@ export default function MarketingBrainDashboard({ data }: { data: MarketingBrain
           </div>
           <button className="mb-sync" onClick={() => setModal({ kind: "cost" })} type="button">
             <span />
-            {data.syncLabel}
-            <em>cost {data.cost.spend}/{data.cost.cap}</em>
+            {dataView.syncLabel}
+            <em>cost {dataView.cost.spend}/{dataView.cost.cap}</em>
           </button>
         </div>
       </nav>
+      {notice && <div className="mb-notice">{notice}</div>}
       <main className="mb-page">
-        {activeTab === "verdicts" && <VerdictsPane data={data} open={setModal} />}
-        {activeTab === "precall" && <PrecallPane data={data} open={setModal} />}
-        {activeTab === "library" && <LibraryPane data={data} open={setModal} />}
-        {activeTab === "rules" && <RulesPane data={data} open={setModal} />}
-        {activeTab === "neural" && <NeuralPane data={data} />}
+        {activeTab === "verdicts" && <VerdictsPane data={dataView} open={setModal} />}
+        {activeTab === "precall" && <PrecallPane data={dataView} open={setModal} />}
+        {activeTab === "library" && <LibraryPane data={dataView} open={setModal} />}
+        {activeTab === "rules" && <RulesPane data={dataView} open={setModal} />}
+        {activeTab === "neural" && <NeuralPane data={dataView} />}
       </main>
-      <Modal modal={modal} data={data} close={() => setModal(null)} />
+      <Modal
+        busy={busy}
+        close={() => setModal(null)}
+        data={dataView}
+        modal={modal}
+        newRuleCategory={newRuleCategory}
+        newRuleText={newRuleText}
+        onPrimary={handlePrimaryAction}
+        setNewRuleCategory={setNewRuleCategory}
+        setNewRuleText={setNewRuleText}
+      />
     </div>
   );
 }
