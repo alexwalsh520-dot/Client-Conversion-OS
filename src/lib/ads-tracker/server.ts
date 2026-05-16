@@ -2308,6 +2308,72 @@ function buildMissingGhlBookingKeywordAlerts(
     }));
 }
 
+function ambiguousGhlBookingAttributionAlertKey(event: KeywordEvent, keyword: string): string {
+  const stableId =
+    event.appointment_id ||
+    event.contact_id ||
+    normalizePersonName(event.contact_name) ||
+    event.event_at ||
+    "unknown";
+  return `ghl_booking_ambiguous:${event.client_key}:${stableId}:${keyword}`;
+}
+
+function buildAmbiguousGhlBookingAttributionAlerts(
+  events: KeywordEvent[],
+  attributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string,
+  resolutionBySaleKey: Map<string, AttributionResolution>,
+  salesRows: SheetRow[] = []
+): UnmatchedSale[] {
+  const coveredBySalesAlert = new Set(
+    salesRows
+      .filter(shouldTrackUnmatchedSale)
+      .map((row) => normalizePersonName(row.name))
+      .filter((value): value is string => Boolean(value))
+  );
+
+  const alerts: UnmatchedSale[] = [];
+
+  for (const event of events) {
+    if (event.source !== "ghl") continue;
+    if (event.event_type === "missing_booking_keyword") continue;
+
+    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+    if (!keyword) continue;
+
+      const groupId =
+        event.override_group_id ||
+        attributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`);
+    if (!isFallbackAttributionGroupId(groupId)) continue;
+
+    const key = ambiguousGhlBookingAttributionAlertKey(event, keyword);
+    if (resolutionBySaleKey.has(key)) continue;
+
+    const name = normalizePersonName(event.contact_name);
+    if (name && coveredBySalesAlert.has(name)) continue;
+
+    alerts.push({
+      key,
+      date: eventDateKey(event.event_at),
+      clientKey: event.client_key,
+      name: event.contact_name || event.appointment_id || "Unknown",
+      setter: event.setter_name || "",
+      outcome: "",
+      callTaken: false,
+      contractedRevenue: 0,
+      collectedRevenue: 0,
+      amount: 0,
+      reason: "ambiguous_or_missing_meta_match",
+      classification: "organic_or_unattributed",
+      alertType: "missing_booking_keyword",
+      appointmentId: event.appointment_id,
+      contactId: event.contact_id,
+      eventAt: event.event_at,
+    });
+  }
+
+  return alerts;
+}
+
 async function fetchGhlAppointments(
   db: ReturnType<typeof getServiceSupabase>,
   eventQueryFrom: string,
@@ -3303,6 +3369,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     resolutionBySaleKey,
     alertAttributionSalesRows
   );
+  const ambiguousGhlBookingAttributionAlerts = buildAmbiguousGhlBookingAttributionAlerts(
+    alertGhlBookings,
+    alertPeriodAdAttributionGroupId,
+    resolutionBySaleKey,
+    alertAttributionSalesRows
+  );
   const realGhlBookingsByName = bookingsByContactName([
     ...attributionGhlBookings,
     ...dashboardMissingGhlBookingKeywordEvents,
@@ -3437,6 +3509,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     ...alertUnmatchedSales,
     ...missingManychatKeywordAlerts,
     ...missingGhlBookingKeywordAlerts,
+    ...ambiguousGhlBookingAttributionAlerts,
   ].sort((a, b) =>
     (b.eventAt || `${b.date}T12:00:00.000Z`).localeCompare(
       a.eventAt || `${a.date}T12:00:00.000Z`
