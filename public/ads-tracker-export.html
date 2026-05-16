@@ -414,25 +414,48 @@
   .metric-grid{margin-top:0}
   .metric-support-grid{margin-top:18px}
   .tasks-grid{margin-top:0}
-  .calendar-panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
-  .calendar-board{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--border);border-left:1px solid var(--border)}
-  .calendar-dow{height:36px;display:flex;align-items:center;padding:0 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-4);background:#0d0d0d}
-  .calendar-cell{min-height:118px;padding:9px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:#101010}
-  .calendar-cell.muted{background:#0c0c0c;color:var(--text-4)}
-  .calendar-cell.today{box-shadow:inset 0 0 0 1px rgba(212,178,122,.35)}
-  .calendar-day-num{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--text-3);margin-bottom:8px}
-  .calendar-call{display:grid;grid-template-columns:7px minmax(0,1fr);gap:7px;padding:7px 0;border-top:1px solid rgba(255,255,255,.04)}
-  .calendar-call:first-of-type{border-top:0}
+  .calendar-panel{border:1px solid var(--border);border-radius:10px;background:linear-gradient(180deg,#111,#0d0d0d);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+  .calendar-summary{min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;border-bottom:1px solid var(--border);background:#0f0f0f}
+  .calendar-summary-title{font-size:12px;color:var(--text);font-weight:600;letter-spacing:-.01em}
+  .calendar-summary-meta{font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.11em}
+  .calendar-board{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-left:1px solid var(--border)}
+  .calendar-dow{height:34px;display:flex;align-items:center;padding:0 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-4);background:#0b0b0b}
+  .calendar-cell{min-height:136px;padding:9px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:linear-gradient(180deg,#101010,#0d0d0d);position:relative}
+  .calendar-cell.muted{background:#0a0a0a;color:var(--text-4)}
+  .calendar-cell.today{box-shadow:inset 0 0 0 1px rgba(212,178,122,.42);background:linear-gradient(180deg,#12100b,#0d0d0d)}
+  .calendar-day-head{height:19px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .calendar-day-num{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--text-3)}
+  .calendar-day-count{font-size:9px;color:var(--gold);border:1px solid rgba(212,178,122,.22);border-radius:999px;background:rgba(212,178,122,.055);padding:2px 6px;white-space:nowrap}
+  .calendar-call{width:100%;display:block;text-align:left;padding:8px 9px;margin-bottom:6px;border:1px solid rgba(255,255,255,.055);border-radius:8px;background:#141414;box-shadow:inset 3px 0 0 var(--text-4);transition:background .14s,border-color .14s,transform .14s}
+  .calendar-call:hover{background:#191919;border-color:#333;transform:translateY(-1px)}
+  .calendar-call:focus-visible{outline:1px solid rgba(212,178,122,.75);outline-offset:2px}
+  .calendar-call.status-upcoming{box-shadow:inset 3px 0 0 var(--gold)}
+  .calendar-call.status-show{box-shadow:inset 3px 0 0 var(--green)}
+  .calendar-call.status-no_show{box-shadow:inset 3px 0 0 var(--red)}
+  .calendar-call.status-needs_review,.calendar-call.status-missing_keyword{box-shadow:inset 3px 0 0 var(--blue)}
+  .calendar-call-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .calendar-dot{width:7px;height:7px;border-radius:99px;margin-top:4px;background:var(--text-4)}
   .calendar-dot.upcoming{background:var(--gold)}
   .calendar-dot.show{background:var(--green)}
   .calendar-dot.no_show{background:var(--red)}
   .calendar-dot.needs_review,.calendar-dot.missing_keyword{background:var(--blue)}
-  .calendar-call-name{font-size:11px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .calendar-call-meta{font-size:10px;color:var(--text-4);line-height:1.25;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .calendar-legend{display:flex;align-items:center;gap:14px;padding:12px 14px;border-top:1px solid var(--border);color:var(--text-3);font-size:10px}
-  .calendar-legend-item{display:flex;align-items:center;gap:6px}
+  .calendar-call-name{font-size:11px;color:var(--text);font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .calendar-status-pill{height:18px;display:inline-flex;align-items:center;border-radius:999px;border:1px solid #292929;background:#101010;color:var(--text-3);font-size:9px;font-weight:600;padding:0 6px;white-space:nowrap}
+  .calendar-status-pill.upcoming{border-color:rgba(212,178,122,.28);color:var(--gold);background:rgba(212,178,122,.06)}
+  .calendar-status-pill.show{border-color:rgba(125,211,168,.24);color:var(--green);background:rgba(125,211,168,.055)}
+  .calendar-status-pill.no_show{border-color:rgba(232,154,148,.24);color:var(--red);background:rgba(232,154,148,.055)}
+  .calendar-status-pill.needs_review,.calendar-status-pill.missing_keyword{border-color:rgba(122,167,212,.26);color:var(--blue);background:rgba(122,167,212,.06)}
+  .calendar-call-time{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--text-3);margin-top:5px}
+  .calendar-call-meta{font-size:10px;color:var(--text-4);line-height:1.28;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .calendar-empty{padding:28px;text-align:center;color:var(--text-4);font-size:12px}
+  .calendar-modal-grid{display:grid;gap:10px}
+  .calendar-modal-card{border:1px solid var(--border);border-radius:8px;background:#0b0b0b;padding:13px 14px}
+  .calendar-modal-row{display:grid;grid-template-columns:128px minmax(0,1fr);gap:14px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.045);align-items:center}
+  .calendar-modal-row:last-child{border-bottom:0}
+  .calendar-modal-label{font-size:9px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-4)}
+  .calendar-modal-value{font-size:12px;color:var(--text-2);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .calendar-modal-value.strong{font-size:14px;color:var(--text);font-weight:650}
+  .calendar-review-note{border:1px solid rgba(122,167,212,.25);border-radius:8px;background:rgba(122,167,212,.055);padding:12px 14px;color:var(--blue);font-size:12px;line-height:1.35}
   @media(max-width:900px){.calendar-board{display:block}.calendar-dow{display:none}.calendar-cell{min-height:auto}.calendar-cell.muted{display:none}}
   .metric-card-shell{position:relative;min-width:0}
   .metric-card-shell.editing .panel{cursor:grab;transition:border-color .14s,box-shadow .14s,transform .32s cubic-bezier(.22,.72,.2,1),opacity .14s,background-color .14s}
@@ -2830,8 +2853,88 @@ function calendarMonthDays(monthIso){
   return days;
 }
 
-function CalendarSection({dashboard, dateRange}){
+function calendarStatusLabel(status){
+  if(status === "show") return "Showed";
+  if(status === "no_show") return "No-show";
+  if(status === "needs_review") return "Review";
+  if(status === "missing_keyword") return "Missing keyword";
+  return "Booked";
+}
+
+function CalendarAppointmentModal({call, onClose, onOpenWorkspace}){
+  if(!call) return null;
+  const needsReview = call.status === "needs_review" || call.status === "missing_keyword";
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal wide" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h3 className="modal-title">{call.name || "Unknown appointment"}</h3>
+            <div className="modal-sub">{dateLabelFromIso(isoFromAnyDate(call.eventAt))} · {timeFromAnyDate(call.eventAt)} · {calendarStatusLabel(call.status)}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="calendar-modal-grid">
+            <div className="calendar-modal-card">
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Status</div>
+                <div className="calendar-modal-value"><span className={"calendar-status-pill "+(call.status || "upcoming")}>{calendarStatusLabel(call.status)}</span></div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Account</div>
+                <div className="calendar-modal-value strong">{clientLabel(call.clientKey)}</div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Campaign</div>
+                <div className="calendar-modal-value">{call.campaignName || "Needs attribution"}</div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Ad</div>
+                <div className="calendar-modal-value">{call.adName || "No exact ad yet"}</div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Keyword</div>
+                <div className="calendar-modal-value strong">{call.keyword || "Missing"}</div>
+              </div>
+            </div>
+            <div className="calendar-modal-card">
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Appointment ID</div>
+                <div className="calendar-modal-value mono">{call.appointmentId || "—"}</div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Contact ID</div>
+                <div className="calendar-modal-value mono">{call.contactId || "—"}</div>
+              </div>
+              <div className="calendar-modal-row">
+                <div className="calendar-modal-label">Sale key</div>
+                <div className="calendar-modal-value mono">{call.saleKey || "Not matched yet"}</div>
+              </div>
+            </div>
+            {needsReview && (
+              <div className="calendar-review-note">
+                This appointment needs attribution. Open the workspace if the VA needs to assign the keyword or campaign.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="metric-board-btn" onClick={onClose}>Close</button>
+          {needsReview && (
+            <button className="apply-btn" onClick={()=>{ onClose(); onOpenWorkspace && onOpenWorkspace(); }}>
+              Open workspace
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarSection({dashboard, dateRange, onOpenWorkspace}){
   const events = Array.isArray(dashboard?.calendarEvents) ? dashboard.calendarEvents : [];
+  const [selectedCall, setSelectedCall] = useState(null);
   const monthIso = monthStartIso(dateRange?.dateFrom || todayEt());
   const days = calendarMonthDays(monthIso);
   const eventsByDay = events.reduce((map, event) => {
@@ -2843,48 +2946,67 @@ function CalendarSection({dashboard, dateRange}){
   }, {});
   const today = todayEt();
   const dow = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const reviewCount = events.filter(event => event.status === "needs_review" || event.status === "missing_keyword").length;
   return (
     <div className="section">
       <div className="section-head">
         <div className="section-label">Calendar</div>
-        <div className="section-meta">{monthTitle(monthIso)} · calls by campaign</div>
+        <div className="section-meta">{monthTitle(monthIso)} · {events.length} booked call{events.length===1?"":"s"}</div>
       </div>
       <div className="calendar-panel">
         {events.length === 0 ? (
           <div className="calendar-empty">No booked calls in this date range.</div>
         ) : (
           <>
+            <div className="calendar-summary">
+              <div>
+                <div className="calendar-summary-title">Booked calls by day</div>
+                <div className="calendar-summary-meta">{reviewCount ? `${reviewCount} need attribution` : "All visible calls are attributed or pending"}</div>
+              </div>
+              <div className="calendar-summary-meta">Click any appointment</div>
+            </div>
             <div className="calendar-board">
               {dow.map(day=><div key={day} className="calendar-dow">{day}</div>)}
               {days.map(day=>{
                 const calls = (eventsByDay[day.iso] || []).slice().sort((a,b)=>String(a.eventAt).localeCompare(String(b.eventAt)));
                 return (
                   <div key={day.iso} className={"calendar-cell "+(day.muted?"muted ":"")+(day.iso===today?"today":"")}>
-                    <div className="calendar-day-num">{Number(day.iso.slice(-2))}</div>
+                    <div className="calendar-day-head">
+                      <div className="calendar-day-num">{Number(day.iso.slice(-2))}</div>
+                      {calls.length > 0 && <div className="calendar-day-count">{calls.length}</div>}
+                    </div>
                     {calls.map(call=>(
-                      <div key={call.id} className="calendar-call" title={`${call.name || "Unknown"} · ${call.campaignName || "Needs attribution"}`}>
-                        <span className={"calendar-dot "+(call.status || "upcoming")}></span>
-                        <div>
-                          <div className="calendar-call-name">{timeFromAnyDate(call.eventAt)} · {call.name || "Unknown"}</div>
-                          <div className="calendar-call-meta">
-                            {call.campaignName || "Needs attribution"}{call.keyword ? ` · ${call.keyword}` : ""}
-                          </div>
+                      <button
+                        key={call.id}
+                        type="button"
+                        className={"calendar-call status-"+(call.status || "upcoming")}
+                        title={`${call.name || "Unknown"} · ${call.campaignName || "Needs attribution"}`}
+                        onClick={()=>setSelectedCall(call)}
+                      >
+                        <div className="calendar-call-top">
+                          <div className="calendar-call-name">{call.name || "Unknown"}</div>
+                          <span className={"calendar-status-pill "+(call.status || "upcoming")}>{calendarStatusLabel(call.status)}</span>
                         </div>
-                      </div>
+                        <div className="calendar-call-time">{timeFromAnyDate(call.eventAt)}</div>
+                        <div className="calendar-call-meta">
+                          {call.campaignName || "Needs attribution"}{call.keyword ? ` · ${call.keyword}` : ""}
+                        </div>
+                      </button>
                     ))}
                   </div>
                 );
               })}
             </div>
-            <div className="calendar-legend">
-              <span className="calendar-legend-item"><span className="calendar-dot upcoming"></span>Upcoming</span>
-              <span className="calendar-legend-item"><span className="calendar-dot show"></span>Show</span>
-              <span className="calendar-legend-item"><span className="calendar-dot no_show"></span>No show</span>
-              <span className="calendar-legend-item"><span className="calendar-dot needs_review"></span>Needs attribution</span>
-            </div>
           </>
         )}
       </div>
+      {selectedCall && (
+        <CalendarAppointmentModal
+          call={selectedCall}
+          onClose={()=>setSelectedCall(null)}
+          onOpenWorkspace={onOpenWorkspace}
+        />
+      )}
     </div>
   );
 }
@@ -4514,7 +4636,7 @@ function App(){
 
           <TasksSection dashboard={dashboard} campaigns={resolveCampaigns} onResolve={onResolveAlert} onToast={showToast} onOpenWorkspace={()=>setWorkspaceOpen(true)}/>
 
-          <CalendarSection dashboard={dashboard} dateRange={dateRange}/>
+          <CalendarSection dashboard={dashboard} dateRange={dateRange} onOpenWorkspace={()=>setWorkspaceOpen(true)}/>
 
           {/* Recent entries (collapsed) */}
           <RecentEntries
