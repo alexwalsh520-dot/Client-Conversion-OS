@@ -10,10 +10,12 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useEffect, useState } from "react";
 import { Trophy, Users } from "lucide-react";
 import type { Client, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
 import type { CoachPerformanceEntry, CoachingFeedbackEntry } from "@/lib/mock-data";
 import { boostPctForScore, type CoachScoreMap } from "@/lib/daily-coacher/coach-scores";
+import CoachDigestToggle from "./CoachDigestToggle";
 
 interface Props {
   clients: Client[];
@@ -28,6 +30,23 @@ interface Props {
 }
 
 export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports, dailyCoacherScores }: Props) {
+  // Probe admin status once for the digest toggle. Cheap: one /api/auth/session
+  // call, cached by NextAuth client-side.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setIsAdmin(data?.user?.role === "admin");
+      } catch {
+        // non-admin default
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   // Get unique coaches from clients
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
 
@@ -161,6 +180,17 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                   Daily Coacher: <strong style={{ color: coach.dailyCoacherScore > 0 ? "var(--accent)" : "var(--text-muted)" }}>{coach.dailyCoacherScore}/10</strong>
                 </span>
               </div>
+              {isAdmin && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: "1px solid var(--border-primary)",
+                  }}
+                >
+                  <CoachDigestToggle coachName={coach.name} isAdmin={isAdmin} />
+                </div>
+              )}
             </div>
           ))}
         </div>

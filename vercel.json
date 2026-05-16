@@ -22,6 +22,14 @@
     {
       "path": "/api/cron/monthly-financials",
       "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/daily-coacher-digest",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/daily-coacher-summaries",
+      "schedule": "0 3 */3 * *"
     }
   ]
 }
