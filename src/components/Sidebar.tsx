@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   LogOut,
   BarChart3,
   Calculator,
@@ -25,12 +26,15 @@ import {
 const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
-  { href: "/ads", label: "Ads", icon: Megaphone },
-  { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
+];
+
+const marketingNavItems = [
+  { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
 ];
 
 export default function Sidebar() {
@@ -40,9 +44,21 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [forceDesktop, setForceDesktop] = useState(false);
+  const [marketingOpen, setMarketingOpen] = useState(true);
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
+
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(href + "/");
+  };
+
+  const canViewItem = (item: { href: string }) =>
+    !hasPermissions || isAdmin || allowedTabs?.includes(item.href);
+  const visibleNavItems = navItems.filter(canViewItem);
+  const visibleMarketingItems = marketingNavItems.filter(canViewItem);
+  const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));
 
   // Persist collapsed state in localStorage
   useEffect(() => {
@@ -60,6 +76,10 @@ export default function Sidebar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (marketingActive) setMarketingOpen(true);
+  }, [marketingActive]);
 
   // Apply/remove force-desktop class on html element
   useEffect(() => {
@@ -91,12 +111,10 @@ export default function Sidebar() {
   if (pathname.startsWith("/studio-2/upload/")) return null;
   if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") return null;
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname === href || pathname.startsWith(href + "/");
-  };
-
-  const renderLink = (item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> }) => {
+  const renderLink = (
+    item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },
+    nested = false
+  ) => {
     const Icon = item.icon;
     const active = isActive(item.href);
 
@@ -104,7 +122,7 @@ export default function Sidebar() {
       <Link
         key={item.href}
         href={item.href}
-        className={`sidebar-link ${active ? "sidebar-link-active" : ""}`}
+        className={`sidebar-link ${nested ? "sidebar-link-nested" : ""} ${active ? "sidebar-link-active" : ""}`}
         onClick={() => setMobileOpen(false)}
       >
         <span className="sidebar-link-icon">
@@ -162,7 +180,30 @@ export default function Sidebar() {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          {navItems.filter(item => !hasPermissions || isAdmin || allowedTabs!.includes(item.href)).map(renderLink)}
+          {visibleNavItems.map((item) => renderLink(item))}
+          {visibleMarketingItems.length > 0 && (
+            <div className="sidebar-section">
+              {!collapsed && (
+                <button
+                  type="button"
+                  className={`sidebar-section-label sidebar-section-toggle ${marketingActive ? "sidebar-section-toggle-active" : ""}`}
+                  aria-expanded={marketingOpen}
+                  onClick={() => setMarketingOpen((open) => !open)}
+                >
+                  <span>Marketing</span>
+                  <ChevronDown
+                    size={13}
+                    className={`sidebar-section-chevron ${marketingOpen ? "sidebar-section-chevron-open" : ""}`}
+                  />
+                </button>
+              )}
+              {(collapsed || marketingOpen || marketingActive) && (
+                <div className="sidebar-section-links">
+                  {visibleMarketingItems.map((item) => renderLink(item, true))}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Bottom section */}
