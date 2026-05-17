@@ -117,7 +117,13 @@ type StudioFolderType = "design" | "media";
 type MediaKind = "image" | "video";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
-type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked">;
+type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked" | "colorSpans">;
+
+interface TextColorSpan {
+  start: number;
+  end: number;
+  color: string;
+}
 
 interface TextBlock {
   id: string;
@@ -138,6 +144,7 @@ interface TextBlock {
   lineHeight: number;
   maxWidth: number;
   locked?: boolean;
+  colorSpans?: TextColorSpan[];
 }
 
 interface ImageTransform {
@@ -220,6 +227,8 @@ interface StudioProjectDetail {
 
 interface RenderedLine {
   text: string;
+  start: number;
+  end: number;
   x: number;
   bgY: number;
   textY: number;
@@ -304,6 +313,61 @@ function hasMeaningfulProjectName(projectName: string) {
   return !!trimmed && trimmed !== DEFAULT_PROJECT_NAME && trimmed !== EMPTY_PROJECT_NAME;
 }
 
+function getBlockText(block: Pick<TextBlock, "lines">) {
+  return block.lines.join("\n");
+}
+
+function normalizeColorSpans(spans: TextColorSpan[] | undefined, textLength: number) {
+  if (!spans?.length) return [];
+
+  return spans
+    .map((span) => ({
+      start: clamp(Math.min(span.start, span.end), 0, textLength),
+      end: clamp(Math.max(span.start, span.end), 0, textLength),
+      color: span.color,
+    }))
+    .filter((span) => span.end > span.start && /^#[0-9a-f]{6}$/i.test(span.color));
+}
+
+function getColorAtTextIndex(block: TextBlock, index: number) {
+  const spans = normalizeColorSpans(block.colorSpans, getBlockText(block).length);
+  for (let i = spans.length - 1; i >= 0; i--) {
+    const span = spans[i];
+    if (index >= span.start && index < span.end) return span.color;
+  }
+  return block.textColor;
+}
+
+function applyTextColorSpan(block: TextBlock, start: number, end: number, color: string): TextBlock {
+  const textLength = getBlockText(block).length;
+  const rangeStart = clamp(Math.min(start, end), 0, textLength);
+  const rangeEnd = clamp(Math.max(start, end), 0, textLength);
+
+  if (rangeEnd <= rangeStart) {
+    return { ...block, textColor: color };
+  }
+
+  const spans = normalizeColorSpans(block.colorSpans, textLength).flatMap((span) => {
+    if (span.end <= rangeStart || span.start >= rangeEnd) return [span];
+    const pieces: TextColorSpan[] = [];
+    if (span.start < rangeStart) pieces.push({ ...span, end: rangeStart });
+    if (span.end > rangeEnd) pieces.push({ ...span, start: rangeEnd });
+    return pieces;
+  });
+
+  spans.push({ start: rangeStart, end: rangeEnd, color });
+  spans.sort((a, b) => a.start - b.start || a.end - b.end);
+  return { ...block, colorSpans: spans };
+}
+
+function withTextBlockText(block: TextBlock, text: string): TextBlock {
+  return {
+    ...block,
+    lines: text.split("\n"),
+    colorSpans: normalizeColorSpans(block.colorSpans, text.length),
+  };
+}
+
 function normalizeTextBlock(block: TextBlock): TextBlock {
   const fontSize = block.fontSize || 44;
   const looksLikeFirstPass = (block.lineHeight || 0) < 1.3 || block.lineGap >= 8;
@@ -311,6 +375,7 @@ function normalizeTextBlock(block: TextBlock): TextBlock {
     ...block,
     lineHeight: looksLikeFirstPass ? 1.5 : block.lineHeight || 1.5,
     lineGap: looksLikeFirstPass ? (fontSize <= 46 ? 5 : 6) : block.lineGap ?? (fontSize <= 46 ? 5 : 6),
+    colorSpans: normalizeColorSpans(block.colorSpans || [], getBlockText(block).length),
   };
 
   if (looksLikeFirstPass && fontSize === 52 && block.paddingH === 24 && block.paddingV === 14) {
@@ -564,23 +629,35 @@ function setBlockFont(ctx: CanvasRenderingContext2D, block: TextBlock) {
   ctx.textBaseline = "middle";
 }
 
-function wrapLine(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
-  if (!text.trim()) return [""];
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let current = words[0] ?? "";
+function wrapLine(ctx: CanvasRenderingContext2D, text: string, maxW: number, startOffset: number) {
+  const tokens = Array.from(text.matchAll(/\S+/g)).map((match) => ({
+    word: match[0],
+    start: startOffset + (match.index ?? 0),
+    end: startOffset + (match.index ?? 0) + match[0].length,
+  }));
 
-  for (let i = 1; i < words.length; i++) {
-    const next = `${current} ${words[i]}`;
+  if (!tokens.length) return [{ text: "", start: startOffset, end: startOffset }];
+
+  const lines: Array<{ text: string; start: number; end: number }> = [];
+  let current = tokens[0]?.word ?? "";
+  let currentStart = tokens[0]?.start ?? startOffset;
+  let currentEnd = tokens[0]?.end ?? startOffset;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    const next = `${current} ${token.word}`;
     if (ctx.measureText(next).width > maxW && current) {
-      lines.push(current);
-      current = words[i] ?? "";
+      lines.push({ text: current, start: currentStart, end: currentEnd });
+      current = token.word;
+      currentStart = token.start;
+      currentEnd = token.end;
     } else {
       current = next;
+      currentEnd = token.end;
     }
   }
 
-  if (current) lines.push(current);
+  if (current) lines.push({ text: current, start: currentStart, end: currentEnd });
   return lines;
 }
 
@@ -589,6 +666,7 @@ function measureTextBlock(ctx: CanvasRenderingContext2D, block: TextBlock): Bloc
   const lineH = block.fontSize * block.lineHeight;
   const availableW = Math.max(40, block.maxWidth - block.paddingH * 2);
   let y = block.y;
+  let textOffset = 0;
   const rendered: RenderedLine[] = [];
   let bottom = block.y;
 
@@ -596,18 +674,21 @@ function measureTextBlock(ctx: CanvasRenderingContext2D, block: TextBlock): Bloc
     if (!logicalLine.trim()) {
       y += Math.round(block.fontSize * 0.55 + block.lineGap);
       bottom = Math.max(bottom, y);
+      textOffset += logicalLine.length + 1;
       continue;
     }
 
-    for (const visualLine of wrapLine(ctx, logicalLine, availableW)) {
-      const textW = ctx.measureText(visualLine).width;
+    for (const visualLine of wrapLine(ctx, logicalLine, availableW, textOffset)) {
+      const textW = ctx.measureText(visualLine.text).width;
       const bgW = textW + block.paddingH * 2;
       const bgH = lineH + block.paddingV * 2;
       let x = block.x;
       if (block.align === "center") x = block.x + (block.maxWidth - bgW) / 2;
       if (block.align === "right") x = block.x + block.maxWidth - bgW;
       rendered.push({
-        text: visualLine,
+        text: visualLine.text,
+        start: visualLine.start,
+        end: visualLine.end,
         x,
         bgY: y,
         textY: y + bgH / 2,
@@ -618,6 +699,7 @@ function measureTextBlock(ctx: CanvasRenderingContext2D, block: TextBlock): Bloc
       bottom = Math.max(bottom, y + bgH);
       y += lineH + block.lineGap;
     }
+    textOffset += logicalLine.length + 1;
   }
 
   const h = Math.max(24, bottom - block.y);
@@ -669,6 +751,24 @@ function drawCoverMedia(
   ctx.restore();
 }
 
+function drawStyledTextLine(ctx: CanvasRenderingContext2D, block: TextBlock, line: RenderedLine) {
+  let x = line.x + block.paddingH;
+  let index = 0;
+
+  while (index < line.text.length) {
+    const color = getColorAtTextIndex(block, line.start + index);
+    let next = index + 1;
+    while (next < line.text.length && getColorAtTextIndex(block, line.start + next) === color) {
+      next++;
+    }
+    const segment = line.text.slice(index, next);
+    ctx.fillStyle = color;
+    ctx.fillText(segment, x, line.textY);
+    x += ctx.measureText(segment).width;
+    index = next;
+  }
+}
+
 function drawArtwork(
   ctx: CanvasRenderingContext2D,
   creative: Creative,
@@ -710,8 +810,7 @@ function drawArtwork(
 
     for (const line of metrics.lines) {
       if (block.id === editingTextBlockId) continue;
-      ctx.fillStyle = block.textColor;
-      ctx.fillText(line.text, line.x + block.paddingH, line.textY);
+      drawStyledTextLine(ctx, block, line);
     }
   }
 
@@ -1371,6 +1470,7 @@ export default function Studio2Page() {
   const [deleteFolderStatus, setDeleteFolderStatus] = useState("");
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [editorTitleFocused, setEditorTitleFocused] = useState(false);
+  const [textSelection, setTextSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1379,6 +1479,7 @@ export default function Studio2Page() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
+  const sidebarTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
   const [, bumpImageVersion] = useState(0);
@@ -1395,6 +1496,21 @@ export default function Studio2Page() {
   const editingBlock = editingBlockId
     ? currentCreative?.textBlocks.find((block) => block.id === editingBlockId)
     : undefined;
+  const selectedTextRange = useMemo(
+    () =>
+      selectedBlock && textSelection?.blockId === selectedBlock.id && textSelection.start !== textSelection.end
+        ? {
+            start: Math.min(textSelection.start, textSelection.end),
+            end: Math.max(textSelection.start, textSelection.end),
+          }
+        : null,
+    [selectedBlock, textSelection]
+  );
+  const activeTextColor = selectedBlock
+    ? selectedTextRange
+      ? getColorAtTextIndex(selectedBlock, selectedTextRange.start)
+      : selectedBlock.textColor
+    : "#ffffff";
 
   const getMeasureCtx = useCallback(() => {
     if (!measureCanvasRef.current) measureCanvasRef.current = document.createElement("canvas");
@@ -1929,6 +2045,54 @@ export default function Studio2Page() {
     [selectedBlock, updateCurrentCreative]
   );
 
+  const captureTextSelection = useCallback((blockId: string, target: HTMLTextAreaElement) => {
+    setTextSelection({
+      blockId,
+      start: target.selectionStart,
+      end: target.selectionEnd,
+    });
+  }, []);
+
+  const updateSelectedBlockText = useCallback(
+    (text: string) => {
+      if (!selectedBlock) return;
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          block.id === selectedBlock.id ? withTextBlockText(block, text) : block
+        ),
+      }));
+      setTextSelection((selection) =>
+        selection?.blockId === selectedBlock.id
+          ? {
+              ...selection,
+              start: clamp(selection.start, 0, text.length),
+              end: clamp(selection.end, 0, text.length),
+            }
+          : selection
+      );
+    },
+    [selectedBlock, updateCurrentCreative]
+  );
+
+  const applySelectedTextColor = useCallback(
+    (color: string) => {
+      if (!selectedBlock) return;
+      const range = selectedTextRange;
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          block.id === selectedBlock.id
+            ? range
+              ? applyTextColorSpan(block, range.start, range.end, color)
+              : { ...block, textColor: color }
+            : block
+        ),
+      }));
+    },
+    [selectedBlock, selectedTextRange, updateCurrentCreative]
+  );
+
   const updateImage = useCallback(
     (updates: Partial<ImageTransform>) => {
       updateCurrentCreative((creative) => ({
@@ -2305,6 +2469,7 @@ export default function Studio2Page() {
       x: clamp(selectedBlock.x + 36, -160, CANVAS_W - 120),
       y: clamp(selectedBlock.y + 36, -160, CANVAS_H - 120),
       lines: [...selectedBlock.lines],
+      colorSpans: selectedBlock.colorSpans?.map((span) => ({ ...span })),
     };
     updateCurrentCreative((creative) => ({
       ...creative,
@@ -2487,9 +2652,10 @@ export default function Studio2Page() {
       if (block.locked) return;
       pushUndo();
       setEditingBlockId(block.id);
-      setEditingText(block.lines.join("\n"));
+      setEditingText(getBlockText(block));
       setEditingOriginalLines([...block.lines]);
       setSelectedLayer({ type: "text", id: block.id });
+      setTextSelection(null);
       setContextMenu(null);
     },
     [pushUndo]
@@ -2774,6 +2940,16 @@ export default function Studio2Page() {
         return;
       }
 
+      if (!typing && !meta && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        const delta = event.key === "ArrowLeft" ? -1 : 1;
+        setCurrentIndex((index) => clamp(index + delta, 0, Math.max(0, creatives.length - 1)));
+        setSelectedLayer(null);
+        setContextMenu(null);
+        setEditingBlockId(null);
+        return;
+      }
+
       if (event.key === "Escape") {
         setContextMenu(null);
       }
@@ -2785,7 +2961,7 @@ export default function Studio2Page() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelectedBlock, duplicateSelectedBlock, redo, selectedLayer, undo, view]);
+  }, [creatives.length, deleteSelectedBlock, duplicateSelectedBlock, redo, selectedLayer, undo, view]);
 
   const renderCreativeToCanvas = useCallback(
     async (creative: Creative, pixelRatio = 2) => {
@@ -5464,10 +5640,13 @@ export default function Studio2Page() {
                   updateCurrentCreative((creative) => ({
                     ...creative,
                     textBlocks: creative.textBlocks.map((block) =>
-                      block.id === editingBlock.id ? { ...block, lines: next.split("\n") } : block
+                      block.id === editingBlock.id ? withTextBlockText(block, next) : block
                     ),
                   }));
                 }}
+                onSelect={(event) => captureTextSelection(editingBlock.id, event.currentTarget)}
+                onKeyUp={(event) => captureTextSelection(editingBlock.id, event.currentTarget)}
+                onMouseUp={(event) => captureTextSelection(editingBlock.id, event.currentTarget)}
                 onBlur={commitInlineEdit}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
@@ -5632,28 +5811,36 @@ export default function Studio2Page() {
                 </button>
               </div>
               <textarea
-                value={selectedBlock.lines.join("\n")}
+                ref={sidebarTextRef}
+                value={getBlockText(selectedBlock)}
                 onFocus={pushUndo}
-                onChange={(e) => updateSelectedBlock({ lines: e.target.value.split("\n") })}
+                onSelect={(e) => captureTextSelection(selectedBlock.id, e.currentTarget)}
+                onKeyUp={(e) => captureTextSelection(selectedBlock.id, e.currentTarget)}
+                onMouseUp={(e) => captureTextSelection(selectedBlock.id, e.currentTarget)}
+                onChange={(e) => updateSelectedBlockText(e.target.value)}
                 rows={4}
                 style={{ ...inputStyle, resize: "vertical", lineHeight: 1.4, marginBottom: 10 }}
               />
-              <Control label="Font">
-                <select value={selectedBlock.fontFamily} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ fontFamily: e.target.value })} style={inputStyle}>
-                  {FONT_OPTIONS.map((font) => (
-                    <option key={font.value} value={font.value}>{font.label}</option>
-                  ))}
-                </select>
-              </Control>
-              <Slider label="Size" min={14} max={150} value={selectedBlock.fontSize} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ fontSize: value })} />
-              <Slider label="Width" min={220} max={1060} value={selectedBlock.maxWidth} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ maxWidth: value })} />
-              <Slider label="Padding" min={0} max={70} value={selectedBlock.paddingH} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ paddingH: value, paddingV: Math.round(value * 0.58) })} />
-              <Slider label="Radius" min={0} max={40} value={selectedBlock.borderRadius} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ borderRadius: value })} />
-              <Slider label="Opacity" min={0} max={100} value={Math.round(selectedBlock.bgOpacity * 100)} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ bgOpacity: value / 100 })} suffix="%" />
-              <Control label="Colors">
-                <input type="color" value={selectedBlock.textColor} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ textColor: e.target.value })} style={{ width: 42, height: 32, border: "none", background: "transparent" }} title="Text color" />
-                <input type="color" value={selectedBlock.bgColor} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ bgColor: e.target.value })} style={{ width: 42, height: 32, border: "none", background: "transparent" }} title="Highlight color" />
-                <span style={{ color: ADS_BRAND.text3, fontSize: 11 }}>text / highlight</span>
+              <Control label={selectedTextRange ? "Selected text color" : "Text color"}>
+                <input
+                  type="color"
+                  value={activeTextColor}
+                  onMouseDown={pushUndo}
+                  onChange={(e) => applySelectedTextColor(e.target.value)}
+                  style={{ width: 42, height: 32, border: "none", background: "transparent" }}
+                  title={selectedTextRange ? "Selected text color" : "Text color"}
+                />
+                <input
+                  type="color"
+                  value={selectedBlock.bgColor}
+                  onMouseDown={pushUndo}
+                  onChange={(e) => updateSelectedBlock({ bgColor: e.target.value })}
+                  style={{ width: 42, height: 32, border: "none", background: "transparent" }}
+                  title="Highlight color"
+                />
+                <span style={{ color: ADS_BRAND.text3, fontSize: 11 }}>
+                  {selectedTextRange ? "selection / highlight" : "text / highlight"}
+                </span>
               </Control>
               <Control label="Align">
                 <div style={{
@@ -5680,6 +5867,18 @@ export default function Studio2Page() {
                   ))}
                 </div>
               </Control>
+              <Control label="Font">
+                <select value={selectedBlock.fontFamily} onMouseDown={pushUndo} onChange={(e) => updateSelectedBlock({ fontFamily: e.target.value })} style={inputStyle}>
+                  {FONT_OPTIONS.map((font) => (
+                    <option key={font.value} value={font.value}>{font.label}</option>
+                  ))}
+                </select>
+              </Control>
+              <Slider label="Size" min={14} max={150} value={selectedBlock.fontSize} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ fontSize: value })} />
+              <Slider label="Width" min={220} max={1060} value={selectedBlock.maxWidth} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ maxWidth: value })} />
+              <Slider label="Padding" min={0} max={70} value={selectedBlock.paddingH} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ paddingH: value, paddingV: Math.round(value * 0.58) })} />
+              <Slider label="Radius" min={0} max={40} value={selectedBlock.borderRadius} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ borderRadius: value })} />
+              <Slider label="Opacity" min={0} max={100} value={Math.round(selectedBlock.bgOpacity * 100)} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ bgOpacity: value / 100 })} suffix="%" />
               <Control label="Position">
                 <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-x")}>Center X</button>
                 <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-y")}>Center Y</button>
