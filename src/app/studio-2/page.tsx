@@ -46,6 +46,7 @@ import {
   Type,
   Upload,
   Video,
+  X,
 } from "lucide-react";
 
 const CANVAS_W = 1080;
@@ -358,6 +359,40 @@ function applyTextColorSpan(block: TextBlock, start: number, end: number, color:
   spans.push({ start: rangeStart, end: rangeEnd, color });
   spans.sort((a, b) => a.start - b.start || a.end - b.end);
   return { ...block, colorSpans: spans };
+}
+
+function removeTextColorRange(block: TextBlock, start: number, end: number): TextBlock {
+  const textLength = getBlockText(block).length;
+  const rangeStart = clamp(Math.min(start, end), 0, textLength);
+  const rangeEnd = clamp(Math.max(start, end), 0, textLength);
+
+  if (rangeEnd <= rangeStart) return block;
+
+  const spans = normalizeColorSpans(block.colorSpans, textLength).flatMap((span) => {
+    if (span.end <= rangeStart || span.start >= rangeEnd) return [span];
+    const pieces: TextColorSpan[] = [];
+    if (span.start < rangeStart) pieces.push({ ...span, end: rangeStart });
+    if (span.end > rangeEnd) pieces.push({ ...span, start: rangeEnd });
+    return pieces;
+  });
+
+  return { ...block, colorSpans: spans };
+}
+
+function removeTextColorSpan(block: TextBlock, target: TextColorSpan): TextBlock {
+  const textLength = getBlockText(block).length;
+  return {
+    ...block,
+    colorSpans: normalizeColorSpans(block.colorSpans, textLength).filter(
+      (span) => !(span.start === target.start && span.end === target.end && span.color === target.color)
+    ),
+  };
+}
+
+function getTextRangeSnippet(text: string, start: number, end: number) {
+  const snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+  if (!snippet) return "Selected text";
+  return snippet.length > 34 ? `${snippet.slice(0, 31)}...` : snippet;
 }
 
 function withTextBlockText(block: TextBlock, text: string): TextBlock {
@@ -1506,11 +1541,19 @@ export default function Studio2Page() {
         : null,
     [selectedBlock, textSelection]
   );
-  const activeTextColor = selectedBlock
-    ? selectedTextRange
+  const selectedBlockText = selectedBlock ? getBlockText(selectedBlock) : "";
+  const selectedTextSnippet =
+    selectedBlock && selectedTextRange
+      ? getTextRangeSnippet(selectedBlockText, selectedTextRange.start, selectedTextRange.end)
+      : "";
+  const selectedTextColor =
+    selectedBlock && selectedTextRange
       ? getColorAtTextIndex(selectedBlock, selectedTextRange.start)
-      : selectedBlock.textColor
-    : "#ffffff";
+      : selectedBlock?.textColor ?? "#ffffff";
+  const selectedColorSpans = useMemo(
+    () => (selectedBlock ? normalizeColorSpans(selectedBlock.colorSpans, selectedBlockText.length) : []),
+    [selectedBlock, selectedBlockText]
+  );
 
   const getMeasureCtx = useCallback(() => {
     if (!measureCanvasRef.current) measureCanvasRef.current = document.createElement("canvas");
@@ -2077,20 +2120,44 @@ export default function Studio2Page() {
 
   const applySelectedTextColor = useCallback(
     (color: string) => {
-      if (!selectedBlock) return;
+      if (!selectedBlock || !selectedTextRange) return;
       const range = selectedTextRange;
       updateCurrentCreative((creative) => ({
         ...creative,
         textBlocks: creative.textBlocks.map((block) =>
           block.id === selectedBlock.id
-            ? range
-              ? applyTextColorSpan(block, range.start, range.end, color)
-              : { ...block, textColor: color }
+            ? applyTextColorSpan(block, range.start, range.end, color)
             : block
         ),
       }));
     },
     [selectedBlock, selectedTextRange, updateCurrentCreative]
+  );
+
+  const clearSelectedTextColor = useCallback(() => {
+    if (!selectedBlock || !selectedTextRange) return;
+    pushUndo();
+    const range = selectedTextRange;
+    updateCurrentCreative((creative) => ({
+      ...creative,
+      textBlocks: creative.textBlocks.map((block) =>
+        block.id === selectedBlock.id ? removeTextColorRange(block, range.start, range.end) : block
+      ),
+    }));
+  }, [pushUndo, selectedBlock, selectedTextRange, updateCurrentCreative]);
+
+  const removeColorSpan = useCallback(
+    (span: TextColorSpan) => {
+      if (!selectedBlock) return;
+      pushUndo();
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          block.id === selectedBlock.id ? removeTextColorSpan(block, span) : block
+        ),
+      }));
+    },
+    [pushUndo, selectedBlock, updateCurrentCreative]
   );
 
   const updateImage = useCallback(
@@ -5812,7 +5879,7 @@ export default function Studio2Page() {
               </div>
               <textarea
                 ref={sidebarTextRef}
-                value={getBlockText(selectedBlock)}
+                value={selectedBlockText}
                 onFocus={pushUndo}
                 onSelect={(e) => captureTextSelection(selectedBlock.id, e.currentTarget)}
                 onKeyUp={(e) => captureTextSelection(selectedBlock.id, e.currentTarget)}
@@ -5821,14 +5888,101 @@ export default function Studio2Page() {
                 rows={4}
                 style={{ ...inputStyle, resize: "vertical", lineHeight: 1.4, marginBottom: 10 }}
               />
-              <Control label={selectedTextRange ? "Selected text color" : "Text color"}>
+              {selectedTextRange && (
+                <div
+                  className="studio2-selection-tools"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minHeight: 38,
+                    margin: "-2px 0 12px",
+                    padding: "6px 8px",
+                    borderRadius: 10,
+                    border: `1px solid ${ADS_BRAND.goldBorder}`,
+                    background: ADS_BRAND.goldSoft,
+                  }}
+                >
+                  <span
+                    style={{
+                      maxWidth: 142,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: selectedTextColor,
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                    title={selectedTextSnippet}
+                  >
+                    {selectedTextSnippet}
+                  </span>
+                  <input
+                    type="color"
+                    value={selectedTextColor}
+                    onMouseDown={pushUndo}
+                    onChange={(e) => applySelectedTextColor(e.target.value)}
+                    style={{ width: 30, height: 28, border: "none", background: "transparent", cursor: "pointer" }}
+                    title="Color selected text"
+                  />
+                  <button
+                    type="button"
+                    onClick={clearSelectedTextColor}
+                    style={{
+                      ...buttonStyle(false),
+                      width: 28,
+                      height: 28,
+                      padding: 0,
+                      color: ADS_BRAND.text2,
+                    }}
+                    title="Remove selected text color"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {selectedColorSpans.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "-2px 0 12px" }}>
+                  {selectedColorSpans.map((span, index) => (
+                    <button
+                      key={`${span.start}-${span.end}-${span.color}-${index}`}
+                      type="button"
+                      onClick={() => removeColorSpan(span)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        maxWidth: "100%",
+                        minHeight: 28,
+                        border: `1px solid ${ADS_BRAND.border2}`,
+                        borderRadius: 999,
+                        background: ADS_BRAND.panel3,
+                        color: ADS_BRAND.text2,
+                        padding: "3px 7px 3px 8px",
+                        fontFamily: "inherit",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      title="Remove this text color"
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: span.color, flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {getTextRangeSnippet(selectedBlockText, span.start, span.end)}
+                      </span>
+                      <X size={11} style={{ flexShrink: 0 }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Control label="Text color">
                 <input
                   type="color"
-                  value={activeTextColor}
+                  value={selectedBlock.textColor}
                   onMouseDown={pushUndo}
-                  onChange={(e) => applySelectedTextColor(e.target.value)}
+                  onChange={(e) => updateSelectedBlock({ textColor: e.target.value })}
                   style={{ width: 42, height: 32, border: "none", background: "transparent" }}
-                  title={selectedTextRange ? "Selected text color" : "Text color"}
+                  title="Text color"
                 />
                 <input
                   type="color"
@@ -5838,9 +5992,7 @@ export default function Studio2Page() {
                   style={{ width: 42, height: 32, border: "none", background: "transparent" }}
                   title="Highlight color"
                 />
-                <span style={{ color: ADS_BRAND.text3, fontSize: 11 }}>
-                  {selectedTextRange ? "selection / highlight" : "text / highlight"}
-                </span>
+                <span style={{ color: ADS_BRAND.text3, fontSize: 11 }}>text / highlight</span>
               </Control>
               <Control label="Align">
                 <div style={{
