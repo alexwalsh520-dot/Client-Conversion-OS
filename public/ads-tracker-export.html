@@ -494,6 +494,8 @@
   .chart-legend-item{display:flex;align-items:center;gap:6px}
   .chart-sw{width:10px;height:2px;border-radius:2px;display:inline-block}
   .cpm-kw-legend{display:flex;flex-wrap:wrap;gap:10px 14px;flex:1}
+  .single-number-card{min-height:170px;justify-content:space-between}
+  .single-number-note{font-size:11px;color:var(--text-4);line-height:1.45;max-width:360px}
 
   /* Line chart */
   .lc-wrap{position:relative;width:100%}
@@ -2242,6 +2244,41 @@ function CACChart({campaigns=CAMPAIGNS}){
 const METRIC_CARD_STORAGE_KEY = "ccos.adsTracker.metricCards.v2";
 const DEFAULT_METRIC_CARD_IDS = ["roas","potential_roas","ad_roas","cost_per_dm","cac"];
 
+function calendarEventsForCurrentWeek(dashboard){
+  const events = Array.isArray(dashboard?.calendarEvents) ? dashboard.calendarEvents : [];
+  const weekEnd = dashboard?.query?.dateTo || todayEt();
+  const days = calendarSevenDays(weekEnd);
+  const weekStart = days[0]?.iso || weekEnd;
+  return events.filter(event => {
+    const iso = isoFromAnyDate(event.eventAt);
+    return iso && iso >= weekStart && iso <= weekEnd;
+  });
+}
+
+function UpcomingCallsCard({dashboard}){
+  const visibleEvents = calendarEventsForCurrentWeek(dashboard);
+  const upcoming = visibleEvents.filter(event => {
+    const status = event.status || "upcoming";
+    return status !== "show" && status !== "no_show";
+  });
+  return (
+    <div className="panel chart-card single-number-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">Upcoming calls</div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{fmtNum(upcoming.length)}</span>
+            <span className="chart-sub-label">calendar calls</span>
+          </div>
+        </div>
+      </div>
+      <div className="single-number-note">
+        Booked calls in the 7-day calendar view that are not marked show or no-show yet.
+      </div>
+    </div>
+  );
+}
+
 function safeRatio(num, den){
   return den ? num / den : 0;
 }
@@ -2473,6 +2510,7 @@ const METRIC_CARD_DEFS = [
   {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns,dashboard})=><AdROASChart campaigns={campaigns} dashboard={dashboard}/>},
   {id:"cost_per_dm", label:"Cost per DM", meta:"Spend divided by messages", render:({campaigns})=><CostPerDMChart campaigns={campaigns}/>},
   {id:"cac", label:"CAC", meta:"Cost per client", render:({campaigns})=><CACChart campaigns={campaigns}/>},
+  {id:"upcoming_calls", label:"Upcoming calls", meta:"Calendar calls not shown or no-showed yet", render:({dashboard})=><UpcomingCallsCard dashboard={dashboard}/>},
   ...GENERIC_METRIC_DEFS.map(def => ({
     id:def.id,
     label:def.label,
