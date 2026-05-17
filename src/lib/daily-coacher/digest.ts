@@ -306,9 +306,11 @@ export function buildDigestBlocks(coachSlackUserId: string, coachName: string, i
   blocks.push({
     type: "actions",
     elements: [
-      { type: "button", text: { type: "plain_text", text: "Snooze 1 day", emoji: true }, action_id: "snooze", value: "1" },
-      { type: "button", text: { type: "plain_text", text: "Snooze 2 days", emoji: true }, action_id: "snooze", value: "2" },
-      { type: "button", text: { type: "plain_text", text: "Snooze 3 days", emoji: true }, action_id: "snooze", value: "3" },
+      // action_id must be unique WITHIN this actions block (Slack constraint).
+      // The interactions handler matches the "snooze_" prefix and reads days from value.
+      { type: "button", text: { type: "plain_text", text: "Snooze 1 day", emoji: true }, action_id: "snooze_1", value: "1" },
+      { type: "button", text: { type: "plain_text", text: "Snooze 2 days", emoji: true }, action_id: "snooze_2", value: "2" },
+      { type: "button", text: { type: "plain_text", text: "Snooze 3 days", emoji: true }, action_id: "snooze_3", value: "3" },
     ],
   });
 

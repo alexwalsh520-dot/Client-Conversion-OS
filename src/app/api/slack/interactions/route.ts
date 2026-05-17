@@ -98,6 +98,14 @@ async function handleBlockActions(payload: SlackInteractionPayload): Promise<Nex
   const action = payload.actions?.[0];
   if (!action) return NextResponse.json({ ok: true });
 
+  // Snooze action_ids are differentiated per duration (snooze_1, snooze_2,
+  // snooze_3) because Slack requires unique action_ids within an actions
+  // block. The handler reads the day count from action.value either way.
+  if (action.action_id.startsWith("snooze")) {
+    after(handleSnooze(payload, action));
+    return NextResponse.json({ ok: true });
+  }
+
   switch (action.action_id) {
     case "open_in_ccos":
       // Slack handles the URL navigation client-side; we just log the click.
@@ -106,10 +114,6 @@ async function handleBlockActions(payload: SlackInteractionPayload): Promise<Nex
 
     case "regenerate":
       after(handleRegenerate(payload, action));
-      return NextResponse.json({ ok: true });
-
-    case "snooze":
-      after(handleSnooze(payload, action));
       return NextResponse.json({ ok: true });
 
     case "add_coach_slack_email":
