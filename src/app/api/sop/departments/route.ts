@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { listDepartments, createDepartment } from "@/lib/sop/data";
+import { slugify } from "@/lib/sop/slug";
 
 export const runtime = "nodejs";
 export const maxDuration = 10;
@@ -52,13 +53,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
-  const key = body.key?.trim().toLowerCase();
   const label = body.label?.trim();
-  if (!key || !/^[a-z0-9_-]+$/.test(key)) {
-    return NextResponse.json({ error: "key must be lowercase alphanumeric (with - or _)" }, { status: 400 });
-  }
   if (!label) {
     return NextResponse.json({ error: "label is required" }, { status: 400 });
+  }
+  // Key is derived from label automatically. Caller may still pass an
+  // explicit key (e.g., for scripted seed data) but the UI doesn't ask
+  // for it anymore.
+  const explicitKey = body.key?.trim().toLowerCase();
+  const key = explicitKey && /^[a-z0-9_-]+$/.test(explicitKey)
+    ? explicitKey
+    : slugify(label).replace(/[^a-z0-9_-]/g, "-");
+  if (!key) {
+    return NextResponse.json({ error: "label could not be slugified" }, { status: 400 });
   }
   try {
     const department = await createDepartment({

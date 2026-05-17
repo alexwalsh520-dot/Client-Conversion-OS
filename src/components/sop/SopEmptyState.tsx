@@ -6,20 +6,19 @@
  * of usage — needs to look intentional, not broken.
  */
 
-import { BookOpen, Upload } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, Plus } from "lucide-react";
 import type { SopPermissions } from "@/lib/sop/types";
 
 interface Props {
   isFiltered: boolean;
   totalSopsAcrossLibrary: number;
-  onUploadClick: () => void;
   permissions: SopPermissions;
 }
 
 export default function SopEmptyState({
   isFiltered,
   totalSopsAcrossLibrary,
-  onUploadClick,
   permissions,
 }: Props) {
   // Three flavors of empty:
@@ -117,18 +116,18 @@ export default function SopEmptyState({
       )}
 
       {permissions.canUpload && libraryEmpty && (
-        <button
+        <Link
+          href="/sop/new"
           className="btn-primary"
-          onClick={onUploadClick}
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            margin: "0 auto",
+            textDecoration: "none",
           }}
         >
-          <Upload size={14} /> Upload first SOP
-        </button>
+          <Plus size={14} /> Create first SOP
+        </Link>
       )}
     </div>
   );

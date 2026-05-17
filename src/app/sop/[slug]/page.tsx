@@ -7,7 +7,7 @@
  */
 
 import { notFound } from "next/navigation";
-import { getSopBySlug, getSignedDownloadUrl } from "@/lib/sop/data";
+import { getSopBySlug } from "@/lib/sop/data";
 import SopViewer from "@/components/sop/SopViewer";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,5 @@ export default async function SopViewerPage({
   const { slug } = await params;
   const sop = await getSopBySlug(slug);
   if (!sop) notFound();
-
-  const signedUrl = await getSignedDownloadUrl(sop.file_path, sop.file_name);
-
-  return <SopViewer sop={sop} initialSignedUrl={signedUrl} />;
+  return <SopViewer sop={sop} />;
 }

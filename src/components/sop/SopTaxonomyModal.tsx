@@ -26,19 +26,18 @@ export default function SopTaxonomyModal({
   onClose,
   onChanged,
 }: Props) {
-  const [newDeptKey, setNewDeptKey] = useState("");
   const [newDeptLabel, setNewDeptLabel] = useState("");
   const [newDeptError, setNewDeptError] = useState<string | null>(null);
   const [savingDept, setSavingDept] = useState(false);
 
   // Per-department new-role state. Keyed by department id so multiple
   // forms can co-exist without state conflicts.
-  const [newRoleByDept, setNewRoleByDept] = useState<Record<number, { key: string; label: string; error: string | null; saving: boolean }>>({});
+  const [newRoleByDept, setNewRoleByDept] = useState<Record<number, { label: string; error: string | null; saving: boolean }>>({});
 
   if (!open) return null;
 
   function getRoleForm(deptId: number) {
-    return newRoleByDept[deptId] ?? { key: "", label: "", error: null, saving: false };
+    return newRoleByDept[deptId] ?? { label: "", error: null, saving: false };
   }
   function setRoleForm(deptId: number, patch: Partial<ReturnType<typeof getRoleForm>>) {
     setNewRoleByDept((prev) => ({
@@ -49,12 +48,7 @@ export default function SopTaxonomyModal({
 
   async function createDepartment() {
     setNewDeptError(null);
-    const key = newDeptKey.trim().toLowerCase();
     const label = newDeptLabel.trim();
-    if (!key || !/^[a-z0-9_-]+$/.test(key)) {
-      setNewDeptError("Key must be lowercase, letters/numbers/-/_ only.");
-      return;
-    }
     if (!label) {
       setNewDeptError("Label is required.");
       return;
@@ -64,11 +58,10 @@ export default function SopTaxonomyModal({
       const res = await fetch("/api/sop/departments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, label }),
+        body: JSON.stringify({ label }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setNewDeptKey("");
       setNewDeptLabel("");
       onChanged();
     } catch (err) {
@@ -80,13 +73,8 @@ export default function SopTaxonomyModal({
 
   async function createRole(deptId: number) {
     const form = getRoleForm(deptId);
-    const key = form.key.trim().toLowerCase();
     const label = form.label.trim();
     setRoleForm(deptId, { error: null });
-    if (!key || !/^[a-z0-9_-]+$/.test(key)) {
-      setRoleForm(deptId, { error: "Key must be lowercase, letters/numbers/-/_ only." });
-      return;
-    }
     if (!label) {
       setRoleForm(deptId, { error: "Label is required." });
       return;
@@ -96,11 +84,11 @@ export default function SopTaxonomyModal({
       const res = await fetch("/api/sop/roles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ department_id: deptId, key, label }),
+        body: JSON.stringify({ department_id: deptId, label }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setRoleForm(deptId, { key: "", label: "", saving: false, error: null });
+      setRoleForm(deptId, { label: "", saving: false, error: null });
       onChanged();
     } catch (err) {
       setRoleForm(deptId, { error: err instanceof Error ? err.message : "Create failed", saving: false });
@@ -168,16 +156,10 @@ export default function SopTaxonomyModal({
           <div style={{ display: "flex", gap: 8 }}>
             <input
               className="input-field"
-              placeholder="Label (e.g. Operations)"
+              placeholder="Department name (e.g. Operations)"
               value={newDeptLabel}
               onChange={(e) => setNewDeptLabel(e.target.value)}
-              style={{ flex: 1, fontSize: 13 }}
-            />
-            <input
-              className="input-field"
-              placeholder="key (e.g. operations)"
-              value={newDeptKey}
-              onChange={(e) => setNewDeptKey(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") createDepartment(); }}
               style={{ flex: 1, fontSize: 13 }}
             />
             <button
@@ -207,7 +189,6 @@ export default function SopTaxonomyModal({
               >
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
                   <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>{d.label}</strong>
-                  <code style={{ fontSize: 11, color: "var(--text-muted)" }}>{d.key}</code>
                 </div>
                 {d.description && (
                   <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 8px" }}>
@@ -246,16 +227,10 @@ export default function SopTaxonomyModal({
                 <div style={{ display: "flex", gap: 6 }}>
                   <input
                     className="input-field"
-                    placeholder="Role label (e.g. Closer)"
+                    placeholder="Role name (e.g. Closer)"
                     value={form.label}
                     onChange={(e) => setRoleForm(d.id, { label: e.target.value })}
-                    style={{ flex: 1, fontSize: 12 }}
-                  />
-                  <input
-                    className="input-field"
-                    placeholder="key (e.g. closer)"
-                    value={form.key}
-                    onChange={(e) => setRoleForm(d.id, { key: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") createRole(d.id); }}
                     style={{ flex: 1, fontSize: 12 }}
                   />
                   <button

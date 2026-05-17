@@ -35,7 +35,8 @@ export async function listDepartments(): Promise<SopDepartment[]> {
 }
 
 export async function createDepartment(input: {
-  key: string;
+  /** Optional. If not provided, the server slugifies `label` to derive it. */
+  key?: string;
   label: string;
   description?: string | null;
   sort_order?: number;
@@ -74,7 +75,8 @@ export async function listRoles(opts?: { departmentId?: number }): Promise<SopRo
 
 export async function createRole(input: {
   department_id: number;
-  key: string;
+  /** Optional. If not provided, the server slugifies `label` to derive it. */
+  key?: string;
   label: string;
   description?: string | null;
   sort_order?: number;

@@ -5,6 +5,7 @@
  * dropdown (filtered to the selected department) + Upload button (admins).
  */
 
+import Link from "next/link";
 import { Search, Plus, BookOpen } from "lucide-react";
 import type { SopDepartment, SopRole, SopPermissions } from "@/lib/sop/types";
 
@@ -17,7 +18,6 @@ interface Props {
   onSearchChange: (s: string) => void;
   onDepartmentChange: (id: number | null) => void;
   onRoleChange: (id: number | null) => void;
-  onUploadClick: () => void;
   onManageTaxonomyClick: () => void;
   permissions: SopPermissions;
   totalCount: number;
@@ -32,7 +32,6 @@ export default function SopFilterBar({
   onSearchChange,
   onDepartmentChange,
   onRoleChange,
-  onUploadClick,
   onManageTaxonomyClick,
   permissions,
   totalCount,
@@ -137,13 +136,18 @@ export default function SopFilterBar({
         </button>
       )}
       {permissions.canUpload && (
-        <button
+        <Link
+          href="/sop/new"
           className="btn-primary"
-          onClick={onUploadClick}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            textDecoration: "none",
+          }}
         >
-          <Plus size={14} /> Upload SOP
-        </button>
+          <Plus size={14} /> New SOP
+        </Link>
       )}
     </div>
   );

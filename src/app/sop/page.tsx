@@ -18,7 +18,6 @@ import type {
 import SopCard from "@/components/sop/SopCard";
 import SopFilterBar from "@/components/sop/SopFilterBar";
 import SopEmptyState from "@/components/sop/SopEmptyState";
-import SopUploadModal from "@/components/sop/SopUploadModal";
 import SopTaxonomyModal from "@/components/sop/SopTaxonomyModal";
 
 export default function SopLibraryPage() {
@@ -32,7 +31,6 @@ export default function SopLibraryPage() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
 
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [taxonomyOpen, setTaxonomyOpen] = useState(false);
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -144,7 +142,6 @@ export default function SopLibraryPage() {
         onSearchChange={setSearch}
         onDepartmentChange={setSelectedDepartmentId}
         onRoleChange={setSelectedRoleId}
-        onUploadClick={() => setUploadOpen(true)}
         onManageTaxonomyClick={() => setTaxonomyOpen(true)}
         permissions={{ canUpload: isAdmin, canManage: isAdmin }}
         totalCount={sops.length}
@@ -171,7 +168,6 @@ export default function SopLibraryPage() {
         <SopEmptyState
           isFiltered={isFiltered}
           totalSopsAcrossLibrary={totalAcrossLibrary}
-          onUploadClick={() => setUploadOpen(true)}
           permissions={{ canUpload: isAdmin, canManage: isAdmin }}
         />
       ) : (
@@ -189,13 +185,6 @@ export default function SopLibraryPage() {
       )}
 
       {/* Modals */}
-      <SopUploadModal
-        open={uploadOpen}
-        departments={departments}
-        roles={roles}
-        onClose={() => setUploadOpen(false)}
-        onUploaded={loadAll}
-      />
       <SopTaxonomyModal
         open={taxonomyOpen}
         departments={departments}
