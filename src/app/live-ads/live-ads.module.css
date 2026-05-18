@@ -93,6 +93,11 @@
   list-style: none;
 }
 
+.campaignTop:hover,
+.adSetHead:hover {
+  background: rgba(255,255,255,0.018);
+}
+
 .campaignTop::-webkit-details-marker {
   display: none;
 }
@@ -117,6 +122,33 @@
   line-height: 1.5;
   margin-top: 6px;
   white-space: nowrap;
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.chevron {
+  border-bottom: 1.5px solid var(--text-muted);
+  border-right: 1.5px solid var(--text-muted);
+  display: inline-block;
+  height: 8px;
+  transform: rotate(45deg);
+  transition: transform 160ms ease, border-color 160ms ease;
+  width: 8px;
+}
+
+.campaign[open] > .campaignTop .chevron,
+.adSet[open] > .adSetHead .chevron {
+  transform: rotate(225deg);
+}
+
+.campaignTop:hover .chevron,
+.adSetHead:hover .chevron {
+  border-color: var(--accent);
 }
 
 .activeBadge {
@@ -203,6 +235,27 @@
   font-size: 12px;
   font-weight: 650;
   list-style: none;
+}
+
+.targetingDetails summary::after {
+  border-bottom: 1.5px solid var(--text-muted);
+  border-right: 1.5px solid var(--text-muted);
+  content: "";
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 7px;
+  margin-top: 3px;
+  transform: rotate(45deg);
+  transition: transform 160ms ease, border-color 160ms ease;
+  width: 7px;
+}
+
+.targetingDetails[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.targetingDetails summary:hover::after {
+  border-color: var(--accent);
 }
 
 .targetingDetails summary::-webkit-details-marker {
@@ -362,5 +415,9 @@
 
   .rowMeta {
     white-space: normal;
+  }
+
+  .rowActions {
+    margin-left: 0;
   }
 }

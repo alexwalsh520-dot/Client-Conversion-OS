@@ -68,7 +68,10 @@ export default async function LiveAdsPage() {
                     {campaign.adSets.reduce((sum, adSet) => sum + adSet.ads.length, 0)} active ads
                   </p>
                 </div>
-                <span className={styles.activeBadge}>{campaign.status || "ACTIVE"}</span>
+                <span className={styles.rowActions}>
+                  <span className={styles.activeBadge}>{campaign.status || "ACTIVE"}</span>
+                  <span className={styles.chevron} aria-hidden="true" />
+                </span>
               </summary>
 
               {campaign.adSets.map((adSet) => (
@@ -83,12 +86,15 @@ export default async function LiveAdsPage() {
                           .join(" · ") || "Budget and delivery details unavailable"}
                       </p>
                     </div>
-                    <span className={styles.rowMeta}>{adSet.ads.length} ads</span>
+                    <span className={styles.rowActions}>
+                      <span className={styles.rowMeta}>{adSet.ads.length} ads</span>
+                      <span className={styles.chevron} aria-hidden="true" />
+                    </span>
                   </summary>
 
                   <details className={styles.targetingDetails}>
                     <summary>
-                      <span>Targeting details</span>
+                      <span>Ad set targeting</span>
                       <span>Audience, placements, and raw Meta settings</span>
                     </summary>
                     {adSet.audience.chips.length > 0 ? (
