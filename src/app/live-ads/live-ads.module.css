@@ -1,0 +1,352 @@
+.page {
+  width: min(1480px, 100%);
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.title {
+  color: var(--text-primary);
+  font-size: clamp(30px, 4vw, 56px);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+  font-weight: 760;
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 700px;
+  margin: 14px 0 0;
+}
+
+.syncPill {
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.stat {
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.018));
+  padding: 16px 18px;
+}
+
+.statLabel {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.statValue {
+  color: var(--text-primary);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 680;
+  letter-spacing: -0.04em;
+}
+
+.accountBlock {
+  margin-top: 28px;
+}
+
+.accountHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.accountTitle {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.accountMeta {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.campaign {
+  border: 1px solid var(--border-primary);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(201,169,110,0.09), transparent 34%),
+    linear-gradient(180deg, rgba(18,18,18,0.96), rgba(12,12,12,0.98));
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.campaignTop {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.campaignName {
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.activeBadge {
+  border: 1px solid rgba(126, 201, 160, 0.26);
+  border-radius: 999px;
+  background: rgba(126, 201, 160, 0.08);
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 6px 9px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.adSet {
+  padding: 18px 20px 22px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.adSet:last-child {
+  border-bottom: 0;
+}
+
+.adSetHead {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.adSetLabel {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+}
+
+.adSetName {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 640;
+  line-height: 1.35;
+}
+
+.adSetSub {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  margin-top: 8px;
+}
+
+.audienceHeadline {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.chip {
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.028);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+.rawDetails {
+  margin-top: 10px;
+}
+
+.rawDetails summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.rawDetails pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.24);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.adsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.adCard {
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.025);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.creative {
+  aspect-ratio: 0.72;
+  background:
+    linear-gradient(135deg, rgba(201,169,110,0.1), transparent 38%),
+    #080808;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.creative img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.creativeMissing {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 18px;
+}
+
+.adBody {
+  padding: 13px 14px 15px;
+}
+
+.adName {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.adCopy {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.adFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.miniMeta {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.metaLink {
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.metaLink:hover {
+  color: var(--text-primary);
+}
+
+.empty {
+  border: 1px dashed var(--border-hover);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.02);
+  color: var(--text-muted);
+  padding: 34px 24px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.error {
+  border: 1px solid rgba(217, 142, 142, 0.22);
+  border-radius: 16px;
+  background: rgba(217, 142, 142, 0.07);
+  color: var(--danger);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .header,
+  .accountHead,
+  .campaignTop {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stats,
+  .adSetHead {
+    grid-template-columns: 1fr;
+  }
+}

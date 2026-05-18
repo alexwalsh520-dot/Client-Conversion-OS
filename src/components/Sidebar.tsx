@@ -35,9 +35,7 @@ const navItems = [
 
 const marketingNavItems = [
   { href: "/ads", label: "Ads", icon: Megaphone },
-];
-
-const studioNavItems = [
+  { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach Test", icon: FileText },
 ];
@@ -56,7 +54,6 @@ export default function Sidebar() {
     return localStorage.getItem("force-desktop-view") === "true";
   });
   const [marketingOpen, setMarketingOpen] = useState(true);
-  const [studioOpen, setStudioOpen] = useState(true);
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
@@ -71,9 +68,7 @@ export default function Sidebar() {
     !hasPermissions || isAdmin || allowedTabs?.includes(item.href);
   const visibleNavItems = navItems.filter(canViewItem);
   const visibleMarketingItems = marketingNavItems.filter(canViewItem);
-  const visibleStudioItems = studioNavItems.filter(canViewItem);
   const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));
-  const studioActive = visibleStudioItems.some((item) => isActive(item.href));
 
   // Apply/remove force-desktop class on html element
   useEffect(() => {
@@ -175,29 +170,6 @@ export default function Sidebar() {
         {/* Navigation */}
         <nav className="sidebar-nav">
           {visibleNavItems.map((item) => renderLink(item))}
-          {visibleStudioItems.length > 0 && (
-            <div className="sidebar-section">
-              {!collapsed && (
-                <button
-                  type="button"
-                  className={`sidebar-section-label sidebar-section-toggle ${studioActive ? "sidebar-section-toggle-active" : ""}`}
-                  aria-expanded={studioOpen || studioActive}
-                  onClick={() => setStudioOpen((open) => !open)}
-                >
-                  <span>Studio 2.0</span>
-                  <ChevronDown
-                    size={13}
-                    className={`sidebar-section-chevron ${studioOpen ? "sidebar-section-chevron-open" : ""}`}
-                  />
-                </button>
-              )}
-              {(collapsed || studioOpen || studioActive) && (
-                <div className="sidebar-section-links">
-                  {visibleStudioItems.map((item) => renderLink(item, true))}
-                </div>
-              )}
-            </div>
-          )}
           {visibleMarketingItems.length > 0 && (
             <div className="sidebar-section">
               {!collapsed && (
