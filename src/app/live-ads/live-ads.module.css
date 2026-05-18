@@ -1,5 +1,5 @@
 .page {
-  width: min(1520px, 100%);
+  width: min(1460px, 100%);
   margin: 0 auto;
 }
 
@@ -22,9 +22,9 @@
 
 .title {
   color: var(--text-primary);
-  font-size: clamp(30px, 4vw, 56px);
-  line-height: 0.95;
-  letter-spacing: -0.055em;
+  font-size: clamp(30px, 3vw, 42px);
+  line-height: 1;
+  letter-spacing: -0.045em;
   font-weight: 760;
   margin: 0;
 }
@@ -51,26 +51,47 @@
 
 .browserShell {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 318px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
 .navPanel {
   border: 1px solid var(--border-primary);
   border-radius: 18px;
-  background: rgba(255,255,255,0.018);
+  background: rgba(255,255,255,0.012);
   max-height: calc(100vh - 130px);
   overflow: auto;
-  padding: 12px;
+  padding: 10px;
   position: sticky;
   top: 20px;
 }
 
+.navPanelHeader {
+  align-items: center;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  justify-content: space-between;
+  margin: -1px -1px 10px;
+  padding: 13px 13px 12px;
+}
+
+.navPanelHeader span:first-child {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.navPanelHeader span:last-child {
+  color: var(--text-muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+}
+
 .navAccount + .navAccount {
   border-top: 1px solid var(--border-primary);
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
 }
 
 .navAccountHead {
@@ -78,13 +99,15 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 4px 10px;
+  padding: 3px 5px 8px;
 }
 
 .navAccountHead span:first-child {
-  color: var(--text-primary);
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .navAccountHead span:last-child {
@@ -95,7 +118,7 @@
 }
 
 .navCampaign {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .navCampaignButton,
@@ -113,20 +136,20 @@
 
 .navCampaignButton {
   border-radius: 13px;
-  padding: 11px 12px;
+  padding: 10px 11px;
 }
 
 .navCampaignButton:hover,
 .navAdSetButton:hover {
-  background: rgba(255,255,255,0.025);
+  background: rgba(255,255,255,0.022);
 }
 
 .navCampaignButtonActive {
-  background: rgba(201,169,110,0.08);
-  border-color: rgba(201,169,110,0.18);
+  background: rgba(201,169,110,0.07);
+  border-color: rgba(201,169,110,0.2);
 }
 
-.navCampaignButton span:first-child,
+.navCampaignTitle,
 .navAdSetButton span:first-child {
   color: var(--text-primary);
   font-size: 12px;
@@ -134,7 +157,7 @@
   line-height: 1.35;
 }
 
-.navCampaignButton span:last-child,
+.navCampaignMeta,
 .navAdSetButton span:last-child {
   color: var(--text-muted);
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -145,14 +168,14 @@
 .navAdSets {
   border-left: 1px solid var(--border-primary);
   display: grid;
-  gap: 5px;
-  margin: 7px 0 10px 14px;
-  padding-left: 9px;
+  gap: 3px;
+  margin: 6px 0 9px 13px;
+  padding-left: 8px;
 }
 
 .navAdSetButton {
   border-radius: 11px;
-  padding: 9px 10px;
+  padding: 8px 9px;
 }
 
 .navAdSetButtonActive {
@@ -163,7 +186,7 @@
 .contentPanel {
   border: 1px solid var(--border-primary);
   border-radius: 20px;
-  background: rgba(255,255,255,0.018);
+  background: rgba(255,255,255,0.012);
   min-height: 560px;
   overflow: hidden;
 }
@@ -174,7 +197,7 @@
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  padding: 18px 20px;
+  padding: 20px 22px;
 }
 
 .selectedEyebrow {
@@ -188,7 +211,7 @@
 
 .selectedTitle {
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 720;
   letter-spacing: -0.03em;
   line-height: 1.25;
@@ -203,58 +226,24 @@
 }
 
 .activeBadge {
-  border: 1px solid rgba(126,201,160,0.26);
+  border: 1px solid var(--border-primary);
   border-radius: 999px;
-  background: rgba(126,201,160,0.08);
-  color: var(--success);
+  background: rgba(255,255,255,0.02);
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 6px 9px;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 11px;
   white-space: nowrap;
-}
-
-.detailBar {
-  border-bottom: 1px solid var(--border-primary);
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.detailBar > div {
-  border-right: 1px solid var(--border-primary);
-  padding: 14px 16px;
-}
-
-.detailBar > div:last-child {
-  border-right: 0;
-}
-
-.detailBar span {
-  color: var(--text-muted);
-  display: block;
-  font-size: 10px;
-  letter-spacing: 0.13em;
-  margin-bottom: 7px;
-  text-transform: uppercase;
-}
-
-.detailBar strong {
-  color: var(--text-primary);
-  display: block;
-  font-size: 13px;
-  font-weight: 620;
-  line-height: 1.4;
 }
 
 .targetingDetails {
   border: 1px solid var(--border-primary);
-  border-radius: 13px;
-  background: rgba(0,0,0,0.14);
-  margin: 18px 18px 0;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.1);
+  margin: 16px 18px 0;
   overflow: hidden;
 }
 
@@ -263,7 +252,7 @@
   display: flex;
   justify-content: space-between;
   gap: 18px;
-  padding: 11px 13px;
+  padding: 12px 14px;
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 650;
@@ -298,6 +287,9 @@
 .targetingDetails summary span:last-child {
   color: var(--text-muted);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chips {
@@ -343,15 +335,15 @@
 
 .adsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 14px;
   padding: 18px;
 }
 
 .adCard {
   border: 1px solid var(--border-primary);
-  border-radius: 16px;
-  background: rgba(255,255,255,0.018);
+  border-radius: 15px;
+  background: rgba(255,255,255,0.014);
   overflow: hidden;
   min-width: 0;
 }
@@ -381,12 +373,12 @@
 }
 
 .adBody {
-  padding: 13px 14px 15px;
+  padding: 12px 13px 13px;
 }
 
 .adName {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
   margin-bottom: 8px;
@@ -396,14 +388,8 @@
 .adFooter {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
-}
-
-.miniMeta {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: var(--font-mono), ui-monospace, monospace;
 }
 
 .metaLink {
@@ -463,19 +449,6 @@
   .selectedHeader {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .detailBar {
-    grid-template-columns: 1fr;
-  }
-
-  .detailBar > div {
-    border-right: 0;
-    border-bottom: 1px solid var(--border-primary);
-  }
-
-  .detailBar > div:last-child {
-    border-bottom: 0;
   }
 
   .targetingDetails summary {

@@ -69,7 +69,7 @@ function findSelected(data: LiveAdsPayload, selection: Selection | null) {
 function adSetMeta(adSet: LiveAdsAdSetGroup) {
   return [
     adSet.dailyBudget ? `${adSet.dailyBudget}/day` : null,
-    adSet.optimizationGoal ? `Optimizing for ${adSet.optimizationGoal.toLowerCase().replaceAll("_", " ")}` : null,
+    adSet.optimizationGoal ? adSet.optimizationGoal.toLowerCase().replaceAll("_", " ") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -86,7 +86,7 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
           <p className={styles.eyebrow}>Marketing</p>
           <h1 className={styles.title}>Live Ads</h1>
           <p className={styles.summaryLine}>
-            {data.totalActiveAds} active ads · {totalCampaigns(data)} campaigns · {totalAdSets(data)} ad sets
+            {data.totalActiveAds} active ads across {totalCampaigns(data)} campaigns
           </p>
         </div>
         <div className={styles.syncPill}>Checked {formatCheckedAt(data.checkedAt)} ET</div>
@@ -94,11 +94,16 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
 
       <div className={styles.browserShell}>
         <aside className={styles.navPanel} aria-label="Live ads navigation">
+          <div className={styles.navPanelHeader}>
+            <span>Campaigns</span>
+            <span>{totalAdSets(data)} ad sets</span>
+          </div>
+
           {data.accounts.map((account) => (
             <section className={styles.navAccount} key={account.key}>
               <div className={styles.navAccountHead}>
                 <span>{account.name}</span>
-                <span>{account.activeAdsCount} active ads</span>
+                <span>{account.activeAdsCount}</span>
               </div>
 
               {account.error ? <div className={styles.error}>{account.error}</div> : null}
@@ -123,8 +128,8 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
                         })
                       }
                     >
-                      <span>{campaign.name}</span>
-                      <span>{campaign.adSets.length} ad sets · {adCount(campaign)} ads</span>
+                      <span className={styles.navCampaignTitle}>{campaign.name}</span>
+                      <span className={styles.navCampaignMeta}>{campaign.adSets.length} ad sets · {adCount(campaign)} ads</span>
                     </button>
 
                     {campaignSelected ? (
@@ -165,34 +170,19 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
             <>
               <div className={styles.selectedHeader}>
                 <div>
-                  <p className={styles.selectedEyebrow}>{selected.account.name}</p>
-                  <h2 className={styles.selectedTitle}>{selected.campaign.name}</h2>
-                  <p className={styles.selectedMeta}>{selected.adSet.name}</p>
+                  <p className={styles.selectedEyebrow}>
+                    {selected.account.name} · {selected.adSet.ads.length} active ads
+                  </p>
+                  <h2 className={styles.selectedTitle}>{selected.adSet.name}</h2>
+                  <p className={styles.selectedMeta}>{selected.campaign.name}</p>
                 </div>
-                <span className={styles.activeBadge}>{selected.adSet.ads.length} active ads</span>
-              </div>
-
-              <div className={styles.detailBar}>
-                <div>
-                  <span>Ad set</span>
-                  <strong>{selected.adSet.name}</strong>
-                </div>
-                {adSetMeta(selected.adSet) ? (
-                  <div>
-                    <span>Delivery</span>
-                    <strong>{adSetMeta(selected.adSet)}</strong>
-                  </div>
-                ) : null}
-                <div>
-                  <span>Audience</span>
-                  <strong>{selected.adSet.audience.headline}</strong>
-                </div>
+                {adSetMeta(selected.adSet) ? <span className={styles.activeBadge}>{adSetMeta(selected.adSet)}</span> : null}
               </div>
 
               <details className={styles.targetingDetails}>
                 <summary>
-                  <span>Ad set targeting</span>
-                  <span>Audience, placements, and raw Meta settings</span>
+                  <span>Targeting details</span>
+                  <span>{selected.adSet.audience.headline}</span>
                 </summary>
                 {selected.adSet.audience.chips.length > 0 ? (
                   <div className={styles.chips}>
@@ -224,7 +214,6 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
                     <div className={styles.adBody}>
                       <h5 className={styles.adName}>{ad.name}</h5>
                       <div className={styles.adFooter}>
-                        <span className={styles.miniMeta}>{ad.status}</span>
                         <a className={styles.metaLink} href={ad.metaUrl} target="_blank" rel="noreferrer">
                           Open in Meta
                         </a>
