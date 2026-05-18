@@ -113,6 +113,7 @@ export async function listSops(opts?: {
     .from("sops")
     .select(`
       id, title, description, department_id, share_slug,
+      body_html,
       file_path, file_name, file_type, file_size_bytes, tags,
       uploaded_by, uploaded_at, updated_at,
       department:sop_departments!inner (id, key, label, description, sort_order)
@@ -190,6 +191,7 @@ export async function getSopBySlug(slug: string): Promise<SopWithRelations | nul
     .from("sops")
     .select(`
       id, title, description, department_id, share_slug,
+      body_html,
       file_path, file_name, file_type, file_size_bytes, tags,
       uploaded_by, uploaded_at, updated_at,
       department:sop_departments!inner (id, key, label, description, sort_order)
