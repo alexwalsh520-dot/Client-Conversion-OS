@@ -2,7 +2,7 @@ import type { SuperDocTemplateContent } from './super-doc-types';
 
 export const DEFAULT_TEMPLATE: SuperDocTemplateContent = {
   hero: {
-    title_template: '{{first_name}} {{last_name}} Super Doc',
+    title_template: '{{first_name}} Super Doc',
     serif_word: 'Super',
   },
 

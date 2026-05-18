@@ -31,7 +31,11 @@ export default function SuperDocEditorPage() {
   const toggle = (key: SectionKey) => {
     setOpenSections(prev => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
       return next;
     });
   };
@@ -118,7 +122,7 @@ export default function SuperDocEditorPage() {
 
       {/* ── SECTIONS ── */}
       <Accordion title="Hero" sectionKey="hero" open={openSections} toggle={toggle}>
-        <Field label="Title template (use {{first_name}}, {{last_name}})" value={template.hero.title_template} onChange={v => update('hero.title_template', v)} />
+        <Field label="Title template (use {{first_name}})" value={template.hero.title_template} onChange={v => update('hero.title_template', v)} />
         <Field label="Italic serif word (from title)" value={template.hero.serif_word} onChange={v => update('hero.serif_word', v)} />
       </Accordion>
 

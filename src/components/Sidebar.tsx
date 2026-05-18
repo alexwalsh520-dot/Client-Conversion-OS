@@ -21,6 +21,7 @@ import {
   Monitor,
   Sparkles,
   BookOpen,
+  FileText,
 } from "lucide-react";
 
 const navItems = [
@@ -34,23 +35,35 @@ const navItems = [
 
 const marketingNavItems = [
   { href: "/ads", label: "Ads", icon: Megaphone },
+];
+
+const studioNavItems = [
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
+  { href: "/studio-2/auto-outreach-test", label: "Auto Outreach Test", icon: FileText },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [forceDesktop, setForceDesktop] = useState(false);
+  const [forceDesktop, setForceDesktop] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("force-desktop-view") === "true";
+  });
   const [marketingOpen, setMarketingOpen] = useState(true);
+  const [studioOpen, setStudioOpen] = useState(true);
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
+    if (href === "/studio-2") return pathname === "/studio-2";
     return pathname === href || pathname.startsWith(href + "/");
   };
 
@@ -58,28 +71,9 @@ export default function Sidebar() {
     !hasPermissions || isAdmin || allowedTabs?.includes(item.href);
   const visibleNavItems = navItems.filter(canViewItem);
   const visibleMarketingItems = marketingNavItems.filter(canViewItem);
+  const visibleStudioItems = studioNavItems.filter(canViewItem);
   const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));
-
-  // Persist collapsed state in localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored !== null) {
-      setCollapsed(stored === "true");
-    }
-    const storedDesktop = localStorage.getItem("force-desktop-view");
-    if (storedDesktop === "true") {
-      setForceDesktop(true);
-    }
-  }, []);
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (marketingActive) setMarketingOpen(true);
-  }, [marketingActive]);
+  const studioActive = visibleStudioItems.some((item) => isActive(item.href));
 
   // Apply/remove force-desktop class on html element
   useEffect(() => {
@@ -181,13 +175,36 @@ export default function Sidebar() {
         {/* Navigation */}
         <nav className="sidebar-nav">
           {visibleNavItems.map((item) => renderLink(item))}
+          {visibleStudioItems.length > 0 && (
+            <div className="sidebar-section">
+              {!collapsed && (
+                <button
+                  type="button"
+                  className={`sidebar-section-label sidebar-section-toggle ${studioActive ? "sidebar-section-toggle-active" : ""}`}
+                  aria-expanded={studioOpen || studioActive}
+                  onClick={() => setStudioOpen((open) => !open)}
+                >
+                  <span>Studio 2.0</span>
+                  <ChevronDown
+                    size={13}
+                    className={`sidebar-section-chevron ${studioOpen ? "sidebar-section-chevron-open" : ""}`}
+                  />
+                </button>
+              )}
+              {(collapsed || studioOpen || studioActive) && (
+                <div className="sidebar-section-links">
+                  {visibleStudioItems.map((item) => renderLink(item, true))}
+                </div>
+              )}
+            </div>
+          )}
           {visibleMarketingItems.length > 0 && (
             <div className="sidebar-section">
               {!collapsed && (
                 <button
                   type="button"
                   className={`sidebar-section-label sidebar-section-toggle ${marketingActive ? "sidebar-section-toggle-active" : ""}`}
-                  aria-expanded={marketingOpen}
+                  aria-expanded={marketingOpen || marketingActive}
                   onClick={() => setMarketingOpen((open) => !open)}
                 >
                   <span>Marketing</span>

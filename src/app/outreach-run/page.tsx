@@ -1,20 +1,40 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
 
 interface Lead {
   first_name: string;
   last_name: string;
   email: string;
   lead_type: string;
+  instagram_handle?: string;
+  instagram_url?: string;
 }
+
+type LeadStatus = 'pending' | 'uploading' | 'generating' | 'routing' | 'completed' | 'failed';
 
 interface LeadResult {
   firstName: string;
   lastName: string;
-  status: 'pending' | 'uploading' | 'generating' | 'completed' | 'failed';
+  status: LeadStatus;
   pageUrl?: string;
+  routePlan?: RoutePlan;
   error?: string;
+}
+
+interface RoutePlan {
+  segment: string;
+  missingEnv: string[];
+  ghl: {
+    pipelineName: string;
+    stageName: string;
+    tags: string[];
+  };
+  smartlead: {
+    campaignEnv: string;
+    campaignId: string | null;
+  };
 }
 
 interface SSEEvent {
@@ -22,17 +42,56 @@ interface SSEEvent {
   firstName?: string;
   lastName?: string;
   status: string;
+  pageUrl?: string;
   gammaUrl?: string;
+  routePlan?: RoutePlan;
   error?: string;
+}
+
+function normalizeKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\.mp4$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeColumnName(col: string): string {
+  return col.toLowerCase().replace(/[\s_-]+/g, '').trim();
 }
 
 function parseCSV(text: string): Lead[] {
   const lines = text.trim().split('\n');
   if (lines.length < 2) throw new Error('CSV must have header + data rows');
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-  const required = ['first_name', 'last_name', 'email', 'lead_type'];
-  const missing = required.filter(c => !headers.includes(c));
+  const headers = lines[0].split(',').map(h => h.trim());
+  const normalizedHeaders = headers.map(normalizeColumnName);
+  const colMap: Record<string, number> = {};
+
+  normalizedHeaders.forEach((h, i) => {
+    if (h === 'firstname' || h === 'first' || h === 'name') colMap.first_name = i;
+    if (h === 'lastname' || h === 'last') colMap.last_name = i;
+    if (h === 'email' || h === 'emailaddress') colMap.email = i;
+    if (h === 'leadtype' || h === 'type' || h === 'segment') colMap.lead_type = i;
+    if (
+      h === 'instagramhandle' ||
+      h === 'instagramusername' ||
+      h === 'ighandle' ||
+      h === 'igusername' ||
+      h === 'ig'
+    )
+      colMap.instagram_handle = i;
+    if (
+      h === 'instagramurl' ||
+      h === 'instagramlink' ||
+      h === 'igurl' ||
+      h === 'iglink'
+    )
+      colMap.instagram_url = i;
+  });
+
+  const required = ['first_name', 'email', 'lead_type'];
+  const missing = required.filter(c => colMap[c] === undefined);
   if (missing.length) throw new Error(`Missing columns: ${missing.join(', ')}`);
 
   return lines
@@ -41,11 +100,14 @@ function parseCSV(text: string): Lead[] {
     .filter(Boolean)
     .map(line => {
       const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = values[i] || '';
-      });
-      return row as unknown as Lead;
+      return {
+        first_name: values[colMap.first_name] || '',
+        last_name: colMap.last_name === undefined ? '' : values[colMap.last_name] || '',
+        email: values[colMap.email] || '',
+        lead_type: values[colMap.lead_type] || '',
+        instagram_handle: colMap.instagram_handle === undefined ? '' : values[colMap.instagram_handle] || '',
+        instagram_url: colMap.instagram_url === undefined ? '' : values[colMap.instagram_url] || '',
+      };
     });
 }
 
@@ -53,9 +115,14 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending: { label: 'Pending', color: 'var(--text-muted)' },
   uploading: { label: 'Uploading to Bunny...', color: 'var(--warning)' },
   generating: { label: 'Creating Super Doc...', color: 'var(--warning)' },
-  completed: { label: 'Completed', color: 'var(--success)' },
+  routing: { label: 'Checking CRM route...', color: 'var(--warning)' },
+  completed: { label: 'Page ready', color: 'var(--success)' },
   failed: { label: 'Failed', color: 'var(--danger)' },
 };
+
+function leadVideoKey(lead: Lead): string {
+  return normalizeKey(`${lead.first_name}-${lead.last_name || ''}`);
+}
 
 export default function OutreachRunPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -66,17 +133,14 @@ export default function OutreachRunPage() {
   const [csvError, setCsvError] = useState<string | null>(null);
   const [matchStatus, setMatchStatus] = useState<Map<string, boolean>>(new Map());
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [folderMessage, setFolderMessage] = useState<string | null>(null);
 
   const videoFilesRef = useRef<File[]>([]);
   const leadsRef = useRef<Lead[]>([]);
 
-  function leadVideoKey(lead: Lead): string {
-    return `${lead.first_name}-${lead.last_name}`.toLowerCase();
-  }
-
-  function updateMatches(currentLeads: Lead[], currentVideos: File[]) {
+  const updateMatches = useCallback((currentLeads: Lead[], currentVideos: File[]) => {
     const videoNames = new Set(
-      currentVideos.map(f => f.name.replace(/\.mp4$/i, '').toLowerCase()),
+      currentVideos.map(f => normalizeKey(f.name)),
     );
     const matches = new Map<string, boolean>();
     currentLeads.forEach(lead => {
@@ -84,7 +148,7 @@ export default function OutreachRunPage() {
       matches.set(key, videoNames.has(key));
     });
     setMatchStatus(matches);
-  }
+  }, []);
 
   const handleCSV = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,6 +156,7 @@ export default function OutreachRunPage() {
 
     setCsvError(null);
     setCsvFile(file);
+    setFolderMessage(null);
 
     try {
       const text = await file.text();
@@ -105,14 +170,58 @@ export default function OutreachRunPage() {
       setLeads([]);
       leadsRef.current = [];
     }
-  }, []);
+  }, [updateMatches]);
 
   const handleVideos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    setFolderMessage(null);
     setVideoFiles(files);
     videoFilesRef.current = files;
     updateMatches(leadsRef.current, files);
-  }, []);
+  }, [updateMatches]);
+
+  const handleFolder = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setCsvError(null);
+    setFolderMessage(null);
+
+    const csv = files.find(file => file.name.toLowerCase().endsWith('.csv')) || null;
+    const videos = files.filter(file => file.name.toLowerCase().endsWith('.mp4'));
+
+    if (!csv) {
+      setCsvError('Folder needs one CSV file');
+      setCsvFile(null);
+      setLeads([]);
+      leadsRef.current = [];
+      setVideoFiles(videos);
+      videoFilesRef.current = videos;
+      updateMatches([], videos);
+      return;
+    }
+
+    try {
+      const text = await csv.text();
+      const parsed = parseCSV(text);
+      if (parsed.length === 0) throw new Error('No data rows found');
+      setCsvFile(csv);
+      setLeads(parsed);
+      leadsRef.current = parsed;
+      setVideoFiles(videos);
+      videoFilesRef.current = videos;
+      updateMatches(parsed, videos);
+      setFolderMessage(`Loaded ${csv.name} and ${videos.length} video${videos.length === 1 ? '' : 's'}`);
+    } catch (err: unknown) {
+      setCsvError(err instanceof Error ? err.message : 'Failed to parse CSV');
+      setCsvFile(null);
+      setLeads([]);
+      leadsRef.current = [];
+      setVideoFiles(videos);
+      videoFilesRef.current = videos;
+      updateMatches([], videos);
+    }
+  }, [updateMatches]);
 
   const allMatched =
     leads.length > 0 &&
@@ -198,7 +307,8 @@ export default function OutreachRunPage() {
                 firstName: data.firstName || next[data.leadIndex!].firstName,
                 lastName: data.lastName || next[data.leadIndex!].lastName,
                 status: data.status as LeadResult['status'],
-                pageUrl: data.gammaUrl,
+                pageUrl: data.pageUrl || data.gammaUrl,
+                routePlan: data.routePlan,
                 error: data.error,
               };
               return next;
@@ -232,16 +342,44 @@ export default function OutreachRunPage() {
           color: 'var(--text-primary)',
         }}
       >
-        Outreach Run
+        Auto Outreach Test
       </h1>
       <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-        Upload a CSV and matching videos to generate personalized Super Doc pages.
+        Upload a folder or separate files. Bunny and Super Doc run for real. GHL and Smartlead are dry-run routing checks.
       </p>
 
-      {/* ── CSV Upload ── */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <Link href="/super-doc-editor" style={linkButtonStyle}>
+          Edit Template
+        </Link>
+        <Link href="/super-doc/test-lead" target="_blank" style={linkButtonStyle}>
+          View Test Page
+        </Link>
+      </div>
+
+      {/* ── Folder Upload ── */}
       <div style={cardStyle}>
+        <label style={labelStyle}>Folder Upload</label>
+        <p style={hintStyle}>Pick one folder with one CSV and matching .mp4 videos.</p>
+        <input
+          type="file"
+          multiple
+          onChange={handleFolder}
+          disabled={isRunning}
+          style={fileInputStyle}
+          {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+        />
+        {folderMessage && (
+          <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 8 }}>{folderMessage}</p>
+        )}
+      </div>
+
+      {/* ── CSV Upload ── */}
+      <div style={{ ...cardStyle, marginTop: '1rem' }}>
         <label style={labelStyle}>CSV File</label>
-        <p style={hintStyle}>Required columns: first_name, last_name, email, lead_type</p>
+        <p style={hintStyle}>
+          Required: first_name, email, lead_type. Optional: last_name, instagram_handle, instagram_url.
+        </p>
         <input
           type="file"
           accept=".csv"
@@ -339,7 +477,7 @@ export default function OutreachRunPage() {
           width: '100%',
         }}
       >
-        {isRunning ? 'Processing...' : 'Run Outreach'}
+        {isRunning ? 'Processing...' : 'Run Bunny + Super Doc'}
       </button>
 
       {/* ── Upload Progress ── */}
@@ -402,6 +540,24 @@ export default function OutreachRunPage() {
                       {r.pageUrl}
                     </a>
                   )}
+                  {r.routePlan && (
+                    <div style={routeBoxStyle}>
+                      <p style={routeTextStyle}>
+                        Segment: <strong>{r.routePlan.segment}</strong>
+                      </p>
+                      <p style={routeTextStyle}>
+                        GHL dry run: {r.routePlan.ghl.pipelineName} / {r.routePlan.ghl.stageName}
+                      </p>
+                      <p style={routeTextStyle}>
+                        Smartlead dry run: {r.routePlan.smartlead.campaignId || `Missing ${r.routePlan.smartlead.campaignEnv}`}
+                      </p>
+                      {r.routePlan.missingEnv.length > 0 && (
+                        <p style={{ ...routeTextStyle, color: 'var(--warning)' }}>
+                          Missing env: {r.routePlan.missingEnv.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {r.error && (
                     <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: 4 }}>
                       {r.error}
@@ -443,4 +599,32 @@ const fileInputStyle: React.CSSProperties = {
   width: '100%',
   fontSize: '0.8rem',
   color: 'var(--text-secondary)',
+};
+
+const linkButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '0.6rem 0.9rem',
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'rgba(255,255,255,0.04)',
+  color: 'var(--text-primary)',
+  fontSize: '0.8rem',
+  fontWeight: 600,
+  textDecoration: 'none',
+};
+
+const routeBoxStyle: React.CSSProperties = {
+  marginTop: 8,
+  padding: '0.65rem 0.75rem',
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'rgba(255,255,255,0.03)',
+};
+
+const routeTextStyle: React.CSSProperties = {
+  margin: '0 0 4px',
+  color: 'var(--text-secondary)',
+  fontSize: '0.75rem',
 };

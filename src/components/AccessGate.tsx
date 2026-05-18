@@ -9,12 +9,21 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const isLocalDev =
+    typeof window !== "undefined" &&
+    ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const isLocalSuperDocEditor =
+    pathname === "/super-doc-editor" && isLocalDev;
+  const isLocalAutoOutreachTest =
+    pathname === "/studio-2/auto-outreach-test" && isLocalDev;
   const isPublicPage =
     pathname === "/login" ||
     pathname === "/review" ||
     pathname === "/voice-notes" ||
     pathname === "/outreach-test" ||
     pathname === "/outreach-run" ||
+    isLocalSuperDocEditor ||
+    isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||
     pathname.startsWith("/studio-2/upload/");
 
