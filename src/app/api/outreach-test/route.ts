@@ -190,6 +190,7 @@ async function createSuperDocLead(
   lead: Lead,
   videoUrl: string,
   templateContent: SuperDocTemplateContent,
+  baseUrl: string,
 ): Promise<{ pageUrl: string; slug: string }> {
   const firstName = lead.first_name;
   const lastName = lead.last_name || '';
@@ -201,10 +202,6 @@ async function createSuperDocLead(
     slug = `${baseSlug}-${suffix}`;
     suffix += 1;
   }
-
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
   await createLead({
     slug,
@@ -219,6 +216,16 @@ async function createSuperDocLead(
   const pageUrl = `${baseUrl}/super-doc/${slug}`;
   console.log(`[SuperDoc] Created lead page: ${pageUrl}`);
   return { pageUrl, slug };
+}
+
+function getRequestBaseUrl(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const proto = req.headers.get('x-forwarded-proto') || (host?.includes('localhost') ? 'http' : 'https');
+
+  if (host) return `${proto}://${host}`;
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
 }
 
 export async function POST(req: NextRequest) {
@@ -258,6 +265,7 @@ export async function POST(req: NextRequest) {
   }
 
   const tmpDir = join(tmpdir(), `outreach-test-${runId}`);
+  const baseUrl = getRequestBaseUrl(req);
 
   let files: string[];
   try {
@@ -320,7 +328,7 @@ export async function POST(req: NextRequest) {
               status: 'generating',
             });
 
-            const { pageUrl, slug } = await createSuperDocLead(lead, embedUrl, template!.content);
+            const { pageUrl, slug } = await createSuperDocLead(lead, embedUrl, template!.content, baseUrl);
             const routePlan = buildSuperDocRoutePlan({
               lead,
               pageUrl,
