@@ -392,8 +392,46 @@
   border: none;
 }
 
+.sd-calendar-card {
+  margin-top: 32px;
+  padding: 32px;
+  border-radius: 22px;
+  border: 1.5px solid var(--sd-ink);
+  box-shadow: 0 4px 0 var(--sd-ink);
+  background: var(--sd-sage);
+  text-align: center;
+}
+
+.sd-calendar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: 999px;
+  border: 1.5px solid var(--sd-ink);
+  background: var(--sd-coral);
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 4px 0 var(--sd-ink);
+}
+
+.sd-calendar-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--sd-ink);
+}
+
 @media (max-width: 640px) {
   .sd-calendly-wrap iframe { height: 500px; }
+  .sd-calendar-card {
+    border-radius: 16px;
+    padding: 24px 16px;
+  }
+  .sd-calendar-button {
+    width: 100%;
+    min-height: 52px;
+  }
 }
 
 /* ── FAQ accordion ────────────────────────────────────── */
@@ -543,7 +581,44 @@
 
 /* ── Responsive card padding ──────────────────────────── */
 @media (max-width: 640px) {
-  .sd-card { padding: 24px 20px; }
-  .sd-callout { padding: 28px 20px; }
-  .sd-cta-option { padding: 28px 20px; }
+  .sd-container { padding: 0 16px; }
+  .sd-h1 {
+    font-size: 2.35rem;
+    letter-spacing: 0;
+  }
+  .sd-h2 {
+    font-size: 1.55rem;
+    letter-spacing: 0;
+  }
+  .sd-h3 { font-size: 1.15rem; }
+  .sd-body { font-size: 0.98rem; }
+  .sd-eyebrow {
+    font-size: 0.68rem;
+    line-height: 1.35;
+  }
+  .sd-card {
+    padding: 24px 20px;
+    border-radius: 16px;
+    box-shadow: 0 3px 0 var(--sd-ink);
+  }
+  .sd-callout {
+    padding: 28px 20px;
+    border-radius: 16px;
+  }
+  .sd-cta-option {
+    padding: 28px 20px;
+    border-radius: 16px;
+  }
+  .sd-video-wrap {
+    border-radius: 16px;
+    box-shadow: 0 3px 0 var(--sd-ink);
+  }
+  .sd-photo {
+    width: 96px;
+    height: 96px;
+  }
+  .sd-photo-lg {
+    width: 128px;
+    height: 128px;
+  }
 }

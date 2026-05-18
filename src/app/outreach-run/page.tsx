@@ -60,6 +60,12 @@ function normalizeColumnName(col: string): string {
   return col.toLowerCase().replace(/[\s_-]+/g, '').trim();
 }
 
+function capitalizeNamePart(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').replace(/(^|[\s'-])([a-z])/g, (_, prefix: string, char: string) => {
+    return `${prefix}${char.toUpperCase()}`;
+  });
+}
+
 function parseCSV(text: string): Lead[] {
   const lines = text.trim().split('\n');
   if (lines.length < 2) throw new Error('CSV must have header + data rows');
@@ -101,8 +107,8 @@ function parseCSV(text: string): Lead[] {
     .map(line => {
       const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
       return {
-        first_name: values[colMap.first_name] || '',
-        last_name: colMap.last_name === undefined ? '' : values[colMap.last_name] || '',
+        first_name: capitalizeNamePart(values[colMap.first_name] || ''),
+        last_name: colMap.last_name === undefined ? '' : capitalizeNamePart(values[colMap.last_name] || ''),
         email: values[colMap.email] || '',
         lead_type: values[colMap.lead_type] || '',
         instagram_handle: colMap.instagram_handle === undefined ? '' : values[colMap.instagram_handle] || '',

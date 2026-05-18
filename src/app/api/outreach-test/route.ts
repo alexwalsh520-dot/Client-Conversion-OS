@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { getTemplate, createLead, generateSlug, getLeadBySlug } from '@/lib/super-doc-db';
 import { buildSuperDocRoutePlan } from '@/lib/super-doc-routing';
+import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 
 const PARALLEL_BATCH_SIZE = 3;
@@ -104,8 +105,8 @@ function parseCSV(text: string): Lead[] {
     if (!line) continue;
     const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
     leads.push({
-      first_name: values[colMap.first_name] || '',
-      last_name: colMap.last_name === undefined ? '' : values[colMap.last_name] || '',
+      first_name: capitalizeNamePart(values[colMap.first_name] || ''),
+      last_name: colMap.last_name === undefined ? '' : capitalizeNamePart(values[colMap.last_name] || ''),
       email: values[colMap.email] || '',
       lead_type: values[colMap.lead_type] || '',
       instagram_handle: colMap.instagram_handle === undefined ? '' : values[colMap.instagram_handle] || '',
@@ -140,7 +141,8 @@ async function uploadToBunny(
   lastName: string,
 ): Promise<string> {
   const createUrl = `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`;
-  console.log(`[Bunny] POST ${createUrl} — title: "${firstName} ${lastName}"`);
+  const title = formatFullName(firstName, lastName);
+  console.log(`[Bunny] POST ${createUrl} — title: "${title}"`);
 
   const createRes = await fetch(createUrl, {
     method: 'POST',
@@ -148,7 +150,7 @@ async function uploadToBunny(
       AccessKey: BUNNY_API_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ title: `${firstName} ${lastName}` }),
+    body: JSON.stringify({ title }),
   });
 
   const create = await safeResponseParse(createRes, 'Bunny Create');
@@ -192,8 +194,8 @@ async function createSuperDocLead(
   templateContent: SuperDocTemplateContent,
   baseUrl: string,
 ): Promise<{ pageUrl: string; slug: string }> {
-  const firstName = lead.first_name;
-  const lastName = lead.last_name || '';
+  const firstName = capitalizeNamePart(lead.first_name);
+  const lastName = capitalizeNamePart(lead.last_name);
   const baseSlug = generateSlug(firstName, lastName).replace(/^-+|-+$/g, '');
   let slug = baseSlug;
   let suffix = 2;

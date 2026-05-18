@@ -1,3 +1,5 @@
+import { capitalizeNamePart, formatFullName } from "./super-doc-name";
+
 export type SuperDocSegment = "creator" | "agency_tm" | "unknown";
 
 export interface SuperDocRouteLead {
@@ -137,12 +139,12 @@ export function buildSuperDocRoutePlan(input: {
   if (!smartleadKey.value) missingEnv.push(smartleadKey.name);
   if (!smartleadCampaign.value) missingEnv.push(smartleadCampaign.name);
 
-  const firstName = clean(lead.first_name);
-  const lastName = clean(lead.last_name);
+  const firstName = capitalizeNamePart(lead.first_name);
+  const lastName = capitalizeNamePart(lead.last_name);
   const email = clean(lead.email);
   const instagramHandle = normalizeInstagramHandle(lead.instagram_handle);
   const instagramUrl = getInstagramUrl(lead);
-  const fullName = `${firstName} ${lastName}`.trim() || email || "Super Doc Lead";
+  const fullName = formatFullName(firstName, lastName) || email || "Super Doc Lead";
 
   return {
     dryRun: true,

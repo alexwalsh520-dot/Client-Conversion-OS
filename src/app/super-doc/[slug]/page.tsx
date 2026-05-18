@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getLeadBySlug } from '@/lib/super-doc-db';
+import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 import ViewTracker from './ViewTracker';
 import FAQAccordion from './FAQAccordion';
@@ -13,9 +14,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const lead = await getLeadBySlug(slug);
   if (!lead) return { title: 'Not Found' };
+  const fullName = formatFullName(lead.first_name, lead.last_name);
   return {
-    title: `${lead.first_name} ${lead.last_name} — Super Doc`,
-    description: `Personalized partnership proposal for ${lead.first_name} ${lead.last_name}`,
+    title: `${fullName} — Super Doc`,
+    description: `Personalized partnership proposal for ${fullName}`,
   };
 }
 
@@ -39,6 +41,32 @@ function nl(text: string): React.ReactNode {
   ));
 }
 
+function canEmbedCalendar(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.includes('calendly.com') || lower.includes('calendar.google.com/calendar/embed');
+}
+
+function CalendarBlock({ url }: { url: string }) {
+  const calendarUrl = url.trim();
+  if (!calendarUrl) return null;
+
+  if (canEmbedCalendar(calendarUrl)) {
+    return (
+      <div className="sd-calendly-wrap">
+        <iframe src={calendarUrl} title="Book a call" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="sd-calendar-card">
+      <a className="sd-calendar-button" href={calendarUrl} target="_blank" rel="noreferrer">
+        Book Your Call
+      </a>
+    </div>
+  );
+}
+
 export default async function SuperDocPage({ params }: Props) {
   const { slug } = await params;
   const lead = await getLeadBySlug(slug);
@@ -46,8 +74,8 @@ export default async function SuperDocPage({ params }: Props) {
 
   const c = lead.content_snapshot as SuperDocTemplateContent;
   const vars = {
-    first_name: lead.first_name,
-    last_name: lead.last_name,
+    first_name: capitalizeNamePart(lead.first_name),
+    last_name: capitalizeNamePart(lead.last_name),
     video_url: lead.video_url,
   };
 
@@ -481,11 +509,7 @@ export default async function SuperDocPage({ params }: Props) {
               <h3 className="sd-h4">{c.cta.option2_text}</h3>
             </div>
           </div>
-          {c.cta.calendly_url && (
-            <div className="sd-calendly-wrap">
-              <iframe src={c.cta.calendly_url} title="Book a call" />
-            </div>
-          )}
+          <CalendarBlock url={c.cta.calendly_url} />
         </div>
       </section>
 
@@ -572,11 +596,7 @@ export default async function SuperDocPage({ params }: Props) {
               <h3 className="sd-h4">{c.cta.option2_text}</h3>
             </div>
           </div>
-          {c.cta.calendly_url && (
-            <div className="sd-calendly-wrap">
-              <iframe src={c.cta.calendly_url} title="Book a call" />
-            </div>
-          )}
+          <CalendarBlock url={c.cta.calendly_url} />
         </div>
       </section>
 
