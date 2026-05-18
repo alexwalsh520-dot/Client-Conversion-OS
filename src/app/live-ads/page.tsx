@@ -28,6 +28,7 @@ function totalAdSets(data: Awaited<ReturnType<typeof getLiveAdsDashboard>>) {
 
 export default async function LiveAdsPage() {
   const data = await getLiveAdsDashboard();
+  const firstOpenCampaignId = data.accounts.flatMap((account) => account.campaigns)[0]?.id;
 
   return (
     <main className={styles.page}>
@@ -35,37 +36,19 @@ export default async function LiveAdsPage() {
         <div>
           <p className={styles.eyebrow}>Marketing</p>
           <h1 className={styles.title}>Live Ads</h1>
-          <p className={styles.subtitle}>
-            Every currently active Meta ad from Tyson and Keith, grouped by campaign and ad set.
+          <p className={styles.summaryLine}>
+            {data.totalActiveAds} active ads · {totalCampaigns(data)} campaigns · {totalAdSets(data)} ad sets
           </p>
         </div>
         <div className={styles.syncPill}>Checked {formatCheckedAt(data.checkedAt)} ET</div>
       </header>
-
-      <section className={styles.stats} aria-label="Live ads summary">
-        <div className={styles.stat}>
-          <span className={styles.statLabel}>Active ads</span>
-          <strong className={styles.statValue}>{data.totalActiveAds}</strong>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statLabel}>Campaigns</span>
-          <strong className={styles.statValue}>{totalCampaigns(data)}</strong>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statLabel}>Ad sets</span>
-          <strong className={styles.statValue}>{totalAdSets(data)}</strong>
-        </div>
-      </section>
 
       {data.accounts.map((account) => (
         <section className={styles.accountBlock} key={account.key}>
           <div className={styles.accountHead}>
             <div>
               <h2 className={styles.accountTitle}>{account.name}</h2>
-              <p className={styles.accountMeta}>
-                {account.activeAdsCount} active ads
-                {account.adAccountId ? ` · ${account.adAccountId}` : ""}
-              </p>
+              <p className={styles.accountMeta}>{account.activeAdsCount} active ads</p>
             </div>
           </div>
 
@@ -76,15 +59,21 @@ export default async function LiveAdsPage() {
           ) : null}
 
           {account.campaigns.map((campaign) => (
-            <article className={styles.campaign} key={campaign.id}>
-              <div className={styles.campaignTop}>
-                <h3 className={styles.campaignName}>{campaign.name}</h3>
+            <details className={styles.campaign} key={campaign.id} open={campaign.id === firstOpenCampaignId}>
+              <summary className={styles.campaignTop}>
+                <div>
+                  <h3 className={styles.campaignName}>{campaign.name}</h3>
+                  <p className={styles.rowMeta}>
+                    {campaign.adSets.length} ad sets ·{" "}
+                    {campaign.adSets.reduce((sum, adSet) => sum + adSet.ads.length, 0)} active ads
+                  </p>
+                </div>
                 <span className={styles.activeBadge}>{campaign.status || "ACTIVE"}</span>
-              </div>
+              </summary>
 
               {campaign.adSets.map((adSet) => (
-                <section className={styles.adSet} key={adSet.id}>
-                  <div className={styles.adSetHead}>
+                <details className={styles.adSet} key={adSet.id}>
+                  <summary className={styles.adSetHead}>
                     <div>
                       <p className={styles.adSetLabel}>Ad set</p>
                       <h4 className={styles.adSetName}>{adSet.name}</h4>
@@ -94,7 +83,8 @@ export default async function LiveAdsPage() {
                           .join(" · ") || "Budget and delivery details unavailable"}
                       </p>
                     </div>
-                  </div>
+                    <span className={styles.rowMeta}>{adSet.ads.length} ads</span>
+                  </summary>
 
                   <details className={styles.targetingDetails}>
                     <summary>
@@ -140,9 +130,9 @@ export default async function LiveAdsPage() {
                       </article>
                     ))}
                   </div>
-                </section>
+                </details>
               ))}
-            </article>
+            </details>
           ))}
         </section>
       ))}

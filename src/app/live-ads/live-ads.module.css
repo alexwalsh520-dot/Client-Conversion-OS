@@ -29,12 +29,12 @@
   margin: 0;
 }
 
-.subtitle {
+.summaryLine {
   color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.55;
-  max-width: 700px;
-  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 12px 0 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
 }
 
 .syncPill {
@@ -50,38 +50,8 @@
   white-space: nowrap;
 }
 
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 28px;
-}
-
-.stat {
-  border: 1px solid var(--border-primary);
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.018));
-  padding: 16px 18px;
-}
-
-.statLabel {
-  color: var(--text-muted);
-  font-size: 10px;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.statValue {
-  color: var(--text-primary);
-  font-size: 28px;
-  line-height: 1;
-  font-weight: 680;
-  letter-spacing: -0.04em;
-}
-
 .accountBlock {
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
 .accountHead {
@@ -110,16 +80,25 @@
   border-radius: 20px;
   background: rgba(255,255,255,0.018);
   overflow: hidden;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .campaignTop {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--border-primary);
+  cursor: pointer;
+  padding: 16px 18px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
+  list-style: none;
+}
+
+.campaignTop::-webkit-details-marker {
+  display: none;
+}
+
+.campaign[open] .campaignTop {
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .campaignName {
@@ -129,6 +108,15 @@
   font-weight: 680;
   letter-spacing: -0.02em;
   margin: 0;
+}
+
+.rowMeta {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1.5;
+  margin-top: 6px;
+  white-space: nowrap;
 }
 
 .activeBadge {
@@ -149,7 +137,7 @@
 }
 
 .adSet {
-  padding: 18px 20px 22px;
+  padding: 0;
   border-bottom: 1px solid var(--border-primary);
 }
 
@@ -158,7 +146,21 @@
 }
 
 .adSetHead {
-  margin-bottom: 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 18px;
+  list-style: none;
+}
+
+.adSetHead::-webkit-details-marker {
+  display: none;
+}
+
+.adSet[open] .adSetHead {
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .adSetLabel {
@@ -187,7 +189,7 @@
   border: 1px solid var(--border-primary);
   border-radius: 13px;
   background: rgba(255,255,255,0.016);
-  margin-bottom: 16px;
+  margin: 16px 18px;
   overflow: hidden;
 }
 
@@ -257,6 +259,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
+  padding: 0 18px 18px;
 }
 
 .adCard {
@@ -351,13 +354,13 @@
 @media (max-width: 900px) {
   .header,
   .accountHead,
-  .campaignTop {
+  .campaignTop,
+  .adSetHead {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .stats,
-  .adSetHead {
-    grid-template-columns: 1fr;
+  .rowMeta {
+    white-space: normal;
   }
 }
