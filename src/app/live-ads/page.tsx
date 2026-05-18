@@ -89,31 +89,34 @@ export default async function LiveAdsPage() {
                       <p className={styles.adSetLabel}>Ad set</p>
                       <h4 className={styles.adSetName}>{adSet.name}</h4>
                       <p className={styles.adSetSub}>
-                        {[adSet.dailyBudget ? `${adSet.dailyBudget}/day` : null, adSet.optimizationGoal, adSet.billingEvent]
+                        {[adSet.dailyBudget ? `${adSet.dailyBudget}/day` : null, adSet.optimizationGoal ? `Optimizing for ${adSet.optimizationGoal.toLowerCase().replaceAll("_", " ")}` : null]
                           .filter(Boolean)
                           .join(" · ") || "Budget and delivery details unavailable"}
                       </p>
                     </div>
-                    <span className={styles.activeBadge}>{adSet.status || "ACTIVE"}</span>
                   </div>
 
-                  <p className={styles.audienceHeadline}>{adSet.audience.headline}</p>
-                  {adSet.audience.chips.length > 0 ? (
-                    <div className={styles.chips}>
-                      {adSet.audience.chips.map((chip) => (
-                        <span className={styles.chip} key={chip}>
-                          {chip}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {adSet.audience.raw ? (
-                    <details className={styles.rawDetails}>
-                      <summary>Raw Meta targeting</summary>
-                      <pre>{JSON.stringify(adSet.audience.raw, null, 2)}</pre>
-                    </details>
-                  ) : null}
+                  <details className={styles.targetingDetails}>
+                    <summary>
+                      <span>Targeting details</span>
+                      <span>Audience, placements, and raw Meta settings</span>
+                    </summary>
+                    {adSet.audience.chips.length > 0 ? (
+                      <div className={styles.chips}>
+                        {adSet.audience.chips.map((chip) => (
+                          <span className={styles.chip} key={chip}>
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {adSet.audience.raw ? (
+                      <details className={styles.rawDetails}>
+                        <summary>Raw Meta targeting</summary>
+                        <pre>{JSON.stringify(adSet.audience.raw, null, 2)}</pre>
+                      </details>
+                    ) : null}
+                  </details>
 
                   <div className={styles.adsGrid}>
                     {adSet.ads.map((ad) => (
@@ -127,8 +130,6 @@ export default async function LiveAdsPage() {
                         </div>
                         <div className={styles.adBody}>
                           <h5 className={styles.adName}>{ad.name}</h5>
-                          {ad.title ? <p className={styles.adCopy}>{ad.title}</p> : null}
-                          {ad.body ? <p className={styles.adCopy}>{ad.body}</p> : null}
                           <div className={styles.adFooter}>
                             <span className={styles.miniMeta}>{ad.status}</span>
                             <a className={styles.metaLink} href={ad.metaUrl} target="_blank" rel="noreferrer">

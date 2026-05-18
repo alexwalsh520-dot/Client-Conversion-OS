@@ -358,7 +358,7 @@ function groupAds(accountName: string, adAccountId: string, ads: MetaLiveAd[]) {
       configuredStatus: ad.configured_status || null,
       creativeId: ad.creative?.id || null,
       creativeName: ad.creative?.name || null,
-      thumbnailUrl: ad.creative?.thumbnail_url || ad.creative?.image_url || null,
+      thumbnailUrl: ad.creative?.image_url || ad.creative?.thumbnail_url || null,
       body: extractMessage(ad.creative),
       title: extractTitle(ad.creative),
       metaUrl: metaAdsManagerUrl(adAccountId, ad.id),

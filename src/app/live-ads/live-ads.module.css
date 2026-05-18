@@ -108,9 +108,7 @@
 .campaign {
   border: 1px solid var(--border-primary);
   border-radius: 20px;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(201,169,110,0.09), transparent 34%),
-    linear-gradient(180deg, rgba(18,18,18,0.96), rgba(12,12,12,0.98));
+  background: rgba(255,255,255,0.018);
   overflow: hidden;
   margin-bottom: 18px;
 }
@@ -138,6 +136,10 @@
   border-radius: 999px;
   background: rgba(126, 201, 160, 0.08);
   color: var(--success);
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  width: auto;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -156,10 +158,7 @@
 }
 
 .adSetHead {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
-  gap: 18px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .adSetLabel {
@@ -184,17 +183,40 @@
   margin-top: 8px;
 }
 
-.audienceHeadline {
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-  margin-bottom: 10px;
+.targetingDetails {
+  border: 1px solid var(--border-primary);
+  border-radius: 13px;
+  background: rgba(255,255,255,0.016);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.targetingDetails summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 13px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.targetingDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.targetingDetails summary span:last-child {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  padding: 0 13px 12px;
 }
 
 .chip {
@@ -207,7 +229,9 @@
 }
 
 .rawDetails {
-  margin-top: 10px;
+  border-top: 1px solid var(--border-primary);
+  margin: 0;
+  padding: 11px 13px 13px;
 }
 
 .rawDetails summary {
@@ -231,23 +255,21 @@
 
 .adsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 .adCard {
   border: 1px solid var(--border-primary);
   border-radius: 16px;
-  background: rgba(255,255,255,0.025);
+  background: rgba(255,255,255,0.018);
   overflow: hidden;
   min-width: 0;
 }
 
 .creative {
-  aspect-ratio: 0.72;
-  background:
-    linear-gradient(135deg, rgba(201,169,110,0.1), transparent 38%),
-    #080808;
+  aspect-ratio: 9 / 16;
+  background: #050505;
   border-bottom: 1px solid var(--border-primary);
   display: flex;
   align-items: center;
@@ -258,7 +280,7 @@
 .creative img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 
@@ -280,17 +302,6 @@
   line-height: 1.25;
   margin-bottom: 8px;
   word-break: break-word;
-}
-
-.adCopy {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-bottom: 12px;
 }
 
 .adFooter {
