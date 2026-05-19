@@ -51,6 +51,11 @@ interface MetaLiveAd {
   adset?: MetaAdSet;
 }
 
+interface MetaAdSpendInsight {
+  ad_id?: string;
+  spend?: string;
+}
+
 export interface LiveAdsAudienceSummary {
   headline: string;
   chips: string[];
@@ -68,6 +73,7 @@ export interface LiveAdsAd {
   body: string | null;
   title: string | null;
   metaUrl: string;
+  spendLast7d: number;
 }
 
 export interface LiveAdsAdSetGroup {
@@ -102,6 +108,7 @@ export interface LiveAdsAccountGroup {
 
 export interface LiveAdsPayload {
   checkedAt: string;
+  spendWindowLabel: string;
   totalActiveAds: number;
   accounts: LiveAdsAccountGroup[];
 }
@@ -176,6 +183,28 @@ async function fetchActiveMetaAds(adAccountId: string, accessToken: string) {
   }
 
   return rows.filter((ad) => ad.effective_status === "ACTIVE");
+}
+
+async function fetchRecentAdSpend(adAccountId: string, accessToken: string) {
+  const fields = ["ad_id", "spend"].join(",");
+  const initialUrl = `${BASE_URL}/${adAccountId}/insights?level=ad&fields=${fields}&date_preset=last_7d&limit=500`;
+  const rows: MetaAdSpendInsight[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const payload: MetaResponse<MetaAdSpendInsight> = await metaFetch<MetaResponse<MetaAdSpendInsight>>(
+      nextUrl,
+      accessToken
+    );
+    rows.push(...(payload.data || []));
+    nextUrl = payload.paging?.next;
+  }
+
+  return new Map(
+    rows
+      .map((row) => [row.ad_id || "", Number(row.spend || 0)] as const)
+      .filter(([adId, spend]) => adId && Number.isFinite(spend))
+  );
 }
 
 function stringList(value: unknown): string[] {
@@ -321,7 +350,7 @@ function metaAdsManagerUrl(adAccountId: string, adId: string) {
   )}&selected_ad_ids=${encodeURIComponent(adId)}`;
 }
 
-function groupAds(accountName: string, adAccountId: string, ads: MetaLiveAd[]) {
+function groupAds(accountName: string, adAccountId: string, ads: MetaLiveAd[], spendByAdId: Map<string, number>) {
   const campaignMap = new Map<string, LiveAdsCampaignGroup>();
 
   for (const ad of ads) {
@@ -362,6 +391,7 @@ function groupAds(accountName: string, adAccountId: string, ads: MetaLiveAd[]) {
       body: extractMessage(ad.creative),
       title: extractTitle(ad.creative),
       metaUrl: metaAdsManagerUrl(adAccountId, ad.id),
+      spendLast7d: spendByAdId.get(ad.id) || 0,
     });
 
     campaignMap.set(campaignId, campaign);
@@ -401,13 +431,16 @@ export async function getLiveAdsDashboard(): Promise<LiveAdsPayload> {
 
       const normalizedAccountId = normalizeAdAccountId(adAccountId);
       try {
-        const ads = await fetchActiveMetaAds(normalizedAccountId, accessToken);
+        const [ads, spendByAdId] = await Promise.all([
+          fetchActiveMetaAds(normalizedAccountId, accessToken),
+          fetchRecentAdSpend(normalizedAccountId, accessToken),
+        ]);
         return {
           key,
           name: config.name,
           adAccountId: normalizedAccountId,
           activeAdsCount: ads.length,
-          campaigns: groupAds(config.name, normalizedAccountId, ads),
+          campaigns: groupAds(config.name, normalizedAccountId, ads, spendByAdId),
           error: null,
         };
       } catch (error) {
@@ -425,6 +458,7 @@ export async function getLiveAdsDashboard(): Promise<LiveAdsPayload> {
 
   return {
     checkedAt: new Date().toISOString(),
+    spendWindowLabel: "Last 7 days",
     totalActiveAds: accounts.reduce((sum, account) => sum + account.activeAdsCount, 0),
     accounts,
   };

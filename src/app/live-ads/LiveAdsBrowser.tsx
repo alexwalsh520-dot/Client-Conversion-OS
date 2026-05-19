@@ -15,6 +15,8 @@ interface Selection {
   adSetId: string;
 }
 
+type ViewMode = "campaigns" | "leaderboard";
+
 function formatCheckedAt(value: string) {
   return new Date(value).toLocaleString("en-US", {
     timeZone: "America/New_York",
@@ -23,6 +25,14 @@ function formatCheckedAt(value: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  }).format(value);
 }
 
 function totalCampaigns(data: LiveAdsPayload) {
@@ -77,7 +87,27 @@ function adSetMeta(adSet: LiveAdsAdSetGroup) {
 
 export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
   const [selection, setSelection] = useState<Selection | null>(() => firstSelection(data));
+  const [viewMode, setViewMode] = useState<ViewMode>("campaigns");
   const selected = useMemo(() => findSelected(data, selection), [data, selection]);
+  const leaderboardAds = useMemo(
+    () =>
+      data.accounts
+        .flatMap((account) =>
+          account.campaigns.flatMap((campaign) =>
+            campaign.adSets.flatMap((adSet) =>
+              adSet.ads.map((ad) => ({
+                ...ad,
+                accountName: account.name,
+                accountKey: account.key,
+                campaignName: campaign.name,
+                adSetName: adSet.name,
+              }))
+            )
+          )
+        )
+        .sort((a, b) => b.spendLast7d - a.spendLast7d || a.name.localeCompare(b.name)),
+    [data]
+  );
 
   return (
     <main className={styles.page}>
@@ -89,10 +119,63 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
             {data.totalActiveAds} active ads across {totalCampaigns(data)} campaigns
           </p>
         </div>
-        <div className={styles.syncPill}>Checked {formatCheckedAt(data.checkedAt)} ET</div>
+        <div className={styles.headerActions}>
+          <div className={styles.viewToggle} aria-label="Live ads view">
+            <button
+              type="button"
+              className={viewMode === "campaigns" ? styles.viewToggleActive : ""}
+              onClick={() => setViewMode("campaigns")}
+            >
+              Campaigns
+            </button>
+            <button
+              type="button"
+              className={viewMode === "leaderboard" ? styles.viewToggleActive : ""}
+              onClick={() => setViewMode("leaderboard")}
+            >
+              Leaderboard
+            </button>
+          </div>
+          <div className={styles.syncPill}>Checked {formatCheckedAt(data.checkedAt)} ET</div>
+        </div>
       </header>
 
-      <div className={styles.browserShell}>
+      {viewMode === "leaderboard" ? (
+        <section className={styles.leaderboardPanel}>
+          <div className={styles.leaderboardHeader}>
+            <div>
+              <p className={styles.selectedEyebrow}>{data.spendWindowLabel}</p>
+              <h2 className={styles.selectedTitle}>Spend leaderboard</h2>
+            </div>
+            <span className={styles.activeBadge}>{leaderboardAds.length} active ads</span>
+          </div>
+
+          <div className={styles.leaderboardList}>
+            {leaderboardAds.map((ad, index) => (
+              <article className={styles.leaderboardRow} key={ad.id}>
+                <span className={styles.rank}>{String(index + 1).padStart(2, "0")}</span>
+                <div className={styles.leaderCreative}>
+                  {ad.thumbnailUrl ? <img src={ad.thumbnailUrl} alt="" loading="lazy" /> : null}
+                </div>
+                <div className={styles.leaderMain}>
+                  <h3>{ad.name}</h3>
+                  <p>
+                    {ad.accountName} · {ad.campaignName.replace(`${ad.accountName} · `, "")} · {ad.adSetName}
+                  </p>
+                </div>
+                <div className={styles.leaderSpend}>
+                  <span>{data.spendWindowLabel}</span>
+                  <strong>{formatCurrency(ad.spendLast7d)}</strong>
+                </div>
+                <a className={styles.metaLink} href={ad.metaUrl} target="_blank" rel="noreferrer">
+                  Open in Meta
+                </a>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <div className={styles.browserShell}>
         <aside className={styles.navPanel} aria-label="Live ads navigation">
           <div className={styles.navPanelHeader}>
             <span>Campaigns</span>
@@ -226,6 +309,7 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
           )}
         </section>
       </div>
+      )}
     </main>
   );
 }
