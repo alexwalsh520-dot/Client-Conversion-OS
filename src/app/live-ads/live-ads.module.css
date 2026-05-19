@@ -246,6 +246,7 @@
 
 .leaderboardList {
   display: grid;
+  overflow: visible;
 }
 
 .leaderboardRow {
@@ -256,6 +257,7 @@
   grid-template-columns: 42px 58px minmax(0, 1fr) 150px 90px;
   min-width: 0;
   padding: 12px 18px;
+  position: relative;
 }
 
 .leaderboardRow:last-child {
@@ -278,6 +280,7 @@
   border: 1px solid var(--border-primary);
   border-radius: 9px;
   overflow: hidden;
+  position: relative;
 }
 
 .leaderCreative img {
@@ -285,6 +288,29 @@
   height: 100%;
   object-fit: contain;
   width: 100%;
+}
+
+.leaderCreative::after {
+  background: var(--leader-preview-url) center / contain no-repeat #050505;
+  border: 1px solid var(--border-hover);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  content: "";
+  height: min(72vh, 560px);
+  left: 78px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) scale(0.98);
+  transition: opacity 90ms ease, transform 90ms ease;
+  width: min(40vw, 315px);
+  z-index: 20;
+}
+
+.leaderCreative:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
 }
 
 .leaderMain {
