@@ -156,14 +156,14 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
                 <span className={styles.rank}>{String(index + 1).padStart(2, "0")}</span>
                 <div
                   className={styles.leaderCreative}
-                  style={
-                    ad.thumbnailUrl
-                      ? ({ "--leader-preview-url": `url("${ad.thumbnailUrl}")` } as React.CSSProperties)
-                      : undefined
-                  }
                 >
                   {ad.thumbnailUrl ? <img src={ad.thumbnailUrl} alt="" loading="lazy" /> : null}
                 </div>
+                {ad.thumbnailUrl ? (
+                  <div className={styles.leaderPreview}>
+                    <img src={ad.thumbnailUrl} alt="" loading="lazy" />
+                  </div>
+                ) : null}
                 <div className={styles.leaderMain}>
                   <h3>{ad.name}</h3>
                   <p>

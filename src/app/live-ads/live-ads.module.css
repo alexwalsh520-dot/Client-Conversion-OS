@@ -232,7 +232,7 @@
   border: 1px solid var(--border-primary);
   border-radius: 20px;
   background: rgba(255,255,255,0.012);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .leaderboardHeader {
@@ -290,15 +290,18 @@
   width: 100%;
 }
 
-.leaderCreative::after {
-  background: var(--leader-preview-url) center / contain no-repeat #050505;
+.leaderPreview {
+  align-items: center;
+  background: #050505;
   border: 1px solid var(--border-hover);
   border-radius: 16px;
   box-shadow: 0 24px 70px rgba(0,0,0,0.55);
-  content: "";
+  display: flex;
   height: min(72vh, 560px);
-  left: 78px;
+  justify-content: center;
+  left: 134px;
   opacity: 0;
+  overflow: hidden;
   pointer-events: none;
   position: absolute;
   top: 50%;
@@ -308,7 +311,14 @@
   z-index: 20;
 }
 
-.leaderCreative:hover::after {
+.leaderPreview img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.leaderCreative:hover + .leaderPreview {
   opacity: 1;
   transform: translateY(-50%) scale(1);
 }
