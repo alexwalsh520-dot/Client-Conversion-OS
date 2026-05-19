@@ -14,12 +14,21 @@
  * Standard CCOS layout (sidebar present, gold/dark theme).
  */
 
+import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { ShieldOff } from "lucide-react";
 import AdminLeadsView from "@/components/testimonials/AdminLeadsView";
 
 export const dynamic = "force-dynamic";
+
+// Belt-and-suspenders: prevent search engines from indexing the admin
+// page if the URL ever leaks (mistakenly shared, browser history sync).
+// The page is already auth-gated server-side; this is one more layer.
+export const metadata: Metadata = {
+  title: "Testimonials Leads · CCOS",
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default async function TestimonialsLeadsPage() {
   const session = await auth();
