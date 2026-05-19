@@ -22,6 +22,7 @@ import {
   Sparkles,
   BookOpen,
   FileText,
+  Star,
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
+  { href: "/testimonials", label: "Testimonials", icon: Star },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
 ];
@@ -99,6 +101,9 @@ export default function Sidebar() {
   if (pathname.startsWith("/super-doc/")) return null;
   if (pathname.startsWith("/studio-2/upload/")) return null;
   if (pathname === "/login" || pathname === "/review" || pathname === "/voice-notes") return null;
+  // Public testimonials page renders as a marketing landing page (no CCOS shell).
+  // The /testimonials/leads admin sub-route still gets the sidebar.
+  if (pathname === "/testimonials") return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },
