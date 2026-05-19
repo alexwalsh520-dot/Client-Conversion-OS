@@ -22,6 +22,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     pathname === "/voice-notes" ||
     pathname === "/outreach-test" ||
     pathname === "/outreach-run" ||
+    // /testimonials is the public-facing testimonials landing page (only
+    // public CCOS surface that accepts user input). The /testimonials/leads
+    // admin sub-route is gated server-side at the page level, so we keep
+    // this as exact-match — startsWith would defeat the admin gate.
+    pathname === "/testimonials" ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||
