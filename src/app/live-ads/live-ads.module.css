@@ -318,7 +318,7 @@
   width: 100%;
 }
 
-.leaderCreative:hover + .leaderPreview {
+.leaderboardRow:hover .leaderPreview {
   opacity: 1;
   transform: translateY(-50%) scale(1);
 }
