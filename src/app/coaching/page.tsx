@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Receipt,
   UtensilsCrossed,
+  ClipboardCheck,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -45,6 +46,8 @@ import EODReportsTab from "@/components/coaching/EODReportsTab";
 import FinancialsTab from "@/components/coaching/FinancialsTab";
 import ExpensesTab from "@/components/coaching/ExpensesTab";
 import NutritionTab from "@/components/coaching/NutritionTab";
+import ClientProgressTab from "@/components/coaching/ClientProgressTab";
+import type { CheckInSubmissionRow } from "@/lib/check-in/types";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "roster", label: "Client Roster", icon: <Users size={14} /> },
@@ -56,7 +59,22 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "financials", label: "Financials", icon: <DollarSign size={14} /> },
   { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
   { key: "nutrition", label: "Nutrition", icon: <UtensilsCrossed size={14} /> },
+  { key: "client-progress", label: "Client Progress", icon: <ClipboardCheck size={14} /> },
 ];
+
+// Admin-only fetch — returns [] for non-admins (their API call 403s).
+// Used by both ClientProgressTab and CoachPerformanceTab so the page
+// shares one round-trip.
+async function fetchCheckInSubmissions(): Promise<CheckInSubmissionRow[]> {
+  try {
+    const res = await fetch("/api/check-in/submissions");
+    if (!res.ok) return [];
+    const data = (await res.json()) as { submissions?: CheckInSubmissionRow[] };
+    return data.submissions ?? [];
+  } catch {
+    return [];
+  }
+}
 
 export default function CoachingPage() {
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
@@ -79,6 +97,7 @@ export default function CoachingPage() {
   const { data: expenses, refetch: refetchExpenses } = useAsyncData(getExpenses, []);
   const { data: nutritionForms, refetch: refetchNutritionForms } = useAsyncData(getNutritionIntakeForms, []);
   const { data: dailyCoacherScores } = useAsyncData(getCoachDailyCoacherScores, {});
+  const { data: checkInSubmissions } = useAsyncData<CheckInSubmissionRow[]>(fetchCheckInSubmissions, []);
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -309,6 +328,7 @@ export default function CoachingPage() {
             coachPerformance={coachPerformance}
             feedback={feedback}
             dailyCoacherScores={dailyCoacherScores}
+            checkInSubmissions={checkInSubmissions}
           />
         )}
         {activeTab === "meetings" && (
@@ -336,6 +356,9 @@ export default function CoachingPage() {
             onUnlinkForm={handleUnlinkNutritionForm}
             onRefreshClients={refetchClients}
           />
+        )}
+        {activeTab === "client-progress" && (
+          <ClientProgressTab submissions={checkInSubmissions} />
         )}
       </div>
     </div>

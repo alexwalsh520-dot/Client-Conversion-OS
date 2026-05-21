@@ -104,6 +104,8 @@ export default function Sidebar() {
   // Public testimonials page renders as a marketing landing page (no CCOS shell).
   // The /testimonials/leads admin sub-route still gets the sidebar.
   if (pathname === "/testimonials") return null;
+  // Public client check-in form — coach-shared URL, no CCOS chrome.
+  if (pathname === "/check-in") return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },

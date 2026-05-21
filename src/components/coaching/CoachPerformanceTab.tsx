@@ -15,6 +15,10 @@ import { Trophy, Users } from "lucide-react";
 import type { Client, CoachMilestone, CoachMeeting, CoachEODReport } from "@/lib/types";
 import type { CoachPerformanceEntry, CoachingFeedbackEntry } from "@/lib/mock-data";
 import { boostPctForScore, type CoachScoreMap } from "@/lib/daily-coacher/coach-scores";
+import {
+  computeCoachProgressBoost,
+  type CheckInSubmissionRow,
+} from "@/lib/check-in/types";
 import CoachDigestToggle from "./CoachDigestToggle";
 
 interface Props {
@@ -27,9 +31,13 @@ interface Props {
   /** Daily Coacher Usage Scores keyed by coach name. May be empty while
    *  loading or if the data fetch fails — in that case the boost is 0. */
   dailyCoacherScores?: CoachScoreMap;
+  /** Client check-in submissions used to compute the per-coach Client
+   *  Progress boost (avg client effectiveness / 10). Coach with zero
+   *  submissions gets 0 boost (no penalty). */
+  checkInSubmissions?: CheckInSubmissionRow[];
 }
 
-export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports, dailyCoacherScores }: Props) {
+export default function CoachPerformanceTab({ clients, milestones, meetings, eodReports, dailyCoacherScores, checkInSubmissions }: Props) {
   // Probe admin status once for the digest toggle. Cheap: one /api/auth/session
   // call, cached by NextAuth client-side.
   const [isAdmin, setIsAdmin] = useState(false);
@@ -85,10 +93,21 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
     const dailyCoacherScore = dcEntry?.score ?? 0;
     const dailyCoacherBoost = dcEntry?.boostPct ?? boostPctForScore(dailyCoacherScore);
 
-    // Overall % = milestone % + Daily Coacher boost, capped at 100.
-    // Coaches still see the raw milestone % via the breakdown caption so
-    // the contribution of each part is transparent.
-    const overallScore = Math.min(100, milestoneRate + dailyCoacherBoost);
+    // Client Progress boost: avg of this coach's clients' effectiveness
+    // scores divided by 10. Coach with zero submissions → 0 boost (no
+    // penalty). See src/lib/check-in/types.ts for grouping logic.
+    const cpBoost = computeCoachProgressBoost(coachName, checkInSubmissions ?? []);
+    const clientProgressScore = cpBoost.avgScore;
+    const clientProgressBoost = cpBoost.boostPct;
+    const clientProgressSubmissionCount = cpBoost.submissionCount;
+
+    // Overall % = milestone % + Daily Coacher boost + Client Progress
+    // boost, capped at 100. Each component is shown in the breakdown so
+    // the contribution of each part stays transparent.
+    const overallScore = Math.min(
+      100,
+      milestoneRate + dailyCoacherBoost + clientProgressBoost
+    );
 
     return {
       name: coachName,
@@ -99,6 +118,9 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       milestoneRate,
       dailyCoacherScore,
       dailyCoacherBoost,
+      clientProgressScore,
+      clientProgressBoost,
+      clientProgressSubmissionCount,
       overallScore,
       totalMeetings: coachMeetings.length,
       eodSubmissions: coachEODs.length,
@@ -146,7 +168,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       <div className="section">
         <h2 className="section-title">
           <Trophy size={16} />
-          Coach Rankings (Milestones + Daily Coacher boost)
+          Coach Rankings (Milestones + Daily Coacher + Client Progress)
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           {ranked.map((coach, idx) => (
@@ -163,7 +185,12 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 {coach.milestoneRate}% milestones
                 {coach.dailyCoacherBoost > 0 && (
                   <span style={{ color: "var(--accent)" }}>
-                    {" "}+ {coach.dailyCoacherBoost}% Daily Coacher boost
+                    {" "}+ {coach.dailyCoacherBoost}% Daily Coacher
+                  </span>
+                )}
+                {coach.clientProgressBoost > 0 && (
+                  <span style={{ color: "var(--accent)" }}>
+                    {" "}+ {coach.clientProgressBoost}% Client Progress
                   </span>
                 )}
               </div>
@@ -178,6 +205,12 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <span>Referrals: <strong>{coach.referrals}</strong></span>
                 <span style={{ gridColumn: "1 / -1" }}>
                   Daily Coacher: <strong style={{ color: coach.dailyCoacherScore > 0 ? "var(--accent)" : "var(--text-muted)" }}>{coach.dailyCoacherScore}/10</strong>
+                </span>
+                <span style={{ gridColumn: "1 / -1" }}>
+                  Client Progress:{" "}
+                  <strong style={{ color: coach.clientProgressSubmissionCount > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+                    {coach.clientProgressSubmissionCount > 0 ? `${coach.clientProgressScore}/100` : "no check-ins"}
+                  </strong>
                 </span>
               </div>
               {isAdmin && (
@@ -237,6 +270,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <th>Completion %</th>
                 <th>Milestone %</th>
                 <th>Daily Coacher</th>
+                <th>Client Progress</th>
                 <th>Overall %</th>
                 <th>TP</th>
                 <th>Video</th>
@@ -260,6 +294,22 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                       <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}>
                         (+{coach.dailyCoacherBoost}%)
                       </span>
+                    )}
+                  </td>
+                  <td>
+                    {coach.clientProgressSubmissionCount > 0 ? (
+                      <>
+                        <span style={{ color: "var(--accent)" }}>
+                          {coach.clientProgressScore}/100
+                        </span>
+                        {coach.clientProgressBoost > 0 && (
+                          <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}>
+                            (+{coach.clientProgressBoost}%)
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>—</span>
                     )}
                   </td>
                   <td style={{ fontWeight: 600, color: coach.overallScore >= 50 ? "var(--success)" : "var(--warning)" }}>
