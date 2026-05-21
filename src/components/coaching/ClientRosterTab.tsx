@@ -134,6 +134,19 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
   });
 
   const handleSave = async () => {
+    // Required fields on ADD only. Edits of legacy synced rows may be
+    // missing start/end dates, and blocking those would prevent fixes.
+    const isAdding = !editingId;
+    if (isAdding) {
+      const missing: string[] = [];
+      if (!formData.name?.trim()) missing.push("Name");
+      if (!formData.startDate) missing.push("Start Date");
+      if (!formData.endDate) missing.push("End Date");
+      if (missing.length > 0) {
+        alert(`Please fill in required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
+        return;
+      }
+    }
     try {
       await onSave(formData);
       setShowAddForm(false);
@@ -451,11 +464,11 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
               )}
             </div>
             <div>
-              <label className="field-label">Start Date</label>
+              <label className="field-label">Start Date *</label>
               <input className="input-field" type="date" value={formData.startDate || ""} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
             </div>
             <div>
-              <label className="field-label">End Date</label>
+              <label className="field-label">End Date *</label>
               <input className="input-field" type="date" value={formData.endDate || ""} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} />
             </div>
             <div>

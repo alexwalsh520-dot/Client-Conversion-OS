@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { appendClientToSheets, updateMilestoneInSheet } from "@/lib/sheets";
 import { postToCoachingChannel } from "@/lib/slack";
+import { notifyAdminOfNewClient } from "@/lib/coaching/notify-new-client";
 
 type Action =
   | "upsert_client"
@@ -168,6 +169,20 @@ export async function POST(req: NextRequest) {
 
         // Per-task Slack ping intentionally removed. Daman tracks her own queue
         // and the bi-monthly summary covers payroll counts.
+
+        // Admin DM to Saeed for truly-new clients (not edits, not
+        // name-collision merges, not bulk Google Sheets sync). Reminds
+        // him to add the client to his manager track record sheet.
+        // Fire-and-forget — never block the API response on Slack.
+        void notifyAdminOfNewClient({
+          name: payload.name,
+          startDate: payload.startDate,
+          endDate: payload.endDate,
+          coachName: payload.coachName,
+          program: payload.program,
+        }).catch((err) => {
+          console.warn("[api/coaching upsert_client] notifyAdminOfNewClient failed:", err);
+        });
 
         return NextResponse.json({ success: true, data });
       }
