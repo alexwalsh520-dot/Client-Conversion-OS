@@ -22,6 +22,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
+import CheckInLinkBox from "@/components/check-in/CheckInLinkBox";
 
 const OWNER_EMAIL = "saeed16765@gmail.com";
 
@@ -207,6 +208,10 @@ export default function ClientProgressTab({ submissions: initialSubmissions }: P
           </div>
         </div>
       </div>
+
+      {/* Check-in link — pinned just above the controls so coaches can
+          re-grab the URL without tab-hopping to Milestones. */}
+      <CheckInLinkBox style={{ marginTop: 0, marginBottom: 16 }} />
 
       {/* Controls */}
       <div
