@@ -358,7 +358,7 @@ export default function CoachingPage() {
           />
         )}
         {activeTab === "client-progress" && (
-          <ClientProgressTab submissions={checkInSubmissions} />
+          <ClientProgressTab submissions={checkInSubmissions} clients={clients} />
         )}
       </div>
     </div>

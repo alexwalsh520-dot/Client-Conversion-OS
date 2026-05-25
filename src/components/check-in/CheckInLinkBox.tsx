@@ -79,7 +79,7 @@ export default function CheckInLinkBox({ style }: Props) {
           <ClipboardCheck size={14} /> Client Check-In Form
         </h3>
         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          Send to clients every 2 weeks via Everfit
+          Send to clients weekly via Everfit
         </span>
       </div>
       <p

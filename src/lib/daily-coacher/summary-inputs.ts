@@ -81,6 +81,20 @@ export interface LiveMessage {
   created_at: string;
 }
 
+/** Weekly check-in form submission. Stored in public.client_check_ins;
+ *  the client picks themselves from a public dropdown at /check-in and
+ *  fills out 4 sliders (Q1: 0-10, Q2-Q4: 1-10) plus an optional paragraph.
+ *  See src/lib/check-in/types.ts for the scoring formula. */
+export interface CheckInRow {
+  q1_overall: number;
+  q2_strength: number;
+  q3_lifestyle: number;
+  q4_progress: number;
+  q5_open_response: string | null;
+  score_0_100: number;
+  submitted_at: string;
+}
+
 export interface ProgramProgress {
   daysElapsed: number | null;
   daysRemaining: number | null;
@@ -104,6 +118,9 @@ export interface SummaryInputs {
   transcript: string | null; // may be null if not yet processed or no link
   clientNotes: ClientNoteRow[]; // chronological, oldest first
   liveMessages: LiveMessage[]; // chronological, oldest first (so order reads naturally)
+  /** Weekly client check-in submissions (newest first). May be empty
+   *  if the client has never filled out the public /check-in form. */
+  checkIns: CheckInRow[];
   /** ISO timestamp of the newest input across all sources. Used by callers
    *  (e.g. the GET /summary route) to decide whether the cached summary is stale. */
   latestInputAt: string | null;
@@ -247,6 +264,18 @@ export async function gatherSummaryInputs(
     .limit(20);
   const liveMessages: LiveMessage[] = ((liveData as LiveMessage[]) || []).reverse();
 
+  // 5b. Recent client check-in submissions (newest first). Fed into the
+  //     per-client summary so the LLM can incorporate client-reported
+  //     sentiment ("client reported low adherence to nutrition last week").
+  const { data: checkInData } = await supabase
+    .from("client_check_ins")
+    .select(
+      "q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at"
+    )
+    .eq("client_id", c.id)
+    .order("submitted_at", { ascending: false });
+  const checkIns: CheckInRow[] = (checkInData as CheckInRow[]) || [];
+
   // 6. Onboarding transcript — use cache, fall back to Fathom fetch
   let transcript: string | null = c.onboarding_transcript_cached;
   if (!transcript && c.onboarding_fathom_link) {
@@ -263,6 +292,7 @@ export async function gatherSummaryInputs(
     ...meetings.map((m) => m.created_at),
     ...clientNotes.map((n) => n.created_at),
     ...liveMessages.map((lm) => lm.created_at),
+    ...checkIns.map((ci) => ci.submitted_at),
     c.onboarding_transcript_fetched_at,
   ];
   const latestInputAt = candidates
@@ -278,6 +308,7 @@ export async function gatherSummaryInputs(
     transcript,
     clientNotes,
     liveMessages,
+    checkIns,
     latestInputAt,
   };
 }

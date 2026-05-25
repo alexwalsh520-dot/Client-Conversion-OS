@@ -28,6 +28,7 @@ import {
   type ClientNoteRow,
   type LiveMessage,
   type ProgramProgress,
+  type CheckInRow,
 } from "./summary-inputs";
 import { stripDashes } from "./text-cleanup";
 
@@ -144,6 +145,22 @@ function fmtLiveMessages(msgs: LiveMessage[]): string {
   return `<recent_exchanges>\n${lines.join("\n")}\n</recent_exchanges>`;
 }
 
+function fmtCheckIns(checkIns: CheckInRow[]): string {
+  if (checkIns.length === 0) {
+    return "<client_check_ins>none submitted</client_check_ins>";
+  }
+  // Newest 5 — beyond that the summary already has enough signal and
+  // token cost outweighs marginal context value.
+  const blocks = checkIns.slice(0, 5).map((ci) => {
+    const date = ci.submitted_at.slice(0, 10);
+    const para = ci.q5_open_response?.trim()
+      ? `\n    note: ${ci.q5_open_response.trim().replace(/\n/g, " ")}`
+      : "";
+    return `  [${date}] score ${ci.score_0_100}/100 (coaching=${ci.q1_overall}, strength=${ci.q2_strength}, nutrition+sleep=${ci.q3_lifestyle}, progress=${ci.q4_progress})${para}`;
+  });
+  return `<client_check_ins>\n${blocks.join("\n")}\n</client_check_ins>`;
+}
+
 function fmtTranscript(transcript: string | null): string {
   if (!transcript) return "<onboarding_call_transcript>not available</onboarding_call_transcript>";
   // Keep the transcript intact — Claude can handle the whole thing within
@@ -178,6 +195,7 @@ function buildUserPrompt(inputs: SummaryInputs): string {
     fmtMeetings(inputs.meetings),
     fmtClientNotes(inputs.clientNotes),
     fmtLiveMessages(inputs.liveMessages),
+    fmtCheckIns(inputs.checkIns),
     `\nGenerate the snapshot now. Follow the format exactly.`,
   ].join("\n\n");
 }

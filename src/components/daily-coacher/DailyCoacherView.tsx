@@ -11,7 +11,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Sparkles } from "lucide-react";
-import type { ProgramProgress } from "@/lib/daily-coacher/summary-inputs";
+import type { CheckInRow, ProgramProgress } from "@/lib/daily-coacher/summary-inputs";
 import type { ClientScoreEntry } from "@/lib/daily-coacher/coach-scores";
 import type { TopicKey } from "@/lib/daily-coacher/topics";
 import SummaryPanel from "./SummaryPanel";
@@ -20,6 +20,7 @@ import TopicSelector from "./TopicSelector";
 import CoachNotesInput from "./CoachNotesInput";
 import LiveMessagesInput from "./LiveMessagesInput";
 import DraftPanel from "./DraftPanel";
+import RecentCheckIns from "./RecentCheckIns";
 
 interface Props {
   clientId: number;
@@ -34,6 +35,9 @@ interface Props {
   /** Per-client Daily Coacher Usage Score. Null if the fetch failed; in
    *  that case the row is hidden and the page continues to function. */
   clientScore: ClientScoreEntry | null;
+  /** Weekly check-in submissions for this client (newest first).
+   *  Empty array if the client has never filled out the form. */
+  checkIns: CheckInRow[];
 }
 
 export default function DailyCoacherView({
@@ -47,6 +51,7 @@ export default function DailyCoacherView({
   initialSummaryUpdatedAt,
   initialStale,
   clientScore,
+  checkIns,
 }: Props) {
   const [selectedTopic, setSelectedTopic] = useState<TopicKey | null>(null);
 
@@ -106,6 +111,9 @@ export default function DailyCoacherView({
               Phase: {progress.phase.replace(/_/g, " ")}
             </span>
           )}
+          <span>
+            Check-Ins: <span style={{ color: checkIns.length > 0 ? "var(--accent)" : "var(--text-secondary)" }}>{checkIns.length}</span>
+          </span>
         </div>
       </div>
 
@@ -128,6 +136,11 @@ export default function DailyCoacherView({
           meetingsWithNotes={clientScore.breakdown.meetingsWithNotes}
         />
       )}
+
+      {/* Recent client check-in submissions */}
+      <div style={{ marginTop: 24 }}>
+        <RecentCheckIns checkIns={checkIns} />
+      </div>
 
       {/* Topic selector */}
       <div style={{ marginTop: 24 }}>

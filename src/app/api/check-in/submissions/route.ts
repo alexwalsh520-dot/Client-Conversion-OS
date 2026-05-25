@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
   const { data: rows, error } = await db
     .from("client_check_ins")
     .select(
-      "id, client_id, client_name, client_email, coach_name, q1_overall, q2_strength, q3_adherence, q4_progress, q5_open_response, score_0_100, submitted_at"
+      "id, client_id, client_name, client_email, coach_name, q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at"
     )
     .order("submitted_at", { ascending: false });
   if (error) {
@@ -65,7 +65,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
       coachName: r.coach_name,
       q1Overall: r.q1_overall,
       q2Strength: r.q2_strength,
-      q3Adherence: r.q3_adherence,
+      q3Lifestyle: r.q3_lifestyle,
       q4Progress: r.q4_progress,
       q5OpenResponse: r.q5_open_response,
       score0to100: r.score_0_100,

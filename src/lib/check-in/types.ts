@@ -9,7 +9,7 @@ export interface ClientCheckIn {
   coachName: string | null;
   q1Overall: number;
   q2Strength: number;
-  q3Adherence: number;
+  q3Lifestyle: number;
   q4Progress: number;
   q5OpenResponse: string | null;
   score0to100: number;
@@ -34,7 +34,7 @@ export interface CheckInSubmissionRow {
   coachName: string | null;
   q1Overall: number;
   q2Strength: number;
-  q3Adherence: number;
+  q3Lifestyle: number;
   q4Progress: number;
   q5OpenResponse: string | null;
   score0to100: number;
@@ -107,4 +107,7 @@ export function computeScore0to100(
   return Math.round(avg * 10); // 0..100
 }
 
-export const LOW_SCORE_ALERT_THRESHOLD = 50;
+/** Score threshold for the weekly digest's "Attention Needed" section.
+ *  Any client whose THIS-WEEK avg falls below this gets surfaced to the
+ *  manager (Saeed) in the Sunday digest email. */
+export const ATTENTION_NEEDED_THRESHOLD = 60;

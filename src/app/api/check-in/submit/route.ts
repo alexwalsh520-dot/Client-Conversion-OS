@@ -1,5 +1,5 @@
 /**
- * POST /api/check-in/submit — public bi-weekly check-in submission.
+ * POST /api/check-in/submit — public weekly check-in submission.
  *
  * This and /api/testimonials/lead are the only CCOS API routes that
  * accept unauthenticated POSTs from the public internet. Hardening:
@@ -13,16 +13,13 @@
  *      at the DB layer).
  *   5. Score computed server-side — never trust a client-supplied score.
  *
- * On success: inserts row, fires Slack DM to Saeed if score < 50, returns 200.
+ * On success: inserts row and returns 200. Manager alerting happens
+ * via the weekly digest cron (Sun 4pm PKT), not per-form.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import {
-  computeScore0to100,
-  LOW_SCORE_ALERT_THRESHOLD,
-} from "@/lib/check-in/types";
-import { notifyAdminOfLowScore } from "@/lib/check-in/notify-low-score";
+import { computeScore0to100 } from "@/lib/check-in/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 10;
@@ -87,6 +84,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!isInt(body.q3, 1, 10)) {
     return NextResponse.json({ error: "Q3 must be 1-10." }, { status: 400 });
   }
+  // Note: column was renamed q3_adherence → q3_lifestyle in migration
+  // 035 to reflect the question pivot from program-adherence to
+  // nutrition+sleep. The payload field is still `q3` from the client
+  // so existing callers don't need updating.
   if (!isInt(body.q4, 1, 10)) {
     return NextResponse.json({ error: "Q4 must be 1-10." }, { status: 400 });
   }
@@ -168,7 +169,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       coach_name: client.coach_name,
       q1_overall: body.q1,
       q2_strength: body.q2,
-      q3_adherence: body.q3,
+      q3_lifestyle: body.q3,
       q4_progress: body.q4,
       q5_open_response: q5,
       score_0_100: score,
@@ -186,36 +187,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Low-score alert: fire-and-forget Slack DM to Saeed when this single
-  // submission falls below threshold. Pull the running avg + total count
-  // for the message; failures here only mean Saeed misses the ping.
-  if (score < LOW_SCORE_ALERT_THRESHOLD) {
-    const { data: allForClient } = await db
-      .from("client_check_ins")
-      .select("score_0_100")
-      .eq("client_id", client.id);
-
-    const scores = (allForClient ?? []).map((r) => r.score_0_100 as number);
-    const runningAvg =
-      scores.length > 0
-        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
-        : score;
-
-    void notifyAdminOfLowScore({
-      clientName: client.name,
-      coachName: client.coach_name,
-      thisFormScore: score,
-      runningAvgScore: runningAvg,
-      totalSubmissions: scores.length,
-      q1: body.q1,
-      q2: body.q2,
-      q3: body.q3,
-      q4: body.q4,
-      q5Paragraph: q5,
-    }).catch((err) => {
-      console.warn("[api/check-in/submit] notifyAdminOfLowScore failed:", err);
-    });
-  }
+  // Per-form Slack alert was removed when the manager workflow moved
+  // to a Sunday weekly digest. See /api/cron/check-in-weekly-digest.
 
   return NextResponse.json({ ok: true, score });
 }

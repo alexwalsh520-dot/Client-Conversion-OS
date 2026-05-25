@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Public bi-weekly check-in form.
+ * Public weekly check-in form.
  *
  * Flow:
  *   1. Client types ≥ 2 chars → typeahead fetches /api/check-in/clients
@@ -362,7 +362,7 @@ export default function CheckInForm() {
 
       {/* Q1 — Coaching overall, 0-10 */}
       <SliderQuestion
-        label="How has your coaching been in the past 2 weeks? *"
+        label="How has your coaching been in the past week? *"
         labelMin="0 — Pretty bad"
         labelMax="10 — Phenomenal"
         min={0}
@@ -384,9 +384,9 @@ export default function CheckInForm() {
         onChange={(v) => setQ("q2", v)}
       />
 
-      {/* Q3 — Adherence */}
+      {/* Q3 — Lifestyle (nutrition + sleep) */}
       <SliderQuestion
-        label="How well did you stick to your program over the last 2 weeks? *"
+        label="How well did you manage nutrition and sleep in the last 7 days? *"
         labelMin="1 — Barely at all"
         labelMax="10 — Nailed it completely"
         min={1}
@@ -398,7 +398,7 @@ export default function CheckInForm() {
 
       {/* Q4 — Progress */}
       <SliderQuestion
-        label="How much progress have you made toward your goal in the last 2 weeks? *"
+        label="How much progress have you made toward your goal in the last 7 days? *"
         labelMin="1 — None / went backwards"
         labelMax="10 — Big step forward"
         min={1}

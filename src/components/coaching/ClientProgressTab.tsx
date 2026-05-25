@@ -20,8 +20,18 @@
  */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, LineChart as LineChartIcon, Search, Trash2 } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
+import type { Client } from "@/lib/types";
 import CheckInLinkBox from "@/components/check-in/CheckInLinkBox";
 
 const OWNER_EMAIL = "saeed16765@gmail.com";
@@ -30,6 +40,11 @@ interface Props {
   /** Pre-fetched in coaching/page.tsx so this tab and CoachPerformanceTab
    *  share one round-trip. */
   submissions: CheckInSubmissionRow[];
+  /** Full client list — used by the chart picker so coaches can chart
+   *  ANY client (not just submitting clients). A client without
+   *  submissions just shows the "no check-ins yet" state in the chart
+   *  panel. */
+  clients: Client[];
 }
 
 interface PerClientStats {
@@ -68,7 +83,7 @@ function scoreColor(score: number): string {
   return "var(--danger)";
 }
 
-export default function ClientProgressTab({ submissions: initialSubmissions }: Props) {
+export default function ClientProgressTab({ submissions: initialSubmissions, clients }: Props) {
   // Local copy so deletes can update the table without a refetch
   const [submissions, setSubmissions] = useState(initialSubmissions);
   useEffect(() => setSubmissions(initialSubmissions), [initialSubmissions]);
@@ -155,6 +170,31 @@ export default function ClientProgressTab({ submissions: initialSubmissions }: P
     return Math.round(sum / filteredClients.length);
   }, [filteredClients]);
 
+  // Chart picker — separate state from the table search/filter so coaches
+  // can chart a specific client while still browsing the broader table.
+  // Picker shows ALL clients ever on CCOS (not just submitting clients).
+  const [chartClientId, setChartClientId] = useState<number | null>(null);
+  const sortedClients = useMemo(
+    () => [...clients].sort((a, b) => a.name.localeCompare(b.name)),
+    [clients]
+  );
+  const chartData = useMemo(() => {
+    if (!chartClientId) return [];
+    const subs = submissions
+      .filter((s) => s.clientId === chartClientId)
+      .sort((a, b) => (a.submittedAt > b.submittedAt ? 1 : -1));
+    return subs.map((s) => ({
+      date: new Date(s.submittedAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      score: s.score0to100,
+    }));
+  }, [chartClientId, submissions]);
+  const chartedClient = chartClientId
+    ? sortedClients.find((c) => c.id === chartClientId)
+    : null;
+
   const headerLabel =
     coachFilter === "all"
       ? "Net overall avg effectiveness"
@@ -207,6 +247,117 @@ export default function ClientProgressTab({ submissions: initialSubmissions }: P
             {filteredClients.reduce((acc, c) => acc + c.submissions.length, 0)}
           </div>
         </div>
+      </div>
+
+      {/* Per-client chart — picker shows ALL clients ever on CCOS.
+          Sits above the table because it's the "deep-dive" view for one
+          specific client, while the table is the "browse everyone"
+          view. Coaches usually arrive with a name in mind. */}
+      <div
+        className="glass-static"
+        style={{ padding: 16, marginBottom: 16 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <h3
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              margin: 0,
+            }}
+          >
+            <LineChartIcon size={14} /> Client check-in trend
+          </h3>
+          <select
+            className="input-field"
+            value={chartClientId ?? ""}
+            onChange={(e) =>
+              setChartClientId(e.target.value ? Number(e.target.value) : null)
+            }
+            style={{ minWidth: 240, maxWidth: 360 }}
+          >
+            <option value="">Select a client…</option>
+            {sortedClients.map((c) => (
+              <option key={c.id ?? c.name} value={c.id ?? ""}>
+                {c.name}
+                {c.coachName ? ` · ${c.coachName}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        {!chartedClient ? (
+          <div
+            style={{
+              padding: 24,
+              textAlign: "center",
+              color: "var(--text-muted)",
+              fontSize: 13,
+            }}
+          >
+            Pick a client to see their check-in score over time.
+          </div>
+        ) : chartData.length === 0 ? (
+          <div
+            style={{
+              padding: 24,
+              textAlign: "center",
+              color: "var(--text-muted)",
+              fontSize: 13,
+            }}
+          >
+            {chartedClient.name} hasn&apos;t submitted any check-in forms yet.
+          </div>
+        ) : (
+          <div style={{ width: "100%", height: 260 }}>
+            <ResponsiveContainer>
+              <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
+                <XAxis
+                  dataKey="date"
+                  stroke="var(--text-muted)"
+                  fontSize={11}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  stroke="var(--text-muted)"
+                  fontSize={11}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-primary)",
+                    borderRadius: 8,
+                    color: "var(--text-primary)",
+                    fontSize: 12,
+                  }}
+                  formatter={(value) => [`${value}/100`, "Score"]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="var(--accent)"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "var(--accent)" }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* Check-in link — pinned just above the controls so coaches can
@@ -440,7 +591,7 @@ export default function ClientProgressTab({ submissions: initialSubmissions }: P
                                   >
                                     <ScoreCell label="Q1 Coaching" value={s.q1Overall} max={10} />
                                     <ScoreCell label="Q2 Strength" value={s.q2Strength} max={10} />
-                                    <ScoreCell label="Q3 Adherence" value={s.q3Adherence} max={10} />
+                                    <ScoreCell label="Q3 Nutrition/Sleep" value={s.q3Lifestyle} max={10} />
                                     <ScoreCell label="Q4 Progress" value={s.q4Progress} max={10} />
                                   </div>
                                   {s.q5OpenResponse && (

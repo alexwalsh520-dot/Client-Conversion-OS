@@ -65,7 +65,7 @@ export default function CheckInPublicPage() {
               lineHeight: 1.6,
             }}
           >
-            Quick bi-weekly check-in for your coach. Takes under a minute.
+            Quick weekly check-in for your coach. Takes under a minute.
           </p>
         </header>
 

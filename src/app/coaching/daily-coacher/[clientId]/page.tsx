@@ -54,6 +54,7 @@ export default async function DailyCoacherPage({
       initialSummaryUpdatedAt={inputs.client.daily_coacher_summary_updated_at ?? null}
       initialStale={isSummaryStale(inputs)}
       clientScore={clientScore}
+      checkIns={inputs.checkIns}
     />
   );
 }
