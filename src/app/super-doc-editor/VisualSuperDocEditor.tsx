@@ -324,11 +324,11 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
     }
   };
 
-  if (loading) return <div style={pageStyle}><p style={mutedStyle}>Loading builder...</p></div>;
-  if (!content) return <div style={pageStyle}><p style={{ color: 'var(--danger)' }}>{message?.text || 'Nothing loaded.'}</p></div>;
+  if (loading) return <div className="super-doc-editor-fullbleed" style={pageStyle}><p style={mutedStyle}>Loading builder...</p></div>;
+  if (!content) return <div className="super-doc-editor-fullbleed" style={pageStyle}><p style={{ color: 'var(--danger)' }}>{message?.text || 'Nothing loaded.'}</p></div>;
 
   return (
-    <div style={pageStyle}>
+    <div className="super-doc-editor-fullbleed" style={pageStyle}>
       <div style={topBarStyle}>
         <Link href="/studio-2/auto-outreach-test" style={backLinkStyle}>Back</Link>
         <div style={topTitleStyle}>

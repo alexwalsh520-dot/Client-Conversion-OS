@@ -128,8 +128,9 @@ body {
   z-index: 1;
 }
 
-/* Full-bleed override for Ad Studio editor */
-.main-content:has(.ad-studio-fullbleed) {
+/* Full-bleed overrides for editor-style workspaces */
+.main-content:has(.ad-studio-fullbleed),
+.main-content:has(.super-doc-editor-fullbleed) {
   padding: 0;
   max-width: none;
   margin: 0;
