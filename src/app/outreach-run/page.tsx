@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 
 interface Lead {
@@ -10,6 +10,7 @@ interface Lead {
   lead_type: string;
   instagram_handle?: string;
   instagram_url?: string;
+  video_url?: string;
 }
 
 type LeadStatus = 'pending' | 'uploading' | 'generating' | 'routing' | 'completed' | 'failed';
@@ -21,6 +22,7 @@ interface LeadResult {
   pageUrl?: string;
   slug?: string;
   routePlan?: RoutePlan;
+  routeResult?: DeliveryResult;
   error?: string;
 }
 
@@ -35,6 +37,26 @@ interface RoutePlan {
   smartlead: {
     campaignEnv: string;
     campaignId: string | null;
+    customFields?: Record<string, string>;
+  };
+}
+
+interface DeliveryResult {
+  testMode: boolean;
+  emailUsed: string;
+  originalEmail: string;
+  segment: string;
+  ghl: {
+    contactId: string;
+    opportunityId: string;
+    stageName: string;
+    pipelineName: string;
+  };
+  smartlead: {
+    campaignEnv: string;
+    campaignId: string;
+    added: boolean;
+    customFields: Record<string, string>;
   };
 }
 
@@ -47,15 +69,8 @@ interface SSEEvent {
   gammaUrl?: string;
   slug?: string;
   routePlan?: RoutePlan;
+  routeResult?: DeliveryResult;
   error?: string;
-}
-
-function normalizeKey(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\.mp4$/i, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 function normalizeColumnName(col: string): string {
@@ -68,12 +83,55 @@ function capitalizeNamePart(value: string): string {
   });
 }
 
-function parseCSV(text: string): Lead[] {
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) throw new Error('CSV must have header + data rows');
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
 
-  const headers = lines[0].split(',').map(h => h.trim());
-  const normalizedHeaders = headers.map(normalizeColumnName);
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(cell.trim());
+      cell = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function parseCSV(text: string): Lead[] {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) throw new Error('CSV must have header + data rows');
+
+  const normalizedHeaders = rows[0].map(normalizeColumnName);
   const colMap: Record<string, number> = {};
 
   normalizedHeaders.forEach((h, i) => {
@@ -87,76 +145,55 @@ function parseCSV(text: string): Lead[] {
       h === 'ighandle' ||
       h === 'igusername' ||
       h === 'ig'
-    )
-      colMap.instagram_handle = i;
+    ) colMap.instagram_handle = i;
     if (
       h === 'instagramurl' ||
       h === 'instagramlink' ||
       h === 'igurl' ||
       h === 'iglink'
-    )
-      colMap.instagram_url = i;
+    ) colMap.instagram_url = i;
+    if (
+      h === 'videourl' ||
+      h === 'video' ||
+      h === 'bunnyurl' ||
+      h === 'loomurl'
+    ) colMap.video_url = i;
   });
 
   const required = ['first_name', 'email', 'lead_type'];
   const missing = required.filter(c => colMap[c] === undefined);
   if (missing.length) throw new Error(`Missing columns: ${missing.join(', ')}`);
 
-  return lines
+  return rows
     .slice(1)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => {
-      const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      return {
-        first_name: capitalizeNamePart(values[colMap.first_name] || ''),
-        last_name: colMap.last_name === undefined ? '' : capitalizeNamePart(values[colMap.last_name] || ''),
-        email: values[colMap.email] || '',
-        lead_type: values[colMap.lead_type] || '',
-        instagram_handle: colMap.instagram_handle === undefined ? '' : values[colMap.instagram_handle] || '',
-        instagram_url: colMap.instagram_url === undefined ? '' : values[colMap.instagram_url] || '',
-      };
-    });
+    .filter(row => row.some(Boolean))
+    .map(row => ({
+      first_name: capitalizeNamePart(row[colMap.first_name] || ''),
+      last_name: colMap.last_name === undefined ? '' : capitalizeNamePart(row[colMap.last_name] || ''),
+      email: row[colMap.email] || '',
+      lead_type: row[colMap.lead_type] || '',
+      instagram_handle: colMap.instagram_handle === undefined ? '' : row[colMap.instagram_handle] || '',
+      instagram_url: colMap.instagram_url === undefined ? '' : row[colMap.instagram_url] || '',
+      video_url: colMap.video_url === undefined ? '' : row[colMap.video_url] || '',
+    }));
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: 'Pending', color: 'var(--text-muted)' },
-  uploading: { label: 'Uploading to Bunny...', color: 'var(--warning)' },
-  generating: { label: 'Creating Super Doc...', color: 'var(--warning)' },
-  routing: { label: 'Checking CRM route...', color: 'var(--warning)' },
-  completed: { label: 'Page ready', color: 'var(--success)' },
-  failed: { label: 'Failed', color: 'var(--danger)' },
+const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string }> = {
+  pending: { label: 'Waiting', color: 'var(--text-muted)' },
+  uploading: { label: 'Uploading video...', color: 'var(--warning)' },
+  generating: { label: 'Making Super Doc...', color: 'var(--warning)' },
+  routing: { label: 'Sending to GHL + Smartlead...', color: 'var(--warning)' },
+  completed: { label: 'Done', color: 'var(--success)' },
+  failed: { label: 'Needs fix', color: 'var(--danger)' },
 };
-
-function leadVideoKey(lead: Lead): string {
-  return normalizeKey(`${lead.first_name}-${lead.last_name || ''}`);
-}
 
 export default function OutreachRunPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [results, setResults] = useState<LeadResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [csvError, setCsvError] = useState<string | null>(null);
-  const [matchStatus, setMatchStatus] = useState<Map<string, boolean>>(new Map());
-  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
-  const [folderMessage, setFolderMessage] = useState<string | null>(null);
-
-  const videoFilesRef = useRef<File[]>([]);
-  const leadsRef = useRef<Lead[]>([]);
-
-  const updateMatches = useCallback((currentLeads: Lead[], currentVideos: File[]) => {
-    const videoNames = new Set(
-      currentVideos.map(f => normalizeKey(f.name)),
-    );
-    const matches = new Map<string, boolean>();
-    currentLeads.forEach(lead => {
-      const key = leadVideoKey(lead);
-      matches.set(key, videoNames.has(key));
-    });
-    setMatchStatus(matches);
-  }, []);
+  const [testMode, setTestMode] = useState(true);
 
   const handleCSV = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,118 +201,41 @@ export default function OutreachRunPage() {
 
     setCsvError(null);
     setCsvFile(file);
-    setFolderMessage(null);
+    setResults([]);
 
     try {
       const text = await file.text();
       const parsed = parseCSV(text);
       if (parsed.length === 0) throw new Error('No data rows found');
       setLeads(parsed);
-      leadsRef.current = parsed;
-      updateMatches(parsed, videoFilesRef.current);
     } catch (err: unknown) {
       setCsvError(err instanceof Error ? err.message : 'Failed to parse CSV');
       setLeads([]);
-      leadsRef.current = [];
     }
-  }, [updateMatches]);
+  }, []);
 
-  const handleVideos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setFolderMessage(null);
-    setVideoFiles(files);
-    videoFilesRef.current = files;
-    updateMatches(leadsRef.current, files);
-  }, [updateMatches]);
-
-  const handleFolder = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    setCsvError(null);
-    setFolderMessage(null);
-
-    const csv = files.find(file => file.name.toLowerCase().endsWith('.csv')) || null;
-    const videos = files.filter(file => file.name.toLowerCase().endsWith('.mp4'));
-
-    if (!csv) {
-      setCsvError('Folder needs one CSV file');
-      setCsvFile(null);
-      setLeads([]);
-      leadsRef.current = [];
-      setVideoFiles(videos);
-      videoFilesRef.current = videos;
-      updateMatches([], videos);
-      return;
-    }
-
-    try {
-      const text = await csv.text();
-      const parsed = parseCSV(text);
-      if (parsed.length === 0) throw new Error('No data rows found');
-      setCsvFile(csv);
-      setLeads(parsed);
-      leadsRef.current = parsed;
-      setVideoFiles(videos);
-      videoFilesRef.current = videos;
-      updateMatches(parsed, videos);
-      setFolderMessage(`Loaded ${csv.name} and ${videos.length} video${videos.length === 1 ? '' : 's'}`);
-    } catch (err: unknown) {
-      setCsvError(err instanceof Error ? err.message : 'Failed to parse CSV');
-      setCsvFile(null);
-      setLeads([]);
-      leadsRef.current = [];
-      setVideoFiles(videos);
-      videoFilesRef.current = videos;
-      updateMatches([], videos);
-    }
-  }, [updateMatches]);
-
-  const allMatched =
-    leads.length > 0 &&
-    videoFiles.length > 0 &&
-    leads.every(l => matchStatus.get(leadVideoKey(l)));
-  const canRun = allMatched && !isRunning && !csvError;
+  const canRun = Boolean(csvFile) && leads.length > 0 && !isRunning && !csvError;
 
   const handleRun = async () => {
     if (!canRun || !csvFile) return;
 
     setIsRunning(true);
-    setResults([]);
-    setUploadProgress(null);
+    setResults(
+      leads.map(l => ({
+        firstName: l.first_name,
+        lastName: l.last_name,
+        status: 'pending' as const,
+      })),
+    );
 
     const runId = crypto.randomUUID();
 
     try {
-      for (let i = 0; i < videoFiles.length; i++) {
-        const video = videoFiles[i];
-        setUploadProgress(`Uploading ${video.name} (${i + 1}/${videoFiles.length})...`);
-
-        const res = await fetch(
-          `/api/outreach-test/upload?runId=${encodeURIComponent(runId)}&name=${encodeURIComponent(video.name)}`,
-          { method: 'PUT', body: video },
-        );
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Upload failed for ${video.name}: ${text}`);
-        }
-      }
-
-      setUploadProgress(null);
-      setResults(
-        leads.map(l => ({
-          firstName: l.first_name,
-          lastName: l.last_name,
-          status: 'pending' as const,
-        })),
-      );
-
       const csvText = await csvFile.text();
       const response = await fetch('/api/outreach-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId, csvText }),
+        body: JSON.stringify({ runId, csvText, testMode }),
       });
 
       if (!response.ok) {
@@ -311,13 +271,15 @@ export default function OutreachRunPage() {
 
             setResults(prev => {
               const next = [...prev];
+              const existing = next[data.leadIndex!];
               next[data.leadIndex!] = {
-                firstName: data.firstName || next[data.leadIndex!].firstName,
-                lastName: data.lastName || next[data.leadIndex!].lastName,
+                firstName: data.firstName || existing.firstName,
+                lastName: data.lastName || existing.lastName,
                 status: data.status as LeadResult['status'],
-                pageUrl: data.pageUrl || data.gammaUrl,
-                slug: data.slug,
-                routePlan: data.routePlan,
+                pageUrl: data.pageUrl || data.gammaUrl || existing.pageUrl,
+                slug: data.slug || existing.slug,
+                routePlan: data.routePlan || existing.routePlan,
+                routeResult: data.routeResult || existing.routeResult,
                 error: data.error,
               };
               return next;
@@ -329,65 +291,39 @@ export default function OutreachRunPage() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Request failed';
-      console.error('Outreach run failed:', msg);
       setResults(prev =>
         prev.length > 0
-          ? prev.map(r => (r.status === 'pending' ? { ...r, status: 'failed' as const, error: msg } : r))
+          ? prev.map(r => (r.status === 'completed' ? r : { ...r, status: 'failed' as const, error: msg }))
           : leads.map(l => ({ firstName: l.first_name, lastName: l.last_name, status: 'failed' as const, error: msg })),
       );
     } finally {
       setIsRunning(false);
-      setUploadProgress(null);
     }
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 900, margin: '0 auto' }}>
-      <h1
-        style={{
-          fontSize: '1.5rem',
-          fontWeight: 600,
-          marginBottom: '0.25rem',
-          color: 'var(--text-primary)',
-        }}
-      >
-        Auto Outreach Test
-      </h1>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-        Upload a folder or separate files. Bunny and Super Doc run for real. GHL and Smartlead are dry-run routing checks.
-      </p>
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: '1rem' }}>
-        <Link href="/super-doc-editor" style={linkButtonStyle}>
-          Edit Template
-        </Link>
-        <Link href="/super-doc/test-lead" target="_blank" style={linkButtonStyle}>
-          View Test Page
-        </Link>
+    <div style={pageStyle}>
+      <div style={headerStyle}>
+        <div>
+          <h1 style={titleStyle}>Auto Outreach Test</h1>
+          <p style={subtitleStyle}>
+            Upload one CSV. CCOS creates the Super Docs, moves test leads into GHL Contacted, then adds them to Smartlead.
+          </p>
+        </div>
+        <div style={headerActionsStyle}>
+          <Link href="/super-doc-editor" style={linkButtonStyle}>
+            Edit Template
+          </Link>
+          <Link href="/super-doc/test-lead" target="_blank" style={linkButtonStyle}>
+            View Test Page
+          </Link>
+        </div>
       </div>
 
-      {/* ── Folder Upload ── */}
       <div style={cardStyle}>
-        <label style={labelStyle}>Folder Upload</label>
-        <p style={hintStyle}>Pick one folder with one CSV and matching .mp4 videos.</p>
-        <input
-          type="file"
-          multiple
-          onChange={handleFolder}
-          disabled={isRunning}
-          style={fileInputStyle}
-          {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
-        />
-        {folderMessage && (
-          <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 8 }}>{folderMessage}</p>
-        )}
-      </div>
-
-      {/* ── CSV Upload ── */}
-      <div style={{ ...cardStyle, marginTop: '1rem' }}>
-        <label style={labelStyle}>CSV File</label>
+        <label style={labelStyle}>Upload CSV</label>
         <p style={hintStyle}>
-          Required: first_name, email, lead_type. Optional: last_name, instagram_handle, instagram_url.
+          Required columns: first_name, email, lead_type. Optional: last_name, instagram_handle, instagram_url, video_url.
         </p>
         <input
           type="file"
@@ -401,150 +337,59 @@ export default function OutreachRunPage() {
         )}
         {leads.length > 0 && !csvError && (
           <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 8 }}>
-            {leads.length} lead{leads.length !== 1 ? 's' : ''} parsed
+            {leads.length} lead{leads.length !== 1 ? 's' : ''} loaded
           </p>
         )}
       </div>
 
-      {/* ── Video Upload ── */}
       <div style={{ ...cardStyle, marginTop: '1rem' }}>
-        <label style={labelStyle}>Video Files</label>
+        <label style={checkboxRowStyle}>
+          <input
+            type="checkbox"
+            checked={testMode}
+            onChange={e => setTestMode(e.target.checked)}
+            disabled={isRunning}
+          />
+          <span>
+            Use dummy emails for this test
+          </span>
+        </label>
         <p style={hintStyle}>
-          .mp4 files — filename must be firstname-lastname (e.g. john-smith.mp4)
+          Keep this on until we are ready to send to real people.
         </p>
-        <input
-          type="file"
-          accept=".mp4"
-          multiple
-          onChange={handleVideos}
-          disabled={isRunning}
-          style={fileInputStyle}
-        />
-        {videoFiles.length > 0 && (
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: 8 }}>
-            {videoFiles.length} video{videoFiles.length !== 1 ? 's' : ''} selected
-          </p>
-        )}
       </div>
 
-      {/* ── Match Validation ── */}
-      {leads.length > 0 && videoFiles.length > 0 && (
-        <div style={{ ...cardStyle, marginTop: '1rem' }}>
-          <label style={labelStyle}>Video Matching</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {leads.map((lead, i) => {
-              const matched = matchStatus.get(leadVideoKey(lead));
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: matched ? 'var(--success)' : 'var(--danger)',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {lead.first_name} {lead.last_name}
-                  </span>
-                  <span style={{ color: matched ? 'var(--success)' : 'var(--danger)' }}>
-                    {matched
-                      ? `← ${leadVideoKey(lead)}.mp4`
-                      : 'No matching video'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Run Button ── */}
       <button
         onClick={handleRun}
         disabled={!canRun}
         style={{
-          marginTop: '1.5rem',
-          padding: '0.75rem 2rem',
-          borderRadius: 10,
-          border: 'none',
+          ...runButtonStyle,
           backgroundColor: canRun ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
           color: canRun ? '#000' : 'var(--text-muted)',
-          fontWeight: 600,
-          fontSize: '0.9rem',
           cursor: canRun ? 'pointer' : 'not-allowed',
-          transition: 'all 0.2s',
-          width: '100%',
         }}
       >
-        {isRunning ? 'Processing...' : 'Run Bunny + Super Doc'}
+        {isRunning ? 'Running Outreach...' : 'Run Outreach'}
       </button>
 
-      {/* ── Upload Progress ── */}
-      {uploadProgress && (
-        <p style={{ color: 'var(--warning)', fontSize: '0.8rem', marginTop: 12, textAlign: 'center' }}>
-          {uploadProgress}
-        </p>
-      )}
-
-      {/* ── Results ── */}
       {results.length > 0 && (
         <div style={{ ...cardStyle, marginTop: '1.5rem' }}>
           <label style={labelStyle}>Results</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+          <div style={resultsListStyle}>
             {results.map((r, i) => {
               const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
               return (
-                <div
-                  key={i}
-                  style={{
-                    padding: '0.75rem 1rem',
-                    borderRadius: 8,
-                    backgroundColor: 'rgba(255,255,255,0.02)',
-                    border: '1px solid var(--border-primary)',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: 'var(--text-primary)',
-                        fontWeight: 500,
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      {r.firstName} {r.lastName}
-                    </span>
-                    <span style={{ color: cfg.color, fontSize: '0.8rem', fontWeight: 500 }}>
+                <div key={i} style={resultItemStyle}>
+                  <div style={resultHeaderStyle}>
+                    <span style={leadNameStyle}>{r.firstName} {r.lastName}</span>
+                    <span style={{ color: cfg.color, fontSize: '0.8rem', fontWeight: 700 }}>
                       {cfg.label}
                     </span>
                   </div>
+
                   {r.pageUrl && (
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
-                      <a
-                        href={r.pageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          color: 'var(--accent)',
-                          fontSize: '0.8rem',
-                          wordBreak: 'break-all',
-                        }}
-                      >
+                    <div style={linkRowStyle}>
+                      <a href={r.pageUrl} target="_blank" rel="noopener noreferrer" style={pageLinkStyle}>
                         {r.pageUrl}
                       </a>
                       {r.slug && (
@@ -554,26 +399,45 @@ export default function OutreachRunPage() {
                       )}
                     </div>
                   )}
-                  {r.routePlan && (
+
+                  {r.routeResult && (
+                    <div style={routeBoxStyle}>
+                      <p style={routeTextStyle}>
+                        Test email: <strong>{r.routeResult.emailUsed}</strong>
+                      </p>
+                      <p style={routeTextStyle}>
+                        GHL: {r.routeResult.ghl.pipelineName} / {r.routeResult.ghl.stageName}
+                      </p>
+                      <p style={routeTextStyle}>
+                        Smartlead: {r.routeResult.smartlead.campaignId}
+                      </p>
+                      <p style={routeTextStyle}>
+                        Doc field: {r.routeResult.smartlead.customFields.super_doc_url}
+                      </p>
+                    </div>
+                  )}
+
+                  {!r.routeResult && r.routePlan && (
                     <div style={routeBoxStyle}>
                       <p style={routeTextStyle}>
                         Segment: <strong>{r.routePlan.segment}</strong>
                       </p>
                       <p style={routeTextStyle}>
-                        GHL dry run: {r.routePlan.ghl.pipelineName} / {r.routePlan.ghl.stageName}
+                        GHL: {r.routePlan.ghl.pipelineName} / {r.routePlan.ghl.stageName}
                       </p>
                       <p style={routeTextStyle}>
-                        Smartlead dry run: {r.routePlan.smartlead.campaignId || `Missing ${r.routePlan.smartlead.campaignEnv}`}
+                        Smartlead: {r.routePlan.smartlead.campaignId || `Missing ${r.routePlan.smartlead.campaignEnv}`}
                       </p>
                       {r.routePlan.missingEnv.length > 0 && (
                         <p style={{ ...routeTextStyle, color: 'var(--warning)' }}>
-                          Missing env: {r.routePlan.missingEnv.join(', ')}
+                          Missing keys: {r.routePlan.missingEnv.join(', ')}
                         </p>
                       )}
                     </div>
                   )}
+
                   {r.error && (
-                    <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: 4 }}>
+                    <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: 6 }}>
                       {r.error}
                     </p>
                   )}
@@ -587,6 +451,41 @@ export default function OutreachRunPage() {
   );
 }
 
+const pageStyle: React.CSSProperties = {
+  padding: '2rem',
+  maxWidth: 980,
+  margin: '0 auto',
+};
+
+const headerStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 16,
+  alignItems: 'flex-start',
+  marginBottom: '1.5rem',
+  flexWrap: 'wrap',
+};
+
+const headerActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  flexWrap: 'wrap',
+};
+
+const titleStyle: React.CSSProperties = {
+  fontSize: '1.5rem',
+  fontWeight: 700,
+  marginBottom: '0.25rem',
+  color: 'var(--text-primary)',
+};
+
+const subtitleStyle: React.CSSProperties = {
+  color: 'var(--text-muted)',
+  fontSize: '0.875rem',
+  margin: 0,
+  maxWidth: 620,
+};
+
 const cardStyle: React.CSSProperties = {
   padding: '1.25rem',
   borderRadius: 12,
@@ -597,7 +496,7 @@ const cardStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   display: 'block',
   fontSize: '0.875rem',
-  fontWeight: 600,
+  fontWeight: 700,
   color: 'var(--text-primary)',
   marginBottom: 2,
 };
@@ -605,7 +504,7 @@ const labelStyle: React.CSSProperties = {
 const hintStyle: React.CSSProperties = {
   fontSize: '0.75rem',
   color: 'var(--text-muted)',
-  marginBottom: 12,
+  margin: '4px 0 12px',
 };
 
 const fileInputStyle: React.CSSProperties = {
@@ -613,6 +512,25 @@ const fileInputStyle: React.CSSProperties = {
   width: '100%',
   fontSize: '0.8rem',
   color: 'var(--text-secondary)',
+};
+
+const checkboxRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  color: 'var(--text-primary)',
+  fontSize: '0.875rem',
+  fontWeight: 700,
+};
+
+const runButtonStyle: React.CSSProperties = {
+  marginTop: '1.5rem',
+  padding: '0.8rem 2rem',
+  borderRadius: 10,
+  border: 'none',
+  fontWeight: 700,
+  fontSize: '0.9rem',
+  width: '100%',
 };
 
 const linkButtonStyle: React.CSSProperties = {
@@ -625,8 +543,49 @@ const linkButtonStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.04)',
   color: 'var(--text-primary)',
   fontSize: '0.8rem',
-  fontWeight: 600,
+  fontWeight: 700,
   textDecoration: 'none',
+};
+
+const resultsListStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  marginTop: 12,
+};
+
+const resultItemStyle: React.CSSProperties = {
+  padding: '0.75rem 1rem',
+  borderRadius: 8,
+  backgroundColor: 'rgba(255,255,255,0.02)',
+  border: '1px solid var(--border-primary)',
+};
+
+const resultHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+};
+
+const leadNameStyle: React.CSSProperties = {
+  color: 'var(--text-primary)',
+  fontWeight: 700,
+  fontSize: '0.875rem',
+};
+
+const linkRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  marginTop: 6,
+};
+
+const pageLinkStyle: React.CSSProperties = {
+  color: 'var(--accent)',
+  fontSize: '0.8rem',
+  wordBreak: 'break-all',
 };
 
 const routeBoxStyle: React.CSSProperties = {

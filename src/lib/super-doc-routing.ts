@@ -12,7 +12,7 @@ export interface SuperDocRouteLead {
 }
 
 export interface SuperDocRoutePlan {
-  dryRun: true;
+  dryRun: boolean;
   segment: SuperDocSegment;
   leadType: string;
   missingEnv: string[];
@@ -125,6 +125,7 @@ export function buildSuperDocRoutePlan(input: {
   lead: SuperDocRouteLead;
   pageUrl: string;
   videoUrl: string;
+  dryRun?: boolean;
 }): SuperDocRoutePlan {
   const { lead, pageUrl, videoUrl } = input;
   const segment = getSuperDocSegment(lead.lead_type);
@@ -147,7 +148,7 @@ export function buildSuperDocRoutePlan(input: {
   const fullName = formatFullName(firstName, lastName) || email || "Super Doc Lead";
 
   return {
-    dryRun: true,
+    dryRun: input.dryRun ?? false,
     segment,
     leadType: clean(lead.lead_type),
     missingEnv,
@@ -155,7 +156,7 @@ export function buildSuperDocRoutePlan(input: {
       action: "create_or_update_contact_and_opportunity",
       locationEnv: ghlLocation.name,
       pipelineName: clean(process.env.OUTREACH_GHL_PIPELINE_NAME) || "AI Outreach",
-      stageName: clean(process.env.SUPER_DOC_GHL_STAGE_NAME) || "New Lead",
+      stageName: clean(process.env.SUPER_DOC_GHL_STAGE_NAME) || "Contacted",
       tags: [
         "super-doc",
         `super-doc-${segment.replace("_", "-")}`,
@@ -185,6 +186,10 @@ export function buildSuperDocRoutePlan(input: {
       campaignId: smartleadCampaign.value || null,
       customFields: {
         super_doc_url: pageUrl,
+        video_url: videoUrl,
+        lead_type: clean(lead.lead_type),
+        instagram_handle: instagramHandle,
+        instagram_url: instagramUrl,
       },
     },
   };

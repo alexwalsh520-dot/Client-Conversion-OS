@@ -25,12 +25,13 @@ export async function addLeadsToCampaign(
   const apiKey = getApiKey();
   const campaignId = campaignIdOverride || getCampaignId();
   const gammaLink = process.env.GAMMA_LINK || "";
+  const legacyGammaField = gammaLink ? { gamma_link: gammaLink } : {};
 
   const leadList = leads.map((l) => ({
     email: l.email,
     first_name: l.first_name,
     custom_fields: {
-      gamma_link: gammaLink,
+      ...legacyGammaField,
       ...l.custom_fields,
     },
   }));

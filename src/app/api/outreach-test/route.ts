@@ -3,11 +3,12 @@ import { rm, readFile, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { getTemplate, createLead, generateSlug, getLeadBySlug } from '@/lib/super-doc-db';
-import { buildSuperDocRoutePlan } from '@/lib/super-doc-routing';
+import { deliverSuperDocLead, type SuperDocDeliveryResult } from '@/lib/super-doc-delivery';
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 
 const PARALLEL_BATCH_SIZE = 3;
+const FALLBACK_VIDEO_URL = 'about:blank';
 
 const BUNNY_LIBRARY_ID = process.env.BUNNY_STREAM_LIBRARY_ID || '';
 const BUNNY_API_KEY = process.env.BUNNY_STREAM_API_KEY || '';
@@ -24,6 +25,7 @@ interface Lead {
   lead_type: string;
   instagram_handle?: string;
   instagram_url?: string;
+  video_url?: string;
 }
 
 function redact(key: string): string {
@@ -66,12 +68,55 @@ function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/[\s_-]+/g, '').trim();
 }
 
-function parseCSV(text: string): Lead[] {
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row');
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
 
-  const headers = lines[0].split(',').map(h => h.trim());
-  const normalizedHeaders = headers.map(normalizeHeader);
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(cell.trim());
+      cell = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function parseCSV(text: string): Lead[] {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) throw new Error('CSV must have a header row and at least one data row');
+
+  const normalizedHeaders = rows[0].map(normalizeHeader);
   const colMap: Record<string, number> = {};
 
   normalizedHeaders.forEach((h, i) => {
@@ -92,6 +137,12 @@ function parseCSV(text: string): Lead[] {
       h === 'igurl' ||
       h === 'iglink'
     ) colMap.instagram_url = i;
+    if (
+      h === 'videourl' ||
+      h === 'video' ||
+      h === 'bunnyurl' ||
+      h === 'loomurl'
+    ) colMap.video_url = i;
   });
 
   const required = ['first_name', 'email', 'lead_type'];
@@ -100,10 +151,9 @@ function parseCSV(text: string): Lead[] {
   }
 
   const leads: Lead[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+  for (let i = 1; i < rows.length; i++) {
+    const values = rows[i];
+    if (!values.some(Boolean)) continue;
     leads.push({
       first_name: capitalizeNamePart(values[colMap.first_name] || ''),
       last_name: colMap.last_name === undefined ? '' : capitalizeNamePart(values[colMap.last_name] || ''),
@@ -111,6 +161,7 @@ function parseCSV(text: string): Lead[] {
       lead_type: values[colMap.lead_type] || '',
       instagram_handle: colMap.instagram_handle === undefined ? '' : values[colMap.instagram_handle] || '',
       instagram_url: colMap.instagram_url === undefined ? '' : values[colMap.instagram_url] || '',
+      video_url: colMap.video_url === undefined ? '' : values[colMap.video_url] || '',
     });
   }
 
@@ -230,19 +281,16 @@ function getRequestBaseUrl(req: NextRequest): string {
   return 'http://localhost:3000';
 }
 
-export async function POST(req: NextRequest) {
-  const missingBunnyEnv = [
-    !BUNNY_LIBRARY_ID && 'BUNNY_STREAM_LIBRARY_ID',
-    !BUNNY_API_KEY && 'BUNNY_STREAM_API_KEY',
-  ].filter(Boolean);
-  if (missingBunnyEnv.length > 0) {
-    return Response.json(
-      { error: `Missing Bunny keys: ${missingBunnyEnv.join(', ')}` },
-      { status: 500 },
-    );
-  }
+function resolveVideoUrl(lead: Lead) {
+  return (
+    (lead.video_url || '').trim() ||
+    (process.env.SUPER_DOC_DEFAULT_VIDEO_URL || '').trim() ||
+    FALLBACK_VIDEO_URL
+  );
+}
 
-  let body: { runId: string; csvText: string };
+export async function POST(req: NextRequest) {
+  let body: { runId: string; csvText: string; testMode?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -250,6 +298,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { runId, csvText } = body;
+  const testMode = body.testMode !== false;
   if (!runId || !csvText) {
     return Response.json({ error: 'Missing runId or csvText' }, { status: 400 });
   }
@@ -273,7 +322,19 @@ export async function POST(req: NextRequest) {
   try {
     files = await readdir(tmpDir);
   } catch {
-    return Response.json({ error: `No uploads found for run ${runId}. Upload videos first.` }, { status: 400 });
+    files = [];
+  }
+
+  const hasUploadedVideos = files.length > 0;
+  const missingBunnyEnv = [
+    !BUNNY_LIBRARY_ID && 'BUNNY_STREAM_LIBRARY_ID',
+    !BUNNY_API_KEY && 'BUNNY_STREAM_API_KEY',
+  ].filter(Boolean);
+  if (hasUploadedVideos && missingBunnyEnv.length > 0) {
+    return Response.json(
+      { error: `Missing Bunny keys: ${missingBunnyEnv.join(', ')}` },
+      { status: 500 },
+    );
   }
 
   const videoMap = new Map<string, string>();
@@ -283,21 +344,21 @@ export async function POST(req: NextRequest) {
     console.log(`[OutreachRun] Found uploaded video: ${key} → ${join(tmpDir, f)}`);
   }
 
-  console.log(`[OutreachRun] Run ${runId} — ${leads.length} leads, ${videoMap.size} videos, parallel: ${PARALLEL_BATCH_SIZE}`);
+  console.log(`[OutreachRun] Run ${runId} — ${leads.length} leads, ${videoMap.size} uploaded videos, test mode: ${testMode}, parallel: ${PARALLEL_BATCH_SIZE}`);
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const work: { index: number; lead: Lead; videoPath: string }[] = [];
+        const work: { index: number; lead: Lead; videoPath?: string }[] = [];
 
         for (let i = 0; i < leads.length; i++) {
           const lead = leads[i];
           const videoKey = leadVideoKey(lead);
           const videoPath = videoMap.get(videoKey);
 
-          if (!videoPath) {
+          if (hasUploadedVideos && !videoPath) {
             sendEvent(controller, encoder, {
               leadIndex: i,
               firstName: lead.first_name,
@@ -311,17 +372,23 @@ export async function POST(req: NextRequest) {
           work.push({ index: i, lead, videoPath });
         }
 
-        async function processLead(item: { index: number; lead: Lead; videoPath: string }) {
+        async function processLead(item: { index: number; lead: Lead; videoPath?: string }) {
           const { index, lead, videoPath } = item;
+          let pageUrl = '';
+          let slug = '';
           try {
-            sendEvent(controller, encoder, {
-              leadIndex: index,
-              firstName: lead.first_name,
-              lastName: lead.last_name,
-              status: 'uploading',
-            });
+            let embedUrl = resolveVideoUrl(lead);
 
-            const embedUrl = await uploadToBunny(videoPath, lead.first_name, lead.last_name);
+            if (videoPath) {
+              sendEvent(controller, encoder, {
+                leadIndex: index,
+                firstName: lead.first_name,
+                lastName: lead.last_name,
+                status: 'uploading',
+              });
+
+              embedUrl = await uploadToBunny(videoPath, lead.first_name, lead.last_name);
+            }
 
             sendEvent(controller, encoder, {
               leadIndex: index,
@@ -330,12 +397,9 @@ export async function POST(req: NextRequest) {
               status: 'generating',
             });
 
-            const { pageUrl, slug } = await createSuperDocLead(lead, embedUrl, template!.content, baseUrl);
-            const routePlan = buildSuperDocRoutePlan({
-              lead,
-              pageUrl,
-              videoUrl: embedUrl,
-            });
+            const createdDoc = await createSuperDocLead(lead, embedUrl, template!.content, baseUrl);
+            pageUrl = createdDoc.pageUrl;
+            slug = createdDoc.slug;
 
             sendEvent(controller, encoder, {
               leadIndex: index,
@@ -344,7 +408,14 @@ export async function POST(req: NextRequest) {
               status: 'routing',
               pageUrl,
               slug,
-              routePlan,
+            });
+
+            const routeResult: SuperDocDeliveryResult = await deliverSuperDocLead({
+              lead,
+              pageUrl,
+              videoUrl: embedUrl,
+              runId,
+              testMode,
             });
 
             sendEvent(controller, encoder, {
@@ -355,7 +426,8 @@ export async function POST(req: NextRequest) {
               pageUrl,
               gammaUrl: pageUrl,
               slug,
-              routePlan,
+              routePlan: routeResult.routePlan,
+              routeResult,
             });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -365,6 +437,8 @@ export async function POST(req: NextRequest) {
               firstName: lead.first_name,
               lastName: lead.last_name,
               status: 'failed',
+              pageUrl: pageUrl || undefined,
+              slug: slug || undefined,
               error: msg,
             });
           }
