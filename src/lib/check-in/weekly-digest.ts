@@ -1,33 +1,44 @@
-// Weekly Check-In Digest — built and emailed every Sunday 4 PM PKT.
+// Weekly Check-In Digest — built and DM'd to Saeed every Sunday 4 PM PKT.
 //
-// The digest is the manager's (Saeed) single source of truth for what
-// the client base is reporting that week. Replaces the per-form Slack
-// alert that was originally specced — per-form pings created too much
-// noise and made it harder to see patterns.
+// Single source of truth for the manager's view of the client base for
+// the week. Replaces both the per-form Slack DM (too noisy) and the
+// earlier short-lived email implementation (Slack is the channel
+// for everything else in CCOS, no reason to split notifications).
 //
 // Contents (in order):
-//   1. KPI strip: submissions, avg score, attention-needed count, % missing
+//   1. KPI fields: submissions, avg score, attention-needed count, % missing
 //   2. AI-generated executive summary (Claude Sonnet 4.5, 300-400 words)
-//   3. Attention Needed table: clients with this week's avg < 60
-//   4. Coach Engagement table: per-coach % of active clients missing
-//      this week (sorted desc, high = losing engagement)
-//   5. Missing Check-Ins: grouped by coach, full list of skip-this-week clients
-//   6. "End date may need fixing" notes: clients with negative days_left
-//      who submitted anyway (likely stale CCOS status)
+//   3. Attention Needed: clients with this week's avg < 60
+//   4. Coach Engagement: per-coach % of active clients missing this week
+//   5. Missing Check-Ins: grouped by coach, full list
+//   6. End-date-needs-fixing flag (clients with negative days_left who
+//      still submitted — likely their CCOS record is stale)
 //
 // Week boundary: This Monday 00:00 PKT → cron firing moment (Sun 4 PM PKT).
-// We accept the last 8 hours of Sunday data are missing — clients almost
+// Last 8 hours of Sunday data are knowingly excluded; clients almost
 // never submit Sunday evening anyway.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
-import { sendEmail, type SendEmailResult } from "@/lib/email/resend";
+import {
+  ADMIN_SLACK_USER_ID,
+  openDmChannel,
+  postBlocks,
+} from "@/lib/slack/coaching-bot";
 import { ATTENTION_NEEDED_THRESHOLD } from "@/lib/check-in/types";
 import { stripDashes } from "@/lib/daily-coacher/text-cleanup";
 
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000; // PKT = UTC+5, no DST
 const MODEL = "claude-sonnet-4-5-20250929";
-const DEFAULT_RECIPIENT = "saeed16765@gmail.com";
+const APP_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "https://client-conversion-os.vercel.app";
+
+// Slack section.text mrkdwn is capped at 3000 chars. The summary
+// prompt asks for 300-400 words (~2000 chars) so we have headroom,
+// but truncate just in case.
+const SLACK_SECTION_TEXT_LIMIT = 2900;
+const MAX_ATTENTION_CLIENTS_INLINE = 10;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -61,29 +72,29 @@ interface PerClientThisWeek {
   coachName: string | null;
   submissions: CheckInRow[];
   avgScore: number;
-  endDateNegative: boolean; // submitted but days_left <= 0
+  endDateNegative: boolean;
 }
 
 interface PerCoachEngagement {
   coachName: string;
-  activeClientCount: number; // active + days_left > 0
+  activeClientCount: number;
   submittedClientCount: number;
   missingClientCount: number;
   missingPct: number;
-  missingClients: string[]; // sorted by name
+  missingClients: string[];
 }
 
 export interface DigestData {
-  weekStartPkt: Date; // Mon 00:00 PKT
-  weekEndPkt: Date; // cron firing moment in PKT
+  weekStartPkt: Date;
+  weekEndPkt: Date;
   submissions: CheckInRow[];
   perClient: PerClientThisWeek[];
   perCoach: PerCoachEngagement[];
-  attentionClients: PerClientThisWeek[]; // weekly avg < 60
+  attentionClients: PerClientThisWeek[];
   totalActiveClientsWithDaysLeft: number;
-  totalMissingClients: number; // across all active clients
+  totalMissingClients: number;
   netAvgScore: number | null;
-  endDateFlagged: PerClientThisWeek[]; // negative days_left + submitted
+  endDateFlagged: PerClientThisWeek[];
 }
 
 // ---------------------------------------------------------------------------
@@ -92,19 +103,16 @@ export interface DigestData {
 
 /** Returns this Monday at 00:00 PKT, expressed as a UTC Date object. */
 export function getThisWeekMondayPkt(now: Date = new Date()): Date {
-  // Shift to PKT, find Monday of the current week, then shift back to UTC.
   const nowPkt = new Date(now.getTime() + PKT_OFFSET_MS);
   const dayOfWeek = nowPkt.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const daysBack = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Mon→0, Sun→6
+  const daysBack = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const mondayPkt = new Date(nowPkt);
   mondayPkt.setUTCDate(mondayPkt.getUTCDate() - daysBack);
   mondayPkt.setUTCHours(0, 0, 0, 0);
-  // Convert PKT-as-UTC back to true UTC by subtracting offset.
   return new Date(mondayPkt.getTime() - PKT_OFFSET_MS);
 }
 
 function formatDatePkt(d: Date): string {
-  // Format a UTC date as PKT calendar date
   const pkt = new Date(d.getTime() + PKT_OFFSET_MS);
   return pkt.toLocaleDateString("en-US", {
     month: "short",
@@ -129,7 +137,7 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
   const supabase = getServiceSupabase();
   const weekStartUtc = getThisWeekMondayPkt(now);
 
-  // 1. All submissions this week (UTC ISO comparison works fine)
+  // 1. All submissions this week
   const { data: subsData } = await supabase
     .from("client_check_ins")
     .select(
@@ -164,17 +172,10 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
       const avg = Math.round(
         subs.reduce((a, b) => a + b.score_0_100, 0) / subs.length
       );
-      // Match snapshot client_id to current active list to derive days_left
       const cid = subs[0].client_id;
       const client = cid ? activeClients.find((c) => c.id === cid) : undefined;
-      // If client exists but has negative/zero days_left, flag
-      // Look it up in the full clients list (we only fetched active above)
       let endDateNegative = false;
-      if (cid && !client) {
-        // Not in active list — might be completed or end_date passed. Re-fetch
-        // is expensive for this one check; just mark as potentially-flagged.
-        endDateNegative = true;
-      }
+      if (cid && !client) endDateNegative = true;
       return {
         clientId: cid,
         clientName: subs[0].client_name,
@@ -186,8 +187,7 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
     }
   );
 
-  // 4. Per-coach engagement: for each coach with active clients, count who
-  //    submitted this week vs. who's missing.
+  // 4. Per-coach engagement
   const submittedClientIds = new Set(
     perClient.map((p) => p.clientId).filter(Boolean) as number[]
   );
@@ -211,9 +211,9 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
     })
     .sort((a, b) => b.missingPct - a.missingPct);
 
-  const attentionClients = perClient.filter(
-    (p) => p.avgScore < ATTENTION_NEEDED_THRESHOLD
-  );
+  const attentionClients = perClient
+    .filter((p) => p.avgScore < ATTENTION_NEEDED_THRESHOLD)
+    .sort((a, b) => a.avgScore - b.avgScore); // worst first
 
   const totalMissingClients = perCoach.reduce(
     (acc, c) => acc + c.missingClientCount,
@@ -227,8 +227,7 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
         )
       : null;
 
-  // End-date-flagged: clients who submitted but days_left <= 0. Need their
-  // actual end_date for the note; re-fetch by ID for the flagged subset.
+  // End-date-flagged: clients who submitted but days_left <= 0
   const flaggedIds = perClient
     .filter((p) => p.endDateNegative)
     .map((p) => p.clientId)
@@ -248,7 +247,6 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
     for (const p of perClient) {
       if (!p.endDateNegative || !p.clientId) continue;
       const meta = flaggedMeta.get(p.clientId);
-      // Truly negative days_left + status active → real flag
       const days = daysLeftFromEndDate(meta?.endDate ?? null);
       if (meta?.status === "active" && days !== null && days <= 0) {
         endDateFlagged.push(p);
@@ -281,9 +279,6 @@ function getApiKey(): string {
 }
 
 function buildSummaryPrompt(d: DigestData): string {
-  // Compact structured dump of every submission's data so Claude can
-  // both quote specifics and detect patterns. Includes coach + paragraph
-  // so coach-level themes are visible.
   const subsBlock = d.submissions.length === 0
     ? "(zero submissions this week)"
     : d.submissions
@@ -304,9 +299,9 @@ function buildSummaryPrompt(d: DigestData): string {
     )
     .join("\n");
 
-  return `You are summarizing this week's CCOS client check-in forms for Saeed, the manager of the entire coaching operation. Saeed reads this email Sunday evening and uses it to know which clients and which coaches need attention this coming week.
+  return `You are summarizing this week's CCOS client check-in forms for Saeed, the manager of the entire coaching operation. Saeed reads this Slack DM Sunday evening and uses it to know which clients and which coaches need attention this coming week.
 
-WEEK: ${formatDatePkt(d.weekStartPkt)} – ${formatDatePkt(d.weekEndPkt)}
+WEEK: ${formatDatePkt(d.weekStartPkt)} to ${formatDatePkt(d.weekEndPkt)}
 TOTAL SUBMISSIONS: ${d.submissions.length}
 NET AVG SCORE: ${d.netAvgScore ?? "N/A"}/100
 ACTIVE CLIENTS WITH POSITIVE DAYS LEFT: ${d.totalActiveClientsWithDaysLeft}
@@ -321,20 +316,19 @@ ${coachStats || "(no active clients)"}
 WRITE A 300-400 WORD EXECUTIVE SUMMARY for Saeed covering:
 - Overall mood and health of the client base this week (themes from the numeric scores AND paragraphs)
 - Standout positive feedback (name specific clients + what they said)
-- Standout concerns (name specific clients + what's happening — be candid about who is struggling and why)
+- Standout concerns (name specific clients + what's happening, be candid about who is struggling and why)
 - Coach-level patterns worth investigating (high missing %, clusters of low scores under one coach, etc.)
 - Anything else that would help Saeed manage the team and clients next week
 
 WRITING RULES:
 - Direct manager-to-manager tone. Saeed already knows the team; no need to over-explain.
 - Quote client paragraphs when they capture something specific. Use quotation marks.
-- NO em-dashes or en-dashes (—, –). Use commas, periods, parentheses, or restructure.
-- Plain prose paragraphs, not bullet lists. Email already has tables below this summary.
+- NO em-dashes or en-dashes. Use commas, periods, parentheses, or restructure.
+- Plain prose paragraphs, not bullet lists. The Slack message already has structured tables below this summary.
 - Output ONLY the summary text. No preamble, no headings, no closing.`;
 }
 
 export async function generateSummaryWithClaude(d: DigestData): Promise<string> {
-  // Don't waste an LLM call on zero data; just write a deterministic message.
   if (d.submissions.length === 0) {
     return "No client check-in forms were submitted this week. Every active client with positive days left is on the missing list below. This warrants immediate investigation: either the form link did not go out, the link is broken, or all coaches simultaneously skipped this week's send. Review the coach engagement table below and confirm the link is reaching clients via Everfit before next week.";
   }
@@ -354,140 +348,204 @@ export async function generateSummaryWithClaude(d: DigestData): Promise<string> 
 }
 
 // ---------------------------------------------------------------------------
-// HTML email rendering
+// Slack Block Kit rendering
 // ---------------------------------------------------------------------------
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function truncateForSlack(text: string, max: number = SLACK_SECTION_TEXT_LIMIT): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1) + "…";
 }
 
-function scoreColor(score: number): string {
-  if (score >= 75) return "#7ec9a0"; // success
-  if (score >= 50) return "#e8c267"; // warning
-  return "#d98e8e"; // danger
+function pctEmoji(pct: number): string {
+  if (pct >= 50) return "🔴";
+  if (pct >= 25) return "🟡";
+  return "🟢";
 }
 
-export function renderDigestEmail(d: DigestData, summary: string): string {
-  const weekLabel = `${formatDatePkt(d.weekStartPkt)} – ${formatDatePkt(d.weekEndPkt)}`;
+function scoreEmoji(score: number): string {
+  if (score >= 75) return "🟢";
+  if (score >= 50) return "🟡";
+  return "🔴";
+}
+
+/**
+ * Build the Slack Block Kit blocks for the digest DM. Stays under
+ * Slack's 50-block limit by collapsing long lists into multi-line
+ * section text rather than one block per item.
+ */
+export function buildDigestSlackBlocks(
+  d: DigestData,
+  summary: string
+): Array<Record<string, unknown>> {
+  const weekLabel = `${formatDatePkt(d.weekStartPkt)} to ${formatDatePkt(d.weekEndPkt)}`;
   const netAvgDisplay = d.netAvgScore === null ? "—" : `${d.netAvgScore}/100`;
   const totalMissingPct = d.totalActiveClientsWithDaysLeft > 0
     ? Math.round((d.totalMissingClients / d.totalActiveClientsWithDaysLeft) * 100)
     : 0;
 
-  const kpiCell = (label: string, value: string, color = "#ffffff") => `
-    <td style="padding: 16px; background: #16161e; border-radius: 8px; border: 1px solid #2a2a35; text-align: center;">
-      <div style="font-size: 10px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">${escapeHtml(label)}</div>
-      <div style="font-size: 24px; font-weight: 700; color: ${color};">${escapeHtml(value)}</div>
-    </td>`;
+  const blocks: Array<Record<string, unknown>> = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "CCOS Weekly Check-In Digest 📊",
+        emoji: true,
+      },
+    },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `*Week of ${weekLabel}*` }],
+    },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*Submissions*\n${d.submissions.length}` },
+        { type: "mrkdwn", text: `*Net avg score*\n${netAvgDisplay}` },
+        {
+          type: "mrkdwn",
+          text: `*Attention needed*\n${d.attentionClients.length} client${d.attentionClients.length === 1 ? "" : "s"}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Missing this week*\n${totalMissingPct}% (${d.totalMissingClients}/${d.totalActiveClientsWithDaysLeft})`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Summary*\n${truncateForSlack(summary)}`,
+      },
+    },
+    { type: "divider" },
+  ];
 
-  const attentionRows = d.attentionClients.length === 0
-    ? `<tr><td colspan="4" style="padding: 14px; color: #8a8a96; text-align: center; font-style: italic;">No clients flagged this week.</td></tr>`
-    : d.attentionClients
-        .map((c) => {
-          const lastPara = [...c.submissions].reverse().find((s) => s.q5_open_response?.trim())?.q5_open_response?.trim() ?? "";
-          const paraTrunc = lastPara.length > 220 ? lastPara.slice(0, 219) + "…" : lastPara;
-          return `
-        <tr>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #ffffff; font-weight: 600;">${escapeHtml(c.clientName)}</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #c4c4cc;">${escapeHtml(c.coachName ?? "—")}</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: ${scoreColor(c.avgScore)}; font-weight: 700;">${c.avgScore}/100</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #c4c4cc; font-size: 13px;">${escapeHtml(paraTrunc) || "<span style='color:#8a8a96;font-style:italic;'>(no paragraph)</span>"}</td>
-        </tr>`;
-        })
-        .join("");
+  // Attention Needed section
+  if (d.attentionClients.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*🚨 Attention Needed* (weekly avg < ${ATTENTION_NEEDED_THRESHOLD})\n_No clients flagged this week._`,
+      },
+    });
+  } else {
+    const visible = d.attentionClients.slice(0, MAX_ATTENTION_CLIENTS_INLINE);
+    const overflow = d.attentionClients.length - visible.length;
+    const lines = visible.map((c) => {
+      const lastPara = [...c.submissions]
+        .reverse()
+        .find((s) => s.q5_open_response?.trim())?.q5_open_response?.trim();
+      const paraSnippet = lastPara
+        ? ` — _"${lastPara.replace(/\n/g, " ").slice(0, 140)}${lastPara.length > 140 ? "…" : ""}"_`
+        : "";
+      const coach = c.coachName ? ` (${c.coachName})` : "";
+      return `${scoreEmoji(c.avgScore)} *${c.clientName}*${coach} — *${c.avgScore}/100*${paraSnippet}`;
+    });
+    const moreLine = overflow > 0 ? `\n_+${overflow} more in Client Progress tab_` : "";
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: truncateForSlack(
+          `*🚨 Attention Needed* (weekly avg < ${ATTENTION_NEEDED_THRESHOLD})\n${lines.join("\n")}${moreLine}`
+        ),
+      },
+    });
+  }
 
-  const coachRows = d.perCoach.length === 0
-    ? `<tr><td colspan="4" style="padding: 14px; color: #8a8a96; text-align: center; font-style: italic;">No active clients with end dates.</td></tr>`
-    : d.perCoach
-        .map((c) => {
-          const pctColor = c.missingPct >= 50 ? "#d98e8e" : c.missingPct >= 25 ? "#e8c267" : "#7ec9a0";
-          return `
-        <tr>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #ffffff; font-weight: 600;">${escapeHtml(c.coachName)}</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #c4c4cc;">${c.activeClientCount}</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: #c4c4cc;">${c.missingClientCount}</td>
-          <td style="padding: 10px 12px; border-top: 1px solid #2a2a35; color: ${pctColor}; font-weight: 700;">${c.missingPct}%</td>
-        </tr>`;
-        })
-        .join("");
+  // Coach Engagement section
+  if (d.perCoach.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Coach Engagement*\n_No active clients with end dates._",
+      },
+    });
+  } else {
+    const lines = d.perCoach.map(
+      (c) =>
+        `${pctEmoji(c.missingPct)} *${c.coachName}* — ${c.missingClientCount}/${c.activeClientCount} missing (*${c.missingPct}%*)`
+    );
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: truncateForSlack(
+          `*Coach Engagement* (high missing % = losing client engagement)\n${lines.join("\n")}`
+        ),
+      },
+    });
+  }
 
-  const missingSections = d.perCoach
-    .filter((c) => c.missingClientCount > 0)
-    .map((c) => `
-      <div style="margin-top: 12px; padding: 12px; background: #16161e; border: 1px solid #2a2a35; border-radius: 8px;">
-        <div style="font-size: 13px; font-weight: 600; color: #ffffff; margin-bottom: 6px;">${escapeHtml(c.coachName)} — ${c.missingClientCount} missing</div>
-        <div style="font-size: 12px; color: #c4c4cc; line-height: 1.6;">${c.missingClients.map(escapeHtml).join(", ")}</div>
-      </div>`)
-    .join("");
+  // Missing Check-Ins per coach. Each coach with missing clients gets
+  // its own section so we don't blow the 3000-char limit on a single
+  // mrkdwn field when many coaches have many missing clients.
+  const coachesWithMissing = d.perCoach.filter((c) => c.missingClientCount > 0);
+  if (coachesWithMissing.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Missing Check-Ins by Coach*\n_Everyone submitted this week. 🎉_",
+      },
+    });
+  } else {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: "*Missing Check-Ins by Coach*" },
+    });
+    for (const c of coachesWithMissing) {
+      // Slack's 50-block limit. If we somehow have >40 coaches with
+      // missing clients, skip the rest — never going to happen in
+      // practice, but defensive.
+      if (blocks.length >= 45) break;
+      const names = c.missingClients.join(", ");
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: truncateForSlack(
+            `*${c.coachName}* (${c.missingClientCount} missing):\n${names}`
+          ),
+        },
+      });
+    }
+  }
 
-  const endDateFlaggedSection = d.endDateFlagged.length === 0 ? "" : `
-    <h2 style="margin: 32px 0 12px; font-size: 16px; font-weight: 600; color: #ffffff;">⚠️ End date may need fixing</h2>
-    <div style="padding: 12px; background: #2d1c1c; border: 1px solid #5a3030; border-radius: 8px; color: #f4d8d8; font-size: 13px; line-height: 1.6;">
-      The following clients submitted a check-in this week but their CCOS end date has already passed. If they are still active, update their end date on the Client Roster:
-      <ul style="margin: 8px 0 0 20px; padding: 0;">
-        ${d.endDateFlagged.map((c) => `<li>${escapeHtml(c.clientName)}${c.coachName ? ` (${escapeHtml(c.coachName)})` : ""}</li>`).join("")}
-      </ul>
-    </div>`;
+  // End-date-flagged warning, only if any
+  if (d.endDateFlagged.length > 0) {
+    const names = d.endDateFlagged
+      .map((c) => `${c.clientName}${c.coachName ? ` (${c.coachName})` : ""}`)
+      .join(", ");
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: truncateForSlack(
+          `⚠️ *End date may need fixing*\nThese clients submitted this week but their CCOS end date is past. If they are still active, update their end date on the Client Roster:\n${names}`
+        ),
+      },
+    });
+  }
 
-  return `<!DOCTYPE html>
-<html><body style="margin: 0; padding: 0; background: #0a0a0f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-<div style="max-width: 720px; margin: 0 auto; padding: 32px 20px;">
+  // Footer with link to Client Progress
+  blocks.push({
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Open Client Progress", emoji: true },
+        url: `${APP_BASE_URL}/coaching`,
+        action_id: "open_client_progress_weekly",
+        style: "primary",
+      },
+    ],
+  });
 
-  <div style="margin-bottom: 24px;">
-    <div style="font-size: 11px; color: #c9a96e; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">CCOS · Weekly Digest</div>
-    <h1 style="margin: 6px 0 4px; font-size: 24px; font-weight: 700; color: #ffffff;">Client Check-In Summary</h1>
-    <div style="font-size: 13px; color: #8a8a96;">${escapeHtml(weekLabel)}</div>
-  </div>
-
-  <table cellpadding="0" cellspacing="8" style="width: 100%; border-collapse: separate;">
-    <tr>
-      ${kpiCell("Submissions", String(d.submissions.length))}
-      ${kpiCell("Net avg score", netAvgDisplay, d.netAvgScore == null ? "#8a8a96" : scoreColor(d.netAvgScore))}
-      ${kpiCell("Attention needed", String(d.attentionClients.length), d.attentionClients.length > 0 ? "#d98e8e" : "#ffffff")}
-      ${kpiCell("Missing this week", `${totalMissingPct}%`, totalMissingPct >= 50 ? "#d98e8e" : totalMissingPct >= 25 ? "#e8c267" : "#7ec9a0")}
-    </tr>
-  </table>
-
-  <h2 style="margin: 32px 0 12px; font-size: 16px; font-weight: 600; color: #ffffff;">Summary</h2>
-  <div style="padding: 16px 18px; background: #16161e; border: 1px solid #2a2a35; border-radius: 8px; color: #d4d4dc; font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(summary)}</div>
-
-  <h2 style="margin: 32px 0 12px; font-size: 16px; font-weight: 600; color: #ffffff;">Attention Needed <span style="color: #8a8a96; font-weight: 400; font-size: 13px;">(weekly avg &lt; ${ATTENTION_NEEDED_THRESHOLD})</span></h2>
-  <table style="width: 100%; border-collapse: collapse; background: #16161e; border: 1px solid #2a2a35; border-radius: 8px; overflow: hidden;">
-    <thead><tr style="background: #1f1f29;">
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Client</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Coach</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Avg this week</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Latest paragraph</th>
-    </tr></thead>
-    <tbody>${attentionRows}</tbody>
-  </table>
-
-  <h2 style="margin: 32px 0 12px; font-size: 16px; font-weight: 600; color: #ffffff;">Coach Engagement <span style="color: #8a8a96; font-weight: 400; font-size: 13px;">(high missing % = losing client engagement)</span></h2>
-  <table style="width: 100%; border-collapse: collapse; background: #16161e; border: 1px solid #2a2a35; border-radius: 8px; overflow: hidden;">
-    <thead><tr style="background: #1f1f29;">
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Coach</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Active clients</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">Missing</th>
-      <th style="padding: 10px 12px; text-align: left; font-size: 11px; color: #8a8a96; text-transform: uppercase; letter-spacing: 0.5px;">% missing</th>
-    </tr></thead>
-    <tbody>${coachRows}</tbody>
-  </table>
-
-  <h2 style="margin: 32px 0 4px; font-size: 16px; font-weight: 600; color: #ffffff;">Missing check-ins by coach</h2>
-  ${missingSections || `<div style="padding: 12px; color: #8a8a96; font-style: italic;">Everyone submitted this week.</div>`}
-
-  ${endDateFlaggedSection}
-
-  <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid #2a2a35; text-align: center; font-size: 11px; color: #8a8a96;">
-    CCOS · Client Conversion · <a href="https://client-conversion-os.vercel.app/coaching" style="color: #c9a96e; text-decoration: none;">Open Client Progress tab</a>
-  </div>
-
-</div></body></html>`;
+  return blocks;
 }
 
 // ---------------------------------------------------------------------------
@@ -497,22 +555,38 @@ export function renderDigestEmail(d: DigestData, summary: string): string {
 export interface BuildAndSendResult {
   digest: DigestData;
   summary: string;
-  email: SendEmailResult;
+  slack: { ok: boolean; error?: string };
 }
 
 /**
- * Top-level: gather data, run Claude, render HTML, send email.
+ * Top-level: gather data, run Claude, render Slack blocks, DM Saeed.
  * Returns the data + result so the cron handler can log + respond.
  */
 export async function buildAndSendWeeklyDigest(
-  recipient: string = DEFAULT_RECIPIENT,
   now: Date = new Date()
 ): Promise<BuildAndSendResult> {
   const digest = await gatherDigestData(now);
   const summary = await generateSummaryWithClaude(digest);
-  const html = renderDigestEmail(digest, summary);
-  const weekLabel = `${formatDatePkt(digest.weekStartPkt)} – ${formatDatePkt(digest.weekEndPkt)}`;
-  const subject = `CCOS Weekly Check-In Digest · ${weekLabel}`;
-  const email = await sendEmail({ to: recipient, subject, html });
-  return { digest, summary, email };
+  const blocks = buildDigestSlackBlocks(digest, summary);
+
+  const channel = await openDmChannel(ADMIN_SLACK_USER_ID);
+  if (!channel) {
+    return {
+      digest,
+      summary,
+      slack: { ok: false, error: "Could not open admin DM channel (check SLACK_BOT_TOKEN_COACHING)" },
+    };
+  }
+
+  const fallback = `CCOS Weekly Check-In Digest: ${digest.submissions.length} submissions, ${digest.attentionClients.length} need attention.`;
+  const result = await postBlocks(channel, blocks, fallback);
+
+  return {
+    digest,
+    summary,
+    slack: {
+      ok: result.ok,
+      error: result.ok ? undefined : (result as { error?: string }).error,
+    },
+  };
 }

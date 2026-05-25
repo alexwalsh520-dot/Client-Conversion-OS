@@ -1,13 +1,14 @@
 /**
  * GET /api/cron/check-in-weekly-digest
  *
- * Fires every Sunday at 4 PM PKT (11:00 UTC on Sunday) per the schedule
- * in vercel.json. Builds the weekly Check-In digest, asks Claude for a
- * 300-400 word executive summary, and emails the whole thing to Saeed.
+ * Fires every Sunday at 4 PM PKT (11:00 UTC Sunday) per vercel.json.
+ * Builds the weekly Check-In digest, asks Claude for a 300-400 word
+ * executive summary, and DMs the whole thing to Saeed via the coaching
+ * Slack bot. Mirrors the other manager notifications.
  *
- * Authentication mirrors the other cron routes: trust the `x-vercel-cron`
- * header (set by Vercel's cron infrastructure) OR a `Bearer CRON_SECRET`
- * Authorization header (so the route can be triggered manually for testing).
+ * Authentication mirrors other cron routes: trust `x-vercel-cron` set
+ * by Vercel cron, OR a `Bearer CRON_SECRET` Authorization header (for
+ * manual triggering during dev/testing).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -32,9 +33,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const result = await buildAndSendWeeklyDigest();
     return NextResponse.json({
-      ok: result.email.ok,
-      emailId: result.email.id,
-      emailError: result.email.error,
+      ok: result.slack.ok,
+      slackError: result.slack.error,
       submissionsCount: result.digest.submissions.length,
       attentionCount: result.digest.attentionClients.length,
       missingCount: result.digest.totalMissingClients,
