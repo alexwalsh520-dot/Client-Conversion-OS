@@ -11,6 +11,8 @@ export async function GET() {
       last_name: lead.last_name,
       email: lead.email,
       lead_type: lead.lead_type,
+      instagram_handle: lead.instagram_handle || '',
+      instagram_url: lead.instagram_url || '',
       video_url: lead.video_url,
       created_at: lead.created_at,
       opened_at: lead.opened_at,

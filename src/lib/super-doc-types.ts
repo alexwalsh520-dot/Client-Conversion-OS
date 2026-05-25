@@ -129,6 +129,8 @@ export interface SuperDocLead {
   last_name: string;
   email: string;
   lead_type: string;
+  instagram_handle?: string | null;
+  instagram_url?: string | null;
   video_url: string;
   content_snapshot: SuperDocTemplateContent;
   created_at: string;

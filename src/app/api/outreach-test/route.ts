@@ -7,7 +7,12 @@ import { deliverSuperDocLead, type SuperDocDeliveryResult } from '@/lib/super-do
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 import { getTemplateContentForLeadType, stripVariantTemplates } from '@/lib/super-doc-template-variants';
-import { buildSuperDocRoutePlan, getSuperDocSegment } from '@/lib/super-doc-routing';
+import {
+  buildSuperDocRoutePlan,
+  getInstagramUrl,
+  getSuperDocSegment,
+  normalizeInstagramHandle,
+} from '@/lib/super-doc-routing';
 
 const PARALLEL_BATCH_SIZE = 3;
 const FALLBACK_VIDEO_URL = 'about:blank';
@@ -325,6 +330,8 @@ async function createSuperDocLead(
     last_name: lastName,
     email: lead.email,
     lead_type: lead.lead_type,
+    instagram_handle: normalizeInstagramHandle(lead.instagram_handle),
+    instagram_url: getInstagramUrl(lead),
     video_url: videoUrl,
     content_snapshot: firstNameOnlyContent(stripVariantTemplates(templateContent)),
   });

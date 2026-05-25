@@ -34,6 +34,15 @@ function eventLabel(eventType: SuperDocEventType) {
   }
 }
 
+function instagramLine(lead: SuperDocLead) {
+  const handle = clean(lead.instagram_handle).replace(/^@/, '');
+  const url = clean(lead.instagram_url);
+  if (handle && url) return `*Instagram:* <${url}|@${handle}>`;
+  if (handle) return `*Instagram:* @${handle}`;
+  if (url) return `*Instagram:* ${url}`;
+  return '';
+}
+
 export async function notifySuperDocActivity(input: {
   lead: SuperDocLead;
   eventType: SuperDocEventType;
@@ -58,6 +67,7 @@ export async function notifySuperDocActivity(input: {
     `*Super Doc activity:* ${eventLabel(input.eventType)}`,
     `*Lead:* ${lead.first_name} ${lead.last_name}`.trim(),
     `*Email:* ${lead.email || 'No email'}`,
+    instagramLine(lead),
     `*Segment:* ${lead.lead_type || 'Unknown'}`,
     `*Opened:* ${lead.opened_at ? 'Yes' : 'No'} (${viewCount} view${viewCount === 1 ? '' : 's'})`,
     `*Read:* ${readPercent || 0}%`,
@@ -65,5 +75,5 @@ export async function notifySuperDocActivity(input: {
     `*Doc:* ${input.pageUrl}`,
   ];
 
-  return postToSlack(channel, lines.join('\n'));
+  return postToSlack(channel, lines.filter(Boolean).join('\n'));
 }

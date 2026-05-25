@@ -61,6 +61,8 @@ export async function createLead(lead: {
   last_name: string;
   email: string;
   lead_type: string;
+  instagram_handle?: string;
+  instagram_url?: string;
   video_url: string;
   content_snapshot: SuperDocTemplateContent;
 }): Promise<SuperDocLead> {
