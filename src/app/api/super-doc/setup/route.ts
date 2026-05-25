@@ -1,5 +1,5 @@
 import { getTemplate, upsertTemplate } from '@/lib/super-doc-db';
-import { DEFAULT_TEMPLATE } from '@/lib/super-doc-template-default';
+import { getInitialTemplateContent } from '@/lib/super-doc-template-variants';
 
 export async function POST() {
   const existing = await getTemplate();
@@ -7,7 +7,7 @@ export async function POST() {
     return Response.json({ message: 'Template already exists', id: existing.id });
   }
 
-  await upsertTemplate(DEFAULT_TEMPLATE);
+  await upsertTemplate(getInitialTemplateContent());
   const created = await getTemplate();
 
   console.log('[SuperDoc] Seeded default template');

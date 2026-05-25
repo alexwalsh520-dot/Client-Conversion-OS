@@ -1,5 +1,7 @@
 import { getServiceSupabase } from './supabase';
 import type { SuperDocTemplateContent, SuperDocLead, SuperDocTemplate } from './super-doc-types';
+import { getTemplateVariantForLeadType } from './super-doc-template-variants';
+import type { SuperDocTemplateVariant } from './super-doc-types';
 
 function db() {
   return getServiceSupabase();
@@ -98,6 +100,17 @@ export async function updateAllLeadSnapshots(content: SuperDocTemplateContent): 
     .select('id');
   if (error) throw new Error(`Failed to update snapshots: ${error.message}`);
   return data?.length || 0;
+}
+
+export async function updateLeadSnapshotsForTemplateVariant(
+  content: SuperDocTemplateContent,
+  variant: SuperDocTemplateVariant,
+): Promise<number> {
+  const leads = await getAllLeads();
+  const matchingLeads = leads.filter((lead) => getTemplateVariantForLeadType(lead.lead_type) === variant);
+
+  await Promise.all(matchingLeads.map((lead) => updateLeadSnapshot(lead.slug, content)));
+  return matchingLeads.length;
 }
 
 export function generateSlug(firstName: string, lastName: string): string {

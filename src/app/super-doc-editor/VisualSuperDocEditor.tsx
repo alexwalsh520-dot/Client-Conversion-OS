@@ -10,6 +10,7 @@ import type {
   SuperDocDevice,
   SuperDocElementStyle,
   SuperDocTemplateContent,
+  SuperDocTemplateVariant,
 } from '@/lib/super-doc-types';
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -28,6 +29,7 @@ interface LeadSummary {
 interface VisualSuperDocEditorProps {
   mode: EditorMode;
   slug?: string;
+  variant?: SuperDocTemplateVariant;
 }
 
 const DEFAULT_DESKTOP: Required<SuperDocBreakpointDesign> = {
@@ -88,7 +90,7 @@ function titleize(key: string): string {
 
 function sectionKeys(content: SuperDocTemplateContent): string[] {
   const hidden = new Set(content.design?.hiddenSections || []);
-  const keys = Object.keys(content).filter((key) => key !== 'design' && !hidden.has(key));
+  const keys = Object.keys(content).filter((key) => key !== 'design' && key !== 'variant_templates' && !hidden.has(key));
   return SECTION_ORDER.filter((key) => keys.includes(key)).concat(keys.filter((key) => !SECTION_ORDER.includes(key)));
 }
 
@@ -210,7 +212,7 @@ function elementButtonStyle(content: SuperDocTemplateContent, path: string, devi
   };
 }
 
-export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEditorProps) {
+export default function VisualSuperDocEditor({ mode, slug, variant = 'creator' }: VisualSuperDocEditorProps) {
   const [content, setContent] = useState<SuperDocTemplateContent | null>(null);
   const [leads, setLeads] = useState<LeadSummary[]>([]);
   const [selectedPath, setSelectedPath] = useState('hero.title_template');
@@ -227,7 +229,9 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
     setLoading(true);
     setMessage(null);
     try {
-      const endpoint = mode === 'template' ? '/api/super-doc/template' : `/api/super-doc/lead/${slug}`;
+      const endpoint = mode === 'template'
+        ? `/api/super-doc/template?variant=${variant}`
+        : `/api/super-doc/lead/${slug}`;
       const res = await fetch(endpoint);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -241,7 +245,7 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
     } finally {
       setLoading(false);
     }
-  }, [mode, slug]);
+  }, [mode, slug, variant]);
 
   useEffect(() => {
     load();
@@ -382,7 +386,10 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(updateAll ? '/api/super-doc/update-all' : '/api/super-doc/template', {
+      const templateEndpoint = updateAll
+        ? `/api/super-doc/update-all?variant=${variant}`
+        : `/api/super-doc/template?variant=${variant}`;
+      const res = await fetch(templateEndpoint, {
         method: updateAll ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -392,8 +399,8 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
       setMessage({
         type: 'success',
         text: updateAll
-          ? `Saved. ${data.leadsUpdated || 0} existing docs were updated too.`
-          : 'Saved. Future Super Docs will use this template.',
+          ? `Saved. ${data.leadsUpdated || 0} existing ${variant === 'agency' ? 'agency/TM' : 'creator'} docs were updated too.`
+          : `Saved. Future ${variant === 'agency' ? 'agency/TM' : 'creator'} Super Docs will use this template.`,
       });
     } catch {
       setMessage({ type: 'error', text: 'Save failed.' });
@@ -430,7 +437,7 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
       <div style={topBarStyle}>
         <Link href="/studio-2/auto-outreach-test" style={backLinkStyle}>Back</Link>
         <div style={topTitleStyle}>
-          <p style={savePillStyle}>{mode === 'template' ? 'Master template' : 'Personalized Super Doc'}</p>
+          <p style={savePillStyle}>{mode === 'template' ? `${variant === 'agency' ? 'Agency/TM' : 'Creator'} template` : 'Personalized Super Doc'}</p>
           <strong style={{ color: 'var(--text-primary)' }}>{mode === 'template' ? 'Super Doc Builder' : `Editing ${slug}`}</strong>
         </div>
         <div style={topActionsStyle}>
@@ -454,6 +461,9 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
               <button onClick={() => setShowConfirm(true)} disabled={saving} style={publishButtonStyle}>
                 Update Existing
               </button>
+              <Link href={`/super-doc-editor?variant=${variant === 'agency' ? 'creator' : 'agency'}`} style={secondaryButtonStyle}>
+                {variant === 'agency' ? 'Creator' : 'Agency/TM'}
+              </Link>
             </>
           ) : (
             <button onClick={saveLead} disabled={saving} style={primaryButtonStyle}>
@@ -534,7 +544,7 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
 
         <main style={canvasShellStyle}>
           <div style={pageLabelStyle}>
-            <span>{mode === 'template' ? 'Template' : slug}</span>
+            <span>{mode === 'template' ? `${variant === 'agency' ? 'Agency/TM' : 'Creator'} Template` : slug}</span>
             <span>{device === 'desktop' ? 'Desktop' : 'Mobile'} canvas</span>
           </div>
           <div style={canvasScrollStyle}>

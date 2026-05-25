@@ -6,6 +6,7 @@ import { getTemplate, createLead, generateSlug, getLeadBySlug } from '@/lib/supe
 import { deliverSuperDocLead, type SuperDocDeliveryResult } from '@/lib/super-doc-delivery';
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
+import { getTemplateContentForLeadType, stripVariantTemplates } from '@/lib/super-doc-template-variants';
 
 const PARALLEL_BATCH_SIZE = 3;
 const FALLBACK_VIDEO_URL = 'about:blank';
@@ -263,7 +264,7 @@ async function createSuperDocLead(
     email: lead.email,
     lead_type: lead.lead_type,
     video_url: videoUrl,
-    content_snapshot: firstNameOnlyContent(templateContent),
+    content_snapshot: firstNameOnlyContent(stripVariantTemplates(templateContent)),
   });
 
   const pageUrl = `${baseUrl}/super-doc/${slug}`;
@@ -397,7 +398,8 @@ export async function POST(req: NextRequest) {
               status: 'generating',
             });
 
-            const createdDoc = await createSuperDocLead(lead, embedUrl, template!.content, baseUrl);
+            const selectedTemplate = getTemplateContentForLeadType(template!.content, lead.lead_type);
+            const createdDoc = await createSuperDocLead(lead, embedUrl, selectedTemplate, baseUrl);
             pageUrl = createdDoc.pageUrl;
             slug = createdDoc.slug;
 

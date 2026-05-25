@@ -1,4 +1,5 @@
 export type SuperDocDevice = 'desktop' | 'mobile';
+export type SuperDocTemplateVariant = 'creator' | 'agency';
 
 export interface SuperDocElementStyle {
   fontSize?: number;
@@ -27,6 +28,7 @@ export interface SuperDocDesign extends SuperDocBreakpointDesign {
 
 export interface SuperDocTemplateContent {
   design?: SuperDocDesign;
+  variant_templates?: Partial<Record<Exclude<SuperDocTemplateVariant, 'creator'>, SuperDocTemplateContent>>;
   hero: {
     title_template: string;
     serif_word: string;

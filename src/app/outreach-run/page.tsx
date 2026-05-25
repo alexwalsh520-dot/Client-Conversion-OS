@@ -312,7 +312,10 @@ export default function OutreachRunPage() {
         </div>
         <div style={headerActionsStyle}>
           <Link href="/super-doc-editor" style={linkButtonStyle}>
-            Edit Template
+            Edit Creator Template
+          </Link>
+          <Link href="/super-doc-editor?variant=agency" style={linkButtonStyle}>
+            Edit Agency/TM Template
           </Link>
           <Link href="/super-doc/test-lead" target="_blank" style={linkButtonStyle}>
             View Test Page
