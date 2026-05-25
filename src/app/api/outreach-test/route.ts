@@ -241,6 +241,67 @@ async function uploadToBunny(
   return embedUrl;
 }
 
+function isBunnyEmbedUrl(value: string) {
+  return /^https:\/\/iframe\.mediadelivery\.net\/embed\//i.test(value.trim());
+}
+
+async function uploadRemoteVideoToBunny(
+  videoUrl: string,
+  firstName: string,
+  lastName: string,
+): Promise<string> {
+  const createUrl = `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`;
+  const title = formatFullName(firstName, lastName);
+  console.log(`[Bunny] POST ${createUrl} — remote title: "${title}"`);
+
+  const createRes = await fetch(createUrl, {
+    method: 'POST',
+    headers: {
+      AccessKey: BUNNY_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  const create = await safeResponseParse(createRes, 'Bunny Remote Create');
+  if (!createRes.ok) {
+    throw new Error(`Bunny create failed (${createRes.status}): ${create.text.slice(0, 500)}`);
+  }
+  if (!create.json) {
+    throw new Error(`Bunny create returned non-JSON: ${create.text.slice(0, 500)}`);
+  }
+
+  const guid = create.json.guid as string;
+  if (!guid) {
+    throw new Error(`Bunny create missing guid: ${create.text.slice(0, 500)}`);
+  }
+
+  const sourceRes = await fetch(videoUrl);
+  if (!sourceRes.ok) {
+    const text = await sourceRes.text().catch(() => '');
+    throw new Error(`Video download failed (${sourceRes.status}): ${text.slice(0, 300)}`);
+  }
+
+  const videoBuffer = Buffer.from(await sourceRes.arrayBuffer());
+  const uploadUrl = `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos/${guid}`;
+  console.log(`[Bunny] PUT ${uploadUrl} — remote ${videoBuffer.length} bytes`);
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { AccessKey: BUNNY_API_KEY },
+    body: videoBuffer,
+  });
+
+  const upload = await safeResponseParse(uploadRes, 'Bunny Remote Upload');
+  if (!uploadRes.ok) {
+    throw new Error(`Bunny upload failed (${uploadRes.status}): ${upload.text.slice(0, 500)}`);
+  }
+
+  const embedUrl = `https://iframe.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${guid}`;
+  console.log(`[Bunny] Remote done → ${embedUrl}`);
+  return embedUrl;
+}
+
 async function createSuperDocLead(
   lead: Lead,
   videoUrl: string,
@@ -335,11 +396,15 @@ export async function POST(req: NextRequest) {
   }
 
   const hasUploadedVideos = files.length > 0;
+  const hasRemoteVideosToUpload = leads.some((lead) => {
+    const videoUrl = (lead.video_url || '').trim();
+    return videoUrl && !isBunnyEmbedUrl(videoUrl);
+  });
   const missingBunnyEnv = [
     !BUNNY_LIBRARY_ID && 'BUNNY_STREAM_LIBRARY_ID',
     !BUNNY_API_KEY && 'BUNNY_STREAM_API_KEY',
   ].filter(Boolean);
-  if (hasUploadedVideos && missingBunnyEnv.length > 0) {
+  if ((hasUploadedVideos || hasRemoteVideosToUpload) && missingBunnyEnv.length > 0) {
     return Response.json(
       { error: `Missing Bunny keys: ${missingBunnyEnv.join(', ')}` },
       { status: 500 },
@@ -397,6 +462,20 @@ export async function POST(req: NextRequest) {
               });
 
               embedUrl = await uploadToBunny(videoPath, lead.first_name, lead.last_name);
+            } else if ((lead.video_url || '').trim() && !isBunnyEmbedUrl(lead.video_url || '')) {
+              const remoteVideoUrl = (lead.video_url || '').trim();
+              sendEvent(controller, encoder, {
+                leadIndex: index,
+                firstName: lead.first_name,
+                lastName: lead.last_name,
+                status: 'uploading',
+              });
+
+              embedUrl = await uploadRemoteVideoToBunny(
+                remoteVideoUrl,
+                lead.first_name,
+                lead.last_name,
+              );
             }
 
             sendEvent(controller, encoder, {
