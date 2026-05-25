@@ -305,7 +305,7 @@ export default function OutreachRunPage() {
     <div style={pageStyle}>
       <div style={headerStyle}>
         <div>
-          <h1 style={titleStyle}>Auto Outreach Test</h1>
+          <h1 style={titleStyle}>Auto Outreach</h1>
           <p style={subtitleStyle}>
             Upload one CSV. CCOS creates the Super Docs, moves test leads into GHL Contacted, then adds them to Smartlead.
           </p>

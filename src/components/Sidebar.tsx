@@ -28,6 +28,7 @@ import {
 const navItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
+  { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/testimonials", label: "Testimonials", icon: Star },
@@ -39,7 +40,6 @@ const marketingNavItems = [
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
-  { href: "/studio-2/auto-outreach-test", label: "Auto Outreach Test", icon: FileText },
 ];
 
 export default function Sidebar() {

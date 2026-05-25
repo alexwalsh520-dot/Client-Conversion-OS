@@ -45,7 +45,7 @@ const TAB_LABELS: Record<string, string> = {
   "/live-ads": "Live Ads",
   "/studio": "Studio",
   "/studio-2": "Studio 2.0",
-  "/studio-2/auto-outreach-test": "Auto Outreach Test",
+  "/studio-2/auto-outreach-test": "Auto Outreach",
   "/outreach": "Outreach",
   "/leads": "Lead Gen",
   "/outreach-runs": "Outreach",
