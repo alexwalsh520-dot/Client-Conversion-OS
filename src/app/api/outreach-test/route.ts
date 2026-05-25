@@ -7,6 +7,7 @@ import { deliverSuperDocLead, type SuperDocDeliveryResult } from '@/lib/super-do
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 import { getTemplateContentForLeadType, stripVariantTemplates } from '@/lib/super-doc-template-variants';
+import { buildSuperDocRoutePlan, getSuperDocSegment } from '@/lib/super-doc-routing';
 
 const PARALLEL_BATCH_SIZE = 3;
 const FALLBACK_VIDEO_URL = 'about:blank';
@@ -283,8 +284,15 @@ function getRequestBaseUrl(req: NextRequest): string {
 }
 
 function resolveVideoUrl(lead: Lead) {
+  const segment = getSuperDocSegment(lead.lead_type);
+  const segmentDefault =
+    segment === 'agency_tm'
+      ? process.env.SUPER_DOC_DEFAULT_AGENCY_TM_VIDEO_URL
+      : process.env.SUPER_DOC_DEFAULT_CREATOR_VIDEO_URL;
+
   return (
     (lead.video_url || '').trim() ||
+    (segmentDefault || '').trim() ||
     (process.env.SUPER_DOC_DEFAULT_VIDEO_URL || '').trim() ||
     FALLBACK_VIDEO_URL
   );
@@ -402,6 +410,12 @@ export async function POST(req: NextRequest) {
             const createdDoc = await createSuperDocLead(lead, embedUrl, selectedTemplate, baseUrl);
             pageUrl = createdDoc.pageUrl;
             slug = createdDoc.slug;
+            const routePlanPreview = buildSuperDocRoutePlan({
+              lead,
+              pageUrl,
+              videoUrl: embedUrl,
+              dryRun: testMode,
+            });
 
             sendEvent(controller, encoder, {
               leadIndex: index,
@@ -410,6 +424,7 @@ export async function POST(req: NextRequest) {
               status: 'routing',
               pageUrl,
               slug,
+              routePlan: routePlanPreview,
             });
 
             const routeResult: SuperDocDeliveryResult = await deliverSuperDocLead({

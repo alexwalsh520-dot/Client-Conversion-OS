@@ -1,5 +1,5 @@
 import { getServiceSupabase } from './supabase';
-import type { SuperDocTemplateContent, SuperDocLead, SuperDocTemplate } from './super-doc-types';
+import type { SuperDocTemplateContent, SuperDocLead, SuperDocTemplate, SuperDocTrackEventInput } from './super-doc-types';
 import { getTemplateVariantForLeadType } from './super-doc-template-variants';
 import type { SuperDocTemplateVariant } from './super-doc-types';
 
@@ -74,22 +74,113 @@ export async function createLead(lead: {
 }
 
 export async function trackView(slug: string): Promise<void> {
-  const lead = await getLeadBySlug(slug);
-  if (!lead) return;
+  await trackSuperDocEvent({ slug, event_type: 'open' });
+}
 
-  const updates: Record<string, unknown> = {
-    view_count: (lead.view_count || 0) + 1,
-  };
-  if (!lead.opened_at) {
-    updates.opened_at = new Date().toISOString();
+function numberFromEvent(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+async function bestEffortInsertEvent(input: SuperDocTrackEventInput) {
+  const { error } = await db()
+    .from('super_doc_events')
+    .insert({
+      lead_slug: input.slug,
+      event_type: input.event_type,
+      event_data: input.event_data || {},
+    });
+
+  if (error) {
+    console.warn(`[SuperDoc] Event table not ready or insert failed: ${error.message}`);
   }
+}
 
-  await db()
+async function bestEffortUpdateLead(slug: string, updates: Record<string, unknown>) {
+  const { error } = await db()
     .from('super_doc_leads')
     .update(updates)
     .eq('slug', slug);
 
-  console.log(`[SuperDoc] View tracked: ${slug} (count: ${updates.view_count})`);
+  if (error) {
+    console.warn(`[SuperDoc] Analytics columns not ready or update failed: ${error.message}`);
+  }
+}
+
+export async function trackSuperDocEvent(input: SuperDocTrackEventInput): Promise<SuperDocLead | null> {
+  const slug = input.slug;
+  const lead = await getLeadBySlug(slug);
+  if (!lead) return null;
+
+  const eventData = input.event_data || {};
+  const now = new Date().toISOString();
+
+  await bestEffortInsertEvent(input);
+
+  if (input.event_type === 'open') {
+    const updates: Record<string, unknown> = {
+      view_count: (lead.view_count || 0) + 1,
+    };
+    if (!lead.opened_at) {
+      updates.opened_at = now;
+    }
+
+    await db()
+      .from('super_doc_leads')
+      .update(updates)
+      .eq('slug', slug);
+
+    const nextLead = {
+      ...lead,
+      ...updates,
+    } as SuperDocLead;
+    console.log(`[SuperDoc] View tracked: ${slug} (count: ${updates.view_count})`);
+    return nextLead;
+  }
+
+  if (input.event_type === 'read_progress') {
+    const percent = Math.max(0, Math.min(100, Math.round(numberFromEvent(eventData.percent) || 0)));
+    const current = lead.max_scroll_percent || 0;
+    if (percent > current) {
+      await bestEffortUpdateLead(slug, {
+        max_scroll_percent: percent,
+        last_read_at: now,
+      });
+      return { ...lead, max_scroll_percent: percent, last_read_at: now };
+    }
+    return lead;
+  }
+
+  if (
+    input.event_type === 'video_play' ||
+    input.event_type === 'video_progress' ||
+    input.event_type === 'video_pause' ||
+    input.event_type === 'video_complete'
+  ) {
+    const percent = Math.max(0, Math.min(100, Math.round(numberFromEvent(eventData.percent) || 0)));
+    const seconds = Math.max(0, numberFromEvent(eventData.seconds) || 0);
+    const currentPercent = lead.video_watch_percent || 0;
+    const currentSeconds = lead.video_watch_seconds || 0;
+    const updates: Record<string, unknown> = {
+      last_video_event_at: now,
+    };
+
+    if (input.event_type === 'video_play') {
+      updates.video_play_count = (lead.video_play_count || 0) + 1;
+    }
+    if (percent > currentPercent) {
+      updates.video_watch_percent = percent;
+    }
+    if (seconds > currentSeconds) {
+      updates.video_watch_seconds = seconds;
+    }
+
+    await bestEffortUpdateLead(slug, updates);
+    return { ...lead, ...updates } as SuperDocLead;
+  }
+
+  return lead;
 }
 
 export async function updateAllLeadSnapshots(content: SuperDocTemplateContent): Promise<number> {

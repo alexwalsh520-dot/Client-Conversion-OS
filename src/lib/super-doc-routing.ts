@@ -16,6 +16,13 @@ export interface SuperDocRoutePlan {
   segment: SuperDocSegment;
   leadType: string;
   missingEnv: string[];
+  video: {
+    action: "use_uploaded_or_generate_from_template";
+    engine: "bunny" | "higgsfield";
+    templateEnv: string;
+    templateId: string | null;
+    note: string;
+  };
   ghl: {
     action: "create_or_update_contact_and_opportunity";
     locationEnv: string;
@@ -124,6 +131,24 @@ export function getSmartleadCampaignForSegment(segment: SuperDocSegment) {
   return readEnv(["SMARTLEAD_CAMPAIGN_ID"]);
 }
 
+export function getVideoTemplateForSegment(segment: SuperDocSegment) {
+  if (segment === "agency_tm") {
+    return readEnv([
+      "HIGGSFIELD_AGENCY_TM_VIDEO_TEMPLATE_ID",
+      "HIGGSFIELD_AGENCY_VIDEO_TEMPLATE_ID",
+    ]);
+  }
+
+  if (segment === "creator") {
+    return readEnv([
+      "HIGGSFIELD_CREATOR_VIDEO_TEMPLATE_ID",
+      "HIGGSFIELD_SOLO_CREATOR_VIDEO_TEMPLATE_ID",
+    ]);
+  }
+
+  return readEnv(["HIGGSFIELD_VIDEO_TEMPLATE_ID"]);
+}
+
 export function buildSuperDocRoutePlan(input: {
   lead: SuperDocRouteLead;
   pageUrl: string;
@@ -133,6 +158,7 @@ export function buildSuperDocRoutePlan(input: {
   const { lead, pageUrl, videoUrl } = input;
   const segment = getSuperDocSegment(lead.lead_type);
   const smartleadCampaign = getSmartleadCampaignForSegment(segment);
+  const videoTemplate = getVideoTemplateForSegment(segment);
   const ghlKey = readEnv(["OUTREACH_GHL_API_KEY", "GHL_API_KEY"]);
   const ghlLocation = readEnv(["OUTREACH_GHL_LOCATION_ID", "GHL_LOCATION_ID"]);
   const smartleadKey = readEnv(["SMARTLEAD_API_KEY"]);
@@ -142,6 +168,9 @@ export function buildSuperDocRoutePlan(input: {
   if (!ghlLocation.value) missingEnv.push(ghlLocation.name);
   if (!smartleadKey.value) missingEnv.push(smartleadKey.name);
   if (!smartleadCampaign.value) missingEnv.push(smartleadCampaign.name);
+  if (process.env.SUPER_DOC_REQUIRE_HIGGSFIELD === "true" && !videoTemplate.value) {
+    missingEnv.push(videoTemplate.name);
+  }
 
   const firstName = capitalizeNamePart(lead.first_name);
   const lastName = capitalizeNamePart(lead.last_name);
@@ -155,6 +184,15 @@ export function buildSuperDocRoutePlan(input: {
     segment,
     leadType: clean(lead.lead_type),
     missingEnv,
+    video: {
+      action: "use_uploaded_or_generate_from_template",
+      engine: videoTemplate.value ? "higgsfield" : "bunny",
+      templateEnv: videoTemplate.name,
+      templateId: videoTemplate.value || null,
+      note: videoTemplate.value
+        ? `Use ${segment === "agency_tm" ? "Agency/TM" : "Creator"} Higgsfield video template`
+        : "Using uploaded video, CSV video_url, or default video until Higgsfield templates are connected",
+    },
     ghl: {
       action: "create_or_update_contact_and_opportunity",
       locationEnv: ghlLocation.name,

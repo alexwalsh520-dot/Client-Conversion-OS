@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 interface Lead {
@@ -29,6 +29,12 @@ interface LeadResult {
 interface RoutePlan {
   segment: string;
   missingEnv: string[];
+  video?: {
+    engine: string;
+    templateEnv: string;
+    templateId: string | null;
+    note: string;
+  };
   ghl: {
     pipelineName: string;
     stageName: string;
@@ -46,6 +52,7 @@ interface DeliveryResult {
   emailUsed: string;
   originalEmail: string;
   segment: string;
+  routePlan: RoutePlan;
   ghl: {
     contactId: string;
     opportunityId: string;
@@ -71,6 +78,24 @@ interface SSEEvent {
   routePlan?: RoutePlan;
   routeResult?: DeliveryResult;
   error?: string;
+}
+
+interface SuperDocListLead {
+  id: string;
+  slug: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  lead_type: string;
+  video_url: string;
+  created_at: string;
+  opened_at: string | null;
+  view_count: number;
+  max_scroll_percent: number;
+  video_play_count: number;
+  video_watch_seconds: number;
+  video_watch_percent: number;
+  last_video_event_at: string | null;
 }
 
 function normalizeColumnName(col: string): string {
@@ -187,6 +212,27 @@ const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string }> = {
   failed: { label: 'Needs fix', color: 'var(--danger)' },
 };
 
+function docUrl(slug: string) {
+  if (typeof window === 'undefined') return `/super-doc/${slug}`;
+  return `${window.location.origin}/super-doc/${slug}`;
+}
+
+function formatDate(value: string | null) {
+  if (!value) return 'Never';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function pathLabel(leadType: string) {
+  const normalized = leadType.toLowerCase();
+  if (normalized.includes('agency') || normalized.includes('manager') || normalized === 'tm') return 'Agency/TM';
+  return 'Creator';
+}
+
 export default function OutreachRunPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -194,6 +240,47 @@ export default function OutreachRunPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [csvError, setCsvError] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(true);
+  const [docs, setDocs] = useState<SuperDocListLead[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docSearch, setDocSearch] = useState('');
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const res = await fetch('/api/super-doc/leads', { cache: 'no-store' });
+      const data = await res.json();
+      setDocs(Array.isArray(data.leads) ? data.leads : []);
+    } catch {
+      setDocs([]);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDocs();
+  }, [loadDocs]);
+
+  const filteredDocs = useMemo(() => {
+    const q = docSearch.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((doc) => {
+      return [
+        doc.first_name,
+        doc.last_name,
+        doc.email,
+        doc.lead_type,
+        doc.slug,
+      ].some((value) => value.toLowerCase().includes(q));
+    });
+  }, [docSearch, docs]);
+
+  const copyDocUrl = useCallback(async (slug: string) => {
+    await navigator.clipboard.writeText(docUrl(slug));
+    setCopiedSlug(slug);
+    window.setTimeout(() => setCopiedSlug((current) => current === slug ? null : current), 1400);
+  }, []);
 
   const handleCSV = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -298,6 +385,7 @@ export default function OutreachRunPage() {
       );
     } finally {
       setIsRunning(false);
+      loadDocs();
     }
   };
 
@@ -320,6 +408,19 @@ export default function OutreachRunPage() {
           <Link href="/super-doc/test-lead" target="_blank" style={linkButtonStyle}>
             View Test Page
           </Link>
+        </div>
+      </div>
+
+      <div style={pathGridStyle}>
+        <div style={pathCardStyle}>
+          <span style={pathKickerStyle}>Path A</span>
+          <strong style={pathTitleStyle}>Creator</strong>
+          <span style={pathTextStyle}>Creator video template, Creator Super Doc, creator Smartlead campaign.</span>
+        </div>
+        <div style={pathCardStyle}>
+          <span style={pathKickerStyle}>Path B</span>
+          <strong style={pathTitleStyle}>Agency/TM</strong>
+          <span style={pathTextStyle}>Agency/TM video template, Agency/TM Super Doc, agency Smartlead campaign.</span>
         </div>
       </div>
 
@@ -415,6 +516,9 @@ export default function OutreachRunPage() {
                         Smartlead: {r.routeResult.smartlead.campaignId}
                       </p>
                       <p style={routeTextStyle}>
+                        Video path: {r.routeResult.routePlan.video?.templateId ? 'Higgsfield template ready' : 'Uploaded/default video for now'}
+                      </p>
+                      <p style={routeTextStyle}>
                         Doc field: {r.routeResult.smartlead.customFields.super_doc_url}
                       </p>
                     </div>
@@ -430,6 +534,9 @@ export default function OutreachRunPage() {
                       </p>
                       <p style={routeTextStyle}>
                         Smartlead: {r.routePlan.smartlead.campaignId || `Missing ${r.routePlan.smartlead.campaignEnv}`}
+                      </p>
+                      <p style={routeTextStyle}>
+                        Video: {r.routePlan.video?.note || 'Video route not checked yet'}
                       </p>
                       {r.routePlan.missingEnv.length > 0 && (
                         <p style={{ ...routeTextStyle, color: 'var(--warning)' }}>
@@ -450,6 +557,76 @@ export default function OutreachRunPage() {
           </div>
         </div>
       )}
+
+      <div style={{ ...cardStyle, marginTop: '1.5rem' }}>
+        <div style={docsHeaderStyle}>
+          <div>
+            <label style={labelStyle}>Previously Made Super Docs</label>
+            <p style={hintStyle}>Search a name, email, segment, or slug. Open the doc, edit it, or grab the link.</p>
+          </div>
+          <button type="button" onClick={loadDocs} style={smallButtonStyle}>
+            Refresh
+          </button>
+        </div>
+        <input
+          type="search"
+          value={docSearch}
+          onChange={(e) => setDocSearch(e.target.value)}
+          placeholder="Search Super Docs"
+          style={searchInputStyle}
+        />
+        <div style={docsTableStyle}>
+          <div style={docsTableHeaderStyle}>
+            <span>Lead</span>
+            <span>Path</span>
+            <span>Opened</span>
+            <span>Read</span>
+            <span>Video</span>
+            <span>Actions</span>
+          </div>
+          {docsLoading ? (
+            <div style={docsEmptyStyle}>Loading Super Docs...</div>
+          ) : filteredDocs.length === 0 ? (
+            <div style={docsEmptyStyle}>No Super Docs found.</div>
+          ) : (
+            filteredDocs.map((doc) => {
+              const opened = Boolean(doc.opened_at);
+              const watched = (doc.video_play_count || 0) > 0 || (doc.video_watch_percent || 0) > 0;
+              return (
+                <div key={doc.id} style={docsRowStyle}>
+                  <div style={docLeadStyle}>
+                    <strong>{doc.first_name} {doc.last_name}</strong>
+                    <span>{doc.email}</span>
+                    <span style={docSlugStyle}>{doc.slug}</span>
+                  </div>
+                  <span style={pillStyle}>{pathLabel(doc.lead_type)}</span>
+                  <div style={docMetricStyle}>
+                    <strong>{opened ? 'Yes' : 'No'}</strong>
+                    <span>{opened ? `${doc.view_count} view${doc.view_count === 1 ? '' : 's'}` : '0 views'}</span>
+                    <span>{formatDate(doc.opened_at)}</span>
+                  </div>
+                  <div style={docMetricStyle}>
+                    <strong>{doc.max_scroll_percent || 0}%</strong>
+                    <span>furthest read</span>
+                  </div>
+                  <div style={docMetricStyle}>
+                    <strong>{watched ? 'Yes' : 'No'}</strong>
+                    <span>{doc.video_watch_percent || 0}% watched</span>
+                    <span>{doc.video_play_count || 0} play{doc.video_play_count === 1 ? '' : 's'}</span>
+                  </div>
+                  <div style={docActionsStyle}>
+                    <a href={`/super-doc/${doc.slug}`} target="_blank" rel="noopener noreferrer" style={miniLinkStyle}>Open</a>
+                    <Link href={`/super-doc-editor/${doc.slug}`} style={miniLinkStyle}>Edit</Link>
+                    <button type="button" onClick={() => copyDocUrl(doc.slug)} style={miniButtonStyle}>
+                      {copiedSlug === doc.slug ? 'Copied' : 'Grab'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -473,6 +650,41 @@ const headerActionsStyle: React.CSSProperties = {
   display: 'flex',
   gap: 10,
   flexWrap: 'wrap',
+};
+
+const pathGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  gap: 12,
+  marginBottom: '1rem',
+};
+
+const pathCardStyle: React.CSSProperties = {
+  padding: '1rem',
+  borderRadius: 10,
+  backgroundColor: 'rgba(255,255,255,0.035)',
+  border: '1px solid var(--border-primary)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 5,
+};
+
+const pathKickerStyle: React.CSSProperties = {
+  color: 'var(--accent)',
+  fontSize: '0.72rem',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+};
+
+const pathTitleStyle: React.CSSProperties = {
+  color: 'var(--text-primary)',
+  fontSize: '0.95rem',
+};
+
+const pathTextStyle: React.CSSProperties = {
+  color: 'var(--text-muted)',
+  fontSize: '0.78rem',
+  lineHeight: 1.45,
 };
 
 const titleStyle: React.CSSProperties = {
@@ -613,4 +825,120 @@ const miniLinkStyle: React.CSSProperties = {
   fontSize: '0.72rem',
   fontWeight: 700,
   textDecoration: 'none',
+};
+
+const docsHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+
+const smallButtonStyle: React.CSSProperties = {
+  border: '1px solid var(--border-primary)',
+  borderRadius: 8,
+  background: 'rgba(255,255,255,0.04)',
+  color: 'var(--text-primary)',
+  padding: '0.45rem 0.75rem',
+  fontSize: '0.75rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const searchInputStyle: React.CSSProperties = {
+  width: '100%',
+  margin: '0.25rem 0 0.85rem',
+  padding: '0.75rem 0.9rem',
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'rgba(255,255,255,0.03)',
+  color: 'var(--text-primary)',
+  fontSize: '0.85rem',
+};
+
+const docsTableStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  overflowX: 'auto',
+};
+
+const docsTableHeaderStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(220px, 1.7fr) 100px 120px 100px 120px 170px',
+  gap: 12,
+  color: 'var(--text-muted)',
+  fontSize: '0.68rem',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: 0,
+  padding: '0 0.75rem',
+  minWidth: 830,
+};
+
+const docsRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(220px, 1.7fr) 100px 120px 100px 120px 170px',
+  gap: 12,
+  alignItems: 'center',
+  padding: '0.8rem 0.75rem',
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'rgba(255,255,255,0.02)',
+  minWidth: 830,
+};
+
+const docLeadStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  color: 'var(--text-primary)',
+  fontSize: '0.82rem',
+  minWidth: 0,
+};
+
+const docSlugStyle: React.CSSProperties = {
+  color: 'var(--text-muted)',
+  fontSize: '0.72rem',
+};
+
+const pillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  width: 'fit-content',
+  border: '1px solid var(--border-primary)',
+  borderRadius: 999,
+  padding: '0.25rem 0.5rem',
+  color: 'var(--text-primary)',
+  fontSize: '0.72rem',
+  fontWeight: 800,
+};
+
+const docMetricStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  color: 'var(--text-primary)',
+  fontSize: '0.76rem',
+};
+
+const docActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 6,
+  flexWrap: 'wrap',
+};
+
+const miniButtonStyle: React.CSSProperties = {
+  ...miniLinkStyle,
+  background: 'transparent',
+  cursor: 'pointer',
+};
+
+const docsEmptyStyle: React.CSSProperties = {
+  padding: '1rem',
+  color: 'var(--text-muted)',
+  fontSize: '0.82rem',
+  border: '1px solid var(--border-primary)',
+  borderRadius: 8,
+  background: 'rgba(255,255,255,0.02)',
 };

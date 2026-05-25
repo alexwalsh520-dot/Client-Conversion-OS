@@ -124,6 +124,12 @@ function sdPath(path: string) {
   return { 'data-sd-path': path };
 }
 
+function trackingVideoSrc(url: string, slug: string, slot: string) {
+  if (!url || url === 'about:blank') return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}sd_track=${encodeURIComponent(`${slug}-${slot}`)}`;
+}
+
 export default async function SuperDocPage({ params }: Props) {
   const { slug } = await params;
   const lead = await getLeadBySlug(slug);
@@ -150,7 +156,8 @@ export default async function SuperDocPage({ params }: Props) {
           </h1>
           <div className="sd-video-wrap">
             <iframe
-              src={lead.video_url}
+              src={trackingVideoSrc(lead.video_url, slug, 'hero')}
+              data-super-doc-video="hero"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />

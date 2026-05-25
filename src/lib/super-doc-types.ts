@@ -134,10 +134,30 @@ export interface SuperDocLead {
   created_at: string;
   opened_at: string | null;
   view_count: number;
+  max_scroll_percent?: number | null;
+  last_read_at?: string | null;
+  video_play_count?: number | null;
+  video_watch_seconds?: number | null;
+  video_watch_percent?: number | null;
+  last_video_event_at?: string | null;
 }
 
 export interface SuperDocTemplate {
   id: string;
   content: SuperDocTemplateContent;
   updated_at: string;
+}
+
+export type SuperDocEventType =
+  | 'open'
+  | 'read_progress'
+  | 'video_play'
+  | 'video_progress'
+  | 'video_pause'
+  | 'video_complete';
+
+export interface SuperDocTrackEventInput {
+  slug: string;
+  event_type: SuperDocEventType;
+  event_data?: Record<string, unknown>;
 }
