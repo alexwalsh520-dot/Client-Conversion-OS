@@ -19,12 +19,24 @@
   --sd-forest: #1F3D2E;
   --sd-serif: 'Instrument Serif', Georgia, serif;
   --sd-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --sd-active-font: var(--sd-sans);
-  --sd-section-y: 80px;
-  --sd-heading-scale: 1;
-  --sd-body-scale: 1;
-  --sd-card-radius: 22px;
-  --sd-card-shadow: 4px;
+  --sd-desktop-active-font: var(--sd-sans);
+  --sd-desktop-section-y: 80px;
+  --sd-desktop-heading-scale: 1;
+  --sd-desktop-body-scale: 1;
+  --sd-desktop-card-radius: 22px;
+  --sd-desktop-card-shadow: 4px;
+  --sd-mobile-active-font: var(--sd-sans);
+  --sd-mobile-section-y: 48px;
+  --sd-mobile-heading-scale: 0.92;
+  --sd-mobile-body-scale: 0.95;
+  --sd-mobile-card-radius: 16px;
+  --sd-mobile-card-shadow: 3px;
+  --sd-active-font: var(--sd-desktop-active-font);
+  --sd-section-y: var(--sd-desktop-section-y);
+  --sd-heading-scale: var(--sd-desktop-heading-scale);
+  --sd-body-scale: var(--sd-desktop-body-scale);
+  --sd-card-radius: var(--sd-desktop-card-radius);
+  --sd-card-shadow: var(--sd-desktop-card-shadow);
   --sd-max: 1100px;
 }
 
@@ -146,7 +158,14 @@
 }
 
 @media (max-width: 640px) {
-  .sd-section { padding: 48px 0; }
+  .sd-root {
+    --sd-active-font: var(--sd-mobile-active-font);
+    --sd-section-y: var(--sd-mobile-section-y);
+    --sd-heading-scale: var(--sd-mobile-heading-scale);
+    --sd-body-scale: var(--sd-mobile-body-scale);
+    --sd-card-radius: var(--sd-mobile-card-radius);
+    --sd-card-shadow: var(--sd-mobile-card-shadow);
+  }
 }
 
 /* ── Section divider ──────────────────────────────────── */

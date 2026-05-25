@@ -2,8 +2,15 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, FileText, LayoutTemplate, Save } from 'lucide-react';
-import type { SuperDocDesign, SuperDocTemplateContent } from '@/lib/super-doc-types';
+import type { CSSProperties } from 'react';
+import { ExternalLink, FileText, LayoutTemplate, Monitor, Save, Smartphone } from 'lucide-react';
+import type {
+  SuperDocBreakpointDesign,
+  SuperDocDesign,
+  SuperDocDevice,
+  SuperDocElementStyle,
+  SuperDocTemplateContent,
+} from '@/lib/super-doc-types';
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type EditorMode = 'template' | 'lead';
@@ -23,7 +30,7 @@ interface VisualSuperDocEditorProps {
   slug?: string;
 }
 
-const DEFAULT_DESIGN: Required<SuperDocDesign> = {
+const DEFAULT_DESKTOP: Required<SuperDocBreakpointDesign> = {
   fontFamily: 'Inter',
   sectionPadding: 80,
   headingScale: 1,
@@ -32,7 +39,38 @@ const DEFAULT_DESIGN: Required<SuperDocDesign> = {
   cardShadow: 4,
 };
 
+const DEFAULT_MOBILE: Required<SuperDocBreakpointDesign> = {
+  fontFamily: 'Inter',
+  sectionPadding: 48,
+  headingScale: 0.92,
+  bodyScale: 0.95,
+  cardRadius: 16,
+  cardShadow: 3,
+};
+
 const FONT_OPTIONS = ['Inter', 'Arial', 'Georgia', 'Times New Roman'];
+const SECTION_ORDER = [
+  'hero',
+  'warning',
+  'how_doc_helps',
+  'special_package',
+  'whats_inside',
+  'how_we_help',
+  'how_it_works',
+  'team',
+  'mission',
+  'tyson',
+  'promotion',
+  'booking',
+  'cash',
+  'coaching',
+  'results',
+  'offer',
+  'next_steps',
+  'cta',
+  'faqs',
+  'about',
+];
 
 function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
@@ -40,12 +78,56 @@ function deepClone<T>(obj: T): T {
 
 function titleize(key: string): string {
   return key
-    .replace(/_/g, ' ')
+    .replace(/\.\d+\./g, ' ')
+    .replace(/\d+/g, (n) => ` ${Number(n) + 1} `)
+    .replace(/[._]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function getDesign(content: SuperDocTemplateContent): Required<SuperDocDesign> {
-  return { ...DEFAULT_DESIGN, ...(content.design || {}) };
+function sectionKeys(content: SuperDocTemplateContent): string[] {
+  const keys = Object.keys(content).filter((key) => key !== 'design');
+  return SECTION_ORDER.filter((key) => keys.includes(key)).concat(keys.filter((key) => !SECTION_ORDER.includes(key)));
+}
+
+function getFlatDesign(design?: SuperDocDesign): SuperDocBreakpointDesign {
+  if (!design) return {};
+  const flat = { ...design };
+  delete flat.desktop;
+  delete flat.mobile;
+  delete flat.elementStyles;
+  return flat;
+}
+
+function normalizeDesign(design?: SuperDocDesign): SuperDocDesign {
+  const flat = getFlatDesign(design);
+  return {
+    ...(design || {}),
+    desktop: { ...DEFAULT_DESKTOP, ...flat, ...(design?.desktop || {}) },
+    mobile: { ...DEFAULT_MOBILE, ...flat, ...(design?.mobile || {}) },
+    elementStyles: design?.elementStyles || {},
+  };
+}
+
+function normalizeContent(content: SuperDocTemplateContent): SuperDocTemplateContent {
+  return { ...content, design: normalizeDesign(content.design) };
+}
+
+function getDeviceDesign(content: SuperDocTemplateContent, device: SuperDocDevice): Required<SuperDocBreakpointDesign> {
+  const design = normalizeDesign(content.design);
+  const defaults = device === 'desktop' ? DEFAULT_DESKTOP : DEFAULT_MOBILE;
+  return { ...defaults, ...(design[device] || {}) };
+}
+
+function getAtPath(content: SuperDocTemplateContent, path: string): JsonValue {
+  const keys = path.split('.');
+  let cursor: unknown = content;
+  for (const key of keys) {
+    if (cursor === null || typeof cursor !== 'object') return null;
+    cursor = Array.isArray(cursor) ? cursor[Number(key)] : (cursor as Record<string, unknown>)[key];
+  }
+  return cursor as JsonValue;
 }
 
 function setAtPath(content: SuperDocTemplateContent, path: string, value: JsonValue): SuperDocTemplateContent {
@@ -55,51 +137,61 @@ function setAtPath(content: SuperDocTemplateContent, path: string, value: JsonVa
 
   for (let i = 0; i < keys.length - 1; i++) {
     if (cursor === null || typeof cursor !== 'object') return next as unknown as SuperDocTemplateContent;
-    const key = keys[i];
-    cursor = Array.isArray(cursor) ? cursor[Number(key)] : cursor[key];
+    cursor = Array.isArray(cursor) ? cursor[Number(keys[i])] : cursor[keys[i]];
   }
 
-  const lastKey = keys[keys.length - 1];
+  const last = keys[keys.length - 1];
   if (cursor && typeof cursor === 'object') {
-    if (Array.isArray(cursor)) cursor[Number(lastKey)] = value;
-    else cursor[lastKey] = value;
+    if (Array.isArray(cursor)) cursor[Number(last)] = value;
+    else cursor[last] = value;
   }
 
   return next as unknown as SuperDocTemplateContent;
 }
 
-function sectionKeys(content: SuperDocTemplateContent): string[] {
-  return Object.keys(content).filter((key) => key !== 'design');
+function isPrimitive(value: JsonValue): value is string | number | boolean {
+  return ['string', 'number', 'boolean'].includes(typeof value);
 }
 
-function collectText(value: JsonValue, limit = 8): string[] {
-  const found: string[] = [];
-  const walk = (item: JsonValue) => {
-    if (found.length >= limit) return;
-    if (typeof item === 'string' && item.trim()) {
-      found.push(item.trim());
-      return;
-    }
-    if (Array.isArray(item)) {
-      item.forEach(walk);
-      return;
-    }
-    if (item && typeof item === 'object') {
-      Object.values(item).forEach(walk);
-    }
+function firstText(value: JsonValue): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(firstText).find(Boolean) || '';
+  if (value && typeof value === 'object') return Object.values(value).map(firstText).find(Boolean) || '';
+  return '';
+}
+
+function getElementStyle(content: SuperDocTemplateContent, path: string, device: SuperDocDevice): SuperDocElementStyle {
+  const design = normalizeDesign(content.design);
+  return design.elementStyles?.[path]?.[device] || {};
+}
+
+function elementButtonStyle(content: SuperDocTemplateContent, path: string, device: SuperDocDevice, selected: boolean): CSSProperties {
+  const style = getElementStyle(content, path, device);
+  return {
+    ...canvasElementStyle,
+    ...(style.fontSize ? { fontSize: style.fontSize } : {}),
+    ...(style.fontWeight ? { fontWeight: style.fontWeight } : {}),
+    ...(style.color ? { color: style.color } : {}),
+    ...(style.textAlign ? { textAlign: style.textAlign } : {}),
+    marginTop: style.marginTop ?? 0,
+    marginBottom: style.marginBottom ?? 8,
+    outline: selected ? '2px solid #ff7a1a' : '1px solid transparent',
+    background: selected ? 'rgba(255,122,26,0.08)' : 'transparent',
   };
-  walk(value);
-  return found;
 }
 
 export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEditorProps) {
   const [content, setContent] = useState<SuperDocTemplateContent | null>(null);
   const [leads, setLeads] = useState<LeadSummary[]>([]);
-  const [selectedSection, setSelectedSection] = useState<string>('hero');
+  const [selectedPath, setSelectedPath] = useState('hero.title_template');
+  const [selectedSection, setSelectedSection] = useState('hero');
+  const [device, setDevice] = useState<SuperDocDevice>('desktop');
+  const [inspectorTab, setInspectorTab] = useState<'general' | 'styles'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,9 +201,10 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
       const res = await fetch(endpoint);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      const loaded = data.content as SuperDocTemplateContent;
-      setContent({ ...loaded, design: { ...DEFAULT_DESIGN, ...(loaded.design || {}) } });
+      const loaded = normalizeContent(data.content as SuperDocTemplateContent);
+      setContent(loaded);
       setSelectedSection(sectionKeys(loaded)[0] || 'hero');
+      setSelectedPath('hero.title_template');
     } catch {
       setMessage({ type: 'error', text: mode === 'template' ? 'Template could not load.' : 'This Super Doc could not load.' });
     } finally {
@@ -132,21 +225,55 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
   }, [mode]);
 
   const sections = useMemo(() => (content ? sectionKeys(content) : []), [content]);
-  const selectedValue = content ? (content as unknown as Record<string, JsonValue>)[selectedSection] : null;
-  const design = content ? getDesign(content) : DEFAULT_DESIGN;
+  const selectedValue = content ? getAtPath(content, selectedPath) : null;
+  const currentDesign = content ? getDeviceDesign(content, device) : DEFAULT_DESKTOP;
+
+  const selectElement = (path: string) => {
+    setSelectedPath(path);
+    setSelectedSection(path.split('.')[0]);
+    setInspectorTab('general');
+  };
 
   const update = useCallback((path: string, value: JsonValue) => {
     setContent((prev) => (prev ? setAtPath(prev, path, value) : prev));
   }, []);
 
-  const updateDesign = (key: keyof SuperDocDesign, value: string | number) => {
+  const updateDeviceDesign = (key: keyof SuperDocBreakpointDesign, value: string | number) => {
     setContent((prev) => {
       if (!prev) return prev;
+      const design = normalizeDesign(prev.design);
       return {
         ...prev,
         design: {
-          ...getDesign(prev),
-          [key]: value,
+          ...design,
+          [device]: {
+            ...(design[device] || {}),
+            [key]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const updateElementStyle = (key: keyof SuperDocElementStyle, value: string | number) => {
+    setContent((prev) => {
+      if (!prev) return prev;
+      const design = normalizeDesign(prev.design);
+      const existing = design.elementStyles?.[selectedPath] || {};
+      return {
+        ...prev,
+        design: {
+          ...design,
+          elementStyles: {
+            ...(design.elementStyles || {}),
+            [selectedPath]: {
+              ...existing,
+              [device]: {
+                ...(existing[device] || {}),
+                [key]: value,
+              },
+            },
+          },
         },
       };
     });
@@ -197,50 +324,47 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
     }
   };
 
-  if (loading) {
-    return <div style={pageStyle}><p style={mutedStyle}>Loading builder...</p></div>;
-  }
-
-  if (!content) {
-    return <div style={pageStyle}><p style={{ color: 'var(--danger)' }}>{message?.text || 'Nothing loaded.'}</p></div>;
-  }
+  if (loading) return <div style={pageStyle}><p style={mutedStyle}>Loading builder...</p></div>;
+  if (!content) return <div style={pageStyle}><p style={{ color: 'var(--danger)' }}>{message?.text || 'Nothing loaded.'}</p></div>;
 
   return (
     <div style={pageStyle}>
       <div style={topBarStyle}>
-        <div>
-          <p style={eyebrowStyle}>{mode === 'template' ? 'Master Template' : 'Single Super Doc'}</p>
-          <h1 style={h1Style}>{mode === 'template' ? 'Super Doc Builder' : `Edit ${slug}`}</h1>
+        <Link href="/studio-2/auto-outreach-test" style={backLinkStyle}>Back</Link>
+        <div style={topTitleStyle}>
+          <p style={savePillStyle}>{mode === 'template' ? 'Master template' : 'Personalized Super Doc'}</p>
+          <strong style={{ color: 'var(--text-primary)' }}>{mode === 'template' ? 'Super Doc Builder' : `Editing ${slug}`}</strong>
         </div>
         <div style={topActionsStyle}>
+          <button onClick={() => setDevice('desktop')} style={device === 'desktop' ? activeIconButtonStyle : iconButtonStyle} title="Desktop editor">
+            <Monitor size={16} />
+          </button>
+          <button onClick={() => setDevice('mobile')} style={device === 'mobile' ? activeIconButtonStyle : iconButtonStyle} title="Mobile editor">
+            <Smartphone size={16} />
+          </button>
           {mode === 'lead' && slug && (
-            <Link href={`/super-doc/${slug}`} target="_blank" style={secondaryButtonStyle}>
+            <Link href={`/super-doc/${slug}`} target="_blank" style={iconButtonStyle} title="View live page">
               <ExternalLink size={16} />
-              View Doc
             </Link>
           )}
           {mode === 'template' ? (
             <>
               <button onClick={() => saveTemplate(false)} disabled={saving} style={primaryButtonStyle}>
                 <Save size={16} />
-                {saving ? 'Saving...' : 'Save Template'}
+                {saving ? 'Saving...' : 'Save'}
               </button>
-              <button onClick={() => setShowConfirm(true)} disabled={saving} style={dangerButtonStyle}>
-                Update Existing Docs
+              <button onClick={() => setShowConfirm(true)} disabled={saving} style={publishButtonStyle}>
+                Update Existing
               </button>
             </>
           ) : (
             <button onClick={saveLead} disabled={saving} style={primaryButtonStyle}>
               <Save size={16} />
-              {saving ? 'Saving...' : 'Save This Doc'}
+              {saving ? 'Saving...' : 'Save Doc'}
             </button>
           )}
         </div>
       </div>
-
-      <p style={mutedStyle}>
-        Edit text and page styling here. Template edits affect future Super Docs. Single-doc edits affect only that one page.
-      </p>
 
       {message && (
         <div style={{ ...messageStyle, borderColor: message.type === 'success' ? 'var(--success)' : 'var(--danger)', color: message.type === 'success' ? 'var(--success)' : 'var(--danger)' }}>
@@ -249,60 +373,79 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
       )}
 
       <div style={builderGridStyle}>
-        <aside style={railStyle}>
-          <div style={railHeaderStyle}>
-            <LayoutTemplate size={16} />
-            Sections
+        <aside style={leftPanelStyle}>
+          <button style={toolButtonStyle}>+</button>
+          <button style={toolButtonStyle}>▦</button>
+          <button style={toolButtonStyle}>T</button>
+          <button style={toolButtonStyle}>▭</button>
+          <div style={panelDividerStyle} />
+          <div style={sideHeaderStyle}><LayoutTemplate size={15} /> Page</div>
+          <div style={sectionListStyle}>
+            {sections.map((section) => (
+              <button
+                key={section}
+                onClick={() => setSelectedSection(section)}
+                style={section === selectedSection ? activeSectionButtonStyle : sectionButtonStyle}
+              >
+                {titleize(section)}
+              </button>
+            ))}
           </div>
-          {sections.map((section) => (
-            <button
-              key={section}
-              onClick={() => setSelectedSection(section)}
-              style={section === selectedSection ? activeSectionButtonStyle : sectionButtonStyle}
-            >
-              {titleize(section)}
-            </button>
-          ))}
-
           {mode === 'template' && (
-            <div style={docsPanelStyle}>
-              <div style={railHeaderStyle}>
-                <FileText size={16} />
-                Existing Docs
-              </div>
-              {leads.length === 0 ? (
-                <p style={smallMutedStyle}>No docs yet.</p>
-              ) : (
-                leads.slice(0, 12).map((lead) => (
-                  <Link key={lead.slug} href={`/super-doc-editor/${lead.slug}`} style={docLinkStyle}>
-                    <span>{`${lead.first_name} ${lead.last_name}`.trim() || lead.email}</span>
-                    <small>{lead.slug}</small>
-                  </Link>
-                ))
-              )}
-            </div>
+            <>
+              <div style={panelDividerStyle} />
+              <div style={sideHeaderStyle}><FileText size={15} /> Docs</div>
+              {leads.slice(0, 8).map((lead) => (
+                <Link key={lead.slug} href={`/super-doc-editor/${lead.slug}`} style={docLinkStyle}>
+                  {`${lead.first_name} ${lead.last_name}`.trim() || lead.email}
+                </Link>
+              ))}
+            </>
           )}
         </aside>
 
-        <main style={previewPanelStyle}>
-          <div style={previewFrameStyle}>
-            <PreviewSection
-              sectionKey={selectedSection}
-              value={selectedValue}
-              design={design}
-            />
+        <main style={canvasShellStyle}>
+          <div style={pageLabelStyle}>
+            <span>{mode === 'template' ? 'Template' : slug}</span>
+            <span>{device === 'desktop' ? 'Desktop' : 'Mobile'} canvas</span>
+          </div>
+          <div style={canvasScrollStyle}>
+            <div style={{
+              ...canvasPageStyle,
+              width: device === 'desktop' ? 1080 : 390,
+              fontFamily: currentDesign.fontFamily,
+            }}>
+              <CanvasPage
+                content={content}
+                device={device}
+                selectedPath={selectedPath}
+                selectedSection={selectedSection}
+                selectElement={selectElement}
+              />
+            </div>
           </div>
         </main>
 
         <aside style={inspectorStyle}>
-          <h2 style={panelTitleStyle}>Design</h2>
-          <DesignControls design={design} updateDesign={updateDesign} />
+          <div style={inspectorTitleRowStyle}>
+            <h2 style={panelTitleStyle}>{selectedValue === null ? 'Page Settings' : titleize(selectedPath)}</h2>
+          </div>
+          <div style={tabRowStyle}>
+            <button onClick={() => setInspectorTab('general')} style={inspectorTab === 'general' ? activeTabStyle : tabStyle}>General</button>
+            <button onClick={() => setInspectorTab('styles')} style={inspectorTab === 'styles' ? activeTabStyle : tabStyle}>Styles</button>
+          </div>
 
-          <h2 style={{ ...panelTitleStyle, marginTop: 24 }}>{titleize(selectedSection)}</h2>
-          {selectedValue === null ? (
-            <p style={smallMutedStyle}>Nothing to edit here.</p>
+          {inspectorTab === 'general' ? (
+            <InspectorGeneral value={selectedValue} path={selectedPath} update={update} />
           ) : (
-            <FieldTree value={selectedValue} basePath={selectedSection} update={update} />
+            <InspectorStyles
+              device={device}
+              design={currentDesign}
+              elementStyle={getElementStyle(content, selectedPath, device)}
+              updateDeviceDesign={updateDeviceDesign}
+              updateElementStyle={updateElementStyle}
+              selectedPath={selectedPath}
+            />
           )}
         </aside>
       </div>
@@ -311,12 +454,10 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
         <div style={overlayStyle}>
           <div style={modalStyle}>
             <h3 style={modalTitleStyle}>Update all existing docs?</h3>
-            <p style={mutedStyle}>
-              This replaces every current personalized Super Doc with this template content. Use this only when you want all old docs changed too.
-            </p>
+            <p style={mutedStyle}>This replaces the content snapshot on every current personalized Super Doc.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
               <button onClick={() => setShowConfirm(false)} style={secondaryButtonStyle}>Cancel</button>
-              <button onClick={() => saveTemplate(true)} style={dangerButtonStyle}>Yes, Update All</button>
+              <button onClick={() => saveTemplate(true)} style={publishButtonStyle}>Yes, Update All</button>
             </div>
           </div>
         </div>
@@ -325,27 +466,253 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
   );
 }
 
-function DesignControls({ design, updateDesign }: {
-  design: Required<SuperDocDesign>;
-  updateDesign: (key: keyof SuperDocDesign, value: string | number) => void;
+function CanvasPage({ content, device, selectedPath, selectedSection, selectElement }: {
+  content: SuperDocTemplateContent;
+  device: SuperDocDevice;
+  selectedPath: string;
+  selectedSection: string;
+  selectElement: (path: string) => void;
+}) {
+  const sections = sectionKeys(content);
+  return (
+    <div>
+      {sections.map((section) => (
+        <CanvasSection
+          key={section}
+          sectionKey={section}
+          value={(content as unknown as Record<string, JsonValue>)[section]}
+          device={device}
+          content={content}
+          selectedPath={selectedPath}
+          selectElement={selectElement}
+          dimmed={selectedSection !== section}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CanvasSection({ sectionKey, value, device, content, selectedPath, selectElement, dimmed }: {
+  sectionKey: string;
+  value: JsonValue;
+  device: SuperDocDevice;
+  content: SuperDocTemplateContent;
+  selectedPath: string;
+  selectElement: (path: string) => void;
+  dimmed: boolean;
+}) {
+  const design = getDeviceDesign(content, device);
+  const isHero = sectionKey === 'hero';
+  const isDark = ['team', 'tyson', 'booking', 'cash', 'coaching', 'results'].includes(sectionKey);
+
+  return (
+    <section
+      style={{
+        ...canvasSectionStyle,
+        padding: `${design.sectionPadding}px 48px`,
+        background: isDark ? '#1F3D2E' : isHero ? '#F4EFE3' : '#FFFCF5',
+        opacity: dimmed ? 0.35 : 1,
+      }}
+    >
+      <div style={canvasSectionInnerStyle}>
+        <div style={{ ...canvasEyebrowStyle, color: isDark ? '#F5D67A' : '#E66B4D' }}>{titleize(sectionKey)}</div>
+        {isHero && (
+          <div style={videoPlaceholderStyle}>
+            <span>Personal video</span>
+          </div>
+        )}
+        <CanvasNode
+          value={value}
+          path={sectionKey}
+          device={device}
+          content={content}
+          selectedPath={selectedPath}
+          selectElement={selectElement}
+          depth={0}
+          dark={isDark}
+        />
+      </div>
+    </section>
+  );
+}
+
+function CanvasNode({ value, path, device, content, selectedPath, selectElement, depth, dark }: {
+  value: JsonValue;
+  path: string;
+  device: SuperDocDevice;
+  content: SuperDocTemplateContent;
+  selectedPath: string;
+  selectElement: (path: string) => void;
+  depth: number;
+  dark: boolean;
+}) {
+  if (isPrimitive(value)) {
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          selectElement(path);
+        }}
+        style={{
+          ...elementButtonStyle(content, path, device, selectedPath === path),
+          color: getElementStyle(content, path, device).color || (dark ? '#fff' : '#181612'),
+          fontSize: getElementStyle(content, path, device).fontSize || (depth === 0 ? 36 : depth === 1 ? 22 : 16),
+          fontWeight: getElementStyle(content, path, device).fontWeight || (depth <= 1 ? 700 : 500),
+          whiteSpace: 'pre-line',
+        }}
+      >
+        {String(value)}
+      </button>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    const primitiveArray = value.every(isPrimitive);
+    return (
+      <div style={primitiveArray ? canvasListStyle : canvasGridStyle}>
+        {value.map((item, index) => (
+          <div key={index} style={primitiveArray ? canvasListItemStyle : canvasCardStyle}>
+            <CanvasNode
+              value={item}
+              path={`${path}.${index}`}
+              device={device}
+              content={content}
+              selectedPath={selectedPath}
+              selectElement={selectElement}
+              depth={depth + 1}
+              dark={false}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value);
+    const headingEntry = entries.find(([key]) => ['heading', 'section_heading', 'title_template', 'text'].includes(key));
+    const rest = headingEntry ? entries.filter(([key]) => key !== headingEntry[0]) : entries;
+    return (
+      <div style={depth > 0 ? nestedCanvasGroupStyle : undefined}>
+        {headingEntry && (
+          <CanvasNode
+            value={headingEntry[1]}
+            path={`${path}.${headingEntry[0]}`}
+            device={device}
+            content={content}
+            selectedPath={selectedPath}
+            selectElement={selectElement}
+            depth={depth}
+            dark={dark}
+          />
+        )}
+        <div style={depth > 0 ? undefined : canvasContentStackStyle}>
+          {rest.map(([key, child]) => {
+            if (key === 'serif_word') return null;
+            const childText = firstText(child);
+            return (
+              <div key={key} style={typeof child === 'object' && child !== null ? nestedCanvasGroupStyle : undefined}>
+                {typeof child === 'object' && child !== null && (
+                  <p style={canvasFieldLabelStyle}>{titleize(key)}{childText ? ` · ${childText.slice(0, 30)}` : ''}</p>
+                )}
+                <CanvasNode
+                  value={child}
+                  path={`${path}.${key}`}
+                  device={device}
+                  content={content}
+                  selectedPath={selectedPath}
+                  selectElement={selectElement}
+                  depth={depth + 1}
+                  dark={dark && depth === 0}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function InspectorGeneral({ value, path, update }: {
+  value: JsonValue;
+  path: string;
+  update: (path: string, value: JsonValue) => void;
+}) {
+  if (typeof value === 'string') {
+    return (
+      <label style={fieldWrapStyle}>
+        <span style={labelStyle}>Text</span>
+        <textarea value={value} rows={8} onChange={(event) => update(path, event.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
+      </label>
+    );
+  }
+
+  if (typeof value === 'number') {
+    return (
+      <label style={fieldWrapStyle}>
+        <span style={labelStyle}>Number</span>
+        <input type="number" value={value} onChange={(event) => update(path, Number(event.target.value))} style={inputStyle} />
+      </label>
+    );
+  }
+
+  if (typeof value === 'boolean') {
+    return (
+      <label style={checkWrapStyle}>
+        <input type="checkbox" checked={value} onChange={(event) => update(path, event.target.checked)} />
+        <span>Enabled</span>
+      </label>
+    );
+  }
+
+  return <p style={mutedStyle}>Select text, a number, or a small item on the page to edit it here.</p>;
+}
+
+function InspectorStyles({ device, design, elementStyle, updateDeviceDesign, updateElementStyle, selectedPath }: {
+  device: SuperDocDevice;
+  design: Required<SuperDocBreakpointDesign>;
+  elementStyle: SuperDocElementStyle;
+  updateDeviceDesign: (key: keyof SuperDocBreakpointDesign, value: string | number) => void;
+  updateElementStyle: (key: keyof SuperDocElementStyle, value: string | number) => void;
+  selectedPath: string;
 }) {
   return (
     <div style={controlGridStyle}>
+      <p style={smallMutedStyle}>Editing {device}. These controls are separate for desktop and mobile.</p>
       <label style={fieldWrapStyle}>
-        <span style={labelStyle}>Font</span>
-        <select
-          value={design.fontFamily}
-          onChange={(event) => updateDesign('fontFamily', event.target.value)}
-          style={inputStyle}
-        >
+        <span style={labelStyle}>Page Font</span>
+        <select value={design.fontFamily} onChange={(event) => updateDeviceDesign('fontFamily', event.target.value)} style={inputStyle}>
           {FONT_OPTIONS.map((font) => <option key={font} value={font}>{font}</option>)}
         </select>
       </label>
-      <NumberControl label="Section Spacing" value={design.sectionPadding} min={40} max={120} step={4} onChange={(value) => updateDesign('sectionPadding', value)} />
-      <NumberControl label="Heading Size" value={design.headingScale} min={0.8} max={1.4} step={0.05} onChange={(value) => updateDesign('headingScale', value)} />
-      <NumberControl label="Body Size" value={design.bodyScale} min={0.85} max={1.3} step={0.05} onChange={(value) => updateDesign('bodyScale', value)} />
-      <NumberControl label="Card Roundness" value={design.cardRadius} min={0} max={32} step={2} onChange={(value) => updateDesign('cardRadius', value)} />
-      <NumberControl label="Card Shadow" value={design.cardShadow} min={0} max={10} step={1} onChange={(value) => updateDesign('cardShadow', value)} />
+      <NumberControl label="Section Padding" value={design.sectionPadding} min={32} max={130} step={4} onChange={(value) => updateDeviceDesign('sectionPadding', value)} />
+      <NumberControl label="Heading Scale" value={design.headingScale} min={0.7} max={1.5} step={0.05} onChange={(value) => updateDeviceDesign('headingScale', value)} />
+      <NumberControl label="Body Scale" value={design.bodyScale} min={0.75} max={1.35} step={0.05} onChange={(value) => updateDeviceDesign('bodyScale', value)} />
+      <NumberControl label="Card Radius" value={design.cardRadius} min={0} max={36} step={2} onChange={(value) => updateDeviceDesign('cardRadius', value)} />
+
+      <div style={panelDividerStyle} />
+      <p style={panelTitleStyle}>Selected Element</p>
+      <p style={smallMutedStyle}>{selectedPath}</p>
+      <NumberControl label="Font Size" value={elementStyle.fontSize || 18} min={10} max={72} step={1} onChange={(value) => updateElementStyle('fontSize', value)} />
+      <NumberControl label="Font Weight" value={elementStyle.fontWeight || 600} min={300} max={900} step={100} onChange={(value) => updateElementStyle('fontWeight', value)} />
+      <NumberControl label="Top Margin" value={elementStyle.marginTop || 0} min={0} max={80} step={2} onChange={(value) => updateElementStyle('marginTop', value)} />
+      <NumberControl label="Bottom Margin" value={elementStyle.marginBottom || 8} min={0} max={80} step={2} onChange={(value) => updateElementStyle('marginBottom', value)} />
+      <label style={fieldWrapStyle}>
+        <span style={labelStyle}>Text Align</span>
+        <select value={elementStyle.textAlign || 'left'} onChange={(event) => updateElementStyle('textAlign', event.target.value)} style={inputStyle}>
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </label>
+      <label style={fieldWrapStyle}>
+        <span style={labelStyle}>Color</span>
+        <input type="color" value={elementStyle.color || '#181612'} onChange={(event) => updateElementStyle('color', event.target.value)} style={{ ...inputStyle, height: 42 }} />
+      </label>
     </div>
   );
 }
@@ -361,425 +728,403 @@ function NumberControl({ label, value, min, max, step, onChange }: {
   return (
     <label style={fieldWrapStyle}>
       <span style={labelStyle}>{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        style={{ width: '100%' }}
-      />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        style={inputStyle}
-      />
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} style={{ width: '100%' }} />
+      <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} style={inputStyle} />
     </label>
   );
 }
 
-function FieldTree({ value, basePath, update }: {
-  value: JsonValue;
-  basePath: string;
-  update: (path: string, value: JsonValue) => void;
-}) {
-  if (typeof value === 'string') {
-    const multiline = value.length > 70 || value.includes('\n');
-    return (
-      <label style={fieldWrapStyle}>
-        <span style={labelStyle}>{titleize(basePath.split('.').at(-1) || basePath)}</span>
-        {multiline ? (
-          <textarea value={value} rows={5} onChange={(event) => update(basePath, event.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
-        ) : (
-          <input value={value} onChange={(event) => update(basePath, event.target.value)} style={inputStyle} />
-        )}
-      </label>
-    );
-  }
-
-  if (typeof value === 'number') {
-    return (
-      <label style={fieldWrapStyle}>
-        <span style={labelStyle}>{titleize(basePath.split('.').at(-1) || basePath)}</span>
-        <input type="number" value={value} onChange={(event) => update(basePath, Number(event.target.value))} style={inputStyle} />
-      </label>
-    );
-  }
-
-  if (typeof value === 'boolean') {
-    return (
-      <label style={checkWrapStyle}>
-        <input type="checkbox" checked={value} onChange={(event) => update(basePath, event.target.checked)} />
-        <span>{titleize(basePath.split('.').at(-1) || basePath)}</span>
-      </label>
-    );
-  }
-
-  if (Array.isArray(value)) {
-    return (
-      <div style={{ display: 'grid', gap: 12 }}>
-        {value.map((item, index) => (
-          <div key={index} style={nestedBoxStyle}>
-            <p style={nestedTitleStyle}>{titleize(basePath.split('.').at(-1) || basePath)} {index + 1}</p>
-            <FieldTree value={item} basePath={`${basePath}.${index}`} update={update} />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (value && typeof value === 'object') {
-    return (
-      <div style={{ display: 'grid', gap: 12 }}>
-        {Object.entries(value).map(([key, child]) => (
-          <FieldTree key={key} value={child} basePath={`${basePath}.${key}`} update={update} />
-        ))}
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function PreviewSection({ sectionKey, value, design }: {
-  sectionKey: string;
-  value: JsonValue;
-  design: Required<SuperDocDesign>;
-}) {
-  const text = collectText(value, 10);
-  const title = text[0] || titleize(sectionKey);
-  const body = text.slice(1, 5);
-
-  return (
-    <section
-      style={{
-        ...previewSectionStyle,
-        padding: `${Math.round(design.sectionPadding * 0.65)}px 28px`,
-        borderRadius: design.cardRadius,
-        fontFamily: design.fontFamily,
-      }}
-    >
-      <p style={previewEyebrowStyle}>{titleize(sectionKey)}</p>
-      <h2 style={{ ...previewTitleStyle, fontSize: `${32 * design.headingScale}px`, fontFamily: design.fontFamily }}>
-        {title}
-      </h2>
-      {body.map((item, index) => (
-        <p key={index} style={{ ...previewBodyStyle, fontSize: `${16 * design.bodyScale}px` }}>
-          {item}
-        </p>
-      ))}
-      <div style={previewCardGridStyle}>
-        {text.slice(5, 8).map((item, index) => (
-          <div key={index} style={{ ...previewCardStyle, borderRadius: design.cardRadius, boxShadow: `0 ${design.cardShadow}px 0 var(--sd-ink, #181612)` }}>
-            {item}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-const pageStyle: React.CSSProperties = {
-  padding: '2rem',
+const pageStyle: CSSProperties = {
   minHeight: '100vh',
+  background: '#f3f4f7',
 };
 
-const topBarStyle: React.CSSProperties = {
+const topBarStyle: CSSProperties = {
+  height: 68,
   display: 'flex',
+  alignItems: 'center',
   justifyContent: 'space-between',
   gap: 16,
-  alignItems: 'center',
-  marginBottom: 8,
-  flexWrap: 'wrap',
-};
-
-const topActionsStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 10,
-  flexWrap: 'wrap',
-};
-
-const eyebrowStyle: React.CSSProperties = {
-  margin: '0 0 4px',
-  color: 'var(--accent)',
-  fontSize: '0.75rem',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
-};
-
-const h1Style: React.CSSProperties = {
-  margin: 0,
-  color: 'var(--text-primary)',
-  fontSize: '1.7rem',
-  fontWeight: 700,
-};
-
-const mutedStyle: React.CSSProperties = {
-  color: 'var(--text-muted)',
-  fontSize: '0.9rem',
-};
-
-const smallMutedStyle: React.CSSProperties = {
-  color: 'var(--text-muted)',
-  fontSize: '0.78rem',
-  margin: 0,
-};
-
-const messageStyle: React.CSSProperties = {
-  padding: '12px 14px',
-  border: '1px solid',
-  borderRadius: 10,
-  margin: '18px 0',
-  fontSize: '0.85rem',
-};
-
-const builderGridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '220px minmax(360px, 1fr) 360px',
-  gap: 18,
-  alignItems: 'start',
-  marginTop: 24,
-};
-
-const railStyle: React.CSSProperties = {
+  padding: '0 18px',
+  borderBottom: '1px solid #dde1ea',
+  background: '#fff',
   position: 'sticky',
-  top: 20,
-  display: 'grid',
-  gap: 8,
-  maxHeight: 'calc(100vh - 40px)',
-  overflow: 'auto',
+  top: 0,
+  zIndex: 20,
 };
 
-const railHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  color: 'var(--text-secondary)',
-  fontSize: '0.78rem',
-  fontWeight: 700,
-  margin: '8px 0',
-};
-
-const sectionButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--border-primary)',
-  borderRadius: 10,
-  padding: '10px 12px',
-  background: 'var(--bg-card)',
-  color: 'var(--text-secondary)',
-  textAlign: 'left',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const activeSectionButtonStyle: React.CSSProperties = {
-  ...sectionButtonStyle,
-  color: 'var(--text-primary)',
-  borderColor: 'var(--accent)',
-  background: 'rgba(255,255,255,0.07)',
-};
-
-const docsPanelStyle: React.CSSProperties = {
-  marginTop: 18,
-  display: 'grid',
-  gap: 8,
-};
-
-const docLinkStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 3,
-  padding: '9px 10px',
-  borderRadius: 10,
-  border: '1px solid var(--border-primary)',
-  color: 'var(--text-secondary)',
+const backLinkStyle: CSSProperties = {
+  color: '#1f2937',
   textDecoration: 'none',
-  fontSize: '0.78rem',
+  fontWeight: 700,
+  fontSize: 14,
 };
 
-const previewPanelStyle: React.CSSProperties = {
-  minWidth: 0,
+const topTitleStyle: CSSProperties = {
+  flex: 1,
+  textAlign: 'center',
 };
 
-const previewFrameStyle: React.CSSProperties = {
-  border: '1px solid var(--border-primary)',
-  borderRadius: 14,
-  padding: 18,
-  background: 'rgba(255,255,255,0.04)',
-  minHeight: 560,
+const savePillStyle: CSSProperties = {
+  margin: 0,
+  color: '#667085',
+  fontSize: 12,
 };
 
-const inspectorStyle: React.CSSProperties = {
-  position: 'sticky',
-  top: 20,
-  border: '1px solid var(--border-primary)',
-  borderRadius: 14,
-  background: 'var(--bg-card)',
-  padding: 16,
-  maxHeight: 'calc(100vh - 40px)',
-  overflow: 'auto',
+const topActionsStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
 };
 
-const panelTitleStyle: React.CSSProperties = {
-  margin: '0 0 12px',
-  color: 'var(--text-primary)',
-  fontSize: '0.95rem',
+const iconButtonStyle: CSSProperties = {
+  width: 42,
+  height: 38,
+  borderRadius: 10,
+  border: '1px solid #d8dde8',
+  background: '#fff',
+  color: '#344054',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  textDecoration: 'none',
+};
+
+const activeIconButtonStyle: CSSProperties = {
+  ...iconButtonStyle,
+  background: '#eef4ff',
+  borderColor: '#4c7dff',
+  color: '#2454d6',
+};
+
+const primaryButtonStyle: CSSProperties = {
+  minHeight: 38,
+  borderRadius: 10,
+  border: 'none',
+  background: '#2563eb',
+  color: '#fff',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  padding: '0 14px',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const publishButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: '#355bea',
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  ...iconButtonStyle,
+  width: 'auto',
+  padding: '0 14px',
   fontWeight: 700,
 };
 
-const controlGridStyle: React.CSSProperties = {
+const builderGridStyle: CSSProperties = {
   display: 'grid',
-  gap: 12,
+  gridTemplateColumns: '230px minmax(420px, 1fr) 350px',
+  height: 'calc(100vh - 68px)',
 };
 
-const fieldWrapStyle: React.CSSProperties = {
+const leftPanelStyle: CSSProperties = {
+  borderRight: '1px solid #dde1ea',
+  background: '#fff',
+  padding: 14,
+  overflow: 'auto',
+};
+
+const toolButtonStyle: CSSProperties = {
+  width: 38,
+  height: 36,
+  marginRight: 6,
+  marginBottom: 8,
+  border: '1px solid #d8dde8',
+  borderRadius: 10,
+  background: '#fff',
+  color: '#475467',
+  fontWeight: 800,
+};
+
+const panelDividerStyle: CSSProperties = {
+  height: 1,
+  background: '#e5e7eb',
+  margin: '12px 0',
+};
+
+const sideHeaderStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#667085',
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  marginBottom: 8,
+};
+
+const sectionListStyle: CSSProperties = {
   display: 'grid',
   gap: 6,
 };
 
-const labelStyle: React.CSSProperties = {
-  color: 'var(--text-muted)',
-  fontSize: '0.75rem',
-  fontWeight: 600,
+const sectionButtonStyle: CSSProperties = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 9,
+  background: '#fff',
+  color: '#344054',
+  textAlign: 'left',
+  padding: '9px 10px',
+  cursor: 'pointer',
 };
 
-const inputStyle: React.CSSProperties = {
+const activeSectionButtonStyle: CSSProperties = {
+  ...sectionButtonStyle,
+  borderColor: '#ff7a1a',
+  color: '#111827',
+  background: '#fff7ed',
+};
+
+const docLinkStyle: CSSProperties = {
+  display: 'block',
+  color: '#344054',
+  textDecoration: 'none',
+  fontSize: 12,
+  padding: '8px 0',
+  borderBottom: '1px solid #edf0f5',
+};
+
+const canvasShellStyle: CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  display: 'grid',
+  gridTemplateRows: '38px 1fr',
+};
+
+const pageLabelStyle: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 10,
+  alignItems: 'center',
+  color: '#3b82f6',
+  fontSize: 13,
+  background: '#f8fafc',
+  borderBottom: '1px solid #dde1ea',
+};
+
+const canvasScrollStyle: CSSProperties = {
+  overflow: 'auto',
+  padding: 22,
+};
+
+const canvasPageStyle: CSSProperties = {
+  margin: '0 auto',
+  background: '#fff',
+  minHeight: 1200,
+  borderRadius: 12,
+  overflow: 'hidden',
+  boxShadow: '0 10px 30px rgba(15,23,42,0.12)',
+};
+
+const inspectorStyle: CSSProperties = {
+  borderLeft: '1px solid #dde1ea',
+  background: '#fff',
+  overflow: 'auto',
+};
+
+const inspectorTitleRowStyle: CSSProperties = {
+  padding: '18px 18px 10px',
+  borderBottom: '1px solid #edf0f5',
+};
+
+const panelTitleStyle: CSSProperties = {
+  margin: 0,
+  color: '#344054',
+  fontSize: 16,
+  fontWeight: 800,
+};
+
+const tabRowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  borderBottom: '1px solid #edf0f5',
+};
+
+const tabStyle: CSSProperties = {
+  border: 0,
+  background: '#fff',
+  color: '#344054',
+  padding: '12px 10px',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const activeTabStyle: CSSProperties = {
+  ...tabStyle,
+  color: '#2563eb',
+  borderBottom: '2px solid #2563eb',
+};
+
+const controlGridStyle: CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  padding: 18,
+};
+
+const fieldWrapStyle: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  padding: 18,
+};
+
+const labelStyle: CSSProperties = {
+  color: '#667085',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const inputStyle: CSSProperties = {
   width: '100%',
-  border: '1px solid var(--border-primary)',
-  borderRadius: 8,
-  background: 'rgba(255,255,255,0.04)',
-  color: 'var(--text-primary)',
-  padding: '8px 10px',
+  border: '1px solid #d8dde8',
+  borderRadius: 10,
+  background: '#fff',
+  color: '#111827',
+  padding: '10px 12px',
   font: 'inherit',
 };
 
-const checkWrapStyle: React.CSSProperties = {
+const checkWrapStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  color: 'var(--text-secondary)',
-  fontSize: '0.85rem',
+  color: '#344054',
+  padding: 18,
 };
 
-const nestedBoxStyle: React.CSSProperties = {
-  border: '1px solid var(--border-primary)',
-  borderRadius: 10,
-  padding: 12,
-  display: 'grid',
-  gap: 10,
+const mutedStyle: CSSProperties = {
+  color: '#667085',
+  fontSize: 14,
 };
 
-const nestedTitleStyle: React.CSSProperties = {
+const smallMutedStyle: CSSProperties = {
+  ...mutedStyle,
   margin: 0,
-  color: 'var(--accent)',
-  fontSize: '0.78rem',
-  fontWeight: 700,
+  fontSize: 12,
 };
 
-const primaryButtonStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  border: 0,
+const messageStyle: CSSProperties = {
+  margin: 16,
+  padding: '12px 14px',
+  border: '1px solid',
   borderRadius: 10,
-  background: 'var(--accent)',
-  color: '#000',
-  padding: '10px 14px',
-  fontWeight: 700,
-  cursor: 'pointer',
-  textDecoration: 'none',
+  background: '#fff',
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  border: '1px solid var(--border-primary)',
-  borderRadius: 10,
-  background: 'rgba(255,255,255,0.04)',
-  color: 'var(--text-primary)',
-  padding: '10px 14px',
-  fontWeight: 700,
-  cursor: 'pointer',
-  textDecoration: 'none',
+const canvasSectionStyle: CSSProperties = {
+  borderBottom: '1.5px solid #181612',
+  transition: 'opacity 0.18s ease',
 };
 
-const dangerButtonStyle: React.CSSProperties = {
-  ...primaryButtonStyle,
-  background: 'var(--danger)',
+const canvasSectionInnerStyle: CSSProperties = {
+  maxWidth: 900,
+  margin: '0 auto',
+};
+
+const canvasEyebrowStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+  marginBottom: 10,
+};
+
+const videoPlaceholderStyle: CSSProperties = {
+  width: '100%',
+  aspectRatio: '16 / 9',
+  background: '#181612',
+  borderRadius: 18,
   color: '#fff',
-};
-
-const previewSectionStyle: React.CSSProperties = {
-  minHeight: 520,
-  background: '#FFFCF5',
-  color: '#181612',
-  border: '1.5px solid #181612',
-  boxShadow: '0 4px 0 #181612',
-};
-
-const previewEyebrowStyle: React.CSSProperties = {
-  margin: '0 0 12px',
-  color: '#E66B4D',
-  fontSize: '0.78rem',
+  display: 'grid',
+  placeItems: 'center',
+  marginBottom: 26,
   fontWeight: 800,
+};
+
+const canvasElementStyle: CSSProperties = {
+  display: 'block',
+  width: '100%',
+  border: 0,
+  padding: 4,
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const canvasContentStackStyle: CSSProperties = {
+  display: 'grid',
+  gap: 12,
+};
+
+const canvasGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 14,
+};
+
+const canvasCardStyle: CSSProperties = {
+  background: '#FFFCF5',
+  border: '1.5px solid #181612',
+  borderRadius: 16,
+  padding: 16,
+  color: '#181612',
+};
+
+const canvasListStyle: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+};
+
+const canvasListItemStyle: CSSProperties = {
+  borderBottom: '1px solid #E6DECB',
+  padding: '4px 0',
+};
+
+const nestedCanvasGroupStyle: CSSProperties = {
+  marginTop: 14,
+};
+
+const canvasFieldLabelStyle: CSSProperties = {
+  color: '#E66B4D',
+  fontSize: 12,
+  fontWeight: 900,
+  margin: '0 0 6px',
   textTransform: 'uppercase',
 };
 
-const previewTitleStyle: React.CSSProperties = {
-  margin: '0 0 18px',
-  lineHeight: 1.1,
-  color: '#181612',
-};
-
-const previewBodyStyle: React.CSSProperties = {
-  margin: '0 0 12px',
-  maxWidth: 680,
-  color: '#2B2722',
-  lineHeight: 1.6,
-  whiteSpace: 'pre-line',
-};
-
-const previewCardGridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-  gap: 14,
-  marginTop: 22,
-};
-
-const previewCardStyle: React.CSSProperties = {
-  border: '1.5px solid #181612',
-  background: '#F4EFE3',
-  padding: 14,
-  color: '#181612',
-  fontWeight: 600,
-};
-
-const overlayStyle: React.CSSProperties = {
+const overlayStyle: CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 50000,
-  background: 'rgba(0,0,0,0.72)',
+  background: 'rgba(0,0,0,0.7)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   padding: 20,
+  zIndex: 50000,
 };
 
-const modalStyle: React.CSSProperties = {
+const modalStyle: CSSProperties = {
   width: 'min(460px, 100%)',
-  border: '1px solid var(--border-primary)',
+  background: '#fff',
   borderRadius: 16,
-  background: 'var(--bg-secondary)',
   padding: 24,
 };
 
-const modalTitleStyle: React.CSSProperties = {
+const modalTitleStyle: CSSProperties = {
   margin: '0 0 10px',
-  color: 'var(--text-primary)',
-  fontSize: '1.1rem',
+  color: '#111827',
+  fontSize: 18,
 };

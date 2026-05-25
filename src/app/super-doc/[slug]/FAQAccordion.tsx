@@ -7,7 +7,7 @@ interface FAQItem {
   answer: string;
 }
 
-export default function FAQAccordion({ items }: { items: FAQItem[] }) {
+export default function FAQAccordion({ items, basePath = 'faqs.text' }: { items: FAQItem[]; basePath?: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
@@ -18,7 +18,7 @@ export default function FAQAccordion({ items }: { items: FAQItem[] }) {
             className="sd-faq-q"
             onClick={() => setOpenIndex(openIndex === i ? null : i)}
           >
-            <span>{item.question}</span>
+            <span data-sd-path={`${basePath}.${i}.question`}>{item.question}</span>
             <svg
               className={`sd-faq-chevron ${openIndex === i ? 'open' : ''}`}
               width="20" height="20" viewBox="0 0 20 20" fill="none"
@@ -27,7 +27,7 @@ export default function FAQAccordion({ items }: { items: FAQItem[] }) {
             </svg>
           </button>
           {openIndex === i && (
-            <div className="sd-faq-a">{item.answer}</div>
+            <div className="sd-faq-a" data-sd-path={`${basePath}.${i}.answer`}>{item.answer}</div>
           )}
         </div>
       ))}

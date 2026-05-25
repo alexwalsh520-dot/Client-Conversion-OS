@@ -1,10 +1,27 @@
-export interface SuperDocDesign {
+export type SuperDocDevice = 'desktop' | 'mobile';
+
+export interface SuperDocElementStyle {
+  fontSize?: number;
+  fontWeight?: number;
+  color?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  marginTop?: number;
+  marginBottom?: number;
+}
+
+export interface SuperDocBreakpointDesign {
   fontFamily?: string;
   sectionPadding?: number;
   headingScale?: number;
   bodyScale?: number;
   cardRadius?: number;
   cardShadow?: number;
+}
+
+export interface SuperDocDesign extends SuperDocBreakpointDesign {
+  desktop?: SuperDocBreakpointDesign;
+  mobile?: SuperDocBreakpointDesign;
+  elementStyles?: Record<string, Partial<Record<SuperDocDevice, SuperDocElementStyle>>>;
 }
 
 export interface SuperDocTemplateContent {

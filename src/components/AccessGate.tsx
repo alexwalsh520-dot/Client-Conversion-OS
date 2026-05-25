@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
@@ -9,9 +9,24 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
-  const isLocalDev =
-    typeof window !== "undefined" &&
-    ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const [localDevState, setLocalDevState] = useState({ checked: false, enabled: false });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setLocalDevState({
+        checked: true,
+        enabled: ["localhost", "127.0.0.1"].includes(window.location.hostname),
+      });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  const isLocalDev = localDevState.enabled;
+
+  const isLocalPublicCandidate =
+    pathname === "/studio-2/auto-outreach-test" ||
+    pathname === "/super-doc-editor" ||
+    pathname.startsWith("/super-doc-editor/");
   const isLocalSuperDocEditor =
     (pathname === "/super-doc-editor" || pathname.startsWith("/super-doc-editor/")) && isLocalDev;
   const isLocalAutoOutreachTest =
@@ -38,10 +53,13 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
 
   // Redirect to login when not authenticated (must be before conditional returns for hooks rules)
   useEffect(() => {
+    if (isLocalPublicCandidate && !localDevState.checked) return;
     if (status === "unauthenticated" && !isPublicPage) {
       router.push("/login");
     }
-  }, [status, isPublicPage, router]);
+  }, [status, isPublicPage, isLocalPublicCandidate, localDevState.checked, router]);
+
+  if (isLocalPublicCandidate && !localDevState.checked) return null;
 
   // Public pages (no restriction)
   if (isPublicPage) {
