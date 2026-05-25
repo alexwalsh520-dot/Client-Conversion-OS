@@ -135,6 +135,7 @@ export default async function SuperDocPage({ params }: Props) {
     last_name: capitalizeNamePart(lead.last_name),
     video_url: lead.video_url,
   };
+  const show = (section: string) => !(c.design?.hiddenSections || []).includes(section);
 
   return (
     <div className="sd-root" style={designVars(c.design)}>
@@ -158,7 +159,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 2. WARNING PANEL ═══ */}
-      <section className="sd-section sd-bg-coral">
+      <section hidden={!show('warning')} className="sd-section sd-bg-coral">
         <div className="sd-container sd-text-center">
           <h2 className="sd-h2 sd-text-white sd-whitespace-pre sd-mb-0" {...sdPath('warning.text')}>
             {nl(t(c.warning.text, vars))}
@@ -167,7 +168,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 3. HOW THIS DOCUMENT CAN HELP YOU ═══ */}
-      <section className="sd-section sd-bg-sage">
+      <section hidden={!show('how_doc_helps')} className="sd-section sd-bg-sage">
         <div className="sd-container">
           <div className="sd-eyebrow">Guide</div>
           <h2 className="sd-h2 sd-mb-24" {...sdPath('how_doc_helps.heading')}>{c.how_doc_helps.heading}</h2>
@@ -176,7 +177,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 4. YOUR SPECIAL PACKAGE (divider) ═══ */}
-      <section className="sd-section sd-divider sd-bg-cream">
+      <section hidden={!show('special_package')} className="sd-section sd-divider sd-bg-cream">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow" style={{ justifyContent: 'center' }}>Package</div>
           <h2 className="sd-h2" {...sdPath('special_package.heading')}>{c.special_package.heading}</h2>
@@ -184,7 +185,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 5. WHAT'S INSIDE ═══ */}
-      <section className="sd-section sd-bg-paper">
+      <section hidden={!show('whats_inside')} className="sd-section sd-bg-paper">
         <div className="sd-container">
           <h2 className="sd-h2 sd-text-center sd-mb-48" {...sdPath('whats_inside.heading')}>{c.whats_inside.heading}</h2>
           <div className="sd-grid-3">
@@ -200,7 +201,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 6. HOW WE WANT TO HELP YOU ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('how_we_help')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <div className="sd-eyebrow">Our Mission</div>
           <h2 className="sd-h2 sd-mb-24" {...sdPath('how_we_help.heading')}>{c.how_we_help.heading}</h2>
@@ -209,7 +210,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 7. HERE'S HOW IT WORKS ═══ */}
-      <section className="sd-section sd-bg-paper sd-divider">
+      <section hidden={!show('how_it_works')} className="sd-section sd-bg-paper sd-divider">
         <div className="sd-container">
           <div className="sd-eyebrow">The Model</div>
           <h2 className="sd-h2 sd-mb-24" {...sdPath('how_it_works.heading')}>{c.how_it_works.heading}</h2>
@@ -221,7 +222,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 8–9. MEET OUR TEAM ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('team')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Our Team</div>
           <h2 className="sd-h2 sd-mb-12" {...sdPath('team.heading')}>{c.team.heading}</h2>
@@ -231,7 +232,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 10. FOUNDERS ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('team')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <div className="sd-eyebrow">Founders</div>
           <div className="sd-grid-2 sd-mt-24">
@@ -248,7 +249,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 11. OUR COMPLETE FITNESS OPERATION ═══ */}
-      <section className="sd-section sd-bg-paper">
+      <section hidden={!show('team')} className="sd-section sd-bg-paper">
         <div className="sd-container">
           <div className="sd-eyebrow">Operations</div>
           <h2 className="sd-h2 sd-text-center sd-mb-48">Our Complete Fitness Operation</h2>
@@ -265,7 +266,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 12. EVERYTHING WE DO FOR YOU IS TO ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('mission')} className="sd-section sd-bg-cream">
         <div className="sd-container sd-text-center">
           <h2 className="sd-h2 sd-mb-24" {...sdPath('mission.heading')}>{c.mission.heading}</h2>
           <div className="sd-mb-24">
@@ -278,7 +279,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 13. TYSON STORY — section divider ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('tyson')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Case Study</div>
           <h2 className="sd-h2" {...sdPath('tyson.section_heading')}>{c.tyson.section_heading}</h2>
@@ -286,7 +287,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 14. TYSON INTRO ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('tyson')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32, flexWrap: 'wrap' }}>
             <div className="sd-photo sd-photo-lg">👤</div>
@@ -307,7 +308,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 15. TYSON'S SITUATION ═══ */}
-      <section className="sd-section sd-bg-peach">
+      <section hidden={!show('tyson')} className="sd-section sd-bg-peach">
         <div className="sd-container">
           <div className="sd-eyebrow">The Challenge</div>
           <h2 className="sd-h2 sd-mb-32" {...sdPath('tyson.situation_heading')}>{c.tyson.situation_heading}</h2>
@@ -322,7 +323,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 16. TYSON'S RESPONSIBILITIES ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('tyson')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <h2 className="sd-h2 sd-mb-32" {...sdPath('tyson.responsibilities_heading')}>{c.tyson.responsibilities_heading}</h2>
           <div className="sd-grid-3 sd-mb-32">
@@ -339,7 +340,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 17. HOW DID WE HELP HIM? ═══ */}
-      <section className="sd-section sd-bg-paper sd-divider">
+      <section hidden={!show('tyson')} className="sd-section sd-bg-paper sd-divider">
         <div className="sd-container">
           <div className="sd-eyebrow">The Process</div>
           <h2 className="sd-h2 sd-text-center sd-mb-48" {...sdPath('tyson.how_helped_heading')}>{c.tyson.how_helped_heading}</h2>
@@ -359,7 +360,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 18. HERE'S EXACTLY HOW (divider) ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('promotion')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Deep Dive</div>
           <h2 className="sd-h2" {...sdPath('promotion.section_heading')}>{c.promotion.section_heading}</h2>
@@ -367,7 +368,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 19. HOW WE PROMOTED — TOC ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('promotion')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <div className="sd-eyebrow">Promotion</div>
           <h2 className="sd-h2 sd-mb-24" {...sdPath('promotion.heading')}>{c.promotion.heading}</h2>
@@ -381,7 +382,7 @@ export default async function SuperDocPage({ params }: Props) {
 
       {/* ═══ 20–23. PROMOTION STEPS ═══ */}
       {c.promotion.steps.map((step, i) => (
-        <section key={`promo-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
+        <section hidden={!show('promotion')} key={`promo-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
           <div className="sd-container">
             <div className="sd-eyebrow">Step {i + 1}</div>
             <h2 className="sd-h3 sd-mb-24" {...sdPath(`promotion.steps.${i}.heading`)}>{step.heading}</h2>
@@ -396,7 +397,7 @@ export default async function SuperDocPage({ params }: Props) {
       ))}
 
       {/* ═══ 24. HOW WE BOOKED SALES CALLS (divider) ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('booking')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Sales</div>
           <h2 className="sd-h2" {...sdPath('booking.section_heading')}>{c.booking.section_heading}</h2>
@@ -404,7 +405,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 25. BOOKING TOC ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('booking')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <ul className="sd-toc">
             {c.booking.toc.map((item, i) => (
@@ -416,7 +417,7 @@ export default async function SuperDocPage({ params }: Props) {
 
       {/* ═══ 26. BOOKING STEPS ═══ */}
       {c.booking.steps.map((step, i) => (
-        <section key={`book-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
+        <section hidden={!show('booking')} key={`book-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
           <div className="sd-container">
             <h3 className="sd-h3 sd-mb-24" {...sdPath(`booking.steps.${i}.heading`)}>{step.heading}</h3>
             <p className="sd-body sd-whitespace-pre" {...sdPath(`booking.steps.${i}.body`)}>{nl(step.body)}</p>
@@ -425,7 +426,7 @@ export default async function SuperDocPage({ params }: Props) {
       ))}
 
       {/* ═══ 27. HOW WE COLLECTED CASH (divider) ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('cash')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Revenue</div>
           <h2 className="sd-h2" {...sdPath('cash.section_heading')}>{c.cash.section_heading}</h2>
@@ -433,7 +434,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 28. CASH TOC ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('cash')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <ul className="sd-toc">
             {c.cash.toc.map((item, i) => (
@@ -445,7 +446,7 @@ export default async function SuperDocPage({ params }: Props) {
 
       {/* ═══ 29. CASH STEPS ═══ */}
       {c.cash.steps.map((step, i) => (
-        <section key={`cash-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
+        <section hidden={!show('cash')} key={`cash-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
           <div className="sd-container">
             <h3 className="sd-h3 sd-mb-24" {...sdPath(`cash.steps.${i}.heading`)}>{step.heading}</h3>
             <p className="sd-body sd-whitespace-pre" {...sdPath(`cash.steps.${i}.body`)}>{nl(step.body)}</p>
@@ -454,7 +455,7 @@ export default async function SuperDocPage({ params }: Props) {
       ))}
 
       {/* ═══ 30. HOW WE COACHED (divider) ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('coaching')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Coaching</div>
           <h2 className="sd-h2" {...sdPath('coaching.section_heading')}>{c.coaching.section_heading}</h2>
@@ -462,7 +463,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 31. COACHING TOC ═══ */}
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('coaching')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <ul className="sd-toc">
             {c.coaching.toc.map((item, i) => (
@@ -474,7 +475,7 @@ export default async function SuperDocPage({ params }: Props) {
 
       {/* ═══ 32. COACHING STEPS ═══ */}
       {c.coaching.steps.map((step, i) => (
-        <section key={`coach-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
+        <section hidden={!show('coaching')} key={`coach-${i}`} className={`sd-section ${i % 2 === 0 ? 'sd-bg-paper' : 'sd-bg-cream'} sd-divider`}>
           <div className="sd-container">
             <h3 className="sd-h3 sd-mb-24" {...sdPath(`coaching.steps.${i}.heading`)}>{step.heading}</h3>
             <p className="sd-body sd-whitespace-pre" {...sdPath(`coaching.steps.${i}.body`)}>{nl(step.body)}</p>
@@ -483,13 +484,13 @@ export default async function SuperDocPage({ params }: Props) {
       ))}
 
       {/* ═══ 33–34. RESULTS ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('results')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">Results</div>
           <h2 className="sd-h2" {...sdPath('results.heading')}>{c.results.heading}</h2>
         </div>
       </section>
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('results')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <p className="sd-body sd-whitespace-pre sd-mb-32" {...sdPath('results.body')}>{nl(c.results.body)}</p>
           <div className="sd-callout sd-callout-sage">
@@ -499,7 +500,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 35–36. SPECIAL OFFER ═══ */}
-      <section className="sd-section sd-bg-coral sd-divider">
+      <section hidden={!show('offer')} className="sd-section sd-bg-coral sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow" style={{ justifyContent: 'center', color: '#fff' }}>
             <span style={{ color: '#fff' }}>Special Offer</span>
@@ -507,7 +508,7 @@ export default async function SuperDocPage({ params }: Props) {
           <h2 className="sd-h2 sd-text-white" {...sdPath('offer.heading')}>{c.offer.heading}</h2>
         </div>
       </section>
-      <section className="sd-section sd-bg-paper">
+      <section hidden={!show('offer')} className="sd-section sd-bg-paper">
         <div className="sd-container">
           <div className="sd-offer-grid">
             {c.offer.columns.map((col, i) => (
@@ -537,7 +538,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 37. NEXT STEPS ═══ */}
-      <section className="sd-section sd-bg-cream sd-divider">
+      <section hidden={!show('next_steps')} className="sd-section sd-bg-cream sd-divider">
         <div className="sd-container">
           <div className="sd-eyebrow">Next Steps</div>
           <h2 className="sd-h2 sd-text-center sd-mb-48" {...sdPath('next_steps.heading')}>{c.next_steps.heading}</h2>
@@ -554,7 +555,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 38. 2 OPTIONS CTA ═══ */}
-      <section className="sd-section sd-bg-paper sd-divider">
+      <section hidden={!show('cta')} className="sd-section sd-bg-paper sd-divider">
         <div className="sd-container">
           <h2 className="sd-h2 sd-text-center sd-mb-48">2 Options To See If This Is For You!</h2>
           <div className="sd-cta-grid">
@@ -572,13 +573,13 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 39–40. FAQ VIDEOS ═══ */}
-      <section className="sd-section sd-bg-forest sd-divider">
+      <section hidden={!show('faqs')} className="sd-section sd-bg-forest sd-divider">
         <div className="sd-container sd-text-center">
           <div className="sd-eyebrow">FAQs</div>
           <h2 className="sd-h2">Frequently Asked Questions</h2>
         </div>
       </section>
-      <section className="sd-section sd-bg-cream">
+      <section hidden={!show('faqs')} className="sd-section sd-bg-cream">
         <div className="sd-container">
           <h3 className="sd-h3 sd-text-center sd-mb-32">FAQ Videos</h3>
           <div className="sd-video-grid">
@@ -604,7 +605,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 41. FAQ TEXT ═══ */}
-      <section className="sd-section sd-bg-paper sd-divider">
+      <section hidden={!show('faqs')} className="sd-section sd-bg-paper sd-divider">
         <div className="sd-container">
           <h3 className="sd-h3 sd-mb-32">Common Questions</h3>
           <FAQAccordion items={c.faqs.text} basePath="faqs.text" />
@@ -612,7 +613,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 42. ABOUT US ═══ */}
-      <section className="sd-section sd-bg-cream sd-divider">
+      <section hidden={!show('about')} className="sd-section sd-bg-cream sd-divider">
         <div className="sd-container">
           <div className="sd-eyebrow">About</div>
           <h2 className="sd-h2 sd-mb-24" {...sdPath('about.heading')}>{c.about.heading}</h2>
@@ -641,7 +642,7 @@ export default async function SuperDocPage({ params }: Props) {
       </section>
 
       {/* ═══ 43. FINAL CTA ═══ */}
-      <section className="sd-section sd-bg-paper sd-divider">
+      <section hidden={!show('cta')} className="sd-section sd-bg-paper sd-divider">
         <div className="sd-container">
           <h2 className="sd-h2 sd-text-center sd-mb-48">2 Options</h2>
           <div className="sd-cta-grid">

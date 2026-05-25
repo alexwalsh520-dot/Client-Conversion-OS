@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ExternalLink, FileText, LayoutTemplate, Monitor, Save, Smartphone } from 'lucide-react';
+import { ExternalLink, FileText, LayoutTemplate, Monitor, Plus, Save, Smartphone, Square, Trash2, Type } from 'lucide-react';
 import type {
   SuperDocBreakpointDesign,
   SuperDocDesign,
@@ -87,7 +87,8 @@ function titleize(key: string): string {
 }
 
 function sectionKeys(content: SuperDocTemplateContent): string[] {
-  const keys = Object.keys(content).filter((key) => key !== 'design');
+  const hidden = new Set(content.design?.hiddenSections || []);
+  const keys = Object.keys(content).filter((key) => key !== 'design' && !hidden.has(key));
   return SECTION_ORDER.filter((key) => keys.includes(key)).concat(keys.filter((key) => !SECTION_ORDER.includes(key)));
 }
 
@@ -97,6 +98,7 @@ function getFlatDesign(design?: SuperDocDesign): SuperDocBreakpointDesign {
   delete flat.desktop;
   delete flat.mobile;
   delete flat.elementStyles;
+  delete flat.hiddenSections;
   return flat;
 }
 
@@ -107,6 +109,7 @@ function normalizeDesign(design?: SuperDocDesign): SuperDocDesign {
     desktop: { ...DEFAULT_DESKTOP, ...flat, ...(design?.desktop || {}) },
     mobile: { ...DEFAULT_MOBILE, ...flat, ...(design?.mobile || {}) },
     elementStyles: design?.elementStyles || {},
+    hiddenSections: design?.hiddenSections || [],
   };
 }
 
@@ -161,6 +164,32 @@ function firstText(value: JsonValue): string {
   return '';
 }
 
+function firstEditablePath(value: JsonValue, basePath: string): string | null {
+  if (isPrimitive(value)) return basePath;
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const path = firstEditablePath(value[index], `${basePath}.${index}`);
+      if (path) return path;
+    }
+    return null;
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value);
+    const heading = entries.find(([key]) => ['heading', 'section_heading', 'title_template', 'text'].includes(key));
+    const ordered = heading ? [heading, ...entries.filter(([key]) => key !== heading[0])] : entries;
+
+    for (const [key, child] of ordered) {
+      if (key === 'serif_word') continue;
+      const path = firstEditablePath(child, `${basePath}.${key}`);
+      if (path) return path;
+    }
+  }
+
+  return null;
+}
+
 function getElementStyle(content: SuperDocTemplateContent, path: string, device: SuperDocDevice): SuperDocElementStyle {
   const design = normalizeDesign(content.design);
   return design.elementStyles?.[path]?.[device] || {};
@@ -191,6 +220,7 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showAddSections, setShowAddSections] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -202,9 +232,10 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const loaded = normalizeContent(data.content as SuperDocTemplateContent);
+      const firstSection = sectionKeys(loaded)[0] || 'hero';
       setContent(loaded);
-      setSelectedSection(sectionKeys(loaded)[0] || 'hero');
-      setSelectedPath('hero.title_template');
+      setSelectedSection(firstSection);
+      setSelectedPath(firstEditablePath((loaded as unknown as Record<string, JsonValue>)[firstSection], firstSection) || firstSection);
     } catch {
       setMessage({ type: 'error', text: mode === 'template' ? 'Template could not load.' : 'This Super Doc could not load.' });
     } finally {
@@ -225,18 +256,85 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
   }, [mode]);
 
   const sections = useMemo(() => (content ? sectionKeys(content) : []), [content]);
+  const addableSections = useMemo(() => {
+    if (!content) return [];
+    const hidden = new Set(content.design?.hiddenSections || []);
+    return SECTION_ORDER.filter((section) => hidden.has(section));
+  }, [content]);
   const selectedValue = content ? getAtPath(content, selectedPath) : null;
   const currentDesign = content ? getDeviceDesign(content, device) : DEFAULT_DESKTOP;
+
+  const selectSection = (section: string) => {
+    if (!content) return;
+    const sectionValue = (content as unknown as Record<string, JsonValue>)[section];
+    setSelectedSection(section);
+    setSelectedPath(firstEditablePath(sectionValue, section) || section);
+    setInspectorTab('general');
+    setShowAddSections(false);
+  };
 
   const selectElement = (path: string) => {
     setSelectedPath(path);
     setSelectedSection(path.split('.')[0]);
     setInspectorTab('general');
+    setShowAddSections(false);
   };
 
   const update = useCallback((path: string, value: JsonValue) => {
     setContent((prev) => (prev ? setAtPath(prev, path, value) : prev));
   }, []);
+
+  const selectFirstTextInSection = () => {
+    if (!content) return;
+    const sectionValue = (content as unknown as Record<string, JsonValue>)[selectedSection];
+    const path = firstEditablePath(sectionValue, selectedSection);
+    if (!path) return;
+    selectElement(path);
+  };
+
+  const hideSection = (section: string) => {
+    if (!content || section === 'hero') return;
+    const visibleSections = sections.filter((item) => item !== section);
+    const fallbackSection = visibleSections[Math.max(0, sections.indexOf(section) - 1)] || 'hero';
+    const fallbackValue = (content as unknown as Record<string, JsonValue>)[fallbackSection];
+    setContent((prev) => {
+      if (!prev) return prev;
+      const design = normalizeDesign(prev.design);
+      const hidden = Array.from(new Set([...(design.hiddenSections || []), section]));
+      return {
+        ...prev,
+        design: {
+          ...design,
+          hiddenSections: hidden,
+        },
+      };
+    });
+    setSelectedSection(fallbackSection);
+    setSelectedPath(firstEditablePath(fallbackValue, fallbackSection) || fallbackSection);
+    setInspectorTab('general');
+    setMessage({ type: 'success', text: `${titleize(section)} was removed from the page. Save when ready.` });
+  };
+
+  const showSection = (section: string) => {
+    if (!content) return;
+    const sectionValue = (content as unknown as Record<string, JsonValue>)[section];
+    setContent((prev) => {
+      if (!prev) return prev;
+      const design = normalizeDesign(prev.design);
+      return {
+        ...prev,
+        design: {
+          ...design,
+          hiddenSections: (design.hiddenSections || []).filter((item) => item !== section),
+        },
+      };
+    });
+    setSelectedSection(section);
+    setSelectedPath(firstEditablePath(sectionValue, section) || section);
+    setInspectorTab('general');
+    setShowAddSections(false);
+    setMessage({ type: 'success', text: `${titleize(section)} was added back. Save when ready.` });
+  };
 
   const updateDeviceDesign = (key: keyof SuperDocBreakpointDesign, value: string | number) => {
     setContent((prev) => {
@@ -374,21 +472,51 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
 
       <div style={builderGridStyle}>
         <aside style={leftPanelStyle}>
-          <button style={toolButtonStyle}>+</button>
-          <button style={toolButtonStyle}>▦</button>
-          <button style={toolButtonStyle}>T</button>
-          <button style={toolButtonStyle}>▭</button>
+          <div style={toolbarStyle}>
+            <button type="button" onClick={() => setShowAddSections((value) => !value)} style={showAddSections ? activeToolButtonStyle : toolButtonStyle} title="Add a removed section">
+              <Plus size={16} />
+            </button>
+            <button type="button" onClick={() => selectSection(selectedSection)} style={toolButtonStyle} title="Select the current section">
+              <LayoutTemplate size={16} />
+            </button>
+            <button type="button" onClick={selectFirstTextInSection} style={toolButtonStyle} title="Select the first text in this section">
+              <Type size={16} />
+            </button>
+            <button type="button" onClick={() => setInspectorTab('styles')} style={inspectorTab === 'styles' ? activeToolButtonStyle : toolButtonStyle} title="Edit styles">
+              <Square size={15} />
+            </button>
+          </div>
+          {showAddSections && (
+            <div style={addSectionPanelStyle}>
+              <p style={smallMutedStyle}>Add back a section you removed.</p>
+              {addableSections.length ? addableSections.map((section) => (
+                <button key={section} type="button" onClick={() => showSection(section)} style={addSectionButtonStyle}>
+                  <Plus size={14} />
+                  {titleize(section)}
+                </button>
+              )) : (
+                <p style={smallMutedStyle}>Nothing is removed right now.</p>
+              )}
+            </div>
+          )}
           <div style={panelDividerStyle} />
           <div style={sideHeaderStyle}><LayoutTemplate size={15} /> Page</div>
           <div style={sectionListStyle}>
             {sections.map((section) => (
-              <button
-                key={section}
-                onClick={() => setSelectedSection(section)}
-                style={section === selectedSection ? activeSectionButtonStyle : sectionButtonStyle}
-              >
-                {titleize(section)}
-              </button>
+              <div key={section} style={sectionRowStyle}>
+                <button
+                  type="button"
+                  onClick={() => selectSection(section)}
+                  style={section === selectedSection ? activeSectionButtonStyle : sectionButtonStyle}
+                >
+                  {titleize(section)}
+                </button>
+                {section !== 'hero' && (
+                  <button type="button" onClick={() => hideSection(section)} style={deleteSectionButtonStyle} title={`Remove ${titleize(section)}`}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           {mode === 'template' && (
@@ -429,6 +557,12 @@ export default function VisualSuperDocEditor({ mode, slug }: VisualSuperDocEdito
         <aside style={inspectorStyle}>
           <div style={inspectorTitleRowStyle}>
             <h2 style={panelTitleStyle}>{selectedValue === null ? 'Page Settings' : titleize(selectedPath)}</h2>
+            {selectedSection !== 'hero' && sections.includes(selectedSection) && (
+              <button type="button" onClick={() => hideSection(selectedSection)} style={dangerSmallButtonStyle}>
+                <Trash2 size={14} />
+                Remove Section
+              </button>
+            )}
           </div>
           <div style={tabRowStyle}>
             <button onClick={() => setInspectorTab('general')} style={inspectorTab === 'general' ? activeTabStyle : tabStyle}>General</button>
@@ -838,16 +972,55 @@ const leftPanelStyle: CSSProperties = {
   overflow: 'auto',
 };
 
+const toolbarStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, 38px)',
+  gap: 6,
+};
+
 const toolButtonStyle: CSSProperties = {
   width: 38,
   height: 36,
-  marginRight: 6,
-  marginBottom: 8,
   border: '1px solid #d8dde8',
   borderRadius: 10,
   background: '#fff',
   color: '#475467',
   fontWeight: 800,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+};
+
+const activeToolButtonStyle: CSSProperties = {
+  ...toolButtonStyle,
+  borderColor: '#2563eb',
+  background: '#eef4ff',
+  color: '#2454d6',
+};
+
+const addSectionPanelStyle: CSSProperties = {
+  border: '1px solid #dde1ea',
+  borderRadius: 12,
+  background: '#f8fafc',
+  padding: 10,
+  marginTop: 10,
+  display: 'grid',
+  gap: 8,
+};
+
+const addSectionButtonStyle: CSSProperties = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 9,
+  color: '#344054',
+  textAlign: 'left',
+  padding: '9px 10px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  background: '#fff',
 };
 
 const panelDividerStyle: CSSProperties = {
@@ -872,6 +1045,13 @@ const sectionListStyle: CSSProperties = {
   gap: 6,
 };
 
+const sectionRowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 36px',
+  gap: 6,
+  alignItems: 'stretch',
+};
+
 const sectionButtonStyle: CSSProperties = {
   border: '1px solid #e5e7eb',
   borderRadius: 9,
@@ -880,6 +1060,7 @@ const sectionButtonStyle: CSSProperties = {
   textAlign: 'left',
   padding: '9px 10px',
   cursor: 'pointer',
+  width: '100%',
 };
 
 const activeSectionButtonStyle: CSSProperties = {
@@ -887,6 +1068,17 @@ const activeSectionButtonStyle: CSSProperties = {
   borderColor: '#ff7a1a',
   color: '#111827',
   background: '#fff7ed',
+};
+
+const deleteSectionButtonStyle: CSSProperties = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 9,
+  background: '#fff',
+  color: '#98a2b3',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
 };
 
 const docLinkStyle: CSSProperties = {
@@ -939,6 +1131,10 @@ const inspectorStyle: CSSProperties = {
 const inspectorTitleRowStyle: CSSProperties = {
   padding: '18px 18px 10px',
   borderBottom: '1px solid #edf0f5',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
 };
 
 const panelTitleStyle: CSSProperties = {
@@ -946,6 +1142,22 @@ const panelTitleStyle: CSSProperties = {
   color: '#344054',
   fontSize: 16,
   fontWeight: 800,
+};
+
+const dangerSmallButtonStyle: CSSProperties = {
+  border: '1px solid #fecaca',
+  borderRadius: 9,
+  background: '#fff7f7',
+  color: '#b42318',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  padding: '8px 10px',
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const tabRowStyle: CSSProperties = {

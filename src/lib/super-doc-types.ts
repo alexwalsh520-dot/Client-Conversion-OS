@@ -22,6 +22,7 @@ export interface SuperDocDesign extends SuperDocBreakpointDesign {
   desktop?: SuperDocBreakpointDesign;
   mobile?: SuperDocBreakpointDesign;
   elementStyles?: Record<string, Partial<Record<SuperDocDevice, SuperDocElementStyle>>>;
+  hiddenSections?: string[];
 }
 
 export interface SuperDocTemplateContent {
