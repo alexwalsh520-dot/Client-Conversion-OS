@@ -13,7 +13,7 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     typeof window !== "undefined" &&
     ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const isLocalSuperDocEditor =
-    pathname === "/super-doc-editor" && isLocalDev;
+    (pathname === "/super-doc-editor" || pathname.startsWith("/super-doc-editor/")) && isLocalDev;
   const isLocalAutoOutreachTest =
     pathname === "/studio-2/auto-outreach-test" && isLocalDev;
   const isPublicPage =

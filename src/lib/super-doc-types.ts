@@ -1,4 +1,14 @@
+export interface SuperDocDesign {
+  fontFamily?: string;
+  sectionPadding?: number;
+  headingScale?: number;
+  bodyScale?: number;
+  cardRadius?: number;
+  cardShadow?: number;
+}
+
 export interface SuperDocTemplateContent {
+  design?: SuperDocDesign;
   hero: {
     title_template: string;
     serif_word: string;

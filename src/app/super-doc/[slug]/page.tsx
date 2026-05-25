@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
+import type { CSSProperties } from 'react';
 import { getLeadBySlug } from '@/lib/super-doc-db';
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
-import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
+import type { SuperDocDesign, SuperDocTemplateContent } from '@/lib/super-doc-types';
 import ViewTracker from './ViewTracker';
 import FAQAccordion from './FAQAccordion';
 
@@ -67,6 +68,18 @@ function CalendarBlock({ url }: { url: string }) {
   );
 }
 
+function designVars(design?: SuperDocDesign): CSSProperties {
+  const fontFamily = design?.fontFamily || 'Inter';
+  return {
+    '--sd-active-font': fontFamily,
+    '--sd-section-y': `${design?.sectionPadding ?? 80}px`,
+    '--sd-heading-scale': design?.headingScale ?? 1,
+    '--sd-body-scale': design?.bodyScale ?? 1,
+    '--sd-card-radius': `${design?.cardRadius ?? 22}px`,
+    '--sd-card-shadow': `${design?.cardShadow ?? 4}px`,
+  } as CSSProperties;
+}
+
 export default async function SuperDocPage({ params }: Props) {
   const { slug } = await params;
   const lead = await getLeadBySlug(slug);
@@ -80,7 +93,7 @@ export default async function SuperDocPage({ params }: Props) {
   };
 
   return (
-    <div className="sd-root">
+    <div className="sd-root" style={designVars(c.design)}>
       <ViewTracker slug={slug} />
 
       {/* ═══ 1. HERO ═══ */}

@@ -45,6 +45,14 @@ export async function getAllLeads(): Promise<SuperDocLead[]> {
   return (data || []) as SuperDocLead[];
 }
 
+export async function updateLeadSnapshot(slug: string, content: SuperDocTemplateContent): Promise<void> {
+  const { error } = await db()
+    .from('super_doc_leads')
+    .update({ content_snapshot: content })
+    .eq('slug', slug);
+  if (error) throw new Error(`Failed to update lead page: ${error.message}`);
+}
+
 export async function createLead(lead: {
   slug: string;
   first_name: string;

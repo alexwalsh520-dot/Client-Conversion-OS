@@ -19,6 +19,7 @@ interface LeadResult {
   lastName: string;
   status: LeadStatus;
   pageUrl?: string;
+  slug?: string;
   routePlan?: RoutePlan;
   error?: string;
 }
@@ -44,6 +45,7 @@ interface SSEEvent {
   status: string;
   pageUrl?: string;
   gammaUrl?: string;
+  slug?: string;
   routePlan?: RoutePlan;
   error?: string;
 }
@@ -314,6 +316,7 @@ export default function OutreachRunPage() {
                 lastName: data.lastName || next[data.leadIndex!].lastName,
                 status: data.status as LeadResult['status'],
                 pageUrl: data.pageUrl || data.gammaUrl,
+                slug: data.slug,
                 routePlan: data.routePlan,
                 error: data.error,
               };
@@ -531,20 +534,25 @@ export default function OutreachRunPage() {
                     </span>
                   </div>
                   {r.pageUrl && (
-                    <a
-                      href={r.pageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        color: 'var(--accent)',
-                        fontSize: '0.8rem',
-                        marginTop: 4,
-                        display: 'block',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {r.pageUrl}
-                    </a>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                      <a
+                        href={r.pageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: 'var(--accent)',
+                          fontSize: '0.8rem',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {r.pageUrl}
+                      </a>
+                      {r.slug && (
+                        <Link href={`/super-doc-editor/${r.slug}`} style={miniLinkStyle}>
+                          Edit Doc
+                        </Link>
+                      )}
+                    </div>
                   )}
                   {r.routePlan && (
                     <div style={routeBoxStyle}>
@@ -633,4 +641,14 @@ const routeTextStyle: React.CSSProperties = {
   margin: '0 0 4px',
   color: 'var(--text-secondary)',
   fontSize: '0.75rem',
+};
+
+const miniLinkStyle: React.CSSProperties = {
+  color: 'var(--text-primary)',
+  border: '1px solid var(--border-primary)',
+  borderRadius: 999,
+  padding: '0.25rem 0.55rem',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  textDecoration: 'none',
 };

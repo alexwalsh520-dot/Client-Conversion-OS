@@ -19,6 +19,12 @@
   --sd-forest: #1F3D2E;
   --sd-serif: 'Instrument Serif', Georgia, serif;
   --sd-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --sd-active-font: var(--sd-sans);
+  --sd-section-y: 80px;
+  --sd-heading-scale: 1;
+  --sd-body-scale: 1;
+  --sd-card-radius: 22px;
+  --sd-card-shadow: 4px;
   --sd-max: 1100px;
 }
 
@@ -31,7 +37,7 @@
   overflow-x: hidden;
   background: var(--sd-cream);
   color: var(--sd-ink);
-  font-family: var(--sd-sans);
+  font-family: var(--sd-active-font), var(--sd-sans);
   font-weight: 400;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
@@ -62,7 +68,7 @@
 .sd-h1 {
   font-family: var(--sd-sans);
   font-weight: 800;
-  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  font-size: calc(clamp(2.2rem, 5vw, 3.8rem) * var(--sd-heading-scale));
   line-height: 1.1;
   color: var(--sd-ink);
   letter-spacing: -0.02em;
@@ -71,7 +77,7 @@
 .sd-h2 {
   font-family: var(--sd-sans);
   font-weight: 700;
-  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+  font-size: calc(clamp(1.6rem, 3.5vw, 2.4rem) * var(--sd-heading-scale));
   line-height: 1.2;
   color: var(--sd-ink);
   letter-spacing: -0.01em;
@@ -80,7 +86,7 @@
 .sd-h3 {
   font-family: var(--sd-sans);
   font-weight: 700;
-  font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+  font-size: calc(clamp(1.2rem, 2.5vw, 1.6rem) * var(--sd-heading-scale));
   line-height: 1.3;
   color: var(--sd-ink);
 }
@@ -88,7 +94,7 @@
 .sd-h4 {
   font-family: var(--sd-sans);
   font-weight: 600;
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-size: calc(clamp(1rem, 2vw, 1.25rem) * var(--sd-heading-scale));
   line-height: 1.35;
   color: var(--sd-ink);
 }
@@ -101,7 +107,7 @@
 }
 
 .sd-body {
-  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
+  font-size: calc(clamp(0.95rem, 1.5vw, 1.1rem) * var(--sd-body-scale));
   color: var(--sd-ink-soft);
   line-height: 1.7;
   max-width: 720px;
@@ -136,7 +142,7 @@
 
 /* ── Section spacing ──────────────────────────────────── */
 .sd-section {
-  padding: 80px 0;
+  padding: var(--sd-section-y) 0;
 }
 
 @media (max-width: 640px) {
@@ -170,9 +176,9 @@
 .sd-card {
   background: var(--sd-paper);
   border: 1.5px solid var(--sd-ink);
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   padding: 32px;
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -184,7 +190,7 @@
 .sd-card-flat {
   background: var(--sd-paper);
   border: 1.5px solid var(--sd-line);
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   padding: 32px;
 }
 
@@ -269,10 +275,10 @@
   position: relative;
   width: 100%;
   padding-bottom: 56.25%; /* 16:9 */
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   overflow: hidden;
   border: 1.5px solid var(--sd-ink);
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
   background: var(--sd-ink);
 }
 
@@ -287,7 +293,7 @@
 
 /* ── Callout panels ───────────────────────────────────── */
 .sd-callout {
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   padding: 40px;
   text-align: center;
   border: 1.5px solid var(--sd-ink);
@@ -351,10 +357,10 @@
 .sd-cta-option {
   background: var(--sd-paper);
   border: 1.5px solid var(--sd-ink);
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   padding: 40px 32px;
   text-align: center;
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
 }
@@ -379,10 +385,10 @@
 
 /* ── Calendly embed ───────────────────────────────────── */
 .sd-calendly-wrap {
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   overflow: hidden;
   border: 1.5px solid var(--sd-ink);
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
   margin-top: 32px;
 }
 
@@ -395,9 +401,9 @@
 .sd-calendar-card {
   margin-top: 32px;
   padding: 32px;
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   border: 1.5px solid var(--sd-ink);
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
   background: var(--sd-sage);
   text-align: center;
 }
@@ -414,7 +420,7 @@
   color: #fff;
   font-weight: 800;
   text-decoration: none;
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
 }
 
 .sd-calendar-button:hover {
@@ -536,10 +542,10 @@
 }
 
 .sd-video-card {
-  border-radius: 22px;
+  border-radius: var(--sd-card-radius);
   overflow: hidden;
   border: 1.5px solid var(--sd-ink);
-  box-shadow: 0 4px 0 var(--sd-ink);
+  box-shadow: 0 var(--sd-card-shadow) 0 var(--sd-ink);
 }
 
 .sd-video-card-title {
