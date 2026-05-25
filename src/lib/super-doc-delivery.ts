@@ -174,6 +174,7 @@ function buildSmartleadCustomFields(input: {
 
   const fields: Record<string, string> = {
     super_doc_url: input.pageUrl,
+    custom_doc_link: input.pageUrl,
     custom_doc_url: input.pageUrl,
     personalized_doc_url: input.pageUrl,
     video_url: input.videoUrl,

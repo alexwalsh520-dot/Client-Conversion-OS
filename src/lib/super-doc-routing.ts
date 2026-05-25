@@ -94,12 +94,15 @@ export function getSuperDocSegment(leadType: string): SuperDocSegment {
   return "unknown";
 }
 
-function readEnv(names: string[]) {
+const DEFAULT_CREATOR_CAMPAIGN_ID = "2861827";
+const DEFAULT_AGENCY_TM_CAMPAIGN_ID = "3392503";
+
+function readEnv(names: string[], fallback = "") {
   for (const name of names) {
     const value = clean(process.env[name]);
     if (value) return { name, value };
   }
-  return { name: names[0], value: "" };
+  return { name: names[0], value: fallback };
 }
 
 export function getSmartleadCampaignForSegment(segment: SuperDocSegment) {
@@ -107,7 +110,7 @@ export function getSmartleadCampaignForSegment(segment: SuperDocSegment) {
     return readEnv([
       "SMARTLEAD_AGENCY_TM_CAMPAIGN_ID",
       "SMARTLEAD_AGENCY_CAMPAIGN_ID",
-    ]);
+    ], DEFAULT_AGENCY_TM_CAMPAIGN_ID);
   }
 
   if (segment === "creator") {
@@ -115,7 +118,7 @@ export function getSmartleadCampaignForSegment(segment: SuperDocSegment) {
       "SMARTLEAD_CREATOR_CAMPAIGN_ID",
       "SMARTLEAD_SOLO_CREATOR_CAMPAIGN_ID",
       "SMARTLEAD_CAMPAIGN_ID",
-    ]);
+    ], DEFAULT_CREATOR_CAMPAIGN_ID);
   }
 
   return readEnv(["SMARTLEAD_CAMPAIGN_ID"]);
