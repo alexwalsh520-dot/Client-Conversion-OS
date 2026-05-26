@@ -7,6 +7,7 @@ import { deliverSuperDocLead, type SuperDocDeliveryResult } from '@/lib/super-do
 import { capitalizeNamePart, formatFullName } from '@/lib/super-doc-name';
 import type { SuperDocTemplateContent } from '@/lib/super-doc-types';
 import { getTemplateContentForLeadType, stripVariantTemplates } from '@/lib/super-doc-template-variants';
+import { createVideoJob } from '@/lib/super-doc-video-automation';
 import {
   buildSuperDocRoutePlan,
   getInstagramUrl,
@@ -366,8 +367,16 @@ function resolveVideoUrl(lead: Lead) {
   );
 }
 
+type OutreachVideoMode = 'existing' | 'queue';
+
 export async function POST(req: NextRequest) {
-  let body: { runId: string; csvText: string; testMode?: boolean };
+  let body: {
+    runId: string;
+    csvText: string;
+    testMode?: boolean;
+    videoMode?: OutreachVideoMode;
+    deferDeliveryUntilVideoReady?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -376,6 +385,8 @@ export async function POST(req: NextRequest) {
 
   const { runId, csvText } = body;
   const testMode = body.testMode !== false;
+  const videoMode: OutreachVideoMode = body.videoMode === 'queue' ? 'queue' : 'existing';
+  const deferDeliveryUntilVideoReady = body.deferDeliveryUntilVideoReady ?? (videoMode === 'queue');
   if (!runId || !csvText) {
     return Response.json({ error: 'Missing runId or csvText' }, { status: 400 });
   }
@@ -403,7 +414,7 @@ export async function POST(req: NextRequest) {
   }
 
   const hasUploadedVideos = files.length > 0;
-  const hasRemoteVideosToUpload = leads.some((lead) => {
+  const hasRemoteVideosToUpload = videoMode === 'existing' && leads.some((lead) => {
     const videoUrl = (lead.video_url || '').trim();
     return videoUrl && !isBunnyEmbedUrl(videoUrl);
   });
@@ -425,7 +436,7 @@ export async function POST(req: NextRequest) {
     console.log(`[OutreachRun] Found uploaded video: ${key} → ${join(tmpDir, f)}`);
   }
 
-  console.log(`[OutreachRun] Run ${runId} — ${leads.length} leads, ${videoMap.size} uploaded videos, test mode: ${testMode}, parallel: ${PARALLEL_BATCH_SIZE}`);
+  console.log(`[OutreachRun] Run ${runId} — ${leads.length} leads, ${videoMap.size} uploaded videos, test mode: ${testMode}, video mode: ${videoMode}, defer delivery: ${deferDeliveryUntilVideoReady}, parallel: ${PARALLEL_BATCH_SIZE}`);
 
   const encoder = new TextEncoder();
 
@@ -457,8 +468,10 @@ export async function POST(req: NextRequest) {
           const { index, lead, videoPath } = item;
           let pageUrl = '';
           let slug = '';
+          let videoJobId = '';
           try {
-            let embedUrl = resolveVideoUrl(lead);
+            const shouldQueueVideo = videoMode === 'queue' && !videoPath && !(lead.video_url || '').trim();
+            let embedUrl = shouldQueueVideo ? FALLBACK_VIDEO_URL : resolveVideoUrl(lead);
 
             if (videoPath) {
               sendEvent(controller, encoder, {
@@ -469,7 +482,7 @@ export async function POST(req: NextRequest) {
               });
 
               embedUrl = await uploadToBunny(videoPath, lead.first_name, lead.last_name);
-            } else if ((lead.video_url || '').trim() && !isBunnyEmbedUrl(lead.video_url || '')) {
+            } else if (videoMode === 'existing' && (lead.video_url || '').trim() && !isBunnyEmbedUrl(lead.video_url || '')) {
               const remoteVideoUrl = (lead.video_url || '').trim();
               sendEvent(controller, encoder, {
                 leadIndex: index,
@@ -502,6 +515,40 @@ export async function POST(req: NextRequest) {
               videoUrl: embedUrl,
               dryRun: testMode,
             });
+
+            if (shouldQueueVideo) {
+              const videoJob = await createVideoJob({
+                runId,
+                leadSlug: slug,
+                firstName: lead.first_name,
+                lastName: lead.last_name,
+                email: lead.email,
+                leadType: lead.lead_type,
+                instagramHandle: lead.instagram_handle,
+                metadata: {
+                  page_url: pageUrl,
+                  test_mode: testMode,
+                  first_10_seconds_rule: 'replace 0-6s and 6-10s, then keep original video from 10s onward',
+                  delivery_deferred: deferDeliveryUntilVideoReady,
+                },
+              });
+              videoJobId = videoJob.id;
+
+              sendEvent(controller, encoder, {
+                leadIndex: index,
+                firstName: lead.first_name,
+                lastName: lead.last_name,
+                status: 'video_queued',
+                pageUrl,
+                slug,
+                videoJobId,
+                routePlan: routePlanPreview,
+              });
+
+              if (deferDeliveryUntilVideoReady) {
+                return;
+              }
+            }
 
             sendEvent(controller, encoder, {
               leadIndex: index,
@@ -542,6 +589,7 @@ export async function POST(req: NextRequest) {
               status: 'failed',
               pageUrl: pageUrl || undefined,
               slug: slug || undefined,
+              videoJobId: videoJobId || undefined,
               error: msg,
             });
           }

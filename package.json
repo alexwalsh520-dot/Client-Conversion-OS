@@ -7,7 +7,9 @@
     "build": "next build",
     "guard": "node scripts/ccos-guard.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "video:worker": "node scripts/super-doc-video-worker.mjs",
+    "video:worker:dry": "node scripts/super-doc-video-worker.mjs --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -13,7 +13,7 @@ interface Lead {
   video_url?: string;
 }
 
-type LeadStatus = 'pending' | 'uploading' | 'generating' | 'routing' | 'completed' | 'failed';
+type LeadStatus = 'pending' | 'uploading' | 'generating' | 'video_queued' | 'routing' | 'completed' | 'failed';
 
 interface LeadResult {
   firstName: string;
@@ -21,6 +21,7 @@ interface LeadResult {
   status: LeadStatus;
   pageUrl?: string;
   slug?: string;
+  videoJobId?: string;
   routePlan?: RoutePlan;
   routeResult?: DeliveryResult;
   error?: string;
@@ -75,6 +76,7 @@ interface SSEEvent {
   pageUrl?: string;
   gammaUrl?: string;
   slug?: string;
+  videoJobId?: string;
   routePlan?: RoutePlan;
   routeResult?: DeliveryResult;
   error?: string;
@@ -96,6 +98,24 @@ interface SuperDocListLead {
   video_watch_seconds: number;
   video_watch_percent: number;
   last_video_event_at: string | null;
+}
+
+interface VideoJob {
+  id: string;
+  run_id: string | null;
+  lead_slug: string | null;
+  segment: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  instagram_handle: string | null;
+  status: string;
+  higgsfield_clip_1_url: string | null;
+  higgsfield_clip_2_url: string | null;
+  bunny_embed_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 function normalizeColumnName(col: string): string {
@@ -207,6 +227,7 @@ const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string }> = {
   pending: { label: 'Waiting', color: 'var(--text-muted)' },
   uploading: { label: 'Uploading video...', color: 'var(--warning)' },
   generating: { label: 'Making Super Doc...', color: 'var(--warning)' },
+  video_queued: { label: 'Video job queued', color: 'var(--accent)' },
   routing: { label: 'Sending to GHL + Smartlead...', color: 'var(--warning)' },
   completed: { label: 'Done', color: 'var(--success)' },
   failed: { label: 'Needs fix', color: 'var(--danger)' },
@@ -244,6 +265,9 @@ export default function OutreachRunPage() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [docSearch, setDocSearch] = useState('');
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [queueVideoCreation, setQueueVideoCreation] = useState(true);
+  const [videoJobs, setVideoJobs] = useState<VideoJob[]>([]);
+  const [videoJobsLoading, setVideoJobsLoading] = useState(false);
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
@@ -258,9 +282,23 @@ export default function OutreachRunPage() {
     }
   }, []);
 
+  const loadVideoJobs = useCallback(async () => {
+    setVideoJobsLoading(true);
+    try {
+      const res = await fetch('/api/super-doc/video/jobs?limit=25', { cache: 'no-store' });
+      const data = await res.json();
+      setVideoJobs(Array.isArray(data.jobs) ? data.jobs : []);
+    } catch {
+      setVideoJobs([]);
+    } finally {
+      setVideoJobsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadDocs();
-  }, [loadDocs]);
+    loadVideoJobs();
+  }, [loadDocs, loadVideoJobs]);
 
   const filteredDocs = useMemo(() => {
     const q = docSearch.trim().toLowerCase();
@@ -322,7 +360,13 @@ export default function OutreachRunPage() {
       const response = await fetch('/api/outreach-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId, csvText, testMode }),
+        body: JSON.stringify({
+          runId,
+          csvText,
+          testMode,
+          videoMode: queueVideoCreation ? 'queue' : 'existing',
+          deferDeliveryUntilVideoReady: queueVideoCreation,
+        }),
       });
 
       if (!response.ok) {
@@ -365,6 +409,7 @@ export default function OutreachRunPage() {
                 status: data.status as LeadResult['status'],
                 pageUrl: data.pageUrl || data.gammaUrl || existing.pageUrl,
                 slug: data.slug || existing.slug,
+                videoJobId: data.videoJobId || existing.videoJobId,
                 routePlan: data.routePlan || existing.routePlan,
                 routeResult: data.routeResult || existing.routeResult,
                 error: data.error,
@@ -376,6 +421,7 @@ export default function OutreachRunPage() {
           }
         }
       }
+      loadVideoJobs();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Request failed';
       setResults(prev =>
@@ -386,6 +432,7 @@ export default function OutreachRunPage() {
     } finally {
       setIsRunning(false);
       loadDocs();
+      loadVideoJobs();
     }
   };
 
@@ -395,7 +442,7 @@ export default function OutreachRunPage() {
         <div>
           <h1 style={titleStyle}>Auto Outreach</h1>
           <p style={subtitleStyle}>
-            Upload one CSV. CCOS creates the Super Docs, moves test leads into GHL Contacted, then adds them to Smartlead.
+            Upload one CSV. CCOS creates the Super Docs, queues the name videos, then sends only after the final Bunny video is attached.
           </p>
         </div>
         <div style={headerActionsStyle}>
@@ -415,12 +462,12 @@ export default function OutreachRunPage() {
         <div style={pathCardStyle}>
           <span style={pathKickerStyle}>Path A</span>
           <strong style={pathTitleStyle}>Creator</strong>
-          <span style={pathTextStyle}>Creator video template, Creator Super Doc, creator Smartlead campaign.</span>
+          <span style={pathTextStyle}>Creator name clips, Creator Super Doc, creator Smartlead campaign.</span>
         </div>
         <div style={pathCardStyle}>
           <span style={pathKickerStyle}>Path B</span>
           <strong style={pathTitleStyle}>Agency/TM</strong>
-          <span style={pathTextStyle}>Agency/TM video template, Agency/TM Super Doc, agency Smartlead campaign.</span>
+          <span style={pathTextStyle}>Agency/TM name clips, Agency/TM Super Doc, agency Smartlead campaign.</span>
         </div>
       </div>
 
@@ -444,6 +491,23 @@ export default function OutreachRunPage() {
             {leads.length} lead{leads.length !== 1 ? 's' : ''} loaded
           </p>
         )}
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: '1rem' }}>
+        <label style={checkboxRowStyle}>
+          <input
+            type="checkbox"
+            checked={queueVideoCreation}
+            onChange={e => setQueueVideoCreation(e.target.checked)}
+            disabled={isRunning}
+          />
+          <span>
+            Make personalized video before sending
+          </span>
+        </label>
+        <p style={hintStyle}>
+          Keep this on for the new workflow. It creates the Super Doc and video job, then waits before sending to GHL or Smartlead.
+        </p>
       </div>
 
       <div style={{ ...cardStyle, marginTop: '1rem' }}>
@@ -538,6 +602,11 @@ export default function OutreachRunPage() {
                       <p style={routeTextStyle}>
                         Video: {r.routePlan.video?.note || 'Video route not checked yet'}
                       </p>
+                      {r.videoJobId && (
+                        <p style={routeTextStyle}>
+                          Video job: {r.videoJobId}
+                        </p>
+                      )}
                       {r.routePlan.missingEnv.length > 0 && (
                         <p style={{ ...routeTextStyle, color: 'var(--warning)' }}>
                           Missing keys: {r.routePlan.missingEnv.join(', ')}
@@ -557,6 +626,53 @@ export default function OutreachRunPage() {
           </div>
         </div>
       )}
+
+      <div style={{ ...cardStyle, marginTop: '1.5rem' }}>
+        <div style={docsHeaderStyle}>
+          <div>
+            <label style={labelStyle}>Video Jobs</label>
+            <p style={hintStyle}>These are the leads waiting for the two Higgsfield name clips and final Bunny upload.</p>
+          </div>
+          <button type="button" onClick={loadVideoJobs} style={smallButtonStyle}>
+            Refresh
+          </button>
+        </div>
+        <div style={jobsListStyle}>
+          {videoJobsLoading ? (
+            <div style={docsEmptyStyle}>Loading video jobs...</div>
+          ) : videoJobs.length === 0 ? (
+            <div style={docsEmptyStyle}>No video jobs yet.</div>
+          ) : (
+            videoJobs.map((job) => (
+              <div key={job.id} style={jobRowStyle}>
+                <div style={docLeadStyle}>
+                  <strong>{job.first_name} {job.last_name}</strong>
+                  <span>{job.email || 'No email'}</span>
+                  {job.instagram_handle && <span style={docSlugStyle}>@{job.instagram_handle}</span>}
+                </div>
+                <span style={pillStyle}>{job.segment === 'agency_tm' ? 'Agency/TM' : 'Creator'}</span>
+                <div style={docMetricStyle}>
+                  <strong>{job.status.replace(/_/g, ' ')}</strong>
+                  <span>{formatDate(job.updated_at)}</span>
+                </div>
+                <div style={docActionsStyle}>
+                  {job.lead_slug && (
+                    <a href={`/super-doc/${job.lead_slug}`} target="_blank" rel="noopener noreferrer" style={miniLinkStyle}>Open Doc</a>
+                  )}
+                  {job.bunny_embed_url && (
+                    <a href={job.bunny_embed_url} target="_blank" rel="noopener noreferrer" style={miniLinkStyle}>Bunny</a>
+                  )}
+                </div>
+                {job.error && (
+                  <p style={{ ...routeTextStyle, color: 'var(--danger)', gridColumn: '1 / -1' }}>
+                    {job.error}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       <div style={{ ...cardStyle, marginTop: '1.5rem' }}>
         <div style={docsHeaderStyle}>
@@ -861,6 +977,24 @@ const docsTableStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
+  overflowX: 'auto',
+};
+
+const jobsListStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+};
+
+const jobRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(220px, 1.4fr) 110px 150px 160px',
+  gap: 12,
+  alignItems: 'center',
+  padding: '0.8rem 0.75rem',
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'rgba(255,255,255,0.02)',
   overflowX: 'auto',
 };
 
