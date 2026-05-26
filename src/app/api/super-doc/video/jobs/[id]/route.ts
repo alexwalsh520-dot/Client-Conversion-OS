@@ -3,6 +3,7 @@ import {
   updateVideoJob,
   type UpdateSuperDocVideoJobInput,
 } from '@/lib/super-doc-video-automation';
+import { triggerVideoWorkerForJob } from '@/lib/super-doc-video-worker-trigger';
 
 export async function GET(
   _req: Request,
@@ -21,5 +22,14 @@ export async function PATCH(
   const { id } = await params;
   const updates = await req.json() as UpdateSuperDocVideoJobInput;
   const job = await updateVideoJob(id, updates);
-  return Response.json({ ok: true, job });
+  const shouldTriggerWorker =
+    updates.status === 'clips_ready' &&
+    Boolean(job.higgsfield_clip_1_url) &&
+    Boolean(job.higgsfield_clip_2_url);
+
+  const workerTrigger = shouldTriggerWorker
+    ? await triggerVideoWorkerForJob(id)
+    : null;
+
+  return Response.json({ ok: true, job, workerTrigger });
 }

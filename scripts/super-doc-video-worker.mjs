@@ -24,6 +24,7 @@ const serviceKey = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 const bunnyLibraryId = clean(process.env.BUNNY_STREAM_LIBRARY_ID);
 const bunnyApiKey = clean(process.env.BUNNY_STREAM_API_KEY);
 const ffmpegPath = clean(process.env.FFMPEG_PATH) || 'ffmpeg';
+const workerSecret = clean(process.env.SUPER_DOC_WORKER_SECRET);
 const siteBaseUrl =
   clean(process.env.SUPER_DOC_WORKER_SITE_URL) ||
   clean(process.env.NEXT_PUBLIC_SITE_URL) ||
@@ -249,7 +250,10 @@ async function uploadToBunny(videoPath, title) {
 async function deliverJob(jobIdToDeliver) {
   const res = await fetch(`${siteBaseUrl}/api/super-doc/video/jobs/${jobIdToDeliver}/deliver`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(workerSecret ? { Authorization: `Bearer ${workerSecret}` } : {}),
+    },
   });
   const text = await res.text();
   if (!res.ok) {

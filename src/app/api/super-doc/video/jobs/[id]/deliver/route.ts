@@ -16,10 +16,20 @@ function readString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
+function isAuthorized(req: Request) {
+  const secret = process.env.SUPER_DOC_WORKER_SECRET;
+  if (!secret) return true;
+  return req.headers.get('authorization') === `Bearer ${secret}`;
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!isAuthorized(req)) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { id } = await params;
   const job = await getVideoJob(id);
   if (!job) return Response.json({ error: 'Video job not found' }, { status: 404 });

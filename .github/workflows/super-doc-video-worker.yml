@@ -1,0 +1,63 @@
+name: Super Doc Video Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Super Doc video job ID
+        required: false
+      limit:
+        description: Number of clips_ready jobs to process when no job ID is supplied
+        required: false
+        default: "5"
+  repository_dispatch:
+    types:
+      - super-doc-video-worker
+
+concurrency:
+  group: super-doc-video-worker-${{ github.event.inputs.job_id || github.event.client_payload.job_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  process-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BUNNY_STREAM_LIBRARY_ID: ${{ secrets.BUNNY_STREAM_LIBRARY_ID }}
+      BUNNY_STREAM_API_KEY: ${{ secrets.BUNNY_STREAM_API_KEY }}
+      SUPER_DOC_WORKER_SITE_URL: ${{ vars.SUPER_DOC_WORKER_SITE_URL || 'https://client-conversion-os.vercel.app' }}
+      SUPER_DOC_WORKER_SECRET: ${{ secrets.SUPER_DOC_WORKER_SECRET }}
+      SUPER_DOC_BASE_VIDEO_SOURCE: ${{ vars.SUPER_DOC_BASE_VIDEO_SOURCE }}
+      SUPER_DOC_CREATOR_BASE_VIDEO_SOURCE: ${{ vars.SUPER_DOC_CREATOR_BASE_VIDEO_SOURCE }}
+      SUPER_DOC_AGENCY_TM_BASE_VIDEO_SOURCE: ${{ vars.SUPER_DOC_AGENCY_TM_BASE_VIDEO_SOURCE }}
+    steps:
+      - name: Check out CCOS
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
+      - name: Install worker dependencies
+        run: npm ci --omit=dev
+
+      - name: Process Super Doc video job
+        env:
+          JOB_ID: ${{ github.event.inputs.job_id || github.event.client_payload.job_id }}
+          LIMIT: ${{ github.event.inputs.limit || '5' }}
+        run: |
+          if [ -n "$JOB_ID" ]; then
+            npm run video:worker -- --job "$JOB_ID"
+          else
+            npm run video:worker -- --limit "$LIMIT"
+          fi

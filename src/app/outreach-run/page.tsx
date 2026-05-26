@@ -268,6 +268,7 @@ export default function OutreachRunPage() {
   const [queueVideoCreation, setQueueVideoCreation] = useState(true);
   const [videoJobs, setVideoJobs] = useState<VideoJob[]>([]);
   const [videoJobsLoading, setVideoJobsLoading] = useState(false);
+  const [triggeringJobId, setTriggeringJobId] = useState<string | null>(null);
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
@@ -319,6 +320,23 @@ export default function OutreachRunPage() {
     setCopiedSlug(slug);
     window.setTimeout(() => setCopiedSlug((current) => current === slug ? null : current), 1400);
   }, []);
+
+  const runCloudWorker = useCallback(async (job: VideoJob) => {
+    setTriggeringJobId(job.id);
+    try {
+      const res = await fetch(`/api/super-doc/video/jobs/${job.id}/run`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        const missing = data.result?.missingEnv ? ` Missing setup: ${data.result.missingEnv}.` : '';
+        throw new Error((data.error || data.result?.error || 'Cloud worker did not start') + missing);
+      }
+      await loadVideoJobs();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Cloud worker did not start');
+    } finally {
+      setTriggeringJobId(null);
+    }
+  }, [loadVideoJobs]);
 
   const handleCSV = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -631,7 +649,7 @@ export default function OutreachRunPage() {
         <div style={docsHeaderStyle}>
           <div>
             <label style={labelStyle}>Video Jobs</label>
-            <p style={hintStyle}>These are the leads waiting for the two Higgsfield name clips and final Bunny upload.</p>
+            <p style={hintStyle}>These run in the cloud, so your computer does not need to stay open.</p>
           </div>
           <button type="button" onClick={loadVideoJobs} style={smallButtonStyle}>
             Refresh
@@ -658,6 +676,16 @@ export default function OutreachRunPage() {
                 <div style={docActionsStyle}>
                   {job.lead_slug && (
                     <a href={`/super-doc/${job.lead_slug}`} target="_blank" rel="noopener noreferrer" style={miniLinkStyle}>Open Doc</a>
+                  )}
+                  {job.status === 'clips_ready' && (
+                    <button
+                      type="button"
+                      onClick={() => runCloudWorker(job)}
+                      disabled={triggeringJobId === job.id}
+                      style={miniButtonStyle}
+                    >
+                      {triggeringJobId === job.id ? 'Starting' : 'Run Worker'}
+                    </button>
                   )}
                   {job.bunny_embed_url && (
                     <a href={job.bunny_embed_url} target="_blank" rel="noopener noreferrer" style={miniLinkStyle}>Bunny</a>
