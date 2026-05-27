@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const sb = getServiceSupabase();
     let query = sb
       .from("studio2_ai_generations")
-      .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at")
+      .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at, media:studio2_media(id, folder_id, public_url, filename, kind, created_at)")
       .order("created_at", { ascending: false })
       .limit(30);
 
@@ -167,6 +167,7 @@ function normalizeStatus(status: unknown) {
 }
 
 function mapGeneration(row: Record<string, unknown>) {
+  const media = row.media && typeof row.media === "object" ? row.media as Record<string, unknown> : null;
   return {
     id: row.id,
     projectId: row.project_id,
@@ -181,5 +182,13 @@ function mapGeneration(row: Record<string, unknown>) {
     error: row.error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    media: media ? {
+      id: media.id,
+      folderId: media.folder_id,
+      url: media.public_url,
+      filename: media.filename || "Generated ad.png",
+      kind: media.kind === "video" ? "video" : "image",
+      createdAt: media.created_at,
+    } : null,
   };
 }
