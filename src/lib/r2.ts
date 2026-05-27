@@ -17,6 +17,12 @@ interface PresignedPutInput {
   expiresSeconds?: number;
 }
 
+interface PutObjectInput {
+  key: string;
+  body: Buffer | Uint8Array;
+  contentType: string;
+}
+
 export function getR2Config(): R2Config {
   const accountId = process.env.R2_ACCOUNT_ID?.trim();
   const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
@@ -153,6 +159,65 @@ export async function deleteR2Object(key: string) {
   }
 }
 
+export async function putR2Object({ key, body, contentType }: PutObjectInput) {
+  const config = getR2Config();
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const host = `${config.accountId}.r2.cloudflarestorage.com`;
+  const canonicalUri = `/${config.bucketName}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  const payloadHash = sha256BufferHex(payload);
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalHeaders = [
+    `host:${host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`,
+    "",
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${R2_REGION}/${R2_SERVICE}/aws4_request`;
+  const canonicalRequest = [
+    "PUT",
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const signingKey = getSigningKey(config.secretAccessKey, dateStamp);
+  const signature = hmacHex(signingKey, stringToSign);
+  const authorization = [
+    `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}`,
+    `SignedHeaders=${signedHeaders}`,
+    `Signature=${signature}`,
+  ].join(", ");
+
+  const res = await fetch(`https://${host}${canonicalUri}`, {
+    method: "PUT",
+    headers: {
+      Authorization: authorization,
+      "Content-Type": contentType,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": amzDate,
+    },
+    body: new Uint8Array(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`R2 upload failed: ${res.status}`);
+  }
+
+  return {
+    publicUrl: getR2PublicUrl(key),
+  };
+}
+
 function getSafeExtension(filename: string, contentType: string) {
   const fromName = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (fromName && fromName.length <= 8) return fromName;
@@ -177,6 +242,10 @@ function canonicalizeQuery(query: Record<string, string>) {
 
 function sha256Hex(value: string) {
   return crypto.createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function sha256BufferHex(value: Buffer) {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function hmac(key: crypto.BinaryLike, value: string) {

@@ -111,12 +111,16 @@ Not "free trial." Free free.
 DM to join before I start
 charging for this.`;
 
+const DEFAULT_GENERATE_PROMPT =
+  "Make a finished 9:16 Instagram Story ad in this same direct-response style: bold readable text, black rounded highlight backgrounds, clean spacing, no random gradient overlays. Keep the ad premium, clear, and easy to read.";
+
 type TextAlign = "left" | "center" | "right";
 type StudioView = "home" | "setup" | "editor";
 type StudioHomeMode = "designs" | "media";
 type StudioFolderType = "design" | "media";
 type MediaKind = "image" | "video";
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
+type EditorSidebarMode = "edit" | "generate";
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked" | "colorSpans">;
 
@@ -214,6 +218,23 @@ interface StudioMediaAsset {
   filename: string;
   folderId?: string | null;
   createdAt?: string;
+}
+
+interface StudioAIGeneration {
+  id: string;
+  jobId: string;
+  prompt: string;
+  status: string;
+  resultUrl?: string | null;
+  mediaId?: string | null;
+  error?: string | null;
+  createdAt?: string;
+  media?: StudioMediaAsset | null;
+}
+
+interface GenerateReferenceImage {
+  name: string;
+  dataUrl: string;
 }
 
 interface StudioProjectDetail {
@@ -1439,6 +1460,7 @@ export default function Studio2Page() {
   const [colorPreset, setColorPreset] = useState<"dark" | "light">("dark");
   const [fontPreset, setFontPreset] = useState(FONT_OPTIONS[0].value);
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayer>(null);
+  const [editorSidebarMode, setEditorSidebarMode] = useState<EditorSidebarMode>("edit");
   const [viewScale, setViewScale] = useState(0.35);
   const [saveStatus, setSaveStatus] = useState("Autosave ready");
   const [exportStatus, setExportStatus] = useState("");
@@ -1506,6 +1528,12 @@ export default function Studio2Page() {
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [editorTitleFocused, setEditorTitleFocused] = useState(false);
   const [textSelection, setTextSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
+  const [generatePrompt, setGeneratePrompt] = useState(DEFAULT_GENERATE_PROMPT);
+  const [generateReference, setGenerateReference] = useState<GenerateReferenceImage | null>(null);
+  const [generateStatus, setGenerateStatus] = useState("");
+  const [generatingAd, setGeneratingAd] = useState(false);
+  const [aiGenerations, setAiGenerations] = useState<StudioAIGeneration[]>([]);
+  const [generateDropActive, setGenerateDropActive] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1513,6 +1541,7 @@ export default function Studio2Page() {
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
+  const generateReferenceInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const sidebarTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
@@ -3109,6 +3138,198 @@ export default function Studio2Page() {
     setExportStatus("");
   }, [creatives, projectName, renderCreativeToCanvas]);
 
+  const upsertAiGeneration = useCallback((generation: StudioAIGeneration) => {
+    setAiGenerations((prev) => {
+      const existingIndex = prev.findIndex((item) => item.id === generation.id || item.jobId === generation.jobId);
+      if (existingIndex === -1) return [generation, ...prev].slice(0, 20);
+      const next = [...prev];
+      next[existingIndex] = { ...next[existingIndex], ...generation, media: generation.media ?? next[existingIndex].media };
+      return next;
+    });
+  }, []);
+
+  const loadAiGenerations = useCallback(async () => {
+    if (!projectId) {
+      setAiGenerations([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/studio-2/ai/generations?projectId=${encodeURIComponent(projectId)}`);
+      if (!res.ok) throw new Error("AI history load failed");
+      const data = await res.json();
+      setAiGenerations((data.generations || []).map((generation: Record<string, unknown>) => ({
+        id: String(generation.id || ""),
+        jobId: String(generation.jobId || ""),
+        prompt: String(generation.prompt || ""),
+        status: String(generation.status || "queued"),
+        resultUrl: typeof generation.resultUrl === "string" ? generation.resultUrl : null,
+        mediaId: typeof generation.mediaId === "string" ? generation.mediaId : null,
+        error: typeof generation.error === "string" ? generation.error : null,
+        createdAt: typeof generation.createdAt === "string" ? generation.createdAt : undefined,
+      })));
+    } catch {
+      setGenerateStatus("Could not load Generate history.");
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (view === "editor") void loadAiGenerations();
+  }, [loadAiGenerations, view]);
+
+  const pickGenerateReference = useCallback(async (file: File | null) => {
+    if (!file || !file.type.startsWith("image/")) {
+      setGenerateStatus("Drop or select an image reference.");
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setGenerateReference({ name: file.name || "Reference image", dataUrl });
+      setGenerateStatus("");
+    } catch {
+      setGenerateStatus("Could not read that reference image.");
+    }
+  }, []);
+
+  const buildHiggsfieldPrompt = useCallback(() => {
+    const text = currentCreative?.textBlocks.map(getBlockText).filter(Boolean).join("\n\n") || copyText;
+    return [
+      generatePrompt.trim() || DEFAULT_GENERATE_PROMPT,
+      "",
+      "Use this exact ad copy when it makes sense:",
+      text,
+      "",
+      "Preserve readable text. Make the final image feel like a finished direct-response Instagram Story ad.",
+    ].join("\n");
+  }, [copyText, currentCreative?.textBlocks, generatePrompt]);
+
+  const pollAiGeneration = useCallback(
+    async (generationId: string) => {
+      for (let attempt = 0; attempt < 80; attempt++) {
+        await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 1800 : 3500));
+        const res = await fetch(`/api/studio-2/ai/generations/${encodeURIComponent(generationId)}`);
+        if (!res.ok) throw new Error("Generation status failed");
+        const data = await res.json();
+        const generation = data.generation || {};
+        const media = data.media || null;
+        const nextGeneration: StudioAIGeneration = {
+          id: String(generation.id || generationId),
+          jobId: String(generation.jobId || ""),
+          prompt: String(generation.prompt || ""),
+          status: String(generation.status || "queued"),
+          resultUrl: typeof generation.resultUrl === "string" ? generation.resultUrl : null,
+          mediaId: typeof generation.mediaId === "string" ? generation.mediaId : null,
+          error: typeof generation.error === "string" ? generation.error : null,
+          createdAt: typeof generation.createdAt === "string" ? generation.createdAt : undefined,
+          media: media
+            ? {
+                id: String(media.id),
+                url: String(media.url),
+                kind: "image",
+                filename: String(media.filename || "Generated ad.png"),
+                folderId: typeof media.folderId === "string" ? media.folderId : null,
+                createdAt: typeof media.createdAt === "string" ? media.createdAt : undefined,
+              }
+            : null,
+        };
+        upsertAiGeneration(nextGeneration);
+
+        if (media?.url) {
+          const generatedAsset: StudioMediaAsset = {
+            id: String(media.id),
+            url: String(media.url),
+            kind: "image",
+            filename: String(media.filename || "Generated ad.png"),
+            folderId: typeof media.folderId === "string" ? media.folderId : null,
+            createdAt: typeof media.createdAt === "string" ? media.createdAt : undefined,
+          };
+          setLibraryMedia((prev) => prev.some((asset) => asset.id === generatedAsset.id) ? prev : [generatedAsset, ...prev]);
+        }
+
+        if (nextGeneration.status === "completed") {
+          setGenerateStatus("Generated image saved to Media Library.");
+          return;
+        }
+        if (nextGeneration.status === "failed") {
+          throw new Error(nextGeneration.error || "Higgsfield generation failed");
+        }
+        setGenerateStatus(`Generating... ${attempt + 1}`);
+      }
+      throw new Error("Generation is still running. Check back in a minute.");
+    },
+    [upsertAiGeneration]
+  );
+
+  const startAiGeneration = useCallback(async () => {
+    if (!currentCreative || generatingAd) return;
+    setGeneratingAd(true);
+    setGenerateStatus("Preparing selected ad...");
+    try {
+      const snapshotCanvas = await renderCreativeToCanvas(currentCreative, 1);
+      const snapshotDataUrl = snapshotCanvas.toDataURL("image/png");
+      setGenerateStatus("Starting Higgsfield job...");
+      const res = await fetch("/api/studio-2/ai/generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          creativeId: currentCreative.id,
+          folderId: setupMediaFolderId,
+          model: "gpt_image_2",
+          prompt: buildHiggsfieldPrompt(),
+          snapshotDataUrl,
+          referenceDataUrl: generateReference?.dataUrl || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start Higgsfield generation");
+      const generation = data.generation || {};
+      const nextGeneration: StudioAIGeneration = {
+        id: String(generation.id),
+        jobId: String(generation.jobId || ""),
+        prompt: String(generation.prompt || buildHiggsfieldPrompt()),
+        status: String(generation.status || "queued"),
+        resultUrl: null,
+        mediaId: null,
+      };
+      upsertAiGeneration(nextGeneration);
+      setGenerateStatus("Generating...");
+      await pollAiGeneration(nextGeneration.id);
+    } catch (err) {
+      setGenerateStatus(err instanceof Error ? err.message : "Could not generate image.");
+    } finally {
+      setGeneratingAd(false);
+    }
+  }, [
+    buildHiggsfieldPrompt,
+    currentCreative,
+    generateReference?.dataUrl,
+    generatingAd,
+    pollAiGeneration,
+    projectId,
+    renderCreativeToCanvas,
+    setupMediaFolderId,
+    upsertAiGeneration,
+  ]);
+
+  const addGeneratedImageAsAd = useCallback((asset: StudioMediaAsset) => {
+    pushUndo();
+    setMediaAssets((prev) => prev.some((media) => media.url === asset.url) ? prev : [asset, ...prev]);
+    setCreatives((prev) => {
+      const nextCreative: Creative = {
+        id: uid(),
+        photoUrl: asset.url,
+        mediaKind: "image",
+        textBlocks: [],
+        imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
+        status: "draft",
+      };
+      setCurrentIndex(prev.length);
+      return [...prev, nextCreative];
+    });
+    setSelectedLayer({ type: "image" });
+    setEditorSidebarMode("edit");
+  }, [pushUndo]);
+
   const addTextBlock = useCallback(() => {
     if (!currentCreative) return;
     pushUndo();
@@ -3654,6 +3875,167 @@ export default function Studio2Page() {
       <div style={{ display: "flex", alignItems: "center", gap: 6, color: ADS_BRAND.text3, fontSize: 11, marginTop: 8 }}>
         <Link2 size={12} />
         <span>{shareLinkStatus || "The link only opens a media upload page for this folder."}</span>
+      </div>
+    </div>
+  );
+
+  const renderGeneratePanel = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={panelStyle}>
+        <div style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6, marginBottom: 9 }}>
+          <Sparkles size={13} />
+          Generate image ad
+        </div>
+        <textarea
+          value={generatePrompt}
+          onChange={(event) => setGeneratePrompt(event.target.value)}
+          rows={7}
+          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.45, minHeight: 148, marginBottom: 10 }}
+          placeholder="Tell Higgsfield what kind of variation to make..."
+        />
+        <div
+          onDragOver={(event) => {
+            event.preventDefault();
+            setGenerateDropActive(true);
+          }}
+          onDragLeave={() => setGenerateDropActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setGenerateDropActive(false);
+            void pickGenerateReference(event.dataTransfer.files?.[0] || null);
+          }}
+          onPaste={(event) => {
+            const file = Array.from(event.clipboardData.files || []).find((item) => item.type.startsWith("image/"));
+            if (file) void pickGenerateReference(file);
+          }}
+          style={{
+            border: `1px dashed ${generateDropActive ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+            background: generateDropActive ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+            borderRadius: 10,
+            padding: 10,
+            marginBottom: 10,
+            minHeight: 86,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            color: ADS_BRAND.text2,
+          }}
+        >
+          {generateReference ? (
+            <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
+              <img
+                src={generateReference.dataUrl}
+                alt=""
+                style={{ width: 44, height: 60, objectFit: "cover", borderRadius: 6, border: `1px solid ${ADS_BRAND.border2}` }}
+              />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ color: ADS_BRAND.text, fontSize: 12, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {generateReference.name}
+                </div>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 11, marginTop: 3 }}>Extra reference attached</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGenerateReference(null)}
+                style={{ ...buttonStyle(false), width: 30, height: 30, padding: 0 }}
+                title="Remove reference"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => generateReferenceInputRef.current?.click()}
+              style={{ ...buttonStyle(false), width: "100%", minHeight: 54, justifyContent: "center" }}
+            >
+              <Upload size={14} /> Drop or paste extra reference
+            </button>
+          )}
+          <input
+            ref={generateReferenceInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              void pickGenerateReference(event.currentTarget.files?.[0] || null);
+              event.currentTarget.value = "";
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => void startAiGeneration()}
+          disabled={!currentCreative || generatingAd}
+          style={{
+            ...buttonStyle(true),
+            width: "100%",
+            height: 40,
+            justifyContent: "center",
+            opacity: currentCreative && !generatingAd ? 1 : 0.45,
+            cursor: currentCreative && !generatingAd ? "pointer" : "not-allowed",
+          }}
+        >
+          <Sparkles size={14} /> {generatingAd ? "Generating..." : "Generate from selected ad"}
+        </button>
+        {generateStatus && (
+          <div style={{ color: generateStatus.toLowerCase().includes("could") || generateStatus.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text3, fontSize: 11, lineHeight: 1.45, marginTop: 8 }}>
+            {generateStatus}
+          </div>
+        )}
+      </div>
+
+      <div style={panelStyle}>
+        <div style={{ ...labelStyle, marginBottom: 9 }}>Results</div>
+        {!aiGenerations.length && (
+          <div style={{ color: ADS_BRAND.text3, fontSize: 12, lineHeight: 1.5 }}>
+            Generated images will appear here and save into the Media Library.
+          </div>
+        )}
+        <div style={{ display: "grid", gap: 10 }}>
+          {aiGenerations.map((generation) => {
+            const asset = generation.media;
+            const imageUrl = asset?.url || generation.resultUrl || "";
+            const ready = generation.status === "completed" && imageUrl;
+            return (
+              <div
+                key={generation.id || generation.jobId}
+                style={{
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  background: ADS_BRAND.panel3,
+                }}
+              >
+                {imageUrl ? (
+                  <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
+                    <Sparkles size={22} />
+                  </div>
+                )}
+                <div style={{ padding: 10 }}>
+                  <div style={{ color: ready ? ADS_BRAND.success : ADS_BRAND.gold, fontSize: 11, fontWeight: 900, textTransform: "uppercase", marginBottom: 7 }}>
+                    {generation.status || "queued"}
+                  </div>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.4, maxHeight: 46, overflow: "hidden", marginBottom: 9 }}>
+                    {generation.prompt || "Generated ad variation"}
+                  </div>
+                  {asset && (
+                    <button
+                      type="button"
+                      onClick={() => addGeneratedImageAsAd(asset)}
+                      style={{ ...buttonStyle(false), width: "100%", justifyContent: "center" }}
+                    >
+                      <FilePlus2 size={13} /> Add as ad
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -5825,6 +6207,43 @@ export default function Studio2Page() {
           flexDirection: "column",
           gap: 10,
         }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 4,
+            padding: 4,
+            borderRadius: 10,
+            border: `1px solid ${ADS_BRAND.border2}`,
+            background: ADS_BRAND.panel3,
+          }}>
+            <button
+              type="button"
+              onClick={() => setEditorSidebarMode("edit")}
+              style={{
+                ...segmentedButtonStyle(editorSidebarMode === "edit"),
+                width: "100%",
+                height: 34,
+                gap: 6,
+              }}
+            >
+              <MousePointer2 size={14} /> Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditorSidebarMode("generate")}
+              style={{
+                ...segmentedButtonStyle(editorSidebarMode === "generate"),
+                width: "100%",
+                height: 34,
+                gap: 6,
+              }}
+            >
+              <Sparkles size={14} /> Generate
+            </button>
+          </div>
+
+          {editorSidebarMode === "generate" ? renderGeneratePanel() : (
+            <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <button style={buttonStyle(false)} onClick={addTextBlock}>
               <Type size={13} /> Add Text
@@ -6109,6 +6528,8 @@ export default function Studio2Page() {
           <div style={{ color: ADS_BRAND.text4, fontSize: 11, lineHeight: 1.5, padding: "2px 2px 10px" }}>
             Studio 2.0 saves locally in this browser. It can recover your work after refresh or Wi-Fi loss.
           </div>
+            </>
+          )}
         </aside>
       </div>
       {contextMenu && (

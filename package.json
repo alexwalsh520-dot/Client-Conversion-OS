@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@higgsfield/cli": "^0.1.40",
     "@reduxjs/toolkit": "^2.11.2",
     "@supabase/supabase-js": "^2.97.0",
     "@tiptap/extension-image": "^3.23.4",
