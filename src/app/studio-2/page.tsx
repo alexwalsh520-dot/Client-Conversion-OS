@@ -41,6 +41,7 @@ import {
   Plus,
   Replace,
   RotateCcw,
+  RotateCw,
   Search,
   SendToBack,
   Square,
@@ -146,7 +147,9 @@ type StudioView = "home" | "setup" | "editor";
 type StudioHomeMode = "designs" | "media";
 type StudioFolderType = "design" | "media";
 type MediaKind = "image" | "video";
+type SetupMediaKindFilter = "all" | MediaKind;
 type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
+type ContextMenuTarget = SelectedLayer | { type: "multi-text" };
 type EditorSidebarMode = "edit" | "generate";
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked" | "colorSpans">;
@@ -289,6 +292,11 @@ interface GeneratePreset {
   prompt: string;
 }
 
+interface HiggsfieldAuthModalState {
+  open: boolean;
+  message?: string;
+}
+
 interface StudioProjectDetail {
   id: string;
   folderId: string | null;
@@ -327,7 +335,7 @@ interface AlignmentGuides {
 interface ContextMenuState {
   x: number;
   y: number;
-  target: SelectedLayer;
+  target: ContextMenuTarget;
 }
 
 type DragState =
@@ -335,10 +343,12 @@ type DragState =
       kind: "move-text";
       active: boolean;
       blockId: string;
+      blockIds?: string[];
       startX: number;
       startY: number;
       origX: number;
       origY: number;
+      origPositions?: Record<string, { x: number; y: number }>;
       origMetrics: BlockMetrics;
     }
   | {
@@ -564,11 +574,57 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-async function uploadStudioMedia(file: File, projectId?: string | null, folderId?: string | null): Promise<string> {
+function isHeicFile(file: File) {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  return type.includes("heic") || type.includes("heif") || /\.(heic|heif)$/.test(name);
+}
+
+async function normalizeUploadFile(file: File): Promise<File> {
+  if (!isHeicFile(file) || typeof window === "undefined") return file;
+  const { default: heic2any } = await import("heic2any");
+  const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
+  const blob = Array.isArray(converted) ? converted[0] : converted;
+  const filename = file.name.replace(/\.(heic|heif)$/i, "") || "heic-image";
+  return new File([blob], `${filename}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
+}
+
+async function normalizeUploadFiles(files: FileList | File[] | null): Promise<File[]> {
+  if (!files?.length) return [];
+  const list = Array.from(files);
+  return Promise.all(list.map((file) => normalizeUploadFile(file).catch(() => file)));
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 60_000) {
+  const controller = new AbortController();
+  const externalSignal = init.signal;
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const abortFromExternal = () => controller.abort();
+
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+  }
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(externalSignal?.aborted ? "Upload cancelled." : "Upload timed out. Try the file again.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
+  }
+}
+
+async function uploadStudioMedia(file: File, projectId?: string | null, folderId?: string | null, signal?: AbortSignal): Promise<string> {
   const contentType = getUploadContentType(file);
-  const presignRes = await fetch("/api/studio-2/media/upload-url", {
+  const presignRes = await fetchWithTimeout("/api/studio-2/media/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal,
     body: JSON.stringify({
       filename: file.name,
       contentType,
@@ -576,7 +632,7 @@ async function uploadStudioMedia(file: File, projectId?: string | null, folderId
       projectId,
       folderId,
     }),
-  });
+  }, 30_000);
 
   if (!presignRes.ok) throw new Error("R2 upload URL failed");
   const presign = await presignRes.json() as {
@@ -586,17 +642,19 @@ async function uploadStudioMedia(file: File, projectId?: string | null, folderId
     headers?: Record<string, string>;
   };
 
-  const uploadRes = await fetch(presign.uploadUrl, {
+  const uploadRes = await fetchWithTimeout(presign.uploadUrl, {
     method: "PUT",
     headers: presign.headers || { "Content-Type": contentType },
+    signal,
     body: file,
-  });
+  }, contentType.startsWith("video/") ? 180_000 : 60_000);
 
   if (!uploadRes.ok) throw new Error("R2 upload failed");
 
-  await fetch("/api/studio-2/media/complete", {
+  const completeRes = await fetchWithTimeout("/api/studio-2/media/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal,
     body: JSON.stringify({
       key: presign.key,
       publicUrl: presign.publicUrl,
@@ -606,7 +664,9 @@ async function uploadStudioMedia(file: File, projectId?: string | null, folderId
       projectId,
       folderId,
     }),
-  }).catch(() => undefined);
+  }, 30_000);
+
+  if (!completeRes.ok) throw new Error("Media save failed");
 
   return presign.publicUrl;
 }
@@ -620,6 +680,8 @@ function getUploadContentType(file: File) {
   if (ext === "png") return "image/png";
   if (ext === "webp") return "image/webp";
   if (ext === "gif") return "image/gif";
+  if (ext === "heic") return "image/heic";
+  if (ext === "heif") return "image/heif";
   if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
   return "application/octet-stream";
 }
@@ -676,6 +738,69 @@ function getCanvasImageSrc(src: string) {
 
 function getMediaPreviewSrc(src: string) {
   return getCanvasImageSrc(src);
+}
+
+function isHeicMediaName(value: string) {
+  return /\.(heic|heif)(?:$|\?)/i.test(value);
+}
+
+function MediaAssetPreview({
+  asset,
+  style,
+  alt = "",
+}: {
+  asset: Pick<StudioMediaAsset, "url" | "filename">;
+  style?: React.CSSProperties;
+  alt?: string;
+}) {
+  const heic = isHeicMediaName(asset.filename || "") || isHeicMediaName(asset.url || "");
+  const [convertedSrc, setConvertedSrc] = useState("");
+
+  useEffect(() => {
+    if (!heic) {
+      setConvertedSrc("");
+      return;
+    }
+    let cancelled = false;
+    let objectUrl = "";
+    (async () => {
+      try {
+        const res = await fetch(getMediaPreviewSrc(asset.url));
+        if (!res.ok) throw new Error("HEIC preview fetch failed");
+        const sourceBlob = await res.blob();
+        const { default: heic2any } = await import("heic2any");
+        const converted = await heic2any({ blob: sourceBlob, toType: "image/jpeg", quality: 0.9 });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setConvertedSrc(objectUrl);
+      } catch {
+        if (!cancelled) setConvertedSrc("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [asset.url, heic]);
+
+  if (heic && !convertedSrc) {
+    return (
+      <div
+        style={{
+          ...style,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: ADS_BRAND.text3,
+          background: ADS_BRAND.bgDeep,
+        }}
+      >
+        <LoaderCircle size={18} style={{ animation: "spin 1s linear infinite" }} />
+      </div>
+    );
+  }
+
+  return <img draggable={false} src={convertedSrc || getMediaPreviewSrc(asset.url)} alt={alt} style={style} />;
 }
 
 function isGenerateErrorStatus(status: string) {
@@ -947,6 +1072,7 @@ function drawOverlay(
   ctx: CanvasRenderingContext2D,
   creative: Creative | undefined,
   selectedLayer: SelectedLayer,
+  selectedTextBlockIds: string[],
   activeGuides: AlignmentGuides,
   activeSafeZones: SafeZoneId[],
   measureCtx: CanvasRenderingContext2D,
@@ -958,7 +1084,7 @@ function drawOverlay(
   drawSafeZones(ctx, activeSafeZones);
   drawAlignmentGuides(ctx, activeGuides);
 
-  if (!creative || !selectedLayer) {
+  if (!creative) {
     ctx.restore();
     return;
   }
@@ -969,23 +1095,31 @@ function drawOverlay(
   ctx.shadowColor = "rgba(212,178,122,0.32)";
   ctx.shadowBlur = 16;
 
-  if (selectedLayer.type === "image") {
+  if (selectedLayer?.type === "image") {
     ctx.strokeRect(8, 8, CANVAS_W - 16, CANVAS_H - 16);
     drawImageHandles(ctx);
     ctx.restore();
     return;
   }
 
-  const block = creative.textBlocks.find((b) => b.id === selectedLayer.id);
-  if (!block) {
+  const highlightedTextIds = new Set(selectedTextBlockIds);
+  if (selectedLayer?.type === "text") highlightedTextIds.add(selectedLayer.id);
+
+  if (!highlightedTextIds.size) {
     ctx.restore();
     return;
   }
 
-  const m = measureTextBlock(measureCtx, block);
-  ctx.strokeRect(m.x, m.y, m.w, m.h);
-  ctx.shadowBlur = 0;
-  drawTextHandles(ctx, m);
+  for (const block of creative.textBlocks) {
+    if (!highlightedTextIds.has(block.id)) continue;
+    const m = measureTextBlock(measureCtx, block);
+    ctx.strokeRect(m.x, m.y, m.w, m.h);
+    if (selectedLayer?.type === "text" && selectedLayer.id === block.id && highlightedTextIds.size === 1) {
+      ctx.shadowBlur = 0;
+      drawTextHandles(ctx, m);
+      ctx.shadowBlur = 16;
+    }
+  }
   ctx.restore();
 }
 
@@ -1559,6 +1693,7 @@ export default function Studio2Page() {
   const [cloudStatus, setCloudStatus] = useState("Loading designs...");
   const [searchTerm, setSearchTerm] = useState("");
   const [setupDropActive, setSetupDropActive] = useState(false);
+  const [homeLibraryDropActive, setHomeLibraryDropActive] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
@@ -1577,6 +1712,7 @@ export default function Studio2Page() {
   const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null);
   const [shareLinkStatus, setShareLinkStatus] = useState("");
   const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
+  const [setupMediaKindFilter, setSetupMediaKindFilter] = useState<SetupMediaKindFilter>("all");
   const [folderPickerProjectId, setFolderPickerProjectId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [folderPickerStatus, setFolderPickerStatus] = useState("");
@@ -1603,6 +1739,7 @@ export default function Studio2Page() {
   const [generateStatus, setGenerateStatus] = useState("");
   const [generatingAd, setGeneratingAd] = useState(false);
   const [aiGenerations, setAiGenerations] = useState<StudioAIGeneration[]>([]);
+  const [selectedGenerationIds, setSelectedGenerationIds] = useState<string[]>([]);
   const [generateDropActive, setGenerateDropActive] = useState(false);
   const [generateSourcePreview, setGenerateSourcePreview] = useState("");
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
@@ -1617,6 +1754,11 @@ export default function Studio2Page() {
   const [editingGeneratePresetLabel, setEditingGeneratePresetLabel] = useState("");
   const [editingGeneratePresetPrompt, setEditingGeneratePresetPrompt] = useState("");
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
+  const [higgsfieldAuthModal, setHiggsfieldAuthModal] = useState<HiggsfieldAuthModalState>({ open: false });
+  const [higgsfieldAuthJson, setHiggsfieldAuthJson] = useState("");
+  const [higgsfieldAuthStatus, setHiggsfieldAuthStatus] = useState("");
+  const [savingHiggsfieldAuth, setSavingHiggsfieldAuth] = useState(false);
+  const [selectedTextBlockIds, setSelectedTextBlockIds] = useState<string[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1625,6 +1767,7 @@ export default function Studio2Page() {
   const generateWorkspaceRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const generateReferenceInputRef = useRef<HTMLInputElement>(null);
   const generatePromptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const generateConversationEndRef = useRef<HTMLDivElement>(null);
@@ -1645,6 +1788,11 @@ export default function Studio2Page() {
     selectedLayer?.type === "text"
       ? currentCreative?.textBlocks.find((b) => b.id === selectedLayer.id)
       : undefined;
+  const selectedTextBlocks = useMemo(
+    () => currentCreative?.textBlocks.filter((block) => selectedTextBlockIds.includes(block.id)) || [],
+    [currentCreative?.textBlocks, selectedTextBlockIds]
+  );
+  const multiSelectedTextBlocks = selectedTextBlocks.length > 1;
   const editingBlock = editingBlockId
     ? currentCreative?.textBlocks.find((block) => block.id === editingBlockId)
     : undefined;
@@ -1713,8 +1861,13 @@ export default function Studio2Page() {
     return `${window.location.origin}/studio-2/upload/${uploadTargetFolderId}`;
   }, [uploadTargetFolderId]);
   const setupLibraryMedia = useMemo(
-    () => libraryMedia.filter((asset) => (asset.folderId || null) === setupMediaFolderId),
-    [libraryMedia, setupMediaFolderId]
+    () => {
+      const folderFiltered = setupMediaFolderId
+        ? libraryMedia.filter((asset) => (asset.folderId || null) === setupMediaFolderId)
+        : libraryMedia;
+      return folderFiltered.filter((asset) => setupMediaKindFilter === "all" || asset.kind === setupMediaKindFilter);
+    },
+    [libraryMedia, setupMediaFolderId, setupMediaKindFilter]
   );
   const setupMediaAssets = useMemo(() => {
     const imageAssets = photos.map((photo, index) => {
@@ -1729,11 +1882,12 @@ export default function Studio2Page() {
     const videoAssets = mediaAssets.filter((asset) => asset.kind === "video");
     const seen = new Set<string>();
     return [...imageAssets, ...videoAssets, ...setupLibraryMedia].filter((asset) => {
+      if (setupMediaKindFilter !== "all" && asset.kind !== setupMediaKindFilter) return false;
       if (seen.has(asset.url)) return false;
       seen.add(asset.url);
       return true;
     });
-  }, [mediaAssets, photos, setupLibraryMedia]);
+  }, [mediaAssets, photos, setupLibraryMedia, setupMediaKindFilter]);
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -2107,12 +2261,29 @@ export default function Studio2Page() {
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
-    drawOverlay(overlayCtx, currentCreative, selectedLayer, activeGuides, activeSafeZones, getMeasureCtx(), dpr);
-  }, [activeGuides, activeSafeZones, currentCreative, currentImage, selectedLayer, editingBlockId, getMeasureCtx]);
+    drawOverlay(overlayCtx, currentCreative, selectedLayer, selectedTextBlockIds, activeGuides, activeSafeZones, getMeasureCtx(), dpr);
+  }, [activeGuides, activeSafeZones, currentCreative, currentImage, selectedLayer, selectedTextBlockIds, editingBlockId, getMeasureCtx]);
 
   useEffect(() => {
     renderPreview();
   }, [renderPreview, viewScale]);
+
+  useEffect(() => {
+    if (editorSidebarMode !== "edit" || !currentCreative || (currentCreative.mediaKind || "image") === "video") return;
+    const url = currentCreative.photoUrl;
+    let cancelled = false;
+    loadImage(url)
+      .then((img) => {
+        if (cancelled) return;
+        imageCacheRef.current.set(url, img);
+        bumpImageVersion((v) => v + 1);
+        window.requestAnimationFrame(() => renderPreview());
+      })
+      .catch(() => window.requestAnimationFrame(() => renderPreview()));
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCreative, editorSidebarMode, renderPreview]);
 
   useEffect(() => {
     if (view !== "editor" || !currentCreative?.photoUrl || (currentCreative.mediaKind || "image") === "video") return;
@@ -2172,6 +2343,7 @@ export default function Studio2Page() {
     setCreatives(cloneCreatives(previous));
     setUndoStack((stack) => stack.slice(0, -1));
     setSelectedLayer(null);
+    setSelectedTextBlockIds([]);
   }, [creatives, undoStack]);
 
   const redo = useCallback(() => {
@@ -2181,6 +2353,7 @@ export default function Studio2Page() {
     setCreatives(cloneCreatives(next));
     setRedoStack((stack) => stack.slice(0, -1));
     setSelectedLayer(null);
+    setSelectedTextBlockIds([]);
   }, [creatives, redoStack]);
 
   const updateCurrentCreative = useCallback(
@@ -2348,8 +2521,9 @@ export default function Studio2Page() {
   );
 
   const handleMediaOnlyUpload = useCallback(async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    const mediaFiles = Array.from(files).filter((file) => getUploadContentType(file).startsWith("video/"));
+    const normalizedFiles = await normalizeUploadFiles(files);
+    if (!normalizedFiles.length) return;
+    const mediaFiles = normalizedFiles.filter((file) => getUploadContentType(file).startsWith("video/"));
     if (!mediaFiles.length) return;
     const uploaded = await Promise.all(
       mediaFiles.map(async (file) => ({
@@ -2386,8 +2560,8 @@ export default function Studio2Page() {
   }, [fetchStudioHome, fetchStudioMedia, projectId, setupMediaFolderId]);
 
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    const fileList = Array.from(files);
+    const fileList = await normalizeUploadFiles(files);
+    if (!fileList.length) return;
     const imageFiles = fileList.filter((file) => getUploadContentType(file).startsWith("image/"));
     const videoFiles = fileList.filter((file) => getUploadContentType(file).startsWith("video/"));
 
@@ -2491,6 +2665,7 @@ export default function Studio2Page() {
   const handleSetupDrop = useCallback(
     (event: React.DragEvent<HTMLElement>) => {
       event.preventDefault();
+      event.stopPropagation();
       setSetupDropActive(false);
       if (!event.dataTransfer.files.length) return;
       void handleFiles(event.dataTransfer.files);
@@ -2513,28 +2688,36 @@ export default function Studio2Page() {
   }, []);
 
   const uploadLibraryFiles = useCallback(async (files: FileList | File[] | null) => {
-    if (!files?.length) return 0;
-    const mediaFiles = Array.from(files).filter((file) => {
+    const normalizedFiles = await normalizeUploadFiles(files);
+    if (!normalizedFiles.length) return 0;
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    const mediaFiles = normalizedFiles.filter((file) => {
       const contentType = getUploadContentType(file);
       return contentType.startsWith("image/") || contentType.startsWith("video/");
     });
     if (!mediaFiles.length) return 0;
 
-    const uploaded = await Promise.all(
-      mediaFiles.map(async (file) => {
-        try {
-          const targetFolderId = uploadTargetFolderId || (homeMode === "media" ? selectedMediaFolderId : null);
-          const url = await uploadStudioMedia(file, null, targetFolderId);
-          return { file, url };
-        } catch {
-          return { file, url: "" };
-        }
-      })
-    );
-    const savedCount = uploaded.filter((item) => item.url).length;
-    await fetchStudioMedia();
-    void fetchStudioHome();
-    return savedCount;
+    try {
+      const uploaded = await Promise.all(
+        mediaFiles.map(async (file) => {
+          try {
+            const targetFolderId = uploadTargetFolderId || (homeMode === "media" ? selectedMediaFolderId : null);
+            const url = await uploadStudioMedia(file, null, targetFolderId, controller.signal);
+            return { file, url };
+          } catch (err) {
+            if (controller.signal.aborted) throw err;
+            return { file, url: "" };
+          }
+        })
+      );
+      const savedCount = uploaded.filter((item) => item.url).length;
+      await fetchStudioMedia();
+      void fetchStudioHome();
+      return savedCount;
+    } finally {
+      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
+    }
   }, [fetchStudioHome, fetchStudioMedia, homeMode, selectedMediaFolderId, uploadTargetFolderId]);
 
   const handleUploadModalDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
@@ -2560,6 +2743,38 @@ export default function Studio2Page() {
     [addQueuedUploadFiles]
   );
 
+  const handleHomeLibraryDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (homeMode !== "media" || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setHomeLibraryDropActive(true);
+  }, [homeMode]);
+
+  const handleHomeLibraryDragLeave = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setHomeLibraryDropActive(false);
+    }
+  }, []);
+
+  const handleHomeLibraryDrop = useCallback(
+    async (event: React.DragEvent<HTMLElement>) => {
+      if (homeMode !== "media") return;
+      event.preventDefault();
+      setHomeLibraryDropActive(false);
+      if (!event.dataTransfer.files.length) return;
+      setUploadStatus("Uploading media...");
+      try {
+        const savedCount = await uploadLibraryFiles(event.dataTransfer.files);
+        setUploadStatus(savedCount ? "Upload complete." : "No supported media found.");
+        window.setTimeout(() => setUploadStatus(""), 2400);
+      } catch (err) {
+        setUploadStatus(err instanceof Error ? err.message : "Upload failed. Try again.");
+      }
+    },
+    [homeMode, uploadLibraryFiles]
+  );
+
   const uploadQueuedMedia = useCallback(async () => {
     if (!uploadQueue.length || uploadingQueuedMedia) return;
     setUploadingQueuedMedia(true);
@@ -2573,12 +2788,32 @@ export default function Studio2Page() {
       setUploadModalOpen(false);
       setShareLinkStatus("");
       setView("home");
-    } catch {
-      setUploadStatus("Upload failed. Try again.");
+    } catch (err) {
+      setUploadStatus(err instanceof Error ? err.message : "Upload failed. Try again.");
     } finally {
       setUploadingQueuedMedia(false);
     }
   }, [uploadLibraryFiles, uploadQueue, uploadingQueuedMedia]);
+
+  const cancelQueuedUpload = useCallback(() => {
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    setUploadQueue([]);
+    setUploadingQueuedMedia(false);
+    setUploadStatus("");
+  }, []);
+
+  const removeQueuedUploadFile = useCallback((index: number) => {
+    setUploadQueue((prev) => {
+      const next = prev.filter((_, fileIndex) => fileIndex !== index);
+      if (!next.length && uploadingQueuedMedia) {
+        uploadAbortRef.current?.abort();
+        setUploadingQueuedMedia(false);
+        setUploadStatus("");
+      }
+      return next;
+    });
+  }, [uploadingQueuedMedia]);
 
   const openUploadMediaModal = useCallback(
     (folderId?: string | null) => {
@@ -2637,6 +2872,7 @@ export default function Studio2Page() {
         imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
       }));
       setSelectedLayer({ type: "image" });
+      setSelectedTextBlockIds([]);
       setContextMenu(null);
       void fetchStudioMedia();
       void fetchStudioHome();
@@ -2660,6 +2896,7 @@ export default function Studio2Page() {
       textBlocks: [...creative.textBlocks, copy],
     }));
     setSelectedLayer({ type: "text", id: copy.id });
+    setSelectedTextBlockIds([copy.id]);
     setContextMenu(null);
   }, [pushUndo, selectedBlock, updateCurrentCreative]);
 
@@ -2671,6 +2908,7 @@ export default function Studio2Page() {
       textBlocks: creative.textBlocks.filter((block) => block.id !== selectedBlock.id),
     }));
     setSelectedLayer(null);
+    setSelectedTextBlockIds([]);
     setContextMenu(null);
   }, [pushUndo, selectedBlock, updateCurrentCreative]);
 
@@ -2702,6 +2940,73 @@ export default function Studio2Page() {
     },
     [getMeasureCtx, pushUndo, selectedBlock, updateSelectedBlock]
   );
+
+  const alignSelectedTextBlocks = useCallback(
+    (align: TextAlign) => {
+      if (selectedTextBlocks.length < 2) return;
+      pushUndo();
+      const ctx = getMeasureCtx();
+      const metrics = selectedTextBlocks.map((block) => ({ block, metrics: measureTextBlock(ctx, block) }));
+      const left = Math.min(...metrics.map((item) => item.metrics.x));
+      const right = Math.max(...metrics.map((item) => item.metrics.x + item.metrics.w));
+      const center = (left + right) / 2;
+      const ids = new Set(selectedTextBlocks.map((block) => block.id));
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) => {
+          if (!ids.has(block.id)) return block;
+          const measured = metrics.find((item) => item.block.id === block.id)?.metrics;
+          if (!measured) return block;
+          const nextX = align === "left"
+            ? left
+            : align === "right"
+              ? right - measured.w
+              : center - measured.w / 2;
+          return { ...block, x: Math.round(nextX), align };
+        }),
+      }));
+      setContextMenu(null);
+    },
+    [getMeasureCtx, pushUndo, selectedTextBlocks, updateCurrentCreative]
+  );
+
+  const scaleSelectedTextBlocks = useCallback(
+    (factor: number) => {
+      if (selectedTextBlocks.length < 2) return;
+      pushUndo();
+      const ids = new Set(selectedTextBlocks.map((block) => block.id));
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          ids.has(block.id)
+            ? {
+                ...block,
+                fontSize: clamp(Math.round(block.fontSize * factor), 14, 150),
+                maxWidth: clamp(Math.round(block.maxWidth * factor), 220, 1060),
+                paddingH: clamp(Math.round(block.paddingH * factor), 0, 90),
+                paddingV: clamp(Math.round(block.paddingV * factor), 0, 90),
+                borderRadius: clamp(Math.round(block.borderRadius * factor), 0, 60),
+              }
+            : block
+        ),
+      }));
+      setContextMenu(null);
+    },
+    [pushUndo, selectedTextBlocks, updateCurrentCreative]
+  );
+
+  const deleteSelectedTextBlocks = useCallback(() => {
+    if (!selectedTextBlocks.length) return;
+    pushUndo();
+    const ids = new Set(selectedTextBlocks.map((block) => block.id));
+    updateCurrentCreative((creative) => ({
+      ...creative,
+      textBlocks: creative.textBlocks.filter((block) => !ids.has(block.id)),
+    }));
+    setSelectedLayer(null);
+    setSelectedTextBlockIds([]);
+    setContextMenu(null);
+  }, [pushUndo, selectedTextBlocks, updateCurrentCreative]);
 
   const moveSelectedLayer = useCallback(
     (direction: "front" | "back" | "forward" | "backward") => {
@@ -2826,7 +3131,7 @@ export default function Studio2Page() {
         if (pointInMetrics(point, metrics)) return "grab";
       }
 
-      return "grab";
+      return "default";
     },
     [currentCreative, getMeasureCtx, selectedLayer]
   );
@@ -2879,11 +3184,19 @@ export default function Studio2Page() {
       event.preventDefault();
       const point = pointFromEvent(event);
       const hit = findHitBlock(point);
-      const target: SelectedLayer = hit ? { type: "text", id: hit.id } : { type: "image" };
-      setSelectedLayer(target);
+      const target: ContextMenuTarget = hit && selectedTextBlockIds.includes(hit.id) && selectedTextBlockIds.length > 1
+        ? { type: "multi-text" }
+        : hit ? { type: "text", id: hit.id } : { type: "image" };
+      if (target?.type === "multi-text") {
+        setSelectedLayer(hit ? { type: "text", id: hit.id } : null);
+      } else if (target) {
+        setSelectedLayer(target);
+        if (target.type === "text") setSelectedTextBlockIds([target.id]);
+        else setSelectedTextBlockIds([]);
+      }
       setContextMenu({ x: event.clientX, y: event.clientY, target });
     },
-    [currentCreative, findHitBlock]
+    [currentCreative, findHitBlock, selectedTextBlockIds]
   );
 
   const handlePointerDown = useCallback(
@@ -2934,16 +3247,36 @@ export default function Studio2Page() {
 
       const hit = findHitBlock(point);
       if (hit) {
+        if (event.shiftKey) {
+          setSelectedTextBlockIds((prev) => {
+            const next = prev.includes(hit.id) ? prev.filter((id) => id !== hit.id) : [...prev, hit.id];
+            if (!next.length) setSelectedLayer(null);
+            else setSelectedLayer({ type: "text", id: hit.id });
+            return next;
+          });
+          return;
+        }
+        const movingBlockIds = selectedTextBlockIds.includes(hit.id) && selectedTextBlockIds.length > 1
+          ? selectedTextBlockIds
+          : [hit.id];
+        const origPositions = Object.fromEntries(
+          currentCreative.textBlocks
+            .filter((block) => movingBlockIds.includes(block.id))
+            .map((block) => [block.id, { x: block.x, y: block.y }])
+        );
         setSelectedLayer({ type: "text", id: hit.id });
+        setSelectedTextBlockIds(movingBlockIds);
         if (!hit.locked) {
           dragRef.current = {
             kind: "move-text",
             active: false,
             blockId: hit.id,
+            blockIds: movingBlockIds,
             startX: point.x,
             startY: point.y,
             origX: hit.x,
             origY: hit.y,
+            origPositions,
             origMetrics: measureTextBlock(ctx, hit),
           };
           setCanvasCursor("grabbing");
@@ -2952,6 +3285,7 @@ export default function Studio2Page() {
       }
 
       if (selectedLayer?.type === "image") {
+        setSelectedTextBlockIds([]);
         dragRef.current = {
           kind: "move-image",
           active: false,
@@ -2966,12 +3300,12 @@ export default function Studio2Page() {
 
       if (selectedLayer) {
         setSelectedLayer(null);
+        setSelectedTextBlockIds([]);
         return;
       }
-
-      setSelectedLayer({ type: "image" });
+      setSelectedTextBlockIds([]);
     },
-    [currentCreative, findHitBlock, getMeasureCtx, selectedLayer]
+    [currentCreative, findHitBlock, getMeasureCtx, selectedLayer, selectedTextBlockIds]
   );
 
   const handlePointerMove = useCallback(
@@ -3006,11 +3340,11 @@ export default function Studio2Page() {
         updateCurrentCreative((creative) => ({
           ...creative,
           textBlocks: creative.textBlocks.map((block) =>
-            block.id === drag.blockId
+            (drag.blockIds || [drag.blockId]).includes(block.id)
               ? {
                   ...block,
-                  x: snapped.x,
-                  y: snapped.y,
+                  x: block.id === drag.blockId ? snapped.x : Math.round((drag.origPositions?.[block.id]?.x ?? block.x) + dx),
+                  y: block.id === drag.blockId ? snapped.y : Math.round((drag.origPositions?.[block.id]?.y ?? block.y) + dy),
                 }
               : block
           ),
@@ -3129,6 +3463,7 @@ export default function Studio2Page() {
         const delta = event.key === "ArrowLeft" ? -1 : 1;
         setCurrentIndex((index) => clamp(index + delta, 0, Math.max(0, creatives.length - 1)));
         setSelectedLayer(null);
+        setSelectedTextBlockIds([]);
         setContextMenu(null);
         setEditingBlockId(null);
         return;
@@ -3138,6 +3473,12 @@ export default function Studio2Page() {
         setContextMenu(null);
       }
 
+      if (!typing && selectedTextBlocks.length > 1 && (event.key === "Delete" || event.key === "Backspace")) {
+        event.preventDefault();
+        deleteSelectedTextBlocks();
+        return;
+      }
+
       if (!typing && selectedLayer?.type === "text" && (event.key === "Delete" || event.key === "Backspace")) {
         event.preventDefault();
         deleteSelectedBlock();
@@ -3145,7 +3486,7 @@ export default function Studio2Page() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [creatives.length, deleteSelectedBlock, duplicateSelectedBlock, redo, selectedLayer, undo, view]);
+  }, [creatives.length, deleteSelectedBlock, deleteSelectedTextBlocks, duplicateSelectedBlock, redo, selectedLayer, selectedTextBlocks.length, undo, view]);
 
   const renderCreativeToCanvas = useCallback(
     async (creative: Creative, pixelRatio = 2) => {
@@ -3276,6 +3617,13 @@ export default function Studio2Page() {
   useEffect(() => {
     if (view === "editor") void loadAiGenerations();
   }, [loadAiGenerations, view]);
+
+  useEffect(() => {
+    setGenerateMessages([]);
+    setGenerateStatus("");
+    setSelectedGenerationIds([]);
+    setGeneratedPreview(null);
+  }, [projectId]);
 
   const pickGenerateReference = useCallback(async (file: File | null) => {
     if (!file || !file.type.startsWith("image/")) {
@@ -3441,7 +3789,13 @@ export default function Studio2Page() {
       }
       setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "sent" } : message));
     } catch (err) {
-      setGenerateStatus(err instanceof Error ? err.message : "Could not generate image.");
+      const message = err instanceof Error ? err.message : "Could not generate image.";
+      setGenerateStatus(message);
+      if (/higgsfield|login|token|auth|credential/i.test(message)) {
+        setHiggsfieldAuthModal({ open: true, message });
+        setHiggsfieldAuthJson("");
+        setHiggsfieldAuthStatus("");
+      }
     } finally {
       setGeneratingAd(false);
     }
@@ -3476,6 +3830,7 @@ export default function Studio2Page() {
       return [...prev, nextCreative];
     });
     setSelectedLayer({ type: "image" });
+    setSelectedTextBlockIds([]);
     setEditorSidebarMode("edit");
     setGeneratedPreview(null);
   }, [pushUndo]);
@@ -3495,6 +3850,174 @@ export default function Studio2Page() {
       createdAt: generation.createdAt,
     };
   }, []);
+
+  const selectedGenerations = useMemo(
+    () => aiGenerations.filter((generation) => selectedGenerationIds.includes(String(generation.id || generation.jobId))),
+    [aiGenerations, selectedGenerationIds]
+  );
+  const selectedGenerationAssets = useMemo(
+    () => selectedGenerations.map((generation) => getGenerationAsset(generation)).filter(Boolean) as StudioMediaAsset[],
+    [getGenerationAsset, selectedGenerations]
+  );
+
+  const toggleGenerationSelection = useCallback((generationId: string) => {
+    setSelectedGenerationIds((prev) =>
+      prev.includes(generationId) ? prev.filter((id) => id !== generationId) : [...prev, generationId]
+    );
+  }, []);
+
+  const deleteSelectedGenerations = useCallback(async () => {
+    const ids = [...selectedGenerationIds];
+    if (!ids.length) return;
+    setGenerateStatus(`Deleting ${ids.length} gallery item${ids.length === 1 ? "" : "s"}...`);
+    await Promise.all(ids.map((id) => fetch(`/api/studio-2/ai/generations/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null)));
+    setAiGenerations((prev) => prev.filter((generation) => !ids.includes(String(generation.id || generation.jobId))));
+    setSelectedGenerationIds([]);
+    setGenerateStatus("");
+  }, [selectedGenerationIds]);
+
+  const addSelectedGenerationsToEditor = useCallback(() => {
+    if (!selectedGenerationAssets.length) return;
+    pushUndo();
+    setMediaAssets((prev) => {
+      const existing = new Set(prev.map((asset) => asset.url));
+      return [
+        ...selectedGenerationAssets.filter((asset) => !existing.has(asset.url)),
+        ...prev,
+      ];
+    });
+    setCreatives((prev) => {
+      const nextCreatives = selectedGenerationAssets.map((asset): Creative => ({
+        id: uid(),
+        photoUrl: asset.url,
+        mediaKind: "image",
+        textBlocks: [],
+        imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
+        status: "draft",
+      }));
+      setCurrentIndex(prev.length);
+      return [...prev, ...nextCreatives];
+    });
+    setSelectedLayer({ type: "image" });
+    setSelectedTextBlockIds([]);
+    setSelectedGenerationIds([]);
+    setEditorSidebarMode("edit");
+  }, [pushUndo, selectedGenerationAssets]);
+
+  const downloadGalleryAssets = useCallback(async (assets: StudioMediaAsset[]) => {
+    if (!assets.length) return;
+    setGenerateStatus(assets.length === 1 ? "Preparing download..." : `Preparing ${assets.length} downloads...`);
+    try {
+      if (assets.length === 1) {
+        const asset = assets[0];
+        const res = await fetch(getMediaPreviewSrc(asset.url));
+        if (!res.ok) throw new Error("Download failed");
+        const blob = await res.blob();
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = href;
+        link.download = asset.filename || "generated-ad.png";
+        link.click();
+        URL.revokeObjectURL(href);
+      } else {
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
+        await Promise.all(assets.map(async (asset, index) => {
+          const res = await fetch(getMediaPreviewSrc(asset.url));
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const ext = asset.filename?.split(".").pop() || "png";
+          zip.file(asset.filename || `generated-ad-${index + 1}.${ext}`, blob);
+        }));
+        const blob = await zip.generateAsync({ type: "blob" });
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = href;
+        link.download = `${projectName || "generated-ads"}.zip`;
+        link.click();
+        URL.revokeObjectURL(href);
+      }
+    } finally {
+      setGenerateStatus("");
+    }
+  }, [projectName]);
+
+  const moveSelectedGenerationsToFolder = useCallback(async (folderId: string | null) => {
+    const assets = selectedGenerationAssets.filter((asset) => asset.id);
+    if (!assets.length) return;
+    setGenerateStatus(`Moving ${assets.length} image${assets.length === 1 ? "" : "s"}...`);
+    try {
+      await Promise.all(assets.map(async (asset) => {
+        const res = await fetch(`/api/studio-2/media/${asset.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId }),
+        });
+        if (!res.ok) throw new Error("Move failed");
+      }));
+      const movedIds = new Set(assets.map((asset) => asset.id));
+      setLibraryMedia((prev) => prev.map((asset) => movedIds.has(asset.id) ? { ...asset, folderId } : asset));
+      setAiGenerations((prev) => prev.map((generation) =>
+        generation.media && movedIds.has(generation.media.id)
+          ? { ...generation, media: { ...generation.media, folderId } }
+          : generation
+      ));
+      setGenerateStatus("Moved.");
+    } catch {
+      setGenerateStatus("Could not move those gallery images.");
+    }
+  }, [selectedGenerationAssets]);
+
+  const moveSelectedGenerationsToProject = useCallback(async (targetProjectId: string) => {
+    const ids = [...selectedGenerationIds];
+    if (!ids.length || !targetProjectId) return;
+    setGenerateStatus(`Moving ${ids.length} gallery item${ids.length === 1 ? "" : "s"}...`);
+    try {
+      await Promise.all(ids.map(async (id) => {
+        const res = await fetch(`/api/studio-2/ai/generations/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: targetProjectId }),
+        });
+        if (!res.ok) throw new Error("Generation move failed");
+      }));
+      setAiGenerations((prev) => prev.filter((generation) => !ids.includes(String(generation.id || generation.jobId))));
+      setSelectedGenerationIds([]);
+      setGenerateStatus("Moved.");
+    } catch {
+      setGenerateStatus("Could not move those gallery items.");
+    }
+  }, [selectedGenerationIds]);
+
+  const openHiggsfieldAuthModal = useCallback((message?: string) => {
+    setHiggsfieldAuthModal({ open: true, message });
+    setHiggsfieldAuthJson("");
+    setHiggsfieldAuthStatus("");
+  }, []);
+
+  const saveHiggsfieldAuth = useCallback(async () => {
+    if (!higgsfieldAuthJson.trim()) {
+      setHiggsfieldAuthStatus("Paste the Higgsfield credentials JSON first.");
+      return;
+    }
+    setSavingHiggsfieldAuth(true);
+    setHiggsfieldAuthStatus("Saving...");
+    try {
+      const res = await fetch("/api/studio-2/ai/higgsfield-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentialsJson: higgsfieldAuthJson }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save Higgsfield login.");
+      setHiggsfieldAuthStatus("Higgsfield is connected.");
+      window.setTimeout(() => setHiggsfieldAuthModal({ open: false }), 900);
+    } catch (err) {
+      setHiggsfieldAuthStatus(err instanceof Error ? err.message : "Could not save Higgsfield login.");
+    } finally {
+      setSavingHiggsfieldAuth(false);
+    }
+  }, [higgsfieldAuthJson]);
 
   useEffect(() => {
     try {
@@ -3563,7 +4086,7 @@ export default function Studio2Page() {
     const textarea = generatePromptTextareaRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.max(78, textarea.scrollHeight)}px`;
+    textarea.style.height = `${Math.max(54, textarea.scrollHeight)}px`;
   }, [generatePrompt, editorSidebarMode]);
 
   useEffect(() => {
@@ -3694,6 +4217,7 @@ export default function Studio2Page() {
       textBlocks: [...creative.textBlocks, { ...newBlock, x: 90, y: 180 }],
     }));
     setSelectedLayer({ type: "text", id: newBlock.id });
+    setSelectedTextBlockIds([newBlock.id]);
   }, [currentCreative, makeBlock, pushUndo, updateCurrentCreative]);
 
   const applyCurrentLayoutToAll = useCallback(() => {
@@ -4269,6 +4793,9 @@ export default function Studio2Page() {
       }] : []),
     ].sort((a, b) => a.sort - b.sort);
     const hasGenerateActivity = conversationItems.length > 0 || generatingAd;
+    const selectedGalleryCount = selectedGenerationIds.length;
+    const selectedGalleryReadyCount = selectedGenerationAssets.length;
+    const generateNeedsAuth = /higgsfield|login|token|auth|credential/i.test(generateStatus);
 
     return (
       <div
@@ -4298,18 +4825,19 @@ export default function Studio2Page() {
             >
               <ArrowLeft size={13} /> Edit
             </button>
-            <Sparkles size={16} color={ADS_BRAND.gold} />
-            <span style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 850 }}>Generate</span>
             <div style={{ flex: 1 }} />
             <button
               type="button"
               aria-pressed={generateGalleryOpen}
               onClick={() => setGenerateGalleryOpen((open) => !open)}
               style={{
-                ...buttonStyle(generateGalleryOpen),
+                ...buttonStyle(false),
                 height: 34,
                 padding: "0 13px",
                 gap: 7,
+                background: generateGalleryOpen ? ADS_BRAND.active : ADS_BRAND.panel3,
+                color: generateGalleryOpen ? ADS_BRAND.text : ADS_BRAND.text2,
+                border: `1px solid ${generateGalleryOpen ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
               }}
             >
               <ImagePlus size={15} />
@@ -4320,9 +4848,9 @@ export default function Studio2Page() {
                     minWidth: 18,
                     height: 18,
                     borderRadius: "50%",
-                    background: generateGalleryOpen ? "rgba(5,5,5,0.18)" : ADS_BRAND.active,
-                    border: `1px solid ${generateGalleryOpen ? "rgba(5,5,5,0.16)" : ADS_BRAND.border2}`,
-                    color: generateGalleryOpen ? ADS_BRAND.bg : ADS_BRAND.text2,
+                    background: generateGalleryOpen ? ADS_BRAND.goldSoft : ADS_BRAND.active,
+                    border: `1px solid ${generateGalleryOpen ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                    color: generateGalleryOpen ? ADS_BRAND.gold : ADS_BRAND.text2,
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -4440,6 +4968,15 @@ export default function Studio2Page() {
                           <div style={{ color: statusIsError ? "#ffb3b3" : ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, marginTop: 3 }}>
                             {statusDetail}
                           </div>
+                          {statusIsError && generateNeedsAuth && (
+                            <button
+                              type="button"
+                              onClick={() => openHiggsfieldAuthModal(item.status)}
+                              style={{ ...buttonStyle(false), height: 32, marginTop: 10, padding: "0 10px" }}
+                            >
+                              Reconnect Higgsfield
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -4535,7 +5072,7 @@ export default function Studio2Page() {
             style={{
               margin: "0 auto 22px",
               width: "min(760px, calc(100% - 48px))",
-              minHeight: 206,
+              minHeight: 150,
               borderRadius: 22,
               border: `1px solid ${generateDropActive ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
               background: generateDropActive ? ADS_BRAND.goldSoft : ADS_BRAND.panel2,
@@ -4546,11 +5083,11 @@ export default function Studio2Page() {
               gap: 13,
             }}
           >
-            <div style={{ display: "flex", gap: 10, alignItems: "center", minHeight: 58 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", minHeight: 46 }}>
               <div
                 style={{
-                  width: 58,
-                  height: 58,
+                  width: 48,
+                  height: 48,
                   borderRadius: 9,
                   overflow: "hidden",
                   border: `1px solid ${ADS_BRAND.border2}`,
@@ -4598,27 +5135,6 @@ export default function Studio2Page() {
                   </button>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={() => generateReferenceInputRef.current?.click()}
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: "50%",
-                  border: `1px solid ${ADS_BRAND.border2}`,
-                  background: ADS_BRAND.panel3,
-                  color: ADS_BRAND.text2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  marginLeft: generateReference ? 0 : "auto",
-                }}
-                title="Add reference image"
-              >
-                <Plus size={21} />
-              </button>
               <input
                 ref={generateReferenceInputRef}
                 type="file"
@@ -4638,7 +5154,7 @@ export default function Studio2Page() {
               rows={3}
               style={{
                 width: "100%",
-                minHeight: 78,
+                minHeight: 54,
                 border: "none",
                 outline: "none",
                 resize: "none",
@@ -4652,7 +5168,26 @@ export default function Studio2Page() {
               placeholder="Describe what you want to generate..."
             />
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => generateReferenceInputRef.current?.click()}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel3,
+                  color: ADS_BRAND.text2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+                title="Add reference image"
+              >
+                <Plus size={17} />
+              </button>
               <div ref={generatePresetMenuRef} style={{ position: "relative", marginRight: "auto" }}>
                 <button
                   type="button"
@@ -4817,9 +5352,30 @@ export default function Studio2Page() {
                 >
                   <Minus size={13} />
                 </button>
-                <span style={{ minWidth: 32, textAlign: "center", color: ADS_BRAND.text, fontSize: 12, fontWeight: 900 }}>
-                  {generateBatchCount}x
-                </span>
+                <input
+                  aria-label="Images to generate"
+                  type="number"
+                  min={1}
+                  max={MAX_GENERATE_BATCH_COUNT}
+                  value={generateBatchCount}
+                  disabled={generatingAd}
+                  onChange={(event) => {
+                    const parsed = Number(event.target.value);
+                    setGenerateBatchCount(Number.isFinite(parsed) ? clamp(Math.round(parsed), 1, MAX_GENERATE_BATCH_COUNT) : 1);
+                  }}
+                  style={{
+                    width: 34,
+                    border: "none",
+                    outline: "none",
+                    background: "transparent",
+                    color: ADS_BRAND.text,
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 900,
+                    textAlign: "center",
+                  }}
+                />
+                <span style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 800 }}>x</span>
                 <button
                   type="button"
                   onClick={() => setGenerateBatchCount((count) => clamp(count + 1, 1, MAX_GENERATE_BATCH_COUNT))}
@@ -4846,8 +5402,8 @@ export default function Studio2Page() {
                 onClick={() => void startAiGeneration()}
                 disabled={generatingAd || !canGenerate}
                 style={{
-                  width: 42,
-                  height: 42,
+                  width: 36,
+                  height: 36,
                   borderRadius: "50%",
                   border: "none",
                   background: generatingAd ? ADS_BRAND.gold : canGenerate ? "#a7f3ff" : ADS_BRAND.border2,
@@ -4860,7 +5416,7 @@ export default function Studio2Page() {
                 }}
                 title={generatingAd ? "Creating" : "Generate"}
               >
-                {generatingAd ? <Square size={17} fill="currentColor" /> : <ArrowLeft size={20} style={{ transform: "rotate(90deg)" }} />}
+                {generatingAd ? <Square size={14} fill="currentColor" /> : <ArrowLeft size={18} style={{ transform: "rotate(90deg)" }} />}
               </button>
             </div>
           </div>
@@ -4900,35 +5456,176 @@ export default function Studio2Page() {
                 maxWidth: "74%",
                 minHeight: 0,
                 overflowY: "auto",
-                padding: "74px 18px 28px",
+                padding: "18px 18px 28px",
                 background: ADS_BRAND.bg,
               }}
             >
+              <div
+                style={{
+                  minHeight: 40,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                {selectedGalleryCount > 0 ? (
+                  <>
+                    <div style={{ color: ADS_BRAND.text2, fontSize: 12, fontWeight: 850 }}>
+                      {selectedGalleryCount} selected
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        disabled={!selectedGalleryReadyCount}
+                        onClick={addSelectedGenerationsToEditor}
+                        style={{ ...buttonStyle(false), height: 32, padding: "0 9px", opacity: selectedGalleryReadyCount ? 1 : 0.45 }}
+                      >
+                        <FilePlus2 size={13} /> Use
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!selectedGalleryReadyCount}
+                        onClick={() => void downloadGalleryAssets(selectedGenerationAssets)}
+                        style={{ ...buttonStyle(false), height: 32, padding: "0 9px", opacity: selectedGalleryReadyCount ? 1 : 0.45 }}
+                      >
+                        <Download size={13} /> Download
+                      </button>
+                      {mediaFolders.length > 0 && (
+                        <select
+                          aria-label="Move selected gallery images to folder"
+                          disabled={!selectedGalleryReadyCount}
+                          defaultValue=""
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            event.currentTarget.value = "";
+                            if (value === "__root") void moveSelectedGenerationsToFolder(null);
+                            else if (value) void moveSelectedGenerationsToFolder(value);
+                          }}
+                          style={{
+                            height: 32,
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 6,
+                            background: ADS_BRAND.panel3,
+                            color: selectedGalleryReadyCount ? ADS_BRAND.text2 : ADS_BRAND.text4,
+                            fontFamily: "inherit",
+                            fontSize: 12,
+                            fontWeight: 750,
+                            padding: "0 8px",
+                          }}
+                        >
+                          <option value="">Move to...</option>
+                          <option value="__root">All Media</option>
+                          {mediaFolders.map((folder) => (
+                            <option key={folder.id} value={folder.id}>{folder.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {cloudProjects.filter((project) => project.id !== projectId).length > 0 && (
+                        <select
+                          aria-label="Move selected gallery items to project"
+                          defaultValue=""
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            event.currentTarget.value = "";
+                            if (value) void moveSelectedGenerationsToProject(value);
+                          }}
+                          style={{
+                            height: 32,
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 6,
+                            background: ADS_BRAND.panel3,
+                            color: ADS_BRAND.text2,
+                            fontFamily: "inherit",
+                            fontSize: 12,
+                            fontWeight: 750,
+                            padding: "0 8px",
+                          }}
+                        >
+                          <option value="">Move project...</option>
+                          {cloudProjects.filter((project) => project.id !== projectId).map((project) => (
+                            <option key={project.id} value={project.id}>{project.name || "Untitled design"}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void deleteSelectedGenerations()}
+                        style={{ ...buttonStyle(false), height: 32, padding: "0 9px", color: "#ff9b9b", borderColor: "rgba(255,155,155,0.28)" }}
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGenerationIds([])}
+                        style={{ ...buttonStyle(false), height: 32, width: 32, padding: 0 }}
+                        aria-label="Clear gallery selection"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div />
+                  </>
+                )}
+              </div>
               {aiGenerations.length ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
                   {aiGenerations.map((generation) => {
                     const asset = getGenerationAsset(generation);
                     const ready = !!asset;
+                    const generationKey = String(generation.id || generation.jobId);
+                    const isSelected = selectedGenerationIds.includes(generationKey);
                     return (
                       <button
-                        key={generation.id || generation.jobId}
+                        key={generationKey}
                         type="button"
-                        disabled={!asset}
                         onClick={() => {
-                          if (asset) setGeneratedPreview({ generation, asset });
+                          if (selectedGalleryCount > 0 || !asset) {
+                            toggleGenerationSelection(generationKey);
+                            return;
+                          }
+                          setGeneratedPreview({ generation, asset });
                         }}
                         style={{
                           position: "relative",
-                          border: `1px solid ${ADS_BRAND.border2}`,
+                          border: `1px solid ${isSelected ? ADS_BRAND.gold : ADS_BRAND.border2}`,
+                          boxShadow: isSelected ? "0 0 0 2px rgba(212,178,122,0.14)" : "none",
                           borderRadius: 10,
                           overflow: "hidden",
                           background: ADS_BRAND.panel3,
                           padding: 0,
-                          cursor: asset ? "pointer" : "default",
+                          cursor: "pointer",
                           textAlign: "left",
                         }}
                         title={asset ? "Open preview" : generation.status}
                       >
+                        <span
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleGenerationSelection(generationKey);
+                          }}
+                          style={{
+                            position: "absolute",
+                            zIndex: 2,
+                            left: 9,
+                            top: 9,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.25)"}`,
+                            background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.56)",
+                            color: isSelected ? ADS_BRAND.bg : ADS_BRAND.text2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {isSelected && <CheckCircle2 size={14} />}
+                        </span>
                         {asset ? (
                           <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
                         ) : (
@@ -4948,7 +5645,7 @@ export default function Studio2Page() {
                             style={{
                               position: "absolute",
                               left: 9,
-                              top: 9,
+                              bottom: 9,
                               borderRadius: 999,
                               background: "rgba(0,0,0,0.72)",
                               color: ADS_BRAND.gold,
@@ -4992,6 +5689,12 @@ export default function Studio2Page() {
     return (
       <div
         className="ad-studio-fullbleed"
+        onDragEnter={handleHomeLibraryDragOver}
+        onDragOver={handleHomeLibraryDragOver}
+        onDragLeave={handleHomeLibraryDragLeave}
+        onDrop={(event) => {
+          void handleHomeLibraryDrop(event);
+        }}
         onClick={() => {
           setCreateMenuOpen(false);
           setFolderMenuOpen(false);
@@ -5031,6 +5734,21 @@ export default function Studio2Page() {
             background: ${ADS_BRAND.panel2} !important;
           }
         `}</style>
+        {homeLibraryDropActive && homeMode === "media" && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 12,
+              zIndex: 70,
+              pointerEvents: "none",
+              border: `2px dashed ${ADS_BRAND.gold}`,
+              borderRadius: 18,
+              background: "rgba(212,178,122,0.08)",
+              backdropFilter: "blur(5px)",
+              boxShadow: "0 0 0 999px rgba(0,0,0,0.32)",
+            }}
+          />
+        )}
 
         <div style={{
           height: 80,
@@ -5828,7 +6546,7 @@ export default function Studio2Page() {
                         {asset.kind === "video" ? (
                           <video draggable={false} src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
-                          <img draggable={false} src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         )}
                         {asset.kind === "video" && (
                           <span style={mediaVideoBadgeStyle}>
@@ -5891,9 +6609,8 @@ export default function Studio2Page() {
                   }}
                 />
               ) : (
-                <img
-                  draggable={false}
-                  src={getMediaPreviewSrc(previewMedia.url)}
+                <MediaAssetPreview
+                  asset={previewMedia}
                   alt={previewMedia.filename}
                   style={{
                     maxWidth: "100%",
@@ -5910,7 +6627,10 @@ export default function Studio2Page() {
         )}
         {uploadModalOpen && (
           <div
-            onClick={() => setUploadModalOpen(false)}
+            onClick={() => {
+              if (uploadingQueuedMedia) cancelQueuedUpload();
+              setUploadModalOpen(false);
+            }}
             style={{
               position: "fixed",
               inset: 0,
@@ -5997,7 +6717,7 @@ export default function Studio2Page() {
                       <button
                         type="button"
                         aria-label="Remove queued file"
-                        onClick={() => setUploadQueue((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                        onClick={() => removeQueuedUploadFile(index)}
                         style={{
                           border: "none",
                           background: "transparent",
@@ -6020,6 +6740,7 @@ export default function Studio2Page() {
                 <button
                   style={buttonStyle(false)}
                   onClick={() => {
+                    if (uploadingQueuedMedia) cancelQueuedUpload();
                     setUploadModalOpen(false);
                     setUploadDropActive(false);
                     setUploadStatus("");
@@ -6559,8 +7280,46 @@ export default function Studio2Page() {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-                {setupMediaFolder ? setupMediaFolder.name : "All Media"}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 700 }}>
+                  {setupMediaFolder ? setupMediaFolder.name : "All Media"}
+                </div>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    gap: 2,
+                    padding: 3,
+                    borderRadius: 8,
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    background: ADS_BRAND.panel3,
+                  }}
+                >
+                  {([
+                    ["all", "All"],
+                    ["image", "Images"],
+                    ["video", "Videos"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSetupMediaKindFilter(value)}
+                      style={{
+                        border: "none",
+                        borderRadius: 6,
+                        background: setupMediaKindFilter === value ? ADS_BRAND.active : "transparent",
+                        color: setupMediaKindFilter === value ? ADS_BRAND.text : ADS_BRAND.text3,
+                        height: 26,
+                        padding: "0 8px",
+                        fontFamily: "inherit",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div
                 style={{
@@ -6613,7 +7372,7 @@ export default function Studio2Page() {
                           {asset.kind === "video" ? (
                             <video draggable={false} src={getMediaPreviewSrc(asset.url)} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <img draggable={false} src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           )}
                           {asset.kind === "video" && (
                             <span
@@ -6895,11 +7654,47 @@ export default function Studio2Page() {
             <span style={{ color: "var(--text-muted)", fontSize: 11, width: 34 }}>{Math.round(viewScale * 100)}%</span>
           </>
         )}
-        <button style={{ ...buttonStyle(false), opacity: undoStack.length ? 1 : 0.35 }} onClick={undo} disabled={!undoStack.length}>
-          <RotateCcw size={14} /> Undo
+        <button
+          type="button"
+          aria-label="Undo"
+          title="Undo"
+          style={{
+            width: 34,
+            height: 34,
+            border: "none",
+            borderRadius: 6,
+            background: "transparent",
+            color: undoStack.length ? ADS_BRAND.text2 : ADS_BRAND.text4,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: undoStack.length ? "pointer" : "not-allowed",
+          }}
+          onClick={undo}
+          disabled={!undoStack.length}
+        >
+          <RotateCcw size={17} />
         </button>
-        <button style={{ ...buttonStyle(false), opacity: redoStack.length ? 1 : 0.35 }} onClick={redo} disabled={!redoStack.length}>
-          Redo
+        <button
+          type="button"
+          aria-label="Redo"
+          title="Redo"
+          style={{
+            width: 34,
+            height: 34,
+            border: "none",
+            borderRadius: 6,
+            background: "transparent",
+            color: redoStack.length ? ADS_BRAND.text2 : ADS_BRAND.text4,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: redoStack.length ? "pointer" : "not-allowed",
+          }}
+          onClick={redo}
+          disabled={!redoStack.length}
+        >
+          <RotateCw size={17} />
         </button>
         <button style={buttonStyle(false)} onClick={exportCurrent}>
           <Download size={14} /> Export
@@ -7125,7 +7920,10 @@ export default function Studio2Page() {
                     </span>
                   </>
                 ) : (
-                  <img draggable={false} src={getMediaPreviewSrc(creative.photoUrl)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <MediaAssetPreview
+                    asset={{ url: creative.photoUrl, filename: creative.photoUrl }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
                 )}
                 {creative.approved && (
                   <span style={{
@@ -7212,7 +8010,7 @@ export default function Studio2Page() {
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <span style={{ color: ADS_BRAND.text2, fontSize: 12 }}>
-                {selectedBlock ? "Text block" : selectedLayer?.type === "image" ? "Background image" : "Nothing selected"}
+                {multiSelectedTextBlocks ? `${selectedTextBlocks.length} text blocks` : selectedBlock ? "Text block" : selectedLayer?.type === "image" ? "Background image" : "Nothing selected"}
               </span>
               <span style={{
                 border: `1px solid ${ADS_BRAND.goldBorder}`,
@@ -7230,7 +8028,32 @@ export default function Studio2Page() {
             </div>
           </div>
 
-          {selectedBlock && (
+          {multiSelectedTextBlocks && (
+            <div style={panelStyle}>
+              <span style={{ ...labelStyle, display: "block", marginBottom: 10 }}>Multi Select</span>
+              <Control label="Align">
+                <button style={{ ...buttonStyle(false), width: 38, height: 34, padding: 0 }} onClick={() => alignSelectedTextBlocks("left")} title="Align left">
+                  <AlignLeft size={16} />
+                </button>
+                <button style={{ ...buttonStyle(false), width: 38, height: 34, padding: 0 }} onClick={() => alignSelectedTextBlocks("center")} title="Align center">
+                  <AlignCenter size={16} />
+                </button>
+                <button style={{ ...buttonStyle(false), width: 38, height: 34, padding: 0 }} onClick={() => alignSelectedTextBlocks("right")} title="Align right">
+                  <AlignRight size={16} />
+                </button>
+              </Control>
+              <Control label="Scale">
+                <button style={buttonStyle(false)} onClick={() => scaleSelectedTextBlocks(0.92)}>
+                  <Minus size={13} />
+                </button>
+                <button style={buttonStyle(false)} onClick={() => scaleSelectedTextBlocks(1.08)}>
+                  <Plus size={13} />
+                </button>
+              </Control>
+            </div>
+          )}
+
+          {selectedBlock && !multiSelectedTextBlocks && (
             <div style={panelStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <span style={labelStyle}>Text Block</span>
@@ -7403,8 +8226,24 @@ export default function Studio2Page() {
               <Slider label="Radius" min={0} max={40} value={selectedBlock.borderRadius} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ borderRadius: value })} />
               <Slider label="Opacity" min={0} max={100} value={Math.round(selectedBlock.bgOpacity * 100)} onStart={pushUndo} onChange={(value) => updateSelectedBlock({ bgOpacity: value / 100 })} suffix="%" />
               <Control label="Position">
-                <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-x")}>Center X</button>
-                <button style={buttonStyle(false)} onClick={() => positionSelectedBlock("center-y")}>Center Y</button>
+                <button
+                  type="button"
+                  aria-label="Center horizontally"
+                  title="Center horizontally"
+                  style={{ ...buttonStyle(false), width: 38, height: 34, padding: 0 }}
+                  onClick={() => positionSelectedBlock("center-x")}
+                >
+                  <AlignHorizontalJustifyCenter size={16} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Center vertically"
+                  title="Center vertically"
+                  style={{ ...buttonStyle(false), width: 38, height: 34, padding: 0 }}
+                  onClick={() => positionSelectedBlock("center-y")}
+                >
+                  <AlignVerticalJustifyCenter size={16} />
+                </button>
               </Control>
               <Control label="Layer">
                 <button style={buttonStyle(false)} onClick={() => moveSelectedLayer("front")}>
@@ -7453,14 +8292,20 @@ export default function Studio2Page() {
             </span>
             <button
               style={{ ...buttonStyle(selectedLayer?.type === "image"), width: "100%", justifyContent: "flex-start", marginBottom: 5 }}
-              onClick={() => setSelectedLayer({ type: "image" })}
+              onClick={() => {
+                setSelectedLayer({ type: "image" });
+                setSelectedTextBlockIds([]);
+              }}
             >
               <ImagePlus size={13} /> Background Media
             </button>
             {currentCreative?.textBlocks.map((block) => (
               <button
                 key={block.id}
-                onClick={() => setSelectedLayer({ type: "text", id: block.id })}
+                onClick={() => {
+                  setSelectedLayer({ type: "text", id: block.id });
+                  setSelectedTextBlockIds([block.id]);
+                }}
                 style={{
                   ...buttonStyle(selectedLayer?.type === "text" && selectedLayer.id === block.id),
                   width: "100%",
@@ -7514,6 +8359,18 @@ export default function Studio2Page() {
               <MenuDivider />
               <MenuAction icon={BringToFront} label="Bring to front" onClick={() => moveSelectedLayer("front")} />
               <MenuAction icon={SendToBack} label="Send to back" onClick={() => moveSelectedLayer("back")} />
+            </>
+          )}
+          {contextMenu.target?.type === "multi-text" && (
+            <>
+              <MenuAction icon={AlignLeft} label="Align left" onClick={() => alignSelectedTextBlocks("left")} />
+              <MenuAction icon={AlignCenter} label="Align center" onClick={() => alignSelectedTextBlocks("center")} />
+              <MenuAction icon={AlignRight} label="Align right" onClick={() => alignSelectedTextBlocks("right")} />
+              <MenuDivider />
+              <MenuAction icon={Plus} label="Scale up together" onClick={() => scaleSelectedTextBlocks(1.08)} />
+              <MenuAction icon={Minus} label="Scale down together" onClick={() => scaleSelectedTextBlocks(0.92)} />
+              <MenuDivider />
+              <MenuAction icon={Trash2} label={`Delete ${selectedTextBlocks.length} blocks`} shortcut="DEL" danger onClick={deleteSelectedTextBlocks} />
             </>
           )}
           {contextMenu.target?.type === "image" && (
@@ -7593,10 +8450,100 @@ export default function Studio2Page() {
               </button>
               <button
                 type="button"
+                onClick={() => void downloadGalleryAssets([generatedPreview.asset])}
+                style={{ ...buttonStyle(false), height: 40 }}
+              >
+                <Download size={14} />
+              </button>
+              <button
+                type="button"
                 onClick={() => setGeneratedPreview(null)}
                 style={{ ...buttonStyle(false), height: 40 }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {higgsfieldAuthModal.open && (
+        <div
+          onClick={() => !savingHiggsfieldAuth && setHiggsfieldAuthModal({ open: false })}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.64)",
+            backdropFilter: "blur(8px)",
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(540px, 94vw)",
+              borderRadius: 14,
+              border: `1px solid ${ADS_BRAND.border2}`,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 90px rgba(0,0,0,0.62)",
+              padding: 16,
+              display: "grid",
+              gap: 13,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 850 }}>Reconnect Higgsfield</div>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+                  Paste the current Higgsfield credentials JSON and Studio 2.0 will use it for future generations.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHiggsfieldAuthModal({ open: false })}
+                disabled={savingHiggsfieldAuth}
+                style={{ ...buttonStyle(false), width: 34, height: 34, padding: 0 }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {higgsfieldAuthModal.message && (
+              <div style={{ color: "#ffb3b3", fontSize: 12, lineHeight: 1.45, border: "1px solid rgba(255,155,155,0.22)", background: "rgba(255,155,155,0.08)", borderRadius: 10, padding: 10 }}>
+                {higgsfieldAuthModal.message}
+              </div>
+            )}
+            <textarea
+              value={higgsfieldAuthJson}
+              onChange={(event) => setHiggsfieldAuthJson(event.target.value)}
+              placeholder='{"token":"..."}'
+              rows={8}
+              spellCheck={false}
+              style={{ ...inputStyle, minHeight: 160, resize: "vertical", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12, lineHeight: 1.45 }}
+            />
+            {higgsfieldAuthStatus && (
+              <div style={{ color: higgsfieldAuthStatus.includes("connected") ? ADS_BRAND.success : ADS_BRAND.text3, fontSize: 12 }}>
+                {higgsfieldAuthStatus}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setHiggsfieldAuthModal({ open: false })}
+                disabled={savingHiggsfieldAuth}
+                style={buttonStyle(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveHiggsfieldAuth()}
+                disabled={savingHiggsfieldAuth || !higgsfieldAuthJson.trim()}
+                style={{ ...buttonStyle(true), opacity: !savingHiggsfieldAuth && higgsfieldAuthJson.trim() ? 1 : 0.45 }}
+              >
+                {savingHiggsfieldAuth ? "Saving..." : "Save login"}
               </button>
             </div>
           </div>
@@ -7717,7 +8664,10 @@ export default function Studio2Page() {
       )}
       {uploadModalOpen && (
         <div
-          onClick={() => setUploadModalOpen(false)}
+          onClick={() => {
+            if (uploadingQueuedMedia) cancelQueuedUpload();
+            setUploadModalOpen(false);
+          }}
           style={{
             position: "fixed",
             inset: 0,
@@ -7804,7 +8754,7 @@ export default function Studio2Page() {
                     <button
                       type="button"
                       aria-label="Remove queued file"
-                      onClick={() => setUploadQueue((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                      onClick={() => removeQueuedUploadFile(index)}
                       style={{
                         border: "none",
                         background: "transparent",
@@ -7827,6 +8777,7 @@ export default function Studio2Page() {
               <button
                 style={buttonStyle(false)}
                 onClick={() => {
+                  if (uploadingQueuedMedia) cancelQueuedUpload();
                   setUploadModalOpen(false);
                   setUploadDropActive(false);
                   setUploadStatus("");

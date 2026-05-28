@@ -267,6 +267,22 @@ async function readStoredHiggsfieldCredentials(): Promise<HiggsfieldCredentials 
   }
 }
 
+export async function getStoredHiggsfieldCredentialStatus() {
+  const storedCredentials = await readStoredHiggsfieldCredentials();
+  if (storedCredentials) return { connected: true, source: "supabase" as const };
+  const envCredentials = readEnvHiggsfieldCredentials();
+  if (envCredentials) return { connected: true, source: "env" as const };
+  return { connected: false, source: null };
+}
+
+export async function saveHiggsfieldCredentials(value: unknown) {
+  const credentials = normalizeHiggsfieldCredentials(value);
+  if (!credentials) {
+    throw new Error("Paste credentials JSON with access_token and refresh_token.");
+  }
+  await writeStoredHiggsfieldCredentials(credentials);
+}
+
 function readEnvHiggsfieldCredentials(): HiggsfieldCredentials | null {
   const jsonCredentials = parseCredentialJson(process.env.HIGGSFIELD_CREDENTIALS_JSON);
   if (jsonCredentials) return jsonCredentials;

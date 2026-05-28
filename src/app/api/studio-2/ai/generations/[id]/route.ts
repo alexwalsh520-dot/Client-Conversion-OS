@@ -91,6 +91,76 @@ export async function GET(
   }
 }
 
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const sb = getServiceSupabase();
+    const generation = await findGeneration(sb, id);
+
+    if (!generation) {
+      return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
+    }
+
+    const { error } = await sb
+      .from("studio2_ai_generations")
+      .delete()
+      .eq("id", generation.id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE_HEADERS });
+    }
+
+    return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
+  } catch (err) {
+    console.error("Studio 2 AI generation delete error:", err);
+    const message = err instanceof Error ? err.message : "Failed to delete Studio 2 AI generation";
+    return NextResponse.json({ error: message }, { status: 500, headers: NO_STORE_HEADERS });
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    const sb = getServiceSupabase();
+    const generation = await findGeneration(sb, id);
+
+    if (!generation) {
+      return NextResponse.json({ error: "Generation not found" }, { status: 404, headers: NO_STORE_HEADERS });
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.projectId !== undefined) {
+      updates.project_id = body.projectId || null;
+      updates.creative_id = null;
+    }
+    if (body.folderId !== undefined) updates.folder_id = body.folderId || null;
+
+    const { data, error } = await sb
+      .from("studio2_ai_generations")
+      .update(updates)
+      .eq("id", generation.id)
+      .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at")
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message || "Generation update failed" }, { status: 500, headers: NO_STORE_HEADERS });
+    }
+
+    return NextResponse.json({ generation: mapGeneration(data) }, { headers: NO_STORE_HEADERS });
+  } catch (err) {
+    console.error("Studio 2 AI generation update error:", err);
+    const message = err instanceof Error ? err.message : "Failed to update Studio 2 AI generation";
+    return NextResponse.json({ error: message }, { status: 500, headers: NO_STORE_HEADERS });
+  }
+}
+
 async function findGeneration(sb: ReturnType<typeof getServiceSupabase>, id: string) {
   const query = sb
     .from("studio2_ai_generations")
