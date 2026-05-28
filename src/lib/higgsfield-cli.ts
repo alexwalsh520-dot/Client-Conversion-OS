@@ -1,13 +1,11 @@
 import { execFile } from "child_process";
 import crypto from "crypto";
 import fs from "fs/promises";
-import { createRequire } from "module";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
-const requireFromHere = createRequire(import.meta.url);
 
 export interface HiggsfieldJob {
   id?: string;
@@ -53,6 +51,9 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
   } catch (err) {
     if (isMissingExecutableError(err)) {
       throw new Error("Higgsfield CLI is not available in this deployment yet. Redeploy the latest build and try again.");
+    }
+    if (isBundledModulePathError(err)) {
+      throw new Error("Higgsfield CLI failed to start in this deployment. Redeploy the latest build and try again.");
     }
     throw err;
   } finally {
@@ -123,17 +124,10 @@ function getHiggsfieldCommand() {
     return { file: process.env.HIGGSFIELD_CLI_PATH.trim(), args: [] };
   }
 
-  try {
-    return {
-      file: process.execPath,
-      args: [requireFromHere.resolve("@higgsfield/cli/bin/higgsfield.js")],
-    };
-  } catch {
-    return {
-      file: process.execPath,
-      args: [path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js")],
-    };
-  }
+  return {
+    file: process.execPath,
+    args: [path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js")],
+  };
 }
 
 async function createCredentialContext(): Promise<{ env: Record<string, string>; cleanup: () => Promise<void> }> {
@@ -193,4 +187,9 @@ function extensionForContentType(contentType: string) {
 function isMissingExecutableError(err: unknown) {
   const maybeError = err as { code?: unknown; message?: unknown };
   return maybeError.code === "ENOENT" || String(maybeError.message || "").includes("ENOENT");
+}
+
+function isBundledModulePathError(err: unknown) {
+  const message = String((err as { message?: unknown }).message || "");
+  return message.includes("Cannot find module") && /\/var\/task\/\d+/.test(message);
 }

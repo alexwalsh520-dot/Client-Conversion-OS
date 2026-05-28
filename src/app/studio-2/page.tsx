@@ -40,6 +40,7 @@ import {
   RotateCcw,
   Search,
   SendToBack,
+  SlidersHorizontal,
   Square,
   Sparkles,
   Trash2,
@@ -1591,6 +1592,7 @@ export default function Studio2Page() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
   const generateReferenceInputRef = useRef<HTMLInputElement>(null);
+  const generatePromptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const sidebarTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
@@ -3473,6 +3475,13 @@ export default function Studio2Page() {
   }, [customGeneratePresets]);
 
   useEffect(() => {
+    const textarea = generatePromptTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(78, textarea.scrollHeight)}px`;
+  }, [generatePrompt, editorSidebarMode]);
+
+  useEffect(() => {
     let cancelled = false;
     if (editorSidebarMode !== "generate" || !currentCreative) {
       setGenerateSourcePreview("");
@@ -4408,6 +4417,7 @@ export default function Studio2Page() {
             </div>
 
             <textarea
+              ref={generatePromptTextareaRef}
               value={generatePrompt}
               onChange={(event) => setGeneratePrompt(event.target.value)}
               rows={3}
@@ -4416,7 +4426,8 @@ export default function Studio2Page() {
                 minHeight: 78,
                 border: "none",
                 outline: "none",
-                resize: "vertical",
+                resize: "none",
+                overflow: "hidden",
                 background: "transparent",
                 color: ADS_BRAND.text,
                 fontFamily: "inherit",
@@ -4447,7 +4458,7 @@ export default function Studio2Page() {
                     cursor: "pointer",
                   }}
                 >
-                  <Sparkles size={14} color={ADS_BRAND.gold} />
+                  <SlidersHorizontal size={14} color={ADS_BRAND.gold} />
                   Presets
                   <ChevronDown size={14} />
                 </button>
