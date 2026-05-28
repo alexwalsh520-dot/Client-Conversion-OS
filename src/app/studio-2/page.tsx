@@ -1539,6 +1539,7 @@ export default function Studio2Page() {
   const [generateDropActive, setGenerateDropActive] = useState(false);
   const [generateSourcePreview, setGenerateSourcePreview] = useState("");
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
+  const [generateGalleryOpen, setGenerateGalleryOpen] = useState(true);
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -3188,7 +3189,7 @@ export default function Studio2Page() {
         };
       }));
     } catch {
-      setGenerateStatus("Could not load Generate history.");
+      setAiGenerations([]);
     }
   }, [projectId]);
 
@@ -3351,6 +3352,20 @@ export default function Studio2Page() {
     setEditorSidebarMode("edit");
     setGeneratedPreview(null);
   }, [pushUndo]);
+
+  const getGenerationAsset = useCallback((generation: StudioAIGeneration): StudioMediaAsset | null => {
+    const imageUrl = generation.media?.url || generation.resultUrl || "";
+    if (generation.media) return generation.media;
+    if (!imageUrl) return null;
+    return {
+      id: generation.mediaId || generation.id || generation.jobId || imageUrl,
+      url: imageUrl,
+      kind: "image",
+      filename: "Generated ad.png",
+      folderId: null,
+      createdAt: generation.createdAt,
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -3963,6 +3978,7 @@ export default function Studio2Page() {
 
   const renderGenerateWorkspace = () => {
     const canGenerate = !!currentCreative && !!generatePrompt.trim() && !generatingAd;
+    const hasGenerateActivity = !!generateStatus || generatingAd || aiGenerations.length > 0;
 
     return (
       <div
@@ -3977,11 +3993,10 @@ export default function Studio2Page() {
       >
         <section
           style={{
-            flex: "1 1 0",
+            flex: "1 1 auto",
             minWidth: 360,
             display: "flex",
             flexDirection: "column",
-            borderRight: `1px solid ${ADS_BRAND.border}`,
             background: ADS_BRAND.panel,
           }}
         >
@@ -3995,24 +4010,113 @@ export default function Studio2Page() {
             </button>
             <Sparkles size={16} color={ADS_BRAND.gold} />
             <span style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 850 }}>Generate</span>
+            <div style={{ flex: 1 }} />
+            <button
+              type="button"
+              aria-pressed={generateGalleryOpen}
+              onClick={() => setGenerateGalleryOpen((open) => !open)}
+              style={{
+                ...buttonStyle(generateGalleryOpen),
+                height: 34,
+                padding: "0 13px",
+                gap: 7,
+              }}
+            >
+              <ImagePlus size={15} />
+              Gallery {aiGenerations.length || ""}
+            </button>
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 28px 18px" }}>
-            {generateStatus && (
-              <div
-                style={{
-                  maxWidth: 720,
-                  margin: "0 auto 18px",
-                  border: `1px solid ${ADS_BRAND.border2}`,
-                  borderRadius: 12,
-                  background: ADS_BRAND.panel2,
-                  color: generateStatus.toLowerCase().includes("could") || generateStatus.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text2,
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  padding: "12px 14px",
-                }}
-              >
-                {generateStatus}
+            {hasGenerateActivity && (
+              <div style={{ maxWidth: 760, margin: "0 auto", display: "grid", gap: 16 }}>
+                {generateStatus && (
+                  <div
+                    style={{
+                      justifySelf: "start",
+                      maxWidth: 620,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 14,
+                      background: ADS_BRAND.panel2,
+                      color: generateStatus.toLowerCase().includes("could") || generateStatus.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text2,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      padding: "12px 14px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 9,
+                    }}
+                  >
+                    <Sparkles size={14} color={generatingAd ? ADS_BRAND.gold : "currentColor"} />
+                    {generateStatus}
+                  </div>
+                )}
+
+                {aiGenerations.map((generation) => {
+                  const imageUrl = generation.media?.url || generation.resultUrl || "";
+                  const asset = getGenerationAsset(generation);
+                  const status = generation.status || "queued";
+                  const failed = status === "failed";
+                  const ready = status === "completed" && imageUrl;
+
+                  return (
+                    <div
+                      key={generation.id || generation.jobId}
+                      style={{
+                        justifySelf: "start",
+                        maxWidth: 260,
+                        border: `1px solid ${failed ? "rgba(255,155,155,0.38)" : ADS_BRAND.border2}`,
+                        borderRadius: 14,
+                        overflow: "hidden",
+                        background: ADS_BRAND.panel2,
+                      }}
+                    >
+                      {imageUrl ? (
+                        <button
+                          type="button"
+                          disabled={!asset}
+                          onClick={() => {
+                            if (asset) setGeneratedPreview({ generation, asset });
+                          }}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            background: "transparent",
+                            padding: 0,
+                            cursor: asset ? "pointer" : "default",
+                            display: "block",
+                          }}
+                          title={asset ? "Open preview" : status}
+                        >
+                          <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
+                        </button>
+                      ) : (
+                        <div
+                          style={{
+                            width: 220,
+                            maxWidth: "100%",
+                            aspectRatio: "9 / 16",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 10,
+                            color: failed ? "#ff9b9b" : ADS_BRAND.text3,
+                            background: ADS_BRAND.bgDeep,
+                          }}
+                        >
+                          <Sparkles size={26} color={failed ? "#ff9b9b" : ADS_BRAND.gold} />
+                          <span style={{ fontSize: 12, fontWeight: 800 }}>
+                            {failed ? "Generation failed" : "Generating image..."}
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ padding: "9px 10px", color: failed ? "#ff9b9b" : ready ? ADS_BRAND.success : ADS_BRAND.gold, fontSize: 10, fontWeight: 900, textTransform: "uppercase" }}>
+                        {ready ? "Image ready" : failed ? "Failed" : status}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -4176,135 +4280,118 @@ export default function Studio2Page() {
           </div>
         </section>
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          onPointerDown={startGenerateDividerDrag}
-          style={{
-            width: 14,
-            flexShrink: 0,
-            cursor: "col-resize",
-            background: ADS_BRAND.bg,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          title="Resize gallery"
-        >
-          <div style={{ width: 3, height: 72, borderRadius: 999, background: ADS_BRAND.border2 }} />
-        </div>
-
-        <section
-          style={{
-            flex: `0 0 ${generateGalleryPercent}%`,
-            minWidth: 320,
-            maxWidth: "74%",
-            minHeight: 0,
-            overflowY: "auto",
-            padding: "18px 18px 28px",
-            background: ADS_BRAND.bg,
-          }}
-        >
-          <div style={{ height: 38, display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 14 }}>
+        {generateGalleryOpen && (
+          <>
             <div
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={startGenerateDividerDrag}
               style={{
-                height: 34,
-                borderRadius: 999,
-                border: `1px solid ${ADS_BRAND.border2}`,
-                background: ADS_BRAND.active,
-                color: ADS_BRAND.text,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                padding: "0 13px",
-                fontSize: 13,
-                fontWeight: 800,
+                position: "relative",
+                width: 10,
+                flexShrink: 0,
+                cursor: "col-resize",
+                background: ADS_BRAND.bg,
               }}
             >
-              <ImagePlus size={15} />
-              Gallery {aiGenerations.length || ""}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  left: "50%",
+                  width: 1,
+                  transform: "translateX(-50%)",
+                  background: ADS_BRAND.border,
+                }}
+              />
             </div>
-          </div>
 
-          {aiGenerations.length ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-              {aiGenerations.map((generation) => {
-                const imageUrl = generation.media?.url || generation.resultUrl || "";
-                const asset = generation.media || (imageUrl ? {
-                  id: generation.mediaId || generation.id || generation.jobId || imageUrl,
-                  url: imageUrl,
-                  kind: "image" as MediaKind,
-                  filename: "Generated ad.png",
-                  folderId: null,
-                  createdAt: generation.createdAt,
-                } : null);
-                const ready = generation.status === "completed" && imageUrl;
-                return (
-                  <button
-                    key={generation.id || generation.jobId}
-                    type="button"
-                    disabled={!asset}
-                    onClick={() => {
-                      if (asset) setGeneratedPreview({ generation, asset });
-                    }}
-                    style={{
-                      position: "relative",
-                      border: `1px solid ${ADS_BRAND.border2}`,
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      background: ADS_BRAND.panel3,
-                      padding: 0,
-                      cursor: asset ? "pointer" : "default",
-                      textAlign: "left",
-                    }}
-                    title={asset ? "Open preview" : generation.status}
-                  >
-                    {imageUrl ? (
-                      <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
-                    ) : (
-                      <div style={{ aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
-                        <Sparkles size={24} />
-                      </div>
-                    )}
-                    {!ready && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          left: 9,
-                          top: 9,
-                          borderRadius: 999,
-                          background: "rgba(0,0,0,0.72)",
-                          color: ADS_BRAND.gold,
-                          fontSize: 10,
-                          fontWeight: 900,
-                          padding: "4px 8px",
-                          textTransform: "uppercase",
+            <section
+              style={{
+                flex: `0 0 ${generateGalleryPercent}%`,
+                minWidth: 320,
+                maxWidth: "74%",
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "74px 18px 28px",
+                background: ADS_BRAND.bg,
+              }}
+            >
+              {aiGenerations.length ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                  {aiGenerations.map((generation) => {
+                    const imageUrl = generation.media?.url || generation.resultUrl || "";
+                    const asset = getGenerationAsset(generation);
+                    const ready = generation.status === "completed" && imageUrl;
+                    return (
+                      <button
+                        key={generation.id || generation.jobId}
+                        type="button"
+                        disabled={!asset}
+                        onClick={() => {
+                          if (asset) setGeneratedPreview({ generation, asset });
                         }}
+                        style={{
+                          position: "relative",
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          background: ADS_BRAND.panel3,
+                          padding: 0,
+                          cursor: asset ? "pointer" : "default",
+                          textAlign: "left",
+                        }}
+                        title={asset ? "Open preview" : generation.status}
                       >
-                        {generation.status || "queued"}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div
-              style={{
-                minHeight: 280,
-                border: `1px dashed ${ADS_BRAND.border2}`,
-                borderRadius: 12,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: ADS_BRAND.text3,
-                fontSize: 13,
-              }}
-            >
-              Generated images will appear here.
-            </div>
-          )}
-        </section>
+                        {imageUrl ? (
+                          <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
+                        ) : (
+                          <div style={{ aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
+                            <Sparkles size={24} />
+                          </div>
+                        )}
+                        {!ready && (
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 9,
+                              top: 9,
+                              borderRadius: 999,
+                              background: "rgba(0,0,0,0.72)",
+                              color: ADS_BRAND.gold,
+                              fontSize: 10,
+                              fontWeight: 900,
+                              padding: "4px 8px",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {generation.status || "queued"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    minHeight: 280,
+                    border: `1px dashed ${ADS_BRAND.border2}`,
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: ADS_BRAND.text3,
+                    fontSize: 13,
+                  }}
+                >
+                  Generated images will appear here.
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     );
   };
