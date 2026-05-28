@@ -38,3 +38,5 @@ BEGIN
       WITH CHECK (true);
   END IF;
 END $$;
+
+NOTIFY pgrst, 'reload schema';

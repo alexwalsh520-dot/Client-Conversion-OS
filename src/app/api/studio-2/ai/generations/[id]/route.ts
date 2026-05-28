@@ -6,6 +6,9 @@ import { getServiceSupabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+const MISSING_AI_TABLE_MESSAGE =
+  "Studio Generate needs one Supabase migration before it can run. Create the studio2_ai_generations table in Supabase, then try again.";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -74,7 +77,11 @@ export async function GET(
     });
   } catch (err) {
     console.error("Studio 2 AI generation read error:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to read Studio 2 AI generation" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Failed to read Studio 2 AI generation";
+    if (isMissingAiGenerationsTableError(message)) {
+      return NextResponse.json({ error: MISSING_AI_TABLE_MESSAGE, setupRequired: true }, { status: 500 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -187,6 +194,11 @@ function extensionForContentType(contentType: string) {
   if (contentType === "image/webp") return "webp";
   if (contentType === "image/jpeg") return "jpg";
   return "png";
+}
+
+function isMissingAiGenerationsTableError(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("studio2_ai_generations") && (value.includes("schema cache") || value.includes("does not exist"));
 }
 
 function mapGeneration(row: Record<string, unknown>) {

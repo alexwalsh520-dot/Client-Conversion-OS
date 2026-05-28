@@ -12,6 +12,8 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const DEFAULT_MODEL = "gpt_image_2";
+const MISSING_AI_TABLE_MESSAGE =
+  "Studio Generate needs one Supabase migration before it can run. Create the studio2_ai_generations table in Supabase, then try again.";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,6 +29,9 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query;
     if (error) {
+      if (isMissingAiGenerationsTableError(error.message)) {
+        return NextResponse.json({ generations: [], setupRequired: true });
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -71,6 +76,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (pendingError || !pendingGeneration) {
+      if (isMissingAiGenerationsTableError(pendingError?.message)) {
+        return NextResponse.json({ error: MISSING_AI_TABLE_MESSAGE, setupRequired: true }, { status: 500 });
+      }
       return NextResponse.json({ error: pendingError?.message || "Generation insert failed" }, { status: 500 });
     }
     pendingGenerationId = String(pendingGeneration.id);
@@ -152,10 +160,19 @@ export async function POST(req: NextRequest) {
         // Keep the original Higgsfield/API error as the response.
       }
     }
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to start Studio 2 AI generation" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Failed to start Studio 2 AI generation";
+    if (isMissingAiGenerationsTableError(message)) {
+      return NextResponse.json({ error: MISSING_AI_TABLE_MESSAGE, setupRequired: true }, { status: 500 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   } finally {
     await cleanupTempPaths(tempPaths);
   }
+}
+
+function isMissingAiGenerationsTableError(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("studio2_ai_generations") && (value.includes("schema cache") || value.includes("does not exist"));
 }
 
 function normalizeStatus(status: unknown) {
