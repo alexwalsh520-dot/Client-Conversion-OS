@@ -1,11 +1,13 @@
 import { execFile } from "child_process";
 import crypto from "crypto";
 import fs from "fs/promises";
+import { createRequire } from "module";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
+const requireFromHere = createRequire(import.meta.url);
 
 export interface HiggsfieldJob {
   id?: string;
@@ -33,7 +35,7 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
   const credentialContext = await createCredentialContext();
 
   try {
-    const { stdout, stderr } = await execFileAsync(command, [...args, "--json", "--no-color"], {
+    const { stdout, stderr } = await execFileAsync(command.file, [...command.args, ...args, "--json", "--no-color"], {
       env: {
         ...process.env,
         ...credentialContext.env,
@@ -48,6 +50,11 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
       stderr,
       json: parseJsonOutput<T>(stdout),
     };
+  } catch (err) {
+    if (isMissingExecutableError(err)) {
+      throw new Error("Higgsfield CLI is not available in this deployment yet. Redeploy the latest build and try again.");
+    }
+    throw err;
   } finally {
     await credentialContext.cleanup();
   }
@@ -112,8 +119,21 @@ export async function cleanupTempPaths(paths: string[]) {
 }
 
 function getHiggsfieldCommand() {
-  if (process.env.HIGGSFIELD_CLI_PATH?.trim()) return process.env.HIGGSFIELD_CLI_PATH.trim();
-  return path.join(process.cwd(), "node_modules", ".bin", "higgsfield");
+  if (process.env.HIGGSFIELD_CLI_PATH?.trim()) {
+    return { file: process.env.HIGGSFIELD_CLI_PATH.trim(), args: [] };
+  }
+
+  try {
+    return {
+      file: process.execPath,
+      args: [requireFromHere.resolve("@higgsfield/cli/bin/higgsfield.js")],
+    };
+  } catch {
+    return {
+      file: process.execPath,
+      args: [path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js")],
+    };
+  }
 }
 
 async function createCredentialContext(): Promise<{ env: Record<string, string>; cleanup: () => Promise<void> }> {
@@ -168,4 +188,9 @@ function extensionForContentType(contentType: string) {
   if (contentType === "image/webp") return "webp";
   if (contentType === "image/gif") return "gif";
   return "jpg";
+}
+
+function isMissingExecutableError(err: unknown) {
+  const maybeError = err as { code?: unknown; message?: unknown };
+  return maybeError.code === "ENOENT" || String(maybeError.message || "").includes("ENOENT");
 }

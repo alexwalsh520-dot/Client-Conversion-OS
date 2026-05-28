@@ -58,6 +58,7 @@ const DEFAULT_PROJECT_NAME = "Studio 2.0 Batch";
 const EMPTY_PROJECT_NAME = "Untitled design";
 const HIDDEN_FOLDERS_KEY = "ccos-studio2-hidden-design-folders";
 const GENERATE_SPLIT_KEY = "ccos-studio2-generate-gallery-percent";
+const GENERATE_PRESETS_KEY = "ccos-studio2-generate-presets";
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
 const IG_SAFE_ZONES = [
@@ -111,6 +112,29 @@ Not "free trial." Free free.
 
 DM to join before I start
 charging for this.`;
+
+const DEFAULT_GENERATE_PRESETS = [
+  {
+    id: "same-style",
+    label: "Same text style",
+    prompt: "Use the exact same bold font style, line spacing, black rounded background highlights, text placement style, and overall Instagram Story ad format.",
+  },
+  {
+    id: "same-person",
+    label: "Keep person identical",
+    prompt: "Keep the person, body, face, pose, lighting, and background image as identical as possible. Only make the requested ad variation.",
+  },
+  {
+    id: "copy-only",
+    label: "Copy only",
+    prompt: "Only vary the ad copy slightly. Keep the image, layout, text styling, highlight backgrounds, and visual composition the same.",
+  },
+  {
+    id: "premium-readable",
+    label: "More premium",
+    prompt: "Make the final ad feel cleaner, more premium, and easier to read while preserving the same direct-response style.",
+  },
+];
 
 type TextAlign = "left" | "center" | "right";
 type StudioView = "home" | "setup" | "editor";
@@ -238,6 +262,20 @@ interface GeneratedPreviewState {
 interface GenerateReferenceImage {
   name: string;
   dataUrl: string;
+}
+
+interface GenerateChatMessage {
+  id: string;
+  prompt: string;
+  sourcePreview: string;
+  reference?: GenerateReferenceImage | null;
+  status: "sent" | "running" | "complete" | "failed";
+}
+
+interface GeneratePreset {
+  id: string;
+  label: string;
+  prompt: string;
 }
 
 interface StudioProjectDetail {
@@ -1540,6 +1578,9 @@ export default function Studio2Page() {
   const [generateSourcePreview, setGenerateSourcePreview] = useState("");
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
   const [generateGalleryOpen, setGenerateGalleryOpen] = useState(true);
+  const [generateMessages, setGenerateMessages] = useState<GenerateChatMessage[]>([]);
+  const [generatePresetMenuOpen, setGeneratePresetMenuOpen] = useState(false);
+  const [customGeneratePresets, setCustomGeneratePresets] = useState<GeneratePreset[]>([]);
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -3211,10 +3252,10 @@ export default function Studio2Page() {
     }
   }, []);
 
-  const buildHiggsfieldPrompt = useCallback(() => {
+  const buildHiggsfieldPrompt = useCallback((promptText = generatePrompt.trim()) => {
     const text = currentCreative?.textBlocks.map(getBlockText).filter(Boolean).join("\n\n") || copyText;
     return [
-      generatePrompt.trim(),
+      promptText.trim(),
       "",
       "Use this exact ad copy when it makes sense:",
       text,
@@ -3282,6 +3323,24 @@ export default function Studio2Page() {
 
   const startAiGeneration = useCallback(async () => {
     if (!currentCreative || generatingAd || !generatePrompt.trim()) return;
+    const submittedPrompt = generatePrompt.trim();
+    const messageId = uid();
+    const promptForApi = buildHiggsfieldPrompt(submittedPrompt);
+    const submittedReference = generateReference;
+
+    setGenerateMessages((prev) => [
+      ...prev,
+      {
+        id: messageId,
+        prompt: submittedPrompt,
+        sourcePreview: generateSourcePreview,
+        reference: submittedReference,
+        status: "running",
+      },
+    ]);
+    setGeneratePrompt("");
+    setGenerateReference(null);
+    setGeneratePresetMenuOpen(false);
     setGeneratingAd(true);
     setGenerateStatus("Preparing selected ad...");
     try {
@@ -3296,9 +3355,9 @@ export default function Studio2Page() {
           creativeId: currentCreative.id,
           folderId: setupMediaFolderId,
           model: "gpt_image_2",
-          prompt: buildHiggsfieldPrompt(),
+          prompt: promptForApi,
           snapshotDataUrl,
-          referenceDataUrl: generateReference?.dataUrl || null,
+          referenceDataUrl: submittedReference?.dataUrl || null,
         }),
       });
       const data = await res.json();
@@ -3307,7 +3366,7 @@ export default function Studio2Page() {
       const nextGeneration: StudioAIGeneration = {
         id: String(generation.id),
         jobId: String(generation.jobId || ""),
-        prompt: String(generation.prompt || buildHiggsfieldPrompt()),
+        prompt: String(generation.prompt || promptForApi),
         status: String(generation.status || "queued"),
         resultUrl: null,
         mediaId: null,
@@ -3315,16 +3374,19 @@ export default function Studio2Page() {
       upsertAiGeneration(nextGeneration);
       setGenerateStatus("Generating...");
       await pollAiGeneration(nextGeneration.id);
+      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "complete" } : message));
     } catch (err) {
       setGenerateStatus(err instanceof Error ? err.message : "Could not generate image.");
+      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "failed" } : message));
     } finally {
       setGeneratingAd(false);
     }
   }, [
     buildHiggsfieldPrompt,
     currentCreative,
-    generateReference?.dataUrl,
+    generateReference,
     generatePrompt,
+    generateSourcePreview,
     generatingAd,
     pollAiGeneration,
     projectId,
@@ -3386,6 +3448,31 @@ export default function Studio2Page() {
   }, [generateGalleryPercent]);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(GENERATE_PRESETS_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      if (Array.isArray(parsed)) {
+        setCustomGeneratePresets(parsed.filter((item) =>
+          item &&
+          typeof item.id === "string" &&
+          typeof item.label === "string" &&
+          typeof item.prompt === "string"
+        ));
+      }
+    } catch {
+      // Local preference only.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GENERATE_PRESETS_KEY, JSON.stringify(customGeneratePresets));
+    } catch {
+      // Local preference only.
+    }
+  }, [customGeneratePresets]);
+
+  useEffect(() => {
     let cancelled = false;
     if (editorSidebarMode !== "generate" || !currentCreative) {
       setGenerateSourcePreview("");
@@ -3426,6 +3513,28 @@ export default function Studio2Page() {
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
   }, []);
+
+  const applyGeneratePreset = useCallback((preset: GeneratePreset) => {
+    setGeneratePrompt((prev) => {
+      const current = prev.trim();
+      return current ? `${current}\n\n${preset.prompt}` : preset.prompt;
+    });
+    setGeneratePresetMenuOpen(false);
+  }, []);
+
+  const addCurrentPromptPreset = useCallback(() => {
+    const prompt = generatePrompt.trim();
+    if (!prompt) return;
+    setCustomGeneratePresets((prev) => [
+      {
+        id: uid(),
+        label: prompt.length > 34 ? `${prompt.slice(0, 34)}...` : prompt,
+        prompt,
+      },
+      ...prev,
+    ].slice(0, 12));
+    setGeneratePresetMenuOpen(false);
+  }, [generatePrompt]);
 
   const addTextBlock = useCallback(() => {
     if (!currentCreative) return;
@@ -3978,7 +4087,8 @@ export default function Studio2Page() {
 
   const renderGenerateWorkspace = () => {
     const canGenerate = !!currentCreative && !!generatePrompt.trim() && !generatingAd;
-    const hasGenerateActivity = !!generateStatus || generatingAd || aiGenerations.length > 0;
+    const allGeneratePresets = [...customGeneratePresets, ...DEFAULT_GENERATE_PRESETS];
+    const hasGenerateActivity = !!generateStatus || generatingAd || generateMessages.length > 0 || aiGenerations.length > 0;
 
     return (
       <div
@@ -4030,6 +4140,47 @@ export default function Studio2Page() {
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 28px 18px" }}>
             {hasGenerateActivity && (
               <div style={{ maxWidth: 760, margin: "0 auto", display: "grid", gap: 16 }}>
+                {generateMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    style={{
+                      justifySelf: "end",
+                      maxWidth: 620,
+                      border: `1px solid ${message.status === "failed" ? "rgba(255,155,155,0.36)" : ADS_BRAND.border2}`,
+                      borderRadius: 18,
+                      background: ADS_BRAND.panel2,
+                      color: ADS_BRAND.text,
+                      padding: 12,
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      {message.sourcePreview && (
+                        <img
+                          src={message.sourcePreview}
+                          alt=""
+                          style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
+                        />
+                      )}
+                      {message.reference && (
+                        <img
+                          src={message.reference.dataUrl}
+                          alt=""
+                          title={message.reference.name}
+                          style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
+                        />
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
+                        <div style={{ color: message.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3, fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
+                          {message.status === "running" ? "Generating" : message.status === "complete" ? "Sent" : message.status}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
                 {generateStatus && (
                   <div
                     style={{
@@ -4255,26 +4406,124 @@ export default function Studio2Page() {
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
+              <div style={{ position: "relative", marginRight: "auto" }}>
+                <button
+                  type="button"
+                  onClick={() => setGeneratePresetMenuOpen((open) => !open)}
+                  style={{
+                    height: 36,
+                    borderRadius: 999,
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    background: ADS_BRAND.panel3,
+                    color: ADS_BRAND.text2,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "0 12px",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Sparkles size={14} color={ADS_BRAND.gold} />
+                  Presets
+                  <ChevronDown size={14} />
+                </button>
+                {generatePresetMenuOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      bottom: 44,
+                      width: 300,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 14,
+                      background: ADS_BRAND.panel,
+                      boxShadow: "0 20px 60px rgba(0,0,0,0.48)",
+                      padding: 7,
+                      zIndex: 8,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={addCurrentPromptPreset}
+                      disabled={!generatePrompt.trim()}
+                      style={{
+                        width: "100%",
+                        minHeight: 38,
+                        border: "none",
+                        borderRadius: 9,
+                        background: "transparent",
+                        color: generatePrompt.trim() ? ADS_BRAND.text : ADS_BRAND.text4,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 9,
+                        padding: "8px 10px",
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: generatePrompt.trim() ? "pointer" : "not-allowed",
+                        textAlign: "left",
+                      }}
+                    >
+                      <Plus size={15} /> Add current prompt
+                    </button>
+                    <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 4px" }} />
+                    {allGeneratePresets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applyGeneratePreset(preset)}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          borderRadius: 9,
+                          background: "transparent",
+                          color: ADS_BRAND.text2,
+                          display: "grid",
+                          gap: 3,
+                          padding: "9px 10px",
+                          fontFamily: "inherit",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                        onMouseEnter={(event) => {
+                          event.currentTarget.style.background = ADS_BRAND.active;
+                          event.currentTarget.style.color = ADS_BRAND.text;
+                        }}
+                        onMouseLeave={(event) => {
+                          event.currentTarget.style.background = "transparent";
+                          event.currentTarget.style.color = ADS_BRAND.text2;
+                        }}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 850 }}>{preset.label}</span>
+                        <span style={{ color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.35 }}>{preset.prompt}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => void startAiGeneration()}
-                disabled={!canGenerate}
+                disabled={generatingAd || !canGenerate}
                 style={{
                   width: 42,
                   height: 42,
                   borderRadius: "50%",
                   border: "none",
-                  background: canGenerate ? "#a7f3ff" : ADS_BRAND.border2,
-                  color: canGenerate ? "#061214" : ADS_BRAND.text3,
+                  background: generatingAd ? ADS_BRAND.gold : canGenerate ? "#a7f3ff" : ADS_BRAND.border2,
+                  color: generatingAd || canGenerate ? "#061214" : ADS_BRAND.text3,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  cursor: canGenerate ? "pointer" : "not-allowed",
-                  opacity: canGenerate ? 1 : 0.55,
+                  cursor: generatingAd ? "progress" : canGenerate ? "pointer" : "not-allowed",
+                  opacity: generatingAd || canGenerate ? 1 : 0.55,
                 }}
-                title="Generate"
+                title={generatingAd ? "Generating" : "Generate"}
               >
-                {generatingAd ? <Sparkles size={18} /> : <ArrowLeft size={20} style={{ transform: "rotate(90deg)" }} />}
+                {generatingAd ? <Square size={17} fill="currentColor" /> : <ArrowLeft size={20} style={{ transform: "rotate(90deg)" }} />}
               </button>
             </div>
           </div>
