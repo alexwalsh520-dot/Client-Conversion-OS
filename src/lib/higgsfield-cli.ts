@@ -43,6 +43,8 @@ interface CredentialContext {
 
 const JOB_ID_KEYS = ["id", "job_id", "jobId", "uuid", "generation_id", "generationId", "jobID"];
 const JOB_CONTAINER_KEYS = ["data", "job", "jobs", "generation", "generations", "result", "results", "item", "items"];
+const RESULT_URL_KEYS = ["result_url", "resultUrl", "output_url", "outputUrl", "image_url", "imageUrl", "download_url", "downloadUrl"];
+const RESULT_CONTAINER_KEYS = ["data", "job", "generation", "output", "outputs", "result", "results", "image", "images", "asset", "assets"];
 const HIGGSFIELD_CREDENTIALS_SETTING_KEY = "higgsfield_credentials";
 
 export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs = 120_000): Promise<HiggsfieldRunResult<T>> {
@@ -127,22 +129,37 @@ function isLikelyJobId(value: string) {
 }
 
 export function getHiggsfieldResultUrl(value: unknown): string {
+  return findHiggsfieldResultUrl(value, new Set(), false);
+}
+
+function findHiggsfieldResultUrl(value: unknown, seen: Set<object>, allowGenericUrl: boolean): string {
   if (!value) return "";
   if (Array.isArray(value)) {
     for (const item of value) {
-      const url: string = getHiggsfieldResultUrl(item);
+      const url = findHiggsfieldResultUrl(item, seen, allowGenericUrl);
       if (url) return url;
     }
+    return "";
   }
   if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
   const record = value as Record<string, unknown>;
-  for (const key of ["result_url", "resultUrl", "url"]) {
+  for (const key of RESULT_URL_KEYS) {
     if (typeof record[key] === "string" && /^https?:\/\//.test(record[key])) return record[key] as string;
   }
-  for (const nested of Object.values(record)) {
-    const url: string = getHiggsfieldResultUrl(nested);
+  if (allowGenericUrl && typeof record.url === "string" && /^https?:\/\//.test(record.url)) {
+    return record.url;
+  }
+
+  for (const key of RESULT_CONTAINER_KEYS) {
+    const nested = record[key];
+    if (!nested) continue;
+    const url = findHiggsfieldResultUrl(nested, seen, true);
     if (url) return url;
   }
+
   return "";
 }
 
@@ -214,6 +231,7 @@ async function createCredentialContext(): Promise<CredentialContext> {
           await writeStoredHiggsfieldCredentials(updatedCredentials);
         }
       } catch (err) {
+        if (isMissingSecureSettingsTableError(err)) return;
         console.warn("Higgsfield credential persistence skipped:", err instanceof Error ? err.message : err);
       }
     },
@@ -301,6 +319,11 @@ async function writeStoredHiggsfieldCredentials(credentials: HiggsfieldCredentia
       { onConflict: "key" }
     );
   if (error) throw new Error(error.message);
+}
+
+function isMissingSecureSettingsTableError(err: unknown) {
+  const message = String(err instanceof Error ? err.message : err).toLowerCase();
+  return message.includes("studio2_secure_settings") && (message.includes("schema cache") || message.includes("does not exist"));
 }
 
 function parseJsonOutput<T>(stdout: string): T {

@@ -4,10 +4,12 @@ import { createR2ObjectKey, putR2Object } from "@/lib/r2";
 import { getServiceSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const MISSING_AI_TABLE_MESSAGE =
   "Studio Generate needs one Supabase migration before it can run. Create the studio2_ai_generations table in Supabase, then try again.";
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
 export async function GET(
   _req: NextRequest,
@@ -19,7 +21,7 @@ export async function GET(
     const generation = await findGeneration(sb, id);
 
     if (!generation) {
-      return NextResponse.json({ error: "Generation not found" }, { status: 404 });
+      return NextResponse.json({ error: "Generation not found" }, { status: 404, headers: NO_STORE_HEADERS });
     }
 
     if (!generation.job_id) {
@@ -27,7 +29,7 @@ export async function GET(
         generation: mapGeneration(generation),
         media: null,
         job: null,
-      });
+      }, { headers: NO_STORE_HEADERS });
     }
 
     const { json } = await runHiggsfieldJson<HiggsfieldJob>(["generate", "get", String(generation.job_id)], 60_000);
@@ -49,7 +51,11 @@ export async function GET(
       status,
       updated_at: new Date().toISOString(),
     };
-    if (resultUrl) updates.result_url = resultUrl;
+    if (status === "completed" && resultUrl) {
+      updates.result_url = resultUrl;
+    } else if (status !== "completed") {
+      updates.result_url = null;
+    }
     if (media?.id) {
       updates.media_id = media.id;
       updates.r2_key = media.r2Key;
@@ -74,14 +80,14 @@ export async function GET(
         createdAt: media.createdAt,
       } : null,
       job: json,
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (err) {
     console.error("Studio 2 AI generation read error:", err);
     const message = err instanceof Error ? err.message : "Failed to read Studio 2 AI generation";
     if (isMissingAiGenerationsTableError(message)) {
-      return NextResponse.json({ error: MISSING_AI_TABLE_MESSAGE, setupRequired: true }, { status: 500 });
+      return NextResponse.json({ error: MISSING_AI_TABLE_MESSAGE, setupRequired: true }, { status: 500, headers: NO_STORE_HEADERS });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: NO_STORE_HEADERS });
   }
 }
 
@@ -211,7 +217,7 @@ function mapGeneration(row: Record<string, unknown>) {
     jobId: row.job_id,
     prompt: row.prompt,
     status: row.status,
-    resultUrl: row.result_url,
+    resultUrl: row.status === "completed" ? row.result_url : null,
     mediaId: row.media_id,
     error: row.error,
     createdAt: row.created_at,

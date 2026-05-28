@@ -9,11 +9,13 @@ import {
 } from "@/lib/higgsfield-cli";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const DEFAULT_MODEL = "gpt_image_2";
 const MISSING_AI_TABLE_MESSAGE =
   "Studio Generate needs one Supabase migration before it can run. Create the studio2_ai_generations table in Supabase, then try again.";
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,17 +32,17 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query;
     if (error) {
       if (isMissingAiGenerationsTableError(error.message)) {
-        return NextResponse.json({ generations: [], setupRequired: true });
+        return NextResponse.json({ generations: [], setupRequired: true }, { headers: NO_STORE_HEADERS });
       }
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE_HEADERS });
     }
 
     return NextResponse.json({
       generations: (data || []).map(mapGeneration),
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (err) {
     console.error("Studio 2 AI generation list error:", err);
-    return NextResponse.json({ error: "Failed to load Studio 2 AI generations" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load Studio 2 AI generations" }, { status: 500, headers: NO_STORE_HEADERS });
   }
 }
 
@@ -196,7 +198,7 @@ function mapGeneration(row: Record<string, unknown>) {
     jobId: row.job_id,
     prompt: row.prompt,
     status: row.status,
-    resultUrl: row.result_url,
+    resultUrl: row.status === "completed" ? row.result_url : null,
     mediaId: row.media_id,
     error: row.error,
     createdAt: row.created_at,

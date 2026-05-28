@@ -3461,8 +3461,10 @@ export default function Studio2Page() {
   }, [pushUndo]);
 
   const getGenerationAsset = useCallback((generation: StudioAIGeneration): StudioMediaAsset | null => {
+    if (generation.status !== "completed") return null;
     const imageUrl = generation.media?.url || generation.resultUrl || "";
-    if (generation.media) return generation.media;
+    if (!/^https?:\/\//i.test(imageUrl)) return null;
+    if (generation.media?.url) return generation.media;
     if (!imageUrl) return null;
     return {
       id: generation.mediaId || generation.id || generation.jobId || imageUrl,
@@ -4382,11 +4384,10 @@ export default function Studio2Page() {
                   }
 
                   const { generation } = item;
-                  const imageUrl = generation.media?.url || generation.resultUrl || "";
                   const asset = getGenerationAsset(generation);
                   const status = generation.status || "queued";
                   const failed = status === "failed";
-                  const ready = status === "completed" && imageUrl;
+                  const ready = !!asset;
 
                   return (
                     <div
@@ -4400,10 +4401,9 @@ export default function Studio2Page() {
                         background: ADS_BRAND.panel2,
                       }}
                     >
-                      {imageUrl ? (
+                      {asset ? (
                         <button
                           type="button"
-                          disabled={!asset}
                           onClick={() => {
                             if (asset) setGeneratedPreview({ generation, asset });
                           }}
@@ -4417,7 +4417,7 @@ export default function Studio2Page() {
                           }}
                           title={asset ? "Open preview" : status}
                         >
-                          <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
+                          <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
                         </button>
                       ) : (
                         <div
@@ -4841,9 +4841,8 @@ export default function Studio2Page() {
               {aiGenerations.length ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
                   {aiGenerations.map((generation) => {
-                    const imageUrl = generation.media?.url || generation.resultUrl || "";
                     const asset = getGenerationAsset(generation);
-                    const ready = generation.status === "completed" && imageUrl;
+                    const ready = !!asset;
                     return (
                       <button
                         key={generation.id || generation.jobId}
@@ -4864,11 +4863,14 @@ export default function Studio2Page() {
                         }}
                         title={asset ? "Open preview" : generation.status}
                       >
-                        {imageUrl ? (
-                          <img src={getMediaPreviewSrc(imageUrl)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
+                        {asset ? (
+                          <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
                         ) : (
-                          <div style={{ aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
+                          <div style={{ aspectRatio: "9 / 16", display: "flex", flexDirection: "column", gap: 9, alignItems: "center", justifyContent: "center", color: generation.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3 }}>
                             <Sparkles size={24} />
+                            <span style={{ fontSize: 11, fontWeight: 850, textTransform: "uppercase" }}>
+                              {generation.status === "failed" ? "Failed" : "Generating"}
+                            </span>
                           </div>
                         )}
                         {!ready && (
@@ -7479,7 +7481,7 @@ export default function Studio2Page() {
             onClick={(event) => event.stopPropagation()}
             style={{
               width: "min(430px, 92vw)",
-              maxHeight: "92vh",
+              maxHeight: "calc(100vh - 48px)",
               borderRadius: 14,
               border: `1px solid ${ADS_BRAND.border2}`,
               background: ADS_BRAND.panel,
@@ -7489,18 +7491,29 @@ export default function Studio2Page() {
               flexDirection: "column",
             }}
           >
-            <img
-              src={getMediaPreviewSrc(generatedPreview.asset.url)}
-              alt=""
+            <div
               style={{
-                width: "100%",
-                aspectRatio: "9 / 16",
-                objectFit: "cover",
                 background: ADS_BRAND.bgDeep,
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 0,
+                flex: "1 1 auto",
               }}
-            />
-            <div style={{ padding: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            >
+              <img
+                src={getMediaPreviewSrc(generatedPreview.asset.url)}
+                alt=""
+                style={{
+                  width: "100%",
+                  maxHeight: "calc(100vh - 136px)",
+                  aspectRatio: "9 / 16",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
+            <div style={{ padding: 14, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => addGeneratedImageAsAd(generatedPreview.asset)}
