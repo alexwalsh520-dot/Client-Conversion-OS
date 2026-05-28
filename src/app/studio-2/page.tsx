@@ -27,6 +27,7 @@ import {
   Layers,
   Library,
   Link2,
+  LoaderCircle,
   Minus,
   MoreHorizontal,
   MousePointer2,
@@ -675,6 +676,24 @@ function getCanvasImageSrc(src: string) {
 
 function getMediaPreviewSrc(src: string) {
   return getCanvasImageSrc(src);
+}
+
+function isGenerateErrorStatus(status: string) {
+  const value = status.toLowerCase();
+  return value.includes("could") || value.includes("failed") || value.includes("error") || value.includes("snag");
+}
+
+function isGenerateSuccessStatus(status: string) {
+  const value = status.toLowerCase();
+  return value.includes("saved") || value.includes("ready") || value.includes("complete") || value.includes("created");
+}
+
+function formatGenerationStatusLabel(status: string) {
+  const value = status.toLowerCase();
+  if (["starting", "queued", "pending", "in_progress", "processing", "running"].includes(value)) return "Creating";
+  if (value === "completed") return "Ready";
+  if (value === "failed") return "Failed";
+  return value.replace(/_/g, " ") || "Creating";
 }
 
 function getDraftProjectFolderId(draft?: Partial<DraftState> & { folderId?: string | null }) {
@@ -3285,7 +3304,7 @@ export default function Studio2Page() {
   }, [copyText, currentCreative?.textBlocks, generatePrompt]);
 
   const pollAiGeneration = useCallback(
-    async (generationId: string) => {
+    async (generationId: string, progressLabel = "Creating your ad") => {
       for (let attempt = 0; attempt < 80; attempt++) {
         await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 1800 : 3500));
         const res = await fetch(`/api/studio-2/ai/generations/${encodeURIComponent(generationId)}`);
@@ -3328,13 +3347,12 @@ export default function Studio2Page() {
         }
 
         if (nextGeneration.status === "completed") {
-          setGenerateStatus("Generated image saved to Media Library.");
           return;
         }
         if (nextGeneration.status === "failed") {
           throw new Error(nextGeneration.error || "Higgsfield generation failed");
         }
-        setGenerateStatus(`Generating... ${attempt + 1}`);
+        setGenerateStatus(progressLabel);
       }
       throw new Error("Generation is still running. Check back in a minute.");
     },
@@ -3356,7 +3374,7 @@ export default function Studio2Page() {
         prompt: submittedPrompt,
         sourcePreview: generateSourcePreview,
         reference: submittedReference,
-        status: "running",
+        status: "sent",
         createdAt: submittedAt,
       },
     ]);
@@ -3364,15 +3382,15 @@ export default function Studio2Page() {
     setGenerateReference(null);
     setGeneratePresetMenuOpen(false);
     setGeneratingAd(true);
-    setGenerateStatus("Preparing selected ad...");
+    const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
+    setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`);
     try {
-      const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
       const snapshotCanvas = await renderCreativeToCanvas(currentCreative, 1);
       const snapshotDataUrl = snapshotCanvas.toDataURL("image/png");
       const startedGenerations: StudioAIGeneration[] = [];
 
       for (let index = 0; index < batchCount; index++) {
-        setGenerateStatus(batchCount === 1 ? "Starting Higgsfield job..." : `Starting Higgsfield job ${index + 1} of ${batchCount}...`);
+        setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`);
         const variationPrompt = batchCount === 1
           ? promptForApi
           : [
@@ -3408,20 +3426,22 @@ export default function Studio2Page() {
         upsertAiGeneration(nextGeneration);
       }
 
-      setGenerateStatus(batchCount === 1 ? "Generating..." : `Generating ${batchCount} images...`);
-      const settled = await Promise.allSettled(startedGenerations.map((generation) => pollAiGeneration(generation.id)));
+      setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`);
+      const progressLabel = batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`;
+      const settled = await Promise.allSettled(startedGenerations.map((generation) => pollAiGeneration(generation.id, progressLabel)));
       const failedCount = settled.filter((result) => result.status === "rejected").length;
       if (failedCount === settled.length) {
         const firstFailure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
         throw new Error(firstFailure?.reason instanceof Error ? firstFailure.reason.message : "Higgsfield generation failed");
       }
       if (failedCount > 0) {
-        setGenerateStatus(`${settled.length - failedCount} generated. ${failedCount} failed.`);
+        setGenerateStatus(`${settled.length - failedCount} ready. ${failedCount} failed.`);
+      } else {
+        setGenerateStatus(batchCount === 1 ? "Your ad is ready." : `${batchCount} ads are ready.`);
       }
-      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "complete" } : message));
+      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "sent" } : message));
     } catch (err) {
       setGenerateStatus(err instanceof Error ? err.message : "Could not generate image.");
-      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "failed" } : message));
     } finally {
       setGeneratingAd(false);
     }
@@ -3552,6 +3572,12 @@ export default function Studio2Page() {
       generateConversationEndRef.current?.scrollIntoView({ block: "end" });
     });
   }, [aiGenerations, editorSidebarMode, generateMessages, generateStatus, generatingAd]);
+
+  useEffect(() => {
+    if (generatingAd || !generateStatus || isGenerateErrorStatus(generateStatus) || !isGenerateSuccessStatus(generateStatus)) return;
+    const timeout = window.setTimeout(() => setGenerateStatus(""), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [generateStatus, generatingAd]);
 
   useEffect(() => {
     if (!generatePresetMenuOpen) return;
@@ -4224,15 +4250,17 @@ export default function Studio2Page() {
         sort: message.createdAt,
         message,
       })),
-      ...aiGenerations.map((generation) => {
-        const createdAt = generation.createdAt ? Date.parse(generation.createdAt) : NaN;
-        return {
-          type: "generation" as const,
-          id: `generation-${generation.id || generation.jobId}`,
-          sort: Number.isFinite(createdAt) ? createdAt : 0,
-          generation,
-        };
-      }),
+      ...aiGenerations
+        .filter((generation) => generation.status === "completed" && (generation.media?.url || generation.resultUrl))
+        .map((generation) => {
+          const createdAt = generation.createdAt ? Date.parse(generation.createdAt) : NaN;
+          return {
+            type: "generation" as const,
+            id: `generation-${generation.id || generation.jobId}`,
+            sort: Number.isFinite(createdAt) ? createdAt : 0,
+            generation,
+          };
+        }),
       ...(generateStatus ? [{
         type: "status" as const,
         id: "generate-status",
@@ -4349,9 +4377,11 @@ export default function Studio2Page() {
                           )}
                           <div style={{ minWidth: 0 }}>
                             <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
-                            <div style={{ color: message.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3, fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
-                              {message.status === "running" ? "Generating" : message.status === "complete" ? "Sent" : message.status}
-                            </div>
+                            {message.status === "failed" && (
+                              <div style={{ color: "#ff9b9b", fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
+                                Could not start
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -4359,26 +4389,58 @@ export default function Studio2Page() {
                   }
 
                   if (item.type === "status") {
+                    const statusIsError = isGenerateErrorStatus(item.status);
+                    const statusIsDone = !generatingAd && isGenerateSuccessStatus(item.status);
+                    const statusDetail = statusIsError
+                      ? item.status
+                      : statusIsDone
+                        ? "Saved to your gallery and Media Library."
+                        : "This can take about a minute. You can keep working while it finishes.";
                     return (
                       <div
                         key={item.id}
                         style={{
                           justifySelf: "start",
                           maxWidth: 620,
-                          border: `1px solid ${ADS_BRAND.border2}`,
-                          borderRadius: 14,
+                          border: `1px solid ${statusIsError ? "rgba(255,155,155,0.3)" : statusIsDone ? "rgba(125,211,168,0.26)" : ADS_BRAND.border2}`,
+                          borderRadius: 18,
                           background: ADS_BRAND.panel2,
-                          color: item.status.toLowerCase().includes("could") || item.status.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text2,
-                          fontSize: 13,
-                          lineHeight: 1.5,
-                          padding: "12px 14px",
-                          display: "inline-flex",
+                          color: statusIsError ? "#ff9b9b" : ADS_BRAND.text2,
+                          padding: "14px 16px",
+                          display: "grid",
+                          gridTemplateColumns: "34px minmax(0, 1fr)",
                           alignItems: "center",
-                          gap: 9,
+                          gap: 12,
                         }}
                       >
-                        <Sparkles size={14} color={generatingAd ? ADS_BRAND.gold : "currentColor"} />
-                        {item.status}
+                        <div
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: "50%",
+                            background: statusIsError ? "rgba(255,155,155,0.1)" : statusIsDone ? "rgba(125,211,168,0.1)" : ADS_BRAND.panel3,
+                            color: statusIsError ? "#ff9b9b" : statusIsDone ? ADS_BRAND.success : ADS_BRAND.gold,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {statusIsError ? (
+                            <X size={16} />
+                          ) : statusIsDone ? (
+                            <CheckCircle2 size={17} />
+                          ) : (
+                            <LoaderCircle size={17} style={{ animation: "spin 1s linear infinite" }} />
+                          )}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: statusIsError ? "#ffb3b3" : ADS_BRAND.text, fontSize: 14, fontWeight: 850 }}>
+                            {statusIsError ? "Generation hit a snag" : item.status}
+                          </div>
+                          <div style={{ color: statusIsError ? "#ffb3b3" : ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, marginTop: 3 }}>
+                            {statusDetail}
+                          </div>
+                        </div>
                       </div>
                     );
                   }
@@ -4434,14 +4496,18 @@ export default function Studio2Page() {
                             background: ADS_BRAND.bgDeep,
                           }}
                         >
-                          <Sparkles size={26} color={failed ? "#ff9b9b" : ADS_BRAND.gold} />
+                          {failed ? (
+                            <X size={24} color="#ff9b9b" />
+                          ) : (
+                            <LoaderCircle size={24} color={ADS_BRAND.gold} style={{ animation: "spin 1s linear infinite" }} />
+                          )}
                           <span style={{ fontSize: 12, fontWeight: 800 }}>
-                            {failed ? "Generation failed" : "Generating image..."}
+                            {failed ? "Generation failed" : "Creating"}
                           </span>
                         </div>
                       )}
                       <div style={{ padding: "9px 10px", color: failed ? "#ff9b9b" : ready ? ADS_BRAND.success : ADS_BRAND.gold, fontSize: 10, fontWeight: 900, textTransform: "uppercase" }}>
-                        {ready ? "Image ready" : failed ? "Failed" : status}
+                        {ready ? "Image ready" : failed ? "Failed" : formatGenerationStatusLabel(status)}
                       </div>
                     </div>
                   );
@@ -4792,7 +4858,7 @@ export default function Studio2Page() {
                   cursor: generatingAd ? "progress" : canGenerate ? "pointer" : "not-allowed",
                   opacity: generatingAd || canGenerate ? 1 : 0.55,
                 }}
-                title={generatingAd ? "Generating" : "Generate"}
+                title={generatingAd ? "Creating" : "Generate"}
               >
                 {generatingAd ? <Square size={17} fill="currentColor" /> : <ArrowLeft size={20} style={{ transform: "rotate(90deg)" }} />}
               </button>
@@ -4867,9 +4933,13 @@ export default function Studio2Page() {
                           <img src={getMediaPreviewSrc(asset.url)} alt="" style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", display: "block" }} />
                         ) : (
                           <div style={{ aspectRatio: "9 / 16", display: "flex", flexDirection: "column", gap: 9, alignItems: "center", justifyContent: "center", color: generation.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3 }}>
-                            <Sparkles size={24} />
+                            {generation.status === "failed" ? (
+                              <X size={23} />
+                            ) : (
+                              <LoaderCircle size={23} color={ADS_BRAND.gold} style={{ animation: "spin 1s linear infinite" }} />
+                            )}
                             <span style={{ fontSize: 11, fontWeight: 850, textTransform: "uppercase" }}>
-                              {generation.status === "failed" ? "Failed" : "Generating"}
+                              {generation.status === "failed" ? "Failed" : "Creating"}
                             </span>
                           </div>
                         )}
@@ -4888,7 +4958,7 @@ export default function Studio2Page() {
                               textTransform: "uppercase",
                             }}
                           >
-                            {generation.status || "queued"}
+                            {formatGenerationStatusLabel(generation.status || "queued")}
                           </span>
                         )}
                       </button>
