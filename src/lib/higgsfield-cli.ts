@@ -28,6 +28,9 @@ interface TempImage {
   contentType: string;
 }
 
+const JOB_ID_KEYS = ["id", "job_id", "jobId", "uuid", "generation_id", "generationId", "jobID"];
+const JOB_CONTAINER_KEYS = ["data", "job", "jobs", "generation", "generations", "result", "results", "item", "items"];
+
 export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs = 120_000): Promise<HiggsfieldRunResult<T>> {
   const command = getHiggsfieldCommand();
   const credentialContext = await createCredentialContext();
@@ -55,6 +58,9 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
     if (isBundledModulePathError(err)) {
       throw new Error("Higgsfield CLI failed to start in this deployment. Redeploy the latest build and try again.");
     }
+    if (isCommandFailureError(err)) {
+      throw new Error(formatHiggsfieldCliError(err));
+    }
     throw err;
   } finally {
     await credentialContext.cleanup();
@@ -62,13 +68,47 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
 }
 
 export function getHiggsfieldJobId(value: unknown) {
+  return findHiggsfieldJobId(value, new Set());
+}
+
+function findHiggsfieldJobId(value: unknown, seen: Set<object>): string {
   if (!value) return "";
-  if (Array.isArray(value)) return getHiggsfieldJobId(value[0]);
-  if (typeof value === "object" && "id" in value) {
-    const id = (value as { id?: unknown }).id;
-    return typeof id === "string" ? id : "";
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string" && isLikelyJobId(item)) return item.trim();
+      const id = findHiggsfieldJobId(item, seen);
+      if (id) return id;
+    }
+    return "";
   }
+  if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  const record = value as Record<string, unknown>;
+  for (const key of JOB_ID_KEYS) {
+    const id = record[key];
+    if (typeof id === "string" && isLikelyJobId(id)) return id.trim();
+  }
+
+  for (const key of JOB_CONTAINER_KEYS) {
+    const id = findHiggsfieldJobId(record[key], seen);
+    if (id) return id;
+  }
+
+  for (const nested of Object.values(record)) {
+    if (nested && (Array.isArray(nested) || typeof nested === "object")) {
+      const id = findHiggsfieldJobId(nested, seen);
+      if (id) return id;
+    }
+  }
+
   return "";
+}
+
+function isLikelyJobId(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length >= 8 && /^[a-zA-Z0-9_-]+$/.test(trimmed);
 }
 
 export function getHiggsfieldResultUrl(value: unknown): string {
@@ -192,4 +232,43 @@ function isMissingExecutableError(err: unknown) {
 function isBundledModulePathError(err: unknown) {
   const message = String((err as { message?: unknown }).message || "");
   return message.includes("Cannot find module") && /\/var\/task\/\d+/.test(message);
+}
+
+function isCommandFailureError(err: unknown) {
+  const maybeError = err as { code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown };
+  return maybeError.code !== undefined || typeof maybeError.stdout === "string" || typeof maybeError.stderr === "string";
+}
+
+function formatHiggsfieldCliError(err: unknown) {
+  const maybeError = err as { stdout?: unknown; stderr?: unknown; message?: unknown };
+  const detail = cleanCliOutput(maybeError.stderr) || cleanCliOutput(maybeError.stdout) || cleanCliOutput(maybeError.message);
+  if (!detail) return "Higgsfield CLI failed before it could start the generation.";
+
+  const lower = detail.toLowerCase();
+  if (lower.includes("unauthorized") || lower.includes("forbidden") || lower.includes("auth")) {
+    return "Higgsfield needs a fresh login token before it can generate.";
+  }
+
+  return `Higgsfield CLI failed: ${detail}`;
+}
+
+function cleanCliOutput(value: unknown) {
+  const text = String(value || "")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .trim();
+  if (!text) return "";
+
+  const usefulLines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith("Command failed:"))
+    .filter((line) => !line.startsWith("node:internal/"))
+    .filter((line) => !line.startsWith("at "))
+    .filter((line) => !line.includes("Module._"))
+    .slice(0, 4);
+
+  const cleaned = usefulLines.join(" ").trim();
+  if (!cleaned) return "";
+  return cleaned.length > 420 ? `${cleaned.slice(0, 420).trim()}...` : cleaned;
 }

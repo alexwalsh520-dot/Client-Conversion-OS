@@ -10,6 +10,7 @@ import {
   AlignRight,
   AlignVerticalJustifyCenter,
   ArrowLeft,
+  Bookmark,
   BringToFront,
   CheckCircle2,
   ChevronDown,
@@ -34,13 +35,13 @@ import {
   PanelBottom,
   PanelTop,
   Pause,
+  Pencil,
   Play,
   Plus,
   Replace,
   RotateCcw,
   Search,
   SendToBack,
-  SlidersHorizontal,
   Square,
   Sparkles,
   Trash2,
@@ -60,6 +61,7 @@ const EMPTY_PROJECT_NAME = "Untitled design";
 const HIDDEN_FOLDERS_KEY = "ccos-studio2-hidden-design-folders";
 const GENERATE_SPLIT_KEY = "ccos-studio2-generate-gallery-percent";
 const GENERATE_PRESETS_KEY = "ccos-studio2-generate-presets";
+const GENERATE_HIDDEN_PRESETS_KEY = "ccos-studio2-hidden-generate-presets";
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
 const IG_SAFE_ZONES = [
@@ -271,7 +273,13 @@ interface GenerateChatMessage {
   sourcePreview: string;
   reference?: GenerateReferenceImage | null;
   status: "sent" | "running" | "complete" | "failed";
+  createdAt: number;
 }
+
+type GenerateConversationItem =
+  | { type: "message"; id: string; sort: number; message: GenerateChatMessage }
+  | { type: "generation"; id: string; sort: number; generation: StudioAIGeneration }
+  | { type: "status"; id: string; sort: number; status: string };
 
 interface GeneratePreset {
   id: string;
@@ -1582,6 +1590,11 @@ export default function Studio2Page() {
   const [generateMessages, setGenerateMessages] = useState<GenerateChatMessage[]>([]);
   const [generatePresetMenuOpen, setGeneratePresetMenuOpen] = useState(false);
   const [customGeneratePresets, setCustomGeneratePresets] = useState<GeneratePreset[]>([]);
+  const [hiddenGeneratePresetIds, setHiddenGeneratePresetIds] = useState<string[]>([]);
+  const [hoveredGeneratePresetId, setHoveredGeneratePresetId] = useState<string | null>(null);
+  const [editingGeneratePreset, setEditingGeneratePreset] = useState<GeneratePreset | null>(null);
+  const [editingGeneratePresetLabel, setEditingGeneratePresetLabel] = useState("");
+  const [editingGeneratePresetPrompt, setEditingGeneratePresetPrompt] = useState("");
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1593,6 +1606,7 @@ export default function Studio2Page() {
   const uploadQueueInputRef = useRef<HTMLInputElement>(null);
   const generateReferenceInputRef = useRef<HTMLInputElement>(null);
   const generatePromptTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const generateConversationEndRef = useRef<HTMLDivElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const sidebarTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
@@ -1604,6 +1618,7 @@ export default function Studio2Page() {
   const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(true);
 
   const currentCreative = creatives[currentIndex];
+  const defaultGeneratePresetIds = useMemo(() => new Set(DEFAULT_GENERATE_PRESETS.map((preset) => preset.id)), []);
   const selectedBlock =
     selectedLayer?.type === "text"
       ? currentCreative?.textBlocks.find((b) => b.id === selectedLayer.id)
@@ -3327,6 +3342,7 @@ export default function Studio2Page() {
     if (!currentCreative || generatingAd || !generatePrompt.trim()) return;
     const submittedPrompt = generatePrompt.trim();
     const messageId = uid();
+    const submittedAt = Date.now();
     const promptForApi = buildHiggsfieldPrompt(submittedPrompt);
     const submittedReference = generateReference;
 
@@ -3338,6 +3354,7 @@ export default function Studio2Page() {
         sourcePreview: generateSourcePreview,
         reference: submittedReference,
         status: "running",
+        createdAt: submittedAt,
       },
     ]);
     setGeneratePrompt("");
@@ -3372,6 +3389,7 @@ export default function Studio2Page() {
         status: String(generation.status || "queued"),
         resultUrl: null,
         mediaId: null,
+        createdAt: typeof generation.createdAt === "string" ? generation.createdAt : new Date(submittedAt + 1).toISOString(),
       };
       upsertAiGeneration(nextGeneration);
       setGenerateStatus("Generating...");
@@ -3468,6 +3486,18 @@ export default function Studio2Page() {
 
   useEffect(() => {
     try {
+      const saved = window.localStorage.getItem(GENERATE_HIDDEN_PRESETS_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      if (Array.isArray(parsed)) {
+        setHiddenGeneratePresetIds(parsed.filter((id) => typeof id === "string"));
+      }
+    } catch {
+      // Local preference only.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(GENERATE_PRESETS_KEY, JSON.stringify(customGeneratePresets));
     } catch {
       // Local preference only.
@@ -3475,11 +3505,26 @@ export default function Studio2Page() {
   }, [customGeneratePresets]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(GENERATE_HIDDEN_PRESETS_KEY, JSON.stringify(hiddenGeneratePresetIds));
+    } catch {
+      // Local preference only.
+    }
+  }, [hiddenGeneratePresetIds]);
+
+  useEffect(() => {
     const textarea = generatePromptTextareaRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.max(78, textarea.scrollHeight)}px`;
   }, [generatePrompt, editorSidebarMode]);
+
+  useEffect(() => {
+    if (editorSidebarMode !== "generate") return;
+    window.requestAnimationFrame(() => {
+      generateConversationEndRef.current?.scrollIntoView({ block: "end" });
+    });
+  }, [aiGenerations, editorSidebarMode, generateMessages, generateStatus, generatingAd]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3528,7 +3573,6 @@ export default function Studio2Page() {
       const current = prev.trim();
       return current ? `${current}\n\n${preset.prompt}` : preset.prompt;
     });
-    setGeneratePresetMenuOpen(false);
   }, []);
 
   const addCurrentPromptPreset = useCallback(() => {
@@ -3544,6 +3588,37 @@ export default function Studio2Page() {
     ].slice(0, 12));
     setGeneratePresetMenuOpen(false);
   }, [generatePrompt]);
+
+  const openGeneratePresetEditor = useCallback((preset: GeneratePreset) => {
+    setEditingGeneratePreset(preset);
+    setEditingGeneratePresetLabel(preset.label);
+    setEditingGeneratePresetPrompt(preset.prompt);
+  }, []);
+
+  const saveGeneratePresetEdit = useCallback(() => {
+    if (!editingGeneratePreset) return;
+    const label = editingGeneratePresetLabel.trim();
+    const prompt = editingGeneratePresetPrompt.trim();
+    if (!label || !prompt) return;
+    const nextPreset = { ...editingGeneratePreset, label, prompt };
+    setCustomGeneratePresets((prev) => {
+      const existing = prev.some((preset) => preset.id === nextPreset.id);
+      return existing
+        ? prev.map((preset) => preset.id === nextPreset.id ? nextPreset : preset)
+        : [nextPreset, ...prev];
+    });
+    setHiddenGeneratePresetIds((prev) => prev.filter((id) => id !== nextPreset.id));
+    setEditingGeneratePreset(null);
+  }, [editingGeneratePreset, editingGeneratePresetLabel, editingGeneratePresetPrompt]);
+
+  const deleteGeneratePresetEdit = useCallback(() => {
+    if (!editingGeneratePreset) return;
+    setCustomGeneratePresets((prev) => prev.filter((preset) => preset.id !== editingGeneratePreset.id));
+    if (defaultGeneratePresetIds.has(editingGeneratePreset.id)) {
+      setHiddenGeneratePresetIds((prev) => prev.includes(editingGeneratePreset.id) ? prev : [...prev, editingGeneratePreset.id]);
+    }
+    setEditingGeneratePreset(null);
+  }, [defaultGeneratePresetIds, editingGeneratePreset]);
 
   const addTextBlock = useCallback(() => {
     if (!currentCreative) return;
@@ -4096,8 +4171,37 @@ export default function Studio2Page() {
 
   const renderGenerateWorkspace = () => {
     const canGenerate = !!currentCreative && !!generatePrompt.trim() && !generatingAd;
-    const allGeneratePresets = [...customGeneratePresets, ...DEFAULT_GENERATE_PRESETS];
-    const hasGenerateActivity = !!generateStatus || generatingAd || generateMessages.length > 0 || aiGenerations.length > 0;
+    const allGeneratePresets = [
+      ...customGeneratePresets,
+      ...DEFAULT_GENERATE_PRESETS.filter((preset) =>
+        !hiddenGeneratePresetIds.includes(preset.id) &&
+        !customGeneratePresets.some((customPreset) => customPreset.id === preset.id)
+      ),
+    ];
+    const conversationItems: GenerateConversationItem[] = [
+      ...generateMessages.map((message) => ({
+        type: "message" as const,
+        id: `message-${message.id}`,
+        sort: message.createdAt,
+        message,
+      })),
+      ...aiGenerations.map((generation) => {
+        const createdAt = generation.createdAt ? Date.parse(generation.createdAt) : NaN;
+        return {
+          type: "generation" as const,
+          id: `generation-${generation.id || generation.jobId}`,
+          sort: Number.isFinite(createdAt) ? createdAt : 0,
+          generation,
+        };
+      }),
+      ...(generateStatus ? [{
+        type: "status" as const,
+        id: "generate-status",
+        sort: Number.MAX_SAFE_INTEGER,
+        status: generateStatus,
+      }] : []),
+    ].sort((a, b) => a.sort - b.sort);
+    const hasGenerateActivity = conversationItems.length > 0 || generatingAd;
 
     return (
       <div
@@ -4170,70 +4274,77 @@ export default function Studio2Page() {
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 28px 18px" }}>
             {hasGenerateActivity && (
               <div style={{ maxWidth: 760, margin: "0 auto", display: "grid", gap: 16 }}>
-                {generateMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    style={{
-                      justifySelf: "end",
-                      maxWidth: 620,
-                      border: `1px solid ${message.status === "failed" ? "rgba(255,155,155,0.36)" : ADS_BRAND.border2}`,
-                      borderRadius: 18,
-                      background: ADS_BRAND.panel2,
-                      color: ADS_BRAND.text,
-                      padding: 12,
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                      {message.sourcePreview && (
-                        <img
-                          src={message.sourcePreview}
-                          alt=""
-                          style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
-                        />
-                      )}
-                      {message.reference && (
-                        <img
-                          src={message.reference.dataUrl}
-                          alt=""
-                          title={message.reference.name}
-                          style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
-                        />
-                      )}
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
-                        <div style={{ color: message.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3, fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
-                          {message.status === "running" ? "Generating" : message.status === "complete" ? "Sent" : message.status}
+                {conversationItems.map((item) => {
+                  if (item.type === "message") {
+                    const { message } = item;
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          justifySelf: "end",
+                          maxWidth: 620,
+                          border: `1px solid ${message.status === "failed" ? "rgba(255,155,155,0.36)" : ADS_BRAND.border2}`,
+                          borderRadius: 18,
+                          background: ADS_BRAND.panel2,
+                          color: ADS_BRAND.text,
+                          padding: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                          {message.sourcePreview && (
+                            <img
+                              src={message.sourcePreview}
+                              alt=""
+                              style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
+                            />
+                          )}
+                          {message.reference && (
+                            <img
+                              src={message.reference.dataUrl}
+                              alt=""
+                              title={message.reference.name}
+                              style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 9, border: `1px solid ${ADS_BRAND.border2}`, flexShrink: 0 }}
+                            />
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
+                            <div style={{ color: message.status === "failed" ? "#ff9b9b" : ADS_BRAND.text3, fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
+                              {message.status === "running" ? "Generating" : message.status === "complete" ? "Sent" : message.status}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  }
 
-                {generateStatus && (
-                  <div
-                    style={{
-                      justifySelf: "start",
-                      maxWidth: 620,
-                      border: `1px solid ${ADS_BRAND.border2}`,
-                      borderRadius: 14,
-                      background: ADS_BRAND.panel2,
-                      color: generateStatus.toLowerCase().includes("could") || generateStatus.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text2,
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      padding: "12px 14px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 9,
-                    }}
-                  >
-                    <Sparkles size={14} color={generatingAd ? ADS_BRAND.gold : "currentColor"} />
-                    {generateStatus}
-                  </div>
-                )}
+                  if (item.type === "status") {
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          justifySelf: "start",
+                          maxWidth: 620,
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          borderRadius: 14,
+                          background: ADS_BRAND.panel2,
+                          color: item.status.toLowerCase().includes("could") || item.status.toLowerCase().includes("failed") ? "#ff9b9b" : ADS_BRAND.text2,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          padding: "12px 14px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 9,
+                        }}
+                      >
+                        <Sparkles size={14} color={generatingAd ? ADS_BRAND.gold : "currentColor"} />
+                        {item.status}
+                      </div>
+                    );
+                  }
 
-                {aiGenerations.map((generation) => {
+                  const { generation } = item;
                   const imageUrl = generation.media?.url || generation.resultUrl || "";
                   const asset = getGenerationAsset(generation);
                   const status = generation.status || "queued";
@@ -4242,7 +4353,7 @@ export default function Studio2Page() {
 
                   return (
                     <div
-                      key={generation.id || generation.jobId}
+                      key={item.id}
                       style={{
                         justifySelf: "start",
                         maxWidth: 260,
@@ -4298,6 +4409,7 @@ export default function Studio2Page() {
                     </div>
                   );
                 })}
+                <div ref={generateConversationEndRef} />
               </div>
             )}
           </div>
@@ -4458,7 +4570,7 @@ export default function Studio2Page() {
                     cursor: "pointer",
                   }}
                 >
-                  <SlidersHorizontal size={14} color={ADS_BRAND.gold} />
+                  <Bookmark size={14} color={ADS_BRAND.gold} />
                   Presets
                   <ChevronDown size={14} />
                 </button>
@@ -4502,37 +4614,69 @@ export default function Studio2Page() {
                       <Plus size={15} /> Add current prompt
                     </button>
                     <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 4px" }} />
-                    {allGeneratePresets.map((preset) => (
-                      <button
+                    {allGeneratePresets.map((preset) => {
+                      const hovered = hoveredGeneratePresetId === preset.id;
+                      return (
+                      <div
                         key={preset.id}
-                        type="button"
-                        onClick={() => applyGeneratePreset(preset)}
+                        onMouseEnter={() => setHoveredGeneratePresetId(preset.id)}
+                        onMouseLeave={() => setHoveredGeneratePresetId(null)}
                         style={{
                           width: "100%",
-                          border: "none",
                           borderRadius: 9,
-                          background: "transparent",
+                          background: hovered ? ADS_BRAND.active : "transparent",
                           color: ADS_BRAND.text2,
-                          display: "grid",
-                          gap: 3,
-                          padding: "9px 10px",
-                          fontFamily: "inherit",
-                          cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                        onMouseEnter={(event) => {
-                          event.currentTarget.style.background = ADS_BRAND.active;
-                          event.currentTarget.style.color = ADS_BRAND.text;
-                        }}
-                        onMouseLeave={(event) => {
-                          event.currentTarget.style.background = "transparent";
-                          event.currentTarget.style.color = ADS_BRAND.text2;
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
                         }}
                       >
-                        <span style={{ fontSize: 13, fontWeight: 850 }}>{preset.label}</span>
-                        <span style={{ color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.35 }}>{preset.prompt}</span>
-                      </button>
-                    ))}
+                        <button
+                          type="button"
+                          onClick={() => applyGeneratePreset(preset)}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            border: "none",
+                            borderRadius: 9,
+                            background: "transparent",
+                            color: hovered ? ADS_BRAND.text : ADS_BRAND.text2,
+                            display: "grid",
+                            gap: 3,
+                            padding: "9px 10px",
+                            fontFamily: "inherit",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{ fontSize: 13, fontWeight: 850 }}>{preset.label}</span>
+                          <span style={{ color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.35 }}>{preset.prompt}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openGeneratePresetEditor(preset)}
+                          style={{
+                            width: 30,
+                            height: 30,
+                            marginRight: 6,
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 8,
+                            background: ADS_BRAND.panel3,
+                            color: ADS_BRAND.text2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            opacity: hovered ? 1 : 0,
+                            pointerEvents: hovered ? "auto" : "none",
+                            cursor: "pointer",
+                          }}
+                          title="Edit preset"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -6567,19 +6711,23 @@ export default function Studio2Page() {
           {saveStatus}
         </span>
         <div style={{ flex: 1 }} />
-        <input
-          className="studio2-range"
-          type="range"
-          min={18}
-          max={70}
-          value={Math.round(viewScale * 100)}
-          onChange={(e) => setViewScale(parseInt(e.target.value) / 100)}
-          style={{
-            width: 96,
-            background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} 100%)`,
-          }}
-        />
-        <span style={{ color: "var(--text-muted)", fontSize: 11, width: 34 }}>{Math.round(viewScale * 100)}%</span>
+        {editorSidebarMode !== "generate" && (
+          <>
+            <input
+              className="studio2-range"
+              type="range"
+              min={18}
+              max={70}
+              value={Math.round(viewScale * 100)}
+              onChange={(e) => setViewScale(parseInt(e.target.value) / 100)}
+              style={{
+                width: 96,
+                background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} ${Math.round(((viewScale * 100 - 18) / 52) * 100)}%, ${ADS_BRAND.border2} 100%)`,
+              }}
+            />
+            <span style={{ color: "var(--text-muted)", fontSize: 11, width: 34 }}>{Math.round(viewScale * 100)}%</span>
+          </>
+        )}
         <button style={{ ...buttonStyle(false), opacity: undoStack.length ? 1 : 0.35 }} onClick={undo} disabled={!undoStack.length}>
           <RotateCcw size={14} /> Undo
         </button>
@@ -7272,6 +7420,119 @@ export default function Studio2Page() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editingGeneratePreset && (
+        <div
+          onClick={() => setEditingGeneratePreset(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.62)",
+            backdropFilter: "blur(8px)",
+            zIndex: 49,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(520px, 94vw)",
+              borderRadius: 14,
+              border: `1px solid ${ADS_BRAND.border2}`,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 90px rgba(0,0,0,0.62)",
+              padding: 16,
+              display: "grid",
+              gap: 13,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ color: ADS_BRAND.text, fontSize: 15, fontWeight: 850 }}>Edit preset</div>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 3 }}>Change the saved prompt text or remove this preset.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingGeneratePreset(null)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel3,
+                  color: ADS_BRAND.text2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+                title="Close"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={labelStyle}>Name</span>
+              <input
+                value={editingGeneratePresetLabel}
+                onChange={(event) => setEditingGeneratePresetLabel(event.target.value)}
+                style={{ ...inputStyle, height: 38, fontSize: 13 }}
+                autoFocus
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={labelStyle}>Prompt Text</span>
+              <textarea
+                value={editingGeneratePresetPrompt}
+                onChange={(event) => setEditingGeneratePresetPrompt(event.target.value)}
+                rows={7}
+                style={{ ...inputStyle, minHeight: 150, resize: "vertical", lineHeight: 1.45, fontSize: 13 }}
+              />
+            </label>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+              <button
+                type="button"
+                onClick={deleteGeneratePresetEdit}
+                style={{
+                  ...buttonStyle(false),
+                  height: 38,
+                  color: "#ff9b9b",
+                  borderColor: "rgba(255,155,155,0.26)",
+                }}
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingGeneratePreset(null)}
+                  style={{ ...buttonStyle(false), height: 38 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveGeneratePresetEdit}
+                  disabled={!editingGeneratePresetLabel.trim() || !editingGeneratePresetPrompt.trim()}
+                  style={{
+                    ...buttonStyle(true),
+                    height: 38,
+                    opacity: editingGeneratePresetLabel.trim() && editingGeneratePresetPrompt.trim() ? 1 : 0.45,
+                    cursor: editingGeneratePresetLabel.trim() && editingGeneratePresetPrompt.trim() ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>

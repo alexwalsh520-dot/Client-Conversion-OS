@@ -118,11 +118,13 @@ export async function POST(req: NextRequest) {
 
     const jobId = getHiggsfieldJobId(json);
     if (!jobId) {
+      console.error("Higgsfield create response missing job id:", JSON.stringify(json).slice(0, 2000));
+      const missingJobMessage = "Higgsfield started, but Studio could not read the job id from its response.";
       await sb
         .from("studio2_ai_generations")
-        .update({ status: "failed", error: "Higgsfield did not return a job id", updated_at: new Date().toISOString() })
+        .update({ status: "failed", error: missingJobMessage, updated_at: new Date().toISOString() })
         .eq("id", pendingGeneration.id);
-      return NextResponse.json({ error: "Higgsfield did not return a job id" }, { status: 502 });
+      return NextResponse.json({ error: missingJobMessage }, { status: 502 });
     }
 
     const { data, error } = await sb
