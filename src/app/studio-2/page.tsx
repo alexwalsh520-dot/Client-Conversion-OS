@@ -4133,7 +4133,28 @@ export default function Studio2Page() {
               }}
             >
               <ImagePlus size={15} />
-              Gallery {aiGenerations.length || ""}
+              <span>Gallery</span>
+              {aiGenerations.length > 0 && (
+                <span
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: generateGalleryOpen ? "rgba(5,5,5,0.18)" : ADS_BRAND.active,
+                    border: `1px solid ${generateGalleryOpen ? "rgba(5,5,5,0.16)" : ADS_BRAND.border2}`,
+                    color: generateGalleryOpen ? ADS_BRAND.bg : ADS_BRAND.text2,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "0 5px",
+                    fontSize: 11,
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
+                >
+                  {aiGenerations.length}
+                </span>
+              )}
             </button>
           </div>
 
