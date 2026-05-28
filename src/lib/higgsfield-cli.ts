@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
+import { getServiceSupabase } from "./supabase";
 
 const execFileAsync = promisify(execFile);
 
@@ -28,8 +29,21 @@ interface TempImage {
   contentType: string;
 }
 
+interface HiggsfieldCredentials {
+  access_token: string;
+  refresh_token: string;
+  [key: string]: unknown;
+}
+
+interface CredentialContext {
+  env: Record<string, string>;
+  persist: () => Promise<void>;
+  cleanup: () => Promise<void>;
+}
+
 const JOB_ID_KEYS = ["id", "job_id", "jobId", "uuid", "generation_id", "generationId", "jobID"];
 const JOB_CONTAINER_KEYS = ["data", "job", "jobs", "generation", "generations", "result", "results", "item", "items"];
+const HIGGSFIELD_CREDENTIALS_SETTING_KEY = "higgsfield_credentials";
 
 export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs = 120_000): Promise<HiggsfieldRunResult<T>> {
   const command = getHiggsfieldCommand();
@@ -63,6 +77,7 @@ export async function runHiggsfieldJson<T = unknown>(args: string[], timeoutMs =
     }
     throw err;
   } finally {
+    await credentialContext.persist();
     await credentialContext.cleanup();
   }
 }
@@ -170,19 +185,16 @@ function getHiggsfieldCommand() {
   };
 }
 
-async function createCredentialContext(): Promise<{ env: Record<string, string>; cleanup: () => Promise<void> }> {
-  const accessToken = process.env.HIGGSFIELD_ACCESS_TOKEN?.trim();
-  const refreshToken = process.env.HIGGSFIELD_REFRESH_TOKEN?.trim();
-
-  if (!accessToken || !refreshToken) {
-    return { env: {}, cleanup: async () => undefined };
-  }
+async function createCredentialContext(): Promise<CredentialContext> {
+  const credentialSource = await readHiggsfieldCredentialSource();
+  if (!credentialSource) return { env: {}, persist: async () => undefined, cleanup: async () => undefined };
 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ccos-higgsfield-auth-"));
   const credentialsPath = path.join(dir, "credentials.json");
+  const initialJson = JSON.stringify(credentialSource.credentials);
   await fs.writeFile(
     credentialsPath,
-    JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+    initialJson,
     { mode: 0o600 }
   );
 
@@ -190,10 +202,105 @@ async function createCredentialContext(): Promise<{ env: Record<string, string>;
     env: {
       HIGGSFIELD_CREDENTIALS_PATH: credentialsPath,
     },
+    persist: async () => {
+      try {
+        const updatedJson = await fs.readFile(credentialsPath, "utf8");
+        const updatedCredentials = normalizeHiggsfieldCredentials(JSON.parse(updatedJson));
+        if (!updatedCredentials) return;
+
+        // Env credentials bootstrap the secure store; Supabase credentials are
+        // rewritten only if the CLI refreshed/rotated tokens during the run.
+        if (credentialSource.source !== "supabase" || updatedJson !== initialJson) {
+          await writeStoredHiggsfieldCredentials(updatedCredentials);
+        }
+      } catch (err) {
+        console.warn("Higgsfield credential persistence skipped:", err instanceof Error ? err.message : err);
+      }
+    },
     cleanup: async () => {
       await fs.rm(dir, { recursive: true, force: true });
     },
   };
+}
+
+async function readHiggsfieldCredentialSource(): Promise<
+  { source: "supabase" | "env"; credentials: HiggsfieldCredentials } | null
+> {
+  const storedCredentials = await readStoredHiggsfieldCredentials();
+  if (storedCredentials) return { source: "supabase", credentials: storedCredentials };
+
+  const envCredentials = readEnvHiggsfieldCredentials();
+  if (envCredentials) return { source: "env", credentials: envCredentials };
+
+  return null;
+}
+
+async function readStoredHiggsfieldCredentials(): Promise<HiggsfieldCredentials | null> {
+  try {
+    const { data, error } = await getServiceSupabase()
+      .from("studio2_secure_settings")
+      .select("value")
+      .eq("key", HIGGSFIELD_CREDENTIALS_SETTING_KEY)
+      .maybeSingle();
+    if (error || !data?.value) return null;
+    return normalizeHiggsfieldCredentials(JSON.parse(String(data.value)));
+  } catch {
+    return null;
+  }
+}
+
+function readEnvHiggsfieldCredentials(): HiggsfieldCredentials | null {
+  const jsonCredentials = parseCredentialJson(process.env.HIGGSFIELD_CREDENTIALS_JSON);
+  if (jsonCredentials) return jsonCredentials;
+
+  const base64Credentials = parseCredentialJson(
+    process.env.HIGGSFIELD_CREDENTIALS_BASE64
+      ? Buffer.from(process.env.HIGGSFIELD_CREDENTIALS_BASE64, "base64").toString("utf8")
+      : ""
+  );
+  if (base64Credentials) return base64Credentials;
+
+  return normalizeHiggsfieldCredentials({
+    access_token: process.env.HIGGSFIELD_ACCESS_TOKEN?.trim(),
+    refresh_token: process.env.HIGGSFIELD_REFRESH_TOKEN?.trim(),
+  });
+}
+
+function parseCredentialJson(value: string | undefined): HiggsfieldCredentials | null {
+  if (!value?.trim()) return null;
+  try {
+    return normalizeHiggsfieldCredentials(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeHiggsfieldCredentials(value: unknown): HiggsfieldCredentials | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const accessToken = typeof record.access_token === "string" ? record.access_token.trim() : "";
+  const refreshToken = typeof record.refresh_token === "string" ? record.refresh_token.trim() : "";
+  if (!accessToken || !refreshToken) return null;
+  return {
+    ...record,
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  };
+}
+
+async function writeStoredHiggsfieldCredentials(credentials: HiggsfieldCredentials) {
+  const { error } = await getServiceSupabase()
+    .from("studio2_secure_settings")
+    .upsert(
+      {
+        key: HIGGSFIELD_CREDENTIALS_SETTING_KEY,
+        value: JSON.stringify(credentials),
+        updated_at: new Date().toISOString(),
+        updated_by: "studio2-higgsfield-cli",
+      },
+      { onConflict: "key" }
+    );
+  if (error) throw new Error(error.message);
 }
 
 function parseJsonOutput<T>(stdout: string): T {

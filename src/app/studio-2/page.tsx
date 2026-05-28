@@ -62,6 +62,7 @@ const HIDDEN_FOLDERS_KEY = "ccos-studio2-hidden-design-folders";
 const GENERATE_SPLIT_KEY = "ccos-studio2-generate-gallery-percent";
 const GENERATE_PRESETS_KEY = "ccos-studio2-generate-presets";
 const GENERATE_HIDDEN_PRESETS_KEY = "ccos-studio2-hidden-generate-presets";
+const MAX_GENERATE_BATCH_COUNT = 30;
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
 const IG_SAFE_ZONES = [
@@ -1588,6 +1589,7 @@ export default function Studio2Page() {
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
   const [generateGalleryOpen, setGenerateGalleryOpen] = useState(true);
   const [generateMessages, setGenerateMessages] = useState<GenerateChatMessage[]>([]);
+  const [generateBatchCount, setGenerateBatchCount] = useState(1);
   const [generatePresetMenuOpen, setGeneratePresetMenuOpen] = useState(false);
   const [customGeneratePresets, setCustomGeneratePresets] = useState<GeneratePreset[]>([]);
   const [hiddenGeneratePresetIds, setHiddenGeneratePresetIds] = useState<string[]>([]);
@@ -1607,6 +1609,7 @@ export default function Studio2Page() {
   const generateReferenceInputRef = useRef<HTMLInputElement>(null);
   const generatePromptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const generateConversationEndRef = useRef<HTMLDivElement>(null);
+  const generatePresetMenuRef = useRef<HTMLDivElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const sidebarTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditRef = useRef<HTMLTextAreaElement>(null);
@@ -3363,37 +3366,58 @@ export default function Studio2Page() {
     setGeneratingAd(true);
     setGenerateStatus("Preparing selected ad...");
     try {
+      const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
       const snapshotCanvas = await renderCreativeToCanvas(currentCreative, 1);
       const snapshotDataUrl = snapshotCanvas.toDataURL("image/png");
-      setGenerateStatus("Starting Higgsfield job...");
-      const res = await fetch("/api/studio-2/ai/generations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          creativeId: currentCreative.id,
-          folderId: setupMediaFolderId,
-          model: "gpt_image_2",
-          prompt: promptForApi,
-          snapshotDataUrl,
-          referenceDataUrl: submittedReference?.dataUrl || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not start Higgsfield generation");
-      const generation = data.generation || {};
-      const nextGeneration: StudioAIGeneration = {
-        id: String(generation.id),
-        jobId: String(generation.jobId || ""),
-        prompt: String(generation.prompt || promptForApi),
-        status: String(generation.status || "queued"),
-        resultUrl: null,
-        mediaId: null,
-        createdAt: typeof generation.createdAt === "string" ? generation.createdAt : new Date(submittedAt + 1).toISOString(),
-      };
-      upsertAiGeneration(nextGeneration);
-      setGenerateStatus("Generating...");
-      await pollAiGeneration(nextGeneration.id);
+      const startedGenerations: StudioAIGeneration[] = [];
+
+      for (let index = 0; index < batchCount; index++) {
+        setGenerateStatus(batchCount === 1 ? "Starting Higgsfield job..." : `Starting Higgsfield job ${index + 1} of ${batchCount}...`);
+        const variationPrompt = batchCount === 1
+          ? promptForApi
+          : [
+              promptForApi,
+              `This is variation ${index + 1} of ${batchCount}. Keep it aligned with the same request, but do not make it an exact duplicate of the other variations.`,
+            ].join("\n\n");
+        const res = await fetch("/api/studio-2/ai/generations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            creativeId: currentCreative.id,
+            folderId: setupMediaFolderId,
+            model: "gpt_image_2",
+            prompt: variationPrompt,
+            snapshotDataUrl,
+            referenceDataUrl: submittedReference?.dataUrl || null,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not start Higgsfield generation");
+        const generation = data.generation || {};
+        const nextGeneration: StudioAIGeneration = {
+          id: String(generation.id),
+          jobId: String(generation.jobId || ""),
+          prompt: String(generation.prompt || variationPrompt),
+          status: String(generation.status || "queued"),
+          resultUrl: null,
+          mediaId: null,
+          createdAt: typeof generation.createdAt === "string" ? generation.createdAt : new Date(submittedAt + index + 1).toISOString(),
+        };
+        startedGenerations.push(nextGeneration);
+        upsertAiGeneration(nextGeneration);
+      }
+
+      setGenerateStatus(batchCount === 1 ? "Generating..." : `Generating ${batchCount} images...`);
+      const settled = await Promise.allSettled(startedGenerations.map((generation) => pollAiGeneration(generation.id)));
+      const failedCount = settled.filter((result) => result.status === "rejected").length;
+      if (failedCount === settled.length) {
+        const firstFailure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+        throw new Error(firstFailure?.reason instanceof Error ? firstFailure.reason.message : "Higgsfield generation failed");
+      }
+      if (failedCount > 0) {
+        setGenerateStatus(`${settled.length - failedCount} generated. ${failedCount} failed.`);
+      }
       setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "complete" } : message));
     } catch (err) {
       setGenerateStatus(err instanceof Error ? err.message : "Could not generate image.");
@@ -3406,6 +3430,7 @@ export default function Studio2Page() {
     currentCreative,
     generateReference,
     generatePrompt,
+    generateBatchCount,
     generateSourcePreview,
     generatingAd,
     pollAiGeneration,
@@ -3527,6 +3552,19 @@ export default function Studio2Page() {
   }, [aiGenerations, editorSidebarMode, generateMessages, generateStatus, generatingAd]);
 
   useEffect(() => {
+    if (!generatePresetMenuOpen) return;
+
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && generatePresetMenuRef.current?.contains(target)) return;
+      setGeneratePresetMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+  }, [generatePresetMenuOpen]);
+
+  useEffect(() => {
     let cancelled = false;
     if (editorSidebarMode !== "generate" || !currentCreative) {
       setGenerateSourcePreview("");
@@ -3586,7 +3624,6 @@ export default function Studio2Page() {
       },
       ...prev,
     ].slice(0, 12));
-    setGeneratePresetMenuOpen(false);
   }, [generatePrompt]);
 
   const openGeneratePresetEditor = useCallback((preset: GeneratePreset) => {
@@ -4550,7 +4587,7 @@ export default function Studio2Page() {
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
-              <div style={{ position: "relative", marginRight: "auto" }}>
+              <div ref={generatePresetMenuRef} style={{ position: "relative", marginRight: "auto" }}>
                 <button
                   type="button"
                   onClick={() => setGeneratePresetMenuOpen((open) => !open)}
@@ -4679,6 +4716,64 @@ export default function Studio2Page() {
                     })}
                   </div>
                 )}
+              </div>
+              <div
+                title="Images to generate"
+                style={{
+                  height: 36,
+                  borderRadius: 999,
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel3,
+                  color: ADS_BRAND.text2,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "0 5px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setGenerateBatchCount((count) => clamp(count - 1, 1, MAX_GENERATE_BATCH_COUNT))}
+                  disabled={generatingAd || generateBatchCount <= 1}
+                  style={{
+                    width: 26,
+                    height: 26,
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "transparent",
+                    color: generateBatchCount <= 1 ? ADS_BRAND.text4 : ADS_BRAND.text2,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: generatingAd || generateBatchCount <= 1 ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Generate fewer images"
+                >
+                  <Minus size={13} />
+                </button>
+                <span style={{ minWidth: 32, textAlign: "center", color: ADS_BRAND.text, fontSize: 12, fontWeight: 900 }}>
+                  {generateBatchCount}x
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setGenerateBatchCount((count) => clamp(count + 1, 1, MAX_GENERATE_BATCH_COUNT))}
+                  disabled={generatingAd || generateBatchCount >= MAX_GENERATE_BATCH_COUNT}
+                  style={{
+                    width: 26,
+                    height: 26,
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "transparent",
+                    color: generateBatchCount >= MAX_GENERATE_BATCH_COUNT ? ADS_BRAND.text4 : ADS_BRAND.text2,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: generatingAd || generateBatchCount >= MAX_GENERATE_BATCH_COUNT ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Generate more images"
+                >
+                  <Plus size={13} />
+                </button>
               </div>
               <button
                 type="button"
