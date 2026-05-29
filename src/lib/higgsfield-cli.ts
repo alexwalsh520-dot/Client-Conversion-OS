@@ -354,9 +354,25 @@ function parseJsonOutput<T>(stdout: string): T {
         return index === -1 ? Number.POSITIVE_INFINITY : index;
       })
     );
-    if (!Number.isFinite(start)) throw new Error("Higgsfield JSON output could not be parsed");
-    return JSON.parse(trimmed.slice(start)) as T;
+    if (!Number.isFinite(start)) throw new Error(formatNonJsonHiggsfieldOutput(trimmed));
+    try {
+      return JSON.parse(trimmed.slice(start)) as T;
+    } catch {
+      throw new Error(formatNonJsonHiggsfieldOutput(trimmed));
+    }
   }
+}
+
+function formatNonJsonHiggsfieldOutput(stdout: string) {
+  const detail = cleanCliOutput(stdout) || "Higgsfield returned text instead of JSON.";
+  const lower = detail.toLowerCase();
+  if (lower.includes("unauthorized") || lower.includes("forbidden") || lower.includes("auth") || lower.includes("token") || lower.includes("login")) {
+    return "Higgsfield needs a fresh login token before it can generate.";
+  }
+  if (lower.includes("request entity too large") || lower.includes("payload too large") || lower.includes("too large")) {
+    return "Higgsfield rejected the reference because the image payload is too large. Try without the extra reference or use a smaller image.";
+  }
+  return `Higgsfield returned a non-JSON response: ${detail}`;
 }
 
 function sanitizeFilename(value: string) {

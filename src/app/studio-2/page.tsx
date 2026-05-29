@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Bookmark,
   BringToFront,
+  Check,
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
@@ -315,6 +316,13 @@ interface GenerateChatMessage {
   reference?: GenerateReferenceImage | null;
   status: "sent" | "running" | "complete" | "failed";
   createdAt: number;
+}
+
+interface PendingGenerateRetry {
+  prompt: string;
+  sourcePreview: string;
+  reference?: GenerateReferenceImage | null;
+  retryMessageId?: string;
 }
 
 type GenerateConversationItem =
@@ -1012,7 +1020,32 @@ function MediaAssetPreview({
 
 function isGenerateErrorStatus(status: string) {
   const value = status.toLowerCase();
-  return value.includes("could") || value.includes("failed") || value.includes("error") || value.includes("snag");
+  return (
+    value.includes("could") ||
+    value.includes("failed") ||
+    value.includes("error") ||
+    value.includes("snag") ||
+    value.includes("unexpected token") ||
+    value.includes("invalid json") ||
+    value.includes("non-json") ||
+    value.includes("rejected") ||
+    value.includes("timed out") ||
+    value.includes("too large")
+  );
+}
+
+function isHiggsfieldAuthStatus(status: string) {
+  const value = status.toLowerCase();
+  if (value.includes("unexpected token")) return false;
+  return (
+    value.includes("fresh login") ||
+    value.includes("reconnect higgsfield") ||
+    value.includes("credential") ||
+    value.includes("unauthorized") ||
+    value.includes("forbidden") ||
+    value.includes("auth") ||
+    value.includes("login token")
+  );
 }
 
 function isGenerateSuccessStatus(status: string) {
@@ -2067,6 +2100,7 @@ export default function Studio2Page() {
   const [selectedGenerationIds, setSelectedGenerationIds] = useState<string[]>([]);
   const [generateDropActive, setGenerateDropActive] = useState(false);
   const [generateSourcePreview, setGenerateSourcePreview] = useState("");
+  const [generateSourceAttached, setGenerateSourceAttached] = useState(true);
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
   const [generateGalleryOpen, setGenerateGalleryOpen] = useState(true);
   const [generateMessages, setGenerateMessages] = useState<GenerateChatMessage[]>([]);
@@ -2090,6 +2124,7 @@ export default function Studio2Page() {
   const [editingGeneratePresetPrompt, setEditingGeneratePresetPrompt] = useState("");
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
   const [higgsfieldAuthModal, setHiggsfieldAuthModal] = useState<HiggsfieldAuthModalState>({ open: false });
+  const [pendingHiggsfieldRetry, setPendingHiggsfieldRetry] = useState<PendingGenerateRetry | null>(null);
   const [higgsfieldAuthLoginUrl, setHiggsfieldAuthLoginUrl] = useState("");
   const [higgsfieldAuthStatus, setHiggsfieldAuthStatus] = useState("");
   const [savingHiggsfieldAuth, setSavingHiggsfieldAuth] = useState(false);
@@ -2100,7 +2135,7 @@ export default function Studio2Page() {
   const [editorUploadMode, setEditorUploadMode] = useState<EditorMediaActionMode | null>(null);
   const [newAdModalOpen, setNewAdModalOpen] = useState(false);
   const [newAdCopy, setNewAdCopy] = useState("");
-  const [newAdMediaAsset, setNewAdMediaAsset] = useState<StudioMediaAsset | null>(null);
+  const [newAdMediaAssets, setNewAdMediaAssets] = useState<StudioMediaAsset[]>([]);
   const [newAdStatus, setNewAdStatus] = useState("");
   const [draggedLayerBlockId, setDraggedLayerBlockId] = useState<string | null>(null);
   const [layerDropBlockId, setLayerDropBlockId] = useState<string | null>(null);
@@ -2352,6 +2387,17 @@ export default function Studio2Page() {
     () => libraryMedia.filter((asset) => (asset.folderId || null) === generateMediaPickerFolderId),
     [generateMediaPickerFolderId, libraryMedia]
   );
+  const generateMediaFolderTrail = useMemo(() => {
+    const trail: StudioFolder[] = [];
+    const seenFolderIds = new Set<string>();
+    let cursor = currentGenerateMediaFolder;
+    while (cursor && !seenFolderIds.has(cursor.id)) {
+      seenFolderIds.add(cursor.id);
+      trail.unshift(cursor);
+      cursor = mediaFolders.find((folder) => folder.id === cursor?.parentId) || null;
+    }
+    return trail;
+  }, [currentGenerateMediaFolder, mediaFolders]);
   const visibleMediaFolders = useMemo(() => {
     if (homeMode !== "media") return [];
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -3422,7 +3468,7 @@ export default function Studio2Page() {
           setEditorMediaActionMode(null);
         } else {
           registerDraftMediaAsset(asset);
-          setNewAdMediaAsset(asset);
+          setNewAdMediaAssets([asset]);
           setNewAdStatus("Media ready.");
         }
         void fetchStudioMedia();
@@ -3611,33 +3657,41 @@ export default function Studio2Page() {
     const groups = parseCopyIntoAds(newAdCopy);
     const sections = groups[0] || [];
     const textBlocks = sections.length ? buildBlocksForSections(sections) : [];
-    const asset = newAdMediaAsset;
-    if (asset) registerDraftMediaAsset(asset);
+    const assets = newAdMediaAssets.length ? newAdMediaAssets : [null];
+    newAdMediaAssets.forEach(registerDraftMediaAsset);
+    const cloneBlocks = () =>
+      textBlocks.map((block) => ({
+        ...block,
+        id: uid(),
+        lines: [...block.lines],
+        colorSpans: block.colorSpans?.map((span) => ({ ...span })),
+      }));
     pushUndo();
-    const nextCreative: Creative = {
+    const nextCreatives = assets.map((asset): Creative => ({
       id: uid(),
       photoUrl: asset?.url || BLANK_IMAGE_DATA_URL,
       mediaKind: asset?.kind || "image",
-      textBlocks,
+      textBlocks: cloneBlocks(),
       imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
       status: "draft",
-    };
+    }));
+    const firstBlock = nextCreatives[0]?.textBlocks[0] || null;
     setCreatives((prev) => {
       setCurrentIndex(prev.length);
-      return [...prev, nextCreative];
+      return [...prev, ...nextCreatives];
     });
-    setSelectedLayer(textBlocks[0] ? { type: "text", id: textBlocks[0].id } : { type: "image" });
-    setSelectedTextBlockIds(textBlocks[0] ? [textBlocks[0].id] : []);
+    setSelectedLayer(firstBlock ? { type: "text", id: firstBlock.id } : { type: "image" });
+    setSelectedTextBlockIds(firstBlock ? [firstBlock.id] : []);
     setNewAdModalOpen(false);
     setNewAdCopy("");
-    setNewAdMediaAsset(null);
+    setNewAdMediaAssets([]);
     setNewAdStatus("");
-  }, [buildBlocksForSections, newAdCopy, newAdMediaAsset, pushUndo, registerDraftMediaAsset]);
+  }, [buildBlocksForSections, newAdCopy, newAdMediaAssets, pushUndo, registerDraftMediaAsset]);
 
   const openNewAdModal = useCallback(() => {
     setNewAdModalOpen(true);
     setNewAdCopy("");
-    setNewAdMediaAsset(null);
+    setNewAdMediaAssets([]);
     setNewAdStatus("");
   }, []);
 
@@ -4512,7 +4566,12 @@ export default function Studio2Page() {
   useEffect(() => {
     if (!projectId) return;
     try {
-      window.localStorage.setItem(`ccos-studio2-generate-chat-${projectId}`, JSON.stringify(generateMessages.slice(-60)));
+      const lightweightMessages = generateMessages.slice(-60).map((message) => ({
+        ...message,
+        sourcePreview: "",
+        reference: null,
+      }));
+      window.localStorage.setItem(`ccos-studio2-generate-chat-${projectId}`, JSON.stringify(lightweightMessages));
     } catch {
       // Local chat history only.
     }
@@ -4564,9 +4623,13 @@ export default function Studio2Page() {
       }
       if (mediaPickerMode === "new-ad") {
         registerDraftMediaAsset(asset);
-        setNewAdMediaAsset(asset);
-        setNewAdStatus("Media ready.");
-        closeMediaLibraryPicker();
+        setNewAdMediaAssets((prev) => {
+          const exists = prev.some((item) => item.id === asset.id || item.url === asset.url);
+          return exists
+            ? prev.filter((item) => item.id !== asset.id && item.url !== asset.url)
+            : [...prev, asset];
+        });
+        setNewAdStatus("");
       }
     },
     [applyMediaAssetToCurrentCreative, attachGenerateMediaReference, closeMediaLibraryPicker, mediaPickerMode, registerDraftMediaAsset]
@@ -4659,27 +4722,46 @@ export default function Studio2Page() {
     [upsertAiGeneration]
   );
 
-  const startAiGeneration = useCallback(async () => {
-    if (!currentCreative || generatingAd || !generatePrompt.trim()) return;
-    const submittedPrompt = generatePrompt.trim();
-    const messageId = uid();
+  const startAiGeneration = useCallback(async (retry?: PendingGenerateRetry) => {
+    const submittedPrompt = (retry?.prompt ?? generatePrompt).trim();
+    if (!currentCreative || generatingAd || !submittedPrompt) return;
+    const messageId = retry?.retryMessageId || uid();
     const submittedAt = Date.now();
     const promptForApi = buildHiggsfieldPrompt(submittedPrompt);
-    const submittedReference = generateReference;
+    const submittedReference = retry ? retry.reference ?? null : generateReference;
+    const submittedSourcePreview = retry ? retry.sourcePreview : generateSourceAttached ? generateSourcePreview : "";
 
-    setGenerateMessages((prev) => [
-      ...prev,
-      {
-        id: messageId,
-        prompt: submittedPrompt,
-        sourcePreview: generateSourcePreview,
-        reference: submittedReference,
-        status: "sent",
-        createdAt: submittedAt,
-      },
-    ]);
-    setGeneratePrompt("");
-    setGenerateReference(null);
+    setGenerateMessages((prev) => {
+      if (retry?.retryMessageId) {
+        return prev.map((message) =>
+          message.id === retry.retryMessageId
+            ? {
+                ...message,
+                prompt: submittedPrompt,
+                sourcePreview: submittedSourcePreview,
+                reference: submittedReference,
+                status: "sent",
+                createdAt: submittedAt,
+              }
+            : message
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: messageId,
+          prompt: submittedPrompt,
+          sourcePreview: submittedSourcePreview,
+          reference: submittedReference,
+          status: "sent",
+          createdAt: submittedAt,
+        },
+      ];
+    });
+    if (!retry) {
+      setGeneratePrompt("");
+      setGenerateReference(null);
+    }
     setGeneratePresetMenuOpen(false);
     setGeneratingAd(true);
     const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
@@ -4687,8 +4769,9 @@ export default function Studio2Page() {
     try {
       const sourceAssetFolderId = getAssetForUrl(currentCreative.photoUrl)?.folderId || null;
       const targetFolderId = await ensureAiGeneratedFolder(setupMediaFolderId || sourceAssetFolderId || null);
-      const snapshotCanvas = await renderCreativeToCanvas(currentCreative, 1);
-      const snapshotDataUrl = snapshotCanvas.toDataURL("image/png");
+      const snapshotDataUrl = submittedSourcePreview
+        ? (await renderCreativeToCanvas(currentCreative, 1)).toDataURL("image/png")
+        : null;
       const startedGenerations: StudioAIGeneration[] = [];
 
       for (let index = 0; index < batchCount; index++) {
@@ -4752,7 +4835,14 @@ export default function Studio2Page() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not generate image.";
       setGenerateStatus(message);
-      if (/higgsfield|login|token|auth|credential/i.test(message)) {
+      setGenerateMessages((prev) => prev.map((item) => item.id === messageId ? { ...item, status: "failed" } : item));
+      if (isHiggsfieldAuthStatus(message)) {
+        setPendingHiggsfieldRetry({
+          prompt: submittedPrompt,
+          sourcePreview: submittedSourcePreview,
+          reference: submittedReference,
+          retryMessageId: messageId,
+        });
         setHiggsfieldAuthModal({ open: true, message });
         setHiggsfieldAuthLoginUrl("");
         setHiggsfieldAuthStatus("");
@@ -4767,6 +4857,7 @@ export default function Studio2Page() {
     generatePrompt,
     generateBatchCount,
     generateSourcePreview,
+    generateSourceAttached,
     generatingAd,
     ensureAiGeneratedFolder,
     getAssetForUrl,
@@ -4999,7 +5090,17 @@ export default function Studio2Page() {
       }
       if (event === "connected") {
         setHiggsfieldAuthStatus(payload.message || "Higgsfield is connected.");
-        window.setTimeout(() => setHiggsfieldAuthModal({ open: false }), 1200);
+        const retry = pendingHiggsfieldRetry;
+        if (retry) {
+          setHiggsfieldAuthStatus("Higgsfield is connected. Retrying your generation...");
+          setPendingHiggsfieldRetry(null);
+          window.setTimeout(() => {
+            setHiggsfieldAuthModal({ open: false });
+            void startAiGeneration(retry);
+          }, 500);
+        } else {
+          window.setTimeout(() => setHiggsfieldAuthModal({ open: false }), 1200);
+        }
         return;
       }
       if (event === "error") {
@@ -5033,7 +5134,7 @@ export default function Studio2Page() {
     } finally {
       setSavingHiggsfieldAuth(false);
     }
-  }, []);
+  }, [pendingHiggsfieldRetry, startAiGeneration]);
 
   useEffect(() => {
     try {
@@ -5175,6 +5276,12 @@ export default function Studio2Page() {
       cancelled = true;
     };
   }, [currentCreative, editorSidebarMode, renderCreativeToCanvas]);
+
+  useEffect(() => {
+    if (editorSidebarMode === "generate" && currentCreative?.id) {
+      setGenerateSourceAttached(true);
+    }
+  }, [currentCreative?.id, editorSidebarMode]);
 
   const startGenerateDividerDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = generateWorkspaceRef.current?.getBoundingClientRect();
@@ -5994,7 +6101,7 @@ export default function Studio2Page() {
     const hasGenerateActivity = conversationItems.length > 0 || generatingAd;
     const selectedGalleryCount = selectedGenerationIds.length;
     const selectedGalleryReadyCount = selectedGenerationAssets.length;
-    const generateNeedsAuth = /higgsfield|login|token|auth|credential/i.test(generateStatus);
+    const generateNeedsAuth = isHiggsfieldAuthStatus(generateStatus);
     const generateFolderTrail: StudioFolder[] = [];
     const seenGenerateFolderIds = new Set<string>();
     let generateFolderCursor: StudioFolder | null = currentGenerateMediaFolder;
@@ -6114,8 +6221,23 @@ export default function Studio2Page() {
                           <div style={{ minWidth: 0 }}>
                             <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
                             {message.status === "failed" && (
-                              <div style={{ color: "#ff9b9b", fontSize: 11, fontWeight: 800, marginTop: 7, textTransform: "uppercase" }}>
-                                Could not start
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+                                <div style={{ color: "#ff9b9b", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                                  Could not start
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => void startAiGeneration({
+                                    prompt: message.prompt,
+                                    sourcePreview: message.sourcePreview,
+                                    reference: message.reference ?? null,
+                                    retryMessageId: message.id,
+                                  })}
+                                  disabled={generatingAd}
+                                  style={{ ...buttonStyle(false), height: 28, padding: "0 9px", fontSize: 11, opacity: generatingAd ? 0.45 : 1 }}
+                                >
+                                  Retry
+                                </button>
                               </div>
                             )}
                           </div>
@@ -6292,26 +6414,52 @@ export default function Studio2Page() {
             }}
           >
             <div style={{ display: "flex", gap: 10, alignItems: "center", minHeight: 46 }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 9,
-                  overflow: "hidden",
-                  border: `1px solid ${ADS_BRAND.border2}`,
-                  background: ADS_BRAND.bgDeep,
-                  flexShrink: 0,
-                }}
-                title="Source ad"
-              >
-                {generateSourcePreview ? (
-                  <img src={generateSourcePreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                ) : (
-                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
-                    <ImagePlus size={18} />
-                  </div>
-                )}
-              </div>
+              {generateSourceAttached && (
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 9,
+                    overflow: "hidden",
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    background: ADS_BRAND.bgDeep,
+                    flexShrink: 0,
+                    position: "relative",
+                  }}
+                  title="Source ad"
+                >
+                  {generateSourcePreview ? (
+                    <img src={generateSourcePreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: ADS_BRAND.text3 }}>
+                      <ImagePlus size={18} />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setGenerateSourceAttached(false)}
+                    style={{
+                      position: "absolute",
+                      top: 3,
+                      right: 3,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      border: "none",
+                      background: "rgba(0,0,0,0.7)",
+                      color: ADS_BRAND.text,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                    title="Remove source ad"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
 
               {generateReference && (
                 <div
@@ -7061,6 +7209,7 @@ export default function Studio2Page() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
                     {visibleGenerateMediaAssets.map((asset) => {
                       const isUsableReference = mediaPickerMode !== "generate-reference" || asset.kind === "image";
+                      const selectedForNewAd = mediaPickerMode === "new-ad" && newAdMediaAssets.some((item) => item.id === asset.id || item.url === asset.url);
                       return (
                         <button
                           key={asset.id}
@@ -7069,9 +7218,9 @@ export default function Studio2Page() {
                             if (isUsableReference) void handleMediaPickerAsset(asset);
                           }}
                           style={{
-                            border: `1px solid ${ADS_BRAND.border2}`,
+                            border: `1px solid ${selectedForNewAd ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
                             borderRadius: 12,
-                            background: ADS_BRAND.panel2,
+                            background: selectedForNewAd ? ADS_BRAND.goldSoft : ADS_BRAND.panel2,
                             padding: 0,
                             overflow: "hidden",
                             cursor: isUsableReference ? "pointer" : "not-allowed",
@@ -7081,8 +7230,29 @@ export default function Studio2Page() {
                           }}
                           title={isUsableReference ? "Use this media" : "Video references are not supported yet"}
                         >
-                          <div style={{ width: "100%", aspectRatio: "1 / 1", background: ADS_BRAND.bgDeep, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ width: "100%", aspectRatio: "1 / 1", background: ADS_BRAND.bgDeep, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
                             <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                            {selectedForNewAd && (
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  top: 8,
+                                  right: 8,
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: "50%",
+                                  background: ADS_BRAND.gold,
+                                  color: "#111",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 12,
+                                  fontWeight: 950,
+                                }}
+                              >
+                                <Check size={14} />
+                              </span>
+                            )}
                           </div>
                           <div style={{ padding: "9px 10px", display: "flex", alignItems: "center", gap: 7 }}>
                             {asset.kind === "video" ? <Video size={13} color={ADS_BRAND.text3} /> : <ImagePlus size={13} color={ADS_BRAND.text3} />}
@@ -7111,6 +7281,20 @@ export default function Studio2Page() {
                   </div>
                 )}
               </div>
+              {mediaPickerMode === "new-ad" && (
+                <div style={{ minHeight: 58, borderTop: `1px solid ${ADS_BRAND.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 12, fontWeight: 800 }}>
+                    {newAdMediaAssets.length ? `${newAdMediaAssets.length} selected` : "Select one or more media items."}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeMediaLibraryPicker}
+                    style={{ ...buttonStyle(true), height: 36, opacity: newAdMediaAssets.length ? 1 : 0.55 }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -10572,8 +10756,28 @@ export default function Studio2Page() {
                   color: ADS_BRAND.text3,
                 }}
               >
-                {newAdMediaAsset ? (
-                  <MediaAssetPreview asset={newAdMediaAsset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                {newAdMediaAssets[0] ? (
+                  <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                    <MediaAssetPreview asset={newAdMediaAssets[0]} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    {newAdMediaAssets.length > 1 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: 8,
+                          bottom: 8,
+                          borderRadius: 999,
+                          background: "rgba(0,0,0,0.72)",
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          color: ADS_BRAND.text,
+                          padding: "4px 8px",
+                          fontSize: 11,
+                          fontWeight: 900,
+                        }}
+                      >
+                        {newAdMediaAssets.length} selected
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <ImagePlus size={24} />
                 )}
@@ -10619,6 +10823,211 @@ export default function Studio2Page() {
                 Generate
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {generateMediaPickerOpen && editorSidebarMode !== "generate" && (
+        <div
+          aria-label="Choose media"
+          onClick={closeMediaLibraryPicker}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(0,0,0,0.58)",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(980px, 94vw)",
+              maxHeight: "min(760px, 88vh)",
+              border: `1px solid ${ADS_BRAND.border2}`,
+              borderRadius: 18,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 90px rgba(0,0,0,0.58)",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div style={{ height: 58, display: "flex", alignItems: "center", gap: 10, padding: "0 16px", borderBottom: `1px solid ${ADS_BRAND.border}` }}>
+              <Library size={18} color={ADS_BRAND.gold} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 900 }}>Media Library</div>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 750, marginTop: 2 }}>
+                  {generateMediaFolderTrail.length ? generateMediaFolderTrail.map((folder) => folder.name).join(" / ") : "All Media"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeMediaLibraryPicker}
+                style={{ ...buttonStyle(false), width: 34, height: 34, padding: 0, justifyContent: "center" }}
+                aria-label="Close media library"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: `1px solid ${ADS_BRAND.border}` }}>
+              <button
+                type="button"
+                onClick={() => setGenerateMediaPickerFolderId(currentGenerateMediaFolder?.parentId || null)}
+                disabled={!currentGenerateMediaFolder}
+                style={{ ...buttonStyle(false), height: 32, opacity: currentGenerateMediaFolder ? 1 : 0.45, cursor: currentGenerateMediaFolder ? "pointer" : "default" }}
+              >
+                <ArrowLeft size={13} /> Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setGenerateMediaPickerFolderId(null)}
+                style={{ ...buttonStyle(!currentGenerateMediaFolder), height: 32 }}
+              >
+                All Media
+              </button>
+              {generateMediaFolderTrail.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  onClick={() => setGenerateMediaPickerFolderId(folder.id)}
+                  style={{ ...buttonStyle(folder.id === generateMediaPickerFolderId), height: 32, maxWidth: 180 }}
+                  title={folder.name}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18 }}>
+              {visibleGenerateMediaFolders.length > 0 && (
+                <>
+                  <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Folders</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10, marginBottom: 22 }}>
+                    {visibleGenerateMediaFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        type="button"
+                        onClick={() => setGenerateMediaPickerFolderId(folder.id)}
+                        style={{
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          borderRadius: 12,
+                          background: ADS_BRAND.panel2,
+                          color: ADS_BRAND.text,
+                          minHeight: 118,
+                          padding: 12,
+                          display: "grid",
+                          alignContent: "center",
+                          justifyItems: "center",
+                          gap: 10,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 850,
+                        }}
+                      >
+                        <Folder size={26} color={ADS_BRAND.text3} />
+                        <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Media</div>
+              {visibleGenerateMediaAssets.length > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+                  {visibleGenerateMediaAssets.map((asset) => {
+                    const isUsableReference = mediaPickerMode !== "generate-reference" || asset.kind === "image";
+                    const selectedForNewAd = mediaPickerMode === "new-ad" && newAdMediaAssets.some((item) => item.id === asset.id || item.url === asset.url);
+                    return (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        onClick={() => {
+                          if (isUsableReference) void handleMediaPickerAsset(asset);
+                        }}
+                        style={{
+                          border: `1px solid ${selectedForNewAd ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                          borderRadius: 12,
+                          background: selectedForNewAd ? ADS_BRAND.goldSoft : ADS_BRAND.panel2,
+                          padding: 0,
+                          overflow: "hidden",
+                          cursor: isUsableReference ? "pointer" : "not-allowed",
+                          opacity: isUsableReference ? 1 : 0.58,
+                          textAlign: "left",
+                          fontFamily: "inherit",
+                        }}
+                        title={isUsableReference ? "Use this media" : "Video references are not supported yet"}
+                      >
+                        <div style={{ width: "100%", aspectRatio: "1 / 1", background: ADS_BRAND.bgDeep, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                          <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          {selectedForNewAd && (
+                            <span
+                              style={{
+                                position: "absolute",
+                                top: 8,
+                                right: 8,
+                                width: 22,
+                                height: 22,
+                                borderRadius: "50%",
+                                background: ADS_BRAND.gold,
+                                color: "#111",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 12,
+                                fontWeight: 950,
+                              }}
+                            >
+                              <Check size={14} />
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ padding: "9px 10px", display: "flex", alignItems: "center", gap: 7 }}>
+                          {asset.kind === "video" ? <Video size={13} color={ADS_BRAND.text3} /> : <ImagePlus size={13} color={ADS_BRAND.text3} />}
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ADS_BRAND.text2, fontSize: 12, fontWeight: 800 }}>
+                            {asset.filename || "Media"}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    minHeight: 220,
+                    border: `1px dashed ${ADS_BRAND.border2}`,
+                    borderRadius: 14,
+                    color: ADS_BRAND.text3,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 13,
+                  }}
+                >
+                  No media in this folder.
+                </div>
+              )}
+            </div>
+            {mediaPickerMode === "new-ad" && (
+              <div style={{ minHeight: 58, borderTop: `1px solid ${ADS_BRAND.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, fontWeight: 800 }}>
+                  {newAdMediaAssets.length ? `${newAdMediaAssets.length} selected` : "Select one or more media items."}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMediaLibraryPicker}
+                  style={{ ...buttonStyle(true), height: 36, opacity: newAdMediaAssets.length ? 1 : 0.55 }}
+                >
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
