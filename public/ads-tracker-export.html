@@ -1552,7 +1552,45 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                       return <td key={col.k} className={cls}>{col.fmt(agg)}</td>;
                     })}
                   </tr>
-                  {isOpen && orderedRows.map(r0=>{
+                  {isOpen && view==="ad" && (()=>{
+                    const adTotals = aggregateAdRowsForCampaign(c);
+                    if(adTotals.length===0){
+                      return (
+                        <tr className="ad-row">
+                          <td colSpan={cols.length}>
+                            <span style={{paddingLeft:30,color:'var(--text-4)',fontSize:11}}>No ad-level data returned by Meta for this date range.</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return adTotals.map(ad => {
+                      const adMetrics = deriveRow({
+                        date: ad.adName,
+                        spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
+                        msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
+                        taken: ad.taken,
+                        collected: ad.collected,
+                      });
+                      return (
+                        <tr key={c.id+":ad:"+ad.adId} className="ad-row">
+                          <td>
+                            <span style={{paddingLeft:30,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
+                              <span className="ad-id mono">{ad.adId}</span>
+                              <span style={{color:'var(--text-3)'}}>·</span>
+                              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                            </span>
+                          </td>
+                          {cols.slice(1).map(col=>{
+                            const cls = (col.cls? col.cls(adMetrics):"")+(col.calc?" calc":"");
+                            let val;
+                            try { val = col.fmt(adMetrics); } catch(e){ val = "—"; }
+                            return <td key={col.k} className={cls} style={{fontSize:11.5}}>{val}</td>;
+                          })}
+                        </tr>
+                      );
+                    });
+                  })()}
+                  {isOpen && view!=="ad" && orderedRows.map(r0=>{
                     const r = deriveRow(r0);
                     const isAdView = view === "ad";
                     const dayKey = `${c.id}:${r0.iso || r0.date}`;
