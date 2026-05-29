@@ -23,10 +23,11 @@ import type { MacroTargets } from "./macro-calculator";
  * Subtracted from the calculator's TDEE-based kcal output before producing
  * the suggested target. Empirically the calculator runs hot for our
  * population (clients tend to be desk workers who self-report higher
- * activity than they actually have); 400 kcal off lands more in line with
- * actual maintenance.
+ * activity than they actually have). Started at 400 kcal; revised down
+ * to 250 kcal after Saeed observed that 400 was over-correcting and
+ * leaving clients hungrier than the program intends.
  */
-export const KCAL_DOWNWARD_ADJUSTMENT = 400;
+export const KCAL_DOWNWARD_ADJUSTMENT = 250;
 
 /**
  * Floor applied to the auto-suggestion so an already-low calculator output
@@ -42,7 +43,7 @@ export interface AdjustedTargets {
   fatG: number;
   sodiumCapMg: number;
   notes: string[];
-  /** "auto" = our -400 default; "override" = coach picked the kcal value. */
+  /** "auto" = our KCAL_DOWNWARD_ADJUSTMENT default; "override" = coach picked the kcal value. */
   source: "auto" | "override";
   /** What the macro calculator originally produced (pre-adjustment). */
   rawCalculatorKcal: number;
@@ -51,13 +52,13 @@ export interface AdjustedTargets {
 }
 
 export interface AdjustMacrosOptions {
-  /** When set, replaces our -400 default. Coach-driven via the lock UI. */
+  /** When set, replaces our KCAL_DOWNWARD_ADJUSTMENT default. Coach-driven via the lock UI. */
   overrideKcal?: number;
 }
 
 /**
- * Convenience: just the suggested kcal target (calc - 400, floored at 1200).
- * Used when the UI only needs the number for display, not the full split.
+ * Convenience: just the suggested kcal target (calc - KCAL_DOWNWARD_ADJUSTMENT,
+ * floored at 1200). Used when the UI only needs the number for display, not the full split.
  */
 export function suggestedKcal(raw: MacroTargets): number {
   return Math.max(KCAL_FLOOR, Math.round(raw.calories) - KCAL_DOWNWARD_ADJUSTMENT);

@@ -2,7 +2,7 @@
  * Coach UI — daily macro target editor.
  *
  * Workflow (matches the explicit "lock-then-generate" model the coach approved):
- *   1. On mount: GET /macros → display the suggested kcal (calc - 400, floored
+ *   1. On mount: GET /macros → display the suggested kcal (calc minus KCAL_DOWNWARD_ADJUSTMENT, floored
  *      at 1200) and the auto-derived P/C/F.
  *   2. While unlocked: kcal input is editable. On every debounced change
  *      (300ms after last keystroke) the editor re-fetches /macros?kcal=N
@@ -24,6 +24,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Lock, Unlock, Check, AlertTriangle, Loader2 } from "lucide-react";
+import { KCAL_DOWNWARD_ADJUSTMENT } from "@/lib/nutrition/macro-adjust";
 
 interface MacrosResponse {
   client_id: number;
@@ -236,10 +237,10 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
       </div>
 
       <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
-        Sodium cap ≤ {t.sodiumCapMg} mg/day · Calculator output: {data.raw_calculator_kcal} kcal · Auto-suggestion applies a 400-kcal downward adjustment. When you adjust kcal, carbs and fat redistribute; protein stays fixed (driven by bodyweight, not calorie target).
+        Sodium cap ≤ {t.sodiumCapMg} mg/day · Calculator output: {data.raw_calculator_kcal} kcal · Auto-suggestion applies a {KCAL_DOWNWARD_ADJUSTMENT}-kcal downward adjustment. When you adjust kcal, carbs and fat redistribute; protein stays fixed (driven by bodyweight, not calorie target).
         {t.flooredAt1200 && !locked && draftKcal === t.calories && (
           <span style={{ color: "rgb(255, 179, 71)", marginLeft: 4 }}>
-            (floored at 1,200 — calculator − 400 would have gone below)
+            (floored at 1,200 — calculator − {KCAL_DOWNWARD_ADJUSTMENT} would have gone below)
           </span>
         )}
       </div>
