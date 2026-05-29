@@ -3,6 +3,16 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
+type StudioMediaRow = {
+  id: string;
+  folder_id: string | null;
+  public_url: string;
+  thumbnail_url?: string | null;
+  filename: string | null;
+  kind: string | null;
+  created_at: string | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const folderId = req.nextUrl.searchParams.get("folderId");
@@ -10,14 +20,29 @@ export async function GET(req: NextRequest) {
     const sb = getServiceSupabase();
     let query = sb
       .from("studio2_media")
-      .select("id, folder_id, public_url, filename, kind, created_at")
+      .select("id, folder_id, public_url, thumbnail_url, filename, kind, created_at")
       .order("created_at", { ascending: false })
       .limit(300);
 
     if (folderId) query = query.eq("folder_id", folderId);
     if (looseOnly) query = query.is("folder_id", null);
 
-    const { data, error } = await query;
+    const initial = await query;
+    let data = initial.data as StudioMediaRow[] | null;
+    let error = initial.error;
+
+    if (error && isMissingThumbnailColumn(error.message)) {
+      let fallbackQuery = sb
+        .from("studio2_media")
+        .select("id, folder_id, public_url, filename, kind, created_at")
+        .order("created_at", { ascending: false })
+        .limit(300);
+      if (folderId) fallbackQuery = fallbackQuery.eq("folder_id", folderId);
+      if (looseOnly) fallbackQuery = fallbackQuery.is("folder_id", null);
+      const fallback = await fallbackQuery;
+      data = fallback.data as StudioMediaRow[] | null;
+      error = fallback.error;
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -28,6 +53,7 @@ export async function GET(req: NextRequest) {
         id: item.id,
         folderId: item.folder_id,
         url: item.public_url,
+        thumbnailUrl: "thumbnail_url" in item ? item.thumbnail_url : null,
         filename: item.filename || "Upload",
         kind: item.kind === "video" ? "video" : "image",
         createdAt: item.created_at,
@@ -37,4 +63,9 @@ export async function GET(req: NextRequest) {
     console.error("Studio 2 media list error:", err);
     return NextResponse.json({ error: "Failed to load Studio 2 media" }, { status: 500 });
   }
+}
+
+function isMissingThumbnailColumn(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("thumbnail_url") && (value.includes("schema cache") || value.includes("column"));
 }

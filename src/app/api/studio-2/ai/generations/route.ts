@@ -23,13 +23,26 @@ export async function GET(req: NextRequest) {
     const sb = getServiceSupabase();
     let query = sb
       .from("studio2_ai_generations")
-      .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at, media:studio2_media(id, folder_id, public_url, filename, kind, created_at)")
+      .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at, media:studio2_media(id, folder_id, public_url, thumbnail_url, filename, kind, created_at)")
       .order("created_at", { ascending: false })
       .limit(30);
 
     if (projectId) query = query.eq("project_id", projectId);
 
-    const { data, error } = await query;
+    const initial = await query;
+    let data = initial.data as Record<string, unknown>[] | null;
+    let error = initial.error;
+    if (error && isMissingThumbnailColumn(error.message)) {
+      let fallbackQuery = sb
+        .from("studio2_ai_generations")
+        .select("id, project_id, creative_id, provider, model, job_id, prompt, status, result_url, media_id, error, created_at, updated_at, media:studio2_media(id, folder_id, public_url, filename, kind, created_at)")
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (projectId) fallbackQuery = fallbackQuery.eq("project_id", projectId);
+      const fallback = await fallbackQuery;
+      data = fallback.data as Record<string, unknown>[] | null;
+      error = fallback.error;
+    }
     if (error) {
       if (isMissingAiGenerationsTableError(error.message)) {
         return NextResponse.json({ generations: [], setupRequired: true }, { headers: NO_STORE_HEADERS });
@@ -179,6 +192,11 @@ function isMissingAiGenerationsTableError(message?: string | null) {
   return value.includes("studio2_ai_generations") && (value.includes("schema cache") || value.includes("does not exist"));
 }
 
+function isMissingThumbnailColumn(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("thumbnail_url") && (value.includes("schema cache") || value.includes("column"));
+}
+
 function normalizeStatus(status: unknown) {
   const value = String(status || "").toLowerCase();
   if (["completed", "complete", "succeeded", "success"].includes(value)) return "completed";
@@ -207,6 +225,7 @@ function mapGeneration(row: Record<string, unknown>) {
       id: media.id,
       folderId: media.folder_id,
       url: media.public_url,
+      thumbnailUrl: "thumbnail_url" in media ? media.thumbnail_url : null,
       filename: media.filename || "Generated ad.png",
       kind: media.kind === "video" ? "video" : "image",
       createdAt: media.created_at,

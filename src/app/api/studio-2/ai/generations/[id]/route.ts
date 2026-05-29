@@ -11,6 +11,16 @@ const MISSING_AI_TABLE_MESSAGE =
   "Studio Generate needs one Supabase migration before it can run. Create the studio2_ai_generations table in Supabase, then try again.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
+type GeneratedMediaRow = {
+  id: string;
+  folder_id: string | null;
+  r2_key: string | null;
+  public_url: string;
+  thumbnail_url?: string | null;
+  filename: string | null;
+  created_at: string | null;
+};
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -75,6 +85,7 @@ export async function GET(
         id: media.id,
         folderId: media.folderId,
         url: media.url,
+        thumbnailUrl: media.thumbnailUrl,
         filename: media.filename,
         kind: "image",
         createdAt: media.createdAt,
@@ -186,11 +197,22 @@ async function findGeneration(sb: ReturnType<typeof getServiceSupabase>, id: str
 }
 
 async function findMedia(sb: ReturnType<typeof getServiceSupabase>, id: string) {
-  const { data, error } = await sb
+  const initial = await sb
     .from("studio2_media")
-    .select("id, folder_id, r2_key, public_url, filename, created_at")
+    .select("id, folder_id, r2_key, public_url, thumbnail_url, filename, created_at")
     .eq("id", id)
     .maybeSingle();
+  let data = initial.data as GeneratedMediaRow | null;
+  let error = initial.error;
+  if (error && isMissingThumbnailColumn(error.message)) {
+    const fallback = await sb
+      .from("studio2_media")
+      .select("id, folder_id, r2_key, public_url, filename, created_at")
+      .eq("id", id)
+      .maybeSingle();
+    data = fallback.data as GeneratedMediaRow | null;
+    error = fallback.error;
+  }
   if (error) throw new Error(error.message);
   if (!data) return null;
   return {
@@ -198,6 +220,7 @@ async function findMedia(sb: ReturnType<typeof getServiceSupabase>, id: string) 
     folderId: data.folder_id,
     r2Key: data.r2_key,
     url: data.public_url,
+    thumbnailUrl: "thumbnail_url" in data ? data.thumbnail_url : null,
     filename: data.filename || "Generated ad.png",
     createdAt: data.created_at,
   };
@@ -220,21 +243,38 @@ async function persistGeneratedResult(input: {
   const upload = await putR2Object({ key, body, contentType });
 
   const sb = getServiceSupabase();
-  const { data, error } = await sb
+  const insertPayload = {
+    project_id: input.projectId,
+    folder_id: input.folderId,
+    r2_key: key,
+    public_url: upload.publicUrl,
+    thumbnail_url: upload.publicUrl,
+    filename,
+    content_type: contentType,
+    file_size: body.length,
+    kind: "image",
+    status: "generated",
+  };
+
+  const initial = await sb
     .from("studio2_media")
-    .insert({
-      project_id: input.projectId,
-      folder_id: input.folderId,
-      r2_key: key,
-      public_url: upload.publicUrl,
-      filename,
-      content_type: contentType,
-      file_size: body.length,
-      kind: "image",
-      status: "generated",
-    })
-    .select("id, folder_id, r2_key, public_url, filename, created_at")
+    .insert(insertPayload)
+    .select("id, folder_id, r2_key, public_url, thumbnail_url, filename, created_at")
     .single();
+  let data = initial.data as GeneratedMediaRow | null;
+  let error = initial.error;
+
+  if (error && isMissingThumbnailColumn(error.message)) {
+    const fallbackPayload: Record<string, unknown> = { ...insertPayload };
+    delete fallbackPayload.thumbnail_url;
+    const fallback = await sb
+      .from("studio2_media")
+      .insert(fallbackPayload)
+      .select("id, folder_id, r2_key, public_url, filename, created_at")
+      .single();
+    data = fallback.data as GeneratedMediaRow | null;
+    error = fallback.error;
+  }
 
   if (error || !data) {
     throw new Error(error?.message || "Generated media insert failed");
@@ -245,6 +285,7 @@ async function persistGeneratedResult(input: {
     folderId: data.folder_id,
     r2Key: data.r2_key,
     url: data.public_url,
+    thumbnailUrl: "thumbnail_url" in data ? data.thumbnail_url : null,
     filename: data.filename || filename,
     createdAt: data.created_at,
   };
@@ -275,6 +316,11 @@ function extensionForContentType(contentType: string) {
 function isMissingAiGenerationsTableError(message?: string | null) {
   const value = String(message || "").toLowerCase();
   return value.includes("studio2_ai_generations") && (value.includes("schema cache") || value.includes("does not exist"));
+}
+
+function isMissingThumbnailColumn(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("thumbnail_url") && (value.includes("schema cache") || value.includes("column"));
 }
 
 function mapGeneration(row: Record<string, unknown>) {
