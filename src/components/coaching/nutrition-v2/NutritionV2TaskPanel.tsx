@@ -20,6 +20,7 @@ import { CheckCircle } from "lucide-react";
 import { CopyPromptButton } from "./CopyPromptButton";
 import { UploadPlanButton } from "./UploadPlanButton";
 import { IntakeFormCard } from "./IntakeFormCard";
+import OnboardingNotesCard from "./OnboardingNotesCard";
 import { MacroTargetEditor } from "./MacroTargetEditor";
 import { PlanHistory } from "./PlanHistory";
 import { MoveToDoneDialog } from "./MoveToDoneDialog";
@@ -123,6 +124,11 @@ export function NutritionV2TaskPanel({
     <div style={panelStyle}>
       {/* 1. Intake form */}
       <IntakeFormCard form={intakeForm} />
+
+      {/* 1b. Onboarding notes — optional free-text from the onboarding
+              specialist for the plan author. Editable any time;
+              included in the Claude.ai prompt when generated. */}
+      <OnboardingNotesCard clientId={client.id} />
 
       {/* 2. Lock macro target → Generate prompt */}
       <div

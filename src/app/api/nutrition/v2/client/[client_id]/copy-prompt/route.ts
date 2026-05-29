@@ -216,6 +216,17 @@ export async function GET(
   if (i.sleep_hours) lines.push(`- Sleep hours: ${i.sleep_hours}`);
   lines.push("");
 
+  // --- 4b. Onboarding notes (optional, coach-supplied via the nutrition
+  //         v2 panel). High-signal context for the meal plan author —
+  //         things like "wife's dietary restrictions, avoid avocados"
+  //         or "previous deficits caused brain fog, keep changes
+  //         gradual." Skip the section entirely if blank. ---
+  if (result.onboardingNotes && result.onboardingNotes.trim().length > 0) {
+    lines.push("## Coach onboarding notes");
+    lines.push(result.onboardingNotes.trim());
+    lines.push("");
+  }
+
   // --- 5. Locked daily macro targets ---
   lines.push("## Daily macro targets");
   lines.push(`- kcal: **${targets.calories}**`);

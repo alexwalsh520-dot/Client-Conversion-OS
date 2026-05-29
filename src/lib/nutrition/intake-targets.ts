@@ -27,6 +27,9 @@ export type IntakeTargetsResult =
       ok: true;
       intake: Record<string, string | number | null>;
       clientName: string | null;
+      /** Coach-supplied free-text notes for the plan author, captured
+       *  in the Nutrition v2 panel's OnboardingNotesCard. May be null. */
+      onboardingNotes: string | null;
       raw: MacroTargets;
       parsed: {
         weightKg: number;
@@ -47,7 +50,7 @@ export async function loadIntakeAndComputeRawTargets(
 ): Promise<IntakeTargetsResult> {
   const { data: client, error: clientErr } = await db
     .from("clients")
-    .select("id, name, nutrition_form_id")
+    .select("id, name, nutrition_form_id, nutrition_onboarding_notes")
     .eq("id", clientId)
     .single();
   if (clientErr || !client) {
@@ -57,6 +60,7 @@ export async function loadIntakeAndComputeRawTargets(
     id: number;
     name: string | null;
     nutrition_form_id: number | null;
+    nutrition_onboarding_notes: string | null;
   };
   if (!c.nutrition_form_id) {
     return {
@@ -123,6 +127,7 @@ export async function loadIntakeAndComputeRawTargets(
     ok: true,
     intake: i,
     clientName: c.name,
+    onboardingNotes: c.nutrition_onboarding_notes,
     raw,
     parsed: { weightKg, heightCm, age, sex },
   };
