@@ -164,6 +164,8 @@ type EditorSidebarMode = "edit" | "generate";
 type ExportMode = "current" | "all" | "custom";
 type CopyLabOfferType = "Direct Offer" | "Lead Magnet" | "Other";
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
+type MediaPickerMode = "generate-reference" | "replace-current" | "new-ad";
+type EditorMediaActionMode = "replace-current" | "new-ad";
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked" | "colorSpans">;
 
 interface TextColorSpan {
@@ -366,6 +368,13 @@ interface AlignmentGuides {
   y: number[];
 }
 
+interface MarqueeRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface ContextMenuState {
   x: number;
   y: number;
@@ -404,6 +413,15 @@ type DragState =
       startY: number;
       origBlocks: Record<string, TextBlock>;
       groupMetrics: BlockMetrics;
+    }
+  | {
+      kind: "marquee-select";
+      active: boolean;
+      startX: number;
+      startY: number;
+      currentX: number;
+      currentY: number;
+      selectImageOnClick?: boolean;
     }
   | {
       kind: "move-image";
@@ -1181,6 +1199,17 @@ function getGroupMetrics(ctx: CanvasRenderingContext2D, blocks: TextBlock[]): Bl
   return { x: left, y: top, w: right - left, h: bottom - top, lines: [] };
 }
 
+function normalizeMarqueeRect(startX: number, startY: number, currentX: number, currentY: number): MarqueeRect {
+  const left = Math.min(startX, currentX);
+  const top = Math.min(startY, currentY);
+  return {
+    x: left,
+    y: top,
+    w: Math.abs(currentX - startX),
+    h: Math.abs(currentY - startY),
+  };
+}
+
 function normalizeHex(value: string, fallback = "#ffffff") {
   const clean = value.trim();
   if (/^#[0-9a-f]{6}$/i.test(clean)) return clean;
@@ -1956,6 +1985,7 @@ export default function Studio2Page() {
   const [redoStack, setRedoStack] = useState<Creative[][]>([]);
   const [activeGuides, setActiveGuides] = useState<AlignmentGuides>({ x: [], y: [] });
   const [activeSafeZones, setActiveSafeZones] = useState<SafeZoneId[]>([]);
+  const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
   const [canvasCursor, setCanvasCursor] = useState("default");
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -2044,6 +2074,7 @@ export default function Studio2Page() {
   const [generateToast, setGenerateToast] = useState<{ message: string } | null>(null);
   const [generateAddMenuOpen, setGenerateAddMenuOpen] = useState(false);
   const [generateMediaPickerOpen, setGenerateMediaPickerOpen] = useState(false);
+  const [mediaPickerMode, setMediaPickerMode] = useState<MediaPickerMode | null>(null);
   const [generateMediaPickerFolderId, setGenerateMediaPickerFolderId] = useState<string | null>(null);
   const [generatePresetMenuOpen, setGeneratePresetMenuOpen] = useState(false);
   const [galleryFolderMenuOpen, setGalleryFolderMenuOpen] = useState(false);
@@ -2065,6 +2096,12 @@ export default function Studio2Page() {
   const [selectedTextBlockIds, setSelectedTextBlockIds] = useState<string[]>([]);
   const [creativeThumbs, setCreativeThumbs] = useState<Record<string, string>>({});
   const [hoveredStripIndex, setHoveredStripIndex] = useState<number | null>(null);
+  const [editorMediaActionMode, setEditorMediaActionMode] = useState<EditorMediaActionMode | null>(null);
+  const [editorUploadMode, setEditorUploadMode] = useState<EditorMediaActionMode | null>(null);
+  const [newAdModalOpen, setNewAdModalOpen] = useState(false);
+  const [newAdCopy, setNewAdCopy] = useState("");
+  const [newAdMediaAsset, setNewAdMediaAsset] = useState<StudioMediaAsset | null>(null);
+  const [newAdStatus, setNewAdStatus] = useState("");
   const [draggedLayerBlockId, setDraggedLayerBlockId] = useState<string | null>(null);
   const [layerDropBlockId, setLayerDropBlockId] = useState<string | null>(null);
   const [copyLabOpen, setCopyLabOpen] = useState(false);
@@ -3294,18 +3331,30 @@ export default function Studio2Page() {
     }
   }, [uploadShareUrl]);
 
-  const replaceCurrentImage = useCallback(
-    async (file: File | null) => {
-      if (!file || !currentCreative) return;
+  const openMediaLibraryPicker = useCallback((mode: MediaPickerMode) => {
+    setMediaPickerMode(mode);
+    setGenerateMediaPickerFolderId(null);
+    setGenerateMediaPickerOpen(true);
+    setGenerateAddMenuOpen(false);
+    setEditorMediaActionMode(null);
+  }, []);
+
+  const closeMediaLibraryPicker = useCallback(() => {
+    setGenerateMediaPickerOpen(false);
+    setMediaPickerMode(null);
+  }, []);
+
+  const prepareStudioMediaAsset = useCallback(
+    async (file: File | null): Promise<StudioMediaAsset | null> => {
+      if (!file) return null;
       const contentType = getUploadContentType(file);
       const mediaKind: MediaKind = contentType.startsWith("video/") ? "video" : "image";
-      if (!contentType.startsWith("image/") && !contentType.startsWith("video/")) return;
-      let asset: StudioMediaAsset;
+      if (!contentType.startsWith("image/") && !contentType.startsWith("video/")) return null;
       try {
-        asset = await uploadStudioMedia(file, projectId, setupMediaFolderId);
+        return await uploadStudioMedia(file, projectId, setupMediaFolderId);
       } catch {
         const url = await fileToDataUrl(file);
-        asset = {
+        return {
           id: uid(),
           url,
           kind: mediaKind,
@@ -3313,21 +3362,33 @@ export default function Studio2Page() {
           folderId: setupMediaFolderId,
         };
       }
+    },
+    [projectId, setupMediaFolderId]
+  );
+
+  const registerDraftMediaAsset = useCallback((asset: StudioMediaAsset) => {
+    const url = asset.url;
+    if (asset.kind === "image") {
+      setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    }
+    setMediaAssets((prev) =>
+      prev.some((existing) => existing.url === url || existing.id === asset.id)
+        ? prev
+        : [...prev, asset]
+    );
+    setPhotoCopies((prev) => (prev[url] ? prev : { ...prev, [url]: 1 }));
+  }, []);
+
+  const applyMediaAssetToCurrentCreative = useCallback(
+    (asset: StudioMediaAsset) => {
+      if (!currentCreative) return;
       const url = asset.url;
       pushUndo();
-      if (mediaKind === "image") {
-        setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
-      }
-      setMediaAssets((prev) =>
-        prev.some((asset) => asset.url === url)
-          ? prev
-          : [...prev, asset]
-      );
-      setPhotoCopies((prev) => (prev[url] ? prev : { ...prev, [url]: 1 }));
+      registerDraftMediaAsset(asset);
       updateCurrentCreative((creative) => ({
         ...creative,
         photoUrl: url,
-        mediaKind,
+        mediaKind: asset.kind,
         imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
       }));
       setSelectedLayer({ type: "image" });
@@ -3336,7 +3397,45 @@ export default function Studio2Page() {
       void fetchStudioMedia();
       void fetchStudioHome();
     },
-    [currentCreative, fetchStudioHome, fetchStudioMedia, projectId, pushUndo, setupMediaFolderId, updateCurrentCreative]
+    [currentCreative, fetchStudioHome, fetchStudioMedia, pushUndo, registerDraftMediaAsset, updateCurrentCreative]
+  );
+
+  const replaceCurrentImage = useCallback(
+    async (file: File | null) => {
+      if (!file || !currentCreative) return;
+      const asset = await prepareStudioMediaAsset(file);
+      if (!asset) return;
+      applyMediaAssetToCurrentCreative(asset);
+    },
+    [applyMediaAssetToCurrentCreative, currentCreative, prepareStudioMediaAsset]
+  );
+
+  const handleEditorMediaUpload = useCallback(
+    async (file: File | null) => {
+      if (!file || !editorUploadMode) return;
+      if (editorUploadMode === "new-ad") setNewAdStatus("Uploading media...");
+      try {
+        const asset = await prepareStudioMediaAsset(file);
+        if (!asset) return;
+        if (editorUploadMode === "replace-current") {
+          applyMediaAssetToCurrentCreative(asset);
+          setEditorMediaActionMode(null);
+        } else {
+          registerDraftMediaAsset(asset);
+          setNewAdMediaAsset(asset);
+          setNewAdStatus("Media ready.");
+        }
+        void fetchStudioMedia();
+        void fetchStudioHome();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Media upload failed.";
+        if (editorUploadMode === "new-ad") setNewAdStatus(message);
+        else setCloudStatus(message);
+      } finally {
+        setEditorUploadMode(null);
+      }
+    },
+    [applyMediaAssetToCurrentCreative, editorUploadMode, fetchStudioHome, fetchStudioMedia, prepareStudioMediaAsset, registerDraftMediaAsset]
   );
 
   const duplicateSelectedBlock = useCallback(() => {
@@ -3504,9 +3603,43 @@ export default function Studio2Page() {
           if (sections.length > 3 && index === sections.length - 2) return makeBlock(lines, "callout");
           return makeBlock(lines, "body");
         })
-      ),
+    ),
     [layoutBlocks, makeBlock]
   );
+
+  const createAdFromModal = useCallback(() => {
+    const groups = parseCopyIntoAds(newAdCopy);
+    const sections = groups[0] || [];
+    const textBlocks = sections.length ? buildBlocksForSections(sections) : [];
+    const asset = newAdMediaAsset;
+    if (asset) registerDraftMediaAsset(asset);
+    pushUndo();
+    const nextCreative: Creative = {
+      id: uid(),
+      photoUrl: asset?.url || BLANK_IMAGE_DATA_URL,
+      mediaKind: asset?.kind || "image",
+      textBlocks,
+      imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
+      status: "draft",
+    };
+    setCreatives((prev) => {
+      setCurrentIndex(prev.length);
+      return [...prev, nextCreative];
+    });
+    setSelectedLayer(textBlocks[0] ? { type: "text", id: textBlocks[0].id } : { type: "image" });
+    setSelectedTextBlockIds(textBlocks[0] ? [textBlocks[0].id] : []);
+    setNewAdModalOpen(false);
+    setNewAdCopy("");
+    setNewAdMediaAsset(null);
+    setNewAdStatus("");
+  }, [buildBlocksForSections, newAdCopy, newAdMediaAsset, pushUndo, registerDraftMediaAsset]);
+
+  const openNewAdModal = useCallback(() => {
+    setNewAdModalOpen(true);
+    setNewAdCopy("");
+    setNewAdMediaAsset(null);
+    setNewAdStatus("");
+  }, []);
 
   const generateAds = useCallback(() => {
     const expandedMedia = selectedMediaForAds.flatMap((media) =>
@@ -3559,6 +3692,90 @@ export default function Studio2Page() {
       return null;
     },
     [currentCreative, getMeasureCtx]
+  );
+
+  const pointFromClientOnCanvas = useCallback((clientX: number, clientY: number) => {
+    const rect = overlayRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: ((clientX - rect.left) / rect.width) * CANVAS_W,
+      y: ((clientY - rect.top) / rect.height) * CANVAS_H,
+    };
+  }, []);
+
+  const selectTextBlocksInMarquee = useCallback(
+    (rect: MarqueeRect) => {
+      if (!currentCreative) return [];
+      const ctx = getMeasureCtx();
+      const ids = currentCreative.textBlocks
+        .filter((block) => rectsIntersect(rect, measureTextBlock(ctx, block)))
+        .map((block) => block.id);
+      setSelectedTextBlockIds(ids);
+      setSelectedLayer(ids.length ? { type: "text", id: ids[ids.length - 1] } : null);
+      return ids;
+    },
+    [currentCreative, getMeasureCtx]
+  );
+
+  const startGridMarqueeSelect = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!currentCreative || editorSidebarMode !== "edit") {
+        setSelectedLayer(null);
+        setSelectedTextBlockIds([]);
+        setContextMenu(null);
+        return;
+      }
+
+      event.preventDefault();
+      const start = pointFromClientOnCanvas(event.clientX, event.clientY);
+      const drag: DragState = {
+        kind: "marquee-select",
+        active: false,
+        startX: start.x,
+        startY: start.y,
+        currentX: start.x,
+        currentY: start.y,
+        selectImageOnClick: false,
+      };
+      dragRef.current = drag;
+      setSelectedLayer(null);
+      setSelectedTextBlockIds([]);
+      setContextMenu(null);
+      setMarqueeRect(null);
+      setCanvasCursor("crosshair");
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const activeDrag = dragRef.current;
+        if (!activeDrag || activeDrag.kind !== "marquee-select") return;
+        const point = pointFromClientOnCanvas(moveEvent.clientX, moveEvent.clientY);
+        const dx = point.x - activeDrag.startX;
+        const dy = point.y - activeDrag.startY;
+        if (!activeDrag.active && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        activeDrag.active = true;
+        activeDrag.currentX = point.x;
+        activeDrag.currentY = point.y;
+        const rect = normalizeMarqueeRect(activeDrag.startX, activeDrag.startY, point.x, point.y);
+        setMarqueeRect(rect);
+        selectTextBlocksInMarquee(rect);
+      };
+
+      const handleUp = () => {
+        const activeDrag = dragRef.current;
+        if (activeDrag?.kind === "marquee-select" && !activeDrag.active) {
+          setSelectedLayer(null);
+          setSelectedTextBlockIds([]);
+        }
+        dragRef.current = null;
+        setMarqueeRect(null);
+        setCanvasCursor("default");
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [currentCreative, editorSidebarMode, pointFromClientOnCanvas, selectTextBlocksInMarquee]
   );
 
   const getHoverCursor = useCallback(
@@ -3767,16 +3984,33 @@ export default function Studio2Page() {
         return;
       }
 
-      setSelectedLayer({ type: "image" });
-      setSelectedTextBlockIds([]);
+      if (selectedLayer?.type === "image") {
+        setSelectedTextBlockIds([]);
+        dragRef.current = {
+          kind: "move-image",
+          active: false,
+          startX: point.x,
+          startY: point.y,
+          orig: { ...currentCreative.imageTransform },
+        };
+        setCanvasCursor("grabbing");
+        return;
+      }
+
       dragRef.current = {
-        kind: "move-image",
+        kind: "marquee-select",
         active: false,
         startX: point.x,
         startY: point.y,
-        orig: { ...currentCreative.imageTransform },
+        currentX: point.x,
+        currentY: point.y,
+        selectImageOnClick: true,
       };
-      setCanvasCursor("grabbing");
+      setSelectedLayer(null);
+      setSelectedTextBlockIds([]);
+      setContextMenu(null);
+      setMarqueeRect(null);
+      setCanvasCursor("crosshair");
     },
     [currentCreative, findHitBlock, getMeasureCtx, selectedLayer, selectedTextBlockIds]
   );
@@ -3798,7 +4032,17 @@ export default function Studio2Page() {
       if (!drag.active) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
         drag.active = true;
-        pushUndo();
+        if (drag.kind !== "marquee-select") pushUndo();
+      }
+
+      if (drag.kind === "marquee-select") {
+        const rect = normalizeMarqueeRect(drag.startX, drag.startY, point.x, point.y);
+        drag.currentX = point.x;
+        drag.currentY = point.y;
+        setMarqueeRect(rect);
+        setCanvasCursor("crosshair");
+        selectTextBlocksInMarquee(rect);
+        return;
       }
 
       if (drag.kind === "move-text") {
@@ -3946,14 +4190,25 @@ export default function Studio2Page() {
         });
       }
     },
-    [currentCreative, getHoverCursor, getMeasureCtx, pushUndo, updateCurrentCreative, updateImage]
+    [currentCreative, getHoverCursor, getMeasureCtx, pushUndo, selectTextBlocksInMarquee, updateCurrentCreative, updateImage]
   );
 
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    const drag = dragRef.current;
+    if (drag?.kind === "marquee-select" && !drag.active) {
+      if (drag.selectImageOnClick) {
+        setSelectedLayer({ type: "image" });
+        setSelectedTextBlockIds([]);
+      } else {
+        setSelectedLayer(null);
+        setSelectedTextBlockIds([]);
+      }
+    }
     dragRef.current = null;
+    setMarqueeRect(null);
     setActiveGuides({ x: [], y: [] });
     setActiveSafeZones([]);
     setCanvasCursor("default");
@@ -4289,11 +4544,33 @@ export default function Studio2Page() {
       setGenerateReference({ name: asset.filename || "Media Library reference", dataUrl });
       setGenerateStatus("");
       setGenerateMediaPickerOpen(false);
+      setMediaPickerMode(null);
       setGenerateAddMenuOpen(false);
     } catch {
       setGenerateStatus("Could not attach that media reference.");
     }
   }, []);
+
+  const handleMediaPickerAsset = useCallback(
+    async (asset: StudioMediaAsset) => {
+      if (mediaPickerMode === "generate-reference") {
+        await attachGenerateMediaReference(asset);
+        return;
+      }
+      if (mediaPickerMode === "replace-current") {
+        applyMediaAssetToCurrentCreative(asset);
+        closeMediaLibraryPicker();
+        return;
+      }
+      if (mediaPickerMode === "new-ad") {
+        registerDraftMediaAsset(asset);
+        setNewAdMediaAsset(asset);
+        setNewAdStatus("Media ready.");
+        closeMediaLibraryPicker();
+      }
+    },
+    [applyMediaAssetToCurrentCreative, attachGenerateMediaReference, closeMediaLibraryPicker, mediaPickerMode, registerDraftMediaAsset]
+  );
 
   const buildHiggsfieldPrompt = useCallback((promptText = generatePrompt.trim()) => {
     const text = currentCreative?.textBlocks.map(getBlockText).filter(Boolean).join("\n\n") || copyText;
@@ -4980,24 +5257,6 @@ export default function Studio2Page() {
     }
     setEditingGeneratePreset(null);
   }, [defaultGeneratePresetIds, editingGeneratePreset]);
-
-  const addBlankAd = useCallback(() => {
-    pushUndo();
-    const nextCreative: Creative = {
-      id: uid(),
-      photoUrl: BLANK_IMAGE_DATA_URL,
-      mediaKind: "image",
-      textBlocks: [],
-      imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
-      status: "draft",
-    };
-    setCreatives((prev) => {
-      setCurrentIndex(prev.length);
-      return [...prev, nextCreative];
-    });
-    setSelectedLayer({ type: "image" });
-    setSelectedTextBlockIds([]);
-  }, [pushUndo]);
 
   const deleteCreativeAt = useCallback((indexToDelete: number) => {
     if (creatives.length <= 1) return;
@@ -6167,9 +6426,7 @@ export default function Studio2Page() {
                     <button
                       type="button"
 	                      onClick={() => {
-	                        setGenerateAddMenuOpen(false);
-	                        setGenerateMediaPickerFolderId(null);
-	                        setGenerateMediaPickerOpen(true);
+	                        openMediaLibraryPicker("generate-reference");
 	                      }}
                       className="studio2-menu-row"
                       style={{ minHeight: 38 }}
@@ -6691,7 +6948,7 @@ export default function Studio2Page() {
             role="dialog"
             aria-modal="true"
             aria-label="Choose media reference"
-            onClick={() => setGenerateMediaPickerOpen(false)}
+            onClick={closeMediaLibraryPicker}
             style={{
               position: "fixed",
               inset: 0,
@@ -6728,7 +6985,7 @@ export default function Studio2Page() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setGenerateMediaPickerOpen(false)}
+                  onClick={closeMediaLibraryPicker}
                   style={{ ...buttonStyle(false), width: 34, height: 34, padding: 0, justifyContent: "center" }}
                   aria-label="Close media library"
                 >
@@ -6803,12 +7060,14 @@ export default function Studio2Page() {
                 {visibleGenerateMediaAssets.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
                     {visibleGenerateMediaAssets.map((asset) => {
-                      const isUsableReference = asset.kind === "image";
+                      const isUsableReference = mediaPickerMode !== "generate-reference" || asset.kind === "image";
                       return (
                         <button
                           key={asset.id}
                           type="button"
-                          onClick={() => void attachGenerateMediaReference(asset)}
+                          onClick={() => {
+                            if (isUsableReference) void handleMediaPickerAsset(asset);
+                          }}
                           style={{
                             border: `1px solid ${ADS_BRAND.border2}`,
                             borderRadius: 12,
@@ -6820,7 +7079,7 @@ export default function Studio2Page() {
                             textAlign: "left",
                             fontFamily: "inherit",
                           }}
-                          title={isUsableReference ? "Use as reference image" : "Video references are not supported yet"}
+                          title={isUsableReference ? "Use this media" : "Video references are not supported yet"}
                         >
                           <div style={{ width: "100%", aspectRatio: "1 / 1", background: ADS_BRAND.bgDeep, display: "flex", alignItems: "center", justifyContent: "center" }}>
                             <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -9171,7 +9430,7 @@ export default function Studio2Page() {
         accept="image/*,video/*"
         style={{ display: "none" }}
         onChange={(event) => {
-          void replaceCurrentImage(event.target.files?.[0] ?? null);
+          void handleEditorMediaUpload(event.target.files?.[0] ?? null);
           event.target.value = "";
         }}
       />
@@ -9365,9 +9624,7 @@ export default function Studio2Page() {
           ref={canvasAreaRef}
           onPointerDown={(event) => {
             if (event.target !== event.currentTarget) return;
-            setSelectedLayer(null);
-            setSelectedTextBlockIds([]);
-            setContextMenu(null);
+            startGridMarqueeSelect(event);
           }}
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleCanvasDrop}
@@ -9521,7 +9778,8 @@ export default function Studio2Page() {
                   left: editingMetrics.x * viewScale,
                   top: editingMetrics.y * viewScale,
                   width: editingMetrics.w * viewScale,
-                  minHeight: Math.max(editingMetrics.h * viewScale, editingBlock.fontSize * viewScale * 2.1),
+                  height: Math.max(editingMetrics.h * viewScale, editingBlock.fontSize * viewScale * 2.1),
+                  boxSizing: "border-box",
                   border: `${Math.max(1, 2 * viewScale)}px solid ${ADS_BRAND.gold}`,
                   boxShadow: "0 0 0 3px rgba(212,178,122,0.18), 0 10px 26px rgba(0,0,0,0.28)",
                   borderRadius: Math.max(6, editingBlock.borderRadius * viewScale),
@@ -9537,6 +9795,22 @@ export default function Studio2Page() {
                   overflow: "hidden",
                   outline: "none",
                   zIndex: 3,
+                }}
+              />
+            )}
+            {marqueeRect && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: marqueeRect.x * viewScale,
+                  top: marqueeRect.y * viewScale,
+                  width: marqueeRect.w * viewScale,
+                  height: marqueeRect.h * viewScale,
+                  border: `1px solid ${ADS_BRAND.gold}`,
+                  background: ADS_BRAND.goldSoft,
+                  boxShadow: "0 0 0 1px rgba(212,178,122,0.18)",
+                  pointerEvents: "none",
+                  zIndex: 4,
                 }}
               />
             )}
@@ -9661,7 +9935,7 @@ export default function Studio2Page() {
             ))}
             <button
               type="button"
-              onClick={addBlankAd}
+              onClick={openNewAdModal}
               style={{
                 width: 48,
                 height: 84,
@@ -9675,7 +9949,7 @@ export default function Studio2Page() {
                 alignItems: "center",
                 justifyContent: "center",
               }}
-              title="Add blank ad"
+              title="Add ad"
             >
               <Plus size={17} />
             </button>
@@ -9750,37 +10024,19 @@ export default function Studio2Page() {
                 </button>
               </Control>
               <Control label="Text">
-                <input
-                  type="color"
+                <HexColorControl
                   value={selectedTextBlocks[0]?.textColor || "#ffffff"}
-                  onMouseDown={pushUndo}
-                  onChange={(e) => updateSelectedTextBlocks({ textColor: e.target.value })}
-                  style={{ width: 34, height: 30, border: "none", background: "transparent" }}
-                  title="Text color"
-                />
-                <input
-                  value={selectedTextBlocks[0]?.textColor || "#ffffff"}
-                  onFocus={pushUndo}
-                  onChange={(e) => updateSelectedTextBlocks({ textColor: normalizeHex(e.target.value, selectedTextBlocks[0]?.textColor || "#ffffff") })}
-                  style={{ ...inputStyle, height: 32, width: 92 }}
-                  aria-label="Text hex color"
+                  onStart={pushUndo}
+                  onChange={(value) => updateSelectedTextBlocks({ textColor: value })}
+                  ariaLabel="Text hex color"
                 />
               </Control>
               <Control label="Highlight">
-                <input
-                  type="color"
+                <HexColorControl
                   value={selectedTextBlocks[0]?.bgColor || "#000000"}
-                  onMouseDown={pushUndo}
-                  onChange={(e) => updateSelectedTextBlocks({ bgColor: e.target.value })}
-                  style={{ width: 34, height: 30, border: "none", background: "transparent" }}
-                  title="Highlight color"
-                />
-                <input
-                  value={selectedTextBlocks[0]?.bgColor || "#000000"}
-                  onFocus={pushUndo}
-                  onChange={(e) => updateSelectedTextBlocks({ bgColor: normalizeHex(e.target.value, selectedTextBlocks[0]?.bgColor || "#000000") })}
-                  style={{ ...inputStyle, height: 32, width: 92 }}
-                  aria-label="Highlight hex color"
+                  onStart={pushUndo}
+                  onChange={(value) => updateSelectedTextBlocks({ bgColor: value })}
+                  ariaLabel="Highlight hex color"
                 />
                 <button
                   type="button"
@@ -9843,7 +10099,7 @@ export default function Studio2Page() {
                 >
                   <span
                     style={{
-                      maxWidth: 142,
+                      maxWidth: 86,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -9855,13 +10111,11 @@ export default function Studio2Page() {
                   >
                     {selectedTextSnippet}
                   </span>
-                  <input
-                    type="color"
+                  <HexColorControl
                     value={selectedTextColor}
-                    onMouseDown={pushUndo}
-                    onChange={(e) => applySelectedTextColor(e.target.value)}
-                    style={{ width: 30, height: 28, border: "none", background: "transparent", cursor: "pointer" }}
-                    title="Color selected text"
+                    onStart={pushUndo}
+                    onChange={applySelectedTextColor}
+                    ariaLabel="Selected text hex color"
                   />
                   <button
                     type="button"
@@ -9914,37 +10168,19 @@ export default function Studio2Page() {
                 </div>
               )}
               <Control label="Text color">
-                <input
-                  type="color"
+                <HexColorControl
                   value={selectedBlock.textColor}
-                  onMouseDown={pushUndo}
-                  onChange={(e) => updateSelectedBlock({ textColor: e.target.value })}
-                  style={{ width: 34, height: 30, border: "none", background: "transparent" }}
-                  title="Text color"
-                />
-                <input
-                  value={selectedBlock.textColor}
-                  onFocus={pushUndo}
-                  onChange={(e) => updateSelectedBlock({ textColor: normalizeHex(e.target.value, selectedBlock.textColor) })}
-                  style={{ ...inputStyle, height: 32, width: 96 }}
-                  aria-label="Text hex color"
+                  onStart={pushUndo}
+                  onChange={(value) => updateSelectedBlock({ textColor: value })}
+                  ariaLabel="Text hex color"
                 />
               </Control>
               <Control label="Highlight">
-                <input
-                  type="color"
+                <HexColorControl
                   value={selectedBlock.bgColor}
-                  onMouseDown={pushUndo}
-                  onChange={(e) => updateSelectedBlock({ bgColor: e.target.value })}
-                  style={{ width: 34, height: 30, border: "none", background: "transparent" }}
-                  title="Highlight color"
-                />
-                <input
-                  value={selectedBlock.bgColor}
-                  onFocus={pushUndo}
-                  onChange={(e) => updateSelectedBlock({ bgColor: normalizeHex(e.target.value, selectedBlock.bgColor) })}
-                  style={{ ...inputStyle, height: 32, width: 96 }}
-                  aria-label="Highlight hex color"
+                  onStart={pushUndo}
+                  onChange={(value) => updateSelectedBlock({ bgColor: value })}
+                  ariaLabel="Highlight hex color"
                 />
                 <button
                   type="button"
@@ -10078,7 +10314,7 @@ export default function Studio2Page() {
               </Control>
               <button
                 style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
-                onClick={() => replaceImageInputRef.current?.click()}
+                onClick={() => setEditorMediaActionMode("replace-current")}
               >
                 <Replace size={13} /> Replace Media
               </button>
@@ -10208,7 +10444,14 @@ export default function Studio2Page() {
           )}
           {contextMenu.target?.type === "image" && (
             <>
-              <MenuAction icon={Replace} label="Replace media" onClick={() => replaceImageInputRef.current?.click()} />
+              <MenuAction
+                icon={Replace}
+                label="Replace media"
+                onClick={() => {
+                  setContextMenu(null);
+                  setEditorMediaActionMode("replace-current");
+                }}
+              />
               <MenuAction
                 icon={RotateCcw}
                 label="Reset image crop"
@@ -10220,6 +10463,163 @@ export default function Studio2Page() {
               />
             </>
           )}
+        </div>
+      )}
+      {editorMediaActionMode && (
+        <div
+          onClick={() => setEditorMediaActionMode(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.42)",
+            zIndex: 45,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 280,
+              borderRadius: 14,
+              border: `1px solid ${ADS_BRAND.border2}`,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 80px rgba(0,0,0,0.58)",
+              padding: 8,
+              display: "grid",
+              gap: 6,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setEditorUploadMode(editorMediaActionMode);
+                setEditorMediaActionMode(null);
+                window.setTimeout(() => replaceImageInputRef.current?.click(), 0);
+              }}
+              className="studio2-menu-row"
+              style={{ minHeight: 42, fontSize: 13 }}
+            >
+              <Upload size={15} /> Upload new
+            </button>
+            <button
+              type="button"
+              onClick={() => openMediaLibraryPicker(editorMediaActionMode)}
+              className="studio2-menu-row"
+              style={{ minHeight: 42, fontSize: 13 }}
+            >
+              <Library size={15} /> Media Library
+            </button>
+          </div>
+        </div>
+      )}
+      {newAdModalOpen && (
+        <div
+          onClick={() => setNewAdModalOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.62)",
+            backdropFilter: "blur(8px)",
+            zIndex: 46,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(560px, 94vw)",
+              borderRadius: 16,
+              border: `1px solid ${ADS_BRAND.border2}`,
+              background: ADS_BRAND.panel,
+              boxShadow: "0 28px 90px rgba(0,0,0,0.62)",
+              padding: 16,
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 900 }}>Add ad</div>
+                <div style={{ color: ADS_BRAND.text3, fontSize: 12, marginTop: 3 }}>Pick media, paste copy, then generate the text blocks onto the new ad.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNewAdModalOpen(false)}
+                style={{ ...buttonStyle(false), width: 34, height: 34, padding: 0 }}
+                aria-label="Close add ad"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, alignItems: "stretch" }}>
+              <div
+                style={{
+                  height: 150,
+                  borderRadius: 12,
+                  border: `1px solid ${ADS_BRAND.border2}`,
+                  background: ADS_BRAND.bgDeep,
+                  overflow: "hidden",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: ADS_BRAND.text3,
+                }}
+              >
+                {newAdMediaAsset ? (
+                  <MediaAssetPreview asset={newAdMediaAsset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                ) : (
+                  <ImagePlus size={24} />
+                )}
+              </div>
+              <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorUploadMode("new-ad");
+                    window.setTimeout(() => replaceImageInputRef.current?.click(), 0);
+                  }}
+                  style={{ ...buttonStyle(false), height: 42, justifyContent: "flex-start" }}
+                >
+                  <Upload size={15} /> Upload new
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMediaLibraryPicker("new-ad")}
+                  style={{ ...buttonStyle(false), height: 42, justifyContent: "flex-start" }}
+                >
+                  <Library size={15} /> Media Library
+                </button>
+                {newAdStatus && <div style={{ color: ADS_BRAND.text3, fontSize: 12 }}>{newAdStatus}</div>}
+              </div>
+            </div>
+
+            <label style={{ display: "grid", gap: 7 }}>
+              <span style={labelStyle}>Copy</span>
+              <textarea
+                value={newAdCopy}
+                onChange={(event) => setNewAdCopy(event.target.value)}
+                placeholder={"Paste copy here.\n\nBlank lines become separate text blocks."}
+                rows={8}
+                style={{ ...inputStyle, minHeight: 160, resize: "vertical", lineHeight: 1.45, fontSize: 13 }}
+              />
+            </label>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setNewAdModalOpen(false)} style={{ ...buttonStyle(false), height: 38 }}>
+                Cancel
+              </button>
+              <button type="button" onClick={createAdFromModal} style={{ ...buttonStyle(true), height: 38 }}>
+                Generate
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {generatedPreview && (
@@ -11143,6 +11543,76 @@ function Control({ label, children }: { label: string; children: React.ReactNode
       <div style={{ ...labelStyle, marginBottom: 6 }}>{label}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{children}</div>
     </div>
+  );
+}
+
+function HexColorControl({
+  value,
+  onStart,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  onStart: () => void;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  const normalizedValue = normalizeHex(value);
+  const [draft, setDraft] = useState(normalizedValue.toUpperCase());
+
+  useEffect(() => {
+    setDraft(normalizeHex(value).toUpperCase());
+  }, [value]);
+
+  const commit = (rawValue: string) => {
+    const next = normalizeHex(rawValue, normalizedValue).toUpperCase();
+    setDraft(next);
+    onChange(next);
+  };
+
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          border: `1px solid ${ADS_BRAND.border2}`,
+          background: normalizedValue,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
+          flexShrink: 0,
+        }}
+      />
+      <input
+        value={draft}
+        onFocus={onStart}
+        onChange={(event) => {
+          const next = event.target.value.toUpperCase();
+          setDraft(next);
+          if (/^#?[0-9A-F]{6}$/.test(next) || /^#?[0-9A-F]{3}$/.test(next)) {
+            onChange(normalizeHex(next, normalizedValue).toUpperCase());
+          }
+        }}
+        onBlur={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit(event.currentTarget.value);
+            event.currentTarget.blur();
+          }
+        }}
+        spellCheck={false}
+        style={{
+          ...inputStyle,
+          height: 32,
+          width: 86,
+          fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+          textTransform: "uppercase",
+        }}
+        aria-label={ariaLabel}
+      />
+    </>
   );
 }
 
