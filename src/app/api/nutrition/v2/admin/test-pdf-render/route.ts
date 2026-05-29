@@ -39,7 +39,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
   try {
     const body = buildSampleBodyForTesting();
     const html = wrapAsFullHtml(body, "Jake");
-    const pdf = await renderHtmlToPdf(html);
+    const pdf = await renderHtmlToPdf(html, { clientFullName: "Jake Ryan" });
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: {

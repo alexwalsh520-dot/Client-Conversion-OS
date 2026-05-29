@@ -11,26 +11,39 @@
 // PDF print call; the template controls layout.
 
 import type { Browser, Page } from "puppeteer-core";
+import { buildFooterTemplate } from "./plan-pdf-template";
 
-const PDF_OPTIONS = {
-  format: "letter" as const,
-  printBackground: true,
-  preferCSSPageSize: true,
-  margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
-};
+interface RenderOptions {
+  /** Used in the page footer ("Jake Ryan | 7-Day Meal Plan Page N / M"). */
+  clientFullName: string;
+}
 
 /**
  * Render a fully-formed HTML document (with <html><head><style>...) to
- * a PDF Buffer. Caller is responsible for closing the browser via the
- * cleanup helper if reusing (rare — usually we one-shot per render).
+ * a PDF Buffer. Adds a per-page footer with client name + page numbers
+ * via puppeteer's displayHeaderFooter.
  */
-export async function renderHtmlToPdf(html: string): Promise<Buffer> {
+export async function renderHtmlToPdf(
+  html: string,
+  options: RenderOptions,
+): Promise<Buffer> {
   const { browser, page } = await launchBrowser();
   try {
     // domcontentloaded is sufficient — we have no external assets in
     // the locked CSS (no @import, no remote fonts/images).
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    const pdf = await page.pdf(PDF_OPTIONS);
+    const pdf = await page.pdf({
+      format: "letter",
+      printBackground: true,
+      preferCSSPageSize: true,
+      displayHeaderFooter: true,
+      headerTemplate: "<div></div>",
+      footerTemplate: buildFooterTemplate(options.clientFullName),
+      // Margin is controlled by the @page rule in the template's CSS
+      // (since preferCSSPageSize: true). The bottom margin in the
+      // CSS includes room for the footer template.
+      margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
+    });
     return Buffer.from(pdf);
   } finally {
     await browser.close().catch(() => {
