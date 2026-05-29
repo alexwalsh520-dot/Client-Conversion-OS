@@ -73,6 +73,7 @@ const AI_GENERATED_FOLDER_NAME = "AI Generated";
 const MAX_GENERATE_BATCH_COUNT = 30;
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
+const IMAGE_CENTER_SNAP_THRESHOLD = 14;
 const IG_SAFE_ZONES = [
   { id: "top" as const, x: 0, y: 0, w: CANVAS_W, h: 150, label: "Instagram top bar" },
   { id: "dm" as const, x: 170, y: 1590, w: 740, h: 195, label: "Send message button" },
@@ -2058,7 +2059,7 @@ export default function Studio2Page() {
   const [editingGeneratePresetPrompt, setEditingGeneratePresetPrompt] = useState("");
   const [generatedPreview, setGeneratedPreview] = useState<GeneratedPreviewState | null>(null);
   const [higgsfieldAuthModal, setHiggsfieldAuthModal] = useState<HiggsfieldAuthModalState>({ open: false });
-  const [higgsfieldAuthJson, setHiggsfieldAuthJson] = useState("");
+  const [higgsfieldAuthLoginUrl, setHiggsfieldAuthLoginUrl] = useState("");
   const [higgsfieldAuthStatus, setHiggsfieldAuthStatus] = useState("");
   const [savingHiggsfieldAuth, setSavingHiggsfieldAuth] = useState(false);
   const [selectedTextBlockIds, setSelectedTextBlockIds] = useState<string[]>([]);
@@ -2623,7 +2624,16 @@ export default function Studio2Page() {
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
-    drawOverlay(overlayCtx, currentCreative, selectedLayer, selectedTextBlockIds, activeGuides, activeSafeZones, getMeasureCtx(), dpr);
+    drawOverlay(
+      overlayCtx,
+      currentCreative,
+      editingBlockId ? null : selectedLayer,
+      editingBlockId ? [] : selectedTextBlockIds,
+      activeGuides,
+      activeSafeZones,
+      getMeasureCtx(),
+      dpr
+    );
   }, [activeGuides, activeSafeZones, currentCreative, currentImage, selectedLayer, selectedTextBlockIds, editingBlockId, getMeasureCtx]);
 
   useEffect(() => {
@@ -3910,12 +3920,19 @@ export default function Studio2Page() {
       }
 
       if (drag.kind === "move-image") {
-        setActiveGuides({ x: [], y: [] });
         setActiveSafeZones([]);
         setCanvasCursor("grabbing");
+        const rawOffsetX = drag.orig.offsetX + dx;
+        const rawOffsetY = drag.orig.offsetY + dy;
+        const snappedX = Math.abs(rawOffsetX) <= IMAGE_CENTER_SNAP_THRESHOLD;
+        const snappedY = Math.abs(rawOffsetY) <= IMAGE_CENTER_SNAP_THRESHOLD;
+        setActiveGuides({
+          x: snappedX ? [CANVAS_W / 2] : [],
+          y: snappedY ? [CANVAS_H / 2] : [],
+        });
         updateImage({
-          offsetX: Math.round(drag.orig.offsetX + dx),
-          offsetY: Math.round(drag.orig.offsetY + dy),
+          offsetX: snappedX ? 0 : Math.round(rawOffsetX),
+          offsetY: snappedY ? 0 : Math.round(rawOffsetY),
         });
       }
 
@@ -4460,7 +4477,7 @@ export default function Studio2Page() {
       setGenerateStatus(message);
       if (/higgsfield|login|token|auth|credential/i.test(message)) {
         setHiggsfieldAuthModal({ open: true, message });
-        setHiggsfieldAuthJson("");
+        setHiggsfieldAuthLoginUrl("");
         setHiggsfieldAuthStatus("");
       }
     } finally {
@@ -4667,33 +4684,79 @@ export default function Studio2Page() {
 
   const openHiggsfieldAuthModal = useCallback((message?: string) => {
     setHiggsfieldAuthModal({ open: true, message });
-    setHiggsfieldAuthJson("");
+    setHiggsfieldAuthLoginUrl("");
     setHiggsfieldAuthStatus("");
   }, []);
 
-  const saveHiggsfieldAuth = useCallback(async () => {
-    if (!higgsfieldAuthJson.trim()) {
-      setHiggsfieldAuthStatus("Paste the Higgsfield credentials JSON first.");
-      return;
+  const startHiggsfieldAuthLogin = useCallback(async () => {
+    const loginWindow = window.open("about:blank", "higgsfield-login", "width=960,height=820");
+    let sawLoginUrl = false;
+    if (loginWindow) {
+      loginWindow.document.title = "Higgsfield Login";
+      loginWindow.document.body.style.fontFamily = "system-ui, sans-serif";
+      loginWindow.document.body.style.background = "#111";
+      loginWindow.document.body.style.color = "#fff";
+      loginWindow.document.body.style.padding = "32px";
+      loginWindow.document.body.textContent = "Opening Higgsfield login...";
     }
+
     setSavingHiggsfieldAuth(true);
-    setHiggsfieldAuthStatus("Saving...");
+    setHiggsfieldAuthLoginUrl("");
+    setHiggsfieldAuthStatus("Starting Higgsfield login...");
+
+    const handleAuthEvent = (event: string, payload: { message?: string; url?: string }) => {
+      if (event === "status" && payload.message) {
+        setHiggsfieldAuthStatus(payload.message);
+        return;
+      }
+      if (event === "login_url" && payload.url) {
+        sawLoginUrl = true;
+        setHiggsfieldAuthLoginUrl(payload.url);
+        setHiggsfieldAuthStatus(payload.message || "Approve Higgsfield in the tab that opened.");
+        if (loginWindow) {
+          loginWindow.location.href = payload.url;
+        } else {
+          window.open(payload.url, "_blank", "noopener,noreferrer");
+        }
+        return;
+      }
+      if (event === "connected") {
+        setHiggsfieldAuthStatus(payload.message || "Higgsfield is connected.");
+        window.setTimeout(() => setHiggsfieldAuthModal({ open: false }), 1200);
+        return;
+      }
+      if (event === "error") {
+        throw new Error(payload.message || "Could not reconnect Higgsfield.");
+      }
+    };
+
     try {
-      const res = await fetch("/api/studio-2/ai/higgsfield-auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credentialsJson: higgsfieldAuthJson }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not save Higgsfield login.");
-      setHiggsfieldAuthStatus("Higgsfield is connected.");
-      window.setTimeout(() => setHiggsfieldAuthModal({ open: false }), 900);
+      const res = await fetch("/api/studio-2/ai/higgsfield-auth/login", { cache: "no-store" });
+      if (!res.ok || !res.body) throw new Error("Could not start Higgsfield login.");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+        for (const chunk of chunks) {
+          const event = chunk.match(/^event:\s*(.+)$/m)?.[1]?.trim() || "message";
+          const data = chunk.match(/^data:\s*(.+)$/m)?.[1]?.trim() || "{}";
+          handleAuthEvent(event, JSON.parse(data));
+        }
+      }
     } catch (err) {
+      if (loginWindow && !loginWindow.closed && !sawLoginUrl) loginWindow.close();
       setHiggsfieldAuthStatus(err instanceof Error ? err.message : "Could not save Higgsfield login.");
     } finally {
       setSavingHiggsfieldAuth(false);
     }
-  }, [higgsfieldAuthJson]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -10265,12 +10328,12 @@ export default function Studio2Page() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-              <div>
-                <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 850 }}>Reconnect Higgsfield</div>
-                <div style={{ color: ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
-                  Paste the current Higgsfield credentials JSON and Studio 2.0 will use it for future generations.
-                </div>
-              </div>
+	              <div>
+	                <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 850 }}>Reconnect Higgsfield</div>
+	                <div style={{ color: ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+	                  Click once, approve Higgsfield in the tab that opens, then come back here. Studio saves the fresh login automatically.
+	                </div>
+	              </div>
               <button
                 type="button"
                 onClick={() => setHiggsfieldAuthModal({ open: false })}
@@ -10285,19 +10348,42 @@ export default function Studio2Page() {
                 {higgsfieldAuthModal.message}
               </div>
             )}
-            <textarea
-              value={higgsfieldAuthJson}
-              onChange={(event) => setHiggsfieldAuthJson(event.target.value)}
-              placeholder='{"token":"..."}'
-              rows={8}
-              spellCheck={false}
-              style={{ ...inputStyle, minHeight: 160, resize: "vertical", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12, lineHeight: 1.45 }}
-            />
-            {higgsfieldAuthStatus && (
-              <div style={{ color: higgsfieldAuthStatus.includes("connected") ? ADS_BRAND.success : ADS_BRAND.text3, fontSize: 12 }}>
-                {higgsfieldAuthStatus}
-              </div>
-            )}
+	            <button
+	              type="button"
+	              onClick={() => void startHiggsfieldAuthLogin()}
+	              disabled={savingHiggsfieldAuth}
+	              style={{
+	                ...buttonStyle(true),
+	                height: 48,
+	                justifyContent: "center",
+	                fontSize: 14,
+	                opacity: savingHiggsfieldAuth ? 0.7 : 1,
+	              }}
+	            >
+	              {savingHiggsfieldAuth ? <LoaderCircle size={16} style={{ animation: "spin 1s linear infinite" }} /> : <Link2 size={16} />}
+	              {savingHiggsfieldAuth ? "Waiting for approval..." : "Open Higgsfield login"}
+	            </button>
+	            {higgsfieldAuthLoginUrl && (
+	              <a
+	                href={higgsfieldAuthLoginUrl}
+	                target="_blank"
+	                rel="noreferrer"
+	                style={{
+	                  color: ADS_BRAND.gold,
+	                  fontSize: 12,
+	                  fontWeight: 800,
+	                  textDecoration: "none",
+	                  justifySelf: "start",
+	                }}
+	              >
+	                Open login page again
+	              </a>
+	            )}
+	            {higgsfieldAuthStatus && (
+	              <div style={{ color: higgsfieldAuthStatus.includes("connected") ? ADS_BRAND.success : ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45 }}>
+	                {higgsfieldAuthStatus}
+	              </div>
+	            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
                 type="button"
@@ -10307,14 +10393,14 @@ export default function Studio2Page() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={() => void saveHiggsfieldAuth()}
-                disabled={savingHiggsfieldAuth || !higgsfieldAuthJson.trim()}
-                style={{ ...buttonStyle(true), opacity: !savingHiggsfieldAuth && higgsfieldAuthJson.trim() ? 1 : 0.45 }}
-              >
-                {savingHiggsfieldAuth ? "Saving..." : "Save login"}
-              </button>
+	              <button
+	                type="button"
+	                onClick={() => void startHiggsfieldAuthLogin()}
+	                disabled={savingHiggsfieldAuth}
+	                style={{ ...buttonStyle(true), opacity: savingHiggsfieldAuth ? 0.45 : 1 }}
+	              >
+	                {savingHiggsfieldAuth ? "Connecting..." : "Reconnect"}
+	              </button>
             </div>
           </div>
         </div>

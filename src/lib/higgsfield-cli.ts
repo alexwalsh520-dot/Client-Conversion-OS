@@ -191,7 +191,7 @@ export async function cleanupTempPaths(paths: string[]) {
   );
 }
 
-function getHiggsfieldCommand() {
+export function getHiggsfieldCommand() {
   if (process.env.HIGGSFIELD_CLI_PATH?.trim()) {
     return { file: process.env.HIGGSFIELD_CLI_PATH.trim(), args: [] };
   }
