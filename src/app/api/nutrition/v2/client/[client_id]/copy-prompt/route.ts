@@ -4,7 +4,8 @@
  * Assembles the full prompt the coach pastes into Claude.ai. Called once,
  * after the coach has locked the daily kcal target via the MacroTargetEditor.
  * The locked kcal value comes in via `?kcal=N`; if missing, falls back to
- * the auto-suggested value (calculator output - 400, floored at 1200).
+ * the auto-suggested value (calculator output minus KCAL_DOWNWARD_ADJUSTMENT,
+ * floored at 1200).
  *
  * Sections (in order):
  *   1. Directive — what to build, what file format
@@ -67,7 +68,7 @@ export async function GET(
   const i = result.intake;
 
   // Coach-locked kcal override comes in via ?kcal=N. Falls back to the
-  // calc - 400 default when absent.
+  // calc minus KCAL_DOWNWARD_ADJUSTMENT default when absent.
   const kcalRaw = req.nextUrl.searchParams.get("kcal");
   let overrideKcal: number | undefined;
   if (kcalRaw != null) {

@@ -2,10 +2,11 @@
  * GET /api/nutrition/v2/client/:client_id/macros[?kcal=N]
  *
  * Live-preview endpoint for the coach UI's MacroTargetEditor. Returns
- * the suggested daily targets (calculator output minus 400 kcal, floored
- * at 1200) plus the re-derived P/C/F. When the coach overrides the kcal
- * value via the editor, the same endpoint is called with `?kcal=N` and
- * returns the same shape with the override applied.
+ * the suggested daily targets (calculator output minus
+ * KCAL_DOWNWARD_ADJUSTMENT, floored at 1200) plus the re-derived P/C/F.
+ * When the coach overrides the kcal value via the editor, the same
+ * endpoint is called with `?kcal=N` and returns the same shape with the
+ * override applied.
  *
  * Lightweight, idempotent. Called on mount + on each debounced kcal
  * change in the editor. The full prompt assembly lives in the separate
@@ -18,7 +19,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { loadIntakeAndComputeRawTargets } from "@/lib/nutrition/intake-targets";
 import {
   adjustMacros,
-  KCAL_FLOOR,
+  suggestedKcal,
 } from "@/lib/nutrition/macro-adjust";
 
 export const runtime = "nodejs";
@@ -71,10 +72,11 @@ export async function GET(
       client_id: clientId,
       client_name: result.clientName,
       raw_calculator_kcal: adjusted.rawCalculatorKcal,
-      suggested_kcal: Math.max(
-        KCAL_FLOOR,
-        adjusted.rawCalculatorKcal - 400,
-      ),
+      // Always the auto-suggestion value (calc minus KCAL_DOWNWARD_ADJUSTMENT,
+      // floored at KCAL_FLOOR), regardless of whether the coach has
+      // overridden via ?kcal=N. The UI uses this as the "what auto
+      // would be" reference for detecting overrides.
+      suggested_kcal: suggestedKcal(result.raw),
       targets: {
         calories: adjusted.calories,
         proteinG: adjusted.proteinG,
