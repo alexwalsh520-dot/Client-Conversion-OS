@@ -28,7 +28,6 @@ import {
   Library,
   Link2,
   LoaderCircle,
-  Mail,
   Menu,
   Minus,
   MoreHorizontal,
@@ -934,10 +933,20 @@ function MediaAssetPreview({
         src={getMediaPreviewSrc(asset.url)}
         muted
         playsInline
-        preload="metadata"
+        preload="auto"
         style={{
           ...style,
           background: ADS_BRAND.bgDeep,
+        }}
+        onLoadedMetadata={(event) => {
+          try {
+            const video = event.currentTarget;
+            if (Number.isFinite(video.duration) && video.duration > 0) {
+              video.currentTime = Math.min(0.12, video.duration / 4);
+            }
+          } catch {
+            // Some browsers reject currentTime before enough video data is buffered.
+          }
         }}
         onError={() => setFailed(true)}
       />
@@ -2033,6 +2042,8 @@ export default function Studio2Page() {
   const [generateBatchCount, setGenerateBatchCount] = useState(1);
   const [generateToast, setGenerateToast] = useState<{ message: string } | null>(null);
   const [generateAddMenuOpen, setGenerateAddMenuOpen] = useState(false);
+  const [generateMediaPickerOpen, setGenerateMediaPickerOpen] = useState(false);
+  const [generateMediaPickerFolderId, setGenerateMediaPickerFolderId] = useState<string | null>(null);
   const [generatePresetMenuOpen, setGeneratePresetMenuOpen] = useState(false);
   const [galleryFolderMenuOpen, setGalleryFolderMenuOpen] = useState(false);
   const [galleryProjectMenuOpen, setGalleryProjectMenuOpen] = useState(false);
@@ -2053,6 +2064,8 @@ export default function Studio2Page() {
   const [selectedTextBlockIds, setSelectedTextBlockIds] = useState<string[]>([]);
   const [creativeThumbs, setCreativeThumbs] = useState<Record<string, string>>({});
   const [hoveredStripIndex, setHoveredStripIndex] = useState<number | null>(null);
+  const [draggedLayerBlockId, setDraggedLayerBlockId] = useState<string | null>(null);
+  const [layerDropBlockId, setLayerDropBlockId] = useState<string | null>(null);
   const [copyLabOpen, setCopyLabOpen] = useState(false);
   const [copyLabStatus, setCopyLabStatus] = useState("");
   const [copyLabWinners, setCopyLabWinners] = useState<CopyLabWinner[]>([]);
@@ -2288,6 +2301,18 @@ export default function Studio2Page() {
   const currentMediaFolder = useMemo(
     () => mediaFolders.find((folder) => folder.id === selectedMediaFolderId) || null,
     [mediaFolders, selectedMediaFolderId]
+  );
+  const currentGenerateMediaFolder = useMemo(
+    () => mediaFolders.find((folder) => folder.id === generateMediaPickerFolderId) || null,
+    [generateMediaPickerFolderId, mediaFolders]
+  );
+  const visibleGenerateMediaFolders = useMemo(
+    () => mediaFolders.filter((folder) => (folder.parentId || null) === generateMediaPickerFolderId),
+    [generateMediaPickerFolderId, mediaFolders]
+  );
+  const visibleGenerateMediaAssets = useMemo(
+    () => libraryMedia.filter((asset) => (asset.folderId || null) === generateMediaPickerFolderId),
+    [generateMediaPickerFolderId, libraryMedia]
   );
   const visibleMediaFolders = useMemo(() => {
     if (homeMode !== "media") return [];
@@ -2892,32 +2917,6 @@ export default function Studio2Page() {
     setSelectedTextBlockIds([newBlock.id]);
   }, [currentCreative, makeBlock, pushUndo, updateCurrentCreative]);
 
-  const addEmailBlock = useCallback(() => {
-    if (!currentCreative) return;
-    pushUndo();
-    const newBlock = {
-      ...makeBlock(["email@example.com"], "body"),
-      fontSize: 42,
-      maxWidth: 760,
-      paddingH: 24,
-      paddingV: 12,
-      align: "center" as const,
-    };
-    updateCurrentCreative((creative) => ({
-      ...creative,
-      textBlocks: [
-        ...creative.textBlocks,
-        {
-          ...newBlock,
-          x: Math.round((CANVAS_W - newBlock.maxWidth) / 2),
-          y: 230,
-        },
-      ],
-    }));
-    setSelectedLayer({ type: "text", id: newBlock.id });
-    setSelectedTextBlockIds([newBlock.id]);
-  }, [currentCreative, makeBlock, pushUndo, updateCurrentCreative]);
-
   const layoutBlocks = useCallback(
     (blocks: TextBlock[]) => {
       const ctx = getMeasureCtx();
@@ -3454,6 +3453,27 @@ export default function Studio2Page() {
       setContextMenu(null);
     },
     [pushUndo, selectedBlock, updateCurrentCreative]
+  );
+
+  const moveTextLayerBefore = useCallback(
+    (blockId: string, beforeBlockId: string) => {
+      if (blockId === beforeBlockId) return;
+      pushUndo();
+      updateCurrentCreative((creative) => {
+        const blocks = [...creative.textBlocks];
+        const fromIndex = blocks.findIndex((block) => block.id === blockId);
+        const targetIndex = blocks.findIndex((block) => block.id === beforeBlockId);
+        if (fromIndex < 0 || targetIndex < 0) return creative;
+        const [moved] = blocks.splice(fromIndex, 1);
+        if (!moved) return creative;
+        const nextTargetIndex = blocks.findIndex((block) => block.id === beforeBlockId);
+        blocks.splice(nextTargetIndex < 0 ? blocks.length : nextTargetIndex, 0, moved);
+        return { ...creative, textBlocks: blocks };
+      });
+      setDraggedLayerBlockId(null);
+      setLayerDropBlockId(null);
+    },
+    [pushUndo, updateCurrentCreative]
   );
 
   const toggleCurrentApproved = useCallback(() => {
@@ -4013,9 +4033,9 @@ export default function Studio2Page() {
     const renderThumbs = async () => {
       for (const creative of creatives) {
         try {
-          const canvas = await renderCreativeToCanvas(creative, 0.16);
+          const canvas = await renderCreativeToCanvas(creative, 0.36);
           if (cancelled) return;
-          nextThumbs[creative.id] = canvas.toDataURL("image/jpeg", 0.75);
+          nextThumbs[creative.id] = canvas.toDataURL("image/jpeg", 0.86);
           setCreativeThumbs((prev) => ({ ...prev, [creative.id]: nextThumbs[creative.id] }));
         } catch {
           // Thumbnails are a navigation aid; the full editor still renders independently.
@@ -4237,6 +4257,24 @@ export default function Studio2Page() {
       setGenerateStatus("");
     } catch {
       setGenerateStatus("Could not read that reference image.");
+    }
+  }, []);
+
+  const attachGenerateMediaReference = useCallback(async (asset: StudioMediaAsset) => {
+    if (asset.kind !== "image") {
+      setGenerateStatus("Choose an image reference. Video references are not supported here yet.");
+      return;
+    }
+    try {
+      const res = await fetch(getMediaPreviewSrc(asset.url));
+      const blob = await res.blob();
+      const dataUrl = await fileToDataUrl(new File([blob], asset.filename || "reference.png", { type: blob.type || "image/png" }));
+      setGenerateReference({ name: asset.filename || "Media Library reference", dataUrl });
+      setGenerateStatus("");
+      setGenerateMediaPickerOpen(false);
+      setGenerateAddMenuOpen(false);
+    } catch {
+      setGenerateStatus("Could not attach that media reference.");
     }
   }, []);
 
@@ -5635,18 +5673,27 @@ export default function Studio2Page() {
     const selectedGalleryCount = selectedGenerationIds.length;
     const selectedGalleryReadyCount = selectedGenerationAssets.length;
     const generateNeedsAuth = /higgsfield|login|token|auth|credential/i.test(generateStatus);
+    const generateFolderTrail: StudioFolder[] = [];
+    const seenGenerateFolderIds = new Set<string>();
+    let generateFolderCursor: StudioFolder | null = currentGenerateMediaFolder;
+    while (generateFolderCursor && !seenGenerateFolderIds.has(generateFolderCursor.id)) {
+      seenGenerateFolderIds.add(generateFolderCursor.id);
+      generateFolderTrail.unshift(generateFolderCursor);
+      generateFolderCursor = mediaFolders.find((folder) => folder.id === generateFolderCursor?.parentId) || null;
+    }
 
     return (
-      <div
-        ref={generateWorkspaceRef}
-        style={{
-          display: "flex",
-          flex: 1,
-          minWidth: 0,
-          minHeight: 0,
-          background: ADS_BRAND.bg,
-        }}
-      >
+      <>
+        <div
+          ref={generateWorkspaceRef}
+          style={{
+            display: "flex",
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            background: ADS_BRAND.bg,
+          }}
+        >
         <section
           style={{
             flex: "1 1 auto",
@@ -6030,81 +6077,42 @@ export default function Studio2Page() {
                 </button>
                 {generateAddMenuOpen && (
                   <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: 38,
-                      width: 340,
-                      maxHeight: 390,
-                      overflowY: "auto",
-                      border: `1px solid ${ADS_BRAND.border2}`,
-                      borderRadius: 12,
-                      background: ADS_BRAND.panel,
-                      boxShadow: "0 20px 60px rgba(0,0,0,0.48)",
+	                    style={{
+	                      position: "absolute",
+	                      left: 0,
+	                      bottom: 38,
+	                      width: 230,
+	                      border: `1px solid ${ADS_BRAND.border2}`,
+	                      borderRadius: 12,
+	                      background: ADS_BRAND.panel,
+	                      boxShadow: "0 20px 60px rgba(0,0,0,0.48)",
                       padding: 7,
                       zIndex: 9,
                     }}
                   >
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGenerateAddMenuOpen(false);
-                          generateReferenceInputRef.current?.click();
-                        }}
-                        style={{ ...buttonStyle(false), height: 34, justifyContent: "flex-start" }}
-                      >
-                        <Upload size={14} /> Upload new
-                      </button>
-                      <button
-                        type="button"
-                        style={{ ...buttonStyle(false), height: 34, justifyContent: "flex-start", cursor: "default" }}
-                      >
-                        <Library size={14} /> Media Library
-                      </button>
-                    </div>
-                    <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 2px" }} />
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                      {libraryMedia.filter((asset) => asset.kind === "image").slice(0, 12).map((asset) => (
-                        <button
-                          key={asset.id}
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(getMediaPreviewSrc(asset.url));
-                              const blob = await res.blob();
-                              const dataUrl = await fileToDataUrl(new File([blob], asset.filename || "reference.png", { type: blob.type || "image/png" }));
-                              setGenerateReference({ name: asset.filename || "Media Library reference", dataUrl });
-                              setGenerateAddMenuOpen(false);
-                            } catch {
-                              setGenerateStatus("Could not attach that media reference.");
-                            }
-                          }}
-                          style={{
-                            border: `1px solid ${ADS_BRAND.border2}`,
-                            borderRadius: 10,
-                            background: ADS_BRAND.panel3,
-                            padding: 0,
-                            overflow: "hidden",
-                            cursor: "pointer",
-                            color: ADS_BRAND.text2,
-                            fontFamily: "inherit",
-                            textAlign: "left",
-                          }}
-                          title={asset.filename || "Media Library image"}
-                        >
-                          <MediaAssetPreview asset={asset} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }} />
-                          <div style={{ padding: "6px 7px", fontSize: 10, fontWeight: 750, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {asset.filename || "Image"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    {!libraryMedia.some((asset) => asset.kind === "image") && (
-                      <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "8px 4px" }}>
-                        No images in the Media Library yet.
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGenerateAddMenuOpen(false);
+                        generateReferenceInputRef.current?.click();
+                      }}
+                      className="studio2-menu-row"
+                      style={{ minHeight: 38 }}
+                    >
+                      <Upload size={14} /> Upload new
+                    </button>
+                    <button
+                      type="button"
+	                      onClick={() => {
+	                        setGenerateAddMenuOpen(false);
+	                        setGenerateMediaPickerFolderId(null);
+	                        setGenerateMediaPickerOpen(true);
+	                      }}
+                      className="studio2-menu-row"
+                      style={{ minHeight: 38 }}
+                    >
+                      <Library size={14} /> Media Library
+                    </button>
                   </div>
                 )}
               </div>
@@ -6614,7 +6622,177 @@ export default function Studio2Page() {
             </section>
           </>
         )}
-      </div>
+        </div>
+        {generateMediaPickerOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose media reference"
+            onClick={() => setGenerateMediaPickerOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 80,
+              background: "rgba(0,0,0,0.58)",
+              backdropFilter: "blur(10px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: "min(980px, 94vw)",
+                maxHeight: "min(760px, 88vh)",
+                border: `1px solid ${ADS_BRAND.border2}`,
+                borderRadius: 18,
+                background: ADS_BRAND.panel,
+                boxShadow: "0 28px 90px rgba(0,0,0,0.58)",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div style={{ height: 58, display: "flex", alignItems: "center", gap: 10, padding: "0 16px", borderBottom: `1px solid ${ADS_BRAND.border}` }}>
+                <Library size={18} color={ADS_BRAND.gold} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ color: ADS_BRAND.text, fontSize: 16, fontWeight: 900 }}>Media Library</div>
+                  <div style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 750, marginTop: 2 }}>
+                    {generateFolderTrail.length ? generateFolderTrail.map((folder) => folder.name).join(" / ") : "All Media"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGenerateMediaPickerOpen(false)}
+                  style={{ ...buttonStyle(false), width: 34, height: 34, padding: 0, justifyContent: "center" }}
+                  aria-label="Close media library"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: `1px solid ${ADS_BRAND.border}` }}>
+                <button
+                  type="button"
+                  onClick={() => setGenerateMediaPickerFolderId(currentGenerateMediaFolder?.parentId || null)}
+                  disabled={!currentGenerateMediaFolder}
+                  style={{ ...buttonStyle(false), height: 32, opacity: currentGenerateMediaFolder ? 1 : 0.45, cursor: currentGenerateMediaFolder ? "pointer" : "default" }}
+                >
+                  <ArrowLeft size={13} /> Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenerateMediaPickerFolderId(null)}
+                  style={{ ...buttonStyle(!currentGenerateMediaFolder), height: 32 }}
+                >
+                  All Media
+                </button>
+                {generateFolderTrail.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => setGenerateMediaPickerFolderId(folder.id)}
+                    style={{ ...buttonStyle(folder.id === generateMediaPickerFolderId), height: 32, maxWidth: 180 }}
+                    title={folder.name}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18 }}>
+                {visibleGenerateMediaFolders.length > 0 && (
+                  <>
+                    <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Folders</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10, marginBottom: 22 }}>
+                      {visibleGenerateMediaFolders.map((folder) => (
+                        <button
+                          key={folder.id}
+                          type="button"
+                          onClick={() => setGenerateMediaPickerFolderId(folder.id)}
+                          style={{
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 12,
+                            background: ADS_BRAND.panel2,
+                            color: ADS_BRAND.text,
+                            minHeight: 118,
+                            padding: 12,
+                            display: "grid",
+                            alignContent: "center",
+                            justifyItems: "center",
+                            gap: 10,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 850,
+                          }}
+                        >
+                          <Folder size={26} color={ADS_BRAND.text3} />
+                          <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <div style={{ color: ADS_BRAND.text, fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Media</div>
+                {visibleGenerateMediaAssets.length > 0 ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+                    {visibleGenerateMediaAssets.map((asset) => {
+                      const isUsableReference = asset.kind === "image";
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onClick={() => void attachGenerateMediaReference(asset)}
+                          style={{
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 12,
+                            background: ADS_BRAND.panel2,
+                            padding: 0,
+                            overflow: "hidden",
+                            cursor: isUsableReference ? "pointer" : "not-allowed",
+                            opacity: isUsableReference ? 1 : 0.58,
+                            textAlign: "left",
+                            fontFamily: "inherit",
+                          }}
+                          title={isUsableReference ? "Use as reference image" : "Video references are not supported yet"}
+                        >
+                          <div style={{ width: "100%", aspectRatio: "1 / 1", background: ADS_BRAND.bgDeep, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          </div>
+                          <div style={{ padding: "9px 10px", display: "flex", alignItems: "center", gap: 7 }}>
+                            {asset.kind === "video" ? <Video size={13} color={ADS_BRAND.text3} /> : <ImagePlus size={13} color={ADS_BRAND.text3} />}
+                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ADS_BRAND.text2, fontSize: 12, fontWeight: 800 }}>
+                              {asset.filename || "Media"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      minHeight: 220,
+                      border: `1px dashed ${ADS_BRAND.border2}`,
+                      borderRadius: 14,
+                      color: ADS_BRAND.text3,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                    }}
+                  >
+                    No media in this folder.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -8634,6 +8812,36 @@ export default function Studio2Page() {
                 </div>
               )}
             </div>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => setSetupFontMenuOpen((open) => !open)}
+                style={{ ...buttonStyle(false), width: "100%", height: 38, justifyContent: "space-between" }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7, overflow: "hidden" }}>
+                  <Type size={14} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    Font: {FONT_OPTIONS.find((font) => font.value === fontPreset)?.label || "Font"}
+                  </span>
+                </span>
+                <ChevronDown size={14} />
+              </button>
+              {setupFontMenuOpen && (
+                <div className="studio2-create-menu" style={{ ...cardMenuStyle, top: 44, left: 0, right: 0, maxHeight: 260, overflowY: "auto" }}>
+                  {FONT_OPTIONS.map((font) => (
+                    <HomeMenuButton
+                      key={font.value}
+                      icon={Type}
+                      label={font.label}
+                      onClick={() => {
+                        setFontPreset(font.value);
+                        setSetupFontMenuOpen(false);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             <textarea
               value={copyText}
               onChange={(e) => setCopyText(e.target.value)}
@@ -8680,8 +8888,8 @@ export default function Studio2Page() {
                 </span>
                 <ChevronDown size={15} style={{ transform: copyLabOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }} />
               </button>
-              {copyLabOpen && (
-                <div style={{ borderTop: `1px solid ${ADS_BRAND.border}`, padding: 12, display: "grid", gap: 12 }}>
+	              {copyLabOpen && (
+	                <div style={{ borderTop: `1px solid ${ADS_BRAND.border}`, padding: 16, display: "grid", gap: 14 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button type="button" onClick={() => void loadCopyLabWinners()} style={{ ...buttonStyle(false), height: 34 }}>
                       <RefreshCw size={13} /> Load winning ads
@@ -8708,7 +8916,7 @@ export default function Studio2Page() {
                       ))}
                     </div>
                   )}
-                  <div style={{ display: "grid", gridTemplateColumns: "118px 1fr", gap: 8 }}>
+	                  <div style={{ display: "grid", gridTemplateColumns: "104px minmax(0, 1fr)", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={labelStyle}>Variations</span>
                       <input
@@ -8728,7 +8936,7 @@ export default function Studio2Page() {
                       />
                     </label>
                   </div>
-                  <div style={{ maxHeight: 260, overflowY: "auto", display: "grid", gap: 9, paddingRight: 3 }}>
+	                  <div style={{ maxHeight: 420, overflowY: "auto", display: "grid", gap: 11, paddingRight: 4 }}>
                     {copyLabWinners.map((winner) => (
                       <div
                         key={winner.id}
@@ -8736,10 +8944,10 @@ export default function Studio2Page() {
                           border: `1px solid ${ADS_BRAND.border2}`,
                           borderRadius: 10,
                           background: ADS_BRAND.bg,
-                          padding: 9,
-                          display: "grid",
-                          gridTemplateColumns: "72px 1fr",
-                          gap: 10,
+	                          padding: 10,
+	                          display: "grid",
+	                          gridTemplateColumns: "88px minmax(0, 1fr)",
+	                          gap: 12,
                         }}
                       >
                         <MediaAssetPreview
@@ -8749,16 +8957,16 @@ export default function Studio2Page() {
                             filename: winner.adName || winner.id,
                             kind: "image",
                           }}
-                          style={{ width: 72, height: 92, objectFit: "cover", borderRadius: 7, background: ADS_BRAND.bgDeep }}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ color: ADS_BRAND.text, fontSize: 12, fontWeight: 850, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {winner.adName || winner.campaignName || winner.id}
-                          </div>
-                          <div style={{ color: ADS_BRAND.gold, fontSize: 11, fontWeight: 850, marginTop: 2 }}>
-                            ${Math.round(winner.spend).toLocaleString()} spend · {winner.clientKey}
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
+	                          style={{ width: 88, height: 112, objectFit: "cover", borderRadius: 8, background: ADS_BRAND.bgDeep }}
+	                        />
+	                        <div style={{ minWidth: 0 }}>
+	                          <div style={{ color: ADS_BRAND.text, fontSize: 13, fontWeight: 850, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+	                            {winner.adName || winner.campaignName || winner.id}
+	                          </div>
+	                          <div style={{ color: ADS_BRAND.gold, fontSize: 12, fontWeight: 850, marginTop: 3 }}>
+	                            ${Math.round(winner.spend).toLocaleString()} spend · {winner.clientKey}
+	                          </div>
+	                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 8 }}>
                             {copyLabOfferTypes.map((offer) => (
                               <button
                                 key={offer}
@@ -8773,16 +8981,17 @@ export default function Studio2Page() {
                                   fontFamily: "inherit",
                                   fontSize: 10,
                                   fontWeight: 850,
-                                  padding: "0 7px",
-                                  cursor: "pointer",
-                                }}
+	                                  padding: "0 6px",
+	                                  cursor: "pointer",
+	                                  whiteSpace: "nowrap",
+	                                }}
                               >
                                 {winner.offerType === offer && <CheckCircle2 size={10} style={{ marginRight: 4, verticalAlign: -1 }} />}
                                 {offer}
                               </button>
                             ))}
                           </div>
-                          <div style={{ marginTop: 7, color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.4, maxHeight: 54, overflow: "auto", whiteSpace: "pre-wrap" }}>
+	                          <div style={{ marginTop: 8, color: ADS_BRAND.text3, fontSize: 12, lineHeight: 1.45, maxHeight: 72, overflow: "auto", whiteSpace: "pre-wrap" }}>
                             {winner.extractedCopy || "No copy extracted yet."}
                           </div>
                           {winner.transcribing && (
@@ -8812,36 +9021,6 @@ export default function Studio2Page() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-
-        <div className="section" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ position: "relative", width: 230 }}>
-            <button
-              type="button"
-              onClick={() => setSetupFontMenuOpen((open) => !open)}
-              style={{ ...buttonStyle(false), width: "100%", height: 38, justifyContent: "space-between" }}
-            >
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {FONT_OPTIONS.find((font) => font.value === fontPreset)?.label || "Font"}
-              </span>
-              <ChevronDown size={14} />
-            </button>
-            {setupFontMenuOpen && (
-              <div className="studio2-create-menu" style={{ ...cardMenuStyle, top: 44, left: 0, right: 0, maxHeight: 260, overflowY: "auto" }}>
-                {FONT_OPTIONS.map((font) => (
-                  <HomeMenuButton
-                    key={font.value}
-                    icon={Type}
-                    label={font.label}
-                    onClick={() => {
-                      setFontPreset(font.value);
-                      setSetupFontMenuOpen(false);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
@@ -9157,14 +9336,20 @@ export default function Studio2Page() {
               <>
                 <video
                   key={currentCreative.id}
-                  ref={videoPreviewRef}
-                  src={getMediaPreviewSrc(currentCreative.photoUrl)}
-                  muted
-                  loop
-                  autoPlay
-                  playsInline
-                  onPlay={() => setVideoPreviewPlaying(true)}
-                  onPause={() => setVideoPreviewPlaying(false)}
+	                  ref={videoPreviewRef}
+	                  src={getMediaPreviewSrc(currentCreative.photoUrl)}
+	                  poster={getMediaPreviewUrl(getAssetForUrl(currentCreative.photoUrl)) || undefined}
+	                  muted
+	                  loop
+	                  autoPlay
+	                  playsInline
+	                  preload="auto"
+	                  onLoadedData={(event) => {
+	                    setVideoPreviewPlaying(!event.currentTarget.paused);
+	                    void event.currentTarget.play().catch(() => undefined);
+	                  }}
+	                  onPlay={() => setVideoPreviewPlaying(true)}
+	                  onPause={() => setVideoPreviewPlaying(false)}
                   style={{
                     position: "absolute",
                     inset: 0,
@@ -9481,12 +9666,9 @@ export default function Studio2Page() {
           </div>
 
           <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <button style={buttonStyle(false)} onClick={addTextBlock}>
-              <Type size={13} /> Add Text
-            </button>
-            <button style={buttonStyle(false)} onClick={addEmailBlock}>
-              <Mail size={13} /> Add Email
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+            <button style={{ ...buttonStyle(false), justifyContent: "center" }} onClick={addTextBlock}>
+              <Plus size={13} /> Add Text
             </button>
           </div>
 
@@ -9867,6 +10049,31 @@ export default function Studio2Page() {
             {currentCreative?.textBlocks.map((block) => (
               <button
                 key={block.id}
+                type="button"
+                draggable
+                onDragStart={(event) => {
+                  setDraggedLayerBlockId(block.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", block.id);
+                }}
+                onDragOver={(event) => {
+                  if (!draggedLayerBlockId || draggedLayerBlockId === block.id) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setLayerDropBlockId(block.id);
+                }}
+                onDragLeave={() => {
+                  setLayerDropBlockId((current) => (current === block.id ? null : current));
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceId = draggedLayerBlockId || event.dataTransfer.getData("text/plain");
+                  if (sourceId) moveTextLayerBefore(sourceId, block.id);
+                }}
+                onDragEnd={() => {
+                  setDraggedLayerBlockId(null);
+                  setLayerDropBlockId(null);
+                }}
                 onClick={() => {
                   setSelectedLayer({ type: "text", id: block.id });
                   setSelectedTextBlockIds([block.id]);
@@ -9877,6 +10084,9 @@ export default function Studio2Page() {
                   justifyContent: "flex-start",
                   marginBottom: 5,
                   overflow: "hidden",
+                  cursor: draggedLayerBlockId === block.id ? "grabbing" : "grab",
+                  borderColor: layerDropBlockId === block.id ? ADS_BRAND.gold : undefined,
+                  boxShadow: layerDropBlockId === block.id ? "inset 0 2px 0 rgba(212,178,122,0.9)" : undefined,
                 }}
               >
                 <Type size={13} />
@@ -9888,9 +10098,6 @@ export default function Studio2Page() {
           </div>
           )}
 
-          <div style={{ color: ADS_BRAND.text4, fontSize: 11, lineHeight: 1.5, padding: "2px 2px 10px" }}>
-            Studio 2.0 saves locally in this browser. It can recover your work after refresh or Wi-Fi loss.
-          </div>
           </>
         </aside>
       </div>
