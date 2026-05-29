@@ -28,6 +28,7 @@ import {
   Library,
   Link2,
   LoaderCircle,
+  Mail,
   Menu,
   Minus,
   MoreHorizontal,
@@ -44,7 +45,6 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
-  ScanText,
   Search,
   SendToBack,
   SwatchBook,
@@ -162,7 +162,7 @@ type SelectedLayer = { type: "text"; id: string } | { type: "image" } | null;
 type ContextMenuTarget = SelectedLayer | { type: "multi-text" };
 type EditorSidebarMode = "edit" | "generate";
 type ExportMode = "current" | "all" | "custom";
-type CopyLabOfferType = "Free Challenge" | "Paid Coaching" | "Direct Offer" | "Lead Magnet" | "Other";
+type CopyLabOfferType = "Direct Offer" | "Lead Magnet" | "Other";
 type SafeZoneId = (typeof IG_SAFE_ZONES)[number]["id"];
 type TextStyle = Omit<TextBlock, "id" | "lines" | "x" | "y" | "locked" | "colorSpans">;
 
@@ -927,7 +927,24 @@ function MediaAssetPreview({
     };
   }, [previewSrc, heic]);
 
-  if ((asset.kind === "video" && !asset.thumbnailUrl) || failed) {
+  if (asset.kind === "video" && !asset.thumbnailUrl && !failed) {
+    return (
+      <video
+        draggable={false}
+        src={getMediaPreviewSrc(asset.url)}
+        muted
+        playsInline
+        preload="metadata"
+        style={{
+          ...style,
+          background: ADS_BRAND.bgDeep,
+        }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  if (failed) {
     return (
       <div
         style={{
@@ -981,6 +998,31 @@ function formatGenerationStatusLabel(status: string) {
   if (value === "completed") return "Ready";
   if (value === "failed") return "Failed";
   return value.replace(/_/g, " ") || "Creating";
+}
+
+function summarizeStoredGenerationPrompt(prompt: string) {
+  return prompt
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .find((part) => part && !/^use this exact ad copy/i.test(part) && !/^preserve readable text/i.test(part))
+    ?.slice(0, 700) || prompt.slice(0, 700);
+}
+
+async function requestCopyLabTranscription(winner: CopyLabWinner) {
+  const res = await fetch("/api/studio-2/copy-lab/transcribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      imageUrl: winner.previewImageUrl,
+      adId: winner.adId || winner.id,
+      clientKey: winner.clientKey,
+      adName: winner.adName,
+      campaignName: winner.campaignName,
+    }),
+  });
+  const data = await res.json() as { transcription?: { text?: string }; error?: string };
+  if (!res.ok) throw new Error(data.error || "Transcription failed");
+  return data.transcription?.text || "";
 }
 
 function getDraftProjectFolderId(draft?: Partial<DraftState> & { folderId?: string | null }) {
@@ -1442,12 +1484,12 @@ function drawImageHandles(ctx: CanvasRenderingContext2D) {
 function getTextHandles(m: BlockMetrics): { handle: ResizeHandle; x: number; y: number }[] {
   const midY = m.y + m.h / 2;
   return [
+    { handle: "w", x: m.x, y: midY },
+    { handle: "e", x: m.x + m.w, y: midY },
     { handle: "nw", x: m.x, y: m.y },
     { handle: "ne", x: m.x + m.w, y: m.y },
     { handle: "sw", x: m.x, y: m.y + m.h },
     { handle: "se", x: m.x + m.w, y: m.y + m.h },
-    { handle: "w", x: m.x, y: midY },
-    { handle: "e", x: m.x + m.w, y: midY },
   ];
 }
 
@@ -1877,7 +1919,7 @@ const alignOptions = [
   { value: "right" as const, label: "Right", icon: AlignRight },
 ];
 
-const copyLabOfferTypes: CopyLabOfferType[] = ["Free Challenge", "Paid Coaching", "Direct Offer", "Lead Magnet", "Other"];
+const copyLabOfferTypes: CopyLabOfferType[] = ["Direct Offer", "Lead Magnet", "Other"];
 
 export default function Studio2Page() {
   const [photos, setPhotos] = useState<string[]>([]);
@@ -1936,6 +1978,8 @@ export default function Studio2Page() {
   const [hiddenDesignFolderIds, setHiddenDesignFolderIds] = useState<string[]>([]);
   const [draggedDesignIds, setDraggedDesignIds] = useState<string[]>([]);
   const [draggedMediaIds, setDraggedMediaIds] = useState<string[]>([]);
+  const [draggedDesignFolderIds, setDraggedDesignFolderIds] = useState<string[]>([]);
+  const [draggedMediaFolderIds, setDraggedMediaFolderIds] = useState<string[]>([]);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [cardMenuId, setCardMenuId] = useState<string | null>(null);
   const [folderCardMenuId, setFolderCardMenuId] = useState<string | null>(null);
@@ -1948,6 +1992,7 @@ export default function Studio2Page() {
   const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
   const [setupMediaKindFilter, setSetupMediaKindFilter] = useState<SetupMediaKindFilter>("all");
   const [includeAiGeneratedMedia, setIncludeAiGeneratedMedia] = useState(false);
+  const [textBackgroundMenuOpen, setTextBackgroundMenuOpen] = useState(false);
   const [setupFontMenuOpen, setSetupFontMenuOpen] = useState(false);
   const [editorFontMenuOpen, setEditorFontMenuOpen] = useState(false);
   const [renameFolderTarget, setRenameFolderTarget] = useState<StudioFolder | null>(null);
@@ -2027,7 +2072,9 @@ export default function Studio2Page() {
   const generateReferenceInputRef = useRef<HTMLInputElement>(null);
   const generatePromptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const generateConversationEndRef = useRef<HTMLDivElement>(null);
+  const generateAddMenuRef = useRef<HTMLDivElement>(null);
   const generatePresetMenuRef = useRef<HTMLDivElement>(null);
+  const topNavMenuRef = useRef<HTMLDivElement>(null);
   const editorSidebarModeRef = useRef(editorSidebarMode);
   const stripRef = useRef<HTMLDivElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
@@ -2098,6 +2145,10 @@ export default function Studio2Page() {
     () => mediaFolders.find((folder) => isAiGeneratedFolder(folder)) || null,
     [mediaFolders]
   );
+  const aiGeneratedFolderIds = useMemo(
+    () => new Set(mediaFolders.filter(isAiGeneratedFolder).map((folder) => folder.id)),
+    [mediaFolders]
+  );
   const getAssetForUrl = useCallback(
     (url?: string | null) => mediaAssets.find((asset) => asset.url === url) || libraryMedia.find((asset) => asset.url === url) || null,
     [libraryMedia, mediaAssets]
@@ -2138,10 +2189,10 @@ export default function Studio2Page() {
     () => {
       const folderFiltered = setupMediaFolderId
         ? libraryMedia.filter((asset) => (asset.folderId || null) === setupMediaFolderId)
-        : libraryMedia.filter((asset) => includeAiGeneratedMedia || (asset.folderId || null) !== aiGeneratedFolder?.id);
+        : libraryMedia.filter((asset) => includeAiGeneratedMedia || !aiGeneratedFolderIds.has(asset.folderId || ""));
       return folderFiltered.filter((asset) => setupMediaKindFilter === "all" || asset.kind === setupMediaKindFilter);
     },
-    [aiGeneratedFolder?.id, includeAiGeneratedMedia, libraryMedia, setupMediaFolderId, setupMediaKindFilter]
+    [aiGeneratedFolderIds, includeAiGeneratedMedia, libraryMedia, setupMediaFolderId, setupMediaKindFilter]
   );
   const setupMediaAssets = useMemo(() => {
     const imageAssets = photos.map((photo, index) => {
@@ -2181,10 +2232,10 @@ export default function Studio2Page() {
       id: activeDraftId,
       name: projectName || "Untitled Studio batch",
       updated: "May 13, 2026",
-      thumb: getCreativeThumbnailUrl(currentCreative) || getMediaPreviewUrl(getAssetForUrl(photos[0])) || photos[0] || "",
+      thumb: (currentCreative ? creativeThumbs[currentCreative.id] : "") || getCreativeThumbnailUrl(currentCreative) || getMediaPreviewUrl(getAssetForUrl(photos[0])) || photos[0] || "",
       isActiveDraft: true,
     }),
-    [activeDraftId, currentCreative, getAssetForUrl, getCreativeThumbnailUrl, photos, projectName]
+    [activeDraftId, creativeThumbs, currentCreative, getAssetForUrl, getCreativeThumbnailUrl, photos, projectName]
   );
   const activeDraftVisible =
     hasActiveDraft &&
@@ -2332,7 +2383,7 @@ export default function Studio2Page() {
       const firstAsset = firstCreative
         ? draft.mediaAssets?.find((asset) => asset.url === firstCreative.photoUrl)
         : draft.mediaAssets?.find((asset) => asset.url === draft.photos[0]);
-      const thumbnailUrl = getMediaPreviewUrl(firstAsset) || firstCreative?.photoUrl || draft.photos[0] || null;
+      const thumbnailUrl = (firstCreative ? creativeThumbs[firstCreative.id] : "") || getMediaPreviewUrl(firstAsset) || firstCreative?.photoUrl || draft.photos[0] || null;
       const body = {
         name: draft.projectName || EMPTY_PROJECT_NAME,
         copyText: draft.copyText,
@@ -2352,7 +2403,7 @@ export default function Studio2Page() {
       if (refreshHome) void fetchStudioHome();
       return data.project;
     },
-    [activeProjectFolderId, fetchStudioHome, projectId]
+    [activeProjectFolderId, creativeThumbs, fetchStudioHome, projectId]
   );
 
   const getHomeProjectDetail = useCallback(async (cardId: string): Promise<StudioProjectDetail | null> => {
@@ -2617,6 +2668,35 @@ export default function Studio2Page() {
     return () => window.removeEventListener("click", close);
   }, [createMenuOpen, folderMenuOpen]);
 
+  useEffect(() => {
+    if (!topNavMenuOpen) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && topNavMenuRef.current?.contains(target)) return;
+      setTopNavMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [topNavMenuOpen]);
+
+  useEffect(() => {
+    if (!generateAddMenuOpen) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && generateAddMenuRef.current?.contains(target)) return;
+      setGenerateAddMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [generateAddMenuOpen]);
+
+  useEffect(() => {
+    if (!textBackgroundMenuOpen) return;
+    const close = () => setTextBackgroundMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [textBackgroundMenuOpen]);
+
   const pushUndo = useCallback(() => {
     setUndoStack((stack) => [...stack.slice(-29), cloneCreatives(creatives)]);
     setRedoStack([]);
@@ -2805,6 +2885,32 @@ export default function Studio2Page() {
           ...newBlock,
           x: Math.round((CANVAS_W - newBlock.maxWidth) / 2),
           y: Math.round(CANVAS_H / 2 - newBlock.fontSize * newBlock.lineHeight),
+        },
+      ],
+    }));
+    setSelectedLayer({ type: "text", id: newBlock.id });
+    setSelectedTextBlockIds([newBlock.id]);
+  }, [currentCreative, makeBlock, pushUndo, updateCurrentCreative]);
+
+  const addEmailBlock = useCallback(() => {
+    if (!currentCreative) return;
+    pushUndo();
+    const newBlock = {
+      ...makeBlock(["email@example.com"], "body"),
+      fontSize: 42,
+      maxWidth: 760,
+      paddingH: 24,
+      paddingV: 12,
+      align: "center" as const,
+    };
+    updateCurrentCreative((creative) => ({
+      ...creative,
+      textBlocks: [
+        ...creative.textBlocks,
+        {
+          ...newBlock,
+          x: Math.round((CANVAS_W - newBlock.maxWidth) / 2),
+          y: 230,
         },
       ],
     }));
@@ -3742,6 +3848,23 @@ export default function Studio2Page() {
         setActiveGuides({ x: [], y: [] });
         setActiveSafeZones([]);
         setCanvasCursor(cursorForResizeHandle(drag.handle));
+        if (drag.handle === "e" || drag.handle === "w") {
+          const deltaW = drag.handle === "e" ? dx : -dx;
+          updateCurrentCreative((creative) => ({
+            ...creative,
+            textBlocks: creative.textBlocks.map((block) => {
+              const orig = drag.origBlocks[block.id];
+              if (!orig) return block;
+              const nextMaxWidth = clamp(Math.round(orig.maxWidth + deltaW), 160, 1060);
+              return {
+                ...orig,
+                x: drag.handle === "w" ? Math.round(orig.x + (orig.maxWidth - nextMaxWidth)) : orig.x,
+                maxWidth: nextMaxWidth,
+              };
+            }),
+          }));
+          return;
+        }
         const widthFactor = (drag.groupMetrics.w + (drag.handle.includes("e") ? dx : -dx)) / Math.max(1, drag.groupMetrics.w);
         const heightFactor = (drag.groupMetrics.h + (drag.handle.includes("s") ? dy : -dy)) / Math.max(1, drag.groupMetrics.h);
         const factor = clamp((widthFactor + heightFactor) / 2, 0.35, 2.8);
@@ -3890,7 +4013,7 @@ export default function Studio2Page() {
     const renderThumbs = async () => {
       for (const creative of creatives) {
         try {
-          const canvas = await renderCreativeToCanvas(creative, 0.08);
+          const canvas = await renderCreativeToCanvas(creative, 0.16);
           if (cancelled) return;
           nextThumbs[creative.id] = canvas.toDataURL("image/jpeg", 0.75);
           setCreativeThumbs((prev) => ({ ...prev, [creative.id]: nextThumbs[creative.id] }));
@@ -4131,19 +4254,20 @@ export default function Studio2Page() {
     ].join("\n");
   }, [copyText, currentCreative?.textBlocks, generatePrompt]);
 
-  const ensureAiGeneratedFolder = useCallback(async () => {
-    if (aiGeneratedFolder?.id) return aiGeneratedFolder.id;
+  const ensureAiGeneratedFolder = useCallback(async (parentId: string | null = null) => {
+    const existing = mediaFolders.find((folder) => isAiGeneratedFolder(folder) && (folder.parentId || null) === parentId);
+    if (existing?.id) return existing.id;
     const res = await fetch("/api/studio-2/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: AI_GENERATED_FOLDER_NAME, folderType: "media", parentId: null }),
+      body: JSON.stringify({ name: AI_GENERATED_FOLDER_NAME, folderType: "media", parentId }),
     });
     if (!res.ok) return null;
     const data = await res.json() as { folder?: StudioFolder };
     if (!data.folder?.id) return null;
     setCloudFolders((prev) => prev.some((folder) => folder.id === data.folder!.id) ? prev : [...prev, data.folder!]);
     return data.folder.id;
-  }, [aiGeneratedFolder?.id]);
+  }, [mediaFolders]);
 
   const pollAiGeneration = useCallback(
     async (generationId: string, progressLabel = "Creating your ad") => {
@@ -4229,7 +4353,8 @@ export default function Studio2Page() {
     const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
     setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`);
     try {
-      const targetFolderId = await ensureAiGeneratedFolder();
+      const sourceAssetFolderId = getAssetForUrl(currentCreative.photoUrl)?.folderId || null;
+      const targetFolderId = await ensureAiGeneratedFolder(setupMediaFolderId || sourceAssetFolderId || null);
       const snapshotCanvas = await renderCreativeToCanvas(currentCreative, 1);
       const snapshotDataUrl = snapshotCanvas.toDataURL("image/png");
       const startedGenerations: StudioAIGeneration[] = [];
@@ -4312,6 +4437,7 @@ export default function Studio2Page() {
     generateSourcePreview,
     generatingAd,
     ensureAiGeneratedFolder,
+    getAssetForUrl,
     pollAiGeneration,
     projectId,
     renderCreativeToCanvas,
@@ -4772,6 +4898,15 @@ export default function Studio2Page() {
     setSelectedTextBlockIds([]);
   }, [pushUndo]);
 
+  const deleteCreativeAt = useCallback((indexToDelete: number) => {
+    if (creatives.length <= 1) return;
+    pushUndo();
+    setCreatives((prev) => prev.filter((_, index) => index !== indexToDelete));
+    setCurrentIndex((index) => clamp(index > indexToDelete ? index - 1 : index, 0, Math.max(0, creatives.length - 2)));
+    setSelectedLayer(null);
+    setSelectedTextBlockIds([]);
+  }, [creatives.length, pushUndo]);
+
   const handleCanvasDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -5037,6 +5172,8 @@ export default function Studio2Page() {
       }
       setFolderCardMenuId(null);
       setDragOverFolderId(null);
+      setDraggedDesignFolderIds([]);
+      setDraggedMediaFolderIds([]);
       setCloudStatus(`${ids.length} folder${ids.length === 1 ? "" : "s"} moved.`);
       void fetchStudioHome();
     } catch (err) {
@@ -5109,7 +5246,7 @@ export default function Studio2Page() {
               name: draft.projectName || EMPTY_PROJECT_NAME,
               copyText: draft.copyText,
               draft: { ...draft, projectFolderId: folderId, folderId },
-              thumbnailUrl: draft.creatives[0]?.photoUrl || draft.photos[0] || null,
+              thumbnailUrl: draft.creatives[0] ? (creativeThumbs[draft.creatives[0].id] || draft.creatives[0].photoUrl) : draft.photos[0] || null,
               status: draft.creatives.length ? "in_progress" : "draft",
             }),
           });
@@ -5140,7 +5277,7 @@ export default function Studio2Page() {
         setFolderPickerStatus("Could not add that project to a folder.");
       }
     },
-    [activeDraftId, buildDraftState, fetchStudioHome, projectId]
+    [activeDraftId, buildDraftState, creativeThumbs, fetchStudioHome, projectId]
   );
 
   const moveDesignsToFolder = useCallback(async (folderId: string, designIds: string[]) => {
@@ -5230,17 +5367,32 @@ export default function Studio2Page() {
 
   const loadCopyLabWinners = useCallback(async () => {
     setCopyLabOpen(true);
-    setCopyLabStatus("Loading top-spend winners...");
+    setCopyLabStatus("Loading top-spend winners and reading the copy...");
     try {
       const res = await fetch("/api/studio-2/copy-lab/winners?limit=12&status=all", { cache: "no-store" });
       const data = await res.json() as { winners?: CopyLabWinner[]; error?: string };
       if (!res.ok) throw new Error(data.error || "Could not load winners");
-      setCopyLabWinners((data.winners || []).map((winner) => ({
+      const normalized = (data.winners || []).map((winner) => ({
         ...winner,
-        offerType: winner.offerType || "Free Challenge",
+        offerType: winner.offerType || "Lead Magnet",
         extractedCopy: winner.extractedCopy || "",
-      })));
-      setCopyLabStatus(data.winners?.length ? "Pick winners, transcribe them, then generate variations." : "No top-spend creative previews found yet.");
+        transcribing: !!winner.previewImageUrl,
+      }));
+      setCopyLabWinners(normalized);
+      if (!normalized.length) {
+        setCopyLabStatus("No top-spend creative previews found yet.");
+        return;
+      }
+      await Promise.allSettled(normalized.slice(0, 8).map(async (winner) => {
+        if (!winner.previewImageUrl) return;
+        try {
+          const extractedCopy = await requestCopyLabTranscription(winner);
+          setCopyLabWinners((prev) => prev.map((item) => item.id === winner.id ? { ...item, extractedCopy, transcribing: false } : item));
+        } catch {
+          setCopyLabWinners((prev) => prev.map((item) => item.id === winner.id ? { ...item, transcribing: false } : item));
+        }
+      }));
+      setCopyLabStatus("Winning copy loaded. Pick an offer type, add direction if needed, then write variations.");
     } catch (err) {
       setCopyLabStatus(err instanceof Error ? err.message : "Could not load winning ads.");
     }
@@ -5250,43 +5402,10 @@ export default function Studio2Page() {
     setCopyLabWinners((prev) => prev.map((winner) => winner.id === winnerId ? { ...winner, ...patch } : winner));
   }, []);
 
-  const transcribeCopyLabWinner = useCallback(async (winner: CopyLabWinner) => {
-    if (!winner.previewImageUrl) return;
-    updateCopyLabWinner(winner.id, { transcribing: true });
-    setCopyLabStatus(`Reading ${winner.adName || winner.campaignName || "winning ad"}...`);
-    try {
-      const res = await fetch("/api/studio-2/copy-lab/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: winner.previewImageUrl,
-          adId: winner.adId || winner.id,
-          clientKey: winner.clientKey,
-          adName: winner.adName,
-          campaignName: winner.campaignName,
-        }),
-      });
-      const data = await res.json() as { transcription?: { text?: string }; error?: string };
-      if (!res.ok) throw new Error(data.error || "Transcription failed");
-      updateCopyLabWinner(winner.id, { extractedCopy: data.transcription?.text || "", transcribing: false });
-      setCopyLabStatus("Copy extracted.");
-    } catch (err) {
-      updateCopyLabWinner(winner.id, { transcribing: false });
-      setCopyLabStatus(err instanceof Error ? err.message : "Could not transcribe that ad.");
-    }
-  }, [updateCopyLabWinner]);
-
-  const transcribeAllCopyLabWinners = useCallback(async () => {
-    const targets = copyLabWinners.filter((winner) => !winner.extractedCopy.trim() && winner.previewImageUrl).slice(0, 8);
-    for (const winner of targets) {
-      await transcribeCopyLabWinner(winner);
-    }
-  }, [copyLabWinners, transcribeCopyLabWinner]);
-
   const generateCopyLabVariations = useCallback(async () => {
     const winners = copyLabWinners.filter((winner) => winner.extractedCopy.trim());
     if (!winners.length) {
-      setCopyLabStatus("Transcribe at least one winner first.");
+      setCopyLabStatus("Load winning ads first.");
       return;
     }
     setCopyLabGenerating(true);
@@ -5315,12 +5434,12 @@ export default function Studio2Page() {
   const saveCopyLabPreset = useCallback(() => {
     const prompt = copyLabDirection.trim();
     if (!prompt) {
-      setCopyLabStatus("Write a direction first, then save it as a preset.");
+      setCopyLabStatus("Write a prompt first, then save it.");
       return;
     }
     const label = prompt.length > 28 ? `${prompt.slice(0, 28)}...` : prompt;
     setCopyLabPresets((prev) => [{ id: uid(), label, prompt }, ...prev].slice(0, 12));
-    setCopyLabStatus("Copy strategy preset saved.");
+    setCopyLabStatus("Copy prompt saved.");
   }, [copyLabDirection]);
 
   const confirmDeleteHomeProject = useCallback(
@@ -5472,8 +5591,23 @@ export default function Studio2Page() {
         !customGeneratePresets.some((customPreset) => customPreset.id === preset.id)
       ),
     ];
+    const hydratedMessages = generateMessages.length
+      ? generateMessages
+      : aiGenerations
+          .filter((generation) => generation.prompt)
+          .map((generation) => {
+            const createdAt = generation.createdAt ? Date.parse(generation.createdAt) : Date.now();
+            return {
+              id: `stored-${generation.id || generation.jobId}`,
+              prompt: summarizeStoredGenerationPrompt(generation.prompt),
+              sourcePreview: "",
+              reference: null,
+              status: generation.status === "failed" ? "failed" : "sent",
+              createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+            } satisfies GenerateChatMessage;
+          });
     const conversationItems: GenerateConversationItem[] = [
-      ...generateMessages.map((message) => ({
+      ...hydratedMessages.map((message) => ({
         type: "message" as const,
         id: `message-${message.id}`,
         sort: message.createdAt,
@@ -5874,7 +6008,7 @@ export default function Studio2Page() {
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-              <div style={{ position: "relative" }}>
+              <div ref={generateAddMenuRef} style={{ position: "relative" }}>
                 <button
                   type="button"
                   onClick={() => setGenerateAddMenuOpen((open) => !open)}
@@ -5900,8 +6034,8 @@ export default function Studio2Page() {
                       position: "absolute",
                       left: 0,
                       bottom: 38,
-                      width: 260,
-                      maxHeight: 320,
+                      width: 340,
+                      maxHeight: 390,
                       overflowY: "auto",
                       border: `1px solid ${ADS_BRAND.border2}`,
                       borderRadius: 12,
@@ -5911,37 +6045,66 @@ export default function Studio2Page() {
                       zIndex: 9,
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGenerateAddMenuOpen(false);
-                        generateReferenceInputRef.current?.click();
-                      }}
-                      className="studio2-menu-row"
-                    >
-                      <Upload size={14} /> Upload new
-                    </button>
-                    <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 2px" }} />
-                    {libraryMedia.filter((asset) => asset.kind === "image").slice(0, 8).map((asset) => (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
                       <button
-                        key={asset.id}
                         type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await fetch(getMediaPreviewSrc(asset.url));
-                            const blob = await res.blob();
-                            const dataUrl = await fileToDataUrl(new File([blob], asset.filename || "reference.png", { type: blob.type || "image/png" }));
-                            setGenerateReference({ name: asset.filename || "Media Library reference", dataUrl });
-                            setGenerateAddMenuOpen(false);
-                          } catch {
-                            setGenerateStatus("Could not attach that media reference.");
-                          }
+                        onClick={() => {
+                          setGenerateAddMenuOpen(false);
+                          generateReferenceInputRef.current?.click();
                         }}
-                        className="studio2-menu-row"
+                        style={{ ...buttonStyle(false), height: 34, justifyContent: "flex-start" }}
                       >
-                        <ImagePlus size={14} /> {asset.filename || "Media Library image"}
+                        <Upload size={14} /> Upload new
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        style={{ ...buttonStyle(false), height: 34, justifyContent: "flex-start", cursor: "default" }}
+                      >
+                        <Library size={14} /> Media Library
+                      </button>
+                    </div>
+                    <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 2px" }} />
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                      {libraryMedia.filter((asset) => asset.kind === "image").slice(0, 12).map((asset) => (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(getMediaPreviewSrc(asset.url));
+                              const blob = await res.blob();
+                              const dataUrl = await fileToDataUrl(new File([blob], asset.filename || "reference.png", { type: blob.type || "image/png" }));
+                              setGenerateReference({ name: asset.filename || "Media Library reference", dataUrl });
+                              setGenerateAddMenuOpen(false);
+                            } catch {
+                              setGenerateStatus("Could not attach that media reference.");
+                            }
+                          }}
+                          style={{
+                            border: `1px solid ${ADS_BRAND.border2}`,
+                            borderRadius: 10,
+                            background: ADS_BRAND.panel3,
+                            padding: 0,
+                            overflow: "hidden",
+                            cursor: "pointer",
+                            color: ADS_BRAND.text2,
+                            fontFamily: "inherit",
+                            textAlign: "left",
+                          }}
+                          title={asset.filename || "Media Library image"}
+                        >
+                          <MediaAssetPreview asset={asset} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }} />
+                          <div style={{ padding: "6px 7px", fontSize: 10, fontWeight: 750, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {asset.filename || "Image"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    {!libraryMedia.some((asset) => asset.kind === "image") && (
+                      <div style={{ color: ADS_BRAND.text3, fontSize: 12, padding: "8px 4px" }}>
+                        No images in the Media Library yet.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -6077,15 +6240,15 @@ export default function Studio2Page() {
               <div
                 title="Images to generate"
                 style={{
-                  height: 36,
+                  height: 30,
                   borderRadius: 999,
                   border: `1px solid ${ADS_BRAND.border2}`,
                   background: ADS_BRAND.panel3,
                   color: ADS_BRAND.text2,
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 4,
-                  padding: "0 5px",
+                  gap: 2,
+                  padding: "0 4px",
                 }}
               >
                 <button
@@ -6093,8 +6256,8 @@ export default function Studio2Page() {
                   onClick={() => setGenerateBatchCount((count) => clamp(count - 1, 1, MAX_GENERATE_BATCH_COUNT))}
                   disabled={generatingAd || generateBatchCount <= 1}
                   style={{
-                    width: 26,
-                    height: 26,
+                    width: 22,
+                    height: 22,
                     border: "none",
                     borderRadius: "50%",
                     background: "transparent",
@@ -6120,7 +6283,7 @@ export default function Studio2Page() {
                     setGenerateBatchCount(Number.isFinite(parsed) ? clamp(Math.round(parsed), 1, MAX_GENERATE_BATCH_COUNT) : 1);
                   }}
                   style={{
-                    width: 34,
+                    width: 28,
                     border: "none",
                     outline: "none",
                     background: "transparent",
@@ -6137,8 +6300,8 @@ export default function Studio2Page() {
                   onClick={() => setGenerateBatchCount((count) => clamp(count + 1, 1, MAX_GENERATE_BATCH_COUNT))}
                   disabled={generatingAd || generateBatchCount >= MAX_GENERATE_BATCH_COUNT}
                   style={{
-                    width: 26,
-                    height: 26,
+                    width: 22,
+                    height: 22,
                     border: "none",
                     borderRadius: "50%",
                     background: "transparent",
@@ -6870,13 +7033,33 @@ export default function Studio2Page() {
                     </div>}
                     {visibleDesignFolders.map((folder) => {
                       const isSelected = selectedFolderIds.includes(folder.id);
-                      const isDropTarget = dragOverFolderId === folder.id && draggedDesignIds.length > 0;
+                      const isDropTarget = dragOverFolderId === folder.id && (draggedDesignIds.length > 0 || draggedDesignFolderIds.some((id) => id !== folder.id));
                       return (
                         <div
                           key={folder.id}
                           role="button"
                           tabIndex={0}
                           className="studio2-design-card"
+                          draggable={selectMode && isSelected}
+                          onDragStart={(event) => {
+                            if (!selectMode || !isSelected) {
+                              event.preventDefault();
+                              return;
+                            }
+                            const ids = selectedFolderIds.includes(folder.id) ? selectedFolderIds : [folder.id];
+                            if (!ids.length) {
+                              event.preventDefault();
+                              return;
+                            }
+                            setDraggedDesignFolderIds(ids);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", ids.join(","));
+                            setStudioCardDragImage(event);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedDesignFolderIds([]);
+                            setDragOverFolderId(null);
+                          }}
                           onClick={() => {
                             if (selectMode) {
                               toggleHomeFolderSelection(folder.id);
@@ -6892,12 +7075,12 @@ export default function Studio2Page() {
                             }
                           }}
                           onDragEnter={(event) => {
-                            if (!draggedDesignIds.length) return;
+                            if (!draggedDesignIds.length && !draggedDesignFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             setDragOverFolderId(folder.id);
                           }}
                           onDragOver={(event) => {
-                            if (!draggedDesignIds.length) return;
+                            if (!draggedDesignIds.length && !draggedDesignFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             event.dataTransfer.dropEffect = "move";
                             setDragOverFolderId(folder.id);
@@ -6909,10 +7092,14 @@ export default function Studio2Page() {
                             }
                           }}
                           onDrop={(event) => {
-                            if (!draggedDesignIds.length) return;
+                            if (!draggedDesignIds.length && !draggedDesignFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             event.stopPropagation();
-                            void moveDesignsToFolder(folder.id, draggedDesignIds);
+                            if (draggedDesignFolderIds.some((id) => id !== folder.id)) {
+                              void moveFoldersToParent(folder.id, draggedDesignFolderIds, "design");
+                            } else {
+                              void moveDesignsToFolder(folder.id, draggedDesignIds);
+                            }
                           }}
                           style={{
                             ...folderCardStyle,
@@ -7143,13 +7330,29 @@ export default function Studio2Page() {
                   <div style={homeGridStyle}>
                     {visibleMediaFolders.map((folder) => {
                       const isSelected = selectedMediaFolderIds.includes(folder.id);
-                      const isDropTarget = dragOverFolderId === folder.id && draggedMediaIds.length > 0;
+                      const isDropTarget = dragOverFolderId === folder.id && (draggedMediaIds.length > 0 || draggedMediaFolderIds.some((id) => id !== folder.id));
                       return (
                         <div
                           key={folder.id}
                           role="button"
                           tabIndex={0}
                           className="studio2-design-card"
+                          draggable={selectMode && isSelected}
+                          onDragStart={(event) => {
+                            if (!selectMode || !isSelected) {
+                              event.preventDefault();
+                              return;
+                            }
+                            const ids = selectedMediaFolderIds.includes(folder.id) ? selectedMediaFolderIds : [folder.id];
+                            setDraggedMediaFolderIds(ids);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", ids.join(","));
+                            setStudioCardDragImage(event);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedMediaFolderIds([]);
+                            setDragOverFolderId(null);
+                          }}
                           onClick={() => {
                             if (selectMode) {
                               toggleMediaFolderSelection(folder.id);
@@ -7165,12 +7368,12 @@ export default function Studio2Page() {
                             }
                           }}
                           onDragEnter={(event) => {
-                            if (!draggedMediaIds.length) return;
+                            if (!draggedMediaIds.length && !draggedMediaFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             setDragOverFolderId(folder.id);
                           }}
                           onDragOver={(event) => {
-                            if (!draggedMediaIds.length) return;
+                            if (!draggedMediaIds.length && !draggedMediaFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             event.dataTransfer.dropEffect = "move";
                             setDragOverFolderId(folder.id);
@@ -7182,10 +7385,14 @@ export default function Studio2Page() {
                             }
                           }}
                           onDrop={(event) => {
-                            if (!draggedMediaIds.length) return;
+                            if (!draggedMediaIds.length && !draggedMediaFolderIds.some((id) => id !== folder.id)) return;
                             event.preventDefault();
                             event.stopPropagation();
-                            void moveMediaToFolder(folder.id, draggedMediaIds);
+                            if (draggedMediaFolderIds.some((id) => id !== folder.id)) {
+                              void moveFoldersToParent(folder.id, draggedMediaFolderIds, "media");
+                            } else {
+                              void moveMediaToFolder(folder.id, draggedMediaIds);
+                            }
                           }}
                           style={{
                             ...folderCardStyle,
@@ -7350,8 +7557,19 @@ export default function Studio2Page() {
                           />
                         </div>
                       )}
-                      <div style={projectThumbStyle(asset.url)}>
-                        <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div
+                        style={{
+                          minHeight: 230,
+                          background: ADS_BRAND.bgDeep,
+                          borderRadius: "12px 12px 0 0",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", maxHeight: 320, objectFit: "contain" }} />
                         {asset.kind === "video" && (
                           <span style={mediaVideoBadgeStyle}>
                             <Video size={12} />
@@ -8366,19 +8584,56 @@ export default function Studio2Page() {
             </h2>
             <label style={labelStyle}>Batch Name</label>
             <input value={projectName} onChange={(e) => setProjectName(e.target.value)} style={{ ...inputStyle, margin: "6px 0 14px" }} />
-            <button
-              type="button"
-              onClick={() => setTextBackgroundsEnabled((enabled) => !enabled)}
-              style={{
-                ...buttonStyle(textBackgroundsEnabled),
-                marginBottom: 12,
-                background: textBackgroundsEnabled ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
-                color: textBackgroundsEnabled ? ADS_BRAND.gold : ADS_BRAND.text2,
-                border: `1px solid ${textBackgroundsEnabled ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
-              }}
-            >
-              <SwatchBook size={14} /> Text backgrounds {textBackgroundsEnabled ? "On" : "Off"}
-            </button>
+            <div onClick={(event) => event.stopPropagation()} style={{ position: "relative", marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => setTextBackgroundMenuOpen((open) => !open)}
+                style={{
+                  ...buttonStyle(textBackgroundsEnabled),
+                  width: "100%",
+                  height: 38,
+                  justifyContent: "space-between",
+                  background: textBackgroundsEnabled ? ADS_BRAND.goldSoft : ADS_BRAND.panel3,
+                  color: textBackgroundsEnabled ? ADS_BRAND.gold : ADS_BRAND.text2,
+                  border: `1px solid ${textBackgroundsEnabled ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <SwatchBook size={14} /> Text Backgrounds: {textBackgroundsEnabled ? (colorPreset === "light" ? "Black on White" : "White on Black") : "Off"}
+                </span>
+                <ChevronDown size={14} />
+              </button>
+              {textBackgroundMenuOpen && (
+                <div className="studio2-create-menu" style={{ ...cardMenuStyle, top: 44, left: 0, right: 0, width: "auto" }}>
+                  <HomeMenuButton
+                    icon={X}
+                    label="Off"
+                    onClick={() => {
+                      setTextBackgroundsEnabled(false);
+                      setTextBackgroundMenuOpen(false);
+                    }}
+                  />
+                  <HomeMenuButton
+                    icon={SwatchBook}
+                    label="White on Black"
+                    onClick={() => {
+                      setTextBackgroundsEnabled(true);
+                      setColorPreset("dark");
+                      setTextBackgroundMenuOpen(false);
+                    }}
+                  />
+                  <HomeMenuButton
+                    icon={SwatchBook}
+                    label="Black on White"
+                    onClick={() => {
+                      setTextBackgroundsEnabled(true);
+                      setColorPreset("light");
+                      setTextBackgroundMenuOpen(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
             <textarea
               value={copyText}
               onChange={(e) => setCopyText(e.target.value)}
@@ -8429,22 +8684,14 @@ export default function Studio2Page() {
                 <div style={{ borderTop: `1px solid ${ADS_BRAND.border}`, padding: 12, display: "grid", gap: 12 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button type="button" onClick={() => void loadCopyLabWinners()} style={{ ...buttonStyle(false), height: 34 }}>
-                      <RefreshCw size={13} /> Load winners
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void transcribeAllCopyLabWinners()}
-                      disabled={!copyLabWinners.length}
-                      style={{ ...buttonStyle(false), height: 34, opacity: copyLabWinners.length ? 1 : 0.45 }}
-                    >
-                      <ScanText size={13} /> Read copy
+                      <RefreshCw size={13} /> Load winning ads
                     </button>
                     <button
                       type="button"
                       onClick={saveCopyLabPreset}
                       style={{ ...buttonStyle(false), height: 34 }}
                     >
-                      <Bookmark size={13} /> Save direction
+                      <Bookmark size={13} /> Save as prompt
                     </button>
                   </div>
                   {copyLabPresets.length > 0 && (
@@ -8472,12 +8719,12 @@ export default function Studio2Page() {
                       />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={labelStyle}>Direction</span>
-                      <input
+                      <span style={labelStyle}>Prompt notes</span>
+                      <textarea
                         value={copyLabDirection}
                         onChange={(event) => setCopyLabDirection(event.target.value)}
-                        placeholder="Example: 8 free challenge ads and 12 paid coaching ads, very close to winners"
-                        style={{ ...inputStyle, height: 38 }}
+                        placeholder="Example: make close variations, keep the same offer, sharpen the pain point"
+                        style={{ ...inputStyle, minHeight: 74, resize: "vertical", lineHeight: 1.4 }}
                       />
                     </label>
                   </div>
@@ -8530,6 +8777,7 @@ export default function Studio2Page() {
                                   cursor: "pointer",
                                 }}
                               >
+                                {winner.offerType === offer && <CheckCircle2 size={10} style={{ marginRight: 4, verticalAlign: -1 }} />}
                                 {offer}
                               </button>
                             ))}
@@ -8537,15 +8785,11 @@ export default function Studio2Page() {
                           <div style={{ marginTop: 7, color: ADS_BRAND.text3, fontSize: 11, lineHeight: 1.4, maxHeight: 54, overflow: "auto", whiteSpace: "pre-wrap" }}>
                             {winner.extractedCopy || "No copy extracted yet."}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => void transcribeCopyLabWinner(winner)}
-                            disabled={winner.transcribing}
-                            style={{ ...buttonStyle(false), height: 28, marginTop: 8, padding: "0 8px", fontSize: 11 }}
-                          >
-                            {winner.transcribing ? <LoaderCircle size={12} style={{ animation: "spin 1s linear infinite" }} /> : <ScanText size={12} />}
-                            {winner.extractedCopy ? "Re-read" : "Read copy"}
-                          </button>
+                          {winner.transcribing && (
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: ADS_BRAND.gold, fontSize: 11, fontWeight: 800, marginTop: 8 }}>
+                              <LoaderCircle size={12} style={{ animation: "spin 1s linear infinite" }} /> Reading copy
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -8572,14 +8816,6 @@ export default function Studio2Page() {
         </div>
 
         <div className="section" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <button style={buttonStyle(colorPreset === "dark")} onClick={() => setColorPreset("dark")}>
-            <span style={{ width: 18, height: 18, borderRadius: 5, background: "#000", border: "1px solid #444" }} />
-            White on Black
-          </button>
-          <button style={buttonStyle(colorPreset === "light")} onClick={() => setColorPreset("light")}>
-            <span style={{ width: 18, height: 18, borderRadius: 5, background: "#fff", border: "1px solid #aaa" }} />
-            Black on White
-          </button>
           <div style={{ position: "relative", width: 230 }}>
             <button
               type="button"
@@ -8706,11 +8942,7 @@ export default function Studio2Page() {
         borderBottom: `1px solid ${ADS_BRAND.border}`,
         background: ADS_BRAND.bg,
       }}>
-        <div
-          onMouseEnter={() => setTopNavMenuOpen(true)}
-          onMouseLeave={() => setTopNavMenuOpen(false)}
-          style={{ position: "relative" }}
-        >
+        <div ref={topNavMenuRef} style={{ position: "relative" }}>
           <button
             type="button"
             onClick={() => setTopNavMenuOpen((open) => !open)}
@@ -8734,10 +8966,10 @@ export default function Studio2Page() {
                 padding: 7,
               }}
             >
-              <button type="button" onClick={() => setView("home")} className="studio2-menu-row">
+              <button type="button" onClick={() => { setTopNavMenuOpen(false); setView("home"); }} className="studio2-menu-row">
                 <Home size={14} /> Home
               </button>
-              <button type="button" onClick={() => setView("setup")} className="studio2-menu-row">
+              <button type="button" onClick={() => { setTopNavMenuOpen(false); setView("setup"); }} className="studio2-menu-row">
                 <ArrowLeft size={14} /> Setup
               </button>
               <div style={{ height: 1, background: ADS_BRAND.border2, margin: "6px 2px" }} />
@@ -8777,10 +9009,6 @@ export default function Studio2Page() {
             padding: "0 8px",
           }}
         />
-        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Ad {currentIndex + 1} of {creatives.length}</span>
-        <span style={{ color: ADS_BRAND.gold, fontSize: 11, fontWeight: 700, marginLeft: 4 }}>
-          {saveStatus}
-        </span>
         <div style={{ flex: 1 }} />
         {editorSidebarMode !== "generate" && (
           <>
@@ -8841,13 +9069,15 @@ export default function Studio2Page() {
         >
           <RotateCw size={17} />
         </button>
-        <button
-          aria-pressed={!!currentCreative?.approved}
-          style={approveButtonStyle(!!currentCreative?.approved)}
-          onClick={toggleCurrentApproved}
-        >
-          <CheckCircle2 size={14} /> {currentCreative?.approved ? "Approved" : "Approve"}
-        </button>
+        {editorSidebarMode !== "generate" && (
+          <button
+            aria-pressed={!!currentCreative?.approved}
+            style={approveButtonStyle(!!currentCreative?.approved)}
+            onClick={toggleCurrentApproved}
+          >
+            <CheckCircle2 size={14} /> {currentCreative?.approved ? "Approved" : "Approve"}
+          </button>
+        )}
         <button style={buttonStyle(true)} onClick={openExportModal}>
           <Download size={14} /> Export
         </button>
@@ -9072,7 +9302,7 @@ export default function Studio2Page() {
               stripRef.current.scrollLeft += event.deltaY;
             }}
             style={{
-              height: 104,
+              height: 178,
               width: "100%",
               display: "flex",
               alignItems: "center",
@@ -9080,7 +9310,7 @@ export default function Studio2Page() {
               gap: 10,
               overflowX: "auto",
               overflowY: "visible",
-              padding: "14px 22px",
+              padding: "18px 22px",
               scrollBehavior: "smooth",
             }}
           >
@@ -9103,8 +9333,8 @@ export default function Studio2Page() {
                 onMouseLeave={() => setHoveredStripIndex(null)}
                 style={{
                   position: "relative",
-                  width: hoveredStripIndex === index ? 58 : 42,
-                  height: hoveredStripIndex === index ? 96 : 74,
+                  width: hoveredStripIndex === index ? 96 : 48,
+                  height: hoveredStripIndex === index ? 164 : 84,
                   borderRadius: 6,
                   overflow: "hidden",
                   border: index === currentIndex ? `2px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
@@ -9152,14 +9382,41 @@ export default function Studio2Page() {
                     <CheckCircle2 size={12} />
                   </span>
                 )}
+                {hoveredStripIndex === index && creatives.length > 1 && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteCreativeAt(index);
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: 3,
+                      right: 3,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 7,
+                      background: "rgba(0,0,0,0.72)",
+                      color: "#ffb3b3",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid rgba(255,155,155,0.25)",
+                    }}
+                    title="Delete ad"
+                  >
+                    <X size={13} />
+                  </span>
+                )}
               </button>
             ))}
             <button
               type="button"
               onClick={addBlankAd}
               style={{
-                width: 42,
-                height: 74,
+                width: 48,
+                height: 84,
                 borderRadius: 6,
                 border: `1px dashed ${ADS_BRAND.border2}`,
                 background: ADS_BRAND.panel3,
@@ -9224,9 +9481,12 @@ export default function Studio2Page() {
           </div>
 
           <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <button style={buttonStyle(false)} onClick={addTextBlock}>
               <Type size={13} /> Add Text
+            </button>
+            <button style={buttonStyle(false)} onClick={addEmailBlock}>
+              <Mail size={13} /> Add Email
             </button>
           </div>
 
@@ -9589,6 +9849,7 @@ export default function Studio2Page() {
             </div>
           )}
 
+          {(selectedLayer || selectedTextBlockIds.length > 0) && (
           <div style={panelStyle}>
             <span style={{ ...labelStyle, display: "block", marginBottom: 8 }}>
               <Layers size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
@@ -9625,6 +9886,7 @@ export default function Studio2Page() {
               </button>
             ))}
           </div>
+          )}
 
           <div style={{ color: ADS_BRAND.text4, fontSize: 11, lineHeight: 1.5, padding: "2px 2px 10px" }}>
             Studio 2.0 saves locally in this browser. It can recover your work after refresh or Wi-Fi loss.

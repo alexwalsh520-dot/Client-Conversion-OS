@@ -18,6 +18,15 @@ interface FolderDetail {
   folderType: "design" | "media";
 }
 
+interface UploadedMedia {
+  id: string;
+  filename: string;
+  kind: "image" | "video";
+  folderId: string | null;
+  url: string;
+  thumbnailUrl?: string | null;
+}
+
 const brand = {
   bg: "#0a0a0a",
   panel: "#111111",
@@ -49,7 +58,41 @@ function isSupportedMedia(file: File) {
   return contentType.startsWith("image/") || contentType.startsWith("video/");
 }
 
-async function uploadClientMedia(file: File, folderId: string) {
+async function makeVideoPosterFile(file: File): Promise<File | null> {
+  if (typeof document === "undefined" || !getUploadContentType(file).startsWith("video/")) return null;
+  const url = URL.createObjectURL(file);
+  try {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    await new Promise<void>((resolve, reject) => {
+      video.onloadeddata = () => resolve();
+      video.onerror = () => reject(new Error("Video preview failed"));
+      video.src = url;
+    });
+    video.currentTime = Math.min(0.25, video.duration || 0.25);
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve();
+      window.setTimeout(resolve, 600);
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(320, video.videoWidth || 720);
+    canvas.height = Math.max(180, video.videoHeight || 1280);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.78));
+    if (!blob) return null;
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, "")}-poster.jpg`, { type: "image/jpeg" });
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function uploadRawMediaFile(file: File, folderId: string) {
   const contentType = getUploadContentType(file);
   const presignRes = await fetch("/api/studio-2/media/upload-url", {
     method: "POST",
@@ -77,17 +120,37 @@ async function uploadClientMedia(file: File, folderId: string) {
   });
 
   if (!uploadRes.ok) throw new Error("Upload failed");
+  return { ...presign, contentType };
+}
+
+async function uploadClientMedia(file: File, folderId: string) {
+  const contentType = getUploadContentType(file);
+  const uploaded = await uploadRawMediaFile(file, folderId);
+  let thumbnailUrl: string | null = null;
+
+  if (contentType.startsWith("video/")) {
+    const posterFile = await makeVideoPosterFile(file);
+    if (posterFile) {
+      try {
+        const poster = await uploadRawMediaFile(posterFile, folderId);
+        thumbnailUrl = poster.publicUrl;
+      } catch {
+        thumbnailUrl = null;
+      }
+    }
+  }
 
   const completeRes = await fetch("/api/studio-2/media/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      key: presign.key,
-      publicUrl: presign.publicUrl,
+      key: uploaded.key,
+      publicUrl: uploaded.publicUrl,
       filename: file.name,
       contentType,
       fileSize: file.size,
       folderId,
+      thumbnailUrl,
     }),
   });
 
@@ -103,9 +166,23 @@ export default function Studio2ClientUploadPage() {
   const [dropActive, setDropActive] = useState(false);
   const [status, setStatus] = useState("Loading upload folder...");
   const [uploading, setUploading] = useState(false);
+  const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
 
   const completedCount = useMemo(() => queue.filter((item) => item.status === "done").length, [queue]);
   const hasQueuedFiles = queue.some((item) => item.status === "queued" || item.status === "error");
+  const uploadedImageCount = uploadedMedia.filter((item) => item.kind === "image").length;
+  const uploadedVideoCount = uploadedMedia.filter((item) => item.kind === "video").length;
+
+  const refreshUploadedMedia = useCallback(async () => {
+    try {
+      const res = await fetch("/api/studio-2/media", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json() as { media?: UploadedMedia[] };
+      setUploadedMedia((data.media || []).filter((item) => item.folderId === folderId));
+    } catch {
+      setUploadedMedia([]);
+    }
+  }, [folderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +198,7 @@ export default function Studio2ClientUploadPage() {
         }
         setFolder(data.folder);
         setStatus("");
+        void refreshUploadedMedia();
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -129,7 +207,7 @@ export default function Studio2ClientUploadPage() {
     return () => {
       cancelled = true;
     };
-  }, [folderId]);
+  }, [folderId, refreshUploadedMedia]);
 
   const addFiles = useCallback((files: FileList | File[] | null) => {
     if (!files?.length) return;
@@ -161,6 +239,7 @@ export default function Studio2ClientUploadPage() {
       try {
         await uploadClientMedia(item.file, folder.id);
         setQueue((prev) => prev.map((queued) => queued.id === item.id ? { ...queued, status: "done" } : queued));
+        void refreshUploadedMedia();
       } catch {
         setQueue((prev) => prev.map((queued) => queued.id === item.id ? { ...queued, status: "error" } : queued));
       }
@@ -168,7 +247,8 @@ export default function Studio2ClientUploadPage() {
 
     setUploading(false);
     setStatus("Upload complete.");
-  }, [folder, queue, uploading]);
+    void refreshUploadedMedia();
+  }, [folder, queue, refreshUploadedMedia, uploading]);
 
   return (
     <main
@@ -218,6 +298,62 @@ export default function Studio2ClientUploadPage() {
             </h1>
           </div>
         </div>
+
+        {folder && (
+          <div
+            style={{
+              border: `1px solid ${brand.border}`,
+              borderRadius: 12,
+              background: brand.panel2,
+              padding: 12,
+              marginBottom: 16,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ color: brand.text2, fontSize: 13, fontWeight: 760 }}>
+                Uploaded to this folder
+              </div>
+              <div style={{ color: brand.gold, fontSize: 12, fontWeight: 760 }}>
+                {uploadedMedia.length} total · {uploadedImageCount} image{uploadedImageCount === 1 ? "" : "s"} · {uploadedVideoCount} video{uploadedVideoCount === 1 ? "" : "s"}
+              </div>
+            </div>
+            {uploadedMedia.length > 0 && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+                {uploadedMedia.slice(0, 18).map((item) => (
+                  <div
+                    key={item.id}
+                    title={item.filename}
+                    style={{
+                      width: 72,
+                      flex: "0 0 72px",
+                      border: `1px solid ${brand.border}`,
+                      borderRadius: 9,
+                      background: brand.bg,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {item.thumbnailUrl || item.kind === "image" ? (
+                      <img
+                        src={item.thumbnailUrl || item.url}
+                        alt=""
+                        style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      <div style={{ width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", color: brand.text3 }}>
+                        <Video size={18} />
+                      </div>
+                    )}
+                    <div style={{ padding: "5px 6px", color: brand.text3, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {item.filename}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <input
           ref={inputRef}

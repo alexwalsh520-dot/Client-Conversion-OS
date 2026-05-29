@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const usableWinners = winners
       .map((winner: Record<string, unknown>) => ({
         clientKey: String(winner.clientKey || "client"),
-        offerType: String(winner.offerType || "Free Challenge"),
+        offerType: String(winner.offerType || "Lead Magnet"),
         spend: Number(winner.spend || 0),
         copy: String(winner.extractedCopy || winner.text || "").trim(),
       }))

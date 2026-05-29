@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
         previewImageUrl: row.previewImageUrl || row.previewThumbnailUrl,
         previewThumbnailUrl: row.previewThumbnailUrl || row.previewImageUrl,
         extractedCopy: "",
-        offerType: "Free Challenge",
+        offerType: "Lead Magnet",
       })),
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
