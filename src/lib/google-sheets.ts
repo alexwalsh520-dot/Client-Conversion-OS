@@ -202,7 +202,17 @@ function normalizeSetterName(val: string | undefined): string {
     .join(" ");
 }
 
-function getOfferForRow(row: (string | undefined)[], tab?: string): string {
+function usesExpandedSalesLayout(row: (string | undefined)[]): boolean {
+  const offer = normalizeCell(row[18]).toLowerCase();
+  return offer.includes("tyson") || offer.includes("keith");
+}
+
+function getOfferForRow(
+  row: (string | undefined)[],
+  tab?: string,
+  expandedLayout = false
+): string {
+  if (expandedLayout) return normalizeCell(row[18]);
   if (tab === "JANUARY") return "Tyson Sonnek";
   return normalizeCell(row[16]);
 }
@@ -213,14 +223,14 @@ function getOfferForRow(row: (string | undefined)[], tab?: string): string {
 
 /**
  * Fetch raw values from a single monthly tab via Google Sheets API v4.
- * Range: A8:Q1000 (row 8 = headers, rows 9+ = data).
+ * Range: A8:Z1000 (row 8 = headers, rows 9+ = data).
  */
 async function fetchTabValues(
   tab: string
 ): Promise<(string | undefined)[][]> {
   const sheetId = getSheetId();
   const apiKey = getApiKey();
-  const range = encodeURIComponent(`${tab}!A8:Q1000`);
+  const range = encodeURIComponent(`${tab}!A8:Z1000`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
   const response = await fetch(url, { cache: "no-store" });
@@ -273,10 +283,12 @@ async function fetchSubscriptionTabValues(
 
 /**
  * Parse a raw row array into a SheetRow.
- * Columns: A=0 Call#, B=1 Date, C=2 Name, D=3 Call Taken, E=4 Call Length,
+ * Legacy columns: A=0 Call#, B=1 Date, C=2 Name, D=3 Call Taken, E=4 Call Length,
  *   F=5 Recorded?, G=6 Outcome, H=7 Closer, I=8 Objection, J=9 Program Length,
  *   K=10 Revenue, L=11 Cash Collected, M=12 Method, N=13 Setter,
  *   O=14 Call Notes, P=15 Call Recording Link, Q=16 Offer
+ * Expanded columns include Manychat Link at D and Ad Type at E, shifting
+ * the sales fields two columns to the right and Offer to S=18.
  */
 function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
   const dateStr = parseDateString(row[1]);
@@ -284,9 +296,12 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
   if (!dateStr) return null;
 
   const isJanuary = tab === "JANUARY";
-  const callTakenStatus = parseCallTakenStatus(row[3]);
-  const setter = normalizeSetterName(isJanuary ? row[12] : row[13]);
-  const offer = getOfferForRow(row, tab);
+  const expandedLayout = usesExpandedSalesLayout(row);
+  const callTakenStatus = parseCallTakenStatus(row[expandedLayout ? 5 : 3]);
+  const setter = normalizeSetterName(
+    expandedLayout ? row[15] : isJanuary ? row[12] : row[13]
+  );
+  const offer = getOfferForRow(row, tab, expandedLayout);
 
   return {
     callNumber: normalizeCell(row[0]),
@@ -294,18 +309,26 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
     name: normalizeCell(row[2]),
     callTaken: callTakenStatus === "yes",
     callTakenStatus,
-    callLength: normalizeCell(row[4]),
-    recorded: parseBoolField(row[5]),
-    outcome: normalizeCell(row[6]).toUpperCase(),
-    closer: normalizeCell(row[7]).toUpperCase(),
-    objection: normalizeCell(row[8]),
-    programLength: normalizeCell(row[9]),
-    revenue: parseRevenue(row[isJanuary ? 9 : 10] || ""),
-    cashCollected: parseRevenue(row[isJanuary ? 10 : 11] || ""),
-    method: normalizeCell(row[isJanuary ? 11 : 12]).toUpperCase(),
+    callLength: normalizeCell(row[expandedLayout ? 6 : 4]),
+    recorded: parseBoolField(row[expandedLayout ? 7 : 5]),
+    outcome: normalizeCell(row[expandedLayout ? 8 : 6]).toUpperCase(),
+    closer: normalizeCell(row[expandedLayout ? 9 : 7]).toUpperCase(),
+    objection: normalizeCell(row[expandedLayout ? 10 : 8]),
+    programLength: normalizeCell(row[expandedLayout ? 11 : 9]),
+    revenue: parseRevenue(
+      row[expandedLayout ? 12 : isJanuary ? 9 : 10] || ""
+    ),
+    cashCollected: parseRevenue(
+      row[expandedLayout ? 13 : isJanuary ? 10 : 11] || ""
+    ),
+    method: normalizeCell(
+      row[expandedLayout ? 14 : isJanuary ? 11 : 12]
+    ).toUpperCase(),
     setter,
-    callNotes: normalizeCell(row[isJanuary ? 13 : 14]),
-    recordingLink: normalizeCell(row[isJanuary ? 14 : 15]),
+    callNotes: normalizeCell(row[expandedLayout ? 16 : isJanuary ? 13 : 14]),
+    recordingLink: normalizeCell(
+      row[expandedLayout ? 17 : isJanuary ? 14 : 15]
+    ),
     offer,
   };
 }
