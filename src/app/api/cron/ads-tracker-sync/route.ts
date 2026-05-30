@@ -70,6 +70,10 @@ export async function GET(req: NextRequest) {
     callSyncRoute(baseUrl, "/api/sync/ads-tracker", body),
   ]);
 
+  // Runs after the sales mirror so newly-stored rows can be classified. Failure
+  // here must never block the core sync, so it is awaited separately.
+  const manychatOrigin = await callSyncRoute(baseUrl, "/api/sync/manychat-origin", body);
+
   return NextResponse.json({
     ok: salesRows.ok && adsTracker.ok,
     dateFrom,
@@ -78,6 +82,7 @@ export async function GET(req: NextRequest) {
     results: {
       "/api/sync/sales-tracker-rows": salesRows,
       "/api/sync/ads-tracker": adsTracker,
+      "/api/sync/manychat-origin": manychatOrigin,
     },
   });
 }
