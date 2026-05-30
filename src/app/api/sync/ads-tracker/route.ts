@@ -3,23 +3,9 @@ import { auth } from "@/auth";
 import { getAdEntities, getAdLevelInsights, type MetaAdEntity } from "@/lib/mozi-meta";
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, keywordFromAdName } from "@/lib/ads-tracker/normalize";
+import { CREATORS, firstEnv, normalizeAdAccountId } from "@/lib/creators";
 
-const ACCOUNTS = [
-  {
-    key: "tyson",
-    name: "Tyson",
-    timezone: "America/Los_Angeles",
-    adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
-    tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
-  },
-  {
-    key: "keith",
-    name: "Keith",
-    timezone: "America/New_York",
-    adAccountEnv: ["META_AD_ACCOUNT_KEITH", "META_ADS_ACCOUNT_KEITH"],
-    tokenEnv: ["META_ACCESS_TOKEN_KEITH", "META_ADS_TOKEN_KEITH", "META_ACCESS_TOKEN"],
-  },
-] as const;
+const ACCOUNTS = CREATORS;
 
 const REPORTING_TIMEZONE = "America/New_York";
 const HOURLY_ADVERTISER_BREAKDOWN = "hourly_stats_aggregated_by_advertiser_time_zone";
@@ -63,18 +49,6 @@ function creativePreviewFromEntity(entity: MetaAdEntity | null | undefined) {
     thumbnail_url: creative.thumbnail_url || null,
     image_url: creative.image_url || null,
   };
-}
-
-function firstEnv(names: readonly string[]) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) return value;
-  }
-  return null;
-}
-
-function normalizeAdAccountId(id: string) {
-  return id.startsWith("act_") ? id : `act_${id}`;
 }
 
 function todayIso() {

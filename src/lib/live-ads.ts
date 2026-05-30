@@ -1,6 +1,13 @@
+import {
+  CREATORS_BY_KEY,
+  firstEnv,
+  normalizeAdAccountId,
+  type CreatorKey,
+} from "@/lib/creators";
+
 const BASE_URL = "https://graph.facebook.com/v21.0";
 
-type ClientKey = "tyson" | "keith";
+type ClientKey = CreatorKey;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -113,40 +120,7 @@ export interface LiveAdsPayload {
   accounts: LiveAdsAccountGroup[];
 }
 
-const ACCOUNTS: Record<
-  ClientKey,
-  {
-    name: string;
-    adAccountEnv: readonly string[];
-    tokenEnv: readonly string[];
-    defaultAdAccountId: string;
-  }
-> = {
-  tyson: {
-    name: "Tyson",
-    adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
-    tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
-    defaultAdAccountId: "act_176726311",
-  },
-  keith: {
-    name: "Keith",
-    adAccountEnv: ["META_AD_ACCOUNT_KEITH", "META_ADS_ACCOUNT_KEITH"],
-    tokenEnv: ["META_ACCESS_TOKEN_KEITH", "META_ADS_TOKEN_KEITH", "META_ACCESS_TOKEN"],
-    defaultAdAccountId: "act_861990450801193",
-  },
-};
-
-function firstEnv(names: readonly string[]) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) return value;
-  }
-  return null;
-}
-
-function normalizeAdAccountId(id: string) {
-  return id.startsWith("act_") ? id : `act_${id}`;
-}
+const ACCOUNTS = CREATORS_BY_KEY;
 
 async function metaFetch<T>(url: string, accessToken: string): Promise<T> {
   const separator = url.includes("?") ? "&" : "?";

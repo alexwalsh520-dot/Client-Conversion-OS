@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { displayKeyword, keywordFromAdName, normalizeKeyword } from "@/lib/ads-tracker/normalize";
 import { getAdEntities } from "@/lib/mozi-meta";
+import {
+  CREATORS_BY_KEY,
+  firstEnv,
+  normalizeAdAccountId,
+  type CreatorKey,
+} from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
 
@@ -8,35 +14,12 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
-const ACCOUNTS = {
-  tyson: {
-    name: "Tyson",
-    adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
-    tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
-  },
-  keith: {
-    name: "Keith",
-    adAccountEnv: ["META_AD_ACCOUNT_KEITH", "META_ADS_ACCOUNT_KEITH"],
-    tokenEnv: ["META_ACCESS_TOKEN_KEITH", "META_ADS_TOKEN_KEITH", "META_ACCESS_TOKEN"],
-  },
-} as const;
+const ACCOUNTS = CREATORS_BY_KEY;
 
-type ClientKey = keyof typeof ACCOUNTS;
-
-function firstEnv(names: readonly string[]) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) return value;
-  }
-  return null;
-}
-
-function normalizeAdAccountId(id: string) {
-  return id.startsWith("act_") ? id : `act_${id}`;
-}
+type ClientKey = CreatorKey;
 
 function isClient(value: string | null): value is ClientKey {
-  return value === "tyson" || value === "keith";
+  return value !== null && value in ACCOUNTS;
 }
 
 export async function GET(req: NextRequest) {
