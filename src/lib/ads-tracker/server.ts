@@ -2291,7 +2291,38 @@ interface ManychatOriginCheckRow {
  * matching can credit the sale to the right ad. They only ADD matches for sales
  * that currently miss — first-hit-wins matching prevents any double counting,
  * and events carry no revenue of their own (the sale row does).
+ *
+ * Spend guardrail: a credit is only allowed if the origin keyword has real paid
+ * Meta spend for that same creator. ManyChat stamps a "keyword" on organic-flow
+ * entrants too (e.g. "LOCKED"), so a non-empty keyword is NOT proof of a paid
+ * ad. Requiring matching ad spend means an organic keyword can never be counted
+ * as ad-driven — it has no ad dollars to point to.
  */
+async function fetchPaidKeywordSet(
+  db: ReturnType<typeof getServiceSupabase>,
+  clientFilter: string[]
+): Promise<Set<string>> {
+  const { data, error } = await db
+    .from("ads_meta_insights_daily")
+    .select("client_key,keyword_normalized,spend_cents")
+    .gt("spend_cents", 0)
+    .not("keyword_normalized", "is", null)
+    .limit(50000);
+  const paid = new Set<string>();
+  if (error) {
+    console.warn("[ads-tracker] paid keyword set query failed", error.message);
+    return paid;
+  }
+  for (const row of (data || []) as { client_key: string | null; keyword_normalized: string | null }[]) {
+    const clientKey = String(row.client_key || "").trim();
+    if (!clientFilter.includes(clientKey)) continue;
+    const kw = normalizeKeyword(row.keyword_normalized);
+    if (!kw) continue;
+    paid.add(`${clientKey}:${kw}`);
+  }
+  return paid;
+}
+
 async function fetchManychatOriginAdEvents(
   db: ReturnType<typeof getServiceSupabase>,
   clientFilter: string[]
@@ -2309,6 +2340,8 @@ async function fetchManychatOriginAdEvents(
     return [];
   }
 
+  const paidKeywords = await fetchPaidKeywordSet(db, clientFilter);
+
   const events: KeywordEvent[] = [];
   for (const row of (data || []) as ManychatOriginCheckRow[]) {
     const clientKey = String(row.client_key || "").trim();
@@ -2317,6 +2350,9 @@ async function fetchManychatOriginAdEvents(
     if (!subscriberId) continue;
     const keywordNormalized = normalizeKeyword(row.origin_keyword);
     if (!keywordNormalized) continue;
+    // Spend guardrail: only credit keywords backed by real paid ad spend for
+    // this creator. Blocks organic-flow keywords (e.g. "LOCKED") from counting.
+    if (!paidKeywords.has(`${clientKey}:${keywordNormalized}`)) continue;
     const eventAt = row.sale_date
       ? `${row.sale_date}T00:00:00.000Z`
       : row.checked_at || new Date().toISOString();
