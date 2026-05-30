@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     // Same idea for Chromium — tell the file tracer to bundle the
     // binary tarball in the function's deployment.
     "/api/nutrition/v2/admin/test-pdf-render": ["./node_modules/@sparticuz/chromium/**"],
+    "/api/nutrition/v2/admin/test-generate-plan": ["./node_modules/@sparticuz/chromium/**"],
     "/api/cron/nutrition-auto-pipeline": ["./node_modules/@sparticuz/chromium/**"],
   },
   // Force clean build - bust Vercel cache v2
