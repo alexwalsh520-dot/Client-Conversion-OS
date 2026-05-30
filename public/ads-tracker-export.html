@@ -766,6 +766,44 @@
   .ddr-play-clean .ic{width:30px;height:30px;border-radius:99px;background:rgba(125,211,168,.13);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
   @media(max-width:700px){.ddr-pcard{grid-template-columns:34px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
+  /* Interactive booking table: sticky header, sortable, filterable, expandable */
+  .bk{display:flex;flex-direction:column;gap:12px}
+  .bk-filters{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .bk-chip{font-size:11px;font-weight:600;padding:6px 12px;border-radius:99px;border:1px solid var(--border);background:var(--panel);color:var(--text-3);cursor:pointer;transition:color .12s,background .12s,border-color .12s;display:inline-flex;align-items:center;gap:6px}
+  .bk-chip:hover{color:var(--text-2)}
+  .bk-chip.on{background:var(--panel-2);color:var(--text);border-color:var(--border-2)}
+  .bk-chip .dot{width:6px;height:6px;border-radius:99px;background:currentColor;opacity:.7}
+  .bk-chip .c{color:var(--text-4);font-weight:600}
+  .bk-chip.on .c{color:var(--text-3)}
+  .bk-tblwrap{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+  .bk-tbl{width:100%;border-collapse:collapse}
+  .bk-tbl th{position:sticky;top:0;z-index:6;background:var(--panel-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:600;text-align:right;padding:12px 14px;border-bottom:1px solid var(--border-2);cursor:pointer;user-select:none;white-space:nowrap;box-shadow:0 1px 0 var(--border)}
+  .bk-tbl th:first-child{text-align:left}
+  .bk-tbl th:hover{color:var(--text-2)}
+  .bk-tbl th.act{color:var(--text)}
+  .bk-tbl th .ar{margin-left:4px;font-size:8.5px;opacity:.45}
+  .bk-tbl th.act .ar{opacity:1;color:var(--gold)}
+  .bk-tbl td{font-size:12.5px;padding:12px 14px;text-align:right;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text-2)}
+  .bk-tbl td:first-child{text-align:left}
+  .bk-tbl tr:last-child td{border-bottom:none}
+  .bk-row{cursor:pointer;transition:background .1s}
+  .bk-row:hover{background:var(--panel-2)}
+  .bk-row.open{background:var(--panel-2)}
+  .bk-kw{font-weight:600;text-transform:capitalize;color:var(--text);letter-spacing:.01em}
+  .bk-chev{display:inline-block;width:13px;color:var(--text-4);transition:transform .15s,color .15s;margin-right:8px;font-size:10px}
+  .bk-row.open .bk-chev{transform:rotate(90deg);color:var(--gold)}
+  .bk-rate{font-weight:680}
+  .bk-stat-paused{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-4);margin-left:7px;border:1px solid var(--border-2);padding:1px 6px;border-radius:99px}
+  .bk-detail>td{background:var(--bg-1);padding:0}
+  .bk-dwrap{padding:15px 18px 17px 38px;display:flex;flex-direction:column;gap:13px}
+  .bk-find{font-size:12px;color:var(--text-3);line-height:1.6}
+  .bk-find .lab{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4);font-weight:700;display:block;margin-bottom:5px}
+  .bk-pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:var(--panel-2);border:1px solid var(--border);color:var(--text-2);margin:0 5px 5px 0;text-transform:capitalize}
+  .bk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px}
+  .bk-stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .bk-stat .l{font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
+  .bk-stat .v{font-size:15px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums;color:var(--text)}
+
   .ddr-empty{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:40px;text-align:center;color:var(--text-3);font-size:13px}
   @media(max-width:900px){.ddr-band{grid-template-columns:repeat(2,1fr)} .ddr-srow{grid-template-columns:80px 1fr 96px}}
 </style>
@@ -4636,10 +4674,11 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
 function aggregateByAdWord(campaigns){
   const map = new Map();
   (campaigns||[]).forEach(c => {
+    const accountLabel = c.clientKey==="tyson" ? "Tyson" : c.clientKey==="keith" ? "Keith" : (c.clientKey||"—");
     (c.rows||[]).forEach(r => {
       (r.adRows||[]).forEach(ad => {
         const kw = String(ad.keyword || ad.adName || "UNKNOWN").toUpperCase();
-        if(!map.has(kw)) map.set(kw, {keyword:kw, spend:0, imp:0, clicks:0, leads:0, booked:0, taken:0, clients:0, collected:0, active:false});
+        if(!map.has(kw)) map.set(kw, {keyword:kw, spend:0, imp:0, clicks:0, leads:0, booked:0, taken:0, clients:0, collected:0, active:false, _accounts:new Set(), _campaigns:new Set(), _ads:new Set()});
         const t = map.get(kw);
         t.spend += Number(ad.spend||0);
         t.imp += Number(ad.imp||0);
@@ -4650,10 +4689,18 @@ function aggregateByAdWord(campaigns){
         t.clients += Number(ad.clients||0);
         t.collected += Number(ad.collected||0);
         if(ad.status==="active") t.active = true;
+        t._accounts.add(accountLabel);
+        if(c.name) t._campaigns.add(String(c.name).replace(/^.*?—\s*/, ""));
+        if(ad.adName) t._ads.add(String(ad.adName));
       });
     });
   });
-  return Array.from(map.values());
+  return Array.from(map.values()).map(t => ({
+    ...t,
+    accounts: Array.from(t._accounts),
+    campaigns: Array.from(t._campaigns),
+    ads: Array.from(t._ads),
+  }));
 }
 
 // Verdict is pure rules over the real numbers — never AI, never invented.
@@ -4728,6 +4775,138 @@ function ActionPlaybook({rows, blendedRate, rangeText}){
       {killCount>0 && (
         <div className="ddr-play-foot">Turning off the underperformers above frees up about <b>{fmtUsd(freedUp)}</b> you spent {rangeText} — money you can move into the ads that actually book calls.</div>
       )}
+    </div>
+  );
+}
+
+// Interactive "what to turn on/off" table. Sticky header, sortable, filterable,
+// click a row to drop down where the ad lives + the deeper numbers.
+function BookingTable({rows}){
+  const [sortKey, setSortKey] = useState("spend");
+  const [sortDir, setSortDir] = useState("desc");
+  const [vf, setVf] = useState("all");      // verdict filter
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [open, setOpen] = useState(null);
+
+  const enriched = useMemo(()=> (rows||[]).map(r=>{
+    const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
+    const cpc = r.booked>0 ? r.spend/r.booked : 0;
+    const cpl = r.leads>0 ? r.spend/r.leads : 0;
+    const ctr = r.imp>0 ? (r.clicks/r.imp)*100 : 0;
+    return {...r, rate, cpc, cpl, ctr, v:bookingVerdict(r)};
+  }), [rows]);
+
+  // verdict counts for the filter chips
+  const counts = useMemo(()=>{
+    const m = {};
+    enriched.forEach(r=>{ m[r.v.label] = (m[r.v.label]||0)+1; });
+    return m;
+  }, [enriched]);
+  const verdictOrder = ["Turn off","Weak","Healthy","Scale it","Low volume"];
+  const presentVerdicts = verdictOrder.filter(v=>counts[v]);
+  const verdictDot = {"Turn off":"var(--red)","Weak":"var(--red-dim)","Healthy":"var(--green-dim)","Scale it":"var(--green)","Low volume":"var(--gold)"};
+
+  const filtered = enriched.filter(r =>
+    (vf==="all" || r.v.label===vf) && (!activeOnly || r.active)
+  );
+  // Verdict severity: best (Scale) high, worst (Turn off) low, so it sorts cleanly.
+  const vRank = {"Scale it":4,"Healthy":3,"Low volume":2,"Weak":1,"Turn off":0};
+  const sorted = [...filtered].sort((a,b)=>{
+    if(sortKey==="keyword") return sortDir==="asc" ? a.keyword.localeCompare(b.keyword) : b.keyword.localeCompare(a.keyword);
+    const av = sortKey==="v" ? vRank[a.v.label] : Number(a[sortKey]||0);
+    const bv = sortKey==="v" ? vRank[b.v.label] : Number(b[sortKey]||0);
+    return sortDir==="asc" ? av-bv : bv-av;
+  });
+
+  const toggleSort = (key)=>{
+    if(sortKey===key){ setSortDir(d=>d==="asc"?"desc":"asc"); }
+    else { setSortKey(key); setSortDir(key==="keyword"?"asc":"desc"); }
+  };
+  const arrow = (key)=> sortKey===key ? (sortDir==="desc"?"▼":"▲") : "↕";
+  const Th = ({k, children}) => (
+    <th className={sortKey===k?"act":""} onClick={()=>toggleSort(k)}>{children}<span className="ar">{arrow(k)}</span></th>
+  );
+  const low = (s)=> String(s||"").toLowerCase();
+
+  return (
+    <div className="bk">
+      <div className="bk-filters">
+        <button className={"bk-chip "+(vf==="all"?"on":"")} onClick={()=>setVf("all")}>All<span className="c">{enriched.length}</span></button>
+        {presentVerdicts.map(v=>(
+          <button key={v} className={"bk-chip "+(vf===v?"on":"")} onClick={()=>setVf(v)} style={vf===v?{color:verdictDot[v]}:null}>
+            <span className="dot" style={{background:verdictDot[v]}}></span>{v}<span className="c">{counts[v]}</span>
+          </button>
+        ))}
+        <div style={{flex:1}}></div>
+        <button className={"bk-chip "+(activeOnly?"on":"")} onClick={()=>setActiveOnly(x=>!x)}>{activeOnly?"Active only":"Show all statuses"}</button>
+      </div>
+
+      <div className="bk-tblwrap">
+        <table className="bk-tbl">
+          <thead><tr>
+            <Th k="keyword">Ad word</Th>
+            <Th k="spend">Spend</Th>
+            <Th k="leads">Leads</Th>
+            <Th k="booked">Booked</Th>
+            <Th k="rate">Book rate</Th>
+            <Th k="cpc">$ / call</Th>
+            <Th k="v">Verdict</Th>
+          </tr></thead>
+          <tbody>
+            {sorted.length===0 && (
+              <tr><td colSpan={7} style={{textAlign:"center",color:"var(--text-3)",padding:"28px"}}>Nothing matches this filter.</td></tr>
+            )}
+            {sorted.map(r=>{
+              const isOpen = open===r.keyword;
+              const rateColor = r.rate>=10?"var(--green)":(r.rate<3&&r.leads>=10?"var(--red)":"var(--text)");
+              return (
+                <React.Fragment key={r.keyword}>
+                  <tr className={"bk-row "+(isOpen?"open":"")} onClick={()=>setOpen(isOpen?null:r.keyword)}>
+                    <td>
+                      <span className="bk-chev">▶</span>
+                      <span className="bk-kw">{low(r.keyword)}</span>
+                      {!r.active && <span className="bk-stat-paused">paused</span>}
+                    </td>
+                    <td>{fmtUsd(r.spend)}</td>
+                    <td>{fmtNum(r.leads)}</td>
+                    <td>{fmtNum(r.booked)}</td>
+                    <td><span className="bk-rate" style={{color:rateColor}}>{r.leads>0?fmtPct(r.rate,1):"—"}</span></td>
+                    <td>{r.cpc>0?fmtUsd(r.cpc):"—"}</td>
+                    <td style={{textAlign:"right"}}><span className={"ddr-verdict "+r.v.cls}><span className="vd"></span>{r.v.label}</span></td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="bk-detail">
+                      <td colSpan={7}>
+                        <div className="bk-dwrap">
+                          <div className="bk-find">
+                            <span className="lab">Where to find this ad</span>
+                            <b>Account:</b> {(r.accounts||[]).join(" + ") || "—"}
+                            {(r.campaigns||[]).length>0 && <span> · <b>Campaign:</b> {r.campaigns.join(", ")}</span>}
+                            <div style={{marginTop:8}}>
+                              <span className="lab">Ad name{(r.ads||[]).length>1?"s":""} in Meta</span>
+                              {(r.ads||[]).length>0 ? r.ads.map(a=> <span className="bk-pill" key={a}>{low(a)}</span>) : <span style={{color:"var(--text-4)"}}>—</span>}
+                            </div>
+                          </div>
+                          <div className="bk-stats">
+                            <div className="bk-stat"><div className="l">Cost / lead</div><div className="v">{r.cpl>0?fmtUsd(r.cpl):"—"}</div></div>
+                            <div className="bk-stat"><div className="l">Cost / booked call</div><div className="v">{r.cpc>0?fmtUsd(r.cpc):"—"}</div></div>
+                            <div className="bk-stat"><div className="l">Calls shown up</div><div className="v">{fmtNum(r.taken)}</div></div>
+                            <div className="bk-stat"><div className="l">New clients</div><div className="v">{fmtNum(r.clients)}</div></div>
+                            <div className="bk-stat"><div className="l">Impressions</div><div className="v">{fmtNum(r.imp)}</div></div>
+                            <div className="bk-stat"><div className="l">Link clicks</div><div className="v">{fmtNum(r.clicks)}</div></div>
+                            <div className="bk-stat"><div className="l">Click rate</div><div className="v">{r.imp>0?fmtPct(r.ctr,2):"—"}</div></div>
+                            <div className="bk-stat"><div className="l">Status</div><div className="v">{r.active?"Active":"Paused"}</div></div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -4818,33 +4997,10 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         </div>
       </div>
 
-      {/* Lead -> Booked-Call rate by ad word */}
+      {/* Lead -> Booked-Call rate by ad word: sortable, filterable, expandable */}
       <div className="ddr-block">
-        <div className="ddr-blabel"><span className="l">Lead → Booked-Call rate, by ad word</span><span className="m">sorted best first</span></div>
-        <table className="ddr-tbl">
-          <thead><tr>
-            <th>Ad word</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Book rate</th><th>$ / call</th><th style={{textAlign:"right"}}>Verdict</th>
-          </tr></thead>
-          <tbody>
-            {tblRows.map(r=>{
-              const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
-              const cpc = r.booked>0 ? r.spend/r.booked : 0;
-              const v = bookingVerdict(r);
-              const rateColor = rate>=10?"var(--green)":rate<3&&r.leads>=10?"var(--red)":"var(--text)";
-              return (
-                <tr key={r.keyword}>
-                  <td><span className="ddr-kw">{cap(r.keyword)}</span></td>
-                  <td>{fmtUsd(r.spend)}</td>
-                  <td>{fmtNum(r.leads)}</td>
-                  <td>{fmtNum(r.booked)}</td>
-                  <td><span className="ddr-rate" style={{color:rateColor}}>{r.leads>0?fmtPct(rate,1):"—"}</span></td>
-                  <td>{cpc>0?fmtUsd(cpc):"—"}</td>
-                  <td style={{textAlign:"right"}}><span className={"ddr-verdict "+v.cls}><span className="vd"></span>{v.label}</span></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="ddr-blabel"><span className="l">Lead → Booked-Call rate, by ad word</span><span className="m">tap a row for where to find the ad · tap a column to sort</span></div>
+        <BookingTable rows={rows}/>
       </div>
 
       {tracedPct!=null && (
