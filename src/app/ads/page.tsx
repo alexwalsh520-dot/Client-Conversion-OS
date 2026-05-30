@@ -12,7 +12,7 @@ export default function AdsTrackerPage() {
     <main className="ads-export-page" aria-label="Ads Tracker">
       <iframe
         className="ads-export-frame"
-        src={`/ads-tracker-export.html?v=deep-dive-playbook-2026-05-30b&t=${cacheBust}`}
+        src={`/ads-tracker-export.html?v=roas-first-deep-dive-2026-05-31&t=${cacheBust}`}
         title="Ads Tracker"
       />
     </main>

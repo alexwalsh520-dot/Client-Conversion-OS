@@ -804,6 +804,42 @@
   .bk-stat .l{font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
   .bk-stat .v{font-size:15px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums;color:var(--text)}
 
+  /* ROAS-first additions: the metric everything ties to */
+  .ddr-stat.hero{background:linear-gradient(180deg,rgba(212,178,122,.11),transparent),var(--panel);border-color:var(--gold-dim)}
+  .ddr-stat.hero .lbl{color:var(--gold)}
+  .ddr-stat .val.roas{font-size:28px;color:var(--gold)}
+  .ddr-stat .val.roas.good{color:var(--green)} .ddr-stat .val.roas.bad{color:var(--red)}
+  .ddr-stat .val.roas .x{font-size:15px;color:var(--text-3);font-weight:600;margin-left:1px}
+
+  /* Playbook dropdowns — maximum context, one tap away */
+  .ddr-pcard{cursor:pointer}
+  .ddr-pcard.open{box-shadow:inset 0 0 0 1px var(--border-2)}
+  .ddr-pchev{font-size:9px;color:var(--text-4);margin-top:6px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+  .ddr-pcard.open .ddr-pchev{color:var(--gold)}
+  .ddr-pmore{grid-column:1 / -1;margin-top:5px;padding-top:14px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:14px;cursor:default}
+  .ddr-chain{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+  .ddr-chain .seg{display:flex;flex-direction:column;gap:1px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 11px;min-width:58px}
+  .ddr-chain .seg b{font-size:14px;color:var(--text);font-weight:660;font-variant-numeric:tabular-nums}
+  .ddr-chain .seg .cl{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);font-weight:600}
+  .ddr-chain .arr{color:var(--text-4);font-size:12px}
+  .ddr-chain .seg.rev b{color:var(--green)} .ddr-chain .seg.rev.dim b{color:var(--text-4)}
+  .ddr-mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:9px}
+  .ddr-mstat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 12px}
+  .ddr-mstat .l{font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
+  .ddr-mstat .v{font-size:14px;font-weight:650;margin-top:3px;color:var(--text);font-variant-numeric:tabular-nums}
+  .ddr-pfind{font-size:11.5px;color:var(--text-3);line-height:1.65}
+  .ddr-pfind .lab{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4);font-weight:700;margin-right:6px}
+  .ddr-pfind .bk-pill{margin-top:4px}
+  .ddr-pdo{font-size:12.5px;line-height:1.6;color:var(--text-2);background:var(--panel-2);border-left:2px solid var(--gold);border-radius:0 8px 8px 0;padding:11px 14px}
+  .ddr-pdo b{color:var(--text)}
+  .ddr-pdo .h{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4);font-weight:700;margin-bottom:5px}
+  .ddr-pcard.kill .ddr-pdo{border-left-color:var(--red)}
+  .ddr-pcard.scale .ddr-pdo{border-left-color:var(--green)}
+
+  /* ROAS column in the ad-word table */
+  .bk-roas{font-weight:700;font-variant-numeric:tabular-nums}
+  .bk-sub{display:block;font-size:8px;color:var(--text-4);font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-top:1px}
+
   .ddr-empty{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:40px;text-align:center;color:var(--text-3);font-size:13px}
   @media(max-width:900px){.ddr-band{grid-template-columns:repeat(2,1fr)} .ddr-srow{grid-template-columns:80px 1fr 96px}}
 </style>
@@ -4703,98 +4739,213 @@ function aggregateByAdWord(campaigns){
   }));
 }
 
-// Verdict is pure rules over the real numbers — never AI, never invented.
-function bookingVerdict(row){
-  const rate = row.leads>0 ? (row.booked/row.leads)*100 : 0;
-  if(row.leads < 10) return {cls:"v-low", label:"Low volume"};
-  if(rate < 2) return {cls:"v-kill", label:"Turn off"};
-  if(rate < 5) return {cls:"v-weak", label:"Weak"};
-  if(rate < 10) return {cls:"v-ok", label:"Healthy"};
-  return {cls:"v-scale", label:"Scale it"};
+// The server already did the careful work of matching collected cash to a
+// specific ad (gating ManyChat credit on real spend, etc.). dashboard.adRoas
+// is that authoritative per-ad result. We sum it up by ad WORD (keyword) so the
+// Deep Dive's ROAS uses the same server-blessed revenue, never a guess.
+function roasByKeyword(adRoas){
+  const m = new Map();
+  (adRoas||[]).forEach(r => {
+    const kw = String(r.label || r.adName || "UNKNOWN").toUpperCase();
+    if(!m.has(kw)) m.set(kw, {collected:0, spend:0});
+    const t = m.get(kw);
+    t.collected += Number(r.collectedRevenue||0);
+    t.spend += Number(r.adSpend||0);
+  });
+  return m;
 }
 
-// Turns the raw numbers into a tiny list of dead-simple moves.
-// Pure rules over real data — anyone could read it and act.
-function buildPlaybook(rows, blendedRate){
-  const kills = [];
-  const scales = [];
-  const killFloor = Math.max(2.5, blendedRate * 0.5);
+// Attach honest ROAS to each ad word. "Traced" means we've tied real cash to it.
+// Where we can't, roas stays null — we show "not traced yet", never a fake 0×
+// that would trick someone into killing a profitable ad.
+function withRoas(row, roasMap){
+  const rk = roasMap && roasMap.get(row.keyword);
+  const tracedRev = rk ? rk.collected : Number(row.collected||0);
+  const traced = tracedRev > 0;
+  // Below ~$100 of spend a ROAS multiple is noise off one lucky sale.
+  const roasReliable = traced && row.spend >= 100;
+  const roas = (traced && row.spend > 0) ? tracedRev/row.spend : null;
+  const rate = row.leads>0 ? (row.booked/row.leads)*100 : 0;
+  const cpc = row.booked>0 ? row.spend/row.booked : 0;
+  const cpl = row.leads>0 ? row.spend/row.leads : 0;
+  const ctr = row.imp>0 ? (row.clicks/row.imp)*100 : 0;
+  return {...row, tracedRev, traced, roas, roasReliable, rate, cpc, cpl, ctr};
+}
+
+// Verdict is pure rules over the real numbers — never AI, never invented.
+// ROAS leads: if we can see the money, the verdict is about PROFIT. A call that
+// costs 2x but returns 5x is a winner — cost-per-call alone is a vanity metric.
+// Only where revenue isn't traced yet do we fall back to booking rate.
+function adVerdict(row){
+  if(row.traced && row.roas != null){
+    if(row.roasReliable){
+      if(row.roas >= 2) return {cls:"v-scale", label:"Scale it", basis:"roas"};
+      if(row.roas >= 1) return {cls:"v-ok", label:"Profitable", basis:"roas"};
+      return {cls:"v-kill", label:"Losing money", basis:"roas"};
+    }
+    return {cls:"v-low", label:"Too early", basis:"roas-early"};
+  }
+  const rate = row.leads>0 ? (row.booked/row.leads)*100 : 0;
+  if(row.leads < 10) return {cls:"v-low", label:"Low volume", basis:"bookings"};
+  if(rate < 2) return {cls:"v-kill", label:"Turn off", basis:"bookings"};
+  if(rate < 5) return {cls:"v-weak", label:"Weak", basis:"bookings"};
+  return {cls:"v-ok", label:"Books well", basis:"bookings"};
+}
+
+// Turns the raw numbers into a tiny list of dead-simple, money-first moves.
+// Pure rules over real data — anyone could read it and act. ROAS leads:
+// scale the proven money-makers, cut the proven money-losers. Only when no
+// revenue is traced do we fall back to "this burns cash and books nothing".
+function buildPlaybook(rows){
+  const scaleRoas = [], cutRoas = [], cutBlind = [];
   rows.forEach(r => {
-    const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
-    const cpc = r.booked>0 ? r.spend/r.booked : Infinity;
-    if(r.leads >= 25 && rate < killFloor && r.spend > 0){
-      kills.push({...r, rate, cpc, type:"kill"});
-    } else if(r.leads >= 10 && r.booked >= 2 && rate >= 10){
-      scales.push({...r, rate, cpc, type:"scale"});
+    if(r.traced && r.roasReliable && r.roas != null){
+      if(r.roas >= 2) scaleRoas.push({...r, type:"scale"});
+      else if(r.roas < 1) cutRoas.push({...r, type:"kill"});
+    } else if(!r.traced && r.spend > 0 && r.leads >= 25 && r.rate < 2.5){
+      // No traceable sale + lots of DMs but almost no bookings = likely waste.
+      cutBlind.push({...r, type:"kill"});
     }
   });
-  kills.sort((a,b)=>b.spend-a.spend);
-  scales.sort((a,b)=>a.cpc-b.cpc);
-  // Money-first: cut the bleeders, then pour into the winners. Cap at 4.
-  const actions = [...kills, ...scales].slice(0,4);
-  const freedUp = kills.reduce((s,r)=>s+r.spend,0);
-  return {actions, freedUp, killCount:kills.length, scaleCount:scales.length};
+  scaleRoas.sort((a,b)=>b.roas-a.roas);   // best return first
+  cutRoas.sort((a,b)=>b.spend-a.spend);   // biggest bleed first
+  cutBlind.sort((a,b)=>b.spend-a.spend);
+  // Growth first (pour into winners), then stop the bleeding. Cap at 5.
+  const actions = [...scaleRoas, ...cutRoas, ...cutBlind].slice(0,5);
+  const freedUp = [...cutRoas, ...cutBlind].reduce((s,r)=>s+r.spend,0);
+  const scaleSpend = scaleRoas.reduce((s,r)=>s+r.spend,0);
+  return {actions, freedUp, scaleSpend, killCount:cutRoas.length+cutBlind.length, scaleCount:scaleRoas.length};
 }
 
-function ActionPlaybook({rows, blendedRate, rangeText}){
-  const {actions, freedUp, killCount} = buildPlaybook(rows, blendedRate);
+// One action card. Collapsed = the move + the one reason + the dollar impact.
+// Tap it open for the full money chain, every supporting number, where the ad
+// lives in Meta, and exactly what to do next.
+function PlaybookCard({a, i, rangeText}){
+  const [open, setOpen] = useState(false);
   const low = (s)=> String(s||"").toLowerCase();
+  const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+  const isKill = a.type==="kill";
+  const blind = isKill && !a.traced;
+  const word = low(a.keyword);
+
+  const why = a.type==="scale"
+    ? <span>Every <b>$1</b> you put in came back as <b>{fmtUsd(a.roas)}</b>. It's one of your best returns — feed it.</span>
+    : blind
+      ? <span>It pulled <b>{fmtNum(a.leads)}</b> leads but booked only <b>{fmtNum(a.booked)}</b> calls, and not one sale traces back to it.</span>
+      : <span>You've spent <b>{fmtUsd(a.spend)}</b> and gotten back just <b>{fmtUsd(a.tracedRev)}</b> — that's <b>{a.roas.toFixed(2)}×</b>, under your money back.</span>;
+
+  const impactBig = a.type==="scale" ? a.roas.toFixed(1)+"×" : "Save "+fmtUsd(a.spend);
+  const impactCap = a.type==="scale" ? "every $1 back" : "spent "+rangeText;
+
+  const doText = a.type==="scale"
+    ? <span><span className="h">What to do</span>Raise this ad's daily budget <b>20–30%</b> and keep it running. Watch that its ROAS holds near <b>{a.roas.toFixed(1)}×</b> as spend grows — if it does, raise it again.</span>
+    : blind
+      ? <span><span className="h">What to do</span>Pause it and move the budget to a "Scale it" ad above. <b>Or</b>, if you believe it really is making sales, make sure those sales get tagged with this ad's ManyChat link — then its true ROAS will show up here.</span>
+      : <span><span className="h">What to do</span>Pause it. For every <b>$1</b> in, only <b>{fmtUsd(a.roas)}</b> comes back. Move that <b>{fmtUsd(a.spend)}</b> into a "Scale it" ad above.</span>;
+
+  return (
+    <div className={"ddr-pcard "+a.type+(open?" open":"")} onClick={()=>setOpen(o=>!o)}>
+      <div className="ddr-pnum">{i+1}</div>
+      <div className="ddr-pmid">
+        <div className="ddr-pmove">
+          <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
+          <span className="word">{word}</span>
+        </div>
+        <div className="ddr-pwhy">{why}</div>
+      </div>
+      <div className="ddr-pimpact">
+        <div className="big">{impactBig}</div>
+        <div className="cap">{impactCap}</div>
+        <div className="ddr-pchev">{open ? "▲ less" : "▾ details"}</div>
+      </div>
+
+      {open && (
+        <div className="ddr-pmore" onClick={(e)=>e.stopPropagation()}>
+          {/* The money chain — spend in, cash out */}
+          <div className="ddr-chain">
+            <div className="seg"><b>{fmtUsd(a.spend)}</b><span className="cl">Spent</span></div>
+            <span className="arr">→</span>
+            <div className="seg"><b>{fmtNum(a.leads)}</b><span className="cl">Leads</span></div>
+            <span className="arr">→</span>
+            <div className="seg"><b>{fmtNum(a.booked)}</b><span className="cl">Booked</span></div>
+            <span className="arr">→</span>
+            <div className="seg"><b>{fmtNum(a.taken)}</b><span className="cl">Showed</span></div>
+            <span className="arr">→</span>
+            <div className="seg"><b>{fmtNum(a.clients)}</b><span className="cl">Clients</span></div>
+            <span className="arr">→</span>
+            <div className={"seg rev"+(a.traced?"":" dim")}><b>{a.traced?fmtUsd(a.tracedRev):"—"}</b><span className="cl">{a.traced?"Collected":"Not traced"}</span></div>
+          </div>
+
+          {/* Every supporting number */}
+          <div className="ddr-mgrid">
+            <div className="ddr-mstat"><div className="l">ROAS</div><div className="v">{a.traced?(a.roas!=null?a.roas.toFixed(2)+"×":"—"):"not traced"}</div></div>
+            <div className="ddr-mstat"><div className="l">Cost / lead</div><div className="v">{a.cpl>0?fmtUsd(a.cpl):"—"}</div></div>
+            <div className="ddr-mstat"><div className="l">Cost / booked call</div><div className="v">{a.cpc>0?fmtUsd(a.cpc):"—"}</div></div>
+            <div className="ddr-mstat"><div className="l">Book rate</div><div className="v">{a.leads>0?fmtPct(a.rate,1):"—"}</div></div>
+            <div className="ddr-mstat"><div className="l">Calls shown up</div><div className="v">{fmtNum(a.taken)}</div></div>
+            <div className="ddr-mstat"><div className="l">New clients</div><div className="v">{fmtNum(a.clients)}</div></div>
+          </div>
+
+          {/* Where to find the ad in Meta */}
+          <div className="ddr-pfind">
+            <span className="lab">Where to find it</span>
+            <b>{(a.accounts||[]).join(" + ") || "—"}</b>
+            {(a.campaigns||[]).length>0 && <span> · {a.campaigns.join(", ")}</span>}
+            <div>
+              {(a.ads||[]).length>0
+                ? (a.ads||[]).map(n=> <span className="bk-pill" key={n}>{cap(n)}</span>)
+                : <span style={{color:"var(--text-4)"}}>ad name unavailable</span>}
+            </div>
+          </div>
+
+          {/* Plain-English instruction */}
+          <div className="ddr-pdo">{doText}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionPlaybook({rows, rangeText}){
+  const {actions, freedUp, scaleSpend, killCount, scaleCount} = buildPlaybook(rows);
 
   return (
     <div className="ddr-play">
       <div className="ddr-play-top">
         <div className="ddr-play-k">Do this next</div>
         <div className="ddr-play-h">{actions.length>0
-          ? <span>The <b>{actions.length}</b> simplest moves to make more money right now.</span>
-          : <span>Your money's working — nothing to cut right now.</span>}</div>
+          ? <span>The <b>{actions.length}</b> highest-ROAS moves to make more money right now. Tap any one for the full story.</span>
+          : <span>Your money's working — nothing to scale hard or cut right now.</span>}</div>
       </div>
 
       {actions.length>0 ? actions.map((a,i)=>(
-        <div className={"ddr-pcard "+a.type} key={a.keyword}>
-          <div className="ddr-pnum">{i+1}</div>
-          <div className="ddr-pmid">
-            <div className="ddr-pmove">
-              <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
-              <span className="word">{low(a.keyword)}</span>
-            </div>
-            <div className="ddr-pwhy">
-              {a.type==="kill"
-                ? <span>It pulled <b>{fmtNum(a.leads)}</b> leads but booked only <b>{fmtNum(a.booked)}</b> calls. You're paying for DMs that don't book.</span>
-                : <span>It books a call for just <b>{fmtUsd(a.cpc)}</b> — that's <b>{fmtPct(a.rate,0)}</b> of its leads. Give it more budget.</span>}
-            </div>
-          </div>
-          <div className="ddr-pimpact">
-            <div className="big">{a.type==="kill" ? "Save "+fmtUsd(a.spend) : fmtUsd(a.cpc)}</div>
-            <div className="cap">{a.type==="kill" ? "spent "+rangeText : "per booked call"}</div>
-          </div>
-        </div>
+        <PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>
       )) : (
-        <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is wasting money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
+        <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is clearly losing money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
       )}
 
-      {killCount>0 && (
-        <div className="ddr-play-foot">Turning off the underperformers above frees up about <b>{fmtUsd(freedUp)}</b> you spent {rangeText} — money you can move into the ads that actually book calls.</div>
+      {(killCount>0 || scaleCount>0) && (
+        <div className="ddr-play-foot">
+          {killCount>0 && <span>Cutting the money-losers above frees up about <b>{fmtUsd(freedUp)}</b> you spent {rangeText}. </span>}
+          {scaleCount>0 && <span>Your proven winners are already running on <b>{fmtUsd(scaleSpend)}</b> — that's the budget to grow first.</span>}
+        </div>
       )}
     </div>
   );
 }
 
-// Interactive "what to turn on/off" table. Sticky header, sortable, filterable,
-// click a row to drop down where the ad lives + the deeper numbers.
+// Interactive "what to scale / turn off" table. ROAS sits right after the ad
+// word — everything ties to it. Sticky header, sortable, filterable, click a
+// row to drop down where the ad lives + every supporting number.
 function BookingTable({rows}){
-  const [sortKey, setSortKey] = useState("spend");
+  const [sortKey, setSortKey] = useState("roas");
   const [sortDir, setSortDir] = useState("desc");
   const [vf, setVf] = useState("all");      // verdict filter
   const [activeOnly, setActiveOnly] = useState(false);
   const [open, setOpen] = useState(null);
 
-  const enriched = useMemo(()=> (rows||[]).map(r=>{
-    const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
-    const cpc = r.booked>0 ? r.spend/r.booked : 0;
-    const cpl = r.leads>0 ? r.spend/r.leads : 0;
-    const ctr = r.imp>0 ? (r.clicks/r.imp)*100 : 0;
-    return {...r, rate, cpc, cpl, ctr, v:bookingVerdict(r)};
-  }), [rows]);
+  // Rows arrive already enriched (withRoas); just attach the verdict.
+  const enriched = useMemo(()=> (rows||[]).map(r=>({...r, v:adVerdict(r)})), [rows]);
 
   // verdict counts for the filter chips
   const counts = useMemo(()=>{
@@ -4802,19 +4953,24 @@ function BookingTable({rows}){
     enriched.forEach(r=>{ m[r.v.label] = (m[r.v.label]||0)+1; });
     return m;
   }, [enriched]);
-  const verdictOrder = ["Turn off","Weak","Healthy","Scale it","Low volume"];
+  const verdictOrder = ["Scale it","Profitable","Books well","Too early","Low volume","Weak","Turn off","Losing money"];
   const presentVerdicts = verdictOrder.filter(v=>counts[v]);
-  const verdictDot = {"Turn off":"var(--red)","Weak":"var(--red-dim)","Healthy":"var(--green-dim)","Scale it":"var(--green)","Low volume":"var(--gold)"};
+  const verdictDot = {"Scale it":"var(--green)","Profitable":"var(--green-dim)","Books well":"var(--green-dim)","Too early":"var(--gold)","Low volume":"var(--gold)","Weak":"var(--red-dim)","Turn off":"var(--red)","Losing money":"var(--red)"};
 
   const filtered = enriched.filter(r =>
     (vf==="all" || r.v.label===vf) && (!activeOnly || r.active)
   );
-  // Verdict severity: best (Scale) high, worst (Turn off) low, so it sorts cleanly.
-  const vRank = {"Scale it":4,"Healthy":3,"Low volume":2,"Weak":1,"Turn off":0};
+  // Verdict severity: best (Scale) high, worst (Losing money) low, sorts cleanly.
+  const vRank = {"Scale it":7,"Profitable":6,"Books well":5,"Too early":4,"Low volume":3,"Weak":2,"Turn off":1,"Losing money":0};
+  const sortVal = (r)=>{
+    if(sortKey==="v") return vRank[r.v.label];
+    if(sortKey==="roas") return r.roas==null ? -1 : r.roas;       // untraced sinks to the bottom
+    if(sortKey==="tracedRev") return Number(r.tracedRev||0);
+    return Number(r[sortKey]||0);
+  };
   const sorted = [...filtered].sort((a,b)=>{
     if(sortKey==="keyword") return sortDir==="asc" ? a.keyword.localeCompare(b.keyword) : b.keyword.localeCompare(a.keyword);
-    const av = sortKey==="v" ? vRank[a.v.label] : Number(a[sortKey]||0);
-    const bv = sortKey==="v" ? vRank[b.v.label] : Number(b[sortKey]||0);
+    const av = sortVal(a), bv = sortVal(b);
     return sortDir==="asc" ? av-bv : bv-av;
   });
 
@@ -4827,6 +4983,7 @@ function BookingTable({rows}){
     <th className={sortKey===k?"act":""} onClick={()=>toggleSort(k)}>{children}<span className="ar">{arrow(k)}</span></th>
   );
   const low = (s)=> String(s||"").toLowerCase();
+  const roasColor = (r)=> r.roas>=2?"var(--green)":(r.roas<1?"var(--red)":"var(--text)");
 
   return (
     <div className="bk">
@@ -4845,20 +5002,20 @@ function BookingTable({rows}){
         <table className="bk-tbl">
           <thead><tr>
             <Th k="keyword">Ad word</Th>
+            <Th k="roas">ROAS</Th>
             <Th k="spend">Spend</Th>
+            <Th k="tracedRev">Revenue</Th>
             <Th k="leads">Leads</Th>
             <Th k="booked">Booked</Th>
-            <Th k="rate">Book rate</Th>
             <Th k="cpc">$ / call</Th>
             <Th k="v">Verdict</Th>
           </tr></thead>
           <tbody>
             {sorted.length===0 && (
-              <tr><td colSpan={7} style={{textAlign:"center",color:"var(--text-3)",padding:"28px"}}>Nothing matches this filter.</td></tr>
+              <tr><td colSpan={8} style={{textAlign:"center",color:"var(--text-3)",padding:"28px"}}>Nothing matches this filter.</td></tr>
             )}
             {sorted.map(r=>{
               const isOpen = open===r.keyword;
-              const rateColor = r.rate>=10?"var(--green)":(r.rate<3&&r.leads>=10?"var(--red)":"var(--text)");
               return (
                 <React.Fragment key={r.keyword}>
                   <tr className={"bk-row "+(isOpen?"open":"")} onClick={()=>setOpen(isOpen?null:r.keyword)}>
@@ -4867,16 +5024,21 @@ function BookingTable({rows}){
                       <span className="bk-kw">{low(r.keyword)}</span>
                       {!r.active && <span className="bk-stat-paused">paused</span>}
                     </td>
+                    <td>
+                      {r.traced
+                        ? <span className="bk-roas" style={{color:roasColor(r)}}>{r.roas.toFixed(1)}×{!r.roasReliable && <span className="bk-sub">early</span>}</span>
+                        : <span style={{color:"var(--text-4)"}}>—<span className="bk-sub">not traced</span></span>}
+                    </td>
                     <td>{fmtUsd(r.spend)}</td>
+                    <td>{r.traced ? fmtUsd(r.tracedRev) : <span style={{color:"var(--text-4)"}}>—</span>}</td>
                     <td>{fmtNum(r.leads)}</td>
                     <td>{fmtNum(r.booked)}</td>
-                    <td><span className="bk-rate" style={{color:rateColor}}>{r.leads>0?fmtPct(r.rate,1):"—"}</span></td>
                     <td>{r.cpc>0?fmtUsd(r.cpc):"—"}</td>
                     <td style={{textAlign:"right"}}><span className={"ddr-verdict "+r.v.cls}><span className="vd"></span>{r.v.label}</span></td>
                   </tr>
                   {isOpen && (
                     <tr className="bk-detail">
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <div className="bk-dwrap">
                           <div className="bk-find">
                             <span className="lab">Where to find this ad</span>
@@ -4888,15 +5050,21 @@ function BookingTable({rows}){
                             </div>
                           </div>
                           <div className="bk-stats">
+                            <div className="bk-stat"><div className="l">ROAS</div><div className="v" style={r.traced?{color:roasColor(r)}:null}>{r.traced?(r.roas.toFixed(2)+"×"):"not traced"}</div></div>
+                            <div className="bk-stat"><div className="l">Revenue traced</div><div className="v">{r.traced?fmtUsd(r.tracedRev):"—"}</div></div>
                             <div className="bk-stat"><div className="l">Cost / lead</div><div className="v">{r.cpl>0?fmtUsd(r.cpl):"—"}</div></div>
                             <div className="bk-stat"><div className="l">Cost / booked call</div><div className="v">{r.cpc>0?fmtUsd(r.cpc):"—"}</div></div>
+                            <div className="bk-stat"><div className="l">Book rate</div><div className="v">{r.leads>0?fmtPct(r.rate,1):"—"}</div></div>
                             <div className="bk-stat"><div className="l">Calls shown up</div><div className="v">{fmtNum(r.taken)}</div></div>
                             <div className="bk-stat"><div className="l">New clients</div><div className="v">{fmtNum(r.clients)}</div></div>
-                            <div className="bk-stat"><div className="l">Impressions</div><div className="v">{fmtNum(r.imp)}</div></div>
-                            <div className="bk-stat"><div className="l">Link clicks</div><div className="v">{fmtNum(r.clicks)}</div></div>
                             <div className="bk-stat"><div className="l">Click rate</div><div className="v">{r.imp>0?fmtPct(r.ctr,2):"—"}</div></div>
-                            <div className="bk-stat"><div className="l">Status</div><div className="v">{r.active?"Active":"Paused"}</div></div>
                           </div>
+                          {!r.traced && (r.spend>0) && (
+                            <div className="ddr-pfind" style={{borderTop:"1px dashed var(--border)",paddingTop:11}}>
+                              <span className="lab">Why no ROAS?</span>
+                              No sale in the tracker is tagged with this ad's ManyChat link yet, so we can't tie cash to it. The spend, leads and bookings above are exact — only the revenue trail is missing. Tag its sales and a real ROAS shows up here.
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -4912,10 +5080,15 @@ function BookingTable({rows}){
 }
 
 function DeepDiveReport({campaigns, dashboard, range, loading}){
+  // Join each ad word to the server's authoritative matched cash, then attach
+  // honest ROAS. This is the single source of truth the whole page leans on.
+  const roasMap = useMemo(()=>roasByKeyword(dashboard && dashboard.adRoas), [dashboard]);
   const rows = useMemo(()=>{
-    const list = aggregateByAdWord(campaigns).filter(r => r.spend>0 || r.leads>0 || r.booked>0);
+    const list = aggregateByAdWord(campaigns)
+      .filter(r => r.spend>0 || r.leads>0 || r.booked>0)
+      .map(r => withRoas(r, roasMap));
     return list.sort((a,b)=>b.spend-a.spend);
-  }, [campaigns]);
+  }, [campaigns, roasMap]);
 
   if(loading) return <div className="ddr-empty">Loading the numbers…</div>;
   if(!rows.length) return <div className="ddr-empty">No ad activity in this date range. Try widening the dates above.</div>;
@@ -4926,10 +5099,23 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   const blendedCostPerCall = totalBooked>0 ? totalSpend/totalBooked : 0;
   const blendedRate = totalLeads>0 ? (totalBooked/totalLeads)*100 : 0;
 
+  // ROAS — the metric everything ties to. Honest blended ROAS is computed ONLY
+  // over the spend where we can actually see the cash, so it never reads
+  // artificially low just because revenue elsewhere isn't tagged yet.
+  const tracedRows = rows.filter(r => r.traced);
+  const tracedRev = tracedRows.reduce((s,r)=>s+r.tracedRev,0);
+  const tracedSpend = tracedRows.reduce((s,r)=>s+r.spend,0);
+  const blendedRoas = tracedSpend>0 ? tracedRev/tracedSpend : null;
+
+  // True total cash for the range (real payload fields) → coverage.
+  const sum = dashboard && dashboard.summary ? dashboard.summary : null;
+  const totalRev = sum ? Number(sum.totalCollectedRevenue||0) : tracedRev;
+  const coverage = totalRev>0 ? (tracedRev/totalRev)*100 : null;
+
   // Cheap-leads, not cheap-customers: high lead volume + bottom booking rate.
   const avgRate = blendedRate;
   const wasters = rows
-    .filter(r => r.leads >= 30 && (r.leads>0 ? (r.booked/r.leads)*100 : 0) < Math.max(2.5, avgRate*0.5))
+    .filter(r => r.leads >= 30 && r.rate < Math.max(2.5, avgRate*0.5))
     .sort((a,b)=>b.leads-a.leads);
   const wasterLeads = wasters.reduce((s,r)=>s+r.leads,0);
   const wasterBooked = wasters.reduce((s,r)=>s+r.booked,0);
@@ -4940,38 +5126,26 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   const maxSpend = Math.max(...rows.map(r=>r.spend), 1);
   const spendRows = rows.filter(r=>r.spend>0).slice(0,7);
 
-  // Booking-rate table sorted by booking rate (best first), volume-aware.
-  const tblRows = [...rows].sort((a,b)=>{
-    const ra = a.leads>0 ? a.booked/a.leads : -1;
-    const rb = b.leads>0 ? b.booked/b.leads : -1;
-    return rb-ra;
-  });
-
-  // Attribution honesty line (real payload fields).
-  const sum = dashboard && dashboard.summary ? dashboard.summary : null;
-  const tracedRev = sum ? Number(sum.collectedRevenue||0) : 0;
-  const totalRev = sum ? Number(sum.totalCollectedRevenue||0) : 0;
-  const tracedPct = totalRev>0 ? (tracedRev/totalRev)*100 : null;
-
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+  const roasClass = blendedRoas==null ? "" : (blendedRoas>=2 ? "good" : blendedRoas<1 ? "bad" : "");
 
   return (
     <div className="ddr">
       <div className="ddr-head">
         <h2 className="ddr-title">Deep Dive</h2>
-        <div className="ddr-sub">Every number below is your real spend and bookings for <b>{rangeLabel(range)}</b> — change the dates above and it all redraws.</div>
+        <div className="ddr-sub">Everything below is tied to <b>ROAS</b> — your real return on ad spend for <b>{rangeLabel(range)}</b>. Change the dates above and it all redraws.</div>
       </div>
 
-      {/* Do This Next — the simple action board */}
-      <ActionPlaybook rows={rows} blendedRate={blendedRate} rangeText={"in "+rangeLabel(range)}/>
+      {/* Do This Next — the simple, ROAS-first action board */}
+      <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)}/>
 
-      {/* Summary band */}
+      {/* Summary band — ROAS leads */}
       <div className="ddr-band">
+        <div className="ddr-stat hero"><div className="lbl">ROAS</div><div className={"val roas "+roasClass}>{blendedRoas!=null ? <span>{blendedRoas.toFixed(1)}<span className="x">×</span></span> : "—"}</div><div className="sub">{blendedRoas!=null ? "every $1 in → "+fmtUsd(blendedRoas)+" back" : "no revenue traced yet"}</div></div>
+        <div className="ddr-stat"><div className="lbl">Revenue traced</div><div className="val">{fmtUsd(tracedRev)}</div><div className="sub">{coverage!=null ? fmtPct(coverage,0)+" of "+fmtUsd(totalRev)+" collected" : "tied to a specific ad"}</div></div>
         <div className="ddr-stat"><div className="lbl">Ad spend</div><div className="val">{fmtUsd(totalSpend)}</div><div className="sub">{spendRows.length} ad words</div></div>
-        <div className="ddr-stat"><div className="lbl">Leads (DMs)</div><div className="val">{fmtNum(totalLeads)}</div><div className="sub">{totalLeads>0?fmtUsd(totalSpend/totalLeads):"—"} per lead</div></div>
-        <div className="ddr-stat"><div className="lbl">Booked calls</div><div className="val">{fmtNum(totalBooked)}</div><div className="sub">from {fmtNum(totalLeads)} leads</div></div>
-        <div className="ddr-stat"><div className="lbl">Cost / booked call</div><div className="val">{blendedCostPerCall>0?fmtUsd(blendedCostPerCall):"—"}</div><div className="sub">blended average</div></div>
-        <div className="ddr-stat"><div className="lbl">Booking rate</div><div className={"val "+(blendedRate>=8?"good":blendedRate<4?"bad":"")}>{fmtPct(blendedRate,1)}</div><div className="sub">leads → booked calls</div></div>
+        <div className="ddr-stat"><div className="lbl">Booked calls</div><div className="val">{fmtNum(totalBooked)}</div><div className="sub">{blendedRate>0?fmtPct(blendedRate,1)+" of leads":"from "+fmtNum(totalLeads)+" leads"}</div></div>
+        <div className="ddr-stat"><div className="lbl">Cost / booked call</div><div className="val">{blendedCostPerCall>0?fmtUsd(blendedCostPerCall):"—"}</div><div className="sub">judge it next to ROAS</div></div>
       </div>
 
       {/* Cheap-leads callout */}
@@ -4997,21 +5171,21 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         </div>
       </div>
 
-      {/* Lead -> Booked-Call rate by ad word: sortable, filterable, expandable */}
+      {/* ROAS by ad word: sortable, filterable, expandable */}
       <div className="ddr-block">
-        <div className="ddr-blabel"><span className="l">Lead → Booked-Call rate, by ad word</span><span className="m">tap a row for where to find the ad · tap a column to sort</span></div>
+        <div className="ddr-blabel"><span className="l">ROAS by ad word</span><span className="m">tap a row for where to find the ad · tap a column to sort</span></div>
         <BookingTable rows={rows}/>
       </div>
 
-      {tracedPct!=null && (
+      {coverage!=null && (
         <div className="ddr-block">
-          <div className="ddr-blabel"><span className="l">Attribution health</span><span className="m">how much we can trust the revenue trail</span></div>
+          <div className="ddr-blabel"><span className="l">Can we trust the ROAS?</span><span className="m">how much of the cash is tied to an ad</span></div>
           <div className="ddr-spend" style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:14}}>
-            <div style={{fontSize:13,color:"var(--text-2)",lineHeight:1.55,maxWidth:520}}>
-              We can trace <b style={{color:"var(--text)"}}>{fmtUsd(tracedRev)}</b> of <b style={{color:"var(--text)"}}>{fmtUsd(totalRev)}</b> collected back to a specific ad. The rest is a blind spot we're still closing — booking and lead counts above are exact, but revenue-per-ad is still being wired up.
+            <div style={{fontSize:13,color:"var(--text-2)",lineHeight:1.55,maxWidth:540}}>
+              We've tied <b style={{color:"var(--text)"}}>{fmtUsd(tracedRev)}</b> of <b style={{color:"var(--text)"}}>{fmtUsd(totalRev)}</b> collected back to a specific ad. The ROAS above is rock-solid on that money. The rest is real cash that just isn't tagged to an ad yet — so spend, leads and bookings are exact, but those ads show "not traced" instead of a fake ROAS. The more sales get tagged with their ManyChat link, the higher this climbs.
             </div>
             <div style={{textAlign:"right"}}>
-              <div style={{fontSize:30,fontWeight:700,color:tracedPct>=70?"var(--green)":tracedPct>=40?"var(--gold)":"var(--red)"}}>{fmtPct(tracedPct,0)}</div>
+              <div style={{fontSize:30,fontWeight:700,color:coverage>=70?"var(--green)":coverage>=40?"var(--gold)":"var(--red)"}}>{fmtPct(coverage,0)}</div>
               <div style={{fontSize:10.5,color:"var(--text-4)",letterSpacing:".05em",textTransform:"uppercase"}}>revenue traced</div>
             </div>
           </div>
