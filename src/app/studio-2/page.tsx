@@ -1923,8 +1923,8 @@ const cardMenuButtonStyle: React.CSSProperties = {
   width: 30,
   height: 30,
   borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(0,0,0,0.56)",
+  border: "1px solid var(--studio-chip-border)",
+  background: "var(--studio-chip-bg)",
   color: ADS_BRAND.text2,
   display: "flex",
   alignItems: "center",
@@ -1990,8 +1990,8 @@ function selectBadgeStyle(isSelected: boolean): React.CSSProperties {
     width: 24,
     height: 24,
     borderRadius: 7,
-    border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.28)"}`,
-    background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.48)",
+    border: `1px solid ${isSelected ? ADS_BRAND.gold : "var(--studio-chip-border)"}`,
+    background: isSelected ? ADS_BRAND.gold : "var(--studio-chip-bg)",
     color: isSelected ? ADS_BRAND.inkOnGold : ADS_BRAND.text2,
     display: "flex",
     alignItems: "center",
@@ -7039,8 +7039,8 @@ export default function Studio2Page() {
                             width: 22,
                             height: 22,
                             borderRadius: 6,
-                            border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.25)"}`,
-                            background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.56)",
+                            border: `1px solid ${isSelected ? ADS_BRAND.gold : "var(--studio-chip-border)"}`,
+                            background: isSelected ? ADS_BRAND.gold : "var(--studio-chip-bg)",
                             color: isSelected ? ADS_BRAND.bg : ADS_BRAND.text2,
                             display: "flex",
                             alignItems: "center",
@@ -7358,7 +7358,7 @@ export default function Studio2Page() {
             background: ${ADS_BRAND.panel2} !important;
           }
           .studio2-card-menu-button:hover {
-            background: rgba(0,0,0,0.76);
+            background: var(--studio-chip-bg-hover);
             color: ${ADS_BRAND.text};
           }
           .studio2-folder-choice:hover {

@@ -90,6 +90,9 @@
   --studio-text2: #a8a8a8;
   --studio-text3: #6b6b6b;
   --studio-text4: #4a4a4a;
+  --studio-chip-bg: rgba(0,0,0,0.56);
+  --studio-chip-bg-hover: rgba(0,0,0,0.76);
+  --studio-chip-border: rgba(255,255,255,0.12);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -171,6 +174,9 @@ html.light {
   --studio-text2: #45454d;
   --studio-text3: #71717a;
   --studio-text4: #a1a1aa;
+  --studio-chip-bg: rgba(255,255,255,0.82);
+  --studio-chip-bg-hover: rgba(255,255,255,0.95);
+  --studio-chip-border: rgba(0,0,0,0.12);
 }
 
 @theme inline {
