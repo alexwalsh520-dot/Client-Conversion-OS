@@ -4,53 +4,40 @@
  *  OR ?name=Zach Glanz       (case-insensitive, fuzzy match — picks
  *                              the best single match; errors if many)
  *
- * End-to-end test of Pieces 1+2 of the auto meal-plan pipeline:
- *   1. Load the client's intake form + onboarding notes + macro targets
- *      from CCOS (same data the manual copy-prompt uses).
- *   2. Build the auto-pipeline prompt + attach reference PDFs.
- *   3. Call Anthropic to generate the HTML body.
- *   4. Wrap in the locked CCOS template + render to PDF.
- *   5. Return the PDF inline so the admin can download + visually
- *      review it without auto-uploading or pinging Slack.
+ * Admin-only async trigger for the auto meal-plan pipeline.
  *
- * Admin-only. Manual run for any client. Does NOT mutate the client
- * row, does NOT mark the task done, does NOT post to Slack. Pure
- * preview.
+ * Returns immediately with the queued run ID. The actual work
+ * (gather → Claude → render → upload to private storage → sign URL)
+ * runs in the background via Next's `after()` and takes 3-5 minutes.
+ * When done, Saeed gets a Slack DM with a download link.
+ *
+ * This is the same pipeline the daily cron sweep will use; the only
+ * difference is trigger_type and the post-success Slack target
+ * (admin DM here, #nutritiontalk in prod with coach @mention).
+ *
+ * Manual-flow safety: this endpoint does NOT mutate the client row,
+ * does NOT mark the task done, does NOT post to #nutritiontalk. The
+ * existing copy-prompt / upload-plan flow is untouched.
  *
  * Examples:
  *   /api/nutrition/v2/admin/test-generate-plan?name=Zach%20Glanz
  *   /api/nutrition/v2/admin/test-generate-plan?client_id=1234
- *   /api/nutrition/v2/admin/test-generate-plan?name=Zach&stub=1
- *     (stub=1 short-circuits the LLM and uses the hardcoded sample
- *      body, useful for verifying the renderer alone.)
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
-import { loadIntakeAndComputeRawTargets } from "@/lib/nutrition/intake-targets";
-import { adjustMacros } from "@/lib/nutrition/macro-adjust";
-import { generatePlanHtml } from "@/lib/nutrition/generate-plan-html";
+import { processPipelineRun } from "@/lib/nutrition/pipeline-worker";
 import {
-  buildSampleBodyForTesting,
-  wrapAsFullHtml,
-} from "@/lib/nutrition/plan-pdf-template";
-import { renderHtmlToPdf } from "@/lib/nutrition/render-pdf";
+  notifyAdminTestRunDone,
+  notifyAdminTestRunFailed,
+} from "@/lib/nutrition/notify-pipeline-result";
 
 export const runtime = "nodejs";
-// API call can take 60-120s; render adds another 5-10s. Budget high.
+// Pro plan max. The work runs inside `after()` which gets the same
+// 300s budget as the request handler.
 export const maxDuration = 300;
-
-function formatGeneratedDateLabel(now: Date = new Date()): string {
-  // PKT calendar date (UTC+5)
-  const pkt = new Date(now.getTime() + 5 * 60 * 60 * 1000);
-  return pkt.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -61,16 +48,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "admin role required" }, { status: 403 });
   }
 
-  // Accept either ?client_id=N or ?name=<partial name>. Name takes
-  // priority since that's what coaches will actually type.
-  const clientIdRaw = req.nextUrl.searchParams.get("client_id");
-  const nameRaw = req.nextUrl.searchParams.get("name")?.trim();
-
-  let clientId: number | null = null;
   const db = getServiceSupabase();
 
+  // Resolve client by name or id
+  const nameRaw = req.nextUrl.searchParams.get("name")?.trim();
+  const clientIdRaw = req.nextUrl.searchParams.get("client_id");
+
+  let clientId: number | null = null;
+  let clientName: string | null = null;
+
   if (nameRaw) {
-    // Escape PostgREST `or` filter wildcards for the ilike lookup.
     const escaped = nameRaw.replace(/[%,]/g, "");
     const { data: matches, error } = await db
       .from("clients")
@@ -88,12 +75,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
     if (matches.length > 1) {
-      // Exact match wins over ambiguity
       const exact = matches.find(
         (m) => (m.name as string).toLowerCase() === nameRaw.toLowerCase(),
       );
       if (exact) {
         clientId = exact.id as number;
+        clientName = exact.name as string;
       } else {
         return NextResponse.json(
           {
@@ -105,13 +92,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     } else {
       clientId = matches[0].id as number;
+      clientName = matches[0].name as string;
     }
   } else if (clientIdRaw) {
     const parsed = parseInt(clientIdRaw, 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return NextResponse.json({ error: "invalid client_id" }, { status: 400 });
     }
-    clientId = parsed;
+    const { data: row } = await db
+      .from("clients")
+      .select("id, name")
+      .eq("id", parsed)
+      .single();
+    if (!row) {
+      return NextResponse.json(
+        { error: `no client with id ${parsed}` },
+        { status: 404 },
+      );
+    }
+    clientId = row.id as number;
+    clientName = row.name as string;
   } else {
     return NextResponse.json(
       {
@@ -122,67 +122,69 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Optional: ?stub=1 short-circuits the LLM call and uses the
-  // hardcoded sample body. Useful for verifying the renderer keeps
-  // working independent of the LLM step.
-  const useStub = req.nextUrl.searchParams.get("stub") === "1";
+  // Insert the queued run row
+  const { data: inserted, error: insertErr } = await db
+    .from("nutrition_pipeline_runs")
+    .insert({
+      client_id: clientId,
+      client_name: clientName,
+      trigger_type: "admin_test",
+      triggered_by: session.user.email,
+      status: "queued",
+    })
+    .select("id")
+    .single();
 
-  try {
-    const intake = await loadIntakeAndComputeRawTargets(db, clientId);
-    if (!intake.ok) {
-      return NextResponse.json({ error: intake.error }, { status: intake.status });
-    }
-
-    const targets = adjustMacros(intake.raw);
-
-    // Look up coach name from clients table — intake helper only
-    // returns intake row + parsed name. Coach lives on clients.
-    const { data: clientRow } = await db
-      .from("clients")
-      .select("coach_name, name")
-      .eq("id", clientId)
-      .single();
-    const coachInternalName = clientRow?.coach_name ?? null;
-    const clientFullName = clientRow?.name ?? intake.clientName ?? "Client";
-
-    const generatedDateLabel = formatGeneratedDateLabel();
-
-    let bodyHtml: string;
-    let stats = "stub";
-    if (useStub) {
-      bodyHtml = buildSampleBodyForTesting();
-    } else {
-      const result = await generatePlanHtml({
-        intake,
-        targets,
-        coachInternalName,
-        generatedDateLabel,
-      });
-      bodyHtml = result.bodyHtml;
-      stats = `tokens in/out: ${result.inputTokens}/${result.outputTokens}`;
-    }
-
-    const firstName =
-      String(intake.intake.first_name ?? "").trim() ||
-      clientFullName.split(/\s+/)[0] ||
-      "Client";
-    const fullHtml = wrapAsFullHtml(bodyHtml, firstName);
-    const pdf = await renderHtmlToPdf(fullHtml, {
-      clientFullName,
-    });
-
-    return new NextResponse(new Uint8Array(pdf), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="ccos-${firstName}-test-plan.pdf"`,
-        "Cache-Control": "no-store",
-        "X-Generation-Stats": stats,
-      },
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[test-generate-plan] failed:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  if (insertErr || !inserted) {
+    return NextResponse.json(
+      { error: insertErr?.message ?? "failed to queue run" },
+      { status: 500 },
+    );
   }
+
+  const runId = inserted.id as number;
+
+  // Kick off the actual work in the background (Next 15 `after()`
+  // keeps the lambda alive for up to maxDuration after the response
+  // is sent). When work finishes, DM Saeed with the result.
+  after(async () => {
+    try {
+      const result = await processPipelineRun(runId);
+      if (result.status === "done" && result.signedUrl && result.clientFullName) {
+        await notifyAdminTestRunDone({
+          runId,
+          clientFullName: result.clientFullName,
+          signedUrl: result.signedUrl,
+          coachInternalName: result.coachInternalName ?? null,
+        });
+      } else {
+        await notifyAdminTestRunFailed({
+          runId,
+          clientFullName: clientName ?? "(unknown)",
+          errorMessage: result.errorMessage ?? "unknown pipeline failure",
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[test-generate-plan after()] worker threw:", msg);
+      await notifyAdminTestRunFailed({
+        runId,
+        clientFullName: clientName ?? "(unknown)",
+        errorMessage: msg,
+      }).catch(() => {});
+    }
+  });
+
+  // Return immediately so the browser doesn't wait. Saeed gets a
+  // Slack DM in ~3-5 minutes with the PDF download link.
+  return NextResponse.json({
+    ok: true,
+    runId,
+    clientName,
+    status: "queued",
+    message:
+      "Pipeline started. You'll get a Slack DM in ~3-5 minutes with the PDF download link. Check /api/nutrition/v2/admin/pipeline-run-status?id=" +
+      runId +
+      " for live status.",
+  });
 }
