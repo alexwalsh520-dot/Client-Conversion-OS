@@ -673,6 +673,71 @@
 
   /* Icons */
   .i{display:inline-block;vertical-align:middle}
+
+  /* ===== Deep Dive Report ===== */
+  .topnav{display:inline-flex;gap:2px;padding:3px;background:var(--panel-2);border:1px solid var(--border);border-radius:99px;margin-bottom:18px}
+  .topnav-btn{appearance:none;border:none;background:transparent;color:var(--text-3);font-size:12px;font-weight:500;padding:7px 16px;border-radius:99px;cursor:pointer;letter-spacing:.01em;transition:color .15s,background .15s;display:inline-flex;align-items:center;gap:7px}
+  .topnav-btn:hover{color:var(--text-2)}
+  .topnav-btn.active{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+  .topnav-btn.active .topnav-dot{background:var(--gold)}
+  .topnav-dot{width:6px;height:6px;border-radius:99px;background:var(--text-4)}
+
+  .ddr{display:flex;flex-direction:column;gap:30px}
+  .ddr-head{display:flex;flex-direction:column;gap:5px}
+  .ddr-title{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:0}
+  .ddr-sub{font-size:12.5px;color:var(--text-3)}
+  .ddr-sub b{color:var(--gold);font-weight:600}
+
+  .ddr-band{display:grid;grid-template-columns:repeat(5,1fr);gap:11px}
+  .ddr-stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 15px}
+  .ddr-stat .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);font-weight:600}
+  .ddr-stat .val{font-size:23px;font-weight:680;letter-spacing:-.02em;margin-top:7px;font-variant-numeric:tabular-nums}
+  .ddr-stat .sub{font-size:10.5px;color:var(--text-4);margin-top:3px}
+  .ddr-stat .val.good{color:var(--green)} .ddr-stat .val.bad{color:var(--red)}
+
+  .ddr-block{display:flex;flex-direction:column;gap:12px}
+  .ddr-blabel{display:flex;align-items:baseline;justify-content:space-between}
+  .ddr-blabel .l{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-3);font-weight:600}
+  .ddr-blabel .m{font-size:11px;color:var(--text-4)}
+
+  /* Spend concentration bars */
+  .ddr-spend{display:flex;flex-direction:column;gap:9px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 17px}
+  .ddr-srow{display:grid;grid-template-columns:96px 1fr 128px;align-items:center;gap:12px}
+  .ddr-skw{font-size:12px;font-weight:600;text-transform:capitalize;letter-spacing:.01em}
+  .ddr-sbar-track{height:9px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+  .ddr-sbar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
+  .ddr-sval{font-size:11.5px;color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
+  .ddr-sval b{color:var(--text);font-weight:650}
+  .ddr-sval .pc{color:var(--text-4)}
+
+  /* Booking-rate table */
+  .ddr-tbl{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .ddr-tbl th{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:600;text-align:right;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--panel-2)}
+  .ddr-tbl th:first-child{text-align:left}
+  .ddr-tbl td{font-size:12.5px;padding:12px 14px;text-align:right;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text-2)}
+  .ddr-tbl tr:last-child td{border-bottom:none}
+  .ddr-tbl td:first-child{text-align:left}
+  .ddr-tbl tbody tr:hover{background:var(--panel-2)}
+  .ddr-kw{font-weight:600;text-transform:capitalize;color:var(--text);letter-spacing:.01em}
+  .ddr-rate{font-weight:680}
+  .ddr-verdict{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:99px;white-space:nowrap}
+  .ddr-verdict .vd{width:6px;height:6px;border-radius:99px}
+  .v-scale{background:rgba(125,211,168,.13);color:var(--green)} .v-scale .vd{background:var(--green)}
+  .v-ok{background:var(--panel-2);color:var(--text-2)} .v-ok .vd{background:var(--green-dim)}
+  .v-weak{background:rgba(232,154,148,.10);color:var(--red-dim)} .v-weak .vd{background:var(--red-dim)}
+  .v-kill{background:rgba(232,154,148,.15);color:var(--red)} .v-kill .vd{background:var(--red)}
+  .v-low{background:rgba(212,178,122,.12);color:var(--gold)} .v-low .vd{background:var(--gold)}
+
+  /* Cheap-leads callout */
+  .ddr-call{background:linear-gradient(180deg,rgba(232,154,148,.07),transparent),var(--panel);border:1px solid var(--red-dim);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:9px}
+  .ddr-call .ct{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--red);font-weight:700}
+  .ddr-call .ch{font-size:16px;font-weight:640;letter-spacing:-.01em;line-height:1.4}
+  .ddr-call .ch b{color:var(--red)}
+  .ddr-call .cp{font-size:12.5px;color:var(--text-3);line-height:1.55}
+  .ddr-call .cp b{color:var(--text-2)}
+
+  .ddr-empty{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:40px;text-align:center;color:var(--text-3);font-size:13px}
+  @media(max-width:900px){.ddr-band{grid-template-columns:repeat(2,1fr)} .ddr-srow{grid-template-columns:80px 1fr 96px}}
 </style>
 </head>
 <body>
@@ -4537,8 +4602,173 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
 }
 
 // ------- App
+// ===== Deep Dive Report: pure-math reporting view, reactive to time range =====
+function aggregateByAdWord(campaigns){
+  const map = new Map();
+  (campaigns||[]).forEach(c => {
+    (c.rows||[]).forEach(r => {
+      (r.adRows||[]).forEach(ad => {
+        const kw = String(ad.keyword || ad.adName || "UNKNOWN").toUpperCase();
+        if(!map.has(kw)) map.set(kw, {keyword:kw, spend:0, imp:0, clicks:0, leads:0, booked:0, taken:0, clients:0, collected:0, active:false});
+        const t = map.get(kw);
+        t.spend += Number(ad.spend||0);
+        t.imp += Number(ad.imp||0);
+        t.clicks += Number(ad.clicks||0);
+        t.leads += Number(ad.msgs||0);
+        t.booked += Number(ad.calls||0);
+        t.taken += Number(ad.taken||0);
+        t.clients += Number(ad.clients||0);
+        t.collected += Number(ad.collected||0);
+        if(ad.status==="active") t.active = true;
+      });
+    });
+  });
+  return Array.from(map.values());
+}
+
+// Verdict is pure rules over the real numbers — never AI, never invented.
+function bookingVerdict(row){
+  const rate = row.leads>0 ? (row.booked/row.leads)*100 : 0;
+  if(row.leads < 10) return {cls:"v-low", label:"Low volume"};
+  if(rate < 2) return {cls:"v-kill", label:"Turn off"};
+  if(rate < 5) return {cls:"v-weak", label:"Weak"};
+  if(rate < 10) return {cls:"v-ok", label:"Healthy"};
+  return {cls:"v-scale", label:"Scale it"};
+}
+
+function DeepDiveReport({campaigns, dashboard, range, loading}){
+  const rows = useMemo(()=>{
+    const list = aggregateByAdWord(campaigns).filter(r => r.spend>0 || r.leads>0 || r.booked>0);
+    return list.sort((a,b)=>b.spend-a.spend);
+  }, [campaigns]);
+
+  if(loading) return <div className="ddr-empty">Loading the numbers…</div>;
+  if(!rows.length) return <div className="ddr-empty">No ad activity in this date range. Try widening the dates above.</div>;
+
+  const totalSpend = rows.reduce((s,r)=>s+r.spend,0);
+  const totalLeads = rows.reduce((s,r)=>s+r.leads,0);
+  const totalBooked = rows.reduce((s,r)=>s+r.booked,0);
+  const blendedCostPerCall = totalBooked>0 ? totalSpend/totalBooked : 0;
+  const blendedRate = totalLeads>0 ? (totalBooked/totalLeads)*100 : 0;
+
+  // Cheap-leads, not cheap-customers: high lead volume + bottom booking rate.
+  const avgRate = blendedRate;
+  const wasters = rows
+    .filter(r => r.leads >= 30 && (r.leads>0 ? (r.booked/r.leads)*100 : 0) < Math.max(2.5, avgRate*0.5))
+    .sort((a,b)=>b.leads-a.leads);
+  const wasterLeads = wasters.reduce((s,r)=>s+r.leads,0);
+  const wasterBooked = wasters.reduce((s,r)=>s+r.booked,0);
+  const wasterSpend = wasters.reduce((s,r)=>s+r.spend,0);
+  const wasterNames = wasters.slice(0,3).map(r=>r.keyword.charAt(0)+r.keyword.slice(1).toLowerCase());
+
+  // Spend concentration (top 7 by spend).
+  const maxSpend = Math.max(...rows.map(r=>r.spend), 1);
+  const spendRows = rows.filter(r=>r.spend>0).slice(0,7);
+
+  // Booking-rate table sorted by booking rate (best first), volume-aware.
+  const tblRows = [...rows].sort((a,b)=>{
+    const ra = a.leads>0 ? a.booked/a.leads : -1;
+    const rb = b.leads>0 ? b.booked/b.leads : -1;
+    return rb-ra;
+  });
+
+  // Attribution honesty line (real payload fields).
+  const sum = dashboard && dashboard.summary ? dashboard.summary : null;
+  const tracedRev = sum ? Number(sum.collectedRevenue||0) : 0;
+  const totalRev = sum ? Number(sum.totalCollectedRevenue||0) : 0;
+  const tracedPct = totalRev>0 ? (tracedRev/totalRev)*100 : null;
+
+  const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+
+  return (
+    <div className="ddr">
+      <div className="ddr-head">
+        <h2 className="ddr-title">Deep Dive</h2>
+        <div className="ddr-sub">Every number below is your real spend and bookings for <b>{rangeLabel(range)}</b> — change the dates above and it all redraws.</div>
+      </div>
+
+      {/* Summary band */}
+      <div className="ddr-band">
+        <div className="ddr-stat"><div className="lbl">Ad spend</div><div className="val">{fmtUsd(totalSpend)}</div><div className="sub">{spendRows.length} ad words</div></div>
+        <div className="ddr-stat"><div className="lbl">Leads (DMs)</div><div className="val">{fmtNum(totalLeads)}</div><div className="sub">{totalLeads>0?fmtUsd(totalSpend/totalLeads):"—"} per lead</div></div>
+        <div className="ddr-stat"><div className="lbl">Booked calls</div><div className="val">{fmtNum(totalBooked)}</div><div className="sub">from {fmtNum(totalLeads)} leads</div></div>
+        <div className="ddr-stat"><div className="lbl">Cost / booked call</div><div className="val">{blendedCostPerCall>0?fmtUsd(blendedCostPerCall):"—"}</div><div className="sub">blended average</div></div>
+        <div className="ddr-stat"><div className="lbl">Booking rate</div><div className={"val "+(blendedRate>=8?"good":blendedRate<4?"bad":"")}>{fmtPct(blendedRate,1)}</div><div className="sub">leads → booked calls</div></div>
+      </div>
+
+      {/* Cheap-leads callout */}
+      {wasters.length>0 && (
+        <div className="ddr-call">
+          <div className="ct">Cheap leads — not cheap customers</div>
+          <div className="ch">{wasterNames.join(" & ")} pulled <b>{fmtNum(wasterLeads)}</b> leads but booked just <b>{fmtNum(wasterBooked)}</b> calls.</div>
+          <div className="cp">That's <b>{fmtUsd(wasterSpend)}</b> of spend going to ad words that fill your DMs but don't fill your calendar. Cheap leads feel good, but these aren't turning into booked calls. Turning {wasters.length>1?"these":"this"} off frees that budget for the ad words below that actually book.</div>
+        </div>
+      )}
+
+      {/* Spend concentration */}
+      <div className="ddr-block">
+        <div className="ddr-blabel"><span className="l">Where the spend went</span><span className="m">share of {fmtUsd(totalSpend)}</span></div>
+        <div className="ddr-spend">
+          {spendRows.map(r=>(
+            <div className="ddr-srow" key={r.keyword}>
+              <div className="ddr-skw">{cap(r.keyword)}</div>
+              <div className="ddr-sbar-track"><div className="ddr-sbar-fill" style={{width:Math.max(2,(r.spend/maxSpend)*100)+"%"}}></div></div>
+              <div className="ddr-sval"><b>{fmtUsd(r.spend)}</b> <span className="pc">{fmtPct(totalSpend>0?(r.spend/totalSpend)*100:0,0)}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Lead -> Booked-Call rate by ad word */}
+      <div className="ddr-block">
+        <div className="ddr-blabel"><span className="l">Lead → Booked-Call rate, by ad word</span><span className="m">sorted best first</span></div>
+        <table className="ddr-tbl">
+          <thead><tr>
+            <th>Ad word</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Book rate</th><th>$ / call</th><th style={{textAlign:"right"}}>Verdict</th>
+          </tr></thead>
+          <tbody>
+            {tblRows.map(r=>{
+              const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
+              const cpc = r.booked>0 ? r.spend/r.booked : 0;
+              const v = bookingVerdict(r);
+              const rateColor = rate>=10?"var(--green)":rate<3&&r.leads>=10?"var(--red)":"var(--text)";
+              return (
+                <tr key={r.keyword}>
+                  <td><span className="ddr-kw">{cap(r.keyword)}</span></td>
+                  <td>{fmtUsd(r.spend)}</td>
+                  <td>{fmtNum(r.leads)}</td>
+                  <td>{fmtNum(r.booked)}</td>
+                  <td><span className="ddr-rate" style={{color:rateColor}}>{r.leads>0?fmtPct(rate,1):"—"}</span></td>
+                  <td>{cpc>0?fmtUsd(cpc):"—"}</td>
+                  <td style={{textAlign:"right"}}><span className={"ddr-verdict "+v.cls}><span className="vd"></span>{v.label}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {tracedPct!=null && (
+        <div className="ddr-block">
+          <div className="ddr-blabel"><span className="l">Attribution health</span><span className="m">how much we can trust the revenue trail</span></div>
+          <div className="ddr-spend" style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:14}}>
+            <div style={{fontSize:13,color:"var(--text-2)",lineHeight:1.55,maxWidth:520}}>
+              We can trace <b style={{color:"var(--text)"}}>{fmtUsd(tracedRev)}</b> of <b style={{color:"var(--text)"}}>{fmtUsd(totalRev)}</b> collected back to a specific ad. The rest is a blind spot we're still closing — booking and lead counts above are exact, but revenue-per-ad is still being wired up.
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:30,fontWeight:700,color:tracedPct>=70?"var(--green)":tracedPct>=40?"var(--gold)":"var(--red)"}}>{fmtPct(tracedPct,0)}</div>
+              <div style={{fontSize:10.5,color:"var(--text-4)",letterSpacing:".05em",textTransform:"uppercase"}}>revenue traced</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App(){
   const [account, setAccount] = useState("all");
+  const [topView, setTopView] = useState("dashboard");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState(()=>rangeForPreset("mtd", todayEt()));
@@ -4735,6 +4965,20 @@ function App(){
             </label>
           </div>
 
+          {/* View switch: live dashboard vs deep-dive report */}
+          <div className="topnav">
+            <button className={"topnav-btn "+(topView==="dashboard"?"active":"")} onClick={()=>setTopView("dashboard")}>
+              <span className="topnav-dot"></span>Dashboard
+            </button>
+            <button className={"topnav-btn "+(topView==="report"?"active":"")} onClick={()=>setTopView("report")}>
+              <span className="topnav-dot"></span>Deep Dive
+            </button>
+          </div>
+
+          {topView==="report" ? (
+            <DeepDiveReport campaigns={scopedCampaigns} dashboard={dashboard} range={dateRange} loading={loading}/>
+          ) : (
+          <React.Fragment>
           {/* Campaign table */}
           <div className="section" style={{marginTop:0}}>
             <div className="section-head">
@@ -4768,6 +5012,8 @@ function App(){
             </div>
             <Actions campaigns={scopedCampaigns} onToast={showToast}/>
           </div>
+          </React.Fragment>
+          )}
 
           <div style={{marginTop:40,color:'var(--text-4)',fontSize:11,display:'flex',justifyContent:'space-between'}}>
             <span>Ads Tracker v1.4 · Client Conversion OS</span>
