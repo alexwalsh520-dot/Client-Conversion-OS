@@ -1,5 +1,8 @@
 /**
- * GET /api/nutrition/v2/admin/test-generate-plan?client_id=NNN
+ * GET /api/nutrition/v2/admin/test-generate-plan
+ *     ?client_id=NNN        (precise lookup)
+ *  OR ?name=Zach Glanz       (case-insensitive, fuzzy match — picks
+ *                              the best single match; errors if many)
  *
  * End-to-end test of Pieces 1+2 of the auto meal-plan pipeline:
  *   1. Load the client's intake form + onboarding notes + macro targets
@@ -14,9 +17,12 @@
  * row, does NOT mark the task done, does NOT post to Slack. Pure
  * preview.
  *
- * Usage:
+ * Examples:
+ *   /api/nutrition/v2/admin/test-generate-plan?name=Zach%20Glanz
  *   /api/nutrition/v2/admin/test-generate-plan?client_id=1234
- *   (Find the client_id in CCOS Coaching → Client Roster row.)
+ *   /api/nutrition/v2/admin/test-generate-plan?name=Zach&stub=1
+ *     (stub=1 short-circuits the LLM and uses the hardcoded sample
+ *      body, useful for verifying the renderer alone.)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -55,16 +61,65 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "admin role required" }, { status: 403 });
   }
 
+  // Accept either ?client_id=N or ?name=<partial name>. Name takes
+  // priority since that's what coaches will actually type.
   const clientIdRaw = req.nextUrl.searchParams.get("client_id");
-  if (!clientIdRaw) {
+  const nameRaw = req.nextUrl.searchParams.get("name")?.trim();
+
+  let clientId: number | null = null;
+  const db = getServiceSupabase();
+
+  if (nameRaw) {
+    // Escape PostgREST `or` filter wildcards for the ilike lookup.
+    const escaped = nameRaw.replace(/[%,]/g, "");
+    const { data: matches, error } = await db
+      .from("clients")
+      .select("id, name")
+      .ilike("name", `%${escaped}%`)
+      .order("name", { ascending: true })
+      .limit(10);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!matches || matches.length === 0) {
+      return NextResponse.json(
+        { error: `no client matches name "${nameRaw}"` },
+        { status: 404 },
+      );
+    }
+    if (matches.length > 1) {
+      // Exact match wins over ambiguity
+      const exact = matches.find(
+        (m) => (m.name as string).toLowerCase() === nameRaw.toLowerCase(),
+      );
+      if (exact) {
+        clientId = exact.id as number;
+      } else {
+        return NextResponse.json(
+          {
+            error: `multiple matches for "${nameRaw}" — narrow the name or use ?client_id=N`,
+            matches: matches.map((m) => ({ id: m.id, name: m.name })),
+          },
+          { status: 400 },
+        );
+      }
+    } else {
+      clientId = matches[0].id as number;
+    }
+  } else if (clientIdRaw) {
+    const parsed = parseInt(clientIdRaw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return NextResponse.json({ error: "invalid client_id" }, { status: 400 });
+    }
+    clientId = parsed;
+  } else {
     return NextResponse.json(
-      { error: "client_id query param required (e.g. ?client_id=1234)" },
+      {
+        error:
+          "Provide ?name=Zach%20Glanz or ?client_id=1234. Example: /api/nutrition/v2/admin/test-generate-plan?name=Zach%20Glanz",
+      },
       { status: 400 },
     );
-  }
-  const clientId = parseInt(clientIdRaw, 10);
-  if (!Number.isFinite(clientId) || clientId <= 0) {
-    return NextResponse.json({ error: "invalid client_id" }, { status: 400 });
   }
 
   // Optional: ?stub=1 short-circuits the LLM call and uses the
@@ -73,7 +128,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const useStub = req.nextUrl.searchParams.get("stub") === "1";
 
   try {
-    const db = getServiceSupabase();
     const intake = await loadIntakeAndComputeRawTargets(db, clientId);
     if (!intake.ok) {
       return NextResponse.json({ error: intake.error }, { status: intake.status });
