@@ -18,9 +18,12 @@ import type { IntakeTargetsResult } from "./intake-targets";
 import type { AdjustedTargets } from "./macro-adjust";
 
 const MODEL = "claude-sonnet-4-5-20250929";
-// Plans run ~10-15k tokens of output. 16k gives headroom; 64k is the
-// Sonnet 4.5 ceiling if we ever need a richer plan.
-const MAX_TOKENS = 16000;
+// Detailed plans run 18-22k tokens of output (Zach's hit the prior
+// 16k ceiling mid-Substitutions, before Shopping List + Variance
+// could land). 32k is comfortably above the worst case we've seen;
+// max_tokens is a ceiling not a cost, so unused budget is free.
+// Sonnet 4.5 supports up to 64k if we ever need more.
+const MAX_TOKENS = 32000;
 
 function getApiKey(): string {
   const key = process.env.ANTHROPIC_API_KEY;
