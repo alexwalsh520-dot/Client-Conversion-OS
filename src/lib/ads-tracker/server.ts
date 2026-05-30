@@ -2274,6 +2274,71 @@ async function fetchKeywordEvents(
   return rows;
 }
 
+interface ManychatOriginCheckRow {
+  client_key: string | null;
+  subscriber_id: string | null;
+  prospect_name: string | null;
+  sale_date: string | null;
+  origin_keyword: string | null;
+  checked_at: string | null;
+}
+
+/**
+ * Ground-truth ad-origin keywords confirmed by asking ManyChat directly (see
+ * /api/sync/manychat-origin). These cover sales whose ad click never produced a
+ * normal keyword event on our side, so they would otherwise look untraceable.
+ * Shaped as DM keyword events keyed by subscriber id so the existing link_dm
+ * matching can credit the sale to the right ad. They only ADD matches for sales
+ * that currently miss — first-hit-wins matching prevents any double counting,
+ * and events carry no revenue of their own (the sale row does).
+ */
+async function fetchManychatOriginAdEvents(
+  db: ReturnType<typeof getServiceSupabase>,
+  clientFilter: string[]
+): Promise<KeywordEvent[]> {
+  const { data, error } = await db
+    .from("manychat_origin_checks")
+    .select("client_key,subscriber_id,prospect_name,sale_date,origin_keyword,checked_at")
+    .eq("from_ad", true)
+    .eq("is_control", false)
+    .not("origin_keyword", "is", null)
+    .not("subscriber_id", "is", null);
+
+  if (error) {
+    console.warn("[ads-tracker] ManyChat origin events query failed", error.message);
+    return [];
+  }
+
+  const events: KeywordEvent[] = [];
+  for (const row of (data || []) as ManychatOriginCheckRow[]) {
+    const clientKey = String(row.client_key || "").trim();
+    if (!clientFilter.includes(clientKey)) continue;
+    const subscriberId = row.subscriber_id ? String(row.subscriber_id) : null;
+    if (!subscriberId) continue;
+    const keywordNormalized = normalizeKeyword(row.origin_keyword);
+    if (!keywordNormalized) continue;
+    const eventAt = row.sale_date
+      ? `${row.sale_date}T00:00:00.000Z`
+      : row.checked_at || new Date().toISOString();
+    events.push({
+      source: "manychat",
+      event_type: "manychat_origin_check",
+      client_key: clientKey,
+      keyword_raw: row.origin_keyword,
+      keyword_normalized: keywordNormalized,
+      value_cents: null,
+      subscriber_id: subscriberId,
+      subscriber_name: null,
+      setter_name: null,
+      appointment_id: null,
+      contact_id: null,
+      contact_name: row.prospect_name,
+      event_at: eventAt,
+    });
+  }
+  return events;
+}
+
 function adsClientKeyFromManychatClient(client: string | null | undefined): "tyson" | "keith" | null {
   const value = (client || "").trim().toLowerCase();
   if (value.includes("tyson")) return "tyson";
@@ -3380,6 +3445,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
 
+  // Ground-truth ad origins confirmed straight from ManyChat — rescue sales whose
+  // ad click never produced a normal keyword event on our side. Fetched once with
+  // the full client set; each merge filters to the client(s) it needs.
+  const originAdEvents = await fetchManychatOriginAdEvents(db, alertClientFilter);
+
   const groups = new Map<string, Group>();
   const rows = metaRows;
   const attributionRows = attributionMetaRows.length ? attributionMetaRows : rows;
@@ -3469,9 +3539,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const attributionGhlBookings = attributionEvents.filter((event) => event.source === "ghl");
   // DM keyword events (subscriber id + keyword captured together at DM time) let a
   // sale carrying a pasted ManyChat link land its revenue on the right ad.
-  const manychatEvents = attributionEvents.filter(
-    (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
-  );
+  const manychatEvents = [
+    ...attributionEvents.filter(
+      (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
+    ),
+    ...originAdEvents.filter((event) => clientFilter.includes(event.client_key)),
+  ];
   const alertBackfill = alertBackfillRows as KeywordBackfillRow[];
   const alertBackfilledDateKeys = new Set(
     alertBackfill.map((row) => `${row.client_key}:${row.date}`)
@@ -3506,9 +3579,12 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
   const alertAttributionSalesRows = alertSalesRows.filter((row) => !isTestSalesRow(row));
   const alertGhlBookings = alertAttributionEvents.filter((event) => event.source === "ghl");
-  const alertManychatEvents = alertAttributionEvents.filter(
-    (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
-  );
+  const alertManychatEvents = [
+    ...alertAttributionEvents.filter(
+      (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
+    ),
+    ...originAdEvents,
+  ];
   const automaticAttributionResolutions = await persistAutomaticSalesAttributions({
     db,
     salesRows: alertAttributionSalesRows,
