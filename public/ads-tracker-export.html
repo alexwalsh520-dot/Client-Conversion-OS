@@ -736,6 +736,36 @@
   .ddr-call .cp{font-size:12.5px;color:var(--text-3);line-height:1.55}
   .ddr-call .cp b{color:var(--text-2)}
 
+  /* "Do This Next" playbook — built so a third grader could run it */
+  .ddr-play{display:flex;flex-direction:column;gap:13px;background:linear-gradient(180deg,rgba(212,178,122,.06),transparent),var(--panel);border:1px solid var(--gold-dim);border-radius:16px;padding:20px 20px 22px}
+  .ddr-play-top{display:flex;flex-direction:column;gap:5px;margin-bottom:4px}
+  .ddr-play-k{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--gold);font-weight:700}
+  .ddr-play-h{font-size:18px;font-weight:660;letter-spacing:-.01em;line-height:1.35}
+  .ddr-play-h b{color:var(--gold)}
+  .ddr-pcard{display:grid;grid-template-columns:40px 1fr auto;gap:15px;align-items:center;padding:15px 16px;border-radius:13px;border:1px solid var(--border);background:var(--panel-2)}
+  .ddr-pcard.kill{border-color:var(--red-dim);background:linear-gradient(90deg,rgba(232,154,148,.09),var(--panel-2))}
+  .ddr-pcard.scale{border-color:var(--green-dim);background:linear-gradient(90deg,rgba(125,211,168,.10),var(--panel-2))}
+  .ddr-pnum{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:720;background:var(--panel);border:1px solid var(--border);color:var(--text-3)}
+  .ddr-pcard.kill .ddr-pnum{color:var(--red);border-color:var(--red-dim)}
+  .ddr-pcard.scale .ddr-pnum{color:var(--green);border-color:var(--green-dim)}
+  .ddr-pmid{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .ddr-pmove{font-size:15.5px;font-weight:680;letter-spacing:-.01em;line-height:1.3}
+  .ddr-pmove .verb{text-transform:uppercase;letter-spacing:.02em}
+  .ddr-pcard.kill .ddr-pmove .verb{color:var(--red)}
+  .ddr-pcard.scale .ddr-pmove .verb{color:var(--green)}
+  .ddr-pmove .word{text-transform:capitalize}
+  .ddr-pwhy{font-size:12.5px;color:var(--text-3);line-height:1.5}
+  .ddr-pwhy b{color:var(--text-2);font-weight:650}
+  .ddr-pimpact{text-align:right;white-space:nowrap;padding-left:6px}
+  .ddr-pimpact .big{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .ddr-pcard.kill .ddr-pimpact .big{color:var(--red)} .ddr-pcard.scale .ddr-pimpact .big{color:var(--green)}
+  .ddr-pimpact .cap{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-4);margin-top:2px}
+  .ddr-play-foot{font-size:12px;color:var(--text-3);line-height:1.55;padding-top:4px;border-top:1px dashed var(--border);margin-top:3px;padding-top:13px}
+  .ddr-play-foot b{color:var(--text)}
+  .ddr-play-clean{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--text-2);padding:6px 2px}
+  .ddr-play-clean .ic{width:30px;height:30px;border-radius:99px;background:rgba(125,211,168,.13);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+  @media(max-width:700px){.ddr-pcard{grid-template-columns:34px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
+
   .ddr-empty{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:40px;text-align:center;color:var(--text-3);font-size:13px}
   @media(max-width:900px){.ddr-band{grid-template-columns:repeat(2,1fr)} .ddr-srow{grid-template-columns:80px 1fr 96px}}
 </style>
@@ -4636,6 +4666,72 @@ function bookingVerdict(row){
   return {cls:"v-scale", label:"Scale it"};
 }
 
+// Turns the raw numbers into a tiny list of dead-simple moves.
+// Pure rules over real data — anyone could read it and act.
+function buildPlaybook(rows, blendedRate){
+  const kills = [];
+  const scales = [];
+  const killFloor = Math.max(2.5, blendedRate * 0.5);
+  rows.forEach(r => {
+    const rate = r.leads>0 ? (r.booked/r.leads)*100 : 0;
+    const cpc = r.booked>0 ? r.spend/r.booked : Infinity;
+    if(r.leads >= 25 && rate < killFloor && r.spend > 0){
+      kills.push({...r, rate, cpc, type:"kill"});
+    } else if(r.leads >= 10 && r.booked >= 2 && rate >= 10){
+      scales.push({...r, rate, cpc, type:"scale"});
+    }
+  });
+  kills.sort((a,b)=>b.spend-a.spend);
+  scales.sort((a,b)=>a.cpc-b.cpc);
+  // Money-first: cut the bleeders, then pour into the winners. Cap at 4.
+  const actions = [...kills, ...scales].slice(0,4);
+  const freedUp = kills.reduce((s,r)=>s+r.spend,0);
+  return {actions, freedUp, killCount:kills.length, scaleCount:scales.length};
+}
+
+function ActionPlaybook({rows, blendedRate, rangeText}){
+  const {actions, freedUp, killCount} = buildPlaybook(rows, blendedRate);
+  const low = (s)=> String(s||"").toLowerCase();
+
+  return (
+    <div className="ddr-play">
+      <div className="ddr-play-top">
+        <div className="ddr-play-k">Do this next</div>
+        <div className="ddr-play-h">{actions.length>0
+          ? <span>The <b>{actions.length}</b> simplest moves to make more money right now.</span>
+          : <span>Your money's working — nothing to cut right now.</span>}</div>
+      </div>
+
+      {actions.length>0 ? actions.map((a,i)=>(
+        <div className={"ddr-pcard "+a.type} key={a.keyword}>
+          <div className="ddr-pnum">{i+1}</div>
+          <div className="ddr-pmid">
+            <div className="ddr-pmove">
+              <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
+              <span className="word">{low(a.keyword)}</span>
+            </div>
+            <div className="ddr-pwhy">
+              {a.type==="kill"
+                ? <span>It pulled <b>{fmtNum(a.leads)}</b> leads but booked only <b>{fmtNum(a.booked)}</b> calls. You're paying for DMs that don't book.</span>
+                : <span>It books a call for just <b>{fmtUsd(a.cpc)}</b> — that's <b>{fmtPct(a.rate,0)}</b> of its leads. Give it more budget.</span>}
+            </div>
+          </div>
+          <div className="ddr-pimpact">
+            <div className="big">{a.type==="kill" ? "Save "+fmtUsd(a.spend) : fmtUsd(a.cpc)}</div>
+            <div className="cap">{a.type==="kill" ? "spent "+rangeText : "per booked call"}</div>
+          </div>
+        </div>
+      )) : (
+        <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is wasting money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
+      )}
+
+      {killCount>0 && (
+        <div className="ddr-play-foot">Turning off the underperformers above frees up about <b>{fmtUsd(freedUp)}</b> you spent {rangeText} — money you can move into the ads that actually book calls.</div>
+      )}
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   const rows = useMemo(()=>{
     const list = aggregateByAdWord(campaigns).filter(r => r.spend>0 || r.leads>0 || r.booked>0);
@@ -4686,6 +4782,9 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         <h2 className="ddr-title">Deep Dive</h2>
         <div className="ddr-sub">Every number below is your real spend and bookings for <b>{rangeLabel(range)}</b> — change the dates above and it all redraws.</div>
       </div>
+
+      {/* Do This Next — the simple action board */}
+      <ActionPlaybook rows={rows} blendedRate={blendedRate} rangeText={"in "+rangeLabel(range)}/>
 
       {/* Summary band */}
       <div className="ddr-band">
