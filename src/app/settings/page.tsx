@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import ThemeToggle from "@/components/ThemeToggle";
 import {
   Settings,
   Users,
@@ -292,6 +293,30 @@ export default function SettingsPage() {
         <p className="page-subtitle">
           User management and integrations
         </p>
+      </div>
+
+      {/* Appearance */}
+      <div
+        className="glass-static"
+        style={{
+          padding: 20,
+          marginBottom: 20,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 16,
+          borderLeft: "3px solid var(--accent)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
+            Appearance
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Switch between dark and light mode. Applies across every page.
+          </div>
+        </div>
+        <ThemeToggle />
       </div>
 
       <div
@@ -708,7 +733,7 @@ export default function SettingsPage() {
                       {/* Expanded row: tab permissions */}
                       {expandedUser === user.id && (
                         <tr key={`${user.id}-tabs`}>
-                          <td colSpan={5} style={{ padding: "12px 16px", background: "rgba(255,255,255,0.02)" }}>
+                          <td colSpan={5} style={{ padding: "12px 16px", background: "var(--hover-bg-subtle)" }}>
                             {editingUser === user.id && editRole === "client" ? (
                               <div>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>

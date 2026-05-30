@@ -33,7 +33,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Paint the last-used theme before hydration to avoid a flash. The
+            signed-in user's own saved choice is reconciled by ThemeToggle once
+            the session loads. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('ccos-theme:last');if(t!=='light'&&t!=='dark')t='dark';var c=document.documentElement.classList;c.remove('light','dark');c.add(t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

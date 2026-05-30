@@ -9,6 +9,14 @@
   --bg-glass: rgba(255, 255, 255, 0.025);
   --bg-glass-hover: rgba(255, 255, 255, 0.055);
 
+  /* Subtle hover overlays + scrollbar — themable so light mode reads correctly */
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --hover-bg-subtle: rgba(255, 255, 255, 0.02);
+  --scroll-thumb: rgba(255, 255, 255, 0.06);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.14);
+  --selection-bg: rgba(201, 169, 110, 0.25);
+  --color-scheme: dark;
+
   --border-primary: rgba(255, 255, 255, 0.06);
   --border-hover: rgba(255, 255, 255, 0.14);
   --border-glass: rgba(255, 255, 255, 0.05);
@@ -65,6 +73,73 @@
   --rs: 12px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT THEME — applied when <html class="light">
+   Overrides the same variables the whole app already reads, so every
+   page follows automatically. Dark stays the default in :root above.
+   ═══════════════════════════════════════════════════════════════════ */
+html.light {
+  /* ── Clean off-white base ─────────────────────────── */
+  --bg-primary: #f6f6f4;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-hover: rgba(255, 255, 255, 0.97);
+  --bg-glass: rgba(0, 0, 0, 0.02);
+  --bg-glass-hover: rgba(0, 0, 0, 0.045);
+
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --hover-bg-subtle: rgba(0, 0, 0, 0.03);
+  --scroll-thumb: rgba(0, 0, 0, 0.14);
+  --scroll-thumb-hover: rgba(0, 0, 0, 0.26);
+  --selection-bg: rgba(184, 149, 79, 0.22);
+  --color-scheme: light;
+
+  --border-primary: rgba(0, 0, 0, 0.09);
+  --border-hover: rgba(0, 0, 0, 0.18);
+  --border-glass: rgba(0, 0, 0, 0.07);
+
+  --text-primary: #18181b;
+  --text-secondary: #3f3f46;
+  --text-muted: #71717a;
+
+  /* ── Accent: slightly deeper gold for contrast on white ── */
+  --accent: #a9823f;
+  --accent-soft: rgba(169, 130, 63, 0.12);
+  --accent-glow: rgba(169, 130, 63, 0.10);
+
+  --success: #3f9e6b;
+  --success-soft: rgba(63, 158, 107, 0.12);
+  --warning: #b8862a;
+  --warning-soft: rgba(184, 134, 42, 0.12);
+  --danger: #c0504a;
+  --danger-soft: rgba(192, 80, 74, 0.12);
+
+  /* ── Client colors — deepened for white background ── */
+  --keith: #7a5fb0;
+  --keith-soft: rgba(122, 95, 176, 0.12);
+  --tyson: #2f8f8f;
+  --tyson-soft: rgba(47, 143, 143, 0.12);
+
+  /* ── Mozi metrics variables ── */
+  --bg: #f6f6f4;
+  --surface: rgba(255, 255, 255, 0.92);
+  --border: rgba(0, 0, 0, 0.09);
+  --text: #18181b;
+  --text-2: #3f3f46;
+  --text-3: rgba(0, 0, 0, 0.55);
+  --gold: #a9823f;
+  --gold-bg: rgba(169, 130, 63, 0.10);
+  --green: #2f9e63;
+  --green-bg: rgba(47, 158, 99, 0.08);
+  --green-b: rgba(47, 158, 99, 0.22);
+  --red: #cc4f47;
+  --red-bg: rgba(204, 79, 71, 0.08);
+  --red-b: rgba(204, 79, 71, 0.22);
+  --amber: #c08a1e;
+  --amber-bg: rgba(192, 138, 30, 0.08);
+  --amber-b: rgba(192, 138, 30, 0.22);
+}
+
 @theme inline {
   --color-bg-primary: var(--bg-primary);
   --color-bg-secondary: var(--bg-secondary);
@@ -91,6 +166,7 @@
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
+  color-scheme: var(--color-scheme);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -99,12 +175,12 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
 /* Selection */
 ::selection {
-  background: rgba(201, 169, 110, 0.25);
+  background: var(--selection-bg);
   color: var(--text-primary);
 }
 
@@ -221,7 +297,7 @@ body {
 .sidebar-section-toggle:hover,
 .sidebar-section-toggle-active {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover-bg-subtle);
 }
 
 .sidebar-section-chevron {
@@ -263,7 +339,7 @@ body {
 
 .sidebar-link:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-bg);
   padding-left: 16px;
 }
 
@@ -326,7 +402,7 @@ body {
 
 .sidebar-toggle-btn:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-bg);
 }
 
 .sidebar-toggle-btn:active {
@@ -348,7 +424,7 @@ body {
 }
 
 .sidebar-user:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-bg);
 }
 
 .sidebar-user-avatar {
@@ -491,7 +567,7 @@ body {
 }
 
 .glass-static:hover {
-  border-color: rgba(255, 255, 255, 0.09);
+  border-color: var(--border-hover);
 }
 
 .glass-subtle {
@@ -562,10 +638,10 @@ body {
   .metric-grid-6 { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Dark theme form controls (select, date inputs) */
+/* Theme-aware form controls (select, date inputs) */
 select.form-input,
 input[type="date"].form-input {
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 select.form-input option {
   background: var(--bg-secondary);
@@ -595,7 +671,7 @@ select.form-input option {
 }
 
 .glass-static:hover .metric-card-value {
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .metric-card-trend {
@@ -646,7 +722,7 @@ select.form-input option {
 
 .data-table tr:hover td {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover-bg-subtle);
 }
 
 .data-table tr:hover td:first-child {
@@ -758,7 +834,7 @@ select.form-input option {
 }
 
 .glass:hover .action-card-title {
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .action-card-desc {
@@ -1057,7 +1133,7 @@ textarea.input-field {
   border: none;
   background: none;
 }
-.context-tab:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.03); }
+.context-tab:hover { color: var(--text-primary); background: var(--hover-bg-subtle); }
 .context-tab:active { transform: scale(0.96); }
 .context-tab-active { background: var(--accent-soft); color: var(--text-primary); }
 
@@ -1217,7 +1293,7 @@ textarea.input-field {
 }
 
 .outreach-activity-item:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--hover-bg-subtle);
 }
 
 .outreach-activity-icon {
