@@ -2113,6 +2113,8 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
       out.push({
         adId: a.id, adName: a.name, camp: c.clientKey || c.id,
         spend, collected, clients, previewImageUrl, previewThumbnailUrl,
+        // Below ~$100 of spend a ROAS multiple is meaningless noise.
+        roasReliable: spend >= 100,
       });
     });
   });
@@ -2139,6 +2141,10 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
           collected,
           clients: Number(row.newClients || 0),
           roas,
+          // Honor the server's reliability verdict when present; otherwise fall
+          // back to the same $100 spend floor. Keeps a $40-spend ad from
+          // printing "181× ROAS" off a single attributed sale.
+          roasReliable: typeof row.roasReliable === "boolean" ? row.roasReliable : spend >= 100,
           previewImageUrl: row.previewImageUrl || row.previewThumbnailUrl || matched?.previewImageUrl || matched?.previewThumbnailUrl || null,
           previewThumbnailUrl: row.previewThumbnailUrl || matched?.previewThumbnailUrl || null,
         };
@@ -2217,7 +2223,7 @@ function AdROASChart({campaigns=CAMPAIGNS, dashboard=null}){
               <div key={a.adId} className="ar-col">
                 <div className="ar-val">
                   <div className="ar-val-rev mono">${Math.round(a.collected/1000*10)/10}k</div>
-                  <div className="ar-val-roas">{a.roas.toFixed(1)}× ROAS</div>
+                  <div className="ar-val-roas">{a.roasReliable===false ? "low spend" : a.roas.toFixed(1)+"× ROAS"}</div>
                 </div>
                 <div
                   className={"ar-bar-v-wrap "+(hasPreview?"has-preview":"")}

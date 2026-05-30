@@ -1153,6 +1153,13 @@ function applySalesToGroups(
   return unmatched;
 }
 
+// Below this much paid spend in the selected window, a per-ad ROAS multiple is
+// noise: a single $3–5k sale lands on a near-zero denominator and prints an
+// absurd "181×". Those ads still show their real revenue and spend, but the
+// ROAS multiple is marked unreliable so the UI can withhold the number instead
+// of presenting a fantasy return.
+const MIN_SPEND_FOR_RELIABLE_ROAS = 100;
+
 function buildPayload(
   query: AdsTrackerQuery,
   rows: AdsTrackerRow[],
@@ -1189,10 +1196,15 @@ function buildPayload(
     0,
     totalCollectedRevenue - totalCollected - organicRevenue - ignoredRevenue
   );
-  const finalUnattributedRevenue = Math.max(
-    unattributedRevenue + resolvedUnattributedRevenue,
-    impliedUnattributedRevenue
-  );
+  // The unattributed bucket is, by definition, the collected cash NOT credited
+  // to a paid ad and not resolved as organic/ignored. Derive it as that exact
+  // leftover (total cash − paid-attributed − organic − ignored) so the buckets
+  // ALWAYS sum back to real collected cash. The previous Math.max with the raw
+  // unmatched-sale alert total let a sale be counted in two buckets at once,
+  // which inflated "potential" revenue past the actual cash collected (e.g. a
+  // $69.5k month rendering an $78.8k potential). `unattributedRevenue` /
+  // `resolvedUnattributedRevenue` still feed the no-sales-source fallback above.
+  const finalUnattributedRevenue = impliedUnattributedRevenue;
 
   const adRoas = paidRows
     .map((row) => ({
@@ -1207,6 +1219,10 @@ function buildPayload(
       previewThumbnailUrl: row.previewThumbnailUrl,
       adSpend: row.adSpend,
       collectedRoi: row.collectedRoi,
+      // True only when there was enough spend for the ROAS multiple to mean
+      // something. The UI hides the multiple (shows revenue + spend instead)
+      // when this is false, so a $40-spend ad never reads as "181× return".
+      roasReliable: row.adSpend >= MIN_SPEND_FOR_RELIABLE_ROAS,
       collectedRevenue: row.collectedRevenue,
       newClients: row.newClients,
     }))
