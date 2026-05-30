@@ -174,7 +174,7 @@ function MetricCard({
           ? channel === "email"
             ? "rgba(201,169,110,0.12)"
             : "rgba(130,197,197,0.12)"
-          : "rgba(255,255,255,0.03)",
+          : "var(--hover-bg-subtle)",
         borderRadius: 14,
         padding: 16,
         cursor: disabled ? "default" : "pointer",
@@ -418,7 +418,7 @@ export default function OutreachDashboard() {
                     setStartDate(e.target.value);
                   }}
                   style={{
-                    background: "rgba(255,255,255,0.03)",
+                    background: "var(--hover-bg-subtle)",
                     border: "1px solid var(--border-primary)",
                     color: "var(--text-primary)",
                     borderRadius: 10,
@@ -438,7 +438,7 @@ export default function OutreachDashboard() {
                     setEndDate(e.target.value);
                   }}
                   style={{
-                    background: "rgba(255,255,255,0.03)",
+                    background: "var(--hover-bg-subtle)",
                     border: "1px solid var(--border-primary)",
                     color: "var(--text-primary)",
                     borderRadius: 10,
@@ -456,7 +456,7 @@ export default function OutreachDashboard() {
             style={{
               padding: "28px 20px",
               borderRadius: 14,
-              background: "rgba(255,255,255,0.03)",
+              background: "var(--hover-bg-subtle)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -592,7 +592,7 @@ export default function OutreachDashboard() {
                 border: "1px solid var(--border-primary)",
                 borderRadius: 16,
                 padding: 18,
-                background: "rgba(255,255,255,0.02)",
+                background: "var(--hover-bg-subtle)",
                 minHeight: 320,
               }}
             >

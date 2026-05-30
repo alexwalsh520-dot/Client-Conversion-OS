@@ -123,7 +123,7 @@ export function TodoList({ status, capacityPct }: TodoListProps) {
                 color: 'var(--text-2)',
                 lineHeight: 1.5,
                 padding: '10px 14px',
-                background: 'rgba(255,255,255,0.015)',
+                background: 'var(--hover-bg-subtle)',
                 borderRadius: 'var(--rs)',
                 border: '1px solid var(--border)',
                 opacity: isDone ? 0.3 : 1,

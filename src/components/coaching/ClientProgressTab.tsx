@@ -505,7 +505,7 @@ export default function ClientProgressTab({ submissions: initialSubmissions, cli
                           <div
                             style={{
                               padding: 16,
-                              background: "rgba(255,255,255,0.02)",
+                              background: "var(--hover-bg-subtle)",
                               borderTop: "1px solid var(--border-primary)",
                             }}
                           >
@@ -600,7 +600,7 @@ export default function ClientProgressTab({ submissions: initialSubmissions, cli
                                         marginTop: 6,
                                         padding: "8px 10px",
                                         borderLeft: "2px solid var(--accent)",
-                                        background: "rgba(255,255,255,0.02)",
+                                        background: "var(--hover-bg-subtle)",
                                         fontSize: 12,
                                         color: "var(--text-secondary)",
                                         whiteSpace: "pre-wrap",

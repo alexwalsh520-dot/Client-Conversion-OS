@@ -610,7 +610,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                                 cursor: "pointer",
                                 border: checkin.onboardingStatus === status
                                   ? `2px solid ${onboardingStatusColor(status)}`
-                                  : "1px solid rgba(255,255,255,0.1)",
+                                  : "1px solid var(--border-primary)",
                                 background: checkin.onboardingStatus === status
                                   ? onboardingStatusBg(status)
                                   : "transparent",

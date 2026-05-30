@@ -38,7 +38,7 @@ function Gauge({
             cy="26"
             r="20"
             fill="none"
-            stroke="rgba(255,255,255,0.04)"
+            stroke="var(--hover-bg)"
             strokeWidth="4"
           />
           <circle
@@ -106,7 +106,7 @@ export function SalesGauges({
       <div
         className="leading-snug"
         style={{
-          background: 'rgba(255,255,255,0.02)',
+          background: 'var(--hover-bg-subtle)',
           borderRadius: 'var(--rs)',
           padding: '7px 10px',
           fontSize: 10,

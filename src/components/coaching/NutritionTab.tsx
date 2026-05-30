@@ -100,7 +100,7 @@ function IntakeFormDetail({ form }: { form: NutritionIntakeForm }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
       {fields.map((f) => (
-        <div key={f.label} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 6 }}>
+        <div key={f.label} style={{ padding: "6px 10px", background: "var(--hover-bg-subtle)", borderRadius: 6 }}>
           <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>
             {f.label} <CopyButton text={f.value} />
           </div>
@@ -299,7 +299,7 @@ function MealPlanTaskPanel({
   }
 
   return (
-    <div style={{ padding: 16, background: "rgba(255,255,255,0.02)" }}>
+    <div style={{ padding: 16, background: "var(--hover-bg-subtle)" }}>
       {/* Client intake form details */}
       {intakeForm && <IntakeFormDetail form={intakeForm} />}
 
@@ -314,7 +314,7 @@ function MealPlanTaskPanel({
             disabled={generating}
             style={{
               padding: "8px 18px", borderRadius: 8, border: "none",
-              background: generating ? "rgba(255,255,255,0.1)" : "var(--accent)",
+              background: generating ? "var(--hover-bg)" : "var(--accent)",
               color: generating ? "var(--text-muted)" : "#000",
               cursor: generating ? "default" : "pointer", fontWeight: 600, fontSize: 13,
               display: "flex", alignItems: "center", gap: 6,
@@ -342,7 +342,7 @@ function MealPlanTaskPanel({
 
         {/* Latest plan preview & download */}
         {latestPlan && (
-          <div style={{ padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, marginBottom: 12 }}>
+          <div style={{ padding: 12, background: "var(--hover-bg)", borderRadius: 8, marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
                 Latest Plan — Version {latestPlan.version}
@@ -387,7 +387,7 @@ function MealPlanTaskPanel({
             {previewUrl && (
               <iframe
                 src={previewUrl}
-                style={{ width: "100%", height: 600, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, marginTop: 12, background: "#fff" }}
+                style={{ width: "100%", height: 600, border: "1px solid var(--border-primary)", borderRadius: 6, marginTop: 12, background: "#fff" }}
                 title="Meal plan preview"
               />
             )}
@@ -402,7 +402,7 @@ function MealPlanTaskPanel({
             </summary>
             <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
               {plans.slice(1).map((p) => (
-                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 4 }}>
+                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 8px", background: "var(--hover-bg-subtle)", borderRadius: 4 }}>
                   <span style={{ color: "var(--text-primary)" }}>v{p.version}</span>
                   <span style={{ color: "var(--text-muted)", flex: 1 }}>{new Date(p.created_at).toLocaleDateString()}</span>
                   {p.pdfUrl && (
@@ -418,7 +418,7 @@ function MealPlanTaskPanel({
       </div>
 
       {/* Comments */}
-      <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10 }}>
+      <div style={{ marginTop: 16, padding: 14, background: "var(--hover-bg-subtle)", borderRadius: 10 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
           <MessageSquarePlus size={13} /> Comments <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11 }}>(used when generating next version)</span>
         </div>
@@ -426,7 +426,7 @@ function MealPlanTaskPanel({
         {comments.length > 0 ? (
           <div style={{ display: "grid", gap: 6, marginBottom: 12, maxHeight: 240, overflowY: "auto" }}>
             {comments.slice(0, 7).map((c) => (
-              <div key={c.id} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 6, fontSize: 12, display: "flex", gap: 8 }}>
+              <div key={c.id} style={{ padding: "6px 10px", background: "var(--hover-bg)", borderRadius: 6, fontSize: 12, display: "flex", gap: 8 }}>
                 <div style={{ flex: 1, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{c.comment}</div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{new Date(c.created_at).toLocaleDateString()}</span>
@@ -464,7 +464,7 @@ function MealPlanTaskPanel({
           <button
             onClick={handleAddComment}
             disabled={!newComment.trim()}
-            style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: newComment.trim() ? "var(--accent)" : "rgba(255,255,255,0.1)", color: newComment.trim() ? "#000" : "var(--text-muted)", cursor: newComment.trim() ? "pointer" : "default", fontSize: 12, fontWeight: 600 }}
+            style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: newComment.trim() ? "var(--accent)" : "var(--hover-bg)", color: newComment.trim() ? "#000" : "var(--text-muted)", cursor: newComment.trim() ? "pointer" : "default", fontSize: 12, fontWeight: 600 }}
           >
             Add
           </button>
@@ -518,7 +518,7 @@ function MealPlanTaskPanel({
                             style={{
                               marginTop: 6,
                               padding: "8px 10px",
-                              background: "rgba(255,255,255,0.04)",
+                              background: "var(--hover-bg)",
                               borderLeft: `2px solid ${fg}`,
                               borderRadius: 4,
                               lineHeight: 1.5,
@@ -592,7 +592,7 @@ function MealPlanTaskPanel({
 
       {/* Completion checklist — only in Pending section (not Done) */}
       {!isDoneSection && latestPlan && (
-        <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10 }}>
+        <div style={{ marginTop: 16, padding: 14, background: "var(--hover-bg-subtle)", borderRadius: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10 }}>
             Completion Checklist
           </div>
@@ -632,7 +632,7 @@ function MealPlanTaskPanel({
             disabled={!checklist.allergies || !checklist.delivered || !checklist.tipsReviewed || completing}
             style={{
               marginTop: 10, padding: "8px 20px", borderRadius: 8, border: "none",
-              background: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "var(--success)" : "rgba(255,255,255,0.1)",
+              background: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "var(--success)" : "var(--hover-bg)",
               color: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "#000" : "var(--text-muted)",
               cursor: (checklist.allergies && checklist.delivered && checklist.tipsReviewed && !completing) ? "pointer" : "default",
               fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6,
@@ -757,7 +757,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                       onClick={() => setShowOldUnlinked(true)}
                       style={{
                         padding: "6px 12px",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        border: "1px solid var(--border-primary)",
                         background: "none",
                         color: "var(--text-muted)",
                         cursor: "pointer",
@@ -795,7 +795,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                           <div style={{ display: "flex", gap: 4 }}>
                             <button
                               onClick={() => setExpandedFormId(expandedFormId === nf.id ? null : nf.id!)}
-                              style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+                              style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
                             >
                               {expandedFormId === nf.id ? "Hide" : "View"}
                             </button>
@@ -810,14 +810,14 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                       </tr>
                       {expandedFormId === nf.id && (
                         <tr>
-                          <td colSpan={4} style={{ padding: 16, background: "rgba(255,255,255,0.02)" }}>
+                          <td colSpan={4} style={{ padding: 16, background: "var(--hover-bg-subtle)" }}>
                             <IntakeFormDetail form={nf} />
                           </td>
                         </tr>
                       )}
                       {linkingFormId === nf.id && (
                         <tr>
-                          <td colSpan={4} style={{ padding: 12, background: "rgba(255,255,255,0.02)" }}>
+                          <td colSpan={4} style={{ padding: 12, background: "var(--hover-bg-subtle)" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Link to client:</span>
                               <input
@@ -845,7 +845,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                                         setLinkClientSearch("");
                                       }}
                                       style={{ padding: "6px 10px", cursor: "pointer", fontSize: 13, borderRadius: 4, display: "flex", justifyContent: "space-between" }}
-                                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-bg)")}
                                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                     >
                                       <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
@@ -870,7 +870,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
               <div
                 style={{
                   padding: "10px 12px",
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  borderTop: "1px solid var(--border-primary)",
                   textAlign: "center",
                 }}
               >
@@ -878,7 +878,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                   onClick={() => setShowOldUnlinked(!showOldUnlinked)}
                   style={{
                     padding: "4px 12px",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    border: "1px solid var(--border-primary)",
                     background: "none",
                     color: "var(--text-muted)",
                     cursor: "pointer",
@@ -923,7 +923,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                       onClick={() => setShowStalePending(true)}
                       style={{
                         padding: "6px 12px",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        border: "1px solid var(--border-primary)",
                         background: "none",
                         color: "var(--text-muted)",
                         cursor: "pointer",
@@ -970,7 +970,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                             <td>
                               <button
                                 onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
-                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
                               >
                                 {isExpanded ? "Hide" : "Open"}
                               </button>
@@ -1013,7 +1013,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
               <div
                 style={{
                   padding: "10px 12px",
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  borderTop: "1px solid var(--border-primary)",
                   textAlign: "center",
                 }}
               >
@@ -1021,7 +1021,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                   onClick={() => setShowStalePending(!showStalePending)}
                   style={{
                     padding: "4px 12px",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    border: "1px solid var(--border-primary)",
                     background: "none",
                     color: "var(--text-muted)",
                     cursor: "pointer",
@@ -1089,7 +1089,7 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                             <td>
                               <button
                                 onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
-                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
                               >
                                 {isExpanded ? "Hide" : "Open"}
                               </button>

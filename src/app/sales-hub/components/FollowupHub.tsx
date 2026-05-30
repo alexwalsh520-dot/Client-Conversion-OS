@@ -655,7 +655,7 @@ function VariantEditorTab({
                     style={{
                       display: "flex", alignItems: "flex-start", gap: 10,
                       padding: "10px 12px", borderRadius: 8,
-                      background: v.status === "paused" ? "rgba(255,255,255,0.02)" : "var(--bg-elevated)",
+                      background: v.status === "paused" ? "var(--hover-bg-subtle)" : "var(--bg-elevated)",
                       border: "1px solid var(--border-subtle)",
                       opacity: v.status === "paused" ? 0.55 : 1,
                     }}
@@ -945,7 +945,7 @@ function Card({ title, children, span }: { title: string; children: React.ReactN
 function StatusPill({ status }: { status: "active" | "paused" }) {
   const styles = status === "active"
     ? { bg: "rgba(73,209,126,0.1)", color: "#49d17e" }
-    : { bg: "rgba(255,255,255,0.05)", color: "var(--text-muted)" };
+    : { bg: "var(--hover-bg)", color: "var(--text-muted)" };
   return (
     <span style={{
       fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 600,

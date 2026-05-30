@@ -63,8 +63,8 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
       style={{
         marginBottom: 14,
         padding: 12,
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--hover-bg-subtle)",
+        border: "1px solid var(--border-primary)",
         borderRadius: 8,
       }}
     >
@@ -113,7 +113,7 @@ export function IntakeFormCard({ form, defaultExpanded = true }: IntakeFormCardP
               key={f.label}
               style={{
                 padding: "6px 10px",
-                background: "rgba(255,255,255,0.04)",
+                background: "var(--hover-bg)",
                 borderRadius: 6,
                 minWidth: 0,
                 overflow: "hidden",

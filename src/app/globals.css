@@ -71,6 +71,25 @@
   --amber-b: rgba(240,195,80,0.18);
   --r: 16px;
   --rs: 12px;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     STUDIO — chrome surfaces for the ad-builder (studio / studio-2).
+     These theme the editor frame ONLY. The ad creative itself is drawn
+     on <canvas> with fixed literal colors (never these vars), so the
+     exported ad never changes between light and dark.
+     ═══════════════════════════════════════════════════════════════════ */
+  --studio-bg: #0a0a0a;
+  --studio-bg-deep: #050505;
+  --studio-panel: #111111;
+  --studio-panel2: #141414;
+  --studio-panel3: #0f0f0f;
+  --studio-active: #1e1e1e;
+  --studio-border: #1f1f1f;
+  --studio-border2: #262626;
+  --studio-text: #e8e8e8;
+  --studio-text2: #a8a8a8;
+  --studio-text3: #6b6b6b;
+  --studio-text4: #4a4a4a;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -138,6 +157,20 @@ html.light {
   --amber: #c08a1e;
   --amber-bg: rgba(192, 138, 30, 0.08);
   --amber-b: rgba(192, 138, 30, 0.22);
+
+  /* ── Studio chrome — light editor frame (creative canvas stays dark) ── */
+  --studio-bg: #f3f3f1;
+  --studio-bg-deep: #eaeae7;
+  --studio-panel: #ffffff;
+  --studio-panel2: #ffffff;
+  --studio-panel3: #f7f7f5;
+  --studio-active: #ececea;
+  --studio-border: rgba(0, 0, 0, 0.10);
+  --studio-border2: rgba(0, 0, 0, 0.15);
+  --studio-text: #18181b;
+  --studio-text2: #45454d;
+  --studio-text3: #71717a;
+  --studio-text4: #a1a1aa;
 }
 
 @theme inline {

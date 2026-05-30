@@ -83,7 +83,7 @@ export function PlanHistory({ clientId, excludePlanId, refreshKey }: PlanHistory
                     alignItems: "center",
                     gap: 10,
                     padding: "6px 10px",
-                    background: "rgba(255,255,255,0.03)",
+                    background: "var(--hover-bg-subtle)",
                     borderRadius: 4,
                     fontSize: 11,
                     minWidth: 0,

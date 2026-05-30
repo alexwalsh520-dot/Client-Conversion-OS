@@ -89,7 +89,7 @@ function Lever({ stage, text, worth }: { stage: string; text: string; worth: str
     <div
       className="flex justify-between items-center"
       style={{
-        background: 'rgba(255,255,255,0.02)',
+        background: 'var(--hover-bg-subtle)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--rs)',
         padding: '12px 16px',

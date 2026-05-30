@@ -239,7 +239,7 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
   if (!unlocked) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 80, gap: 16 }}>
-        <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16, padding: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, maxWidth: 360, width: "100%" }}>
+        <div style={{ background: "var(--hover-bg)", borderRadius: 16, padding: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, maxWidth: 360, width: "100%" }}>
           <Lock size={32} style={{ color: "var(--text-muted)" }} />
           <h3 style={{ color: "var(--text-primary)", margin: 0, fontSize: 18 }}>Expenses</h3>
           <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0, textAlign: "center" }}>
@@ -437,7 +437,7 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
                 ))
               )}
               {monthExpenses.length > 0 && (
-                <tr style={{ fontWeight: 700, borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+                <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border-primary)" }}>
                   <td colSpan={3} style={{ textAlign: "right" }}>Total Expenses</td>
                   <td>{fmtMoney(monthExpenses.reduce((s, e) => s + e.base, 0))}</td>
                   <td>{fmtMoney(monthExpenses.reduce((s, e) => s + e.commissions, 0))}</td>
@@ -510,8 +510,8 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
             alignItems: "center",
             gap: 10,
             padding: "10px 14px",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
+            background: "var(--hover-bg)",
+            border: "1px solid var(--border-primary)",
             borderRadius: 8,
             marginBottom: 12,
             maxWidth: 460,
@@ -539,9 +539,9 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
               style={{
                 width: 80,
                 padding: "4px 8px",
-                background: "rgba(0,0,0,0.4)",
+                background: "var(--bg-secondary)",
                 color: "var(--text-primary)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--border-primary)",
                 borderRadius: 4,
                 fontFamily: "ui-monospace, monospace",
                 fontSize: 13,

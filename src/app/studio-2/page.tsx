@@ -80,26 +80,40 @@ const IG_SAFE_ZONES = [
   { id: "dm" as const, x: 170, y: 1590, w: 740, h: 195, label: "Send message button" },
   { id: "bottom" as const, x: 0, y: 1830, w: 170, h: 82, label: "Ad label" },
 ];
+// Editor-chrome palette. Surface/text keys resolve to CSS variables so the
+// builder frame follows light/dark mode (defined in globals.css). Brand keys
+// (gold/success) stay literal so they read on both themes AND keep working in
+// the few places that can't accept a CSS var (canvas draws, SVG icon color).
+// IMPORTANT: the ad creative itself is NEVER styled from this palette — it is
+// drawn on <canvas> using CREATIVE_BG + the user's own block colors, so the
+// exported ad is byte-identical regardless of the app theme.
 const ADS_BRAND = {
-  bg: "#0a0a0a",
-  bgDeep: "#050505",
-  panel: "#111111",
-  panel2: "#141414",
-  panel3: "#0f0f0f",
-  active: "#1e1e1e",
-  border: "#1f1f1f",
-  border2: "#262626",
-  text: "#e8e8e8",
-  text2: "#a8a8a8",
-  text3: "#6b6b6b",
-  text4: "#4a4a4a",
+  bg: "var(--studio-bg)",
+  bgDeep: "var(--studio-bg-deep)",
+  panel: "var(--studio-panel)",
+  panel2: "var(--studio-panel2)",
+  panel3: "var(--studio-panel3)",
+  active: "var(--studio-active)",
+  border: "var(--studio-border)",
+  border2: "var(--studio-border2)",
+  text: "var(--studio-text)",
+  text2: "var(--studio-text2)",
+  text3: "var(--studio-text3)",
+  text4: "var(--studio-text4)",
   gold: "#d4b27a",
   goldDim: "#8a7348",
   goldSoft: "rgba(212,178,122,0.08)",
   goldBorder: "rgba(212,178,122,0.32)",
   success: "#7dd3a8",
   successText: "#07130d",
+  // Fixed dark "ink" for text sitting on a solid gold chip (gold reads the
+  // same in both themes, so this must stay dark in both).
+  inkOnGold: "#0a0a0a",
 };
+
+// Colors baked into the exported ad creative on <canvas>. These must NEVER
+// change with the theme, or every ad's background would shift. Keep literal.
+const CREATIVE_BG = "#050505";
 
 const FONT_OPTIONS = [
   { label: "SF Pro Display", value: "Inter, SF Pro Display, system-ui" },
@@ -1361,7 +1375,7 @@ function drawArtwork(
     media && typeof HTMLVideoElement !== "undefined" && media instanceof HTMLVideoElement;
 
   if (!isVideoCreative || media) {
-    ctx.fillStyle = ADS_BRAND.bgDeep;
+    ctx.fillStyle = CREATIVE_BG;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
 
@@ -1978,7 +1992,7 @@ function selectBadgeStyle(isSelected: boolean): React.CSSProperties {
     borderRadius: 7,
     border: `1px solid ${isSelected ? ADS_BRAND.gold : "rgba(255,255,255,0.28)"}`,
     background: isSelected ? ADS_BRAND.gold : "rgba(0,0,0,0.48)",
-    color: isSelected ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
+    color: isSelected ? ADS_BRAND.inkOnGold : ADS_BRAND.text2,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -2703,7 +2717,7 @@ export default function Studio2Page() {
     } else {
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = ADS_BRAND.bgDeep;
+      ctx.fillStyle = CREATIVE_BG;
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
@@ -7196,7 +7210,7 @@ export default function Studio2Page() {
                             fontWeight: 850,
                           }}
                         >
-                          <Folder size={26} color={ADS_BRAND.text3} />
+                          <Folder size={26} style={{ color: ADS_BRAND.text3 }} />
                           <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
                         </button>
                       ))}
@@ -7255,7 +7269,7 @@ export default function Studio2Page() {
                             )}
                           </div>
                           <div style={{ padding: "9px 10px", display: "flex", alignItems: "center", gap: 7 }}>
-                            {asset.kind === "video" ? <Video size={13} color={ADS_BRAND.text3} /> : <ImagePlus size={13} color={ADS_BRAND.text3} />}
+                            {asset.kind === "video" ? <Video size={13} style={{ color: ADS_BRAND.text3 }} /> : <ImagePlus size={13} style={{ color: ADS_BRAND.text3 }} />}
                             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ADS_BRAND.text2, fontSize: 12, fontWeight: 800 }}>
                               {asset.filename || "Media"}
                             </span>
@@ -7503,7 +7517,7 @@ export default function Studio2Page() {
                   border: "none",
                   borderRadius: 8,
                   background: ADS_BRAND.gold,
-                  color: ADS_BRAND.bgDeep,
+                  color: ADS_BRAND.inkOnGold,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
@@ -9825,7 +9839,7 @@ export default function Studio2Page() {
           position: "relative",
         }}>
           {exportStatus && (
-            <div style={{ position: "absolute", top: 14, zIndex: 10, ...panelStyle, color: "#fff", fontSize: 12 }}>
+            <div style={{ position: "absolute", top: 14, zIndex: 10, ...panelStyle, color: ADS_BRAND.text, fontSize: 12 }}>
               {exportStatus}
             </div>
           )}
@@ -10929,7 +10943,7 @@ export default function Studio2Page() {
                           fontWeight: 850,
                         }}
                       >
-                        <Folder size={26} color={ADS_BRAND.text3} />
+                        <Folder size={26} style={{ color: ADS_BRAND.text3 }} />
                         <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
                       </button>
                     ))}
@@ -10988,7 +11002,7 @@ export default function Studio2Page() {
                           )}
                         </div>
                         <div style={{ padding: "9px 10px", display: "flex", alignItems: "center", gap: 7 }}>
-                          {asset.kind === "video" ? <Video size={13} color={ADS_BRAND.text3} /> : <ImagePlus size={13} color={ADS_BRAND.text3} />}
+                          {asset.kind === "video" ? <Video size={13} style={{ color: ADS_BRAND.text3 }} /> : <ImagePlus size={13} style={{ color: ADS_BRAND.text3 }} />}
                           <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ADS_BRAND.text2, fontSize: 12, fontWeight: 800 }}>
                             {asset.filename || "Media"}
                           </span>
@@ -11585,7 +11599,7 @@ export default function Studio2Page() {
                     border: "none",
                     borderRadius: 7,
                     background: exportMode === option.value ? ADS_BRAND.gold : "transparent",
-                    color: exportMode === option.value ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
+                    color: exportMode === option.value ? ADS_BRAND.inkOnGold : ADS_BRAND.text2,
                     fontFamily: "inherit",
                     fontSize: 14,
                     fontWeight: 850,
@@ -11676,7 +11690,7 @@ export default function Studio2Page() {
                             height: 24,
                             borderRadius: 999,
                             background: selected ? ADS_BRAND.gold : "rgba(0,0,0,0.62)",
-                            color: selected ? ADS_BRAND.bgDeep : ADS_BRAND.text2,
+                            color: selected ? ADS_BRAND.inkOnGold : ADS_BRAND.text2,
                             display: "inline-flex",
                             alignItems: "center",
                             justifyContent: "center",

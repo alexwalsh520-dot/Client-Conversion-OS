@@ -61,7 +61,7 @@ export function CoachBars({ coaches }: CoachBarsProps) {
                 className="flex-1 overflow-hidden"
                 style={{
                   height: 5,
-                  background: 'rgba(255,255,255,0.04)',
+                  background: 'var(--hover-bg)',
                   borderRadius: 100,
                 }}
               >

@@ -71,7 +71,7 @@ export function AdBudgetCard({ status, headroom, currentAdSpend, safeBudget }: A
         className="mt-3 overflow-hidden"
         style={{
           height: 8,
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--hover-bg)',
           borderRadius: 100,
         }}
       >

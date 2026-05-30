@@ -770,7 +770,7 @@ function HBar({
         style={{
           height: 8,
           borderRadius: 4,
-          background: "rgba(255,255,255,0.04)",
+          background: "var(--hover-bg)",
           overflow: "hidden",
         }}
       >
@@ -1011,7 +1011,7 @@ function FunnelStep({
         style={{
           height: 36,
           borderRadius: 8,
-          background: "rgba(255,255,255,0.03)",
+          background: "var(--hover-bg-subtle)",
           overflow: "hidden",
           border: `1px solid ${hc}30`,
           boxShadow: glow,
@@ -1255,11 +1255,11 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
               border:
                 view === btn.key
                   ? "1px solid var(--accent)"
-                  : "1px solid rgba(255,255,255,0.1)",
+                  : "1px solid var(--border-primary)",
               background:
                 view === btn.key
                   ? "rgba(201,169,110,0.15)"
-                  : "rgba(255,255,255,0.03)",
+                  : "var(--hover-bg-subtle)",
               color:
                 view === btn.key ? "var(--accent)" : "var(--text-muted)",
               cursor: "pointer",
@@ -1292,7 +1292,7 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
         >
           <div
             style={{
-              borderRight: "1px solid rgba(255,255,255,0.06)",
+              borderRight: "1px solid var(--border-primary)",
               paddingRight: 16,
             }}
           >
@@ -1544,7 +1544,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
               background: "#7ec9a0",
               bottom: -1,
               right: -1,
-              border: "1.5px solid #121212",
+              border: "1.5px solid var(--bg-secondary)",
             }}
           />
         </div>
@@ -1708,7 +1708,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
             padding: "8px 12px",
             borderRadius: 8,
             border: "1px solid rgba(201,169,110,0.15)",
-            background: "rgba(255,255,255,0.03)",
+            background: "var(--hover-bg-subtle)",
             color: "var(--text-primary)",
             fontSize: 12,
             outline: "none",
@@ -1724,7 +1724,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
             background:
               input.trim() && !thinking
                 ? "rgba(201,169,110,0.15)"
-                : "rgba(255,255,255,0.03)",
+                : "var(--hover-bg-subtle)",
             color:
               input.trim() && !thinking
                 ? "var(--accent)"
@@ -1870,7 +1870,7 @@ function resetMouseTracking(container: HTMLDivElement) {
       const h = el as HTMLElement;
       h.style.transform = "";
       h.style.boxShadow = "";
-      h.style.borderColor = "rgba(255,255,255,0.06)";
+      h.style.borderColor = "var(--border-primary)";
     });
   container
     .querySelectorAll("[data-reactive-text]")
@@ -2154,11 +2154,11 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               border:
                 alexDatePreset === tab.key
                   ? "1px solid var(--accent)"
-                  : "1px solid rgba(255,255,255,0.06)",
+                  : "1px solid var(--border-primary)",
               background:
                 alexDatePreset === tab.key
                   ? "rgba(201,169,110,0.18)"
-                  : "rgba(255,255,255,0.02)",
+                  : "var(--hover-bg-subtle)",
               color:
                 alexDatePreset === tab.key
                   ? "var(--accent)"
@@ -2188,7 +2188,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                 padding: "4px 8px",
                 borderRadius: 6,
                 border: "1px solid rgba(201,169,110,0.2)",
-                background: "rgba(255,255,255,0.03)",
+                background: "var(--hover-bg-subtle)",
                 color: "var(--text-primary)",
                 fontSize: 11,
                 outline: "none",
@@ -2205,7 +2205,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                 padding: "4px 8px",
                 borderRadius: 6,
                 border: "1px solid rgba(201,169,110,0.2)",
-                background: "rgba(255,255,255,0.03)",
+                background: "var(--hover-bg-subtle)",
                 color: "var(--text-primary)",
                 fontSize: 11,
                 outline: "none",
@@ -2235,8 +2235,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             position: "relative",
             overflow: "hidden",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2295,8 +2295,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             position: "relative",
             overflow: "hidden",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2354,8 +2354,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             position: "relative",
             overflow: "hidden",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2413,8 +2413,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         style={{
           padding: "16px 0 12px 0",
           borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(10,10,14,0.6)",
+          border: "1px solid var(--border-primary)",
+          background: "var(--bg-card)",
           overflow: "hidden",
           ...RC,
         }}
@@ -2487,8 +2487,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             flexDirection: "column",
             alignItems: "center",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2565,8 +2565,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           style={{
             padding: "18px 14px",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2649,8 +2649,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           style={{
             padding: "18px 14px",
             borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--hover-bg-subtle)",
             ...RC,
           }}
         >
@@ -2771,7 +2771,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                       style={{
                         height: 8,
                         borderRadius: 4,
-                        background: "rgba(255,255,255,0.04)",
+                        background: "var(--hover-bg)",
                         overflow: "hidden",
                         transition:
                           "filter 0.15s ease-out, box-shadow 0.15s ease-out",
@@ -2895,8 +2895,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               padding: "16px 14px",
               textAlign: "center",
               borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.06)",
-              background: "rgba(255,255,255,0.02)",
+              border: "1px solid var(--border-primary)",
+              background: "var(--hover-bg-subtle)",
               ...RC,
             }}
           >

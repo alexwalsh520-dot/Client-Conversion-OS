@@ -317,9 +317,9 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
                         }}
                         style={{
                           padding: "8px 12px", cursor: "pointer", fontSize: 13,
-                          color: "var(--text-primary)", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          color: "var(--text-primary)", borderBottom: "1px solid var(--border-primary)",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-bg)")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         <span style={{ fontWeight: 600 }}>{nf.firstName} {nf.lastName}</span>

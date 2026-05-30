@@ -218,9 +218,9 @@ export function MacroTargetEditor({ clientId, onLockChange }: MacroTargetEditorP
               fontSize: 14,
               fontWeight: 600,
               fontFamily: "ui-monospace, monospace",
-              background: locked ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.4)",
+              background: locked ? "var(--hover-bg)" : "var(--bg-secondary)",
               color: "var(--text-primary)",
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: "1px solid var(--border-primary)",
               borderRadius: 4,
             }}
           />
@@ -303,7 +303,7 @@ function Field({ label, editable, hint, children }: { label: string; editable?: 
     <div
       style={{
         padding: "6px 10px",
-        background: "rgba(255,255,255,0.03)",
+        background: "var(--hover-bg-subtle)",
         borderRadius: 4,
         minWidth: 0,
       }}
@@ -336,8 +336,8 @@ function ReadOnlyValue({ v }: { v: number }) {
 
 const cardStyle: React.CSSProperties = {
   padding: 12,
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(255,255,255,0.06)",
+  background: "var(--hover-bg-subtle)",
+  border: "1px solid var(--border-primary)",
   borderRadius: 8,
   marginBottom: 14,
   minWidth: 0,
@@ -364,7 +364,7 @@ const secondaryButton: React.CSSProperties = {
   padding: "6px 14px",
   background: "none",
   color: "var(--text-primary)",
-  border: "1px solid rgba(255,255,255,0.1)",
+  border: "1px solid var(--border-primary)",
   borderRadius: 6,
   cursor: "pointer",
   fontSize: 12,

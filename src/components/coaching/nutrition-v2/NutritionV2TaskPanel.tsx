@@ -239,7 +239,7 @@ export function NutritionV2TaskPanel({
                 style={{
                   fontSize: 10,
                   color: "var(--text-muted)",
-                  background: "rgba(255,255,255,0.05)",
+                  background: "var(--hover-bg)",
                   padding: "1px 6px",
                   borderRadius: 4,
                   textTransform: "uppercase",
@@ -258,7 +258,7 @@ export function NutritionV2TaskPanel({
               width: "100%",
               maxWidth: "100%",
               height: 720,
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: "1px solid var(--border-primary)",
               borderRadius: 6,
               background: "#fff",
             }}
@@ -314,8 +314,8 @@ export function NutritionV2TaskPanel({
 
 const panelStyle: React.CSSProperties = {
   padding: 16,
-  background: "rgba(255,255,255,0.02)",
-  borderTop: "1px solid rgba(255,255,255,0.06)",
+  background: "var(--hover-bg-subtle)",
+  borderTop: "1px solid var(--border-primary)",
   minWidth: 0,
   overflow: "hidden",
   boxSizing: "border-box",

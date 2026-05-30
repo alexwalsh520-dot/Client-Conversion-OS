@@ -45,7 +45,7 @@ function parseInline(text: string): React.ReactElement[] {
           key={key++}
           style={{
             color: "var(--accent)",
-            background: "rgba(255,255,255,0.06)",
+            background: "var(--hover-bg)",
             padding: "2px 6px",
             borderRadius: 4,
             fontSize: "0.9em",

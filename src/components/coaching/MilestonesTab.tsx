@@ -517,7 +517,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
                       onClick={() => onToggle(milestone.id!, toggleField, "pending")}
                       title="Undo this change"
                       style={{
-                        background: "rgba(255,255,255,0.04)",
+                        background: "var(--hover-bg)",
                         border: "1px solid var(--border-primary)",
                         borderRadius: 4,
                         padding: "3px 8px",

@@ -144,8 +144,8 @@ export default function OnboardingNotesCard({ clientId }: Props) {
   const cardStyle: React.CSSProperties = {
     marginBottom: 14,
     padding: 12,
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "var(--hover-bg-subtle)",
+    border: "1px solid var(--border-primary)",
     borderRadius: 8,
   };
 
@@ -314,7 +314,7 @@ export default function OnboardingNotesCard({ clientId }: Props) {
           whiteSpace: "pre-wrap",
           padding: "8px 10px",
           borderLeft: "2px solid var(--accent)",
-          background: "rgba(255,255,255,0.02)",
+          background: "var(--hover-bg-subtle)",
           borderRadius: "0 6px 6px 0",
         }}
       >

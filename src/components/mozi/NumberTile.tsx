@@ -32,7 +32,7 @@ export function NumberTile({ label, value, sub, color, tooltip }: NumberTileProp
             width: 14,
             height: 14,
             borderRadius: '50%',
-            background: 'rgba(255,255,255,0.04)',
+            background: 'var(--hover-bg)',
             color: 'var(--text-3)',
             fontSize: 9,
           }}

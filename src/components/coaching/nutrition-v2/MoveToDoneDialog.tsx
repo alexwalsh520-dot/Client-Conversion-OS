@@ -144,7 +144,7 @@ export function MoveToDoneDialog({
             padding: "6px 14px",
             background: "none",
             color: "var(--text-muted)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            border: "1px solid var(--border-primary)",
             borderRadius: 4,
             cursor: "pointer",
             fontSize: 12,
