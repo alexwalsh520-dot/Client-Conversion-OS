@@ -179,12 +179,14 @@ async function handler(req: NextRequest) {
   }
 
   // Controls: a few subscribers we KNOW came from an ad, to confirm the
-  // ad-origin signal looks the way we expect on a real ad buyer.
+  // ad-origin signal looks the way we expect on a real ad buyer. Kept in their
+  // own list and checked FIRST so they are never crowded out by the per-run cap.
+  const controls: typeof candidates = [];
   const controlSubs = Array.from(knownAdSubs).slice(0, 3);
   for (const subscriberId of controlSubs) {
     const dedupe = `tyson:${subscriberId}`;
     if (alreadyChecked.has(dedupe)) continue;
-    candidates.push({
+    controls.push({
       client: "tyson",
       subscriberId,
       prospectName: null,
@@ -193,7 +195,7 @@ async function handler(req: NextRequest) {
     });
   }
 
-  const toCheck = candidates.slice(0, MAX_LOOKUPS_PER_RUN);
+  const toCheck = [...controls, ...candidates].slice(0, MAX_LOOKUPS_PER_RUN);
   const results: { subscriber_id: string; from_ad: boolean | null; keyword: string | null; control: boolean }[] = [];
 
   for (const c of toCheck) {
