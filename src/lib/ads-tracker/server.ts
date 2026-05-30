@@ -128,6 +128,8 @@ interface SalesTrackerDbRow {
   call_notes: string | null;
   recording_link: string | null;
   offer: string | null;
+  manychat_link: string | null;
+  manychat_subscriber_id: string | null;
 }
 
 export interface AdsTrackerRow {
@@ -178,6 +180,11 @@ interface SalesAttributionOptions {
   includeCallTakenMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeClientSplitMetrics?: (match: KeywordEvent, row: SheetRow) => boolean;
   includeUnmatchedSales?: (row: SheetRow, clientKey: string | null) => boolean;
+  // DM keyword events (source=manychat) used to match a sale straight from its
+  // pasted ManyChat link to the buyer's keyword. Omit to use only booking + name.
+  manychatEvents?: KeywordEvent[];
+  // Optional accumulator: counts how each sale was matched (link/name/none).
+  matchStats?: SalesMatchStats;
 }
 
 interface Group {
@@ -308,6 +315,7 @@ interface BuildPayloadOptions {
   calendarEvents?: AdsTrackerCalendarEvent[];
   attributionKeywordOptions?: Record<string, unknown>[];
   attributionCampaignOptions?: Record<string, unknown>[];
+  salesMatchStats?: SalesMatchStats;
 }
 
 interface AdsTrackerCalendarEvent {
@@ -858,6 +866,10 @@ function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
     callNotes: row.call_notes || "",
     recordingLink: row.recording_link || "",
     offer: row.offer || "",
+    // The synced table now stores the ManyChat link, so the DB read path can
+    // attribute revenue by subscriber id exactly like the live-sheet path.
+    manychatLink: row.manychat_link || "",
+    manychatSubscriberId: row.manychat_subscriber_id || null,
   };
 }
 
@@ -895,6 +907,8 @@ async function fetchSalesRowsFromSupabase(
         "call_notes",
         "recording_link",
         "offer",
+        "manychat_link",
+        "manychat_subscriber_id",
       ].join(",")
     )
     .gte("date", query.dateFrom)
@@ -941,15 +955,112 @@ function bookingsByContactName(bookings: KeywordEvent[]) {
   return byName;
 }
 
+type SalesMatchMethod = "link_booking" | "link_dm" | "name" | "none";
+
+interface SalesMatchIndex {
+  byName: Map<string, KeywordEvent[]>;
+  // Booked-call events keyed by ManyChat subscriber id (when the booking has one).
+  bySubscriber: Map<string, KeywordEvent[]>;
+  // DM keyword events (source=manychat) keyed by subscriber id, newest first.
+  manychatBySubscriber: Map<string, KeywordEvent[]>;
+}
+
+interface SalesMatchStats {
+  link_booking: number;
+  link_dm: number;
+  name: number;
+  none: number;
+}
+
+function emptySalesMatchStats(): SalesMatchStats {
+  return { link_booking: 0, link_dm: 0, name: 0, none: 0 };
+}
+
+/**
+ * Build the indexes used to match a sales row to the keyword/ad that earned it.
+ * `manychatEvents` is optional: when omitted, only booking + name matching run
+ * (used where we specifically need a *real* GHL booking). When provided, a sale
+ * carrying a ManyChat link can also be matched straight to the buyer's DM
+ * keyword event — the most reliable signal, since the keyword and subscriber id
+ * are captured together at DM time.
+ */
+function buildSalesMatchIndex(
+  bookings: KeywordEvent[],
+  manychatEvents: KeywordEvent[] = []
+): SalesMatchIndex {
+  const byName = bookingsByContactName(bookings);
+  const bySubscriber = new Map<string, KeywordEvent[]>();
+  for (const booking of bookings) {
+    if (!booking.subscriber_id) continue;
+    const list = bySubscriber.get(booking.subscriber_id) || [];
+    list.push(booking);
+    bySubscriber.set(booking.subscriber_id, list);
+  }
+  const manychatBySubscriber = new Map<string, KeywordEvent[]>();
+  for (const event of manychatEvents) {
+    if (!event.subscriber_id || !event.keyword_normalized) continue;
+    const list = manychatBySubscriber.get(event.subscriber_id) || [];
+    list.push(event);
+    manychatBySubscriber.set(event.subscriber_id, list);
+  }
+  for (const list of manychatBySubscriber.values()) {
+    list.sort((a, b) => b.event_at.localeCompare(a.event_at));
+  }
+  return { byName, bySubscriber, manychatBySubscriber };
+}
+
+/**
+ * Match one sales row to the keyword event that should attribute its revenue.
+ * Priority (first hit wins, so a sale is never counted twice):
+ *   1. link_booking — the sale's ManyChat id equals a booked call's subscriber id
+ *   2. link_dm      — the sale's ManyChat id matches the buyer's DM keyword event
+ *   3. name         — the legacy person-name match (kept as a safety net)
+ * Subscriber ids are only unique inside one creator's ManyChat, so id matches are
+ * scoped to the sale's creator (offer) whenever that is known.
+ */
+function matchSalesRow(
+  row: SheetRow,
+  index: SalesMatchIndex
+): { match: KeywordEvent | null; method: SalesMatchMethod } {
+  const clientKey = clientFromOffer(row);
+  const subscriberId = row.manychatSubscriberId;
+
+  if (subscriberId) {
+    const bookingMatches = index.bySubscriber.get(subscriberId) || [];
+    const booking =
+      bookingMatches.find((item) => !clientKey || item.client_key === clientKey) ||
+      bookingMatches[0];
+    if (booking) return { match: booking, method: "link_booking" };
+
+    const dmMatches = index.manychatBySubscriber.get(subscriberId) || [];
+    const scoped = clientKey
+      ? dmMatches.filter((item) => item.client_key === clientKey)
+      : dmMatches;
+    const candidates = scoped.length ? scoped : dmMatches;
+    // Prefer the most recent DM keyword on or before the sale date; otherwise
+    // fall back to the newest one we have for this subscriber.
+    const dm =
+      candidates.find((item) => eventDateKey(item.event_at) <= row.date) ||
+      candidates[0] ||
+      null;
+    if (dm) return { match: dm, method: "link_dm" };
+  }
+
+  const name = normalizePersonName(row.name);
+  if (!name) return { match: null, method: "none" };
+  const matches = index.byName.get(name) || [];
+  const match =
+    matches.find((item) => !clientKey || item.client_key === clientKey) ||
+    matches[0] ||
+    null;
+  return { match, method: match ? "name" : "none" };
+}
+
 function matchedBookingForSalesRow(
   row: SheetRow,
-  bookingsByName: Map<string, KeywordEvent[]>
-) {
-  const name = normalizePersonName(row.name);
-  if (!name) return null;
-  const clientKey = clientFromOffer(row);
-  const matches = bookingsByName.get(name) || [];
-  return matches.find((item) => !clientKey || item.client_key === clientKey) || matches[0] || null;
+  index: SalesMatchIndex
+): KeywordEvent | null {
+  return matchSalesRow(row, index).match;
 }
 
 function isFallbackAttributionGroupId(groupId: string) {
@@ -969,7 +1080,7 @@ function applySalesToGroups(
   bookings: KeywordEvent[],
   options: SalesAttributionOptions = {}
 ): UnmatchedSale[] {
-  const bookingsByName = bookingsByContactName(bookings);
+  const matchIndex = buildSalesMatchIndex(bookings, options.manychatEvents || []);
 
   const unmatched: UnmatchedSale[] = [];
   const addUnmatched = (
@@ -989,7 +1100,8 @@ function applySalesToGroups(
       addUnmatched(row, clientKey, "missing_sales_name");
       continue;
     }
-    const match = matchedBookingForSalesRow(row, bookingsByName);
+    const { match, method } = matchSalesRow(row, matchIndex);
+    if (options.matchStats) options.matchStats[method] += 1;
     if (!match) {
       addUnmatched(row, clientKey, "no_matching_ghl_booking");
       continue;
@@ -1167,6 +1279,7 @@ function buildPayload(
       campaignOptions: options.attributionCampaignOptions || [],
     },
     sourceStatus: options.sourceStatus || null,
+    salesMatchStats: options.salesMatchStats || emptySalesMatchStats(),
     rows,
     dailyRows,
     adRoas,
@@ -2586,7 +2699,9 @@ async function persistAutomaticSalesAttributions({
   attributionRows: MetaRow[];
   adAttributionGroupId: (row: KeywordEvent, keyword: string, fallbackId: string) => string;
 }): Promise<AttributionResolution[]> {
-  const bookingsByName = bookingsByContactName(bookings);
+  // DB-write path stays conservative: only the stable booking-id and name
+  // matches auto-write to the exceptions table (no DM-only matches in v1).
+  const matchIndex = buildSalesMatchIndex(bookings);
   const now = new Date().toISOString();
   const inserts: Array<Record<string, unknown>> = [];
   const saleKeysInBatch = new Set<string>();
@@ -2602,7 +2717,7 @@ async function persistAutomaticSalesAttributions({
     if (saleKeysInBatch.has(saleKey)) continue;
     if (existingResolution && existingResolution.source !== AUTO_ATTRIBUTION_SOURCE) continue;
 
-    const match = matchedBookingForSalesRow(row, bookingsByName);
+    const match = matchedBookingForSalesRow(row, matchIndex);
     if (!match) continue;
 
     const keyword = normalizeKeyword(match.keyword_normalized || match.keyword_raw);
@@ -2964,14 +3079,19 @@ function buildAttributionEventsHistory({
     });
   }
 
-  const bookingsByName = bookingsByContactName(bookings);
+  // Display path: a sale can also be matched straight from its pasted ManyChat
+  // link to the buyer's DM keyword event, so revenue lands on the right ad.
+  const matchManychatEvents = events.filter(
+    (item) => item.source === "manychat" && item.subscriber_id && item.keyword_normalized
+  );
+  const matchIndex = buildSalesMatchIndex(bookings, matchManychatEvents);
 
   for (const row of salesRows) {
     if (isTestSalesRow(row)) continue;
     const clientKey = clientFromOffer(row);
     const saleKey = salesRowKey(row, clientKey);
     const resolution = resolutionBySaleKey.get(saleKey);
-    const match = matchedBookingForSalesRow(row, bookingsByName);
+    const match = matchedBookingForSalesRow(row, matchIndex);
     const keyword = normalizeKeyword(
       resolution?.keywordNormalized ||
         resolution?.keywordRaw ||
@@ -3347,6 +3467,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
 
   const attributionSalesRows = salesRows.filter((row) => !isTestSalesRow(row));
   const attributionGhlBookings = attributionEvents.filter((event) => event.source === "ghl");
+  // DM keyword events (subscriber id + keyword captured together at DM time) let a
+  // sale carrying a pasted ManyChat link land its revenue on the right ad.
+  const manychatEvents = attributionEvents.filter(
+    (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
+  );
   const alertBackfill = alertBackfillRows as KeywordBackfillRow[];
   const alertBackfilledDateKeys = new Set(
     alertBackfill.map((row) => `${row.client_key}:${row.date}`)
@@ -3381,6 +3506,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   );
   const alertAttributionSalesRows = alertSalesRows.filter((row) => !isTestSalesRow(row));
   const alertGhlBookings = alertAttributionEvents.filter((event) => event.source === "ghl");
+  const alertManychatEvents = alertAttributionEvents.filter(
+    (event) => event.source === "manychat" && event.subscriber_id && event.keyword_normalized
+  );
   const automaticAttributionResolutions = await persistAutomaticSalesAttributions({
     db,
     salesRows: alertAttributionSalesRows,
@@ -3437,7 +3565,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     resolutionBySaleKey,
     alertAttributionSalesRows
   );
-  const realGhlBookingsByName = bookingsByContactName([
+  // Deliberately no ManyChat DM events here: `hasRealGhlBooking` must stay true
+  // only when an actual GHL booking exists (booking-id or name), not a DM match.
+  const realGhlBookingsIndex = buildSalesMatchIndex([
     ...attributionGhlBookings,
     ...dashboardMissingGhlBookingKeywordEvents,
   ]);
@@ -3446,7 +3576,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       const clientKey = clientFromOffer(row);
       if (!clientKey || !clientFilter.includes(clientKey)) return null;
       if (backfilledDateKeys.has(`${clientKey}:${row.date}`)) return null;
-      const matchedGhlBooking = matchedBookingForSalesRow(row, realGhlBookingsByName);
+      const matchedGhlBooking = matchedBookingForSalesRow(row, realGhlBookingsIndex);
       const hasRealGhlBooking = Boolean(
         matchedGhlBooking &&
         normalizeKeyword(matchedGhlBooking.keyword_normalized || matchedGhlBooking.keyword_raw)
@@ -3499,6 +3629,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     !backfilledDateKeys.has(`${clientKey}:${row.date}`) &&
     !resolutionBySaleKey.has(salesRowKey(row, clientKey));
 
+  const salesMatchStats = emptySalesMatchStats();
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
     groupId: (match) =>
       resolvedAttributionGroupId(
@@ -3529,6 +3660,8 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
     includeUnmatchedSales,
+    manychatEvents,
+    matchStats: salesMatchStats,
   });
   const alertBookings = [
     ...alertManualStandaloneResolutionEvents,
@@ -3568,6 +3701,9 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeCallTakenMetrics: () => false,
     includeClientSplitMetrics: () => false,
     includeUnmatchedSales: includeUnmatchedAlertSales,
+    // Keep flags consistent with revenue: a sale matched via its ManyChat link
+    // should not also be flagged as "no matching booking".
+    manychatEvents: alertManychatEvents,
   });
   const attributionAlerts = [
     ...alertUnmatchedSales,
@@ -3667,6 +3803,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeCallTakenMetrics,
     includeClientSplitMetrics: includeSalesOutcomeMetrics,
     includeUnmatchedSales,
+    manychatEvents,
   });
 
   const eventsHistory = buildAttributionEventsHistory({
@@ -3815,5 +3952,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     sourceStatus,
     eventsHistory,
     calendarEvents,
+    salesMatchStats,
   });
 }

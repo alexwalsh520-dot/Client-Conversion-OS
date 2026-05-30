@@ -25,6 +25,32 @@ export interface SheetRow {
   callNotes: string;
   recordingLink: string;
   offer: string; // Keith Holland or Tyson Sonnek
+  manychatLink: string; // ManyChat chat link pasted by setters (newer "expanded" rows, col D)
+  manychatSubscriberId: string | null; // stable subscriber ID parsed from the link
+}
+
+/**
+ * Pull the ManyChat subscriber ID out of a pasted chat link.
+ * Links look like https://app.manychat.com/fb<accountId>/chat/<subscriberId>
+ * so the ID is the trailing number after /chat/. We also accept a bare number
+ * (a setter pasting just the ID). Returns null when nothing usable is present —
+ * callers then fall back to name matching, so a junk value never forces a match.
+ */
+export function manychatSubscriberIdFromLink(
+  link: string | null | undefined
+): string | null {
+  if (!link) return null;
+  const text = link.trim();
+  if (!text) return null;
+  // Preferred: the number right after "/chat/"
+  const chatMatch = text.match(/\/chat\/(\d{3,})/i);
+  if (chatMatch) return chatMatch[1];
+  // Bare ID: the whole cell is just digits
+  if (/^\d{3,}$/.test(text)) return text;
+  // Fallback: the last run of 3+ digits anywhere in the string
+  const digitRuns = text.match(/\d{3,}/g);
+  if (digitRuns && digitRuns.length > 0) return digitRuns[digitRuns.length - 1];
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +323,8 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
 
   const isJanuary = tab === "JANUARY";
   const expandedLayout = usesExpandedSalesLayout(row);
+  // The ManyChat chat link only exists on the newer "expanded" layout (col D).
+  const manychatLink = expandedLayout ? normalizeCell(row[3]) : "";
   const callTakenStatus = parseCallTakenStatus(row[expandedLayout ? 5 : 3]);
   const setter = normalizeSetterName(
     expandedLayout ? row[15] : isJanuary ? row[12] : row[13]
@@ -330,6 +358,8 @@ function parseRow(row: (string | undefined)[], tab?: string): SheetRow | null {
       row[expandedLayout ? 17 : isJanuary ? 14 : 15]
     ),
     offer,
+    manychatLink,
+    manychatSubscriberId: manychatSubscriberIdFromLink(manychatLink),
   };
 }
 
@@ -364,6 +394,8 @@ function parseSubscriptionRow(row: (string | undefined)[]): SheetRow | null {
     callNotes: normalizeCell(row[7]),
     recordingLink: "",
     offer,
+    manychatLink: "",
+    manychatSubscriberId: null,
   };
 }
 

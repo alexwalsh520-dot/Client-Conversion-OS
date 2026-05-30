@@ -82,6 +82,8 @@ function rowPayload(row: SheetRow, index: number) {
     call_notes: row.callNotes || null,
     recording_link: row.recordingLink || null,
     offer: row.offer || null,
+    manychat_link: row.manychatLink || null,
+    manychat_subscriber_id: row.manychatSubscriberId,
     raw_payload: row,
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
