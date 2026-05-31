@@ -75,6 +75,7 @@ const GENERATE_HIDDEN_PRESETS_KEY = "ccos-studio2-hidden-generate-presets";
 const COPY_LAB_PRESETS_KEY = "ccos-studio2-copy-lab-presets";
 const AI_GENERATED_FOLDER_NAME = "AI Generated";
 const MAX_GENERATE_BATCH_COUNT = 30;
+const GENERATE_RUN_TIMEOUT_MS = 8 * 60 * 1000;
 const DRAG_THRESHOLD = 5;
 const SNAP_THRESHOLD = 10;
 const IMAGE_CENTER_SNAP_THRESHOLD = 14;
@@ -351,6 +352,24 @@ interface GenerateChatMessage {
   createdAt: number;
 }
 
+interface ActiveGenerateRun {
+  id: string;
+  messageId: string;
+  label: string;
+  total: number;
+  ready: number;
+  startedAt: number;
+}
+
+interface GenerateRunTracker {
+  messageId: string;
+  controllers: Set<AbortController>;
+  generationIds: Set<string>;
+  timeoutId: number | null;
+  stopped: boolean;
+  stopReason: string;
+}
+
 interface PendingGenerateRetry {
   prompt: string;
   sourcePreview: string;
@@ -361,7 +380,7 @@ interface PendingGenerateRetry {
 type GenerateConversationItem =
   | { type: "message"; id: string; sort: number; message: GenerateChatMessage }
   | { type: "generation"; id: string; sort: number; generation: StudioAIGeneration }
-  | { type: "status"; id: string; sort: number; status: string };
+  | { type: "status"; id: string; sort: number; status: string; run?: ActiveGenerateRun };
 
 interface GeneratePreset {
   id: string;
@@ -1221,6 +1240,9 @@ function isGenerateErrorStatus(status: string) {
     value.includes("non-json") ||
     value.includes("rejected") ||
     value.includes("timed out") ||
+    value.includes("stopped") ||
+    value.includes("canceled") ||
+    value.includes("cancelled") ||
     value.includes("too large")
   );
 }
@@ -2292,7 +2314,6 @@ export default function Studio2Page() {
   const [generatePrompt, setGeneratePrompt] = useState("");
   const [generateReference, setGenerateReference] = useState<GenerateReferenceImage | null>(null);
   const [generateStatus, setGenerateStatus] = useState("");
-  const [generatingAd, setGeneratingAd] = useState(false);
   const [aiGenerations, setAiGenerations] = useState<StudioAIGeneration[]>([]);
   const [selectedGenerationIds, setSelectedGenerationIds] = useState<string[]>([]);
   const [generateDropActive, setGenerateDropActive] = useState(false);
@@ -2301,6 +2322,7 @@ export default function Studio2Page() {
   const [generateGalleryPercent, setGenerateGalleryPercent] = useState(50);
   const [generateGalleryOpen, setGenerateGalleryOpen] = useState(true);
   const [generateMessages, setGenerateMessages] = useState<GenerateChatMessage[]>([]);
+  const [activeGenerateRuns, setActiveGenerateRuns] = useState<ActiveGenerateRun[]>([]);
   const [generateBatchCount, setGenerateBatchCount] = useState(1);
   const [generateToast, setGenerateToast] = useState<{ message: string } | null>(null);
   const [generateAddMenuOpen, setGenerateAddMenuOpen] = useState(false);
@@ -2358,6 +2380,7 @@ export default function Studio2Page() {
   const generateConversationEndRef = useRef<HTMLDivElement>(null);
   const generateAddMenuRef = useRef<HTMLDivElement>(null);
   const generatePresetMenuRef = useRef<HTMLDivElement>(null);
+  const generateRunControllersRef = useRef(new Map<string, GenerateRunTracker>());
   const topNavMenuRef = useRef<HTMLDivElement>(null);
   const editorSidebarModeRef = useRef(editorSidebarMode);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -2446,6 +2469,7 @@ export default function Studio2Page() {
     () => new Set(mediaFolders.filter(isAiGeneratedFolder).map((folder) => folder.id)),
     [mediaFolders]
   );
+  const generatingAd = activeGenerateRuns.length > 0;
   const getAssetForUrl = useCallback(
     (url?: string | null) => mediaAssets.find((asset) => asset.url === url) || libraryMedia.find((asset) => asset.url === url) || null,
     [libraryMedia, mediaAssets]
@@ -5052,11 +5076,77 @@ export default function Studio2Page() {
     return data.folder.id;
   }, [mediaFolders]);
 
+  const registerGenerateController = useCallback((runId: string) => {
+    const tracker = generateRunControllersRef.current.get(runId);
+    const controller = new AbortController();
+    if (!tracker) return controller;
+    tracker.controllers.add(controller);
+    controller.signal.addEventListener("abort", () => tracker.controllers.delete(controller), { once: true });
+    return controller;
+  }, []);
+
+  const finishGenerateRun = useCallback((runId: string) => {
+    const tracker = generateRunControllersRef.current.get(runId);
+    if (tracker?.timeoutId) window.clearTimeout(tracker.timeoutId);
+    generateRunControllersRef.current.delete(runId);
+    setActiveGenerateRuns((prev) => prev.filter((run) => run.id !== runId));
+  }, []);
+
+  const stopGenerateRun = useCallback((runId: string, reason = "Stopped by user.") => {
+    const tracker = generateRunControllersRef.current.get(runId);
+    if (!tracker) return;
+    tracker.stopped = true;
+    tracker.stopReason = reason;
+    tracker.controllers.forEach((controller) => controller.abort());
+    const generationIds = [...tracker.generationIds];
+    generationIds.forEach((generationId) => {
+      void fetch(`/api/studio-2/ai/generations/${encodeURIComponent(generationId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "failed", error: reason }),
+      }).catch(() => undefined);
+    });
+    if (generationIds.length) {
+      const generationIdSet = new Set(generationIds);
+      setAiGenerations((prev) => prev.map((generation) =>
+        generationIdSet.has(String(generation.id || generation.jobId))
+          ? { ...generation, status: "failed", error: reason }
+          : generation
+      ));
+    }
+    setGenerateMessages((prev) => prev.map((message) =>
+      message.id === tracker.messageId ? { ...message, status: "failed" } : message
+    ));
+    setGenerateStatus(reason);
+    if (tracker.timeoutId) window.clearTimeout(tracker.timeoutId);
+    setActiveGenerateRuns((prev) => prev.filter((run) => run.id !== runId));
+  }, []);
+
+  const editGenerateMessage = useCallback((message: GenerateChatMessage) => {
+    setGeneratePrompt(message.prompt);
+    setGenerateReference(message.reference ?? null);
+    setGenerateSourceAttached(!!message.sourcePreview);
+    if (message.sourcePreview) setGenerateSourcePreview(message.sourcePreview);
+    window.requestAnimationFrame(() => {
+      generatePromptTextareaRef.current?.focus();
+      const textarea = generatePromptTextareaRef.current;
+      if (textarea) {
+        textarea.selectionStart = textarea.value.length;
+        textarea.selectionEnd = textarea.value.length;
+      }
+    });
+  }, []);
+
   const pollAiGeneration = useCallback(
-    async (generationId: string, progressLabel = "Creating your ad") => {
+    async (generationId: string, progressLabel = "Creating your ad", runId?: string) => {
       for (let attempt = 0; attempt < 80; attempt++) {
+        const tracker = runId ? generateRunControllersRef.current.get(runId) : null;
+        if (tracker?.stopped) throw new Error(tracker.stopReason || "Stopped by user.");
         await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 1800 : 3500));
-        const res = await fetch(`/api/studio-2/ai/generations/${encodeURIComponent(generationId)}`);
+        const controller = runId ? registerGenerateController(runId) : null;
+        const res = await fetch(`/api/studio-2/ai/generations/${encodeURIComponent(generationId)}`, {
+          signal: controller?.signal,
+        });
         if (!res.ok) throw new Error("Generation status failed");
         const data = await res.json();
         const generation = data.generation || {};
@@ -5103,21 +5193,52 @@ export default function Studio2Page() {
         if (nextGeneration.status === "failed") {
           throw new Error(nextGeneration.error || "Higgsfield generation failed");
         }
-        setGenerateStatus(progressLabel);
+        if (runId) {
+          setActiveGenerateRuns((prev) => prev.map((run) =>
+            run.id === runId ? { ...run, label: progressLabel } : run
+          ));
+        } else {
+          setGenerateStatus(progressLabel);
+        }
       }
       throw new Error("Generation is still running. Check back in a minute.");
     },
-    [upsertAiGeneration]
+    [registerGenerateController, upsertAiGeneration]
   );
 
   const startAiGeneration = useCallback(async (retry?: PendingGenerateRetry) => {
     const submittedPrompt = (retry?.prompt ?? generatePrompt).trim();
-    if (!currentCreative || generatingAd || !submittedPrompt) return;
+    if (!currentCreative || !submittedPrompt) return;
+    const runId = uid();
     const messageId = retry?.retryMessageId || uid();
     const submittedAt = Date.now();
     const promptForApi = buildHiggsfieldPrompt(submittedPrompt);
     const submittedReference = retry ? retry.reference ?? null : generateReference;
     const submittedSourcePreview = retry ? retry.sourcePreview : generateSourceAttached ? generateSourcePreview : "";
+    const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
+    const timeoutId = window.setTimeout(() => {
+      stopGenerateRun(runId, "Generation timed out. Edit the prompt and resend when ready.");
+    }, GENERATE_RUN_TIMEOUT_MS);
+
+    generateRunControllersRef.current.set(runId, {
+      messageId,
+      controllers: new Set(),
+      generationIds: new Set(),
+      timeoutId,
+      stopped: false,
+      stopReason: "",
+    });
+    setActiveGenerateRuns((prev) => [
+      ...prev,
+      {
+        id: runId,
+        messageId,
+        label: batchCount === 1 ? "Preparing your ad" : `Preparing ${batchCount} ads`,
+        total: batchCount,
+        ready: 0,
+        startedAt: submittedAt,
+      },
+    ]);
 
     setGenerateMessages((prev) => {
       if (retry?.retryMessageId) {
@@ -5128,7 +5249,7 @@ export default function Studio2Page() {
                 prompt: submittedPrompt,
                 sourcePreview: submittedSourcePreview,
                 reference: submittedReference,
-                status: "sent",
+                status: "running",
                 createdAt: submittedAt,
               }
             : message
@@ -5141,7 +5262,7 @@ export default function Studio2Page() {
           prompt: submittedPrompt,
           sourcePreview: submittedSourcePreview,
           reference: submittedReference,
-          status: "sent",
+          status: "running",
           createdAt: submittedAt,
         },
       ];
@@ -5151,9 +5272,7 @@ export default function Studio2Page() {
       setGenerateReference(null);
     }
     setGeneratePresetMenuOpen(false);
-    setGeneratingAd(true);
-    const batchCount = clamp(Math.round(generateBatchCount), 1, MAX_GENERATE_BATCH_COUNT);
-    setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Creating ${batchCount} ads`);
+    setGenerateStatus("");
     try {
       const sourceAssetFolderId = getAssetForUrl(currentCreative.photoUrl)?.folderId || null;
       const targetFolderId = await ensureAiGeneratedFolder(setupMediaFolderId || sourceAssetFolderId || null);
@@ -5163,16 +5282,24 @@ export default function Studio2Page() {
       const startedGenerations: StudioAIGeneration[] = [];
 
       for (let index = 0; index < batchCount; index++) {
-        setGenerateStatus(batchCount === 1 ? "Preparing your ad" : `Preparing ${index + 1} of ${batchCount}`);
+        const tracker = generateRunControllersRef.current.get(runId);
+        if (tracker?.stopped) throw new Error(tracker.stopReason || "Stopped by user.");
+        setActiveGenerateRuns((prev) => prev.map((run) =>
+          run.id === runId
+            ? { ...run, label: batchCount === 1 ? "Preparing your ad" : `Preparing ${index + 1} of ${batchCount}` }
+            : run
+        ));
         const variationPrompt = batchCount === 1
           ? promptForApi
           : [
               promptForApi,
               `This is variation ${index + 1} of ${batchCount}. Keep it aligned with the same request, but do not make it an exact duplicate of the other variations.`,
             ].join("\n\n");
+        const controller = registerGenerateController(runId);
         const res = await fetch("/api/studio-2/ai/generations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             projectId,
             creativeId: currentCreative.id,
@@ -5196,15 +5323,22 @@ export default function Studio2Page() {
           createdAt: typeof generation.createdAt === "string" ? generation.createdAt : new Date(submittedAt + index + 1).toISOString(),
         };
         startedGenerations.push(nextGeneration);
+        generateRunControllersRef.current.get(runId)?.generationIds.add(nextGeneration.id);
         upsertAiGeneration(nextGeneration);
       }
 
-      setGenerateStatus(batchCount === 1 ? "Creating your ad" : `Waiting for ${batchCount} ads`);
+      setActiveGenerateRuns((prev) => prev.map((run) =>
+        run.id === runId ? { ...run, label: batchCount === 1 ? "Creating your ad" : `Waiting for ${batchCount} ads` } : run
+      ));
       let readyCount = 0;
       const settled = await Promise.allSettled(startedGenerations.map(async (generation) => {
-        await pollAiGeneration(generation.id, "Creating your ad");
+        await pollAiGeneration(generation.id, "Creating your ad", runId);
         readyCount += 1;
-        if (batchCount > 1) setGenerateStatus(`${readyCount} of ${batchCount} ready`);
+        setActiveGenerateRuns((prev) => prev.map((run) =>
+          run.id === runId
+            ? { ...run, ready: readyCount, label: batchCount > 1 ? `${readyCount} of ${batchCount} ready` : "Finishing up" }
+            : run
+        ));
         if (editorSidebarModeRef.current !== "generate") {
           setGenerateToast({ message: batchCount === 1 ? "Generated ad is ready." : `${readyCount} of ${batchCount} ready.` });
         }
@@ -5219,9 +5353,15 @@ export default function Studio2Page() {
       } else {
         setGenerateStatus(batchCount === 1 ? "Your ad is ready." : `${batchCount} ads are ready.`);
       }
-      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "sent" } : message));
+      setGenerateMessages((prev) => prev.map((message) => message.id === messageId ? { ...message, status: "complete" } : message));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not generate image.";
+      const tracker = generateRunControllersRef.current.get(runId);
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      const message = tracker?.stopped
+        ? tracker.stopReason || "Stopped by user."
+        : aborted
+          ? "Stopped by user."
+          : err instanceof Error ? err.message : "Could not generate image.";
       setGenerateStatus(message);
       setGenerateMessages((prev) => prev.map((item) => item.id === messageId ? { ...item, status: "failed" } : item));
       if (isHiggsfieldAuthStatus(message)) {
@@ -5236,7 +5376,7 @@ export default function Studio2Page() {
         setHiggsfieldAuthStatus("");
       }
     } finally {
-      setGeneratingAd(false);
+      finishGenerateRun(runId);
     }
   }, [
     buildHiggsfieldPrompt,
@@ -5246,13 +5386,15 @@ export default function Studio2Page() {
     generateBatchCount,
     generateSourcePreview,
     generateSourceAttached,
-    generatingAd,
     ensureAiGeneratedFolder,
+    finishGenerateRun,
     getAssetForUrl,
     pollAiGeneration,
     projectId,
+    registerGenerateController,
     renderCreativeToCanvas,
     setupMediaFolderId,
+    stopGenerateRun,
     upsertAiGeneration,
   ]);
 
@@ -5624,7 +5766,7 @@ export default function Studio2Page() {
     window.requestAnimationFrame(() => {
       generateConversationEndRef.current?.scrollIntoView({ block: "end" });
     });
-  }, [aiGenerations, editorSidebarMode, generateMessages, generateStatus, generatingAd]);
+  }, [activeGenerateRuns, aiGenerations, editorSidebarMode, generateMessages, generateStatus, generatingAd]);
 
   useEffect(() => {
     if (generatingAd || !generateStatus || isGenerateErrorStatus(generateStatus) || !isGenerateSuccessStatus(generateStatus)) return;
@@ -6440,7 +6582,7 @@ export default function Studio2Page() {
   );
 
   const renderGenerateWorkspace = () => {
-    const canGenerate = !!currentCreative && !!generatePrompt.trim() && !generatingAd;
+    const canGenerate = !!currentCreative && !!generatePrompt.trim();
     const allGeneratePresets = [
       ...customGeneratePresets,
       ...DEFAULT_GENERATE_PRESETS.filter((preset) =>
@@ -6481,7 +6623,14 @@ export default function Studio2Page() {
             generation,
           };
         }),
-      ...(generateStatus ? [{
+      ...activeGenerateRuns.map((run) => ({
+        type: "status" as const,
+        id: `run-${run.id}`,
+        sort: run.startedAt + 1,
+        status: run.ready > 0 && run.total > 1 ? `${run.ready} of ${run.total} ready` : run.label,
+        run,
+      })),
+      ...(generateStatus && (!activeGenerateRuns.length || isGenerateErrorStatus(generateStatus) || isGenerateSuccessStatus(generateStatus)) ? [{
         type: "status" as const,
         id: "generate-status",
         sort: Number.MAX_SAFE_INTEGER,
@@ -6577,6 +6726,13 @@ export default function Studio2Page() {
                 {conversationItems.map((item) => {
                   if (item.type === "message") {
                     const { message } = item;
+                    const activeMessageRun = activeGenerateRuns.find((run) => run.messageId === message.id);
+                    const messageStatusLabel =
+                      activeMessageRun ? "Generating" :
+                      message.status === "complete" ? "Ready" :
+                      message.status === "failed" ? "Failed" :
+                      message.status === "running" ? "Generating" :
+                      "Sent";
                     return (
                       <div
                         key={item.id}
@@ -6610,26 +6766,46 @@ export default function Studio2Page() {
                           )}
                           <div style={{ minWidth: 0 }}>
                             <div style={{ color: ADS_BRAND.text, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message.prompt}</div>
-                            {message.status === "failed" && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                                <div style={{ color: "#ff9b9b", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
-                                  Could not start
-                                </div>
+                            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 9 }}>
+                              <div
+                                style={{
+                                  color: message.status === "failed" ? "#ff9b9b" : activeMessageRun ? ADS_BRAND.gold : ADS_BRAND.text3,
+                                  fontSize: 11,
+                                  fontWeight: 850,
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                {messageStatusLabel}
+                              </div>
+                              {activeMessageRun && (
                                 <button
                                   type="button"
-                                  onClick={() => void startAiGeneration({
-                                    prompt: message.prompt,
-                                    sourcePreview: message.sourcePreview,
-                                    reference: message.reference ?? null,
-                                    retryMessageId: message.id,
-                                  })}
-                                  disabled={generatingAd}
-                                  style={{ ...buttonStyle(false), height: 28, padding: "0 9px", fontSize: 11, opacity: generatingAd ? 0.45 : 1 }}
+                                  onClick={() => stopGenerateRun(activeMessageRun.id)}
+                                  style={{ ...buttonStyle(false), height: 28, padding: "0 9px", fontSize: 11 }}
                                 >
-                                  Retry
+                                  <Square size={10} fill="currentColor" /> Stop
                                 </button>
-                              </div>
-                            )}
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => editGenerateMessage(message)}
+                                style={{ ...buttonStyle(false), height: 28, padding: "0 9px", fontSize: 11 }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void startAiGeneration({
+                                  prompt: message.prompt,
+                                  sourcePreview: message.sourcePreview,
+                                  reference: message.reference ?? null,
+                                })}
+                                disabled={!currentCreative}
+                                style={{ ...buttonStyle(false), height: 28, padding: "0 9px", fontSize: 11, opacity: currentCreative ? 1 : 0.45 }}
+                              >
+                                Resend
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -6641,6 +6817,10 @@ export default function Studio2Page() {
                     const statusIsDone = !generatingAd && isGenerateSuccessStatus(item.status);
                     const statusDetail = statusIsError
                       ? item.status
+                      : item.run
+                        ? item.run.total > 1
+                          ? `${item.run.ready} of ${item.run.total} ready. You can keep working, stop this run, or start another one.`
+                          : "You can keep working, stop this run, or start another one."
                       : statusIsDone
                         ? "Saved to your gallery and Media Library."
                         : "This can take about a minute. You can keep working while it finishes.";
@@ -6695,6 +6875,15 @@ export default function Studio2Page() {
                               style={{ ...buttonStyle(false), height: 32, marginTop: 10, padding: "0 10px" }}
                             >
                               Reconnect Higgsfield
+                            </button>
+                          )}
+                          {item.run && !statusIsError && (
+                            <button
+                              type="button"
+                              onClick={() => stopGenerateRun(item.run!.id)}
+                              style={{ ...buttonStyle(false), height: 32, marginTop: 10, padding: "0 10px" }}
+                            >
+                              <Square size={10} fill="currentColor" /> Stop this run
                             </button>
                           )}
                         </div>
@@ -7120,7 +7309,7 @@ export default function Studio2Page() {
                 <button
                   type="button"
                   onClick={() => setGenerateBatchCount((count) => clamp(count - 1, 1, MAX_GENERATE_BATCH_COUNT))}
-                  disabled={generatingAd || generateBatchCount <= 1}
+                  disabled={generateBatchCount <= 1}
                   style={{
                     width: 22,
                     height: 22,
@@ -7131,7 +7320,7 @@ export default function Studio2Page() {
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    cursor: generatingAd || generateBatchCount <= 1 ? "not-allowed" : "pointer",
+                    cursor: generateBatchCount <= 1 ? "not-allowed" : "pointer",
                   }}
                   aria-label="Generate fewer images"
                 >
@@ -7143,7 +7332,6 @@ export default function Studio2Page() {
                   type="text"
                   inputMode="numeric"
                   value={generateBatchCount}
-                  disabled={generatingAd}
                   onChange={(event) => {
                     const parsed = Number(event.target.value.replace(/\D/g, ""));
                     setGenerateBatchCount(Number.isFinite(parsed) ? clamp(Math.round(parsed), 1, MAX_GENERATE_BATCH_COUNT) : 1);
@@ -7164,7 +7352,7 @@ export default function Studio2Page() {
                 <button
                   type="button"
                   onClick={() => setGenerateBatchCount((count) => clamp(count + 1, 1, MAX_GENERATE_BATCH_COUNT))}
-                  disabled={generatingAd || generateBatchCount >= MAX_GENERATE_BATCH_COUNT}
+                  disabled={generateBatchCount >= MAX_GENERATE_BATCH_COUNT}
                   style={{
                     width: 22,
                     height: 22,
@@ -7175,7 +7363,7 @@ export default function Studio2Page() {
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    cursor: generatingAd || generateBatchCount >= MAX_GENERATE_BATCH_COUNT ? "not-allowed" : "pointer",
+                    cursor: generateBatchCount >= MAX_GENERATE_BATCH_COUNT ? "not-allowed" : "pointer",
                   }}
                   aria-label="Generate more images"
                 >
@@ -7185,23 +7373,23 @@ export default function Studio2Page() {
               <button
                 type="button"
                 onClick={() => void startAiGeneration()}
-                disabled={generatingAd || !canGenerate}
+                disabled={!canGenerate}
                 style={{
                   width: 36,
                   height: 36,
                   borderRadius: "50%",
                   border: "none",
-                  background: generatingAd ? ADS_BRAND.gold : canGenerate ? "#a7f3ff" : ADS_BRAND.border2,
-                  color: generatingAd || canGenerate ? "#061214" : ADS_BRAND.text3,
+                  background: canGenerate ? "#a7f3ff" : ADS_BRAND.border2,
+                  color: canGenerate ? "#061214" : ADS_BRAND.text3,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  cursor: generatingAd ? "progress" : canGenerate ? "pointer" : "not-allowed",
-                  opacity: generatingAd || canGenerate ? 1 : 0.55,
+                  cursor: canGenerate ? "pointer" : "not-allowed",
+                  opacity: canGenerate ? 1 : 0.55,
                 }}
-                title={generatingAd ? "Creating" : "Generate"}
+                title={generatingAd ? "Generate another run" : "Generate"}
               >
-                {generatingAd ? <Square size={14} fill="currentColor" /> : <ArrowLeft size={18} style={{ transform: "rotate(90deg)" }} />}
+                <ArrowLeft size={18} style={{ transform: "rotate(90deg)" }} />
               </button>
             </div>
           </div>

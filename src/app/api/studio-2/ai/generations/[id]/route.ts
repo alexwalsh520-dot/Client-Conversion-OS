@@ -34,6 +34,23 @@ export async function GET(
       return NextResponse.json({ error: "Generation not found" }, { status: 404, headers: NO_STORE_HEADERS });
     }
 
+    if (normalizeStatus(generation.status) === "failed" && isClientStoppedGeneration(generation.error)) {
+      const media = generation.media_id ? await findMedia(sb, String(generation.media_id)) : null;
+      return NextResponse.json({
+        generation: mapGeneration(generation),
+        media: media ? {
+          id: media.id,
+          folderId: media.folderId,
+          url: media.url,
+          thumbnailUrl: media.thumbnailUrl,
+          filename: media.filename,
+          kind: "image",
+          createdAt: media.createdAt,
+        } : null,
+        job: null,
+      }, { headers: NO_STORE_HEADERS });
+    }
+
     if (!generation.job_id) {
       return NextResponse.json({
         generation: mapGeneration(generation),
@@ -152,6 +169,14 @@ export async function PATCH(
       updates.creative_id = null;
     }
     if (body.folderId !== undefined) updates.folder_id = body.folderId || null;
+    if (body.status !== undefined) {
+      const status = normalizeStatus(body.status);
+      updates.status = status;
+      if (status !== "completed") updates.result_url = null;
+    }
+    if (body.error !== undefined) {
+      updates.error = body.error ? String(body.error) : null;
+    }
 
     const { data, error } = await sb
       .from("studio2_ai_generations")
@@ -297,6 +322,11 @@ function normalizeStatus(status: unknown) {
   if (["failed", "error", "cancelled", "canceled"].includes(value)) return "failed";
   if (["queued", "pending", "created"].includes(value)) return "queued";
   return value || "queued";
+}
+
+function isClientStoppedGeneration(error: unknown) {
+  const value = String(error || "").toLowerCase();
+  return value.includes("stopped by user") || value.includes("timed out");
 }
 
 function normalizeImageContentType(contentType: string | null, url: string) {
