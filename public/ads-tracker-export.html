@@ -5229,14 +5229,22 @@ function withRoas(row, roasMap){
   const rk = roasMap && roasMap.get(row.keyword);
   const tracedRev = rk ? rk.collected : Number(row.collected||0);
   const traced = tracedRev > 0;
+  // When we've traced real cash to this word, EVERY money figure rolls up from
+  // the same per-ad source the "explore all ads" list uses — so a word's ROAS
+  // here is exactly Σ(its ads' revenue) ÷ Σ(its ads' spend) and reconciles ad-
+  // for-ad with that list. (Before, ROAS divided traced revenue by the campaign
+  // row's spend — two different denominators — so the same word could read 11.9×
+  // in one panel and 7.1× in another. That mismatch is what broke trust.) Fall
+  // back to the campaign row's spend only when nothing is traced.
+  const spend = (rk && rk.spend > 0) ? rk.spend : Number(row.spend||0);
   // Below ~$100 of spend a ROAS multiple is noise off one lucky sale.
-  const roasReliable = traced && row.spend >= 100;
-  const roas = (traced && row.spend > 0) ? tracedRev/row.spend : null;
+  const roasReliable = traced && spend >= 100;
+  const roas = (traced && spend > 0) ? tracedRev/spend : null;
   const rate = row.leads>0 ? (row.booked/row.leads)*100 : 0;
-  const cpc = row.booked>0 ? row.spend/row.booked : 0;
-  const cpl = row.leads>0 ? row.spend/row.leads : 0;
+  const cpc = row.booked>0 ? spend/row.booked : 0;
+  const cpl = row.leads>0 ? spend/row.leads : 0;
   const ctr = row.imp>0 ? (row.clicks/row.imp)*100 : 0;
-  return {...row, tracedRev, traced, roas, roasReliable, rate, cpc, cpl, ctr};
+  return {...row, spend, tracedRev, traced, roas, roasReliable, rate, cpc, cpl, ctr};
 }
 
 // Verdict is pure rules over the real numbers — never AI, never invented.
@@ -5819,7 +5827,7 @@ function computeBriefModel(analyzed){
   const rawReliable = (analyzed||[]).filter(a=>a.reliable).length;
   const blendRoas = (arr)=>{ const sp=arr.reduce((s,a)=>s+a.spend,0); const rv=arr.reduce((s,a)=>s+a.revenue,0); return sp>0 ? Math.round((rv/sp)*10)/10 : 0; };
   const mk = (isFree, pool)=>{
-    const winners = pool.filter(a=>a.revenue>0 && a.roas>=1.5).sort((a,b)=>b.roas-a.roas);
+    const winners = pool.filter(a=>a.revenue>0 && a.roas>=3).sort((a,b)=>b.roas-a.roas);
     const losers  = pool.filter(a=>a.roas<1).sort((a,b)=>a.roas-b.roas);
     return {
       isFree, winners, losers,
