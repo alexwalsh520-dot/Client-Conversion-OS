@@ -24,6 +24,7 @@ import {
 import type { Client, NutritionIntakeForm } from "@/lib/types";
 import { NutritionV2TaskPanel } from "./nutrition-v2/NutritionV2TaskPanel";
 import GenerateWithAiButton from "./nutrition-v2/GenerateWithAiButton";
+import PushDoneButton from "./nutrition-v2/PushDoneButton";
 import BatchGenerateWithAiButton from "./nutrition-v2/BatchGenerateWithAiButton";
 
 // B6b — feature flag for the new best-of-3 + coach-review-handoff UI.
@@ -983,6 +984,11 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                             <td>
                               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                 <GenerateWithAiButton clientId={client.id!} />
+                                <PushDoneButton
+                                  clientId={client.id!}
+                                  clientName={client.name}
+                                  onDone={onRefreshClients}
+                                />
                                 <button
                                   onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
                                   style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
