@@ -4798,10 +4798,163 @@ export default function Studio2Page() {
     []
   );
 
+  const renderCreativeToFastVideoBlob = useCallback(
+    async (creative: Creative, label = "video") => {
+      if (typeof VideoEncoder === "undefined") {
+        throw new Error("Fast MP4 export is not available in this browser.");
+      }
+
+      const { Muxer, ArrayBufferTarget } = await import("mp4-muxer");
+      const fps = 24;
+      const frameDurationUs = Math.round(1_000_000 / fps);
+      const bitrate = 4_800_000;
+      const sourcePlaybackRate = 8;
+      const configCandidates: VideoEncoderConfig[] = [
+        { codec: "avc1.640028", width: CANVAS_W, height: CANVAS_H, bitrate, framerate: fps, latencyMode: "quality" },
+        { codec: "avc1.4D4028", width: CANVAS_W, height: CANVAS_H, bitrate, framerate: fps, latencyMode: "quality" },
+        { codec: "avc1.42E01E", width: CANVAS_W, height: CANVAS_H, bitrate, framerate: fps, latencyMode: "quality" },
+      ];
+
+      let encoderConfig: VideoEncoderConfig | null = null;
+      for (const candidate of configCandidates) {
+        const support = await VideoEncoder.isConfigSupported(candidate).catch(() => null);
+        if (support?.supported) {
+          encoderConfig = support.config || candidate;
+          break;
+        }
+      }
+      if (!encoderConfig) throw new Error("Fast MP4 export is not supported in this browser.");
+
+      const canvas = document.createElement("canvas");
+      canvas.width = CANVAS_W;
+      canvas.height = CANVAS_H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not start fast MP4 export.");
+
+      const video = document.createElement("video");
+      const resolvedSrc = getCanvasImageSrc(creative.photoUrl);
+      if (/^https?:\/\//i.test(resolvedSrc)) video.crossOrigin = "anonymous";
+      video.playsInline = true;
+      video.preload = "auto";
+      video.muted = true;
+      video.playbackRate = sourcePlaybackRate;
+      video.src = resolvedSrc;
+      video.load();
+
+      const target = new ArrayBufferTarget();
+      const muxer = new Muxer({
+        target,
+        video: { codec: "avc", width: CANVAS_W, height: CANVAS_H, frameRate: fps },
+        fastStart: "in-memory",
+      });
+
+      let encodeError: Error | null = null;
+      const encoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (error) => {
+          encodeError = error instanceof Error ? error : new Error(String(error));
+        },
+      });
+
+      let encodedFrameCount = 0;
+      const encodeFrame = async () => {
+        drawArtwork(ctx, creative, video, 1);
+        const frame = new VideoFrame(canvas, {
+          timestamp: encodedFrameCount * frameDurationUs,
+          duration: frameDurationUs,
+        });
+        encoder.encode(frame, { keyFrame: encodedFrameCount % fps === 0 });
+        frame.close();
+        encodedFrameCount += 1;
+        if (encoder.encodeQueueSize > 8) await encoder.flush();
+      };
+
+      try {
+        encoder.configure(encoderConfig);
+        await ensureVideoMetadata(video);
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          await waitForVideoEvent(video, "canplay", 15_000).catch(() => undefined);
+        }
+
+        const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        const segments = getEnabledVideoSegments(creative, duration)
+          .map((segment) => ({
+            ...segment,
+            end: clamp(segment.end ?? duration, segment.start, duration || segment.end || segment.start),
+          }))
+          .filter((segment) => segment.enabled && (segment.end ?? segment.start) > segment.start);
+        if (!segments.length) throw new Error("This video has no enabled timeline segments to export.");
+
+        const totalOutputSeconds = segments.reduce((sum, segment) => sum + Math.max(0, (segment.end ?? segment.start) - segment.start), 0);
+        let exportedSeconds = 0;
+
+        for (const segment of segments) {
+          const segmentEnd = segment.end ?? duration;
+          const segmentLength = Math.max(0, segmentEnd - segment.start);
+          let segmentEncodedSeconds = 0;
+          await seekVideoElement(video, segment.start);
+          await encodeFrame();
+          await video.play().catch(() => undefined);
+
+          while (segmentEncodedSeconds < segmentLength - 0.001) {
+            await new Promise<void>((resolve) => {
+              const requestFrame = (video as HTMLVideoElement & {
+                requestVideoFrameCallback?: (callback: () => void) => number;
+              }).requestVideoFrameCallback;
+              if (requestFrame) requestFrame.call(video, () => resolve());
+              else window.requestAnimationFrame(() => resolve());
+            });
+
+            const sourceProgress = clamp(video.currentTime - segment.start, 0, segmentLength);
+            const targetProgress = Math.min(segmentLength, Math.max(sourceProgress, segmentEncodedSeconds + 1 / fps));
+            while (segmentEncodedSeconds < targetProgress - 0.001) {
+              await encodeFrame();
+              segmentEncodedSeconds += 1 / fps;
+            }
+            setExportStatus(`Fast exporting ${label} · ${formatVideoTime(exportedSeconds + segmentEncodedSeconds)} / ${formatVideoTime(totalOutputSeconds)}`);
+            if (video.currentTime >= segmentEnd - 0.02) break;
+          }
+
+          video.pause();
+          while (segmentEncodedSeconds < segmentLength - 0.001) {
+            await encodeFrame();
+            segmentEncodedSeconds += 1 / fps;
+          }
+          exportedSeconds += segmentLength;
+        }
+
+        video.pause();
+        await encoder.flush();
+        if (encodeError) throw encodeError;
+        muxer.finalize();
+        const blob = new Blob([target.buffer], { type: "video/mp4" });
+        if (!blob.size) throw new Error("Fast MP4 export produced an empty file.");
+        return { blob, extension: "mp4", contentType: "video/mp4" };
+      } finally {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        try {
+          encoder.close();
+        } catch {
+          // The encoder may already be closed after an internal failure.
+        }
+      }
+    },
+    []
+  );
+
   const renderCreativeToVideoBlob = useCallback(
     async (creative: Creative, label = "video") => {
       if ((creative.mediaKind || "image") !== "video") {
         throw new Error("This ad is not a video.");
+      }
+      if (creative.videoMuted ?? true) {
+        try {
+          return await renderCreativeToFastVideoBlob(creative, label);
+        } catch {
+          setExportStatus(`Fast export unavailable. Finishing ${label} the slower way...`);
+        }
       }
       const recorderFormat = getVideoRecorderFormat();
       if (!recorderFormat || typeof MediaRecorder === "undefined") {
@@ -4906,7 +5059,7 @@ export default function Studio2Page() {
         await audioContext?.close().catch(() => undefined);
       }
     },
-    []
+    [renderCreativeToFastVideoBlob]
   );
 
   const renderCreativeToExportBlob = useCallback(

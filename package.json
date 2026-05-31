@@ -35,6 +35,7 @@
     "lightningcss": "^1.31.1",
     "lucide-react": "^0.575.0",
     "mammoth": "^1.12.0",
+    "mp4-muxer": "^5.2.2",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "puppeteer-core": "^25.1.0",
