@@ -210,6 +210,12 @@
 	  .workspace-type-pill.revenue{border-color:rgba(211,180,119,.28);color:var(--gold);background:rgba(211,180,119,.06)}
 	  .workspace-type-pill.booking{border-color:rgba(122,167,212,.28);color:var(--blue);background:rgba(122,167,212,.06)}
 	  .workspace-type-pill.keyword{border-color:rgba(125,211,168,.24);color:var(--green);background:rgba(125,211,168,.055)}
+	  .workspace-type-pill.nokeyword{border-color:var(--border-2);color:var(--text-4);background:transparent}
+	  .workspace-type-tab.quiet{color:var(--text-4)}
+	  .workspace-type-tab.quiet.active{background:var(--border);color:var(--text-3)}
+	  .workspace-row.nokeyword{opacity:.62}
+	  .workspace-row.nokeyword:hover{opacity:1;background:var(--panel-2)}
+	  .workspace-nokeyword-note{padding:13px 20px;border-bottom:1px solid var(--border);background:var(--bg-1);color:var(--text-3);font-size:11.5px;line-height:1.5}
 	  .workspace-issue{color:var(--text-3);font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 	  .workspace-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}
 	  .workspace-empty{padding:28px 20px;color:var(--text-4);font-size:12px}
@@ -4667,6 +4673,9 @@ function AttributionSummaryTiles({dashboard, alerts, scope="range"}){
   const paid = Number(scopedTotals.paidAttributedRevenue ?? (isAllTime ? attribution.allTimePaidAttributedRevenue : attribution.paidAttributedRevenue) ?? summary.paidAttributedRevenue ?? summary.collectedRevenue ?? 0);
   const unresolved = Number(scopedTotals.unattributedRevenue ?? (isAllTime ? attribution.allTimeUnattributedRevenue : attribution.unattributedRevenue) ?? alertsInRange.reduce((sum, alert) => sum + Number(alert.amount || 0), 0));
   const organic = Number(scopedTotals.organicRevenue ?? (isAllTime ? attribution.allTimeOrganicRevenue : attribution.organicRevenue) ?? summary.organicRevenue ?? 0);
+  // Untraceable "no ad keyword" calls aren't an actionable backlog — keep them
+  // out of the red unresolved count so the tile reflects real work to be done.
+  const actionableInRange = alertsInRange.filter(alert => !alert.noAdKeyword);
   const unattributedIsClear = unresolved <= 0;
 
   return (
@@ -4689,7 +4698,7 @@ function AttributionSummaryTiles({dashboard, alerts, scope="range"}){
         <div className={"alerts-summary-card "+(unattributedIsClear ? "good" : "warn")}>
           <div className="alerts-summary-label">Unattributed</div>
           <div className={"alerts-summary-value "+(unattributedIsClear ? "good" : "warn")}>{fmtUsd(unresolved)}</div>
-          <div className="alerts-summary-note">{alertsInRange.length} unresolved item{alertsInRange.length===1?"":"s"}</div>
+          <div className="alerts-summary-note">{actionableInRange.length} unresolved item{actionableInRange.length===1?"":"s"}</div>
         </div>
       </div>
     </div>
@@ -4743,6 +4752,9 @@ function alertTitleLabel(alert){
 }
 
 function alertWorkspaceKind(alert){
+  // Genuinely untraceable booked call (no keyword + no ManyChat to recover from):
+  // its own calm bucket, checked first so it never reads as a red "Booked" alert.
+  if(alert?.noAdKeyword) return "nokeyword";
   if(alert?.alertType === "missing_dm_keyword" || alert?.reason === "missing_manychat_keyword") return "keyword";
   if(alert?.alertType === "missing_booking_keyword" || alert?.reason === "missing_booking_keyword") return "booking";
   if(alert?.alertType === "call" || alert?.callTaken) return "call";
@@ -4756,7 +4768,16 @@ function alertWorkspaceKindLabel(alert){
   if(kind === "booking") return "Booked call";
   if(kind === "keyword") return "DM keyword";
   if(kind === "call") return "Call";
+  if(kind === "nokeyword") return "No ad keyword";
   return "Review";
+}
+
+// Calm, plain-English explanation for the genuinely-untraceable bucket. These
+// are never organic and never ad revenue — just calls we couldn't tie to a
+// keyword, kept visible but out of the urgent pile.
+function alertWorkspaceIssueLabel(alert){
+  if(alert?.noAdKeyword) return "No ad keyword captured · can't be traced";
+  return alertReasonLabel(alert?.reason);
 }
 
 function alertWorkspaceSearchText(alert){
@@ -5401,23 +5422,32 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, modal]);
 
+  // The genuinely-untraceable "No ad keyword captured" calls get their own calm
+  // section. They stay visible but out of the urgent count and the default view,
+  // so the needs-review pile only shows calls a setter can actually act on.
+  const actionableAlerts = scopedAlerts.filter(alert=>!alert.noAdKeyword);
+  const noKeywordAlerts = scopedAlerts.filter(alert=>alert.noAdKeyword);
   const clientCounts = {
-    all: scopedAlerts.length,
-    tyson: scopedAlerts.filter(alert=>alert.clientKey==="tyson").length,
-    keith: scopedAlerts.filter(alert=>alert.clientKey==="keith").length,
+    all: actionableAlerts.length,
+    tyson: actionableAlerts.filter(alert=>alert.clientKey==="tyson").length,
+    keith: actionableAlerts.filter(alert=>alert.clientKey==="keith").length,
   };
   const typeCounts = {
-    all: scopedAlerts.length,
-    revenue: scopedAlerts.filter(alert=>alertWorkspaceKind(alert)==="revenue").length,
-    booking: scopedAlerts.filter(alert=>alertWorkspaceKind(alert)==="booking").length,
-    keyword: scopedAlerts.filter(alert=>alertWorkspaceKind(alert)==="keyword").length,
-    other: scopedAlerts.filter(alert=>["call","other"].includes(alertWorkspaceKind(alert))).length,
+    all: actionableAlerts.length,
+    revenue: actionableAlerts.filter(alert=>alertWorkspaceKind(alert)==="revenue").length,
+    booking: actionableAlerts.filter(alert=>alertWorkspaceKind(alert)==="booking").length,
+    keyword: actionableAlerts.filter(alert=>alertWorkspaceKind(alert)==="keyword").length,
+    other: actionableAlerts.filter(alert=>["call","other"].includes(alertWorkspaceKind(alert))).length,
+    nokeyword: noKeywordAlerts.length,
   };
   const filteredAlerts = scopedAlerts.filter(alert => {
     if(clientFilter !== "all" && alert.clientKey !== clientFilter) return false;
     const kind = alertWorkspaceKind(alert);
+    // Keep the untraceable bucket out of every view except its own tab.
+    if(typeFilter !== "nokeyword" && kind === "nokeyword") return false;
+    if(typeFilter === "nokeyword" && kind !== "nokeyword") return false;
     if(typeFilter === "other" && !["call","other"].includes(kind)) return false;
-    if(typeFilter !== "all" && typeFilter !== "other" && kind !== typeFilter) return false;
+    if(typeFilter !== "all" && typeFilter !== "other" && typeFilter !== "nokeyword" && kind !== typeFilter) return false;
     const q = searchQuery.trim().toLowerCase();
     if(q && !alertWorkspaceSearchText(alert).includes(q)) return false;
     return true;
@@ -5442,7 +5472,7 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
         <div>
           <div className="workspace-kicker">Selected range queue</div>
           <div className="workspace-title">Attribution Workspace</div>
-          <div className="workspace-sub">{scopedAlerts.length} unresolved · {rangeLabel}</div>
+          <div className="workspace-sub">{actionableAlerts.length} unresolved{noKeywordAlerts.length ? ` · ${noKeywordAlerts.length} no ad keyword` : ""} · {rangeLabel}</div>
         </div>
         <button className="workspace-close" onClick={onClose}>Back to dashboard</button>
       </div>
@@ -5469,8 +5499,9 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
                 ["booking","Booked",typeCounts.booking],
                 ["keyword","DM keywords",typeCounts.keyword],
                 ["other","Other",typeCounts.other],
+                ...(typeCounts.nokeyword ? [["nokeyword","No ad keyword",typeCounts.nokeyword]] : []),
               ].map(([id,label,count])=>(
-                <button key={id} className={"workspace-type-tab "+(typeFilter===id?"active":"")} onClick={()=>setTypeFilter(id)}>
+                <button key={id} className={"workspace-type-tab "+(id==="nokeyword"?"quiet ":"")+(typeFilter===id?"active":"")} onClick={()=>setTypeFilter(id)}>
                   {label}
                   <span className="alerts-tab-count">{count}</span>
                 </button>
@@ -5494,12 +5525,15 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
             <div className="hide-mid">Issue</div>
             <div></div>
           </div>
+          {typeFilter === "nokeyword" && filteredAlerts.length > 0 && (
+            <div className="workspace-nokeyword-note">These calls had no ad keyword on the booking link and no ManyChat conversation to recover one from — so they can't be traced to an ad. They're kept here for visibility but never counted as ad revenue or as organic, so your ROAS stays honest.</div>
+          )}
           {filteredAlerts.length === 0 ? (
-            <div className="workspace-empty">No unresolved attribution alerts match this view.</div>
+            <div className="workspace-empty">{typeFilter === "nokeyword" ? "No untraceable calls in this range." : "No unresolved attribution alerts match this view."}</div>
           ) : filteredAlerts.map(alert => {
             const kind = alertWorkspaceKind(alert);
             return (
-              <div className="workspace-row workspace-grid" key={alertSaleKey(alert)} onClick={()=>setModal({alert})}>
+              <div className={"workspace-row workspace-grid"+(kind==="nokeyword"?" nokeyword":"")} key={alertSaleKey(alert)} onClick={()=>setModal({alert})}>
                 <div>
                   <div className="workspace-name">{alert.name || "Unknown"}</div>
                   <div className="workspace-meta">{alert.setter ? `Setter · ${alert.setter}` : alert.instagramHandle ? `IG · ${alert.instagramHandle}` : alertSaleKey(alert)}</div>
@@ -5511,7 +5545,7 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
                 </div>
                 <div className="workspace-meta hide-mid">{alertTimestampLabel(alert)}</div>
                 <div className="alert-amount">{alertAmountLabel(alert)}</div>
-                <div className="workspace-issue hide-mid">{alertReasonLabel(alert.reason)}</div>
+                <div className="workspace-issue hide-mid">{alertWorkspaceIssueLabel(alert)}</div>
                 <div className="workspace-actions" onClick={e=>e.stopPropagation()}>
                   {alert.manychatUrl && (
                     <a

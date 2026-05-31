@@ -242,6 +242,11 @@ interface UnmatchedSale {
     | "missing_manychat_keyword";
   classification: "organic_or_unattributed" | "missing_keyword";
   alertType?: "sale" | "call" | "missing_dm_keyword" | "missing_booking_keyword";
+  // A booked call we genuinely can't trace: no keyword on the booking link AND
+  // no ManyChat conversation to recover one from. These move OUT of the red
+  // needs-review pile into a calm, separate "No ad keyword captured" bucket —
+  // never credited as organic, never counted as ad revenue (amount stays 0).
+  noAdKeyword?: boolean;
   subscriberId?: string | null;
   instagramHandle?: string | null;
   manychatUrl?: string | null;
@@ -2639,24 +2644,33 @@ function buildMissingGhlBookingKeywordAlerts(
       const name = normalizePersonName(event.contact_name);
       return !name || !coveredBySalesAlert.has(name);
     })
-    .map((event) => ({
-      key: event.attribution_resolution_id as string,
-      date: eventDateKey(event.event_at),
-      clientKey: event.client_key,
-      name: event.contact_name || event.appointment_id || "Unknown",
-      setter: "",
-      outcome: "",
-      callTaken: false,
-      contractedRevenue: 0,
-      collectedRevenue: 0,
-      amount: 0,
-      reason: "missing_booking_keyword" as const,
-      classification: "missing_keyword" as const,
-      alertType: "missing_booking_keyword" as const,
-      appointmentId: event.appointment_id,
-      contactId: event.contact_id,
-      eventAt: event.event_at,
-    }));
+    .map((event) => {
+      // Recoverable = there's a ManyChat conversation a human could open to find
+      // the keyword. With no subscriber there's nothing left to chase, so the
+      // call is genuinely untraceable → calm "No ad keyword captured" bucket.
+      const subscriberId = event.subscriber_id ? String(event.subscriber_id).trim() : "";
+      const recoverable = Boolean(subscriberId);
+      return {
+        key: event.attribution_resolution_id as string,
+        date: eventDateKey(event.event_at),
+        clientKey: event.client_key,
+        name: event.contact_name || event.appointment_id || "Unknown",
+        setter: "",
+        outcome: "",
+        callTaken: false,
+        contractedRevenue: 0,
+        collectedRevenue: 0,
+        amount: 0,
+        reason: "missing_booking_keyword" as const,
+        classification: "missing_keyword" as const,
+        alertType: "missing_booking_keyword" as const,
+        noAdKeyword: !recoverable,
+        subscriberId: subscriberId || null,
+        appointmentId: event.appointment_id,
+        contactId: event.contact_id,
+        eventAt: event.event_at,
+      };
+    });
 }
 
 function ambiguousGhlBookingAttributionAlertKey(event: KeywordEvent, keyword: string): string {
