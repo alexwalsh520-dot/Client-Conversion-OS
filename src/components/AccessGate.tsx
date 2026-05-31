@@ -88,10 +88,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // Settings and its child pages are always accessible (shows limited view for non-admins)
   if (pathname === "/settings" || pathname.startsWith("/settings/")) return <>{children}</>;
 
-  // Partner onboarding back office handles its own admin-vs-PIN gate inside
-  // the page (admins straight in; non-admins enter a shared PIN once). Let
-  // any authenticated user reach it so the in-page gate can do its job.
-  if (pathname === "/partner-onboarding") return <>{children}</>;
+  // Partner onboarding back office (and per-client detail pages) handle their
+  // own admin-vs-PIN gate inside the page (admins straight in; non-admins
+  // enter a shared PIN once). Let any authenticated user reach these so the
+  // in-page gate can do its job.
+  if (pathname === "/partner-onboarding" || pathname.startsWith("/partner-onboarding/")) return <>{children}</>;
 
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {

@@ -57,6 +57,31 @@ export default function WelcomePortal({ token }: Props) {
     load();
   }, [load]);
 
+  // This is a public, shared link — it should match the visitor's own device
+  // (light/dark), not whatever theme the CCOS team has saved for themselves.
+  // We drive the <html> class off prefers-color-scheme and follow OS changes
+  // live, then restore the original class on unmount.
+  useEffect(() => {
+    const root = document.documentElement;
+    const had = { light: root.classList.contains("light"), dark: root.classList.contains("dark") };
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const apply = () => {
+      const wantDark = mq.matches;
+      root.classList.remove("light", "dark");
+      root.classList.add(wantDark ? "dark" : "light");
+    };
+    apply();
+    mq.addEventListener("change", apply);
+
+    return () => {
+      mq.removeEventListener("change", apply);
+      root.classList.remove("light", "dark");
+      if (had.light) root.classList.add("light");
+      if (had.dark) root.classList.add("dark");
+    };
+  }, []);
+
   const completedIds = useMemo(() => {
     const set = new Set<string>();
     view?.progress.forEach((p) => {
