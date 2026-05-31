@@ -1386,7 +1386,7 @@
   .brain-btn.on .bcaret{transform:rotate(180deg)}
 
   .flow-wrap{overflow:hidden;transition:max-height .55s cubic-bezier(.22,1,.36,1),opacity .4s,margin-top .4s;max-height:0;opacity:0;margin-top:0}
-  .flow-wrap.open{max-height:1400px;opacity:1;margin-top:14px}
+  .flow-wrap.open{max-height:1800px;opacity:1;margin-top:14px}
   .flow-shell{border:1px solid var(--border-2);border-radius:16px;overflow:hidden;
     background:radial-gradient(120% 80% at 50% -10%,color-mix(in srgb,var(--gold) 6%,transparent),transparent 60%),var(--panel)}
   .flow-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -1402,26 +1402,36 @@
 
   .flow-stage{display:grid;grid-template-columns:1fr 256px;gap:0}
   @media(max-width:760px){.flow-stage{grid-template-columns:1fr}}
-  .flow-cv-scroll{min-width:0;overflow-x:auto;overflow-y:hidden}
-  @media(max-width:900px){.flow-canvas{min-width:780px}}
-  .flow-canvas{position:relative;width:100%;aspect-ratio:1180/620;
+  /* Open, pannable/zoomable canvas: a fixed viewport with a larger world inside */
+  .flow-canvas{position:relative;width:100%;height:clamp(360px,54vh,540px);overflow:hidden;
     background:
-      radial-gradient(60% 50% at 72% 50%,color-mix(in srgb,var(--gold) 4%,transparent),transparent 70%),
-      linear-gradient(0deg,color-mix(in srgb,var(--bg) 60%,transparent),transparent);
-    background-color:var(--bg);
-    -webkit-mask-image:linear-gradient(90deg,#000,#000);overflow:hidden}
-  .flow-grid{position:absolute;inset:0;opacity:.5;
+      radial-gradient(60% 50% at 50% 45%,color-mix(in srgb,var(--gold) 4%,transparent),transparent 70%),
+      var(--bg);
+    cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+  .flow-canvas.grabbing{cursor:grabbing}
+  .flow-world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+  .flow-grid{position:absolute;inset:0;opacity:.4;
     background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
-    background-size:34px 34px;-webkit-mask-image:radial-gradient(80% 80% at 50% 45%,#000,transparent 95%);
-            mask-image:radial-gradient(80% 80% at 50% 45%,#000,transparent 95%)}
-  .flow-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    background-size:34px 34px}
+  .flow-svg{position:absolute;inset:0;pointer-events:none;overflow:visible}
   .flow-edge{fill:none;stroke:var(--border-2);stroke-width:1.4;transition:stroke .35s,stroke-width .35s,opacity .35s;opacity:.65}
   .flow-edge.lit{stroke:color-mix(in srgb,var(--gold) 75%,var(--text-3));stroke-width:2;opacity:1;
     filter:drop-shadow(0 0 4px color-mix(in srgb,var(--gold) 55%,transparent))}
-  .flow-edge.faded{opacity:.12}
+  .flow-edge.faded{opacity:.1}
   .flow-orb{fill:var(--gold);opacity:0;transition:opacity .3s}
   .flow-orb.run{opacity:.95;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--gold) 85%,transparent))}
   .flow-orb.amb{opacity:.28}
+  .flow-zoom{position:absolute;right:12px;bottom:12px;z-index:6;display:flex;flex-direction:column;gap:6px}
+  .flow-zoom button{width:30px;height:30px;border-radius:9px;border:1px solid var(--border-2);
+    background:color-mix(in srgb,var(--panel) 84%,transparent);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    color:var(--text-2);font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:color .2s,border-color .2s,box-shadow .25s}
+  .flow-zoom button:hover{color:var(--gold);border-color:var(--gold-dim);
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 20%,transparent)}
+  .flow-zoom .fz-fit{font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+  .flow-pan-hint{position:absolute;left:12px;bottom:12px;z-index:6;font-size:10px;color:var(--text-4);
+    letter-spacing:.02em;pointer-events:none;background:color-mix(in srgb,var(--panel) 66%,transparent);
+    padding:3px 9px;border-radius:7px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 
   .flow-node{position:absolute;transform:translate(-50%,-50%);width:142px;
     border:1px solid var(--border-2);border-radius:12px;background:var(--panel-2);
@@ -7819,48 +7829,69 @@ function DecisionTracker({decisions, dashboard, onUndo}){
 // the glowing connections, and the info panel all redraw themselves from it.
 // Coordinates live in a 1180×620 viewBox (x = left→right flow, y = top→bottom).
 // ───────────────────────────────────────────────────────────────────────────
+const FLOW_WORLD = { w:1380, h:820 };
 const FLOW_NODES = [
-  { id:"meta", group:"src", x:105, y:95, label:"Meta Ads", sub:"spend · copy · audience",
+  { id:"meta", group:"src", x:120, y:120, label:"Meta Ads", sub:"spend · copy · audience",
     icon:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
     detail:"Your Meta ad accounts (Tyson, Keith, Lucy). Every day we pull spend, impressions, each ad's on-image copy, and its audience settings — the raw fuel for everything below." },
-  { id:"manychat", group:"src", x:105, y:235, label:"ManyChat", sub:"DM keyword capture",
+  { id:"manychat", group:"src", x:120, y:285, label:"ManyChat", sub:"DM keyword capture",
     icon:["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"],
     detail:"When someone taps your ad's button, Meta hands ManyChat a keyword (like WIN or EDGE). ManyChat catches it in a custom field — that single word is the thread we follow all the way to the sale." },
-  { id:"ghl", group:"src", x:105, y:380, label:"GHL Calendar", sub:"booked calls + utm_content",
+  { id:"ghl", group:"src", x:120, y:455, label:"GHL Calendar", sub:"booked calls + utm_content",
     icon:["M3 4h18v18H3z","M3 10h18","M8 2v4","M16 2v4"],
     detail:"When a lead books, GHL records the call. The keyword rides in on the booking link as utm_content=KEYWORD, and we also read the GHL lead tag (e.g. \"tyson sonnek lead\") so we always know whose ad it was — even when the link is empty." },
-  { id:"sales", group:"src", x:105, y:525, label:"Sales Tracker", sub:"collected revenue",
+  { id:"sales", group:"src", x:120, y:640, label:"Sales Tracker", sub:"collected revenue",
     icon:["M2 7h20v12H2z","M2 11h20","M6 15h4"],
     detail:"Your Sales Tracker sheet — every closed deal and the cash actually collected. This is the money side of the equation that ROAS and real profit are built on." },
-  { id:"keyword", group:"cap", x:355, y:235, label:"Keyword Capture", sub:"ad click → field → link",
+  { id:"sync", group:"cap", x:345, y:455, label:"Daily Sync", sub:"pulls every source",
+    icon:["M21 12a9 9 0 0 0-15-6.7L3 8","M3 12a9 9 0 0 0 15 6.7L21 16","M21 4v4h-4","M3 20v-4h4"],
+    detail:"Every night — and instantly when you hit Sync now — the app pulls fresh numbers out of all four sources and lands them in one place. This is why the tab is always up to date without you lifting a finger, and why the same date range now gives the same locked numbers every time." },
+  { id:"copy", group:"cap", x:545, y:160, label:"Ad Copy Reader", sub:"reads on-image words",
+    icon:["M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2","M9 20h6","M12 4v16"],
+    detail:"The app reads the actual words printed on every ad image and stores them. That's what lets it later tell you which messaging angles bring the money — not just which faceless ad ID did." },
+  { id:"keyword", group:"cap", x:545, y:310, label:"Keyword Capture", sub:"ad click → field → link",
     icon:["M20.6 13.4 11 3.8H3.8V11l9.6 9.6a2 2 0 0 0 2.8 0l4.4-4.4a2 2 0 0 0 0-2.8z","M7.5 7.5h.01"],
     detail:"The hand-off: ad click → ManyChat field → the keyword gets stamped onto the call-booking link. This is the mechanism that lets us tie a real booked call back to the exact ad word that earned it, without guessing by name." },
-  { id:"join", group:"cap", x:590, y:310, label:"Keyword Join", sub:"match by client : keyword",
+  { id:"join", group:"cap", x:745, y:400, label:"Keyword Join", sub:"match by client : keyword",
     icon:["M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5","M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"],
     detail:"We line up spend ↔ calls ↔ cash by client + keyword (e.g. tyson:WIN). The keyword is the key that connects all four sources — no fuzzy name-matching, so the numbers don't drift." },
-  { id:"engine", group:"eng", x:815, y:250, label:"Attribution Engine", sub:"stitches it together",
+  { id:"engine", group:"eng", x:955, y:320, label:"Attribution Engine", sub:"stitches it together",
     icon:["M6 6h12v12H6z","M9 9h6v6H9z","M9 2v2","M15 2v2","M9 20v2","M15 20v2","M2 9h2","M2 15h2","M20 9h2","M20 15h2"],
     detail:"The brain. It stitches every source into one truth: which ad word brought which calls and which dollars. Anything it can't tie down with confidence is flagged rather than guessed — so the scoreboard only ever shows money we can actually see." },
-  { id:"alerts", group:"alt", x:815, y:470, label:"Alerts & Exceptions", sub:"can't auto-attribute",
+  { id:"alerts", group:"alt", x:955, y:540, label:"Alerts & Exceptions", sub:"can't auto-attribute",
     icon:["M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z","M12 9v4","M12 17h.01"],
     detail:"Calls or sales the engine couldn't auto-attribute — a missing keyword, or it can't tell which ad. You resolve these in the workspace, and your answers feed straight back into the engine, so the picture gets sharper over time." },
-  { id:"totals", group:"out", x:1065, y:110, label:"ROAS & Totals", sub:"the honest scoreboard",
+  { id:"setter", group:"alt", x:745, y:620, label:"Setter Counts", sub:"what setters know",
+    icon:["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2","M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8","M22 21v-2a4 4 0 0 0-3-3.9"],
+    detail:"What your setters KNOW but the system couldn't trace to the last dollar — e.g. \"8 wins from FOCUS this week.\" Shown side-by-side as its own labeled tier. Never folded into ROAS or real profit, so the money math stays honest." },
+  { id:"nokw", group:"alt", x:955, y:710, label:"No Ad Keyword", sub:"calm parked bucket",
+    icon:["M9.9 4.2 4.2 9.9a2 2 0 0 0 0 2.8l7.1 7.1a2 2 0 0 0 2.8 0l5.7-5.7a2 2 0 0 0 0-2.8l-7.1-7.1a2 2 0 0 0-2.8 0z","M5 5 19 19"],
+    detail:"Booked calls with nothing traceable — no keyword and no ManyChat trail. Parked in a calm, low-priority bucket so they don't clutter your urgent list, and kept out of ROAS entirely (never counted as ad money, never as organic)." },
+  { id:"totals", group:"out", x:1235, y:130, label:"ROAS & Totals", sub:"the honest scoreboard",
     icon:["M3 3v18h18","M7 14l3-3 4 4 5-7"],
     detail:"ROAS, revenue traced, cost per booked call — the honest scoreboard, built only on cash we can genuinely trace to an ad. It never reads artificially low just because some revenue isn't tagged yet." },
-  { id:"ltgp", group:"out", x:1065, y:255, label:"Real Profit (LTGP:CAC)", sub:"what you keep",
+  { id:"ltgp", group:"out", x:1235, y:285, label:"Real Profit (LTGP:CAC)", sub:"what you keep",
     icon:["M6 9H4.5a2.5 2.5 0 0 1 0-5H6","M18 9h1.5a2.5 2.5 0 0 0 0-5H18","M6 3h12v6a6 6 0 0 1-12 0z","M9 18h6","M12 15v3"],
     detail:"The money-first number: what's left after your team's cut (closer, setter, manager) and coaching costs, measured against ad spend. Target 9:1, floor 3:1. This is the number that actually pays you." },
-  { id:"correlation", group:"out", x:1065, y:395, label:"Correlation", sub:"what drives the money",
+  { id:"correlation", group:"out", x:1235, y:440, label:"Correlation", sub:"what drives the money",
     icon:["M5 5 19 19","M6 18a2 2 0 1 0 0-.01","M18 6a2 2 0 1 0 0-.01","M12 12a2 2 0 1 0 0-.01"],
     detail:"What actually drives the money — the engine measures which levers (copy angle, audience, ad word) move ROAS up or down, so you scale the cause, not the coincidence." },
-  { id:"decisions", group:"out", x:1065, y:530, label:"Decision Center", sub:"scale · kill · close loop",
+  { id:"messaging", group:"out", x:1235, y:595, label:"Messaging Insights", sub:"plain-English copy read",
+    icon:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z","M8 9h8","M8 13h5"],
+    detail:"A plain-English read on what's working in your copy: which hooks, angles, and promises actually move ROAS — written so you can act in seconds instead of staring at a spreadsheet. Built from the ad words the reader captured plus the engine's results." },
+  { id:"decisions", group:"out", x:1235, y:740, label:"Decision Center", sub:"scale · kill · close loop",
     icon:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],
     detail:"Scale / kill / reallocate moves, plus the close-the-loop tracker that checks weeks later whether each move actually paid off — so decisions are graded by results, not gut feel." },
 ];
 const FLOW_EDGES = [
   ["meta","keyword"],["keyword","manychat"],["manychat","ghl"],
-  ["meta","join"],["manychat","join"],["ghl","join"],["sales","join"],
-  ["join","engine"],["engine","totals"],["engine","alerts"],
+  ["meta","copy"],
+  ["meta","sync"],["manychat","sync"],["ghl","sync"],["sales","sync"],
+  ["sync","join"],["keyword","join"],
+  ["join","engine"],
+  ["engine","totals"],["engine","alerts"],["engine","messaging"],
+  ["copy","messaging"],
+  ["alerts","nokw"],["alerts","setter"],
   ["totals","ltgp"],["totals","correlation"],["totals","decisions"],
 ];
 const FLOW_GROUP_LABEL = { src:"Source", cap:"Capture & join", eng:"Engine", out:"Output", alt:"Exception" };
@@ -7894,6 +7925,9 @@ function DataFlowToggle({ open, onToggle }){
   );
 }
 
+const FLOW_ZOOM_MIN = 0.45, FLOW_ZOOM_MAX = 2.6;
+const flowClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
 function DataFlowMap({ open, sel, setSel }){
   const nodeById = useMemo(() => {
     const m = {}; FLOW_NODES.forEach(n => { m[n.id] = n; }); return m;
@@ -7913,13 +7947,90 @@ function DataFlowMap({ open, sel, setSel }){
   const feedsOut = selNode ? edges.filter(e => e.from === sel).map(e => nodeById[e.to]) : [];
   const feedsIn  = selNode ? edges.filter(e => e.to === sel).map(e => nodeById[e.from]) : [];
 
+  // ---- Pan / zoom: a fixed viewport with a larger world transformed inside it.
+  const vpRef = useRef(null);
+  const [view, setView] = useState({ x:0, y:0, k:0.7 });
+  const [grabbing, setGrabbing] = useState(false);
+  const drag = useRef(null);
+
+  const fit = React.useCallback(() => {
+    const vp = vpRef.current; if(!vp) return;
+    const vw = vp.clientWidth, vh = vp.clientHeight;
+    if(!vw || !vh) return;
+    const k = flowClamp(Math.min(vw / FLOW_WORLD.w, vh / FLOW_WORLD.h) * 0.94, FLOW_ZOOM_MIN, FLOW_ZOOM_MAX);
+    const sw = FLOW_WORLD.w * k, sh = FLOW_WORLD.h * k;
+    // Center when the scaled world fits; otherwise anchor near the top-left so the
+    // sources (where the flow starts) are on screen — better on narrow phones.
+    setView({ k, x: sw <= vw ? (vw - sw) / 2 : 16, y: sh <= vh ? (vh - sh) / 2 : 16 });
+  }, []);
+
+  // Fit to view whenever the map opens (after the wrapper has expanded).
+  useLayoutEffect(() => {
+    if(!open) return;
+    const t = setTimeout(fit, 70);
+    return () => clearTimeout(t);
+  }, [open, fit]);
+
+  // Re-fit if the viewport itself changes size (window resize, panel reflow).
+  useEffect(() => {
+    if(!open) return;
+    const vp = vpRef.current;
+    if(!vp || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(vp);
+    return () => ro.disconnect();
+  }, [open, fit]);
+
+  // Wheel-to-zoom toward the cursor (native listener so we can preventDefault).
+  useEffect(() => {
+    const vp = vpRef.current; if(!vp) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const r = vp.getBoundingClientRect();
+      const cx = e.clientX - r.left, cy = e.clientY - r.top;
+      setView(v => {
+        const k = flowClamp(v.k * (e.deltaY < 0 ? 1.12 : 1 / 1.12), FLOW_ZOOM_MIN, FLOW_ZOOM_MAX);
+        const ratio = k / v.k;
+        return { k, x: cx - (cx - v.x) * ratio, y: cy - (cy - v.y) * ratio };
+      });
+    };
+    vp.addEventListener("wheel", onWheel, { passive:false });
+    return () => vp.removeEventListener("wheel", onWheel);
+  }, [open]);
+
+  const zoomBy = (factor) => setView(v => {
+    const vp = vpRef.current; if(!vp) return v;
+    const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2;
+    const k = flowClamp(v.k * factor, FLOW_ZOOM_MIN, FLOW_ZOOM_MAX);
+    const ratio = k / v.k;
+    return { k, x: cx - (cx - v.x) * ratio, y: cy - (cy - v.y) * ratio };
+  });
+
+  const onPointerDown = (e) => {
+    if(e.button != null && e.button !== 0) return;
+    drag.current = { sx:e.clientX, sy:e.clientY, ox:view.x, oy:view.y, moved:false };
+    setGrabbing(true);
+    const vp = vpRef.current;
+    if(vp && vp.setPointerCapture){ try { vp.setPointerCapture(e.pointerId); } catch(_){} }
+  };
+  const onPointerMove = (e) => {
+    const d = drag.current; if(!d) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if(!d.moved && Math.hypot(dx, dy) > 4) d.moved = true;
+    if(d.moved) setView(v => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
+  };
+  const onPointerUp = () => {
+    const d = drag.current; drag.current = null; setGrabbing(false);
+    if(d && !d.moved) setSel(null); // a real background click (not a pan) deselects
+  };
+
   return (
       <div className={"flow-wrap" + (open ? " open" : "")}>
         <div className="flow-shell">
           <div className="flow-bar">
             <div className="flow-bar-l">
               <div className="flow-bar-t">How a click becomes a tracked dollar</div>
-              <div className="flow-bar-s">Tap any step to light up what feeds it and what it feeds.</div>
+              <div className="flow-bar-s">Drag to roam · scroll to zoom · tap any step to trace what feeds it.</div>
             </div>
             <div className="flow-legend">
               <span className="flow-lg src"><i></i>Source</span>
@@ -7931,55 +8042,67 @@ function DataFlowMap({ open, sel, setSel }){
           </div>
 
           <div className="flow-stage">
-            <div className="flow-cv-scroll">
-            <div className="flow-canvas" onClick={() => setSel(null)}>
-              <div className="flow-grid"></div>
-              <svg className="flow-svg" viewBox="0 0 1180 620" preserveAspectRatio="xMidYMid meet">
-                <g>
-                  {edges.map((e, i) => {
-                    const connected = sel && (e.from === sel || e.to === sel);
-                    const cls = "flow-edge" + (sel ? (connected ? " lit" : " faded") : "");
-                    return <path key={i} className={cls} d={e.d} />;
-                  })}
-                </g>
-                <g>
-                  {edges.map((e, i) => {
-                    const connected = sel && (e.from === sel || e.to === sel);
-                    if(sel && !connected) return null;
-                    if(!sel){
+            <div ref={vpRef} className={"flow-canvas" + (grabbing ? " grabbing" : "")}
+              onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+              <div className="flow-world" style={{ width:FLOW_WORLD.w, height:FLOW_WORLD.h,
+                transform:`translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+                <div className="flow-grid"></div>
+                <svg className="flow-svg" width={FLOW_WORLD.w} height={FLOW_WORLD.h}
+                  viewBox={"0 0 " + FLOW_WORLD.w + " " + FLOW_WORLD.h}>
+                  <g>
+                    {edges.map((e, i) => {
+                      const connected = sel && (e.from === sel || e.to === sel);
+                      const cls = "flow-edge" + (sel ? (connected ? " lit" : " faded") : "");
+                      return <path key={i} className={cls} d={e.d} />;
+                    })}
+                  </g>
+                  <g>
+                    {edges.map((e, i) => {
+                      const connected = sel && (e.from === sel || e.to === sel);
+                      if(sel && !connected) return null;
+                      if(!sel){
+                        return (
+                          <circle key={i} className="flow-orb amb" r="2.6">
+                            <animateMotion dur="5s" begin={(i * 0.4) + "s"} repeatCount="indefinite" path={e.d} />
+                          </circle>
+                        );
+                      }
                       return (
-                        <circle key={i} className="flow-orb amb" r="2.6">
-                          <animateMotion dur="5s" begin={(i * 0.4) + "s"} repeatCount="indefinite" path={e.d} />
-                        </circle>
+                        <React.Fragment key={i}>
+                          <circle className="flow-orb run" r="3.4">
+                            <animateMotion dur="2.1s" repeatCount="indefinite" path={e.d} />
+                          </circle>
+                          <circle className="flow-orb run" r="3.4">
+                            <animateMotion dur="2.1s" begin="-1.05s" repeatCount="indefinite" path={e.d} />
+                          </circle>
+                        </React.Fragment>
                       );
-                    }
-                    return (
-                      <React.Fragment key={i}>
-                        <circle className="flow-orb run" r="3.4">
-                          <animateMotion dur="2.1s" repeatCount="indefinite" path={e.d} />
-                        </circle>
-                        <circle className="flow-orb run" r="3.4">
-                          <animateMotion dur="2.1s" begin="-1.05s" repeatCount="indefinite" path={e.d} />
-                        </circle>
-                      </React.Fragment>
-                    );
-                  })}
-                </g>
-              </svg>
+                    })}
+                  </g>
+                </svg>
 
-              {FLOW_NODES.map(n => {
-                const state = sel === n.id ? " sel" : neighbors.has(n.id) ? " active" : (sel ? " dim" : "");
-                return (
-                  <button key={n.id} className={"flow-node g-" + n.group + state}
-                    style={{ left:(n.x / 1180 * 100) + "%", top:(n.y / 620 * 100) + "%" }}
-                    onClick={(ev) => { ev.stopPropagation(); setSel(s => s === n.id ? null : n.id); }}>
-                    <span className="fn-ic"><FlowIcon d={n.icon} /></span>
-                    <div className="fn-lbl">{n.label}</div>
-                    <div className="fn-sub">{n.sub}</div>
-                  </button>
-                );
-              })}
-            </div>
+                {FLOW_NODES.map(n => {
+                  const state = sel === n.id ? " sel" : neighbors.has(n.id) ? " active" : (sel ? " dim" : "");
+                  return (
+                    <button key={n.id} className={"flow-node g-" + n.group + state}
+                      style={{ left:n.x, top:n.y }}
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      onClick={(ev) => { ev.stopPropagation(); setSel(s => s === n.id ? null : n.id); }}>
+                      <span className="fn-ic"><FlowIcon d={n.icon} /></span>
+                      <div className="fn-lbl">{n.label}</div>
+                      <div className="fn-sub">{n.sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flow-zoom" onPointerDown={(e) => e.stopPropagation()}>
+                <button type="button" title="Zoom in" onClick={() => zoomBy(1.2)}>+</button>
+                <button type="button" title="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</button>
+                <button type="button" title="Fit to view" className="fz-fit" onClick={fit}>fit</button>
+              </div>
+              <div className="flow-pan-hint">drag to pan · scroll to zoom</div>
             </div>
 
             <div className="flow-panel">
@@ -8022,7 +8145,7 @@ function DataFlowMap({ open, sel, setSel }){
                     <path d="M14.5 2A2.5 2.5 0 0 1 17 4.5v.4a2.6 2.6 0 0 1 2 2.5 2.5 2.5 0 0 1 1 2 2.5 2.5 0 0 1-1.4 2.2A2.5 2.5 0 0 1 17 16.5 2.5 2.5 0 0 1 14.5 19 2.5 2.5 0 0 1 12 16.5"/>
                   </svg>
                   <h4>The whole pipeline, one picture</h4>
-                  <p>Four sources flow left → right into the engine, then out into the numbers you act on. Tap any box to trace exactly what connects to it and watch the data light up.</p>
+                  <p>Sources on the left flow into the engine, then out into the numbers you act on. Drag to roam the map, scroll to zoom, and tap any box to trace exactly what connects to it.</p>
                 </div>
               )}
             </div>
