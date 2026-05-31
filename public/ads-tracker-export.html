@@ -1234,15 +1234,36 @@
   /* ---- Correlations: what drives the money ---- */
   .corr{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
   @media(max-width:760px){.corr{grid-template-columns:1fr}}
-  .corr-list{display:flex;flex-direction:column;gap:11px}
-  .corr-row{display:grid;grid-template-columns:60px 1fr auto;gap:10px;align-items:center}
+  .corr-list{display:flex;flex-direction:column;gap:8px}
+  .corr-row{display:grid;grid-template-columns:60px 1fr auto;gap:10px;align-items:center;
+    width:100%;text-align:left;font:inherit;cursor:pointer;
+    background:transparent;border:1px solid transparent;border-radius:9px;padding:8px 10px;
+    transition:background .15s,border-color .15s,transform .1s}
+  .corr-row:hover{background:var(--row-hover);border-color:var(--border)}
+  .corr-row.on{background:color-mix(in srgb,var(--gold) 9%,transparent);border-color:var(--gold-dim)}
+  .corr-row.on .corr-txt b{color:var(--gold)}
+  .corr-row:active{transform:scale(.99)}
   .corr-bar{height:7px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border);overflow:hidden}
   .corr-fill{height:100%;border-radius:99px;transition:width .5s}
   .corr-txt{font-size:12px;line-height:1.42;color:var(--text-2)} .corr-txt b{color:var(--text)}
-  .corr-r{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-4)}
+  .corr-r{font-family:var(--mono);font-size:10.5px;color:var(--text-4)}
+  .corr-hint{font-size:10.5px;color:var(--text-4);padding:2px 10px 0;letter-spacing:.02em}
   .corr-scatter{border:1px solid var(--border);border-radius:11px;background:var(--panel);padding:11px 12px}
-  .corr-scatter-h{font-size:10.5px;color:var(--text-4);margin-bottom:6px}
-  .corr-svg{width:100%;height:auto;display:block}
+  .corr-scatter-h{font-size:10.5px;color:var(--text-4);margin-bottom:6px;line-height:1.5}
+  .corr-scatter-h .ax{font-family:var(--mono);color:var(--text-3);font-size:9.5px}
+  .corr-svg{width:100%;height:auto;display:block;overflow:visible}
+  .corr-plot{position:relative}
+  .corr-tip{position:absolute;transform:translate(-50%,calc(-100% - 12px));pointer-events:none;z-index:5;
+    background:var(--panel-2);border:1px solid var(--border-2);border-radius:9px;padding:8px 10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);min-width:128px;white-space:nowrap}
+  .corr-tip .kw{font-family:var(--mono);font-size:11px;color:var(--text);font-weight:700;
+    margin-bottom:5px;letter-spacing:.02em}
+  .corr-tip .rows{display:flex;flex-direction:column;gap:3px}
+  .corr-tip .rows span{display:flex;justify-content:space-between;gap:14px;font-size:11px}
+  .corr-tip .rows i{font-style:normal;color:var(--text-4)}
+  .corr-tip .rows b{font-family:var(--mono);color:var(--text-2);font-weight:600}
+  .corr-read{margin-top:9px;font-size:11.5px;line-height:1.5;color:var(--text-3);
+    border-top:1px solid var(--border);padding-top:8px} .corr-read b{color:var(--text-2)}
 </style>
 </head>
 <body>
@@ -6816,6 +6837,11 @@ function corrWord(r){
 }
 
 function CorrelationPanel({rows, dashboard}){
+  // Which lever to plot on the X axis, and which dot the mouse is over.
+  // Declared first so the hook order never changes across renders.
+  const [selId, setSelId] = useState(null);
+  const [hover, setHover] = useState(null); // {i, leftPct, topPct}
+
   // Only ad words with enough spend to trust and real traced ROAS can speak.
   const pool = rows.filter(r=> r.traced && r.roasReliable && r.roas!=null && r.spend>0);
   if(pool.length<4) return null;
@@ -6834,23 +6860,54 @@ function CorrelationPanel({rows, dashboard}){
   }).filter(f=>f.r!=null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
   if(!findings.length) return null;
 
-  // Scatter the strongest relationship so the claim is visible, not just asserted.
-  const lead = findings[0];
-  const leadPairs = pool.filter(r=>{ const v=lead.get(r); return v!=null && !isNaN(v) && v>0; }).map(r=>({x:lead.get(r), y:r.roas, kw:r.keyword, spend:r.spend}));
-  const W=660, H=220, padL=44, padB=30, padT=12, padR=12;
+  // Default the scatter to the strongest relationship; let Alex switch it.
+  const lead = findings.find(f=>f.id===selId) || findings[0];
+  const cap=(s)=>s?s.charAt(0)+s.slice(1).toLowerCase():s;
+  const leadPairs = pool.filter(r=>{ const v=lead.get(r); return v!=null && !isNaN(v) && v>0; })
+    .map(r=>({x:lead.get(r), y:r.roas, kw:r.keyword, spend:r.spend}));
+
+  const W=660, H=270, padL=54, padB=52, padT=16, padR=16;
   const xs=leadPairs.map(p=>p.x), ys=leadPairs.map(p=>p.y);
   const xMin=Math.min(...xs), xMax=Math.max(...xs)||1, yMin=0, yMax=Math.max(...ys, 2);
   const sx=v=> padL + ((v-xMin)/((xMax-xMin)||1))*(W-padL-padR);
   const sy=v=> (H-padB) - ((v-yMin)/((yMax-yMin)||1))*(H-padB-padT);
   const beY = sy(1); // breakeven ROAS line
-  const cap=(s)=>s?s.charAt(0)+s.slice(1).toLowerCase():s;
+  const rOf = (spend)=> Math.max(4, Math.min(13, Math.sqrt(spend)/5));
+
+  // Least-squares trend line over the selected lever — the visual the eye reads
+  // as "as this goes up, ROAS goes ___".
+  const n=leadPairs.length;
+  let Sx=0,Sy=0,Sxx=0,Sxy=0;
+  leadPairs.forEach(p=>{ Sx+=p.x; Sy+=p.y; Sxx+=p.x*p.x; Sxy+=p.x*p.y; });
+  const denom = n*Sxx - Sx*Sx;
+  const slope = denom!==0 ? (n*Sxy - Sx*Sy)/denom : 0;
+  const intercept = (Sy - slope*Sx)/(n||1);
+  const clampY=(v)=> Math.max(yMin, Math.min(yMax, v));
+  const tA = clampY(intercept + slope*xMin), tB = clampY(intercept + slope*xMax);
+
+  // Four round-ish ticks per axis.
+  const fr=[0,1/3,2/3,1];
+  const xTicks = fr.map(t=> xMin + t*((xMax-xMin)||1));
+  const yTicks = fr.map(t=> yMin + t*((yMax-yMin)||1));
+
+  const dirHelps = (lead.r<0) === lead.lowerIsCheaper; // does moving this lever the "good" way lift ROAS?
+  const strength = corrWord(lead.r);
 
   const plain = (f)=>{
-    const dirHelps = (f.r<0) === f.lowerIsCheaper; // negative r + lower-is-cheaper ⇒ helps ROAS
-    const strength = corrWord(f.r);
-    if(strength==="little to no") return <span><b>{f.label}</b> shows little to no link to ROAS across your ads.</span>;
-    return <span>Ads with <b>{f.x}</b> tend to {dirHelps?"earn MORE":"earn LESS"} — {strength} relationship to ROAS{f.label===lead.label?"":""}.</span>;
+    const helps = (f.r<0) === f.lowerIsCheaper;
+    const s = corrWord(f.r);
+    if(s==="little to no") return <span><b>{f.label}</b> shows little to no link to ROAS.</span>;
+    return <span>Ads with <b>{f.x}</b> tend to {helps?"earn MORE":"earn LESS"} — {s} link to ROAS.</span>;
   };
+
+  // Pixel → percentage of the viewBox, so the HTML tooltip lands on the dot at
+  // any rendered size (the SVG scales but keeps its 0..W / 0..H coordinates).
+  const leftPct=(v)=> (sx(v)/W)*100, topPct=(v)=> (sy(v)/H)*100;
+  const hp = hover!=null && leadPairs[hover] ? leadPairs[hover] : null;
+
+  const readout = strength==="little to no"
+    ? <span><b>{lead.label}</b> barely moves ROAS — picking ads by this number won't reliably win or lose you money.</span>
+    : <span>Reading left → right: as <b>{lead.label.toLowerCase()}</b> {lead.lowerIsCheaper?"rises":"rises"}, ROAS tends to {slope>=0?"rise":"fall"}. Your sweet spot is the {dirHelps?(lead.lowerIsCheaper?"top-left":"top-right"):(lead.lowerIsCheaper?"top-left":"top-right")} — high ROAS at {lead.lowerIsCheaper?"a low cost":"a strong rate"}. Green dots cleared break-even; red didn't.</span>;
 
   return (
     <div className="ddr-block">
@@ -6860,30 +6917,77 @@ function CorrelationPanel({rows, dashboard}){
       </div>
       <div className="corr">
         <div className="corr-list">
-          {findings.map(f=>(
-            <div className={"corr-row "+corrWord(f.r).replace(/[^a-z]/g,"")} key={f.id}>
-              <div className="corr-bar"><div className="corr-fill" style={{width:Math.round(Math.abs(f.r)*100)+"%", background: ((f.r<0)===f.lowerIsCheaper)?"var(--green)":"var(--red)"}}></div></div>
-              <div className="corr-txt">{plain(f)}</div>
-              <div className="corr-r">r={f.r.toFixed(2)}</div>
-            </div>
-          ))}
+          {findings.map(f=>{
+            const on = f.id===lead.id;
+            return (
+              <button type="button" className={"corr-row"+(on?" on":"")} key={f.id} onClick={()=>setSelId(f.id)} title={"Plot "+f.label+" on the chart"}>
+                <div className="corr-bar"><div className="corr-fill" style={{width:Math.round(Math.abs(f.r)*100)+"%", background: ((f.r<0)===f.lowerIsCheaper)?"var(--green)":"var(--red)"}}></div></div>
+                <div className="corr-txt">{plain(f)}</div>
+                <div className="corr-r">r={f.r.toFixed(2)}</div>
+              </button>
+            );
+          })}
+          <div className="corr-hint">Tap a lever to plot it ↗</div>
         </div>
+
         <div className="corr-scatter">
-          <div className="corr-scatter-h">{lead.label} (→) vs ROAS (↑) — each dot is an ad word, size = spend</div>
-          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="corr-svg">
-            <line x1={padL} y1={beY} x2={W-padR} y2={beY} stroke="var(--text-4)" strokeDasharray="3 3" strokeWidth="1"/>
-            <text x={W-padR} y={beY-4} textAnchor="end" fontSize="8" fill="var(--text-4)">break-even 1×</text>
-            <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="var(--border)" strokeWidth="1"/>
-            <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="var(--border)" strokeWidth="1"/>
-            {leadPairs.map((p,i)=>(
-              <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={Math.max(3, Math.min(11, Math.sqrt(p.spend)/6))}
-                fill={p.y>=1?"var(--green)":"var(--red)"} fillOpacity="0.5" stroke={p.y>=1?"var(--green)":"var(--red)"} strokeWidth="1">
-                <title>{cap(p.kw)} · {lead.fmt(p.x)} · {p.y.toFixed(1)}× · {fmtUsd(p.spend)}</title>
-              </circle>
-            ))}
-            <text x={padL} y={H-padB+18} fontSize="8" fill="var(--text-4)">{lead.fmt(xMin)}</text>
-            <text x={W-padR} y={H-padB+18} textAnchor="end" fontSize="8" fill="var(--text-4)">{lead.fmt(xMax)}</text>
-          </svg>
+          <div className="corr-scatter-h"><b style={{color:"var(--text-2)"}}>{lead.label}</b> <span className="ax">→ across</span> vs <b style={{color:"var(--text-2)"}}>ROAS</b> <span className="ax">↑ up</span> · each dot = one ad word, bigger = more spend</div>
+          <div className="corr-plot">
+            <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="corr-svg" preserveAspectRatio="none"
+              onMouseLeave={()=>setHover(null)}>
+              {/* good zone tint: above break-even */}
+              <rect x={padL} y={padT} width={W-padL-padR} height={Math.max(0,beY-padT)} fill="var(--green)" fillOpacity="0.04"/>
+              {/* gridlines + y tick labels (ROAS) */}
+              {yTicks.map((t,i)=>(
+                <g key={"y"+i}>
+                  <line x1={padL} y1={sy(t)} x2={W-padR} y2={sy(t)} stroke="var(--border)" strokeWidth="1" strokeOpacity={i===0?0:0.55}/>
+                  <text x={padL-8} y={sy(t)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{t.toFixed(1)}×</text>
+                </g>
+              ))}
+              {/* x tick labels (selected lever) */}
+              {xTicks.map((t,i)=>(
+                <g key={"x"+i}>
+                  <line x1={sx(t)} y1={padT} x2={sx(t)} y2={H-padB} stroke="var(--border)" strokeWidth="1" strokeOpacity="0.35"/>
+                  <text x={sx(t)} y={H-padB+16} textAnchor={i===0?"start":i===xTicks.length-1?"end":"middle"} fontSize="9" fill="var(--text-4)">{lead.fmt(t)}</text>
+                </g>
+              ))}
+              {/* break-even line */}
+              <line x1={padL} y1={beY} x2={W-padR} y2={beY} stroke="var(--gold)" strokeDasharray="4 3" strokeWidth="1" strokeOpacity="0.7"/>
+              <text x={W-padR-2} y={beY-5} textAnchor="end" fontSize="9" fill="var(--gold)">break-even 1×</text>
+              {/* trend line */}
+              {strength!=="little to no" && (
+                <line x1={sx(xMin)} y1={sy(tA)} x2={sx(xMax)} y2={sy(tB)} stroke={dirHelps?"var(--green)":"var(--red)"} strokeWidth="2" strokeOpacity="0.55" strokeLinecap="round"/>
+              )}
+              {/* axis frame */}
+              <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="var(--border-2)" strokeWidth="1"/>
+              <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="var(--border-2)" strokeWidth="1"/>
+              {/* axis titles */}
+              <text x={(padL+W-padR)/2} y={H-6} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600">{lead.label} {lead.lowerIsCheaper?"(cheaper ← → pricier)":"(lower ← → higher)"}</text>
+              <text x={14} y={(padT+H-padB)/2} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600" transform={`rotate(-90 14 ${(padT+H-padB)/2})`}>ROAS — $ back per $1</text>
+              {/* dots */}
+              {leadPairs.map((p,i)=>{
+                const isHover = hover===i;
+                return (
+                  <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={rOf(p.spend)+(isHover?3:0)}
+                    fill={p.y>=1?"var(--green)":"var(--red)"} fillOpacity={isHover?0.85:0.45}
+                    stroke={p.y>=1?"var(--green)":"var(--red)"} strokeWidth={isHover?2:1}
+                    style={{cursor:"pointer", transition:"r .1s ease, fill-opacity .1s ease"}}
+                    onMouseEnter={()=>setHover(i)} onMouseMove={()=>setHover(i)}/>
+                );
+              })}
+            </svg>
+            {hp && (
+              <div className="corr-tip" style={{left:leftPct(hp.x)+"%", top:topPct(hp.y)+"%"}}>
+                <div className="kw">{cap(hp.kw)}</div>
+                <div className="rows">
+                  <span><i>{lead.label}</i><b>{lead.fmt(hp.x)}</b></span>
+                  <span><i>ROAS</i><b style={{color:hp.y>=1?"var(--green)":"var(--red)"}}>{hp.y.toFixed(1)}×</b></span>
+                  <span><i>Spend</i><b>{fmtUsd(hp.spend)}</b></span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="corr-read">{readout}</div>
         </div>
       </div>
     </div>
