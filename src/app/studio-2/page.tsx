@@ -1098,6 +1098,66 @@ function loadVideoFrame(src: string, atSeconds = 0): Promise<HTMLVideoElement> {
   });
 }
 
+function waitForVideoEvent(video: HTMLVideoElement, eventName: keyof HTMLMediaElementEventMap, timeoutMs = 12_000) {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener(eventName, onReady);
+      video.removeEventListener("error", onError);
+    };
+    const onReady = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("Video failed to load"));
+    };
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("Video took too long to load"));
+    }, timeoutMs);
+    video.addEventListener(eventName, onReady, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+async function ensureVideoMetadata(video: HTMLVideoElement) {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(video.duration)) return;
+  await waitForVideoEvent(video, "loadedmetadata");
+}
+
+async function seekVideoElement(video: HTMLVideoElement, time: number) {
+  await ensureVideoMetadata(video);
+  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : time;
+  const nextTime = clamp(time, 0, Math.max(0, duration - 0.02));
+  if (Math.abs(video.currentTime - nextTime) < 0.025 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+  const seeked = waitForVideoEvent(video, "seeked", 12_000);
+  video.currentTime = nextTime;
+  await seeked;
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    await waitForVideoEvent(video, "canplay", 12_000).catch(() => undefined);
+  }
+}
+
+function getVideoRecorderFormat() {
+  if (typeof MediaRecorder === "undefined") return null;
+  const mp4Type = [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4;codecs=h264,aac",
+    "video/mp4;codecs=avc1",
+    "video/mp4",
+  ].find((type) => MediaRecorder.isTypeSupported(type));
+  return mp4Type ? { mimeType: mp4Type, extension: "mp4" } : null;
+}
+
 function getCanvasImageSrc(src: string) {
   if (!/^https?:\/\//i.test(src) || typeof window === "undefined") return src;
   try {
@@ -3187,12 +3247,13 @@ export default function Studio2Page() {
   const applySelectedTextColor = useCallback(
     (color: string) => {
       if (!selectedBlock || !selectedTextRange) return;
+      const nextColor = normalizeHex(color, selectedBlock.textColor).toUpperCase();
       const range = selectedTextRange;
       updateCurrentCreative((creative) => ({
         ...creative,
         textBlocks: creative.textBlocks.map((block) =>
           block.id === selectedBlock.id
-            ? applyTextColorSpan(block, range.start, range.end, color)
+            ? applyTextColorSpan(block, range.start, range.end, nextColor)
             : block
         ),
       }));
@@ -4737,6 +4798,135 @@ export default function Studio2Page() {
     []
   );
 
+  const renderCreativeToVideoBlob = useCallback(
+    async (creative: Creative, label = "video") => {
+      if ((creative.mediaKind || "image") !== "video") {
+        throw new Error("This ad is not a video.");
+      }
+      const recorderFormat = getVideoRecorderFormat();
+      if (!recorderFormat || typeof MediaRecorder === "undefined") {
+        throw new Error("This browser cannot export MP4 video from Studio 2.0.");
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = CANVAS_W;
+      canvas.height = CANVAS_H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not start video export.");
+
+      const video = document.createElement("video");
+      const resolvedSrc = getCanvasImageSrc(creative.photoUrl);
+      if (/^https?:\/\//i.test(resolvedSrc)) video.crossOrigin = "anonymous";
+      video.playsInline = true;
+      video.preload = "auto";
+      video.muted = creative.videoMuted ?? true;
+      video.volume = clamp(creative.videoVolume ?? 1, 0, 1);
+      video.src = resolvedSrc;
+      video.load();
+
+      let audioContext: AudioContext | null = null;
+      let recordStream: MediaStream | null = null;
+
+      try {
+        await ensureVideoMetadata(video);
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          await waitForVideoEvent(video, "canplay", 15_000).catch(() => undefined);
+        }
+        const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        const segments = getEnabledVideoSegments(creative, duration)
+          .map((segment) => ({
+            ...segment,
+            end: clamp(segment.end ?? duration, segment.start, duration || segment.end || segment.start),
+          }))
+          .filter((segment) => segment.enabled && (segment.end ?? segment.start) > segment.start);
+        if (!segments.length) throw new Error("This video has no enabled timeline segments to export.");
+
+        const totalOutputSeconds = segments.reduce((sum, segment) => sum + Math.max(0, (segment.end ?? segment.start) - segment.start), 0);
+        const canvasStream = canvas.captureStream(30);
+        recordStream = new MediaStream(canvasStream.getVideoTracks());
+
+        if (!(creative.videoMuted ?? true) && clamp(creative.videoVolume ?? 1, 0, 1) > 0 && typeof AudioContext !== "undefined") {
+          audioContext = new AudioContext();
+          await audioContext.resume().catch(() => undefined);
+          const source = audioContext.createMediaElementSource(video);
+          const gain = audioContext.createGain();
+          const destination = audioContext.createMediaStreamDestination();
+          gain.gain.value = clamp(creative.videoVolume ?? 1, 0, 1);
+          source.connect(gain);
+          gain.connect(destination);
+          destination.stream.getAudioTracks().forEach((track) => recordStream?.addTrack(track));
+        }
+
+        const chunks: Blob[] = [];
+        const recorder = new MediaRecorder(recordStream, { mimeType: recorderFormat.mimeType });
+        const stopped = new Promise<Blob>((resolve, reject) => {
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) chunks.push(event.data);
+          };
+          recorder.onerror = () => reject(new Error("Video export failed."));
+          recorder.onstop = () => resolve(new Blob(chunks, { type: recorderFormat.mimeType }));
+        });
+
+        recorder.start(250);
+        let renderedSeconds = 0;
+        for (let index = 0; index < segments.length; index++) {
+          const segment = segments[index];
+          const segmentEnd = segment.end ?? duration;
+          setExportStatus(`Exporting ${label} · ${formatVideoTime(renderedSeconds)} / ${formatVideoTime(totalOutputSeconds)}`);
+          await seekVideoElement(video, segment.start);
+          drawArtwork(ctx, creative, video, 1);
+          try {
+            await video.play();
+          } catch {
+            video.muted = true;
+            await video.play();
+          }
+          const segmentStartedAt = video.currentTime;
+          while (video.currentTime < segmentEnd - 0.025) {
+            drawArtwork(ctx, creative, video, 1);
+            const segmentProgress = Math.max(0, video.currentTime - segmentStartedAt);
+            setExportStatus(`Exporting ${label} · ${formatVideoTime(renderedSeconds + segmentProgress)} / ${formatVideoTime(totalOutputSeconds)}`);
+            await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+          }
+          video.pause();
+          renderedSeconds += Math.max(0, segmentEnd - segment.start);
+          await seekVideoElement(video, segmentEnd).catch(() => undefined);
+          drawArtwork(ctx, creative, video, 1);
+        }
+
+        if (recorder.state !== "inactive") recorder.stop();
+        const blob = await stopped;
+        if (!blob.size) throw new Error("Video export produced an empty file.");
+        return { blob, extension: recorderFormat.extension, contentType: recorderFormat.mimeType };
+      } finally {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        recordStream?.getTracks().forEach((track) => track.stop());
+        await audioContext?.close().catch(() => undefined);
+      }
+    },
+    []
+  );
+
+  const renderCreativeToExportBlob = useCallback(
+    async (creative: Creative, index: number) => {
+      const safeIndex = index + 1;
+      if ((creative.mediaKind || "image") === "video") {
+        return renderCreativeToVideoBlob(creative, `ad ${safeIndex}`);
+      }
+      const canvas = await renderCreativeToCanvas(creative, 2);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((nextBlob) => {
+          if (nextBlob) resolve(nextBlob);
+          else reject(new Error("Image export failed."));
+        }, "image/png");
+      });
+      return { blob, extension: "png", contentType: "image/png" };
+    },
+    [renderCreativeToCanvas, renderCreativeToVideoBlob]
+  );
+
   const renderCreativePreviewToCanvas = useCallback(
     async (creative: Creative, pixelRatio = 0.36) => {
       const canvas = document.createElement("canvas");
@@ -4791,16 +4981,23 @@ export default function Studio2Page() {
     if (!currentCreative) return;
     setExportModalOpen(false);
     setExportStatus("Exporting current ad...");
-    const canvas = await renderCreativeToCanvas(currentCreative, 2);
-    const link = document.createElement("a");
-    link.download = `${fileLabel || projectName || "studio-2"}-ad-${currentIndex + 1}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-    setCreatives((prev) =>
-      prev.map((creative, index) => index === currentIndex ? { ...creative, status: "exported" } : creative)
-    );
-    setExportStatus("");
-  }, [currentCreative, currentIndex, projectName, renderCreativeToCanvas]);
+    try {
+      const exportFile = await renderCreativeToExportBlob(currentCreative, currentIndex);
+      const link = document.createElement("a");
+      const href = URL.createObjectURL(exportFile.blob);
+      link.download = `${fileLabel || projectName || "studio-2"}-ad-${currentIndex + 1}.${exportFile.extension}`;
+      link.href = href;
+      link.click();
+      URL.revokeObjectURL(href);
+      setCreatives((prev) =>
+        prev.map((creative, index) => index === currentIndex ? { ...creative, status: "exported" } : creative)
+      );
+      setExportStatus("");
+    } catch (err) {
+      setExportStatus(err instanceof Error ? err.message : "Export failed.");
+      window.setTimeout(() => setExportStatus(""), 3200);
+    }
+  }, [currentCreative, currentIndex, projectName, renderCreativeToExportBlob]);
 
   const exportAll = useCallback(async (folderLabel?: string, approvedOnly = false) => {
     const creativesToExport = approvedOnly
@@ -4825,11 +5022,8 @@ export default function Studio2Page() {
 
     for (let i = 0; i < creativesToExport.length; i++) {
       setExportStatus(`Exporting ${i + 1} of ${creativesToExport.length}...`);
-      const canvas = await renderCreativeToCanvas(creativesToExport[i], 2);
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b!), "image/png");
-      });
-      folder.file(`ad-${i + 1}.png`, blob);
+      const exportFile = await renderCreativeToExportBlob(creativesToExport[i], i);
+      folder.file(`ad-${i + 1}.${exportFile.extension}`, exportFile.blob);
     }
 
     setExportStatus("Zipping...");
@@ -4842,7 +5036,7 @@ export default function Studio2Page() {
     URL.revokeObjectURL(href);
     setCreatives((prev) => prev.map((creative) => ({ ...creative, status: "exported" })));
     setExportStatus("");
-  }, [creatives, projectName, renderCreativeToCanvas]);
+  }, [creatives, projectName, renderCreativeToExportBlob]);
 
   const exportSelectedPages = useCallback(async (indices: number[], folderLabel?: string) => {
     const uniqueIndices = [...new Set(indices)]
@@ -4853,12 +5047,19 @@ export default function Studio2Page() {
       const index = uniqueIndices[0];
       setExportModalOpen(false);
       setExportStatus(`Exporting ad ${index + 1}...`);
-      const canvas = await renderCreativeToCanvas(creatives[index], 2);
-      const link = document.createElement("a");
-      link.download = `${folderLabel || projectName || "studio-2"}-ad-${index + 1}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      setExportStatus("");
+      try {
+        const exportFile = await renderCreativeToExportBlob(creatives[index], index);
+        const href = URL.createObjectURL(exportFile.blob);
+        const link = document.createElement("a");
+        link.download = `${folderLabel || projectName || "studio-2"}-ad-${index + 1}.${exportFile.extension}`;
+        link.href = href;
+        link.click();
+        URL.revokeObjectURL(href);
+        setExportStatus("");
+      } catch (err) {
+        setExportStatus(err instanceof Error ? err.message : "Export failed.");
+        window.setTimeout(() => setExportStatus(""), 3200);
+      }
       return;
     }
 
@@ -4873,11 +5074,8 @@ export default function Studio2Page() {
     for (let i = 0; i < uniqueIndices.length; i++) {
       const creativeIndex = uniqueIndices[i];
       setExportStatus(`Exporting ${i + 1} of ${uniqueIndices.length}...`);
-      const canvas = await renderCreativeToCanvas(creatives[creativeIndex], 2);
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b!), "image/png");
-      });
-      folder.file(`ad-${creativeIndex + 1}.png`, blob);
+      const exportFile = await renderCreativeToExportBlob(creatives[creativeIndex], creativeIndex);
+      folder.file(`ad-${creativeIndex + 1}.${exportFile.extension}`, exportFile.blob);
     }
 
     const blob = await zip.generateAsync({ type: "blob" });
@@ -4888,7 +5086,7 @@ export default function Studio2Page() {
     link.click();
     URL.revokeObjectURL(href);
     setExportStatus("");
-  }, [creatives, projectName, renderCreativeToCanvas]);
+  }, [creatives, projectName, renderCreativeToExportBlob]);
 
   const runExportModal = useCallback(() => {
     if (exportMode === "current") {
@@ -10876,7 +11074,7 @@ export default function Studio2Page() {
                 <HexColorControl
                   value={selectedTextBlocks[0]?.textColor || "#ffffff"}
                   onStart={pushUndo}
-                  onChange={(value) => updateSelectedTextBlocks({ textColor: value })}
+                  onChange={(value) => updateSelectedTextBlocks({ textColor: normalizeHex(value, selectedTextBlocks[0]?.textColor || "#ffffff").toUpperCase() })}
                   ariaLabel="Text hex color"
                 />
               </Control>
@@ -10884,7 +11082,10 @@ export default function Studio2Page() {
                 <HexColorControl
                   value={selectedTextBlocks[0]?.bgColor || "#000000"}
                   onStart={pushUndo}
-                  onChange={(value) => updateSelectedTextBlocks({ bgColor: value })}
+                  onChange={(value) => updateSelectedTextBlocks({
+                    bgColor: normalizeHex(value, selectedTextBlocks[0]?.bgColor || "#000000").toUpperCase(),
+                    bgOpacity: selectedTextBlocks[0]?.bgOpacity && selectedTextBlocks[0].bgOpacity > 0 ? selectedTextBlocks[0].bgOpacity : 1,
+                  })}
                   ariaLabel="Highlight hex color"
                 />
                 <button
@@ -11020,7 +11221,7 @@ export default function Studio2Page() {
                 <HexColorControl
                   value={selectedBlock.textColor}
                   onStart={pushUndo}
-                  onChange={(value) => updateSelectedBlock({ textColor: value })}
+                  onChange={(value) => updateSelectedBlock({ textColor: normalizeHex(value, selectedBlock.textColor).toUpperCase() })}
                   ariaLabel="Text hex color"
                 />
               </Control>
@@ -11028,7 +11229,10 @@ export default function Studio2Page() {
                 <HexColorControl
                   value={selectedBlock.bgColor}
                   onStart={pushUndo}
-                  onChange={(value) => updateSelectedBlock({ bgColor: value })}
+                  onChange={(value) => updateSelectedBlock({
+                    bgColor: normalizeHex(value, selectedBlock.bgColor).toUpperCase(),
+                    bgOpacity: selectedBlock.bgOpacity > 0 ? selectedBlock.bgOpacity : 1,
+                  })}
                   ariaLabel="Highlight hex color"
                 />
                 <button
