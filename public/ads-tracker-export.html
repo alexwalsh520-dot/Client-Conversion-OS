@@ -8284,6 +8284,47 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   );
 }
 
+// ---- Per-range snapshot cache ------------------------------------------------
+// The Deep Dive must show the SAME numbers for the same date range every time —
+// payroll depends on them, so they can't quietly re-roll on each visit. We save
+// each loaded range to the browser and re-show that exact saved copy on return.
+// A fully-past range never changes, so it stays locked indefinitely; a range that
+// includes today only stays valid for the current calendar day, so a new day (or
+// a manual "Sync now") refreshes it. Bump SNAP_VERSION when the math changes so
+// old saved copies are discarded instead of shown under new rules.
+const SNAP_VERSION = "1";
+const SNAP_NS = "ccos-ads-snapshot:v" + SNAP_VERSION;
+const SNAP_MAX = 24; // keep the most-recently-used ranges, evict the rest
+function snapKey(account, range){ return account + "|" + range.dateFrom + "|" + range.dateTo; }
+function snapReadAll(){
+  try{ return JSON.parse(window.localStorage.getItem(SNAP_NS) || "{}") || {}; }
+  catch(_){ return {}; }
+}
+function readSnapshot(account, range, allowStale){
+  const e = snapReadAll()[snapKey(account, range)];
+  if(!e || !e.payload) return null;
+  const today = todayEt();
+  const includesToday = range.dateTo >= today;
+  if(!allowStale && includesToday && e.day !== today) return null;
+  return e.payload;
+}
+function writeSnapshot(account, range, payload){
+  if(!payload || payload.error) return; // never lock in an error/empty result
+  try{
+    const all = snapReadAll();
+    all[snapKey(account, range)] = { payload, day: todayEt(), savedAt: Date.now() };
+    const keys = Object.keys(all);
+    if(keys.length > SNAP_MAX){
+      keys.map(k => [k, all[k].savedAt || 0])
+        .sort((a,b)=> a[1]-b[1])
+        .slice(0, keys.length - SNAP_MAX)
+        .forEach(([k]) => { delete all[k]; });
+    }
+    window.localStorage.setItem(SNAP_NS, JSON.stringify(all));
+  }catch(_){ /* quota or disabled storage — fine, we just won't cache */ }
+}
+function clearSnapshots(){ try{ window.localStorage.removeItem(SNAP_NS); }catch(_){} }
+
 function App(){
   const [account, setAccount] = useState("all");
   const [topView, setTopView] = useState("dashboard");
@@ -8297,6 +8338,7 @@ function App(){
   const [newEntries, setNewEntries] = useState([]);
   const [toast, setToast] = useState(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -8325,14 +8367,26 @@ function App(){
       };
       setNewEntries(x=>[entry, ...x]);
       showToast("Manual correction saved");
-      await loadDashboard({silent:true});
+      await loadDashboard({silent:true, force:true});
     }catch(err){
       console.error(err);
       showToast(err?.message || "Manual correction failed");
     }
   };
 
-  const loadDashboard = async ({silent=false}={}) => {
+  const loadDashboard = async ({silent=false, force=false}={}) => {
+    // Locked snapshot: if we already have this exact range saved (and it's still
+    // valid for today), show that same copy instantly — no refetch, no re-roll.
+    if(!force){
+      const cached = readSnapshot(account, dateRange);
+      if(cached){
+        setDashboard(cached);
+        setLoadError(null);
+        setLoading(false);
+        setFromCache(true);
+        return;
+      }
+    }
     if(!silent) setLoading(true);
     setLoadError(null);
     const params = new URLSearchParams({
@@ -8347,11 +8401,23 @@ function App(){
       const json = await res.json();
       if(!res.ok) throw new Error(json.error || "Ads Tracker API failed");
       setDashboard(json);
+      writeSnapshot(account, dateRange, json);
+      setFromCache(false);
     }catch(err){
       console.error(err);
-      setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[], eventsHistory:[]});
-      setLoadError(err?.message || "Live data unavailable");
-      showToast("Live data unavailable");
+      // Live fetch failed — fall back to the last saved copy of this range
+      // (even if stale) rather than wiping the screen to an error.
+      const stale = readSnapshot(account, dateRange, true);
+      if(stale){
+        setDashboard(stale);
+        setLoadError(null);
+        setFromCache(true);
+        showToast("Showing saved data · live unavailable");
+      }else{
+        setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[], eventsHistory:[]});
+        setLoadError(err?.message || "Live data unavailable");
+        showToast("Live data unavailable");
+      }
     }finally{
       setLoading(false);
     }
@@ -8366,7 +8432,7 @@ function App(){
     const json = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(json.error || "Attribution save failed");
     showToast("Attribution saved");
-    await loadDashboard({silent:true});
+    await loadDashboard({silent:true, force:true});
   };
 
   useEffect(()=>{
@@ -8399,7 +8465,7 @@ function App(){
   );
   const fetchedLabel = loadError
     ? "Live data unavailable"
-    : (dashboard ? `Live · ${rangeLabel(dateRange)}` : "Loading live data");
+    : (dashboard ? `${fromCache ? "Saved" : "Live"} · ${rangeLabel(dateRange)}` : "Loading live data");
 
   const syncNow = async () => {
     if(syncing) return;
@@ -8422,7 +8488,8 @@ function App(){
       const salesOk = sales.ok;
       const adsOk = ads.ok;
       if(!salesOk && !adsOk) throw new Error("Sync failed");
-      await loadDashboard({silent:true});
+      clearSnapshots();
+      await loadDashboard({silent:true, force:true});
       if(salesOk && adsOk) showToast("Synced · live data refreshed");
       else if(adsOk) showToast("Meta synced · sales sync needs setup");
       else showToast("Sales synced · Meta sync needs logs");

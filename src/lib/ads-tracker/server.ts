@@ -777,7 +777,10 @@ async function buildSupplementalGhlKeywordEvents(
     const { data, error } = await db
       .from("manychat_contact_links")
       .select("client,subscriber_id,ghl_contact_id")
-      .in("ghl_contact_id", contactIds);
+      .in("ghl_contact_id", contactIds)
+      .order("ghl_contact_id", { ascending: true })
+      .order("subscriber_id", { ascending: true })
+      .order("client", { ascending: true });
 
     if (error) {
       console.warn("[ads-tracker] ManyChat contact-link fallback unavailable", error);
@@ -942,7 +945,13 @@ async function fetchSalesRowsFromSupabase(
       ].join(",")
     )
     .gte("date", query.dateFrom)
-    .lte("date", query.dateTo);
+    .lte("date", query.dateTo)
+    // Stable, total ordering so the same range always attributes identically —
+    // payroll depends on these numbers, they must not shift between loads.
+    .order("date", { ascending: true })
+    .order("call_number", { ascending: true })
+    .order("prospect_name", { ascending: true })
+    .order("collected_revenue_cents", { ascending: false });
 
   if (error) {
     console.warn("[ads-tracker] Supabase sales rows unavailable; falling back to sheet", error);
@@ -1034,7 +1043,15 @@ function buildSalesMatchIndex(
     manychatBySubscriber.set(event.subscriber_id, list);
   }
   for (const list of manychatBySubscriber.values()) {
-    list.sort((a, b) => b.event_at.localeCompare(a.event_at));
+    // Newest first, with a full tiebreak chain so two events sharing the exact
+    // same timestamp (e.g. origin checks dated to midnight) always order the same
+    // way — otherwise the chosen keyword could flip between identical loads.
+    list.sort(
+      (a, b) =>
+        b.event_at.localeCompare(a.event_at) ||
+        (b.keyword_normalized || "").localeCompare(a.keyword_normalized || "") ||
+        (b.contact_name || "").localeCompare(a.contact_name || "")
+    );
   }
   return { byName, bySubscriber, manychatBySubscriber };
 }
@@ -2283,7 +2300,11 @@ async function fetchKeywordBackfillRows(
       .select(selectColumns.join(","))
       .in("client_key", clientFilter)
       .gte("date", query.dateFrom)
-      .lte("date", query.dateTo);
+      .lte("date", query.dateTo)
+      .order("date", { ascending: true })
+      .order("client_key", { ascending: true })
+      .order("keyword_normalized", { ascending: true })
+      .order("keyword_raw", { ascending: true });
 
   let { data, error } = await queryRows(columns);
 
@@ -2401,6 +2422,9 @@ async function fetchPaidKeywordSet(
   const { data, error } = await db
     .from("ads_meta_insights_daily")
     .select("client_key,keyword_normalized,spend_cents")
+    .order("client_key", { ascending: true })
+    .order("keyword_normalized", { ascending: true })
+    .order("spend_cents", { ascending: false })
     .gt("spend_cents", 0)
     .not("keyword_normalized", "is", null)
     .limit(50000);
@@ -2429,7 +2453,14 @@ async function fetchManychatOriginAdEvents(
     .eq("from_ad", true)
     .eq("is_control", false)
     .not("origin_keyword", "is", null)
-    .not("subscriber_id", "is", null);
+    .not("subscriber_id", "is", null)
+    // Deterministic order: when one subscriber has multiple ad-origin checks,
+    // always resolve to the same keyword instead of whatever Postgres returns first.
+    .order("client_key", { ascending: true })
+    .order("subscriber_id", { ascending: true })
+    .order("sale_date", { ascending: true, nullsFirst: true })
+    .order("checked_at", { ascending: true })
+    .order("origin_keyword", { ascending: true });
 
   if (error) {
     console.warn("[ads-tracker] ManyChat origin events query failed", error.message);
