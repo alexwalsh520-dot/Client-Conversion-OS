@@ -636,18 +636,21 @@ function normalizeVideoSegment(segment: Partial<VideoSegment>, fallback: VideoTr
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const minGap = safeDuration ? Math.min(0.15, safeDuration) : 0.15;
   const rawStart = Number(segment.start);
-  const fallbackEnd = fallback.end ?? (safeDuration || Math.max(fallback.start + 1, 1));
   const startMax = safeDuration ? Math.max(0, safeDuration - minGap) : Number.POSITIVE_INFINITY;
   const start = clamp(Number.isFinite(rawStart) ? rawStart : fallback.start, 0, startMax);
-  const rawEnd = typeof segment.end === "number" && Number.isFinite(segment.end) ? segment.end : fallbackEnd;
+  const explicitEnd = typeof segment.end === "number" && Number.isFinite(segment.end) ? segment.end : null;
+  const fallbackEnd = fallback.end ?? null;
+  const rawEnd = explicitEnd ?? fallbackEnd;
   const end = safeDuration
-    ? clamp(Math.max(rawEnd, start + minGap), start + minGap, safeDuration)
-    : Math.max(rawEnd, start + minGap);
+    ? clamp(Math.max(rawEnd ?? safeDuration, start + minGap), start + minGap, safeDuration)
+    : rawEnd === null
+      ? null
+      : Math.max(rawEnd, start + minGap);
 
   return {
     id: segment.id || uid(),
     start: roundVideoTime(start),
-    end: roundVideoTime(end),
+    end: end === null ? null : roundVideoTime(end),
     enabled: segment.enabled !== false,
   };
 }
@@ -693,7 +696,7 @@ function resolveVideoTrimRange(trimValue?: Partial<VideoTrim> | null, duration =
 
 function getVideoTrimRange(creative?: Creative | null, duration = 0) {
   if (creative?.videoTimeline?.length) {
-    const segments = normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim, duration);
+    const segments = getVideoTimelineSegments(creative, duration);
     const enabled = segments.filter((segment) => segment.enabled);
     const first = enabled[0] || segments[0];
     if (first) return resolveVideoTrimRange({ start: first.start, end: first.end }, duration);
@@ -703,7 +706,17 @@ function getVideoTrimRange(creative?: Creative | null, duration = 0) {
 
 function getVideoTimelineSegments(creative?: Creative | null, duration = 0) {
   if (!creative || (creative.mediaKind || "image") !== "video") return [];
-  return normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim, duration);
+  const segments = normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim, duration);
+  const safeDuration = Number.isFinite(duration) && duration > 1.25 ? duration : 0;
+  const isOldDefaultOneSecondClip =
+    safeDuration > 0 &&
+    segments.length === 1 &&
+    segments[0].start === 0 &&
+    segments[0].enabled &&
+    typeof segments[0].end === "number" &&
+    segments[0].end <= 1.01 &&
+    !creative.videoTrim?.end;
+  return isOldDefaultOneSecondClip ? [{ ...segments[0], end: roundVideoTime(safeDuration) }] : segments;
 }
 
 function getEnabledVideoSegments(creative?: Creative | null, duration = 0) {
@@ -2849,7 +2862,7 @@ export default function Studio2Page() {
     const updateScale = () => {
       const panelW = 326;
       const toolbarH = 60;
-      const dockH = videoTimelineDockOpen ? 322 : 132;
+      const dockH = videoTimelineDockOpen ? 332 : 132;
       const availableW = Math.max(320, window.innerWidth - panelW - 300);
       const availableH = Math.max(420, window.innerHeight - toolbarH - dockH - 30);
       const next = Math.min(availableW / CANVAS_W, availableH / CANVAS_H, 0.62);
@@ -10158,7 +10171,7 @@ export default function Studio2Page() {
             position: "relative",
             width: CANVAS_W * viewScale,
             height: CANVAS_H * viewScale,
-            boxShadow: "0 22px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)",
+            boxShadow: "0 12px 34px rgba(0,0,0,0.24), 0 0 0 1px rgba(255,255,255,0.08)",
             background: ADS_BRAND.bgDeep,
           }}>
             {currentCreative?.mediaKind === "video" && (
@@ -10510,12 +10523,12 @@ export default function Studio2Page() {
           {videoTimelineDockOpen && currentCreative && (
             <div style={{
               width: "100%",
-              height: 248,
+              height: 258,
               flexShrink: 0,
               borderTop: `1px solid ${ADS_BRAND.border}`,
               background: ADS_BRAND.bg,
-              padding: "10px 18px 14px",
-              boxShadow: "0 -18px 50px rgba(0,0,0,0.18)",
+              padding: "10px 18px 12px",
+              boxShadow: "none",
             }}>
               <VideoTrimControls
                 duration={videoPreviewDuration}
@@ -10557,7 +10570,7 @@ export default function Studio2Page() {
           background: ADS_BRAND.bg,
           padding: 12,
           overflowY: "auto",
-          display: "flex",
+          display: videoTimelineDockOpen ? "none" : "flex",
           flexDirection: "column",
           gap: 10,
         }}>
@@ -12550,8 +12563,8 @@ function VideoTrimControls({
     [draftSegments, segments, safeDuration]
   );
   const max = safeDuration || Math.max(...normalizedSegments.map((segment) => segment.end || segment.start + 1), 1);
-  const pxPerSecond = 36 + clamp(zoom, 0.5, 4) * 68;
-  const trackWidth = Math.max(440, Math.ceil(max * pxPerSecond));
+  const pxPerSecond = 10 + clamp(zoom, 0.5, 4) * 38;
+  const trackWidth = Math.max(720, Math.ceil(max * pxPerSecond));
   const previewLeft = clamp((currentTime / max) * trackWidth, 0, trackWidth);
   const activeSegment = normalizedSegments.find((segment) => segment.id === selectedSegmentId)
     ?? normalizedSegments.find((segment) => currentTime >= segment.start && currentTime <= (segment.end ?? max))
@@ -12569,10 +12582,10 @@ function VideoTrimControls({
     fontSize: 11,
   };
   const toolbarButton = (active = false, disabled = false): React.CSSProperties => ({
-    width: 31,
-    height: 31,
-    borderRadius: 8,
-    border: active ? `1px solid ${ADS_BRAND.goldBorder}` : `1px solid ${ADS_BRAND.border}`,
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    border: `1px solid ${active ? ADS_BRAND.goldBorder : "transparent"}`,
     background: active ? ADS_BRAND.goldSoft : "transparent",
     color: disabled ? ADS_BRAND.text4 : active ? ADS_BRAND.gold : ADS_BRAND.text2,
     display: "inline-flex",
@@ -12733,16 +12746,15 @@ function VideoTrimControls({
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minWidth: 0 }}>
       <div style={{
-        height: 36,
+        height: 42,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
-        marginBottom: 8,
-        border: `1px solid ${ADS_BRAND.border}`,
-        background: ADS_BRAND.panel,
-        borderRadius: 9,
-        padding: "0 8px",
+        marginBottom: 4,
+        borderBottom: `1px solid ${ADS_BRAND.border}`,
+        background: "transparent",
+        padding: "0 2px 8px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <button type="button" style={toolbarButton(true)} title="Select clips">
@@ -12771,12 +12783,12 @@ function VideoTrimControls({
         <div style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
           <span style={{
             color: ADS_BRAND.gold,
-            background: "rgba(212,178,122,0.1)",
-            border: `1px solid ${ADS_BRAND.goldSoft}`,
+            background: ADS_BRAND.goldSoft,
+            border: `1px solid ${ADS_BRAND.goldBorder}`,
             borderRadius: 999,
-            padding: "3px 8px",
-            fontSize: 11,
-            fontWeight: 800,
+            padding: "5px 10px",
+            fontSize: 12,
+            fontWeight: 900,
           }}>
             {formatVideoTime(totalEnabledLength || max)}
           </span>
@@ -12804,11 +12816,11 @@ function VideoTrimControls({
       </div>
 
       <div style={{
-        border: `1px solid ${ADS_BRAND.border2}`,
-        borderRadius: 8,
-        background: ADS_BRAND.bg,
-        padding: 10,
-        marginBottom: 10,
+        border: "none",
+        borderRadius: 0,
+        background: "transparent",
+        padding: "6px 0 0",
+        marginBottom: 6,
         minHeight: 0,
         flex: "1 1 auto",
         display: "flex",
@@ -12839,19 +12851,19 @@ function VideoTrimControls({
           onPointerUp={stopDrag}
           onPointerCancel={stopDrag}
         >
-          <div style={{ position: "relative", width: trackWidth, height: "100%", minHeight: 128 }}>
-            <div style={{ position: "absolute", inset: "0 0 auto", height: 30, color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800 }}>
+          <div style={{ position: "relative", width: trackWidth, height: "100%", minHeight: 132 }}>
+            <div style={{ position: "absolute", inset: "0 0 auto", height: 30, color: ADS_BRAND.text3, fontSize: 11, fontWeight: 800 }}>
               {Array.from({ length: tickCount }).map((_, index) => {
                 const time = index * tickStep;
                 const left = time * pxPerSecond;
                 return (
-                  <div key={time} style={{ position: "absolute", left, top: 0, width: 1, height: 30, background: "rgba(255,255,255,0.12)" }}>
+                  <div key={time} style={{ position: "absolute", left, top: 0, width: 1, height: 30, background: "rgba(127,127,127,0.22)" }}>
                     <span style={{ position: "absolute", left: 4, top: 0, whiteSpace: "nowrap" }}>{formatVideoTime(time)}</span>
                   </div>
                 );
               })}
             </div>
-            <div style={{ position: "absolute", left: 0, right: 0, top: 42, height: 68, borderRadius: 9, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
+            <div style={{ position: "absolute", left: 0, right: 0, top: 42, height: 68, borderRadius: 10, background: ADS_BRAND.panel2, border: `1px solid ${ADS_BRAND.border}` }} />
             {normalizedSegments.map((segment, index) => {
               const segmentEnd = segment.end ?? max;
               const left = segment.start * pxPerSecond;
@@ -12873,12 +12885,12 @@ function VideoTrimControls({
                     width,
                     height: 56,
                     borderRadius: 8,
-                    border: `${isSelected ? 2 : 1}px ${segment.enabled ? "solid" : "dashed"} ${isSelected ? ADS_BRAND.text : segment.enabled ? ADS_BRAND.gold : ADS_BRAND.border2}`,
+                    border: `${isSelected ? 2 : 1}px ${segment.enabled ? "solid" : "dashed"} ${isSelected ? ADS_BRAND.gold : segment.enabled ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
                     background: segment.enabled
-                      ? "linear-gradient(135deg, rgba(212,178,122,0.22), rgba(212,178,122,0.07))"
+                      ? "rgba(212,178,122,0.14)"
                       : "rgba(255,255,255,0.035)",
                     opacity: segment.enabled ? 1 : 0.55,
-                    boxShadow: isSelected ? "0 0 0 3px rgba(212,178,122,0.16)" : segment.enabled ? "0 0 18px rgba(212,178,122,0.14)" : "none",
+                    boxShadow: "none",
                     cursor: "grab",
                     overflow: "hidden",
                   }}
@@ -12898,7 +12910,7 @@ function VideoTrimControls({
                       height: 20,
                       borderRadius: 999,
                       border: `1px solid ${segment.enabled ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
-                      background: segment.enabled ? ADS_BRAND.goldSoft : ADS_BRAND.bgDeep,
+                      background: segment.enabled ? "rgba(212,178,122,0.16)" : ADS_BRAND.bgDeep,
                       color: segment.enabled ? ADS_BRAND.gold : ADS_BRAND.text3,
                       fontFamily: "inherit",
                       fontSize: 9,
@@ -12935,7 +12947,7 @@ function VideoTrimControls({
                       bottom: 0,
                       width: 10,
                       border: "none",
-                      background: "rgba(212,178,122,0.42)",
+                      background: isSelected ? ADS_BRAND.gold : "rgba(212,178,122,0.38)",
                       cursor: "ew-resize",
                     }}
                     aria-label="Trim clip start"
@@ -12950,7 +12962,7 @@ function VideoTrimControls({
                       bottom: 0,
                       width: 10,
                       border: "none",
-                      background: "rgba(212,178,122,0.42)",
+                      background: isSelected ? ADS_BRAND.gold : "rgba(212,178,122,0.38)",
                       cursor: "ew-resize",
                     }}
                     aria-label="Trim clip end"
@@ -12971,7 +12983,7 @@ function VideoTrimControls({
                         height: 20,
                         borderRadius: 999,
                         border: `1px solid ${ADS_BRAND.border2}`,
-                        background: "rgba(0,0,0,0.45)",
+                        background: ADS_BRAND.bg,
                         color: "#ffb3b3",
                         display: "flex",
                         alignItems: "center",
@@ -13038,21 +13050,30 @@ function VideoTrimControls({
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-          <span style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 800 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <span style={{ color: ADS_BRAND.text3, fontSize: 12, fontWeight: 850 }}>
             Playhead {formatVideoTime(currentTime)}
           </span>
-          <button type="button" style={{ ...smallButton, marginLeft: "auto" }} onClick={onReset}>
+          <button type="button" style={{ ...smallButton, marginLeft: "auto", background: "transparent" }} onClick={onReset}>
             Reset
           </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-        <span style={labelStyle}>Original audio</span>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "auto auto minmax(140px, 260px)",
+        alignItems: "center",
+        justifyContent: "end",
+        gap: 10,
+        minHeight: 34,
+        borderTop: `1px solid ${ADS_BRAND.border}`,
+        paddingTop: 8,
+      }}>
+        <span style={{ ...labelStyle, margin: 0 }}>Audio</span>
         <button
           type="button"
-          style={{ ...buttonStyle(muted), height: 30, padding: "0 10px", fontSize: 11 }}
+          style={{ ...buttonStyle(muted), height: 28, padding: "0 10px", fontSize: 11, borderRadius: 999 }}
           onClick={() => {
             onStart();
             onMutedChange(!muted);
@@ -13060,22 +13081,22 @@ function VideoTrimControls({
         >
           {muted ? "Muted" : "On"}
         </button>
+        <input
+          className="studio2-range"
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(volume * 100)}
+          onPointerDown={onStart}
+          onChange={(event) => onVolumeChange(Number(event.currentTarget.value) / 100)}
+          disabled={muted}
+          style={{
+            opacity: muted ? 0.45 : 1,
+            background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${Math.round(volume * 100)}%, ${ADS_BRAND.border2} ${Math.round(volume * 100)}%, ${ADS_BRAND.border2} 100%)`,
+          }}
+          aria-label="Original video volume"
+        />
       </div>
-      <input
-        className="studio2-range"
-        type="range"
-        min={0}
-        max={100}
-        value={Math.round(volume * 100)}
-        onPointerDown={onStart}
-        onChange={(event) => onVolumeChange(Number(event.currentTarget.value) / 100)}
-        disabled={muted}
-        style={{
-          opacity: muted ? 0.45 : 1,
-          background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${Math.round(volume * 100)}%, ${ADS_BRAND.border2} ${Math.round(volume * 100)}%, ${ADS_BRAND.border2} 100%)`,
-        }}
-        aria-label="Original video volume"
-      />
     </div>
   );
 }
