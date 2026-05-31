@@ -927,24 +927,46 @@
   .ddr-play-k{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--gold);font-weight:700}
   .ddr-play-h{font-size:18px;font-weight:660;letter-spacing:-.01em;line-height:1.35}
   .ddr-play-h b{color:var(--gold)}
-  .ddr-pcard{display:grid;grid-template-columns:40px 1fr auto;gap:15px;align-items:center;padding:15px 16px;border-radius:13px;border:1px solid var(--border);background:var(--panel-2)}
-  .ddr-pcard.kill{border-color:var(--red-dim);background:linear-gradient(90deg,rgba(232,154,148,.09),var(--panel-2))}
-  .ddr-pcard.scale{border-color:var(--green-dim);background:linear-gradient(90deg,rgba(125,211,168,.10),var(--panel-2))}
-  .ddr-pnum{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:720;background:var(--panel);border:1px solid var(--border);color:var(--text-3)}
-  .ddr-pcard.kill .ddr-pnum{color:var(--red);border-color:var(--red-dim)}
-  .ddr-pcard.scale .ddr-pnum{color:var(--green);border-color:var(--green-dim)}
-  .ddr-pmid{display:flex;flex-direction:column;gap:4px;min-width:0}
-  .ddr-pmove{font-size:15.5px;font-weight:680;letter-spacing:-.01em;line-height:1.3}
-  .ddr-pmove .verb{text-transform:uppercase;letter-spacing:.02em}
+  .ddr-pcard{position:relative;display:grid;grid-template-columns:34px 1fr auto;gap:16px;align-items:center;
+    padding:15px 18px 15px 17px;border-radius:14px;border:1px solid var(--border);background:var(--panel-2);overflow:hidden;
+    transition:border-color .25s,box-shadow .3s,transform .18s,background .25s}
+  .ddr-pcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-2);transition:background .25s}
+  .ddr-pcard.scale::before{background:linear-gradient(180deg,var(--green),color-mix(in srgb,var(--green) 35%,transparent))}
+  .ddr-pcard.kill::before{background:linear-gradient(180deg,var(--red),color-mix(in srgb,var(--red) 35%,transparent))}
+  .ddr-pcard.scale{background:linear-gradient(100deg,color-mix(in srgb,var(--green) 6%,var(--panel-2)),var(--panel-2) 58%)}
+  .ddr-pcard.kill{background:linear-gradient(100deg,color-mix(in srgb,var(--red) 6%,var(--panel-2)),var(--panel-2) 58%)}
+  .ddr-pcard:hover{transform:translateY(-1px)}
+  .ddr-pcard.scale:hover{border-color:var(--green-dim);box-shadow:0 12px 32px -20px color-mix(in srgb,var(--green) 75%,transparent)}
+  .ddr-pcard.kill:hover{border-color:var(--red-dim);box-shadow:0 12px 32px -20px color-mix(in srgb,var(--red) 75%,transparent)}
+  .ddr-pnum{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;align-self:start;margin-top:1px;
+    font-family:var(--mono);font-size:12.5px;font-weight:600;background:color-mix(in srgb,var(--panel) 65%,transparent);border:1px solid var(--border);color:var(--text-4)}
+  .ddr-pcard.kill .ddr-pnum{color:color-mix(in srgb,var(--red) 78%,var(--text-3));border-color:color-mix(in srgb,var(--red) 24%,var(--border))}
+  .ddr-pcard.scale .ddr-pnum{color:color-mix(in srgb,var(--green) 78%,var(--text-3));border-color:color-mix(in srgb,var(--green) 24%,var(--border))}
+  .ddr-pmid{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .ddr-pmove{font-size:15px;font-weight:680;letter-spacing:-.01em;line-height:1.25}
+  .ddr-pmove .verb{text-transform:uppercase;letter-spacing:.04em;font-size:13px}
   .ddr-pcard.kill .ddr-pmove .verb{color:var(--red)}
   .ddr-pcard.scale .ddr-pmove .verb{color:var(--green)}
   .ddr-pmove .word{text-transform:capitalize}
-  .ddr-pwhy{font-size:12.5px;color:var(--text-3);line-height:1.5}
-  .ddr-pwhy b{color:var(--text-2);font-weight:650}
-  .ddr-pimpact{text-align:right;white-space:nowrap;padding-left:6px}
-  .ddr-pimpact .big{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .ddr-pwhy{font-size:12px;color:var(--text-3);line-height:1.4}
+  .ddr-pwhy b{color:var(--text-2);font-weight:650;font-variant-numeric:tabular-nums}
+  .ddr-pwhy .ar{color:var(--text-4);font-weight:500;margin:0 1px}
+  .ddr-pcard.scale .ddr-pwhy .ar{color:color-mix(in srgb,var(--green) 60%,var(--text-4))}
+  .ddr-pcard.kill .ddr-pwhy .ar{color:color-mix(in srgb,var(--red) 55%,var(--text-4))}
+  .ddr-pconf{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-4);letter-spacing:.01em}
+  .ddr-pconf .dot{width:7px;height:7px;border-radius:99px;flex-shrink:0}
+  .ddr-pconf .sep{opacity:.45;margin:0 1px}
+  .ddr-pconf.hi b{color:var(--green)} .ddr-pconf.hi .dot{background:var(--green);box-shadow:0 0 7px -1px var(--green)}
+  .ddr-pconf.md b{color:var(--gold)} .ddr-pconf.md .dot{background:var(--gold)}
+  .ddr-pconf.lo b{color:var(--text-3)} .ddr-pconf.lo .dot{background:transparent;border:1px dashed var(--text-4)}
+  .ddr-pbar{height:4px;border-radius:99px;background:color-mix(in srgb,var(--text) 6%,transparent);overflow:hidden;margin-top:2px;max-width:340px}
+  .ddr-pbar span{display:block;height:100%;border-radius:99px;transition:width .55s cubic-bezier(.16,1,.3,1)}
+  .ddr-pcard.scale .ddr-pbar span{background:linear-gradient(90deg,color-mix(in srgb,var(--green) 50%,transparent),var(--green))}
+  .ddr-pcard.kill .ddr-pbar span{background:linear-gradient(90deg,color-mix(in srgb,var(--red) 50%,transparent),var(--red))}
+  .ddr-pimpact{text-align:right;white-space:nowrap;padding-left:8px;align-self:center}
+  .ddr-pimpact .big{font-family:var(--mono);font-size:23px;font-weight:550;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
   .ddr-pcard.kill .ddr-pimpact .big{color:var(--red)} .ddr-pcard.scale .ddr-pimpact .big{color:var(--green)}
-  .ddr-pimpact .cap{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-4);margin-top:2px}
+  .ddr-pimpact .cap{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);margin-top:4px}
   .ddr-play-foot{font-size:12px;color:var(--text-3);line-height:1.55;padding-top:4px;border-top:1px dashed var(--border);margin-top:3px;padding-top:13px}
   .ddr-play-foot b{color:var(--text)}
   .ddr-play-clean{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--text-2);padding:6px 2px}
@@ -5713,10 +5735,36 @@ function buildPlaybook(rows){
   return { scales: scaleRoas, kills: [...cutRoas, ...cutBlind] };
 }
 
+// How sure are we about THIS recommendation? Pure evidence, never invented:
+// how many real sales traced to it and how much was spent (the sample size).
+// Surfacing this is the honesty win — Alex sees the strength behind every move,
+// not just the headline number. See project-ccos-attribution-workspace.
+function playbookConfidence(a){
+  const sales = a.clients || 0;
+  const plural = (n)=> n===1 ? "" : "s";
+  if (a.type === "scale") {
+    const note = sales+" sale"+plural(sales)+" traced · "+fmtUsd(a.spend)+" spent";
+    if (sales >= 3 && a.spend >= 500) return { cls:"hi", label:"High confidence", note };
+    if (sales >= 2 || a.spend >= 800) return { cls:"md", label:"Solid signal", note };
+    return { cls:"lo", label:"Thin so far", note:"scale gently — "+sales+" sale"+plural(sales)+" traced" };
+  }
+  if (a.traced) {
+    const note = fmtUsd(a.tracedRev)+" back on "+fmtUsd(a.spend)+" spent";
+    if (a.spend >= 500) return { cls:"hi", label:"High confidence", note };
+    if (a.spend >= 200) return { cls:"md", label:"Solid signal", note };
+    return { cls:"lo", label:"Early read", note };
+  }
+  const leads = a.leads || 0;
+  const note = fmtNum(leads)+" leads, 0 sales traced";
+  if (leads >= 60) return { cls:"hi", label:"High confidence", note };
+  if (leads >= 30) return { cls:"md", label:"Solid signal", note };
+  return { cls:"lo", label:"Early read", note };
+}
+
 // One action card. Collapsed = the move + the one reason + the dollar impact.
 // Tap it open for the full money chain, every supporting number, where the ad
 // lives in Meta, and exactly what to do next.
-function PlaybookCard({a, i, rangeText, onDid}){
+function PlaybookCard({a, i, peak, rangeText, onDid}){
   const [open, setOpen] = useState(false);
   const low = (s)=> String(s||"").toLowerCase();
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
@@ -5725,13 +5773,16 @@ function PlaybookCard({a, i, rangeText, onDid}){
   const word = low(a.keyword);
 
   const why = a.type==="scale"
-    ? <span>Every <b>$1</b> you put in came back as <b>{fmtUsd(a.roas)}</b>. It's one of your best returns — feed it.</span>
+    ? <span><b>{fmtUsd(a.spend)}</b> in <span className="ar">→</span> <b>{fmtUsd(a.tracedRev)}</b> back</span>
     : blind
-      ? <span>It pulled <b>{fmtNum(a.leads)}</b> leads but booked only <b>{fmtNum(a.booked)}</b> calls, and not one sale traces back to it.</span>
-      : <span>You've spent <b>{fmtUsd(a.spend)}</b> and gotten back just <b>{fmtUsd(a.tracedRev)}</b> — that's <b>{a.roas.toFixed(2)}×</b>, under your money back.</span>;
+      ? <span><b>{fmtNum(a.leads)}</b> leads · <b>{fmtNum(a.booked)}</b> booked · <b>0</b> sales traced</span>
+      : <span><b>{fmtUsd(a.spend)}</b> in <span className="ar">→</span> only <b>{fmtUsd(a.tracedRev)}</b> back</span>;
 
-  const impactBig = a.type==="scale" ? a.roas.toFixed(1)+"×" : "Save "+fmtUsd(a.spend);
-  const impactCap = a.type==="scale" ? "every $1 back" : "spent "+rangeText;
+  const conf = playbookConfidence(a);
+  const barPct = Math.max(7, Math.min(100, peak>0 ? (a.type==="scale" ? a.roas : a.spend)/peak*100 : 0));
+
+  const impactBig = a.type==="scale" ? a.roas.toFixed(1)+"×" : fmtUsd(a.spend);
+  const impactCap = a.type==="scale" ? "return on spend" : "to reclaim";
 
   const doText = a.type==="scale"
     ? <span><span className="h">What to do</span>Raise this ad's daily budget <b>20–30%</b> and keep it running. Watch that its ROAS holds near <b>{a.roas.toFixed(1)}×</b> as spend grows — if it does, raise it again.</span>
@@ -5748,6 +5799,13 @@ function PlaybookCard({a, i, rangeText, onDid}){
           <span className="word">{word}</span>
         </div>
         <div className="ddr-pwhy">{why}</div>
+        <div className={"ddr-pconf "+conf.cls}>
+          <span className="dot"></span>
+          <b>{conf.label}</b>
+          <span className="sep">·</span>
+          {conf.note}
+        </div>
+        <div className="ddr-pbar"><span style={{width:barPct+"%"}}></span></div>
       </div>
       <div className="ddr-pimpact">
         <div className="big">{impactBig}</div>
@@ -5830,6 +5888,11 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
   const killCount = aKills.length;
   const nothing = aScales.length===0 && aKills.length===0;
 
+  // Peaks anchor each card's strength bar — scales scale by ROAS, kills by the
+  // dollars they're burning, so the bar reads as "biggest move" at a glance.
+  const scalePeak = aScales.reduce((m,s)=>Math.max(m,s.roas||0),0);
+  const killPeak = aKills.reduce((m,k)=>Math.max(m,k.spend||0),0);
+
   return (
     <div className="ddr-play">
       <div className="ddr-play-top">
@@ -5862,13 +5925,13 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
       {aScales.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh scale"><span className="ar">▲</span>Scale these — proven winners with room to grow</div>
-          {aScales.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+          {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
       {aKills.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh kill"><span className="ar">▼</span>Kill these — burning cash, reclaim the budget</div>
-          {aKills.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+          {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
     </div>
