@@ -5079,6 +5079,109 @@ function BookingTable({rows}){
   );
 }
 
+// Friendly creator name from a client key, with a title-case fallback so new
+// creators read correctly without a code change.
+function creatorName(key){
+  const known = {tyson:"Tyson", keith:"Keith", lucy:"Lucy", lucy_hubbard:"Lucy", antwan:"Antwan", antwan_rarcus:"Antwan"};
+  if(known[key]) return known[key];
+  return String(key||"").split(/[_\s]+/).map(s=> s ? s.charAt(0).toUpperCase()+s.slice(1) : s).join(" ") || "Unknown";
+}
+
+// Data-health tripwire. The ad feed is synced from Meta once a day; if a
+// creator's connection silently breaks (e.g. a password change kills the token)
+// their spend just stops arriving and every ROAS below quietly understates
+// reality. This reads the freshness signals the server already sends and shouts
+// the moment a creator who WAS spending stops reporting — while staying calm and
+// green when everything is current, and never crying wolf over a brand-new
+// account that simply isn't live yet.
+function DataHealth({dashboard}){
+  if(!dashboard || dashboard.mock) return null;
+  const meta = dashboard.sourceStatus && dashboard.sourceStatus.meta;
+  if(!meta) return null;
+
+  // How much spend each creator actually produced this range → tells a real
+  // outage (had spend, now blank) apart from a not-live account (never any).
+  const adRoas = Array.isArray(dashboard.adRoas) ? dashboard.adRoas : [];
+  const spendByCreator = {};
+  adRoas.forEach(r => { const k = r.clientKey || "unknown"; spendByCreator[k] = (spendByCreator[k]||0) + Number(r.adSpend||0); });
+
+  // Group the days with no ad data by creator.
+  const missing = Array.isArray(meta.missingDateAccounts) ? meta.missingDateAccounts : [];
+  const datesByCreator = {};
+  missing.forEach(m => { const k = m.clientKey || "unknown"; (datesByCreator[k] = datesByCreator[k] || []).push(m.date); });
+
+  const broken = [];   // was spending, now has a run of missing days → real break
+  const notLive = [];  // no spend at all this range → just not running yet
+  Object.keys(datesByCreator).forEach(k => {
+    const dates = datesByCreator[k].slice().sort();
+    const entry = { key:k, name:creatorName(k), days:dates.length, from:dates[0], to:dates[dates.length-1] };
+    // 2+ missing days for an active spender = concerning (1 day is normal sync lag).
+    if((spendByCreator[k]||0) > 0 && dates.length >= 2) broken.push(entry);
+    else if((spendByCreator[k]||0) <= 0) notLive.push(entry);
+  });
+  broken.sort((a,b)=> b.days - a.days);
+
+  // Secondary signal: nothing synced in a long while.
+  const last = meta.latestSyncedAt ? new Date(meta.latestSyncedAt) : null;
+  const hrsSince = last && !Number.isNaN(last.getTime()) ? (Date.now() - last.getTime())/36e5 : null;
+  const stale = hrsSince != null && hrsSince > 48;
+  const freshText = hrsSince == null ? null
+    : hrsSince < 1.5 ? "just now"
+    : hrsSince < 36 ? Math.round(hrsSince) + "h ago"
+    : Math.round(hrsSince/24) + " days ago";
+
+  const alarm = broken.length > 0 || stale;
+
+  // Everything current → quiet green confidence line.
+  if(!alarm){
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:9,padding:"8px 13px",marginBottom:14,
+        borderRadius:10,background:"color-mix(in srgb, var(--green) 9%, transparent)",
+        border:"1px solid color-mix(in srgb, var(--green) 26%, transparent)"}}>
+        <span style={{width:8,height:8,borderRadius:"50%",background:"var(--green)",flexShrink:0}}></span>
+        <span style={{fontSize:12.5,color:"var(--text-2)"}}>
+          Ad data is current{freshText?<span> — last updated <b style={{color:"var(--text)"}}>{freshText}</b></span>:null}. Every active account is reporting, so the numbers below are complete.
+        </span>
+        {notLive.length>0 && (
+          <span style={{fontSize:11.5,color:"var(--text-4)",marginLeft:"auto"}}>
+            {notLive.map(n=>n.name).join(", ")} not reporting yet (new account)
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // Something's wrong → loud, plain-English, with the fix.
+  return (
+    <div style={{padding:"13px 15px",marginBottom:16,borderRadius:12,
+      background:"color-mix(in srgb, var(--red) 10%, transparent)",
+      border:"1px solid color-mix(in srgb, var(--red) 38%, transparent)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+        <span style={{width:9,height:9,borderRadius:"50%",background:"var(--red)",flexShrink:0}}></span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"var(--text)"}}>Some ad data has stopped coming in — read this before trusting the numbers</span>
+      </div>
+      {broken.map(b => (
+        <div key={b.key} style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.55,marginBottom:5}}>
+          <b style={{color:"var(--text)"}}>{b.name}</b>'s ad spend stopped updating — <b style={{color:"var(--text)"}}>{b.days} day{b.days>1?"s":""} missing</b> ({dateLabelFromIso(b.from)}{b.from!==b.to?" – "+dateLabelFromIso(b.to):""}). Until this is fixed, every total below is missing {b.name}'s ads, so the real ROAS is higher than it looks.
+        </div>
+      ))}
+      {stale && broken.length===0 && (
+        <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.55,marginBottom:5}}>
+          The last ad-data update was <b style={{color:"var(--text)"}}>{freshText}</b>. The numbers below may be out of date until the next successful update.
+        </div>
+      )}
+      <div style={{fontSize:11.5,color:"var(--text-4)",marginTop:7,lineHeight:1.5}}>
+        Usually this means that creator's Meta connection needs refreshing (a new access key in the dashboard's settings). Send the affected creator over and it can be sorted.
+      </div>
+      {notLive.length>0 && (
+        <div style={{fontSize:11,color:"var(--text-4)",marginTop:6}}>
+          ({notLive.map(n=>n.name).join(", ")} {notLive.length>1?"are":"is"} not reporting yet — expected for a brand-new account, not a problem.)
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -5135,6 +5238,9 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         <h2 className="ddr-title">Deep Dive</h2>
         <div className="ddr-sub">Everything below is tied to <b>ROAS</b> — your real return on ad spend for <b>{rangeLabel(range)}</b>. Change the dates above and it all redraws.</div>
       </div>
+
+      {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
+      <DataHealth dashboard={dashboard}/>
 
       {/* Do This Next — the simple, ROAS-first action board */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)}/>
