@@ -32,7 +32,7 @@ const navItems = [
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
-  { href: "/partner-onboarding", label: "Partner Onboarding", icon: Handshake },
+  { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },

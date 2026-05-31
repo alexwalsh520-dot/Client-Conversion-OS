@@ -58,7 +58,7 @@ export default function PartnerOnboardingAdmin() {
               Enter PIN
             </h2>
             <p style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "0 0 18px" }}>
-              This area holds partner logins. Enter the team PIN to continue.
+              This area holds client logins. Enter the team PIN to continue.
             </p>
             <input
               autoFocus
@@ -145,10 +145,10 @@ function AdminContent() {
       <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Handshake size={26} style={{ color: "var(--accent)" }} /> Partner Onboarding
+            <Handshake size={26} style={{ color: "var(--accent)" }} /> Client Onboarding
           </h1>
           <p className="page-subtitle">
-            Welcome new creator partners, collect their logins securely, and run the setup checklist.
+            Welcome new clients, collect their logins securely, and run the setup checklist.
           </p>
         </div>
       </div>
@@ -156,7 +156,7 @@ function AdminContent() {
       {/* Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
         <TabBtn active={tab === "partners"} onClick={() => setTab("partners")} icon={<ListChecks size={15} />}>
-          Partners
+          Clients
         </TabBtn>
         <TabBtn active={tab === "steps"} onClick={() => setTab("steps")} icon={<Settings2 size={15} />}>
           Checklist & SOPs
@@ -238,12 +238,12 @@ function PartnersTab({
   return (
     <div>
       <button onClick={() => setAdding((a) => !a)} className="glow-accent" style={{ ...primaryBtn, width: "auto", marginBottom: 18, display: "inline-flex", alignItems: "center", gap: 7 }}>
-        <Plus size={16} /> New partner
+        <Plus size={16} /> New client
       </button>
 
       {adding && (
         <div className="glass-static" style={{ padding: 18, marginBottom: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-          <input placeholder="Partner name (required)" value={name} onChange={(e) => setName(e.target.value)} style={fieldStyle} />
+          <input placeholder="Client name (required)" value={name} onChange={(e) => setName(e.target.value)} style={fieldStyle} />
           <input placeholder="Instagram handle (optional)" value={handle} onChange={(e) => setHandle(e.target.value)} style={fieldStyle} />
           <input placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
           <button onClick={create} disabled={busy || !name.trim()} className="glow-accent" style={{ ...primaryBtn, width: "auto", opacity: busy ? 0.7 : 1 }}>
@@ -254,7 +254,7 @@ function PartnersTab({
 
       {partners.length === 0 ? (
         <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-          No partners yet. Add one to generate their personal welcome link.
+          No clients yet. Add one to generate their personal welcome link.
         </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -347,7 +347,7 @@ function PartnerDetailModal({
   }
 
   async function remove() {
-    if (!confirm("Remove this partner and all their submitted info? This can't be undone.")) return;
+    if (!confirm("Remove this client and all their submitted info? This can't be undone.")) return;
     await fetch(`/api/onboarding/admin/${partnerId}`, { method: "DELETE" });
     await onChanged();
     onClose();
@@ -488,8 +488,8 @@ function StepsTab({ steps, onChanged }: { steps: OnboardingStep[]; onChanged: ()
 
   return (
     <div style={{ display: "grid", gap: 22 }}>
-      <StepGroup title="Partner-facing steps" subtitle="What new partners see and fill in on their welcome link." audience="client" list={client} onChanged={onChanged} />
-      <StepGroup title="Our internal checklist" subtitle="The setup tasks your team / VAs work through for each partner." audience="internal" list={internal} onChanged={onChanged} />
+      <StepGroup title="Client-facing steps" subtitle="What new clients see and fill in on their welcome link." audience="client" list={client} onChanged={onChanged} />
+      <StepGroup title="Our internal checklist" subtitle="The setup tasks your team / VAs work through for each client." audience="internal" list={internal} onChanged={onChanged} />
     </div>
   );
 }
