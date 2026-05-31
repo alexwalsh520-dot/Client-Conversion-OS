@@ -850,6 +850,17 @@
   .ddr-profit .pchip{padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-weight:600;letter-spacing:.03em}
   .ddr-profit .pchip.floor{color:var(--red)} .ddr-profit .pchip.target{color:var(--green)}
 
+  /* Where every dollar came from — three honest buckets (ad / organic / unknown) */
+  .cov-split{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%}
+  .cov-cell{border:1px solid var(--border);border-radius:10px;padding:13px 14px;border-left-width:3px}
+  .cov-cell.ad{border-left-color:var(--green)}
+  .cov-cell.org{border-left-color:var(--gold)}
+  .cov-cell.unk{border-left-color:var(--text-4)}
+  .cov-amt{font-size:21px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--text)}
+  .cov-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-2);margin-top:5px}
+  .cov-pc{font-size:10.5px;color:var(--text-4);margin-top:2px}
+  @media(max-width:700px){.cov-split{grid-template-columns:1fr}}
+
   /* Playbook dropdowns — maximum context, one tap away */
   .ddr-pcard{cursor:pointer}
   .ddr-pcard.open{box-shadow:inset 0 0 0 1px var(--border-2)}
@@ -5465,6 +5476,25 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   const totalRev = sum ? Number(sum.totalCollectedRevenue||0) : tracedRev;
   const coverage = totalRev>0 ? (tracedRev/totalRev)*100 : null;
 
+  // Honest split of every collected dollar into THREE buckets, not two. Organic
+  // money is ATTRIBUTED — to organic — so it must not sit in an "unknown" pile.
+  // Only cash we genuinely can't classify (no ManyChat link pasted) is unknown.
+  //   adRev      → came from a specific paid ad (ROAS is built on this)
+  //   organicRev → confirmed NOT from an ad; real money, correctly left out of ROAS
+  //   unknownRev → no link pasted, so we can't yet tell ad vs organic — the gap to chase
+  // Use the SAME traced figure the ROAS hero rests on, so the screen never shows
+  // two different "from an ad" dollar amounts. Organic comes from the payload;
+  // unknown is the exact leftover so all three always sum back to total cash.
+  const adRev = tracedRev;
+  const organicRev = sum && sum.organicRevenue != null ? Number(sum.organicRevenue) : 0;
+  const ignoredRev = sum && sum.ignoredRevenue != null ? Number(sum.ignoredRevenue) : 0;
+  const unknownRev = Math.max(0, totalRev - adRev - organicRev - ignoredRev);
+  // Share of cash we can actually EXPLAIN (ad + organic) — the honest "do we know
+  // where the money came from" number, distinct from the ad-only ROAS coverage.
+  const explainedRev = adRev + organicRev;
+  const explainedPct = totalRev>0 ? (explainedRev/totalRev)*100 : null;
+  const pctOf = (v)=> totalRev>0 ? Math.round((v/totalRev)*100) : 0;
+
   // Cheap-leads, not cheap-customers: high lead volume + bottom booking rate.
   const avgRate = blendedRate;
   const wasters = rows
@@ -5564,14 +5594,27 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
 
       {coverage!=null && (
         <div className="ddr-block">
-          <div className="ddr-blabel"><span className="l">Can we trust the ROAS?</span><span className="m">how much of the cash is tied to an ad</span></div>
-          <div className="ddr-spend" style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:14}}>
-            <div style={{fontSize:13,color:"var(--text-2)",lineHeight:1.55,maxWidth:540}}>
-              We've tied <b style={{color:"var(--text)"}}>{fmtUsd(tracedRev)}</b> of <b style={{color:"var(--text)"}}>{fmtUsd(totalRev)}</b> collected back to a specific ad. The ROAS above is rock-solid on that money. The rest is real cash that just isn't tagged to an ad yet — so spend, leads and bookings are exact, but those ads show "not traced" instead of a fake ROAS. The more sales get tagged with their ManyChat link, the higher this climbs.
+          <div className="ddr-blabel"><span className="l">Where every dollar came from</span><span className="m">of {fmtUsd(totalRev)} collected</span></div>
+          <div className="ddr-spend" style={{gap:14}}>
+            <div className="cov-split">
+              <div className="cov-cell ad">
+                <div className="cov-amt">{fmtUsd(adRev)}</div>
+                <div className="cov-lbl">From an ad</div>
+                <div className="cov-pc">{pctOf(adRev)}% · ROAS built on this</div>
+              </div>
+              <div className="cov-cell org">
+                <div className="cov-amt">{fmtUsd(organicRev)}</div>
+                <div className="cov-lbl">Organic</div>
+                <div className="cov-pc">{pctOf(organicRev)}% · not from an ad, on purpose</div>
+              </div>
+              <div className="cov-cell unk">
+                <div className="cov-amt">{fmtUsd(unknownRev)}</div>
+                <div className="cov-lbl">No link pasted</div>
+                <div className="cov-pc">{pctOf(unknownRev)}% · can't tell yet</div>
+              </div>
             </div>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:30,fontWeight:700,color:coverage>=70?"var(--green)":coverage>=40?"var(--gold)":"var(--red)"}}>{fmtPct(coverage,0)}</div>
-              <div style={{fontSize:10.5,color:"var(--text-4)",letterSpacing:".05em",textTransform:"uppercase"}}>revenue traced</div>
+            <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.6}}>
+              <b style={{color:"var(--text)"}}>{fmtUsd(adRev)}</b> is tied to a specific ad — the ROAS above is rock-solid on that money. <b style={{color:"var(--text)"}}>{fmtUsd(organicRev)}</b> is confirmed <b style={{color:"var(--text)"}}>organic</b> — real cash that didn't come from an ad, so it's correctly left out of your ROAS (counting it would make the ads look better than they are). The only true blind spot is <b style={{color:"var(--text)"}}>{fmtUsd(unknownRev)}</b> with <b style={{color:"var(--text)"}}>no ManyChat link pasted</b> — we can't yet say ad or organic. That's the {explainedPct!=null ? (100-Math.round(explainedPct)) : 0}% to chase: get a link on those sales and it moves into ad or organic.
             </div>
           </div>
         </div>
