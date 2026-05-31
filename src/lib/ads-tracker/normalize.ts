@@ -34,6 +34,26 @@ export function normalizePersonName(value: unknown): string | null {
   return normalized || null;
 }
 
+/**
+ * Pull a non-empty `utm_content` value out of a booking-link URL's query string.
+ * GHL stores the keyword on the calendar booking link as `?utm_content=KEYWORD`
+ * (inside contact.attributionSource.url / lastAttributionSource.url). The mirror
+ * JSON field is usually populated too, but when it isn't, the URL is the source
+ * of truth — so we parse it directly. Returns null for empty `utm_content=`.
+ */
+export function keywordFromUrlUtmContent(value: unknown): string | null {
+  if (typeof value !== "string" || !value.includes("utm_content")) return null;
+  const match = value.match(/[?&]utm_content=([^&#\s]+)/i);
+  if (!match) return null;
+  let raw = match[1];
+  try {
+    raw = decodeURIComponent(raw.replace(/\+/g, " "));
+  } catch {
+    // Leave raw as-is if it isn't valid percent-encoding.
+  }
+  return normalizeKeyword(raw);
+}
+
 export function extractKeywordFromPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
 
@@ -64,6 +84,12 @@ export function extractKeywordFromPayload(payload: unknown): string | null {
         const normalized = normalizeKeyword(value);
         if (normalized) return normalized;
       }
+
+      // Booking-link URLs carry the keyword as a `?utm_content=` query param.
+      // Parse it directly so we still capture the keyword when the mirror JSON
+      // field is empty.
+      const fromUrl = keywordFromUrlUtmContent(value);
+      if (fromUrl) return fromUrl;
 
       if (
         value &&
