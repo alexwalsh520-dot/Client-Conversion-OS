@@ -610,6 +610,7 @@
   .ad-preview-copy.loading,.ad-preview-copy.empty{background:var(--bg-2);border-color:var(--border-2);color:var(--text-4);font-size:11.5px;font-style:italic}
   .ad-preview-copy-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:3px}
   .ad-preview-copy-text{font-size:13px;line-height:1.35;color:var(--text-1);font-weight:500}
+  .ad-preview-hint{margin-top:7px;font-size:10.5px;letter-spacing:.03em;color:var(--text-4);text-align:center}
   /* Messaging insights card */
   .msg-loading{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border-2);color:var(--text-3);font-size:13px;line-height:1.5}
   .msg-spin{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb, var(--gold) 35%, transparent);border-top-color:var(--gold);animation:msg-spin 0.8s linear infinite;flex-shrink:0}
@@ -970,6 +971,13 @@
   .ddr-pbadge{position:absolute;left:3px;top:3px;min-width:17px;height:17px;padding:0 4px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font-family:var(--mono);font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
   .ddr-pcard.scale .ddr-pthumb{border-color:color-mix(in srgb,var(--green) 30%,var(--border))}
   .ddr-pcard.kill .ddr-pthumb{border-color:color-mix(in srgb,var(--red) 30%,var(--border))}
+  /* Hover-to-enlarge wrappers around the creative tiles */
+  .ddr-pthumb-wrap{display:inline-flex;align-self:start;line-height:0}
+  .ddr-padimg-wrap{display:inline-flex;flex-shrink:0;line-height:0}
+  .ddr-pthumb-wrap.live,.ddr-padimg-wrap.live{cursor:zoom-in}
+  .ddr-pthumb-wrap.live .ddr-pthumb,.ddr-padimg-wrap.live .ddr-padimg{transition:transform .12s ease,box-shadow .12s ease}
+  .ddr-pthumb-wrap.live:hover .ddr-pthumb{transform:scale(1.06);box-shadow:0 6px 18px -7px rgba(0,0,0,.8)}
+  .ddr-padimg-wrap.live:hover .ddr-padimg{transform:scale(1.05);border-color:color-mix(in srgb,var(--gold) 40%,var(--border-2))}
   /* Expanded: every real ad behind the word, with creative + the read copy */
   .ddr-pads{margin-top:12px}
   .ddr-pads .lab{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-4);margin-bottom:8px}
@@ -990,6 +998,10 @@
   .ddr-play-foot b{color:var(--text)}
   .ddr-play-clean{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--text-2);padding:6px 2px}
   .ddr-play-clean .ic{width:30px;height:30px;border-radius:99px;background:rgba(125,211,168,.13);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+  .ddr-play-note{display:flex;align-items:flex-start;gap:11px;font-size:12.5px;line-height:1.6;color:var(--text-3);padding:11px 13px;margin-top:10px;background:color-mix(in srgb,var(--panel-2) 60%,transparent);border:1px dashed var(--border-2);border-radius:12px}
+  .ddr-play-note .ic{width:26px;height:26px;border-radius:99px;background:color-mix(in srgb,var(--gold) 14%,transparent);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
+  .ddr-play-note b{color:var(--text-2)}
+  .ddr-play-note i{font-style:italic;color:var(--text-2)}
   @media(max-width:700px){.ddr-pcard{grid-template-columns:46px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
   /* Interactive booking table: sticky header, sortable, filterable, expandable */
@@ -5691,6 +5703,8 @@ function adsByKeyword(adRoas){
   (adRoas||[]).forEach(r => {
     const kw = String(r.label || r.adName || "UNKNOWN").toUpperCase();
     const thumb = r.previewThumbnailUrl || r.previewImageUrl || null;
+    // full = the higher-resolution image for hover-to-enlarge + open/save.
+    const full = r.previewImageUrl || r.previewThumbnailUrl || null;
     const copy = typeof r.onImageText === "string" ? r.onImageText.trim() : "";
     if(!thumb && !copy && !(r.adName)) return;
     if(!m.has(kw)) m.set(kw, []);
@@ -5699,6 +5713,7 @@ function adsByKeyword(adRoas){
       adName: r.adName || r.label || "",
       account: r.clientKey || "",
       thumb,
+      full,
       copy,
       spend: Number(r.adSpend||0),
     });
@@ -5831,6 +5846,9 @@ function playbookConfidence(a){
 // lives in Meta, and exactly what to do next.
 function PlaybookCard({a, i, peak, rangeText, onDid}){
   const [open, setOpen] = useState(false);
+  // Hover a creative → a big, high-res peek of the real ad follows the cursor.
+  // Click it → open the full image in a new tab so Alex can actually see / save it.
+  const [hov, setHov] = useState(null);
   const low = (s)=> String(s||"").toLowerCase();
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
   const isKill = a.type==="kill";
@@ -5853,6 +5871,13 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
   const previews = Array.isArray(a.previews) ? a.previews : [];
   const hero = previews.find(p=>p.thumb) || null;
 
+  // Hover-to-enlarge + click-to-open helpers for any preview tile.
+  const bigUrl = (p)=> (p && (p.full || p.thumb)) || null;
+  const showHov = (e, p)=>{ const url=bigUrl(p); if(!url) return; setHov({url, copy:p.copy||"", name:p.adName||word, pos:adPreviewPosition(e)}); };
+  const moveHov = (e, p)=>{ const url=bigUrl(p); if(!url) return; setHov(h=> h ? {...h, pos:adPreviewPosition(e)} : {url, copy:p.copy||"", name:p.adName||word, pos:adPreviewPosition(e)}); };
+  const hideHov = ()=> setHov(null);
+  const openImg = (e, p)=>{ e.stopPropagation(); const url=bigUrl(p); if(url) window.open(url, "_blank", "noopener,noreferrer"); };
+
   const doText = a.type==="scale"
     ? <span><span className="h">What to do</span>Raise this ad's daily budget <b>20–30%</b> and keep it running. Watch that its ROAS holds near <b>{a.roas.toFixed(1)}×</b> as spend grows — if it does, raise it again.</span>
     : blind
@@ -5861,7 +5886,16 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
 
   return (
     <div className={"ddr-pcard "+a.type+(open?" open":"")} onClick={()=>setOpen(o=>!o)}>
-      <CreativeImg kind="thumb" src={hero && hero.thumb} alt={hero ? ("Real ad creative for "+word) : ""} badge={i+1}/>
+      <span
+        className={"ddr-pthumb-wrap"+(hero && hero.thumb ? " live" : "")}
+        onMouseEnter={hero && hero.thumb ? (e)=>showHov(e, hero) : undefined}
+        onMouseMove={hero && hero.thumb ? (e)=>moveHov(e, hero) : undefined}
+        onMouseLeave={hideHov}
+        onClick={hero && hero.thumb ? (e)=>openImg(e, hero) : undefined}
+        title={hero && hero.thumb ? "Click to open the full ad image" : undefined}
+      >
+        <CreativeImg kind="thumb" src={hero && hero.thumb} alt={hero ? ("Real ad creative for "+word) : ""} badge={i+1}/>
+      </span>
       <div className="ddr-pmid">
         <div className="ddr-pmove">
           <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
@@ -5892,7 +5926,16 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
               <div className="ddr-padlist">
                 {previews.slice(0,4).map((p,idx)=>(
                   <div className="ddr-paditem" key={p.adId||idx}>
-                    <CreativeImg kind="full" src={p.thumb} alt={"Real ad creative: "+(p.adName||word)}/>
+                    <span
+                      className={"ddr-padimg-wrap"+(p.thumb?" live":"")}
+                      onMouseEnter={p.thumb ? (e)=>showHov(e, p) : undefined}
+                      onMouseMove={p.thumb ? (e)=>moveHov(e, p) : undefined}
+                      onMouseLeave={hideHov}
+                      onClick={p.thumb ? (e)=>openImg(e, p) : undefined}
+                      title={p.thumb ? "Click to open the full ad image" : undefined}
+                    >
+                      <CreativeImg kind="full" src={p.thumb} alt={"Real ad creative: "+(p.adName||word)}/>
+                    </span>
                     <div className="ddr-padmeta">
                       <b>{cap(p.adName||word)}</b>
                       <span className="acct">{[p.account?cap(p.account):null, p.spend>0?fmtUsd(p.spend)+" spent":null].filter(Boolean).join(" · ")||"—"}</span>
@@ -5954,6 +5997,16 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
           )}
         </div>
       )}
+
+      {hov && (
+        <div className="ad-preview-popover" style={{left:hov.pos.left, top:hov.pos.top}}>
+          <img className="ad-preview-image" src={hov.url} alt={hov.name||""}/>
+          {hov.copy
+            ? <div className="ad-preview-copy"><div className="ad-preview-copy-label">What this ad says</div><div className="ad-preview-copy-text">{hov.copy}</div></div>
+            : <div className="ad-preview-copy empty">No words read off this image yet</div>}
+          <div className="ad-preview-hint">Click the image to open / save the full ad ↗</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5977,6 +6030,14 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
   const reallocReturn = blendedWinRoas!=null ? freedUp*blendedWinRoas : null;
   const killCount = aKills.length;
   const nothing = aScales.length===0 && aKills.length===0;
+
+  // Why a 7-day window can show zero "turn off" cards while 30 days makes them
+  // obvious: a kill call needs enough evidence in the SELECTED window — about
+  // $100+ of traced spend for a ROAS verdict, or 25+ leads for a no-sale verdict.
+  // Short windows simply haven't accumulated that yet. We count the ads still
+  // under that bar so we can explain the gap in plain English instead of leaving
+  // Alex wondering why the signal "suddenly" appears on a longer range.
+  const thin = rows.filter(r => Number(r.spend||0) > 0 && !r.roasReliable && Number(r.leads||0) < 25).length;
 
   // Peaks anchor each card's strength bar — scales scale by ROAS, kills by the
   // dollars they're burning, so the bar reads as "biggest move" at a glance.
@@ -6022,6 +6083,13 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
         <div className="ddr-pgroup">
           <div className="ddr-pgh kill"><span className="ar">▼</span>Kill these — burning cash, reclaim the budget</div>
           {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+        </div>
+      )}
+
+      {!nothing && aKills.length===0 && thin>0 && (
+        <div className="ddr-play-note">
+          <span className="ic">🕗</span>
+          <span>Nothing's clearly losing money in this window <i>yet</i>. <b>{thin}</b> ad{thin===1?"":"s"} {rangeText} {thin===1?"hasn't":"haven't"} spent enough (or pulled enough leads) to call a loser with confidence. A <b>turn-off</b> needs roughly <b>$100+</b> of traced spend or <b>25+</b> leads behind it — so a short window shows fewer, and a <b>wider date range (try 30 days)</b> surfaces the obvious ones. That gap is expected, not a glitch.</span>
         </div>
       )}
     </div>
