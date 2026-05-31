@@ -173,7 +173,11 @@ export default function HomePage() {
     fetchRevenue();
   }, [fetchRevenue]);
 
-  const totalRevenue = totalCashCollected + totalSubscriptions + totalRetention;
+  // Total Revenue is real dollars only: cash collected + retention. The
+  // subscriptions figure is a COUNT (and is read from a single sheet cell that
+  // can hold a non-count value), so it must never be summed into a dollar total
+  // — doing that previously inflated revenue to absurd figures (e.g. $8.4M).
+  const totalRevenue = totalCashCollected + totalRetention;
   const growthPercent = totalLastMonth > 0
     ? (((totalCashCollected - totalLastMonth) / totalLastMonth) * 100).toFixed(1)
     : "0.0";
@@ -345,7 +349,13 @@ export default function HomePage() {
                   <CreditCard size={14} style={{ color: "var(--accent)" }} />
                   New Subscriptions
                 </div>
-                <div className="metric-card-value">{totalSubscriptions}</div>
+                {/* Read from a single sheet cell (month tab Q3). If that cell
+                    holds an implausible value (the layout shifted / it's not a
+                    real count), show a dash instead of a garbage number rather
+                    than display something inaccurate. */}
+                <div className="metric-card-value">
+                  {totalSubscriptions > 0 && totalSubscriptions <= 10000 ? totalSubscriptions : "—"}
+                </div>
               </div>
               <div className="glass-static metric-card">
                 <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
