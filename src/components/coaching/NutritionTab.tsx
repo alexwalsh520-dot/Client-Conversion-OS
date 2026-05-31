@@ -24,6 +24,7 @@ import {
 import type { Client, NutritionIntakeForm } from "@/lib/types";
 import { NutritionV2TaskPanel } from "./nutrition-v2/NutritionV2TaskPanel";
 import GenerateWithAiButton from "./nutrition-v2/GenerateWithAiButton";
+import BatchGenerateWithAiButton from "./nutrition-v2/BatchGenerateWithAiButton";
 
 // B6b — feature flag for the new best-of-3 + coach-review-handoff UI.
 // Default: ON. To disable (kill-switch back to v1 MealPlanTaskPanel for
@@ -899,17 +900,28 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
 
       {/* ---- Pending Section ---- */}
       <div className="section" style={{ marginBottom: 20 }}>
-        <button
-          onClick={() => setExpandedPending(!expandedPending)}
-          style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 16, fontWeight: 600, padding: 0, marginBottom: 12 }}
-        >
-          {expandedPending ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-          <Clock size={16} />
-          Pending Meal Plans
-          <span style={{ background: "rgba(59,130,246,0.2)", color: "#3b82f6", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
-            {freshPendingClients.length}
-          </span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setExpandedPending(!expandedPending)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 16, fontWeight: 600, padding: 0 }}
+          >
+            {expandedPending ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+            <Clock size={16} />
+            Pending Meal Plans
+            <span style={{ background: "rgba(59,130,246,0.2)", color: "#3b82f6", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
+              {freshPendingClients.length}
+            </span>
+          </button>
+          <BatchGenerateWithAiButton
+            pendingClients={visiblePendingClients
+              .filter((c) => c.id != null)
+              .map((c) => ({
+                id: c.id!,
+                name: c.name,
+                daysSinceOnboarding: daysSince(c.onboardingDate || c.startDate),
+              }))}
+          />
+        </div>
 
         {expandedPending && (
           <div className="glass-static" style={{ overflow: "auto" }}>
