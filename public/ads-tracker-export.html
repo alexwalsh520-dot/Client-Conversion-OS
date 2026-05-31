@@ -316,7 +316,7 @@
   table.ads tbody tr.total-row td:first-child{background:var(--bg-1);color:var(--text-2);text-transform:uppercase;font-size:10px;letter-spacing:0.08em}
 
   .campaign-cell{display:flex;align-items:center;gap:10px}
-  .camp-dot{width:6px;height:6px;border-radius:99px;flex-shrink:0}
+  .camp-dot{width:6px;height:6px;border-radius:99px;flex-shrink:0;background:var(--text-3, #71717a)}
   .camp-dot.tyson{background:var(--gold)}
   .camp-dot.keith{background:var(--blue)}
   .chevron{color:var(--text-4);font-size:9px;width:10px;display:inline-block}
@@ -1190,9 +1190,12 @@ function campaignsFromDashboard(dashboard, range){
 
   for(const apiRow of sourceRows){
     const client = apiRow.clientKey || "unknown";
-    if(client!=="tyson" && client!=="keith") continue;
+    // Show EVERY creator's data, not just the two we started with. Only skip
+    // rows with no real creator attached. (Previously this hard-coded
+    // tyson/keith and silently dropped Lucy, Antwan and any future creator.)
+    if(client==="unknown") continue;
     const keyword = (apiRow.keyword || "UNKNOWN").toUpperCase();
-    const clientLabel = client==="tyson" ? "Tyson" : "Keith";
+    const clientLabel = creatorName(client);
     const attributionOnly = Boolean(apiRow.attributionOnly) || (!apiRow.campaignId && !apiRow.adId && !Number(apiRow.adSpend || 0));
     const campaignId = apiRow.campaignId || `${client}:keyword-attribution`;
     const campaignKey = `${client}:${campaignId}`;
@@ -4035,9 +4038,10 @@ function AttributionSummaryTiles({dashboard, alerts, scope="range"}){
 }
 
 function clientLabel(key){
-  if(key==="tyson") return "Tyson";
-  if(key==="keith") return "Keith";
-  return "Unknown";
+  // Delegates to the shared creator-name helper so every creator (not just the
+  // original two) reads correctly. Falls back to a title-cased key, then
+  // "Unknown" only when there's genuinely no creator.
+  return creatorName(key);
 }
 
 function alertSaleKey(alert){
