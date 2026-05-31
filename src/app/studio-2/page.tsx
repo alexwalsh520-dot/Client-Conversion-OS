@@ -47,6 +47,7 @@ import {
   RotateCw,
   Search,
   SendToBack,
+  Scissors,
   SwatchBook,
   Square,
   Sparkles,
@@ -223,11 +224,19 @@ interface VideoTrim {
   end: number | null;
 }
 
+interface VideoSegment {
+  id: string;
+  start: number;
+  end: number | null;
+  enabled: boolean;
+}
+
 interface Creative {
   id: string;
   photoUrl: string;
   mediaKind?: MediaKind;
   videoTrim?: VideoTrim;
+  videoTimeline?: VideoSegment[];
   videoMuted?: boolean;
   videoVolume?: number;
   textBlocks: TextBlock[];
@@ -621,6 +630,46 @@ function normalizeVideoTrim(trim?: Partial<VideoTrim> | null): VideoTrim {
   };
 }
 
+function normalizeVideoSegment(segment: Partial<VideoSegment>, fallback: VideoTrim, duration = 0): VideoSegment {
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const minGap = safeDuration ? Math.min(0.15, safeDuration) : 0.15;
+  const rawStart = Number(segment.start);
+  const fallbackEnd = fallback.end ?? (safeDuration || Math.max(fallback.start + 1, 1));
+  const startMax = safeDuration ? Math.max(0, safeDuration - minGap) : Number.POSITIVE_INFINITY;
+  const start = clamp(Number.isFinite(rawStart) ? rawStart : fallback.start, 0, startMax);
+  const rawEnd = typeof segment.end === "number" && Number.isFinite(segment.end) ? segment.end : fallbackEnd;
+  const end = safeDuration
+    ? clamp(Math.max(rawEnd, start + minGap), start + minGap, safeDuration)
+    : Math.max(rawEnd, start + minGap);
+
+  return {
+    id: segment.id || uid(),
+    start: roundVideoTime(start),
+    end: roundVideoTime(end),
+    enabled: segment.enabled !== false,
+  };
+}
+
+function normalizeVideoTimeline(
+  segments?: Partial<VideoSegment>[] | null,
+  trim?: Partial<VideoTrim> | null,
+  duration = 0
+): VideoSegment[] {
+  const fallbackTrim = normalizeVideoTrim(trim);
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const source = Array.isArray(segments) && segments.length
+    ? segments
+    : [{ id: uid(), start: fallbackTrim.start, end: fallbackTrim.end ?? (safeDuration || null), enabled: true }];
+
+  return source
+    .map((segment) => normalizeVideoSegment(segment, fallbackTrim, safeDuration))
+    .sort((a, b) => a.start - b.start);
+}
+
+function createDefaultVideoTimeline(): VideoSegment[] {
+  return [{ id: uid(), start: 0, end: null, enabled: true }];
+}
+
 function resolveVideoTrimRange(trimValue?: Partial<VideoTrim> | null, duration = 0) {
   const trim = normalizeVideoTrim(trimValue);
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
@@ -641,7 +690,32 @@ function resolveVideoTrimRange(trimValue?: Partial<VideoTrim> | null, duration =
 }
 
 function getVideoTrimRange(creative?: Creative | null, duration = 0) {
+  if (creative?.videoTimeline?.length) {
+    const segments = normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim, duration);
+    const enabled = segments.filter((segment) => segment.enabled);
+    const first = enabled[0] || segments[0];
+    if (first) return resolveVideoTrimRange({ start: first.start, end: first.end }, duration);
+  }
   return resolveVideoTrimRange(creative?.videoTrim, duration);
+}
+
+function getVideoTimelineSegments(creative?: Creative | null, duration = 0) {
+  if (!creative || (creative.mediaKind || "image") !== "video") return [];
+  return normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim, duration);
+}
+
+function getEnabledVideoSegments(creative?: Creative | null, duration = 0) {
+  const segments = getVideoTimelineSegments(creative, duration);
+  const enabled = segments.filter((segment) => segment.enabled);
+  return enabled.length ? enabled : segments.slice(0, 1);
+}
+
+function findVideoSegmentAtTime(segments: VideoSegment[], time: number) {
+  return segments.find((segment) => time >= segment.start && time < (segment.end ?? time + 1)) || null;
+}
+
+function getFirstVideoSegmentStart(creative?: Creative | null, duration = 0) {
+  return getEnabledVideoSegments(creative, duration)[0]?.start ?? 0;
 }
 
 function formatVideoTime(value: number) {
@@ -654,10 +728,14 @@ function formatVideoTime(value: number) {
 
 function normalizeCreative(creative: Creative): Creative {
   const mediaKind = creative.mediaKind || "image";
+  const videoTimeline = mediaKind === "video"
+    ? normalizeVideoTimeline(creative.videoTimeline, creative.videoTrim)
+    : undefined;
   return {
     ...creative,
     mediaKind,
     videoTrim: mediaKind === "video" ? normalizeVideoTrim(creative.videoTrim) : undefined,
+    videoTimeline,
     videoMuted: mediaKind === "video" ? creative.videoMuted ?? true : undefined,
     videoVolume: mediaKind === "video" ? clamp(creative.videoVolume ?? 1, 0, 1) : undefined,
     textBlocks: creative.textBlocks.map(normalizeTextBlock),
@@ -818,6 +896,15 @@ async function makeVideoPosterFile(file: File): Promise<File | null> {
         }
       };
 
+      video.onloadedmetadata = () => {
+        try {
+          const duration = Number.isFinite(video.duration) ? video.duration : 0;
+          video.currentTime = duration > 0 ? Math.min(0.18, duration / 5) : 0;
+        } catch {
+          capture();
+        }
+      };
+      video.onseeked = capture;
       video.onloadeddata = capture;
       video.onerror = () => {
         window.clearTimeout(timer);
@@ -1049,7 +1136,7 @@ function MediaAssetPreview({
         src={getMediaPreviewSrc(asset.url)}
         muted
         playsInline
-        preload="auto"
+        preload="metadata"
         style={{
           ...style,
           background: ADS_BRAND.bgDeep,
@@ -1345,8 +1432,9 @@ function normalizeHex(value: string, fallback = "#ffffff") {
   return fallback;
 }
 
-function getMediaPreviewUrl(asset?: Pick<StudioMediaAsset, "url" | "thumbnailUrl"> | null) {
+function getMediaPreviewUrl(asset?: Pick<StudioMediaAsset, "url" | "thumbnailUrl" | "kind"> | null) {
   if (!asset) return "";
+  if (asset.kind === "video") return asset.thumbnailUrl || "";
   return asset.thumbnailUrl || asset.url;
 }
 
@@ -2263,6 +2351,7 @@ export default function Studio2Page() {
   const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(true);
   const [videoPreviewDuration, setVideoPreviewDuration] = useState(0);
   const [videoPreviewTime, setVideoPreviewTime] = useState(0);
+  const [videoTimelineZoom, setVideoTimelineZoom] = useState(1);
 
   const currentCreative = creatives[currentIndex];
   const defaultGeneratePresetIds = useMemo(() => new Set(DEFAULT_GENERATE_PRESETS.map((preset) => preset.id)), []);
@@ -2314,6 +2403,12 @@ export default function Studio2Page() {
     () => currentCreative && (currentCreative.mediaKind || "image") === "video"
       ? getVideoTrimRange(currentCreative, videoPreviewDuration)
       : null,
+    [currentCreative, videoPreviewDuration]
+  );
+  const currentVideoTimelineSegments = useMemo(
+    () => currentCreative && (currentCreative.mediaKind || "image") === "video"
+      ? getVideoTimelineSegments(currentCreative, videoPreviewDuration)
+      : [],
     [currentCreative, videoPreviewDuration]
   );
   const designFolders = useMemo(
@@ -2589,7 +2684,8 @@ export default function Studio2Page() {
       const firstAsset = firstCreative
         ? draft.mediaAssets?.find((asset) => asset.url === firstCreative.photoUrl)
         : draft.mediaAssets?.find((asset) => asset.url === draft.photos[0]);
-      const thumbnailUrl = (firstCreative ? creativeThumbs[firstCreative.id] : "") || getMediaPreviewUrl(firstAsset) || firstCreative?.photoUrl || draft.photos[0] || null;
+      const fallbackPhotoThumb = firstCreative && (firstCreative.mediaKind || "image") === "image" ? firstCreative.photoUrl : draft.photos[0] || null;
+      const thumbnailUrl = (firstCreative ? creativeThumbs[firstCreative.id] : "") || getMediaPreviewUrl(firstAsset) || fallbackPhotoThumb;
       const body = {
         name: draft.projectName || EMPTY_PROJECT_NAME,
         copyText: draft.copyText,
@@ -2846,9 +2942,10 @@ export default function Studio2Page() {
     const video = videoPreviewRef.current;
     if (!video) return;
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    const range = getVideoTrimRange(currentCreative, duration);
+    const segments = getEnabledVideoSegments(currentCreative, duration);
+    const range = segments[0] ? resolveVideoTrimRange({ start: segments[0].start, end: segments[0].end }, duration) : getVideoTrimRange(currentCreative, duration);
     if (duration) setVideoPreviewDuration(duration);
-    if (video.currentTime < range.start || video.currentTime > range.end) {
+    if (!findVideoSegmentAtTime(segments, video.currentTime)) {
       video.currentTime = range.start;
     }
     setVideoPreviewTime(video.currentTime || range.start);
@@ -3080,12 +3177,25 @@ export default function Studio2Page() {
   );
 
   const updateVideoSettings = useCallback(
-    (updates: Partial<Pick<Creative, "videoTrim" | "videoMuted" | "videoVolume">>) => {
+    (updates: Partial<Pick<Creative, "videoTrim" | "videoTimeline" | "videoMuted" | "videoVolume">>) => {
       updateCurrentCreative((creative) => {
         if ((creative.mediaKind || "image") !== "video") return creative;
+        const nextTimeline = updates.videoTimeline
+          ? normalizeVideoTimeline(updates.videoTimeline, updates.videoTrim || creative.videoTrim, videoPreviewDuration)
+          : undefined;
+        const enabled = nextTimeline?.filter((segment) => segment.enabled) || [];
+        const firstEnabled = enabled[0] || nextTimeline?.[0];
         return {
           ...creative,
           ...(updates.videoTrim ? { videoTrim: normalizeVideoTrim(updates.videoTrim) } : {}),
+          ...(nextTimeline
+            ? {
+                videoTimeline: nextTimeline,
+                videoTrim: firstEnabled
+                  ? { start: firstEnabled.start, end: firstEnabled.end }
+                  : normalizeVideoTrim(updates.videoTrim || creative.videoTrim),
+              }
+            : {}),
           ...(typeof updates.videoMuted === "boolean" ? { videoMuted: updates.videoMuted } : {}),
           ...(typeof updates.videoVolume === "number"
             ? { videoVolume: clamp(updates.videoVolume, 0, 1) }
@@ -3093,7 +3203,7 @@ export default function Studio2Page() {
         };
       });
     },
-    [updateCurrentCreative]
+    [updateCurrentCreative, videoPreviewDuration]
   );
 
   const seekVideoPreview = useCallback((time: number) => {
@@ -3104,6 +3214,36 @@ export default function Studio2Page() {
     video.currentTime = nextTime;
     setVideoPreviewTime(nextTime);
   }, [videoPreviewDuration]);
+
+  const updateVideoTimelineSegments = useCallback(
+    (segments: VideoSegment[], previewTime?: number) => {
+      const normalized = normalizeVideoTimeline(segments, currentCreative?.videoTrim, videoPreviewDuration);
+      updateVideoSettings({ videoTimeline: normalized });
+      if (typeof previewTime === "number") seekVideoPreview(previewTime);
+    },
+    [currentCreative?.videoTrim, seekVideoPreview, updateVideoSettings, videoPreviewDuration]
+  );
+
+  const splitVideoAtPlayhead = useCallback(() => {
+    if (!currentCreative || (currentCreative.mediaKind || "image") !== "video") return;
+    const duration = videoPreviewDuration;
+    const segments = getVideoTimelineSegments(currentCreative, duration);
+    const playhead = clamp(videoPreviewTime, 0, duration || Number.POSITIVE_INFINITY);
+    const target = segments.find((segment) => playhead > segment.start + 0.12 && playhead < (segment.end ?? duration) - 0.12);
+    if (!target) return;
+    pushUndo();
+    updateVideoTimelineSegments(
+      segments.flatMap((segment) =>
+        segment.id === target.id
+          ? [
+              { ...segment, end: roundVideoTime(playhead) },
+              { ...segment, id: uid(), start: roundVideoTime(playhead), end: target.end, enabled: target.enabled },
+            ]
+          : [segment]
+      ),
+      playhead
+    );
+  }, [currentCreative, pushUndo, updateVideoTimelineSegments, videoPreviewDuration, videoPreviewTime]);
 
   const makeBlock = useCallback(
     (lines: string[], role: "title" | "body" | "callout" | "cta"): TextBlock => {
@@ -3583,6 +3723,7 @@ export default function Studio2Page() {
         photoUrl: url,
         mediaKind: asset.kind,
         videoTrim: asset.kind === "video" ? { start: 0, end: null } : undefined,
+        videoTimeline: asset.kind === "video" ? createDefaultVideoTimeline() : undefined,
         videoMuted: asset.kind === "video" ? true : undefined,
         videoVolume: asset.kind === "video" ? 1 : undefined,
         imageTransform: { scale: 1, rotate: 0, offsetX: 0, offsetY: 0 },
@@ -3822,6 +3963,7 @@ export default function Studio2Page() {
       photoUrl: asset?.url || BLANK_IMAGE_DATA_URL,
       mediaKind: asset?.kind || "image",
       videoTrim: asset?.kind === "video" ? { start: 0, end: null } : undefined,
+      videoTimeline: asset?.kind === "video" ? createDefaultVideoTimeline() : undefined,
       videoMuted: asset?.kind === "video" ? true : undefined,
       videoVolume: asset?.kind === "video" ? 1 : undefined,
       textBlocks: cloneBlocks(),
@@ -3862,6 +4004,7 @@ export default function Studio2Page() {
         photoUrl: media.url,
         mediaKind: media.kind,
         videoTrim: media.kind === "video" ? { start: 0, end: null } : undefined,
+        videoTimeline: media.kind === "video" ? createDefaultVideoTimeline() : undefined,
         videoMuted: media.kind === "video" ? true : undefined,
         videoVolume: media.kind === "video" ? 1 : undefined,
         textBlocks: buildBlocksForSections(sections),
@@ -4492,8 +4635,7 @@ export default function Studio2Page() {
       const ctx = canvas.getContext("2d")!;
       let media: HTMLImageElement | HTMLVideoElement | null = null;
       if ((creative.mediaKind || "image") === "video") {
-        const trim = getVideoTrimRange(creative);
-        media = await loadVideoFrame(creative.photoUrl, trim.start);
+        media = await loadVideoFrame(creative.photoUrl, getFirstVideoSegmentStart(creative));
       } else {
         let image = imageCacheRef.current.get(creative.photoUrl) ?? null;
         if (!image) {
@@ -5870,7 +6012,9 @@ export default function Studio2Page() {
               name: draft.projectName || EMPTY_PROJECT_NAME,
               copyText: draft.copyText,
               draft: { ...draft, projectFolderId: folderId, folderId },
-              thumbnailUrl: draft.creatives[0] ? (creativeThumbs[draft.creatives[0].id] || draft.creatives[0].photoUrl) : draft.photos[0] || null,
+              thumbnailUrl: draft.creatives[0]
+                ? (creativeThumbs[draft.creatives[0].id] || ((draft.creatives[0].mediaKind || "image") === "image" ? draft.creatives[0].photoUrl : null))
+                : draft.photos[0] || null,
               status: draft.creatives.length ? "in_progress" : "draft",
             }),
           });
@@ -10003,18 +10147,18 @@ export default function Studio2Page() {
 	                  muted={currentCreative.videoMuted ?? true}
 	                  autoPlay
 	                  playsInline
-	                  preload="auto"
+	                  preload="metadata"
 	                  onLoadedMetadata={(event) => {
 	                    const video = event.currentTarget;
 	                    const duration = Number.isFinite(video.duration) ? video.duration : 0;
 	                    setVideoPreviewDuration(duration);
-	                    const range = getVideoTrimRange(currentCreative, duration);
+	                    const start = getFirstVideoSegmentStart(currentCreative, duration);
 	                    video.volume = clamp(currentCreative.videoVolume ?? 1, 0, 1);
 	                    video.muted = currentCreative.videoMuted ?? true;
-	                    if (video.currentTime < range.start || video.currentTime > range.end) {
-	                      video.currentTime = range.start;
+	                    if (!findVideoSegmentAtTime(getEnabledVideoSegments(currentCreative, duration), video.currentTime)) {
+	                      video.currentTime = start;
 	                    }
-	                    setVideoPreviewTime(video.currentTime || range.start);
+	                    setVideoPreviewTime(video.currentTime || start);
 	                  }}
 	                  onLoadedData={(event) => {
 	                    setVideoPreviewPlaying(!event.currentTarget.paused);
@@ -10022,18 +10166,25 @@ export default function Studio2Page() {
 	                  }}
 	                  onTimeUpdate={(event) => {
 	                    const video = event.currentTarget;
-	                    const range = getVideoTrimRange(currentCreative, video.duration || videoPreviewDuration);
-	                    if (video.currentTime >= range.end - 0.04) {
-	                      video.currentTime = range.start;
+	                    const duration = video.duration || videoPreviewDuration;
+	                    const segments = getEnabledVideoSegments(currentCreative, duration);
+	                    const segment = findVideoSegmentAtTime(segments, video.currentTime);
+	                    if (!segment && segments[0]) {
+	                      video.currentTime = segments[0].start;
+	                    } else if (segment && video.currentTime >= (segment.end ?? duration) - 0.04) {
+	                      const index = segments.findIndex((item) => item.id === segment.id);
+	                      const next = segments[index + 1] || segments[0];
+	                      video.currentTime = next?.start ?? 0;
 	                      if (!video.paused) void video.play().catch(() => undefined);
 	                    }
-	                    setVideoPreviewTime(video.currentTime || range.start);
+	                    setVideoPreviewTime(video.currentTime || 0);
 	                  }}
 	                  onPlay={(event) => {
 	                    const video = event.currentTarget;
-	                    const range = getVideoTrimRange(currentCreative, video.duration || videoPreviewDuration);
-	                    if (video.currentTime < range.start || video.currentTime >= range.end) {
-	                      video.currentTime = range.start;
+	                    const duration = video.duration || videoPreviewDuration;
+	                    const segments = getEnabledVideoSegments(currentCreative, duration);
+	                    if (!findVideoSegmentAtTime(segments, video.currentTime)) {
+	                      video.currentTime = segments[0]?.start ?? 0;
 	                    }
 	                    setVideoPreviewPlaying(true);
 	                  }}
@@ -10683,18 +10834,26 @@ export default function Studio2Page() {
               {currentCreative.mediaKind === "video" && currentVideoTrimRange && (
                 <VideoTrimControls
                   duration={videoPreviewDuration}
-                  trim={currentCreative.videoTrim || { start: 0, end: null }}
+                  segments={currentVideoTimelineSegments}
                   currentTime={videoPreviewTime}
+                  zoom={videoTimelineZoom}
                   muted={currentCreative.videoMuted ?? true}
                   volume={currentCreative.videoVolume ?? 1}
                   onStart={pushUndo}
-                  onTrimChange={(videoTrim) => updateVideoSettings({ videoTrim })}
+                  onSegmentsChange={updateVideoTimelineSegments}
                   onPreviewTime={seekVideoPreview}
+                  onZoomChange={setVideoTimelineZoom}
+                  onSplit={splitVideoAtPlayhead}
                   onMutedChange={(videoMuted) => updateVideoSettings({ videoMuted })}
                   onVolumeChange={(videoVolume) => updateVideoSettings({ videoVolume })}
                   onReset={() => {
                     pushUndo();
-                    updateVideoSettings({ videoTrim: { start: 0, end: null }, videoMuted: true, videoVolume: 1 });
+                    updateVideoSettings({
+                      videoTrim: { start: 0, end: null },
+                      videoTimeline: createDefaultVideoTimeline(),
+                      videoMuted: true,
+                      videoVolume: 1,
+                    });
                     seekVideoPreview(0);
                   }}
                 />
@@ -12282,43 +12441,138 @@ function Slider({
 
 function VideoTrimControls({
   duration,
-  trim,
+  segments,
   currentTime,
+  zoom,
   muted,
   volume,
   onStart,
-  onTrimChange,
+  onSegmentsChange,
   onPreviewTime,
+  onZoomChange,
+  onSplit,
   onMutedChange,
   onVolumeChange,
   onReset,
 }: {
   duration: number;
-  trim: VideoTrim;
+  segments: VideoSegment[];
   currentTime: number;
+  zoom: number;
   muted: boolean;
   volume: number;
   onStart: () => void;
-  onTrimChange: (trim: VideoTrim) => void;
+  onSegmentsChange: (segments: VideoSegment[], previewTime?: number) => void;
   onPreviewTime: (time: number) => void;
+  onZoomChange: (zoom: number) => void;
+  onSplit: () => void;
   onMutedChange: (muted: boolean) => void;
   onVolumeChange: (volume: number) => void;
   onReset: () => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    type: "start" | "end" | "move";
+    id: string;
+    pointerStartX: number;
+    start: number;
+    end: number;
+  } | null>(null);
   const safeDuration = Math.max(0, duration);
-  const range = resolveVideoTrimRange(trim, safeDuration);
-  const max = safeDuration || Math.max(range.end, 1);
-  const startFill = clamp((range.start / max) * 100, 0, 100);
-  const endFill = clamp((range.end / max) * 100, 0, 100);
-  const previewFill = clamp((currentTime / max) * 100, 0, 100);
-  const canTrim = safeDuration > 0;
-  const minGap = Math.min(0.2, safeDuration || 0.2);
+  const normalizedSegments = useMemo(
+    () => normalizeVideoTimeline(segments, null, safeDuration),
+    [segments, safeDuration]
+  );
+  const max = safeDuration || Math.max(...normalizedSegments.map((segment) => segment.end || segment.start + 1), 1);
+  const pxPerSecond = 36 + clamp(zoom, 0.5, 4) * 68;
+  const trackWidth = Math.max(440, Math.ceil(max * pxPerSecond));
+  const previewLeft = clamp((currentTime / max) * trackWidth, 0, trackWidth);
+  const enabledSegments = normalizedSegments.filter((segment) => segment.enabled);
+  const totalEnabledLength = enabledSegments.reduce((sum, segment) => sum + Math.max(0, (segment.end ?? max) - segment.start), 0);
+  const canTrim = safeDuration > 0 || normalizedSegments.length > 0;
+  const minGap = Math.min(0.15, max || 0.15);
+  const tickStep = zoom > 2.8 ? 0.5 : zoom > 1.6 ? 1 : zoom > 0.85 ? 2 : 5;
+  const tickCount = Math.min(260, Math.floor(max / tickStep) + 1);
   const smallButton: React.CSSProperties = {
     ...buttonStyle(false),
     height: 30,
     padding: "0 9px",
     fontSize: 11,
   };
+
+  const commitDrag = useCallback(
+    (clientX: number) => {
+      const active = dragRef.current;
+      if (!active) return;
+      const deltaSeconds = (clientX - active.pointerStartX) / pxPerSecond;
+      const next = normalizedSegments.map((segment) => {
+        if (segment.id !== active.id) return segment;
+        if (active.type === "start") {
+          const start = clamp(active.start + deltaSeconds, 0, Math.max(0, active.end - minGap));
+          return { ...segment, start: roundVideoTime(start) };
+        }
+        if (active.type === "end") {
+          const end = clamp(active.end + deltaSeconds, active.start + minGap, max);
+          return { ...segment, end: roundVideoTime(end) };
+        }
+        const length = active.end - active.start;
+        const start = clamp(active.start + deltaSeconds, 0, Math.max(0, max - length));
+        return { ...segment, start: roundVideoTime(start), end: roundVideoTime(start + length) };
+      });
+      const updated = next.find((segment) => segment.id === active.id);
+      onSegmentsChange(next, updated?.start ?? currentTime);
+    },
+    [currentTime, max, minGap, normalizedSegments, onSegmentsChange, pxPerSecond]
+  );
+
+  const startDrag = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, type: "start" | "end" | "move", segment: VideoSegment) => {
+      if (!canTrim) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onStart();
+      const end = segment.end ?? max;
+      dragRef.current = {
+        type,
+        id: segment.id,
+        pointerStartX: event.clientX,
+        start: segment.start,
+        end,
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      onPreviewTime(type === "end" ? end : segment.start);
+    },
+    [canTrim, max, onPreviewTime, onStart]
+  );
+
+  const stopDrag = useCallback(() => {
+    dragRef.current = null;
+  }, []);
+
+  const toggleSegment = useCallback(
+    (segmentId: string) => {
+      onStart();
+      const enabledCount = normalizedSegments.filter((segment) => segment.enabled).length;
+      onSegmentsChange(
+        normalizedSegments.map((segment) =>
+          segment.id === segmentId
+            ? { ...segment, enabled: enabledCount <= 1 && segment.enabled ? true : !segment.enabled }
+            : segment
+        )
+      );
+    },
+    [normalizedSegments, onSegmentsChange, onStart]
+  );
+
+  const deleteSegment = useCallback(
+    (segmentId: string) => {
+      if (normalizedSegments.length <= 1) return;
+      onStart();
+      const next = normalizedSegments.filter((segment) => segment.id !== segmentId);
+      onSegmentsChange(next, next[0]?.start ?? 0);
+    },
+    [normalizedSegments, onSegmentsChange, onStart]
+  );
 
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${ADS_BRAND.border}` }}>
@@ -12333,7 +12587,7 @@ function VideoTrimControls({
           fontSize: 11,
           fontWeight: 800,
         }}>
-          {formatVideoTime(range.length)}
+          {formatVideoTime(totalEnabledLength || max)}
         </span>
       </div>
 
@@ -12341,128 +12595,223 @@ function VideoTrimControls({
         border: `1px solid ${ADS_BRAND.border2}`,
         borderRadius: 8,
         background: ADS_BRAND.bg,
-        padding: 12,
+        padding: 10,
         marginBottom: 12,
       }}>
-        <div style={{ position: "relative", height: 12, marginBottom: 12 }}>
-          <div style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 4,
-            height: 4,
-            borderRadius: 999,
-            background: ADS_BRAND.border2,
-          }} />
-          <div style={{
-            position: "absolute",
-            left: `${startFill}%`,
-            width: `${Math.max(0, endFill - startFill)}%`,
-            top: 4,
-            height: 4,
-            borderRadius: 999,
-            background: ADS_BRAND.gold,
-            boxShadow: "0 0 18px rgba(212,178,122,0.25)",
-          }} />
-          <div style={{
-            position: "absolute",
-            left: `calc(${previewFill}% - 1px)`,
-            top: 0,
-            width: 2,
-            height: 12,
-            borderRadius: 999,
-            background: ADS_BRAND.text,
-            opacity: 0.8,
-          }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+          <button
+            type="button"
+            style={smallButton}
+            disabled={!canTrim}
+            onClick={() => {
+              onStart();
+              onSplit();
+            }}
+          >
+            <Scissors size={13} /> Split
+          </button>
+          <button type="button" style={{ ...smallButton, marginLeft: "auto", padding: "0 7px" }} onClick={() => onZoomChange(clamp(zoom - 0.35, 0.5, 4))}>
+            <Minus size={13} />
+          </button>
+          <input
+            className="studio2-range"
+            type="range"
+            min={0.5}
+            max={4}
+            step={0.05}
+            value={zoom}
+            onChange={(event) => onZoomChange(Number(event.currentTarget.value))}
+            aria-label="Timeline zoom"
+            style={{
+              width: 78,
+              background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} 100%)`,
+            }}
+          />
+          <button type="button" style={{ ...smallButton, padding: "0 7px" }} onClick={() => onZoomChange(clamp(zoom + 0.35, 0.5, 4))}>
+            <Plus size={13} />
+          </button>
         </div>
 
-        <input
-          className="studio2-range"
-          type="range"
-          min={0}
-          max={max}
-          step={0.05}
-          disabled={!canTrim}
-          value={clamp(currentTime, 0, max)}
-          onChange={(event) => onPreviewTime(Number(event.currentTarget.value))}
+        <div
+          ref={rootRef}
           style={{
-            marginBottom: 12,
-            opacity: canTrim ? 1 : 0.45,
-            background: `linear-gradient(90deg, ${ADS_BRAND.text3} 0%, ${ADS_BRAND.text3} ${previewFill}%, ${ADS_BRAND.border2} ${previewFill}%, ${ADS_BRAND.border2} 100%)`,
+            width: "100%",
+            overflowX: "auto",
+            overflowY: "hidden",
+            paddingBottom: 4,
+            cursor: canTrim ? "crosshair" : "default",
           }}
-          aria-label="Preview video time"
-        />
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-          <div>
-            <div style={{ ...labelStyle, marginBottom: 6 }}>Start</div>
-            <input
-              className="studio2-range"
-              type="range"
-              min={0}
-              max={max}
-              step={0.05}
-              disabled={!canTrim}
-              value={range.start}
-              onPointerDown={onStart}
-              onChange={(event) => {
-                const nextStart = clamp(Number(event.currentTarget.value), 0, Math.max(0, range.end - minGap));
-                onTrimChange({ start: nextStart, end: range.end });
-                onPreviewTime(nextStart);
-              }}
-              aria-label="Trim start"
-            />
-            <div style={{ color: ADS_BRAND.text2, fontSize: 12, fontWeight: 700, marginTop: 4 }}>
-              {formatVideoTime(range.start)}
+          onClick={(event) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest("[data-video-segment='true']")) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - bounds.left + event.currentTarget.scrollLeft;
+            onPreviewTime(clamp(x / pxPerSecond, 0, max));
+          }}
+          onPointerMove={(event) => commitDrag(event.clientX)}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+        >
+          <div style={{ position: "relative", width: trackWidth, height: 88 }}>
+            <div style={{ position: "absolute", inset: "0 0 auto", height: 22, color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800 }}>
+              {Array.from({ length: tickCount }).map((_, index) => {
+                const time = index * tickStep;
+                const left = time * pxPerSecond;
+                return (
+                  <div key={time} style={{ position: "absolute", left, top: 0, width: 1, height: 22, background: "rgba(255,255,255,0.12)" }}>
+                    <span style={{ position: "absolute", left: 4, top: 0, whiteSpace: "nowrap" }}>{formatVideoTime(time)}</span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          <div>
-            <div style={{ ...labelStyle, marginBottom: 6 }}>End</div>
-            <input
-              className="studio2-range"
-              type="range"
-              min={0}
-              max={max}
-              step={0.05}
-              disabled={!canTrim}
-              value={range.end}
-              onPointerDown={onStart}
-              onChange={(event) => {
-                const nextEnd = clamp(Number(event.currentTarget.value), range.start + minGap, max);
-                onTrimChange({ start: range.start, end: nextEnd });
-                onPreviewTime(Math.min(currentTime, nextEnd));
-              }}
-              aria-label="Trim end"
-            />
-            <div style={{ color: ADS_BRAND.text2, fontSize: 12, fontWeight: 700, marginTop: 4 }}>
-              {formatVideoTime(range.end)}
-            </div>
+            <div style={{ position: "absolute", left: 0, right: 0, top: 28, height: 50, borderRadius: 8, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
+            {normalizedSegments.map((segment, index) => {
+              const segmentEnd = segment.end ?? max;
+              const left = segment.start * pxPerSecond;
+              const width = Math.max(28, (segmentEnd - segment.start) * pxPerSecond);
+              return (
+                <div
+                  key={segment.id}
+                  data-video-segment="true"
+                  onPointerDown={(event) => startDrag(event, "move", segment)}
+                  style={{
+                    position: "absolute",
+                    left,
+                    top: 32,
+                    width,
+                    height: 42,
+                    borderRadius: 8,
+                    border: `1px ${segment.enabled ? "solid" : "dashed"} ${segment.enabled ? ADS_BRAND.gold : ADS_BRAND.border2}`,
+                    background: segment.enabled
+                      ? "linear-gradient(135deg, rgba(212,178,122,0.22), rgba(212,178,122,0.07))"
+                      : "rgba(255,255,255,0.035)",
+                    opacity: segment.enabled ? 1 : 0.55,
+                    boxShadow: segment.enabled ? "0 0 18px rgba(212,178,122,0.14)" : "none",
+                    cursor: "grab",
+                    overflow: "hidden",
+                  }}
+                  title="Drag clip to move it"
+                >
+                  <button
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleSegment(segment.id);
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: 5,
+                      top: 5,
+                      height: 20,
+                      borderRadius: 999,
+                      border: `1px solid ${segment.enabled ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                      background: segment.enabled ? ADS_BRAND.goldSoft : ADS_BRAND.bgDeep,
+                      color: segment.enabled ? ADS_BRAND.gold : ADS_BRAND.text3,
+                      fontFamily: "inherit",
+                      fontSize: 9,
+                      fontWeight: 900,
+                      padding: "0 6px",
+                      cursor: "pointer",
+                    }}
+                    title={segment.enabled ? "Turn segment off" : "Turn segment on"}
+                  >
+                    {segment.enabled ? "ON" : "OFF"}
+                  </button>
+                  <div style={{
+                    position: "absolute",
+                    left: 8,
+                    bottom: 6,
+                    right: 8,
+                    color: ADS_BRAND.text2,
+                    fontSize: 10,
+                    fontWeight: 900,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    pointerEvents: "none",
+                  }}>
+                    Clip {index + 1} · {formatVideoTime(segment.start)}-{formatVideoTime(segmentEnd)}
+                  </div>
+                  <button
+                    type="button"
+                    onPointerDown={(event) => startDrag(event, "start", segment)}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 10,
+                      border: "none",
+                      background: "rgba(212,178,122,0.42)",
+                      cursor: "ew-resize",
+                    }}
+                    aria-label="Trim clip start"
+                  />
+                  <button
+                    type="button"
+                    onPointerDown={(event) => startDrag(event, "end", segment)}
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 10,
+                      border: "none",
+                      background: "rgba(212,178,122,0.42)",
+                      cursor: "ew-resize",
+                    }}
+                    aria-label="Trim clip end"
+                  />
+                  {normalizedSegments.length > 1 && (
+                    <button
+                      type="button"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteSegment(segment.id);
+                      }}
+                      style={{
+                        position: "absolute",
+                        right: 14,
+                        top: 5,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 999,
+                        border: `1px solid ${ADS_BRAND.border2}`,
+                        background: "rgba(0,0,0,0.45)",
+                        color: "#ffb3b3",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                      }}
+                      title="Delete segment"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{
+              position: "absolute",
+              left: previewLeft,
+              top: 22,
+              width: 2,
+              height: 60,
+              borderRadius: 999,
+              background: ADS_BRAND.text,
+              boxShadow: "0 0 0 3px rgba(212,178,122,0.16)",
+              pointerEvents: "none",
+            }} />
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            type="button"
-            style={smallButton}
-            disabled={!canTrim}
-            onClick={() => {
-              onStart();
-              onTrimChange({ start: clamp(currentTime, 0, Math.max(0, range.end - minGap)), end: range.end });
-            }}
-          >
-            Set start
-          </button>
-          <button
-            type="button"
-            style={smallButton}
-            disabled={!canTrim}
-            onClick={() => {
-              onStart();
-              onTrimChange({ start: range.start, end: clamp(currentTime, range.start + minGap, max) });
-            }}
-          >
-            Set end
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <span style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 800 }}>
+            Playhead {formatVideoTime(currentTime)}
+          </span>
           <button type="button" style={{ ...smallButton, marginLeft: "auto" }} onClick={onReset}>
             Reset
           </button>
