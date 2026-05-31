@@ -742,11 +742,94 @@
   .ddr-blabel{display:flex;align-items:baseline;justify-content:space-between}
   .ddr-blabel .l{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-3);font-weight:600}
   .ddr-blabel .m{font-size:11px;color:var(--text-4)}
-  .ddr-bl-text{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;min-width:0}
-  .mi-copy{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--gold);background:color-mix(in srgb,var(--gold) 10%,var(--panel));border:1px solid color-mix(in srgb,var(--gold) 32%,var(--border-2));border-radius:8px;padding:6px 11px;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .12s ease,color .15s ease;white-space:nowrap}
-  .mi-copy:hover{background:color-mix(in srgb,var(--gold) 18%,var(--panel));border-color:color-mix(in srgb,var(--gold) 50%,var(--border-2));transform:translateY(-1px)}
-  .mi-copy:active{transform:translateY(0)}
-  .mi-copy.done{color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,var(--border-2));background:color-mix(in srgb,var(--green) 12%,var(--panel))}
+
+  /* ★ Copy Brief Studio — the showpiece */
+  .cbs{position:relative;border-radius:16px;overflow:hidden;background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb,var(--gold) 9%,transparent) 0%, transparent 45%),
+      radial-gradient(120% 140% at 100% 0%, color-mix(in srgb,var(--blue) 8%,transparent) 0%, transparent 42%),
+      linear-gradient(180deg, color-mix(in srgb,var(--gold) 4%,var(--panel-2)) 0%, var(--panel) 70%);
+    border:1px solid color-mix(in srgb,var(--gold) 22%,var(--border-2));
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 6%,transparent), 0 18px 50px -28px color-mix(in srgb,var(--gold) 40%,transparent);
+    transition:box-shadow .4s ease,border-color .4s ease}
+  .cbs.open{border-color:color-mix(in srgb,var(--gold) 38%,var(--border-2));box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 12%,transparent), 0 26px 70px -30px color-mix(in srgb,var(--gold) 55%,transparent)}
+  .cbs::before{content:"";position:absolute;inset:-1px;border-radius:16px;padding:1px;background:conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb,var(--gold) 60%,transparent) 70deg, transparent 150deg, color-mix(in srgb,var(--blue) 50%,transparent) 250deg, transparent 330deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .5s ease;animation:cbs-spin 9s linear infinite;pointer-events:none}
+  .cbs.open::before{opacity:.7}
+  @keyframes cbs-spin{to{transform:rotate(360deg)}}
+  .cbs-stars{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;opacity:.0;transition:opacity .6s ease}
+  .cbs.open .cbs-stars{opacity:1}
+  .cbs-star{position:absolute;border-radius:50%;background:radial-gradient(circle, var(--gold) 0%, transparent 70%);box-shadow:0 0 6px color-mix(in srgb,var(--gold) 80%,transparent);animation:cbs-twinkle linear infinite, cbs-float ease-in-out infinite;will-change:opacity,transform}
+  @keyframes cbs-twinkle{0%,100%{opacity:.15}50%{opacity:.9}}
+  @keyframes cbs-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+
+  .cbs-trigger{position:relative;z-index:2;width:100%;display:flex;align-items:center;gap:14px;padding:16px 18px;background:transparent;border:0;cursor:pointer;text-align:left;font:inherit;color:var(--text)}
+  .cbs-orb{position:relative;flex-shrink:0;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%, color-mix(in srgb,var(--gold) 90%,#fff) 0%, var(--gold) 45%, color-mix(in srgb,var(--gold) 40%,#000) 100%);box-shadow:0 0 18px color-mix(in srgb,var(--gold) 70%,transparent),0 0 40px color-mix(in srgb,var(--gold) 30%,transparent);animation:cbs-pulse 2.6s ease-in-out infinite}
+  @keyframes cbs-pulse{0%,100%{box-shadow:0 0 16px color-mix(in srgb,var(--gold) 60%,transparent),0 0 34px color-mix(in srgb,var(--gold) 22%,transparent)}50%{box-shadow:0 0 26px color-mix(in srgb,var(--gold) 90%,transparent),0 0 58px color-mix(in srgb,var(--gold) 45%,transparent)}}
+  .cbs-orb-core{font-size:18px;color:#1a1407;line-height:1;animation:cbs-spin 6s linear infinite;text-shadow:0 1px 1px rgba(255,255,255,.4)}
+  .cbs-trig-txt{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+  .cbs-trig-txt .t{font-size:14px;font-weight:700;letter-spacing:-.01em;background:linear-gradient(90deg,var(--gold),color-mix(in srgb,var(--gold) 55%,#fff));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .cbs-trig-txt .s{font-size:11.5px;color:var(--text-3);line-height:1.35}
+  .cbs-chev{flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,transparent);border:1px solid color-mix(in srgb,var(--gold) 30%,var(--border-2));border-radius:999px;padding:6px 12px;white-space:nowrap;transition:background .2s ease}
+  .cbs-trigger:hover .cbs-chev{background:color-mix(in srgb,var(--gold) 20%,transparent)}
+
+  .cbs-body{position:relative;z-index:2;padding:0 18px 18px;display:flex;flex-direction:column;gap:14px;animation:cbs-reveal .45s cubic-bezier(.2,.7,.3,1)}
+  @keyframes cbs-reveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .cbs-controls{display:flex;flex-wrap:wrap;gap:16px;padding-top:4px}
+  .cbs-seg-group{display:flex;flex-direction:column;gap:6px}
+  .cbs-seg-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-4);font-weight:700}
+  .cbs-seg{display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:color-mix(in srgb,var(--bg) 60%,var(--panel-2));border:1px solid var(--border)}
+  .cbs-seg-b{font:inherit;font-size:11.5px;font-weight:600;color:var(--text-3);background:transparent;border:0;border-radius:7px;padding:6px 12px;cursor:pointer;transition:color .18s ease,background .18s ease,box-shadow .18s ease;white-space:nowrap}
+  .cbs-seg-b:hover{color:var(--text)}
+  .cbs-seg-b.on{color:#1a1407;background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 92%,#fff),var(--gold));box-shadow:0 2px 12px -3px color-mix(in srgb,var(--gold) 80%,transparent)}
+  .cbs-stylenote{font-size:11.5px;color:var(--text-3);font-style:italic;margin-top:-4px}
+
+  .cbs-preview{display:flex;flex-direction:column;gap:14px;max-height:560px;overflow-y:auto;padding:14px;border-radius:12px;background:color-mix(in srgb,var(--bg) 55%,var(--panel));border:1px solid var(--border);scrollbar-width:thin}
+  .cbs-rule{font-size:11.5px;line-height:1.45;color:var(--text-2);background:color-mix(in srgb,var(--gold) 8%,transparent);border:1px dashed color-mix(in srgb,var(--gold) 35%,var(--border-2));border-radius:10px;padding:10px 12px}
+  .cbs-rule .k{display:block;font-weight:700;color:var(--gold);margin-bottom:2px;font-size:11px;letter-spacing:.02em}
+  .cbs-offer{display:flex;flex-direction:column;gap:10px;padding:13px;border-radius:11px;background:var(--panel);border:1px solid var(--border)}
+  .cbs-offer-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .cbs-offer-h .badge{font-size:10px;font-weight:800;letter-spacing:.08em;padding:5px 10px;border-radius:7px}
+  .cbs-offer-h.free .badge{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent);border:1px solid color-mix(in srgb,var(--blue) 38%,var(--border-2))}
+  .cbs-offer-h.paid .badge{color:var(--gold);background:color-mix(in srgb,var(--gold) 14%,transparent);border:1px solid color-mix(in srgb,var(--gold) 38%,var(--border-2))}
+  .cbs-offer-h .meta{font-size:10.5px;color:var(--text-4);font-family:var(--mono)}
+  .cbs-grp{display:flex;flex-direction:column;gap:7px}
+  .cbs-grp-h{font-size:11px;font-weight:600;letter-spacing:.01em}
+  .cbs-grp-h.win{color:var(--green)}
+  .cbs-grp-h.lose{color:var(--red)}
+  .cbs-grp-h b{font-family:var(--mono);font-weight:700}
+  .cbs-quote{display:flex;gap:11px;align-items:stretch;padding:10px 12px;border-radius:10px;border:1px solid var(--border);position:relative;overflow:hidden}
+  .cbs-quote.win{background:color-mix(in srgb,var(--green) 6%,var(--panel-2));border-color:color-mix(in srgb,var(--green) 26%,var(--border-2))}
+  .cbs-quote.lose{background:color-mix(in srgb,var(--red) 5%,var(--panel-2));border-color:color-mix(in srgb,var(--red) 24%,var(--border-2))}
+  .cbs-quote.win::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);box-shadow:0 0 12px var(--green)}
+  .cbs-quote.lose::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);box-shadow:0 0 12px var(--red)}
+  .cbs-q-roas{flex-shrink:0;align-self:center;font-family:var(--mono);font-size:16px;font-weight:800;min-width:48px;text-align:center}
+  .cbs-q-roas.win{color:var(--green)}
+  .cbs-q-roas.lose{color:var(--red)}
+  .cbs-q-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .cbs-q-words{font-size:12.5px;line-height:1.4;color:var(--text);font-weight:500}
+  .cbs-q-meta{font-size:10.5px;color:var(--text-4);font-family:var(--mono)}
+  .cbs-dd{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}
+  @media(max-width:680px){.cbs-dd{grid-template-columns:1fr}}
+  .cbs-dd-col{display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:9px;background:color-mix(in srgb,var(--bg) 40%,var(--panel-2))}
+  .cbs-dd-col .h{font-size:9.5px;font-weight:800;letter-spacing:.12em}
+  .cbs-dd-col.do .h{color:var(--green)}
+  .cbs-dd-col.dont .h{color:var(--red)}
+  .cbs-dd-item{font-size:11.5px;line-height:1.4;color:var(--text-2);padding-left:13px;position:relative}
+  .cbs-dd-col.do .cbs-dd-item::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+  .cbs-dd-col.dont .cbs-dd-item::before{content:"✕";position:absolute;left:0;color:var(--red);font-weight:700}
+  .cbs-empty{font-size:12px;color:var(--text-4);text-align:center;padding:24px 12px}
+
+  .cbs-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .cbs-count{font-size:11px;color:var(--text-4);font-family:var(--mono)}
+  .cbs-copy{position:relative;overflow:hidden;flex-shrink:0;font:inherit;font-size:13px;font-weight:700;letter-spacing:.01em;color:#1a1407;background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 92%,#fff),var(--gold));border:0;border-radius:11px;padding:12px 22px;cursor:pointer;box-shadow:0 8px 24px -10px color-mix(in srgb,var(--gold) 90%,transparent);transition:transform .14s ease,box-shadow .25s ease}
+  .cbs-copy:hover{transform:translateY(-2px);box-shadow:0 14px 32px -10px color-mix(in srgb,var(--gold) 95%,transparent)}
+  .cbs-copy:active{transform:translateY(0)}
+  .cbs-copy:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
+  .cbs-copy.done{color:#fff;background:linear-gradient(180deg,color-mix(in srgb,var(--green) 85%,#fff),var(--green));box-shadow:0 10px 28px -10px color-mix(in srgb,var(--green) 85%,transparent)}
+  .cbs-copy-lbl{position:relative;z-index:2}
+  .cbs-copy-sheen{position:absolute;top:0;left:-60%;width:50%;height:100%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);animation:cbs-sheen 3.4s ease-in-out infinite;z-index:1}
+  @keyframes cbs-sheen{0%{left:-60%}55%{left:140%}100%{left:140%}}
+  .cbs-burst{position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);background:transparent;box-shadow:0 0 0 0 color-mix(in srgb,var(--green) 70%,transparent);animation:cbs-burst .65s ease-out forwards;z-index:0}
+  @keyframes cbs-burst{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--green) 60%,transparent)}to{box-shadow:0 0 0 60px transparent}}
 
   /* Spend concentration bars */
   .ddr-spend{display:flex;flex-direction:column;gap:9px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 17px}
@@ -5598,78 +5681,276 @@ function copySignals(winners, losers){
   return out;
 }
 
-function buildCopyBrief(analyzed, rangeText){
+// Structured brief model — computed ONCE from the real numbers, then rendered two
+// ways: a beautiful in-app preview AND plain text for pasting. No AI tokens.
+function computeBriefModel(analyzed){
   const reliable = (analyzed||[]).filter(a=>a.reliable);
+  const blendRoas = (arr)=>{ const sp=arr.reduce((s,a)=>s+a.spend,0); const rv=arr.reduce((s,a)=>s+a.revenue,0); return sp>0 ? Math.round((rv/sp)*10)/10 : 0; };
+  const mk = (isFree, pool)=>{
+    const winners = pool.filter(a=>a.revenue>0 && a.roas>=1.5).sort((a,b)=>b.roas-a.roas);
+    const losers  = pool.filter(a=>a.roas<1).sort((a,b)=>a.roas-b.roas);
+    return {
+      isFree, winners, losers,
+      winSpend: winners.reduce((s,a)=>s+a.spend,0),
+      winRev:   winners.reduce((s,a)=>s+a.revenue,0),
+      loseSpend:losers.reduce((s,a)=>s+a.spend,0),
+      loseRev:  losers.reduce((s,a)=>s+a.revenue,0),
+      loseClients: losers.reduce((s,a)=>s+Math.round(Number(a.clients)||0),0),
+      blend: blendRoas(winners),
+      signals: copySignals(winners, losers),
+      has: winners.length>0 || losers.length>0,
+    };
+  };
+  return {
+    reliableCount: reliable.length,
+    free: mk(true,  reliable.filter(a=> isFreeOffer(a.words))),
+    paid: mk(false, reliable.filter(a=> !isFreeOffer(a.words))),
+  };
+}
+
+// Which offer sections the chosen filter should include.
+function briefSections(model, offer){
+  const out = [];
+  if((offer==="all"||offer==="free") && model.free.has) out.push(model.free);
+  if((offer==="all"||offer==="paid") && model.paid.has) out.push(model.paid);
+  return out;
+}
+
+// Plain-English DO / DON'T lines for a section, shared by the preview and the text.
+function briefDos(s){
+  const arr = [];
+  if(s.winners.length) arr.push(`Echo the winning angle — it returned ${s.blend}× on real spend.`);
+  s.signals.forEach(x=>arr.push(x));
+  arr.push(s.isFree ? "Keep the whole promise free; end on joining the free challenge." : "Make the paid offer and the buy ask explicit.");
+  return arr;
+}
+function briefDonts(s){
+  const arr = [];
+  if(s.losers.length) arr.push(`Don't reuse the losing angles — they burned ${fmtUsd(s.loseSpend)} for ${s.loseClients} client${s.loseClients===1?"":"s"}.`);
+  arr.push(s.isFree ? "Never mention price, payment, or a paid-only feature in a free-challenge ad." : "Don't water the ask down to sound like a free offer.");
+  return arr;
+}
+
+// The paste-ready text, honoring the offer filter + style preset.
+function briefToText(model, opts){
+  const offer = opts.offer||"all", style = opts.style||"prompt", rangeText = opts.rangeText||"";
   const r1 = (n)=> (Math.round((Number(n)||0)*10)/10);
   const usd = (n)=> "$"+Math.round(Number(n)||0).toLocaleString();
   const clean = (s)=> String(s||"").replace(/\s+/g," ").trim();
   const clientsOf = (a)=> Math.round(Number(a.clients)||0);
-  const blendRoas = (arr)=>{ const sp=arr.reduce((s,a)=>s+a.spend,0); const rv=arr.reduce((s,a)=>s+a.revenue,0); return sp>0 ? r1(rv/sp) : 0; };
   const sep = "============================================================";
   const out = [];
-
+  const sections = briefSections(model, offer);
+  const offerName = (s)=> s.isFree ? "FREE CHALLENGE ADS  (copy contains the word \"free\")" : "DIRECT CTA ADS  (no \"free\" -- paid offer)";
   const adBlock = (a)=>{
     const roas = a.revenue>0 ? r1(a.roas)+"x" : "n/a";
-    const c = clientsOf(a);
-    const nm = a.adName ? `  -- ${a.adName}` : "";
+    const c = clientsOf(a); const nm = a.adName ? `  -- ${a.adName}` : "";
     return `  - ${roas} ROAS | ${usd(a.spend)} spent -> ${usd(a.revenue)} collected | ${c} client${c===1?"":"s"}${nm}\n    "${clean(a.words)}"`;
   };
 
-  out.push("COPYWRITING BRIEF -- built only from real ad performance" + (rangeText?` (${rangeText})`:""));
-  out.push(`Based on ${reliable.length} ad${reliable.length===1?"":"s"} with $100+ spent, enough to trust the ROAS. Every number below is real -- quote them, never invent new ones.`);
-  out.push("");
-  out.push(sep);
-  out.push("RULE #1 -- TWO OFFERS, NEVER MIX THEM");
-  out.push(sep);
-  out.push("This account runs two different offers. Copy for one must NEVER promise the other:");
-  out.push("  * FREE CHALLENGE ads = the offer is free. Never mention price, payment, or paid-only features. The only ask is to join the free challenge.");
-  out.push("  * DIRECT CTA ads = the paid program. The full offer stack / price / direct buy-now ask lives HERE only.");
-  out.push("Write for ONE of these at a time. Never borrow a paid promise into a free ad, or a free angle into a paid ad.");
+  if(style==="swipe"){
+    out.push("SWIPE FILE -- winning ad copy that actually made money" + (rangeText?` (${rangeText})`:""));
+    out.push("Every line below is a real ad with $100+ spent; the ROAS is its true return. Steal the angles, keep the two offers separate.");
+  } else if(style==="lessons"){
+    out.push("WHAT'S WORKING & WHAT'S NOT -- copy lessons from real spend" + (rangeText?` (${rangeText})`:""));
+    out.push(`Based on ${model.reliableCount} ad${model.reliableCount===1?"":"s"} with enough spend to trust. Every number is real.`);
+  } else {
+    out.push("COPYWRITING BRIEF -- built only from real ad performance" + (rangeText?` (${rangeText})`:""));
+    out.push(`Based on ${model.reliableCount} ad${model.reliableCount===1?"":"s"} with $100+ spent, enough to trust the ROAS. Every number below is real -- quote them, never invent new ones.`);
+  }
 
-  const buildSection = (title, isFree, pool)=>{
-    const winners = pool.filter(a=>a.revenue>0 && a.roas>=1.5).sort((a,b)=>b.roas-a.roas);
-    const losers  = pool.filter(a=>a.roas<1).sort((a,b)=>a.roas-b.roas);
-    if(!winners.length && !losers.length) return;
-    out.push("");
-    out.push(sep);
-    out.push(title);
-    out.push(sep);
-    out.push(isFree
-      ? "OFFER TYPE: a FREE challenge. The winning copy below is exactly what these ads promised -- keep every promise free."
-      : "OFFER TYPE: the paid program (direct CTA). The full offer stack and price are allowed here.");
-    if(winners.length){
+  if(offer==="all" && model.free.has && model.paid.has && style!=="swipe"){
+    out.push(""); out.push(sep); out.push("RULE #1 -- TWO OFFERS, NEVER MIX THEM"); out.push(sep);
+    out.push("This account runs two different offers. Copy for one must NEVER promise the other:");
+    out.push("  * FREE CHALLENGE ads = the offer is free. Never mention price, payment, or paid-only features. The only ask is to join the free challenge.");
+    out.push("  * DIRECT CTA ads = the paid program. The full offer stack / price / direct buy-now ask lives HERE only.");
+    out.push("Write for ONE of these at a time. Never borrow a paid promise into a free ad, or a free angle into a paid ad.");
+  }
+
+  sections.forEach(s=>{
+    out.push(""); out.push(sep); out.push(offerName(s)); out.push(sep);
+    if(style!=="swipe"){
+      out.push(s.isFree ? "OFFER TYPE: a FREE challenge. Keep every promise free."
+                        : "OFFER TYPE: the paid program (direct CTA). Offer stack and price allowed.");
+    }
+    if(s.winners.length){
       out.push("");
-      out.push(`>>> WINNING COPY -- DO MORE OF THIS (${winners.length} ad${winners.length===1?"":"s"}, ${usd(winners.reduce((s,a)=>s+a.spend,0))} spent -> ${usd(winners.reduce((s,a)=>s+a.revenue,0))} collected, ${blendRoas(winners)}x blended):`);
-      winners.forEach(a=> out.push(adBlock(a)));
+      out.push(`>>> WINNING COPY -- DO MORE OF THIS (${s.winners.length} ad${s.winners.length===1?"":"s"}, ${usd(s.winSpend)} spent -> ${usd(s.winRev)} collected, ${s.blend}x blended):`);
+      s.winners.forEach(a=> out.push(adBlock(a)));
     }
-    if(losers.length){
+    if(style!=="swipe" && s.losers.length){
       out.push("");
-      out.push(`>>> LOSING COPY -- DO NOT REPEAT THIS (${losers.length} ad${losers.length===1?"":"s"}, ${usd(losers.reduce((s,a)=>s+a.spend,0))} spent -> only ${usd(losers.reduce((s,a)=>s+a.revenue,0))} back):`);
-      losers.forEach(a=> out.push(adBlock(a)));
+      out.push(`>>> LOSING COPY -- DO NOT REPEAT THIS (${s.losers.length} ad${s.losers.length===1?"":"s"}, ${usd(s.loseSpend)} spent -> only ${usd(s.loseRev)} back):`);
+      s.losers.forEach(a=> out.push(adBlock(a)));
     }
-    out.push("");
-    out.push("DO:");
-    if(winners.length) out.push(`  - Echo the angle in the winning copy above -- it returned ${blendRoas(winners)}x on real spend.`);
-    copySignals(winners, losers).forEach(s=> out.push("  - "+s));
-    out.push(isFree ? "  - Keep the whole promise free; end on joining the free challenge." : "  - Make the paid offer and the buy ask explicit.");
-    out.push("DON'T:");
-    if(losers.length){
-      const lc = losers.reduce((s,a)=>s+clientsOf(a),0);
-      out.push(`  - Reuse the losing angles above -- they burned ${usd(losers.reduce((s,a)=>s+a.spend,0))} for ${lc} client${lc===1?"":"s"}.`);
+    if(style!=="swipe"){
+      out.push(""); out.push("DO:");
+      briefDos(s).forEach(x=> out.push("  - "+x));
+      out.push("DON'T:");
+      briefDonts(s).forEach(x=> out.push("  - "+x));
     }
-    out.push(isFree ? "  - Never mention price, payment, or a paid-only feature in a free-challenge ad." : "  - Don't water the ask down to sound like a free offer.");
+  });
+
+  if(style==="prompt"){
+    out.push(""); out.push(sep); out.push("HOW TO USE THIS"); out.push(sep);
+    out.push("Pick ONE offer above. Write new ad copy that matches its winning patterns and avoids its losing ones. Keep free-challenge and direct-CTA messaging completely separate so a free ad never over-promises a paid feature.");
+  }
+  if(!sections.length){
+    out.push(""); out.push("Not enough ads in this filter with $100+ spent yet. Widen the date range or switch the offer filter.");
+  }
+  return out.join("\n");
+}
+
+// ★ The showpiece. An expandable studio that renders the brief as a living,
+// glowing document — preset toggles to regenerate it different ways, a full
+// visual preview so you SEE what you're copying, and a copy button that pops.
+function CopyBriefStudio({analyzed, range}){
+  const model = useMemo(()=>computeBriefModel(analyzed), [analyzed]);
+  const stars = useMemo(()=> Array.from({length:18}).map((_,i)=>({
+    left:(4 + (i*53)%92)+"%", top:(6 + (i*37)%86)+"%",
+    delay:((i*0.41)%3.4).toFixed(2)+"s", dur:(2.4 + (i%5)*0.7).toFixed(2)+"s",
+    size:(2 + (i%3))+"px",
+  })), []);
+  const [open, setOpen] = useState(false);
+  const [offer, setOffer] = useState("all");
+  const [style, setStyle] = useState("prompt");
+  const [copied, setCopied] = useState(false);
+  const [burst, setBurst] = useState(0);
+
+  if(!model.free.has && !model.paid.has) return null;
+
+  const clean = (s)=> String(s||"").replace(/\s+/g," ").trim();
+  const clientsOf = (a)=> Math.round(Number(a.clients)||0);
+  const rangeText = range ? rangeLabel(range) : "";
+
+  const offerChoices = [];
+  if(model.free.has && model.paid.has) offerChoices.push(["all","Both offers"]);
+  if(model.free.has) offerChoices.push(["free","Free challenge"]);
+  if(model.paid.has) offerChoices.push(["paid","Direct CTA"]);
+  const styleChoices = [["prompt","AI prompt"],["swipe","Swipe file"],["lessons","Lessons"]];
+  const effOffer = offerChoices.some(([k])=>k===offer) ? offer : (offerChoices[0]||["all"])[0];
+
+  const sections = briefSections(model, effOffer);
+  const text = briefToText(model, {offer:effOffer, style, rangeText});
+  const lineCount = text.split("\n").length;
+  const winTotal = (model.free.winners.length)+(model.paid.winners.length);
+  const loseTotal = (model.free.losers.length)+(model.paid.losers.length);
+
+  const doCopy = ()=>{
+    copyText(text).then(()=>{ setCopied(true); setBurst(b=>b+1); setTimeout(()=>setCopied(false), 2600); }).catch(()=>{});
   };
 
-  buildSection("1) FREE CHALLENGE ADS  (copy contains the word \"free\")", true,  reliable.filter(a=> isFreeOffer(a.words)));
-  buildSection("2) DIRECT CTA ADS  (no \"free\" -- paid offer)",          false, reliable.filter(a=> !isFreeOffer(a.words)));
+  const styleNote = style==="swipe" ? "Just the winning copy, verbatim, with its ROAS — a clean swipe file."
+    : style==="lessons" ? "The do's, don'ts and the headline numbers — the lessons, less the raw copy."
+    : "Full prompt: the rules, the winning + losing copy, and do's/don'ts to paste into any AI.";
 
-  out.push("");
-  out.push(sep);
-  out.push("HOW TO USE THIS");
-  out.push(sep);
-  out.push("Pick ONE offer above. Write new ad copy that matches its winning patterns and avoids its losing ones. Keep free-challenge and direct-CTA messaging completely separate so a free ad never over-promises a paid feature.");
+  return (
+    <div className={"cbs"+(open?" open":"")}>
+      <div className="cbs-stars" aria-hidden="true">
+        {stars.map((st,i)=><span key={i} className="cbs-star" style={{left:st.left, top:st.top, width:st.size, height:st.size, animationDelay:st.delay, animationDuration:st.dur}}></span>)}
+      </div>
 
-  return out.join("\n");
+      <button type="button" className="cbs-trigger" onClick={()=>setOpen(o=>!o)}>
+        <span className="cbs-orb"><span className="cbs-orb-core">★</span></span>
+        <span className="cbs-trig-txt">
+          <span className="t">Copywriting Brief Generator</span>
+          <span className="s">{winTotal} winning &amp; {loseTotal} losing ads → a paste-ready brief, built from your real numbers</span>
+        </span>
+        <span className="cbs-chev">{open?"Collapse ▲":"Open it ▾"}</span>
+      </button>
+
+      {open && (
+        <div className="cbs-body">
+          <div className="cbs-controls">
+            <div className="cbs-seg-group">
+              <span className="cbs-seg-lbl">Offer</span>
+              <div className="cbs-seg">
+                {offerChoices.map(([k,l])=>(
+                  <button key={k} type="button" className={"cbs-seg-b"+(effOffer===k?" on":"")} onClick={()=>setOffer(k)}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="cbs-seg-group">
+              <span className="cbs-seg-lbl">Style</span>
+              <div className="cbs-seg">
+                {styleChoices.map(([k,l])=>(
+                  <button key={k} type="button" className={"cbs-seg-b"+(style===k?" on":"")} onClick={()=>setStyle(k)}>{l}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="cbs-stylenote">{styleNote}</div>
+
+          <div className="cbs-preview">
+            {effOffer==="all" && model.free.has && model.paid.has && style!=="swipe" && (
+              <div className="cbs-rule"><span className="k">⚠ Never mix the two offers</span> Free-challenge copy must never promise a paid feature — and a paid ad must never sound free.</div>
+            )}
+            {sections.map((s,si)=>(
+              <div className="cbs-offer" key={si}>
+                <div className={"cbs-offer-h "+(s.isFree?"free":"paid")}>
+                  <span className="badge">{s.isFree?"FREE CHALLENGE":"DIRECT CTA · PAID"}</span>
+                  <span className="meta">{s.winners.length} winning · {s.losers.length} losing</span>
+                </div>
+
+                {s.winners.length>0 && (
+                  <div className="cbs-grp">
+                    <div className="cbs-grp-h win">▲ Winning copy — do more of this · <b>{s.blend}× blended</b> on {fmtUsd(s.winSpend)}</div>
+                    {s.winners.map((a,i)=>(
+                      <div className="cbs-quote win" key={i}>
+                        <div className="cbs-q-roas win">{a.roas.toFixed(1)}×</div>
+                        <div className="cbs-q-body">
+                          <div className="cbs-q-words">“{clean(a.words)}”</div>
+                          <div className="cbs-q-meta">{fmtUsd(a.spend)} spent → {fmtUsd(a.revenue)} collected · {fmtNum(clientsOf(a))} client{clientsOf(a)===1?"":"s"}{a.adName?` · ${a.adName}`:""}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {style!=="swipe" && s.losers.length>0 && (
+                  <div className="cbs-grp">
+                    <div className="cbs-grp-h lose">▼ Losing copy — don't repeat this · {fmtUsd(s.loseSpend)} spent → only {fmtUsd(s.loseRev)} back</div>
+                    {s.losers.map((a,i)=>(
+                      <div className="cbs-quote lose" key={i}>
+                        <div className="cbs-q-roas lose">{a.roas.toFixed(1)}×</div>
+                        <div className="cbs-q-body">
+                          <div className="cbs-q-words">“{clean(a.words)}”</div>
+                          <div className="cbs-q-meta">{fmtUsd(a.spend)} spent → {fmtUsd(a.revenue)} back · {fmtNum(clientsOf(a))} client{clientsOf(a)===1?"":"s"}{a.adName?` · ${a.adName}`:""}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {style!=="swipe" && (
+                  <div className="cbs-dd">
+                    <div className="cbs-dd-col do">
+                      <div className="h">DO</div>
+                      {briefDos(s).map((x,i)=><div className="cbs-dd-item" key={i}>{x}</div>)}
+                    </div>
+                    <div className="cbs-dd-col dont">
+                      <div className="h">DON'T</div>
+                      {briefDonts(s).map((x,i)=><div className="cbs-dd-item" key={i}>{x}</div>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!sections.length && <div className="cbs-empty">No ads in this filter with $100+ spent yet. Widen the dates or switch the offer.</div>}
+          </div>
+
+          <div className="cbs-actions">
+            <span className="cbs-count">{lineCount} lines · paste into ChatGPT, Claude, a doc — anywhere</span>
+            <button type="button" className={"cbs-copy"+(copied?" done":"")} onClick={doCopy} disabled={!sections.length}>
+              <span className="cbs-copy-sheen" aria-hidden="true"></span>
+              <span className="cbs-copy-lbl">{copied ? "✓ Copied — go make money" : "⧉ Copy this brief"}</span>
+              {burst>0 && <span className="cbs-burst" key={burst} aria-hidden="true"></span>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ------- What your messaging is telling us
@@ -5726,7 +6007,6 @@ function MessagingInsights({dashboard, range}){
   const [progress, setProgress] = useState({read:0, total:0});
   const [exploreOpen, setExploreOpen] = useState(false);
   const [sortBy, setSortBy] = useState("roas"); // roas | spend | clients
-  const [copied, setCopied] = useState(false);
 
   useEffect(()=>{
     let cancelled = false;
@@ -5791,13 +6071,6 @@ function MessagingInsights({dashboard, range}){
   const reliableCount = analyzed.filter(a=>a.reliable).length;
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
   const quote = (s, n)=> { const t=String(s||"").trim(); return t.length>n ? t.slice(0,n).trim()+"…" : t; };
-
-  // Build the paste-anywhere copywriting brief and drop it on the clipboard.
-  const canCopyBrief = analyzed.some(a=>a.reliable);
-  const doCopyBrief = ()=>{
-    const text = buildCopyBrief(analyzed, range ? rangeLabel(range) : "");
-    copyText(text).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2200); }).catch(()=>{});
-  };
 
   // Head-to-head, computed from REAL numbers — no AI needed, never wrong.
   // Best vs worst by ROAS among ads with enough spend AND revenue to compare.
@@ -5868,16 +6141,8 @@ function MessagingInsights({dashboard, range}){
   return (
     <div className="ddr-block msg-insights">
       <div className="ddr-blabel">
-        <div className="ddr-bl-text">
-          <span className="l">What your words are earning</span>
-          <span className="m">the actual copy on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
-        </div>
-        {canCopyBrief && (
-          <button type="button" className={"mi-copy"+(copied?" done":"")} onClick={doCopyBrief}
-            title="Copy a copywriting brief — winning vs losing copy with ROAS, split by free-challenge vs paid offer — to paste into any tool">
-            {copied ? "✓ Copied to clipboard" : "⧉ Copy copywriting brief"}
-          </button>
-        )}
+        <span className="l">What your words are earning</span>
+        <span className="m">the actual copy on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
       </div>
 
       <div className="mi">
@@ -5925,6 +6190,9 @@ function MessagingInsights({dashboard, range}){
             </div>
           </div>
         )}
+
+        {/* ★ The showpiece: turn the proof above into a paste-ready copywriting brief */}
+        <CopyBriefStudio analyzed={analyzed} range={range}/>
 
         {/* Depth on demand — every ad, its words, its ROAS bar */}
         {analyzed.length>0 && (
