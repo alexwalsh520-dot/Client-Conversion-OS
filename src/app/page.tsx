@@ -9,9 +9,11 @@ import {
   DollarSign,
   CreditCard,
   RefreshCw,
+  Wallet,
 } from "lucide-react";
 import { CLIENTS } from "@/lib/mock-data";
 import { fmtDollars } from "@/lib/formatters";
+import { saleGrossProfit } from "@/lib/economics";
 
 // Map offer column values to CLIENTS keys
 function offerToClientKey(offer: string): string | null {
@@ -40,6 +42,8 @@ export default function HomePage() {
   const [totalSubscriptions, setTotalSubscriptions] = useState(0);
   const [totalRetention, setTotalRetention] = useState(0);
   const [totalLastMonth, setTotalLastMonth] = useState(0);
+  const [totalGrossProfit, setTotalGrossProfit] = useState(0);
+  const [totalAdSpend, setTotalAdSpend] = useState<number | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const mtdStart = useMemo(() => formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1)), [now]);
@@ -91,15 +95,24 @@ export default function HomePage() {
       const fromDate = new Date(dateFrom + "T00:00:00");
       const retentionMonthIndex = fromDate.getMonth();
 
-      const [thisMonthRes, lastMonthRes, retentionRes] = await Promise.all([
+      const [thisMonthRes, lastMonthRes, retentionRes, adSpendData] = await Promise.all([
         fetch(`/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`),
         fetch(`/api/sales-hub/sheet-data?dateFrom=${lastMonthStart}&dateTo=${lastMonthEndStr}`),
         fetch(`/api/coaching/financials?month=${retentionMonthIndex}`),
+        // Ad spend for the same range, all accounts and statuses, so real profit
+        // nets out the full ad cost (not just currently-active campaigns).
+        fetch(`/api/ads-tracker?dateFrom=${dateFrom}&dateTo=${dateTo}&account=all&level=campaign&status=all`)
+          .then((r) => r.json())
+          .catch(() => null),
       ]);
 
       const thisMonthData = await thisMonthRes.json();
       const lastMonthData = await lastMonthRes.json();
       const retentionData = await retentionRes.json();
+      const adSpend =
+        adSpendData && adSpendData.summary && typeof adSpendData.summary.adSpend === "number"
+          ? adSpendData.summary.adSpend
+          : null;
 
       const thisMonthRows = thisMonthData.rows || [];
       const lastMonthRows = lastMonthData.rows || [];
@@ -119,11 +132,14 @@ export default function HomePage() {
 
       let totalCash = 0;
       let totalLast = 0;
+      let grossProfit = 0;
 
       for (const row of thisMonthRows) {
         const cash = row.cashCollected || 0;
         const clientKey = offerToClientKey(row.offer || "");
         totalCash += cash;
+        // Same per-sale formula the Deep Dive uses (one shared source of truth).
+        grossProfit += saleGrossProfit(row);
         if (clientKey && perClient[clientKey]) {
           perClient[clientKey].thisMonth += cash;
         }
@@ -143,6 +159,8 @@ export default function HomePage() {
       setTotalSubscriptions(subscriptionsSold);
       setTotalRetention(retentionTotal);
       setTotalLastMonth(totalLast);
+      setTotalGrossProfit(grossProfit);
+      setTotalAdSpend(adSpend);
     } catch (err) {
       console.error("Failed to fetch revenue data:", err);
     } finally {
@@ -160,6 +178,14 @@ export default function HomePage() {
     ? (((totalCashCollected - totalLastMonth) / totalLastMonth) * 100).toFixed(1)
     : "0.0";
   const isGrowthPositive = totalCashCollected >= totalLastMonth;
+
+  // Real profit: what's actually kept. Gross profit (collected minus the team's
+  // cut + coaching) less ad spend. When ad spend hasn't loaded, fall back to the
+  // before-ad-spend figure rather than showing a wrong number.
+  const realProfit = totalAdSpend != null ? totalGrossProfit - totalAdSpend : totalGrossProfit;
+  const profitIsPositive = realProfit >= 0;
+  const profitMarginPct =
+    totalCashCollected > 0 ? (realProfit / totalCashCollected) * 100 : null;
 
   return (
     <div className="fade-up">
@@ -265,6 +291,35 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            {/* Real Profit Card — what's actually kept after the team's cut,
+                coaching delivery, and ad spend (not just cash in the door). */}
+            <div
+              className="glass-static metric-card"
+              style={{
+                marginBottom: 12,
+                borderLeft: `3px solid ${profitIsPositive ? "var(--success)" : "var(--danger)"}`,
+              }}
+            >
+              <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Wallet size={14} style={{ color: profitIsPositive ? "var(--success)" : "var(--danger)" }} />
+                Real Profit
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                  {totalAdSpend != null ? "after team pay, coaching & ad spend" : "after team pay & coaching"}
+                </span>
+              </div>
+              <div
+                className="metric-card-value"
+                style={{ fontSize: 32, color: profitIsPositive ? "var(--success)" : "var(--danger)" }}
+              >
+                {fmtDollars(realProfit)}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
+                {fmtDollars(totalCashCollected)} collected → {fmtDollars(totalGrossProfit)} after team pay + coaching
+                {totalAdSpend != null ? ` → minus ${fmtDollars(totalAdSpend)} ad spend` : ""}
+                {profitMarginPct != null ? ` · ${profitMarginPct.toFixed(0)}% of collected cash kept` : ""}
+              </div>
+            </div>
+
             {/* Total Revenue Card */}
             <div className="glass-static metric-card" style={{ marginBottom: 12 }}>
               <div className="metric-card-label">Total Revenue</div>
