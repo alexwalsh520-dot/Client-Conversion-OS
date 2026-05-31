@@ -927,7 +927,7 @@
   .ddr-play-k{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--gold);font-weight:700}
   .ddr-play-h{font-size:18px;font-weight:660;letter-spacing:-.01em;line-height:1.35}
   .ddr-play-h b{color:var(--gold)}
-  .ddr-pcard{position:relative;display:grid;grid-template-columns:34px 1fr auto;gap:16px;align-items:center;
+  .ddr-pcard{position:relative;display:grid;grid-template-columns:46px 1fr auto;gap:16px;align-items:center;
     padding:15px 18px 15px 17px;border-radius:14px;border:1px solid var(--border);background:var(--panel-2);overflow:hidden;
     transition:border-color .25s,box-shadow .3s,transform .18s,background .25s}
   .ddr-pcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-2);transition:background .25s}
@@ -963,6 +963,25 @@
   .ddr-pbar span{display:block;height:100%;border-radius:99px;transition:width .55s cubic-bezier(.16,1,.3,1)}
   .ddr-pcard.scale .ddr-pbar span{background:linear-gradient(90deg,color-mix(in srgb,var(--green) 50%,transparent),var(--green))}
   .ddr-pcard.kill .ddr-pbar span{background:linear-gradient(90deg,color-mix(in srgb,var(--red) 50%,transparent),var(--red))}
+  /* Real ad creative as the card's left tile — number badge overlaid. This is
+     the at-a-glance "this is a real Facebook ad" proof. */
+  .ddr-pthumb{position:relative;width:46px;height:46px;border-radius:11px;overflow:hidden;flex-shrink:0;border:1px solid var(--border);background:var(--panel);box-shadow:0 4px 14px -8px rgba(0,0,0,.7)}
+  .ddr-pthumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .ddr-pbadge{position:absolute;left:3px;top:3px;min-width:17px;height:17px;padding:0 4px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font-family:var(--mono);font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+  .ddr-pcard.scale .ddr-pthumb{border-color:color-mix(in srgb,var(--green) 30%,var(--border))}
+  .ddr-pcard.kill .ddr-pthumb{border-color:color-mix(in srgb,var(--red) 30%,var(--border))}
+  /* Expanded: every real ad behind the word, with creative + the read copy */
+  .ddr-pads{margin-top:12px}
+  .ddr-pads .lab{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-4);margin-bottom:8px}
+  .ddr-padlist{display:flex;flex-direction:column;gap:9px}
+  .ddr-paditem{display:flex;gap:11px;align-items:flex-start;padding:9px;border-radius:11px;background:var(--panel);border:1px solid var(--border)}
+  .ddr-padimg{width:64px;height:64px;border-radius:9px;object-fit:cover;flex-shrink:0;border:1px solid var(--border-2);background:var(--panel-2)}
+  .ddr-padimg.noimg{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--text-4);text-align:center;line-height:1.3}
+  .ddr-padmeta{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+  .ddr-padmeta b{font-size:13px;color:var(--text);letter-spacing:-.01em;line-height:1.25}
+  .ddr-padmeta .acct{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .ddr-padcopy{font-size:12px;color:var(--text-2);line-height:1.45;margin-top:2px;font-style:italic}
+  .ddr-padcopy.none{color:var(--text-4);font-style:normal}
   .ddr-pimpact{text-align:right;white-space:nowrap;padding-left:8px;align-self:center}
   .ddr-pimpact .big{font-family:var(--mono);font-size:23px;font-weight:550;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
   .ddr-pcard.kill .ddr-pimpact .big{color:var(--red)} .ddr-pcard.scale .ddr-pimpact .big{color:var(--green)}
@@ -971,7 +990,7 @@
   .ddr-play-foot b{color:var(--text)}
   .ddr-play-clean{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--text-2);padding:6px 2px}
   .ddr-play-clean .ic{width:30px;height:30px;border-radius:99px;background:rgba(125,211,168,.13);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-  @media(max-width:700px){.ddr-pcard{grid-template-columns:34px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
+  @media(max-width:700px){.ddr-pcard{grid-template-columns:46px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
   /* Interactive booking table: sticky header, sortable, filterable, expandable */
   .bk{display:flex;flex-direction:column;gap:12px}
@@ -5662,6 +5681,32 @@ function roasByKeyword(adRoas){
   return m;
 }
 
+// The REAL ads behind each ad word — the actual Facebook creative image and the
+// words our reader pulled off it. This is the "is this a real ad or did the
+// software make it up?" proof: a kill/scale call can be eyeballed against the
+// live creative. Pulled straight from the same authoritative adRoas payload —
+// nothing generated. Strongest-spending ad first (most representative).
+function adsByKeyword(adRoas){
+  const m = new Map();
+  (adRoas||[]).forEach(r => {
+    const kw = String(r.label || r.adName || "UNKNOWN").toUpperCase();
+    const thumb = r.previewThumbnailUrl || r.previewImageUrl || null;
+    const copy = typeof r.onImageText === "string" ? r.onImageText.trim() : "";
+    if(!thumb && !copy && !(r.adName)) return;
+    if(!m.has(kw)) m.set(kw, []);
+    m.get(kw).push({
+      adId: r.adId || r.id || null,
+      adName: r.adName || r.label || "",
+      account: r.clientKey || "",
+      thumb,
+      copy,
+      spend: Number(r.adSpend||0),
+    });
+  });
+  m.forEach(list => list.sort((a,b)=>b.spend-a.spend));
+  return m;
+}
+
 // Attach honest ROAS to each ad word. "Traced" means we've tied real cash to it.
 // Where we can't, roas stays null — we show "not traced yet", never a fake 0×
 // that would trick someone into killing a profitable ad.
@@ -5735,6 +5780,26 @@ function buildPlaybook(rows){
   return { scales: scaleRoas, kills: [...cutRoas, ...cutBlind] };
 }
 
+// Renders a real Facebook ad creative, degrading gracefully. Facebook's preview
+// image links are valid at sync time but expire over time — so if one fails to
+// load we fall back to the clean number badge (collapsed) or a small "no
+// preview" tile (expanded). A broken-image icon would hurt trust more than help,
+// so we never show one. Fresh data → see the real ad; stale link → tidy fallback.
+function CreativeImg({src, alt, kind, badge}){
+  const [ok, setOk] = useState(true);
+  if(kind === "thumb"){
+    if(!src || !ok) return <div className="ddr-pnum">{badge}</div>;
+    return (
+      <div className="ddr-pthumb" title={alt||""}>
+        <img src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={()=>setOk(false)}/>
+        <span className="ddr-pbadge">{badge}</span>
+      </div>
+    );
+  }
+  if(!src || !ok) return <div className="ddr-padimg noimg">no preview</div>;
+  return <img className="ddr-padimg" src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={()=>setOk(false)}/>;
+}
+
 // How sure are we about THIS recommendation? Pure evidence, never invented:
 // how many real sales traced to it and how much was spent (the sample size).
 // Surfacing this is the honesty win — Alex sees the strength behind every move,
@@ -5784,6 +5849,10 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
   const impactBig = a.type==="scale" ? a.roas.toFixed(1)+"×" : fmtUsd(a.spend);
   const impactCap = a.type==="scale" ? "return on spend" : "to reclaim";
 
+  // The real ads behind this word — actual creative + the copy we read off it.
+  const previews = Array.isArray(a.previews) ? a.previews : [];
+  const hero = previews.find(p=>p.thumb) || null;
+
   const doText = a.type==="scale"
     ? <span><span className="h">What to do</span>Raise this ad's daily budget <b>20–30%</b> and keep it running. Watch that its ROAS holds near <b>{a.roas.toFixed(1)}×</b> as spend grows — if it does, raise it again.</span>
     : blind
@@ -5792,7 +5861,7 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
 
   return (
     <div className={"ddr-pcard "+a.type+(open?" open":"")} onClick={()=>setOpen(o=>!o)}>
-      <div className="ddr-pnum">{i+1}</div>
+      <CreativeImg kind="thumb" src={hero && hero.thumb} alt={hero ? ("Real ad creative for "+word) : ""} badge={i+1}/>
       <div className="ddr-pmid">
         <div className="ddr-pmove">
           <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
@@ -5815,6 +5884,27 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
 
       {open && (
         <div className="ddr-pmore" onClick={(e)=>e.stopPropagation()}>
+          {/* The actual ad(s) behind this word — real creative + the copy we read.
+              The proof that this move points at a live Facebook ad, not a guess. */}
+          {previews.length>0 && (
+            <div className="ddr-pads">
+              <span className="lab">The real ad{previews.length>1?"s":""} behind "{word}"</span>
+              <div className="ddr-padlist">
+                {previews.slice(0,4).map((p,idx)=>(
+                  <div className="ddr-paditem" key={p.adId||idx}>
+                    <CreativeImg kind="full" src={p.thumb} alt={"Real ad creative: "+(p.adName||word)}/>
+                    <div className="ddr-padmeta">
+                      <b>{cap(p.adName||word)}</b>
+                      <span className="acct">{[p.account?cap(p.account):null, p.spend>0?fmtUsd(p.spend)+" spent":null].filter(Boolean).join(" · ")||"—"}</span>
+                      {p.copy
+                        ? <div className="ddr-padcopy">"{p.copy}"</div>
+                        : <div className="ddr-padcopy none">Copy not read off this image yet</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* The money chain — spend in, cash out */}
           <div className="ddr-chain">
             <div className="seg"><b>{fmtUsd(a.spend)}</b><span className="cl">Spent</span></div>
@@ -8228,12 +8318,15 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
   const roasMap = useMemo(()=>roasByKeyword(dashboard && dashboard.adRoas), [dashboard]);
+  // Real creative + read copy for each ad word, so the playbook can SHOW the
+  // actual ad behind every move (the trust proof). Same source as ROAS.
+  const previewMap = useMemo(()=>adsByKeyword(dashboard && dashboard.adRoas), [dashboard]);
   const rows = useMemo(()=>{
     const list = aggregateByAdWord(campaigns)
       .filter(r => r.spend>0 || r.leads>0 || r.booked>0)
-      .map(r => withRoas(r, roasMap));
+      .map(r => { const wr = withRoas(r, roasMap); wr.previews = previewMap.get(wr.keyword) || []; return wr; });
     return list.sort((a,b)=>b.spend-a.spend);
-  }, [campaigns, roasMap]);
+  }, [campaigns, roasMap, previewMap]);
 
   // ---- The decision feedback loop ----
   // Logged moves live in Supabase via /api/ads/decisions, scoped to the account
