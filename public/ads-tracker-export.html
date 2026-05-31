@@ -836,6 +836,20 @@
   .ddr-stat .val.roas.good{color:var(--green)} .ddr-stat .val.roas.bad{color:var(--red)}
   .ddr-stat .val.roas .x{font-size:15px;color:var(--text-3);font-weight:600;margin-left:1px}
 
+  /* Real profit return (LTGP:CAC) — the money-first hero, sits above the band */
+  .ddr-profit{margin:0 0 13px;background:linear-gradient(180deg,rgba(212,178,122,.09),transparent),var(--panel);border:1px solid var(--gold-dim);border-radius:12px;padding:17px 20px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+  .ddr-profit .pnum{display:flex;flex-direction:column;gap:4px;min-width:150px}
+  .ddr-profit .plbl{font-size:10px;text-transform:uppercase;letter-spacing:.11em;color:var(--gold);font-weight:700}
+  .ddr-profit .big{font-size:42px;font-weight:720;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .ddr-profit .big.good{color:var(--green)} .ddr-profit .big.bad{color:var(--red)} .ddr-profit .big.mid{color:var(--gold)}
+  .ddr-profit .big .x{font-size:21px;color:var(--text-3);font-weight:600;margin-left:2px}
+  .ddr-profit .psub{font-size:10.5px;color:var(--text-4)}
+  .ddr-profit .pexp{flex:1;min-width:250px;font-size:12.5px;color:var(--text-2);line-height:1.6}
+  .ddr-profit .pexp b{color:var(--text)}
+  .ddr-profit .pgoal{margin-top:6px;display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--text-4)}
+  .ddr-profit .pchip{padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-weight:600;letter-spacing:.03em}
+  .ddr-profit .pchip.floor{color:var(--red)} .ddr-profit .pchip.target{color:var(--green)}
+
   /* Playbook dropdowns — maximum context, one tap away */
   .ddr-pcard{cursor:pointer}
   .ddr-pcard.open{box-shadow:inset 0 0 0 1px var(--border-2)}
@@ -5456,6 +5470,13 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
   const roasClass = blendedRoas==null ? "" : (blendedRoas>=2 ? "good" : blendedRoas<1 ? "bad" : "");
 
+  // Real profit return (LTGP:CAC) — the money-first number. Collected ROAS is the
+  // top line; this is what's actually LEFT after the team's cut and coaching costs
+  // are paid, measured against ad spend. Target 9:1, floor 3:1.
+  const grossProfit = sum && sum.grossProfit != null ? Number(sum.grossProfit) : null;
+  const profitReturn = sum && sum.grossProfitRoi != null ? Number(sum.grossProfitRoi) : null;
+  const profitClass = profitReturn==null ? "mid" : (profitReturn>=9 ? "good" : profitReturn>=3 ? "mid" : "bad");
+
   return (
     <div className="ddr">
       <div className="ddr-head">
@@ -5468,6 +5489,25 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
 
       {/* Do This Next — the simple, ROAS-first action board */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)}/>
+
+      {/* Real profit return (LTGP:CAC) — the money-first hero */}
+      {profitReturn!=null && (
+        <div className="ddr-profit">
+          <div className="pnum">
+            <div className="plbl">Real profit return</div>
+            <div className={"big "+profitClass}>{profitReturn.toFixed(1)}<span className="x">:1</span></div>
+            <div className="psub">{grossProfit!=null ? fmtUsd(grossProfit)+" kept" : ""}</div>
+          </div>
+          <div className="pexp">
+            After your team's cut (closer, setter, manager) and coaching costs are paid, every <b>$1</b> of ad spend brings back <b>{fmtUsd(profitReturn)}</b> in real profit you keep{grossProfit!=null ? <span> — about <b>{fmtUsd(grossProfit)}</b> in your pocket from this spend</span> : null}. This is the number that actually pays you, not the top-line ROAS.
+            <div className="pgoal">
+              <span className="pchip floor">Floor 3:1</span>
+              <span className="pchip target">Target 9:1</span>
+              <span>{profitReturn>=9 ? "You're at target — this spend is printing." : profitReturn>=3 ? "Above the floor — healthy, push toward 9:1." : "Below the floor — this spend isn't paying its way yet."}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary band — ROAS leads */}
       <div className="ddr-band">

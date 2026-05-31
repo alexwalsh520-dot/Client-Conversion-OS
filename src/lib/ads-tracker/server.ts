@@ -163,9 +163,12 @@ export interface AdsTrackerRow {
   callClosingRate: number;
   messagesConversionRate: number;
   collectedRevenue: number;
+  grossProfit: number;
   costPerNewClient: number | null;
   contractedRoi: number;
   collectedRoi: number;
+  // Real return on ad spend: gross profit kept ÷ ad spend (LTGP:CAC). Target 9×, floor 3×.
+  grossProfitRoi: number;
   status: "active" | "finished";
   attributionOnly: boolean;
 }
@@ -210,6 +213,7 @@ interface Group {
   subscriptionClients: number;
   contractedRevenue: number;
   collectedRevenue: number;
+  grossProfit: number;
   status: "active" | "finished";
 }
 
@@ -413,6 +417,7 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     subscriptionClients: 0,
     contractedRevenue: 0,
     collectedRevenue: 0,
+    grossProfit: 0,
     status: "finished",
   };
 }
@@ -472,9 +477,11 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     callClosingRate: safeDiv(group.newClients, group.callsTaken || group.bookedCalls) * 100,
     messagesConversionRate: safeDiv(group.bookedCalls, group.messages) * 100,
     collectedRevenue: group.collectedRevenue,
+    grossProfit: group.grossProfit,
     costPerNewClient: group.newClients > 0 ? adSpend / group.newClients : null,
     contractedRoi: safeDiv(group.contractedRevenue, adSpend),
     collectedRoi: safeDiv(group.collectedRevenue, adSpend),
+    grossProfitRoi: safeDiv(group.grossProfit, adSpend),
     status: group.status,
     attributionOnly: !group.campaignId && !group.adId && group.adSpendCents === 0,
   };
@@ -1147,6 +1154,7 @@ function applySalesToGroups(
       if (isWin(row)) group.newClients += 1;
       group.contractedRevenue += row.revenue || 0;
       group.collectedRevenue += row.cashCollected || 0;
+      group.grossProfit += saleGrossProfit(row);
     }
   }
 
@@ -1159,6 +1167,58 @@ function applySalesToGroups(
 // ROAS multiple is marked unreliable so the UI can withhold the number instead
 // of presenting a fantasy return.
 const MIN_SPEND_FOR_RELIABLE_ROAS = 100;
+
+// ---- True gross-profit model (confirmed with Alex 2026-05-31) ------------
+// Real money kept on a sale = collected cash minus the team's cut and the cost
+// of delivering the coaching. Ad spend is subtracted at the aggregate (it's the
+// CAC side). The fixed $4k/mo manager base is overhead handled separately, NOT
+// here — this models only the per-sale variable cost.
+const CLOSER_COMMISSION_RATE = 0.10; // 10% to whoever closed, always.
+const MANAGER_NAME = "WILL"; // Sales manager; gets a 2.5% override on deals he didn't close.
+const MANAGER_OVERRIDE_RATE = 0.025;
+const DEFAULT_SETTER_RATE = 0.03; // Most setters are 3%; Amara is the exception.
+const SETTER_COMMISSION_RATES: Record<string, number> = {
+  amara: 0.05,
+  gideon: 0.03,
+  debbie: 0.03,
+  kelechi: 0.03,
+  kelz: 0.03,
+};
+const COACHING_COST_PER_MONTH = 30; // $30 per month of coaching sold.
+export const MANAGER_MONTHLY_BASE = 4000; // Fixed overhead; surfaced in the monthly view, not per ad.
+// When collected cash arrives WITHOUT per-sale detail (manual corrections, or
+// day-level backfill rows that have no setter/closer/program length), we can't
+// break out exact commissions + coaching. To keep gross profit consistent with
+// the collected revenue it sits beside, we apply the blended margin observed on
+// fully-detailed sales (~75%: e.g. $2400/6mo → $1829, $1200/3mo → $899). Every
+// fully-detailed matched sale uses the EXACT model in saleGrossProfit() instead.
+const GROSS_PROFIT_FALLBACK_MARGIN = 0.75;
+
+function setterCommissionRate(setter: string | null | undefined): number {
+  const key = (setter || "").trim().toLowerCase();
+  if (!key) return DEFAULT_SETTER_RATE;
+  return SETTER_COMMISSION_RATES[key] ?? DEFAULT_SETTER_RATE;
+}
+
+function coachingMonthsFromProgramLength(programLength: string | null | undefined): number {
+  // Stored as a whole number of months in text form ("1", "3", "6").
+  const months = parseInt(String(programLength || "").replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(months) && months > 0 ? months : 0;
+}
+
+// Gross profit kept on a single sale, BEFORE ad spend. Only meaningful for an
+// actual won sale with collected cash; returns 0 otherwise.
+function saleGrossProfit(row: SheetRow): number {
+  const collected = row.cashCollected || 0;
+  if (collected <= 0) return 0;
+  const closerName = (row.closer || "").trim().toUpperCase();
+  const closerComm = collected * CLOSER_COMMISSION_RATE;
+  const setterComm = collected * setterCommissionRate(row.setter);
+  const managerOverride =
+    closerName === MANAGER_NAME ? 0 : collected * MANAGER_OVERRIDE_RATE;
+  const coachingCost = coachingMonthsFromProgramLength(row.programLength) * COACHING_COST_PER_MONTH;
+  return collected - closerComm - setterComm - managerOverride - coachingCost;
+}
 
 function buildPayload(
   query: AdsTrackerQuery,
@@ -1224,9 +1284,15 @@ function buildPayload(
       // when this is false, so a $40-spend ad never reads as "181× return".
       roasReliable: row.adSpend >= MIN_SPEND_FOR_RELIABLE_ROAS,
       collectedRevenue: row.collectedRevenue,
+      // Real money kept after the team's cut + coaching cost (before ad spend).
+      grossProfit: row.grossProfit,
+      // LTGP:CAC — gross profit kept per $1 of ad spend. Target 9×, floor 3×.
+      grossProfitRoi: row.grossProfitRoi,
       newClients: row.newClients,
     }))
     .sort((a, b) => b.collectedRevenue - a.collectedRevenue);
+
+  const totalGrossProfit = paidRows.reduce((sum, row) => sum + row.grossProfit, 0);
 
   return {
     mock,
@@ -1249,6 +1315,10 @@ function buildPayload(
       contractedRevenue: totalContracted,
       collectedRoi: safeDiv(totalCollected, totalSpend),
       contractedRoi: safeDiv(totalContracted, totalSpend),
+      // Real profit kept after the team's cut + coaching cost (before ad spend),
+      // and the money-first metric: gross profit per $1 of ad spend (LTGP:CAC).
+      grossProfit: totalGrossProfit,
+      grossProfitRoi: safeDiv(totalGrossProfit, totalSpend),
       messages: paidRows.reduce((sum, row) => sum + row.messages, 0),
       bookedCalls: paidRows.reduce((sum, row) => sum + row.bookedCalls, 0),
       callsTaken: paidRows.reduce((sum, row) => sum + row.callsTaken, 0),
@@ -2124,6 +2194,7 @@ function addKeywordEventsToGroups(
       const amount = dollars(manualValue);
       group.collectedRevenue += amount;
       group.contractedRevenue += amount;
+      group.grossProfit += amount * GROSS_PROFIT_FALLBACK_MARGIN;
     } else if (event.event_type === "manual_missing_booking_attribution_override") {
       group.bookedCalls += 1;
     } else if (event.event_type !== "manual_attribution_override") {
@@ -2170,6 +2241,7 @@ function addKeywordBackfillRowsToGroups(
     group.mainOfferClients += Math.max(0, newClients - subscriptionClients);
     group.contractedRevenue += dollars(row.contracted_revenue_cents || 0);
     group.collectedRevenue += dollars(row.collected_revenue_cents || 0);
+    group.grossProfit += dollars(row.collected_revenue_cents || 0) * GROSS_PROFIT_FALLBACK_MARGIN;
     group.dateLabel = dateLabelForRow(row);
     groups.set(id, group);
   }
