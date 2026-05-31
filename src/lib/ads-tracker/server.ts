@@ -4065,7 +4065,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     },
   };
 
-  return buildPayload(query, finalized, events, false, finalizedDaily, {
+  const payload = buildPayload(query, finalized, events, false, finalizedDaily, {
     unmatchedSales: attributionAlerts,
     financialUnmatchedSales: unmatchedSales,
     resolvedAlerts,
@@ -4082,4 +4082,63 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     calendarEvents,
     salesMatchStats,
   });
+
+  // Attach the words the software has already read off each ad's image, so the
+  // payload carries the messaging next to the money. Never blocks the dashboard
+  // if the copy store is empty or unavailable.
+  await attachCreativeCopy(db, payload);
+
+  return payload;
+}
+
+// Reads the stored on-image text for every ad in the payload and hangs it on the
+// matching adRoas row as `onImageText`. Also reports how many ads still need
+// reading so the UI / a backfill can fill the gaps. Best-effort only.
+async function attachCreativeCopy(
+  db: ReturnType<typeof getServiceSupabase>,
+  payload: { adRoas?: Array<{ adId?: string | null; onImageText?: string }> } & Record<string, unknown>
+) {
+  try {
+    const rows = Array.isArray(payload.adRoas) ? payload.adRoas : [];
+    const adIds = Array.from(
+      new Set(rows.map((r) => (r.adId ? String(r.adId) : "")).filter(Boolean))
+    );
+    if (adIds.length === 0) return;
+
+    const copyByAd = new Map<string, string>();
+    // Chunk the IN() list so a long ad roster can't blow the query size.
+    for (let i = 0; i < adIds.length; i += 200) {
+      const chunk = adIds.slice(i, i + 200);
+      const { data } = await db
+        .from("ad_creative_copy")
+        .select("ad_id,on_image_text")
+        .in("ad_id", chunk);
+      (data || []).forEach((row: { ad_id: string; on_image_text: string | null }) => {
+        copyByAd.set(row.ad_id, row.on_image_text || "");
+      });
+    }
+
+    let read = 0;
+    let withWords = 0;
+    for (const row of rows) {
+      const id = row.adId ? String(row.adId) : "";
+      if (id && copyByAd.has(id)) {
+        const text = copyByAd.get(id) || "";
+        row.onImageText = text;
+        read += 1;
+        if (text) withWords += 1;
+      } else {
+        row.onImageText = "";
+      }
+    }
+
+    payload.creativeCopyStatus = {
+      total: adIds.length,
+      read,
+      withWords,
+      pending: adIds.length - read,
+    };
+  } catch (error) {
+    console.error("attachCreativeCopy failed (non-fatal):", error);
+  }
 }

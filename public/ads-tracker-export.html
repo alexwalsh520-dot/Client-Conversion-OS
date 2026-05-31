@@ -552,6 +552,31 @@
   .ar-col-camp{font-size:9px;color:var(--text-4);letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;opacity:0.8}
   .ad-preview-popover{position:fixed;z-index:80;width:min(340px,calc(100vw - 28px));max-height:calc(100vh - 28px);padding:8px;background:var(--bg-1);border:1px solid var(--border-2);border-radius:8px;box-shadow:0 18px 60px rgba(0,0,0,0.72);pointer-events:none}
   .ad-preview-image{display:block;width:100%;max-height:calc(100vh - 44px);object-fit:contain;border-radius:5px;background:var(--bg)}
+  .ad-preview-copy{margin-top:8px;padding:8px 10px;border-radius:6px;background:color-mix(in srgb, var(--gold) 8%, transparent);border:1px solid color-mix(in srgb, var(--gold) 22%, transparent)}
+  .ad-preview-copy.loading,.ad-preview-copy.empty{background:var(--bg-2);border-color:var(--border-2);color:var(--text-4);font-size:11.5px;font-style:italic}
+  .ad-preview-copy-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:3px}
+  .ad-preview-copy-text{font-size:13px;line-height:1.35;color:var(--text-1);font-weight:500}
+  /* Messaging insights card */
+  .msg-loading{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border-2);color:var(--text-3);font-size:13px;line-height:1.5}
+  .msg-spin{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb, var(--gold) 35%, transparent);border-top-color:var(--gold);animation:msg-spin 0.8s linear infinite;flex-shrink:0}
+  @keyframes msg-spin{to{transform:rotate(360deg)}}
+  .msg-card{padding:16px 18px;border-radius:12px;background:linear-gradient(180deg, color-mix(in srgb, var(--gold) 7%, var(--bg-1)), var(--bg-1));border:1px solid color-mix(in srgb, var(--gold) 26%, var(--border-2))}
+  .msg-headline{font-size:17px;line-height:1.4;font-weight:700;color:var(--text);margin-bottom:14px}
+  .msg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
+  @media (max-width:640px){.msg-grid{grid-template-columns:1fr}}
+  .msg-col{padding:11px 13px;border-radius:9px;background:var(--bg-2)}
+  .msg-col.win{border-left:3px solid var(--green)}
+  .msg-col.lose{border-left:3px solid var(--red)}
+  .msg-col-h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;margin-bottom:5px}
+  .msg-col.win .msg-col-h{color:var(--green)}
+  .msg-col.lose .msg-col-h{color:var(--red)}
+  .msg-col-b{font-size:13px;line-height:1.45;color:var(--text-1)}
+  .msg-take{margin:14px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .msg-take li{position:relative;padding-left:20px;font-size:13.5px;line-height:1.45;color:var(--text-2)}
+  .msg-take li:before{content:"→";position:absolute;left:0;top:0;color:var(--gold);font-weight:700}
+  .msg-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:11px;border-top:1px solid var(--border-2);flex-wrap:wrap}
+  .msg-conf{font-size:11.5px;font-weight:600}
+  .msg-foot-note{font-size:11px;color:var(--text-4)}
 
   /* Keyword chart */
   .kw-panel{padding:18px 20px}
@@ -2319,6 +2344,9 @@ function allAdsAggregated(campaigns=CAMPAIGNS, authoritativeAdRoas=[]){
           roasReliable: typeof row.roasReliable === "boolean" ? row.roasReliable : spend >= 100,
           previewImageUrl: row.previewImageUrl || row.previewThumbnailUrl || matched?.previewImageUrl || matched?.previewThumbnailUrl || null,
           previewThumbnailUrl: row.previewThumbnailUrl || matched?.previewThumbnailUrl || null,
+          // The words the software already read off this ad's image (from the
+          // payload). Empty until the reader has processed this ad.
+          onImageText: typeof row.onImageText === "string" ? row.onImageText : "",
         };
       })
       .filter(ad => {
@@ -2348,21 +2376,48 @@ function adPreviewPosition(event){
 function AdROASChart({campaigns=CAMPAIGNS, dashboard=null}){
   const [view, setView] = useState("top"); // 'top' | 'all'
   const [preview, setPreview] = useState(null);
+  // adId -> {loading:true} | {text:"..."} — the words written ON each ad image,
+  // read once (lazily, on hover) and remembered so we never re-read the same ad.
+  const [copy, setCopy] = useState({});
   const all = useMemo(()=>allAdsAggregated(campaigns, dashboard?.adRoas), [campaigns, dashboard?.adRoas]);
   const filtered = all
     .map(a => ({...a, roas: Number.isFinite(a.roas) ? a.roas : (a.spend ? a.collected/a.spend : 0)}))
     .sort((a,b) => b.collected - a.collected);
   const list = view === "top" ? filtered.slice(0,6) : filtered;
   const max = list[0]?.collected || 1;
+  // Ask the reader what words are on this ad's image. Fires at most once per ad.
+  const loadCopy = (ad) => {
+    const url = ad.previewImageUrl || ad.previewThumbnailUrl;
+    if(!ad.adId || !url) return;
+    // The software may have already read this ad (attached on the payload) —
+    // use that instantly, no network call.
+    if(typeof ad.onImageText === "string" && ad.onImageText){
+      setCopy(prev => prev[ad.adId] ? prev : {...prev, [ad.adId]: {text: ad.onImageText}});
+      return;
+    }
+    setCopy(prev => {
+      if(prev[ad.adId]) return prev; // already loading or loaded
+      fetch("/api/ads/creative-copy", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({adId: ad.adId, imageUrl: url, clientKey: ad.camp})
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setCopy(p => ({...p, [ad.adId]: {text: (d && d.onImageText) ? d.onImageText : ""}})))
+        .catch(() => setCopy(p => ({...p, [ad.adId]: {text: ""}})));
+      return {...prev, [ad.adId]: {loading: true}};
+    });
+  };
   const showPreview = (event, ad) => {
     const url = ad.previewImageUrl || ad.previewThumbnailUrl;
     if(!url) return;
-    setPreview({url, position: adPreviewPosition(event)});
+    loadCopy(ad);
+    setPreview({url, adId: ad.adId, position: adPreviewPosition(event)});
   };
   const movePreview = (event, ad) => {
     const url = ad.previewImageUrl || ad.previewThumbnailUrl;
     if(!url) return;
-    setPreview({url, position: adPreviewPosition(event)});
+    setPreview({url, adId: ad.adId, position: adPreviewPosition(event)});
   };
   return (
     <div className="panel chart-card ads-roas">
@@ -2418,6 +2473,17 @@ function AdROASChart({campaigns=CAMPAIGNS, dashboard=null}){
       {preview && (
         <div className="ad-preview-popover" style={{left:preview.position.left, top:preview.position.top}}>
           <img className="ad-preview-image" src={preview.url} alt="" />
+          {(() => {
+            const c = copy[preview.adId];
+            if(!c || c.loading) return <div className="ad-preview-copy loading">Reading the words on this ad…</div>;
+            if(!c.text) return <div className="ad-preview-copy empty">No words on this image</div>;
+            return (
+              <div className="ad-preview-copy">
+                <div className="ad-preview-copy-label">What this ad says</div>
+                <div className="ad-preview-copy-text">{c.text}</div>
+              </div>
+            );
+          })()}
         </div>
       )}
       <div className="chart-legend">
@@ -5186,6 +5252,160 @@ function DataHealth({dashboard}){
   );
 }
 
+// ------- What your messaging is telling us
+// The software reads the words off every ad image (in the background), then ties
+// that messaging to the money (spend / revenue / ROAS / clients) and explains, in
+// plain English, what kind of message is working. This closes the loop between
+// what an ad SAYS and what it MAKES.
+function MessagingInsights({dashboard}){
+  const adRoas = useMemo(()=> Array.isArray(dashboard?.adRoas) ? dashboard.adRoas : [], [dashboard]);
+  const scope = (dashboard && dashboard.query && dashboard.query.account) || "all";
+  // Ads that have a picture we can read words from.
+  const readableAds = useMemo(()=> adRoas
+    .map(a => ({
+      adId: a.adId || a.id || null,
+      adName: a.adName || a.label || "",
+      clientKey: a.clientKey || "",
+      imageUrl: a.previewImageUrl || a.previewThumbnailUrl || null,
+      adSpend: Number(a.adSpend||0),
+      collectedRevenue: Number(a.collectedRevenue||0),
+      collectedRoi: Number(a.collectedRoi||0),
+      newClients: Number(a.newClients||0),
+      roasReliable: typeof a.roasReliable === "boolean" ? a.roasReliable : Number(a.adSpend||0) >= 100,
+    }))
+    .filter(a => a.adId && a.imageUrl), [adRoas]);
+
+  const [insight, setInsight] = useState(null);
+  const [phase, setPhase] = useState("idle"); // idle | reading | thinking | ready | empty
+  const [progress, setProgress] = useState({read:0, total:0});
+
+  useEffect(()=>{
+    let cancelled = false;
+    if(!dashboard || dashboard.mock || readableAds.length === 0){
+      setPhase("empty"); setInsight(null);
+      return;
+    }
+
+    const adsForBackfill = readableAds.map(a => ({adId:a.adId, imageUrl:a.imageUrl, clientKey:a.clientKey}));
+    const adsForInsight = readableAds.map(a => ({
+      adId:a.adId, adName:a.adName, clientKey:a.clientKey,
+      adSpend:a.adSpend, collectedRevenue:a.collectedRevenue,
+      collectedRoi:a.collectedRoi, newClients:a.newClients, roasReliable:a.roasReliable,
+    }));
+
+    const fetchInsight = async () => {
+      try{
+        const res = await fetch("/api/ads/messaging-insights", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({scope, ads: adsForInsight}),
+        });
+        const json = await res.json().catch(()=>({}));
+        if(cancelled) return false;
+        if(json && json.status === "ok" && json.insight){
+          setInsight(json.insight); setPhase("ready");
+          return true;
+        }
+        return false;
+      }catch(_e){ return false; }
+    };
+
+    const run = async () => {
+      // 1) Maybe it's already analyzed (cache) — show instantly.
+      const had = await fetchInsight();
+      if(cancelled) return;
+
+      // 2) Read any ads we haven't read yet, a few at a time, until done.
+      setPhase(prev => prev === "ready" ? "ready" : "reading");
+      let guard = 0;
+      while(!cancelled && guard < 60){
+        guard++;
+        let data = null;
+        try{
+          const res = await fetch("/api/ads/creative-copy/backfill", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ads: adsForBackfill}),
+          });
+          data = await res.json().catch(()=>null);
+        }catch(_e){ break; }
+        if(cancelled || !data) break;
+        const total = readableAds.length;
+        setProgress({read: Math.max(0, total - (data.remaining||0)), total});
+        if(!data.remaining || data.remaining <= 0) break;
+      }
+      if(cancelled) return;
+
+      // 3) Now that more ads are read, get (or refresh) the insight.
+      if(phase !== "ready" || !had){
+        setPhase(prev => prev === "ready" ? "ready" : "thinking");
+        const ok = await fetchInsight();
+        if(!cancelled && !ok) setPhase(prev => prev === "ready" ? "ready" : "empty");
+      }
+    };
+
+    run();
+    return ()=>{ cancelled = true; };
+  }, [readableAds, scope, dashboard]);
+
+  if(!dashboard || dashboard.mock || readableAds.length === 0) return null;
+
+  const conf = insight && insight.confidence ? String(insight.confidence) : null;
+  const confColor = conf==="high" ? "var(--green)" : conf==="medium" ? "var(--gold)" : "var(--text-4)";
+  const takeaways = insight && Array.isArray(insight.takeaways) ? insight.takeaways.filter(Boolean) : [];
+
+  return (
+    <div className="ddr-block msg-insights">
+      <div className="ddr-blabel">
+        <span className="l">What your messaging is telling us</span>
+        <span className="m">
+          {phase==="ready"
+            ? "the words on your ads, tied to the money"
+            : progress.total>0
+              ? `reading your ads… ${progress.read} of ${progress.total}`
+              : "reading the words on your ads…"}
+        </span>
+      </div>
+
+      {phase !== "ready" && !insight && (
+        <div className="msg-loading">
+          <span className="msg-spin" aria-hidden="true"></span>
+          The software is reading the actual words on each ad and matching them to what they earned. This shows up here once it's done — no need to wait.
+        </div>
+      )}
+
+      {insight && (
+        <div className="msg-card">
+          {insight.headline && <div className="msg-headline">{insight.headline}</div>}
+          <div className="msg-grid">
+            {insight.winning_message && (
+              <div className="msg-col win">
+                <div className="msg-col-h">What's working</div>
+                <div className="msg-col-b">{insight.winning_message}</div>
+              </div>
+            )}
+            {insight.losing_message && (
+              <div className="msg-col lose">
+                <div className="msg-col-h">What's burning money</div>
+                <div className="msg-col-b">{insight.losing_message}</div>
+              </div>
+            )}
+          </div>
+          {takeaways.length>0 && (
+            <ul className="msg-take">
+              {takeaways.map((t,i)=>(<li key={i}>{t}</li>))}
+            </ul>
+          )}
+          {conf && (
+            <div className="msg-foot">
+              <span className="msg-conf" style={{color:confColor}}>● {conf} confidence</span>
+              <span className="msg-foot-note">based only on ads with enough spend to trust</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -5286,6 +5506,9 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         <div className="ddr-blabel"><span className="l">ROAS by ad word</span><span className="m">tap a row for where to find the ad · tap a column to sort</span></div>
         <BookingTable rows={rows}/>
       </div>
+
+      {/* What your messaging is telling us — software reads the ad copy and ties it to results */}
+      <MessagingInsights dashboard={dashboard}/>
 
       {coverage!=null && (
         <div className="ddr-block">
