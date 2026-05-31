@@ -1045,6 +1045,80 @@
   @media(max-width:680px){.mi-c{grid-template-columns:1fr}}
   .mi-quiet{padding:11px 15px;border-top:1px solid var(--border);font-size:11px;color:var(--text-4)}
   .mi-loading{display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:11px;background:var(--bg-2,var(--panel-2));border:1px solid var(--border);color:var(--text-3);font-size:12.5px;line-height:1.5}
+
+  /* ---- Decision Center: balanced scale/kill + reallocation hero ---- */
+  .ddr-realloc{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 4px;padding:14px 16px;border-radius:12px;border:1px solid color-mix(in srgb,var(--gold) 30%,var(--border-2));background:radial-gradient(130% 170% at 0% 0%,color-mix(in srgb,var(--gold) 10%,var(--panel)),var(--panel) 62%)}
+  .ddr-realloc .rl-main{display:flex;flex-direction:column;gap:3px;flex-shrink:0}
+  .ddr-realloc .rl-amt{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;color:var(--red);letter-spacing:-0.02em;line-height:1}
+  .ddr-realloc .rl-cap{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);font-weight:600}
+  .ddr-realloc .rl-arrow{font-size:18px;color:var(--text-3);flex-shrink:0}
+  .ddr-realloc .rl-to{flex:1;min-width:240px;font-size:12.5px;line-height:1.5;color:var(--text-2)}
+  .ddr-realloc .rl-to b{color:var(--text)}
+  .ddr-pgroup{margin-top:14px}
+  .ddr-pgh{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;padding-left:2px}
+  .ddr-pgh .ar{font-size:12px}
+  .ddr-pgh.scale{color:var(--green)} .ddr-pgh.kill{color:var(--red)}
+
+  /* ---- Funnel scoreboard: every metric, sparkline, meaning, click-to-trend ---- */
+  .fs{display:flex;flex-direction:column;gap:16px}
+  .fs-stage-h{display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:9px}
+  .fs-stage-h .dot{width:7px;height:7px;border-radius:50%}
+  .fs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(186px,1fr));gap:9px}
+  .fs-tile{display:flex;flex-direction:column;gap:5px;padding:12px 13px 11px;border:1px solid var(--border);border-radius:11px;background:var(--panel);text-align:left;transition:border-color .14s,transform .12s,box-shadow .16s}
+  .fs-tile:hover{border-color:var(--gold-dim);transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.22)}
+  .fs-tile.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  .fs-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .fs-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);font-weight:600;line-height:1.3}
+  .fs-chip{font-size:9px;font-weight:700;white-space:nowrap;padding:2px 5px;border-radius:5px;font-variant-numeric:tabular-nums}
+  .fs-chip.good{color:var(--green);background:color-mix(in srgb,var(--green) 13%,transparent)}
+  .fs-chip.bad{color:var(--red);background:color-mix(in srgb,var(--red) 13%,transparent)}
+  .fs-chip.neutral,.fs-chip.flat{color:var(--text-4);background:var(--panel-2)}
+  .fs-val{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500;letter-spacing:-0.02em;color:var(--text)}
+  .fs-tile .spark{display:block;width:100%;height:28px}
+  .fs-explain{font-size:10.5px;line-height:1.4;color:var(--text-4)}
+  .fs-expand{margin-top:6px;border:1px solid var(--gold-dim);border-radius:12px;background:var(--panel);padding:14px 16px;animation:mi-rise .3s both}
+  .fs-expand-h{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .fs-expand-h .t{font-size:14px;font-weight:650;color:var(--text)}
+  .fs-expand-h .m{flex:1;font-size:11px;color:var(--text-4)}
+  .fs-close{font-size:12px;color:var(--text-3);padding:2px 8px;border-radius:6px;border:1px solid var(--border)}
+  .fs-close:hover{color:var(--text);border-color:var(--border-2)}
+
+  /* ---- Winners & money pits: cards that open a proving trend graph ---- */
+  .wp{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  @media(max-width:760px){.wp{grid-template-columns:1fr}}
+  .wp-col{display:flex;flex-direction:column;gap:8px}
+  .wp-colh{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+  .wp-colh.win{color:var(--green)} .wp-colh.lose{color:var(--red)}
+  .wp-none{font-size:11.5px;color:var(--text-4);padding:10px 12px;border:1px dashed var(--border);border-radius:10px}
+  .pt-card{border:1px solid var(--border);border-radius:11px;background:var(--panel);overflow:hidden;transition:border-color .14s}
+  .pt-card.win:hover,.pt-card.win.open{border-color:color-mix(in srgb,var(--green) 40%,transparent)}
+  .pt-card.lose:hover,.pt-card.lose.open{border-color:color-mix(in srgb,var(--red) 40%,transparent)}
+  .pt-head{display:grid;grid-template-columns:1fr auto;grid-template-areas:"word roas" "mini mini" "chev chev";gap:6px 10px;width:100%;padding:11px 13px;text-align:left}
+  .pt-word{grid-area:word;font-size:13.5px;font-weight:620;color:var(--text);align-self:center}
+  .pt-roas{grid-area:roas;font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:500;align-self:center}
+  .pt-roas.win{color:var(--green)} .pt-roas.lose{color:var(--red)}
+  .pt-mini{grid-area:mini;display:flex;gap:14px}
+  .pt-mini .s{font-size:11px;color:var(--text-4)} .pt-mini .s b{color:var(--text-2);font-variant-numeric:tabular-nums}
+  .pt-chev{grid-area:chev;font-size:10.5px;color:var(--text-3);font-weight:600}
+  .pt-card:hover .pt-chev{color:var(--gold)}
+  .pt-body{padding:0 13px 13px;border-top:1px solid var(--border);animation:mi-rise .3s both}
+  .pt-proof{font-size:11.5px;line-height:1.5;color:var(--text-3);padding:11px 0 4px}
+  .pt-where{font-size:10.5px;color:var(--text-4);margin-top:8px}
+  .pt-where .lab{text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-right:6px}
+  .pt-where b{color:var(--text-2)}
+
+  /* ---- Correlations: what drives the money ---- */
+  .corr{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:760px){.corr{grid-template-columns:1fr}}
+  .corr-list{display:flex;flex-direction:column;gap:11px}
+  .corr-row{display:grid;grid-template-columns:60px 1fr auto;gap:10px;align-items:center}
+  .corr-bar{height:7px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border);overflow:hidden}
+  .corr-fill{height:100%;border-radius:99px;transition:width .5s}
+  .corr-txt{font-size:12px;line-height:1.42;color:var(--text-2)} .corr-txt b{color:var(--text)}
+  .corr-r{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-4)}
+  .corr-scatter{border:1px solid var(--border);border-radius:11px;background:var(--panel);padding:11px 12px}
+  .corr-scatter-h{font-size:10.5px;color:var(--text-4);margin-bottom:6px}
+  .corr-svg{width:100%;height:auto;display:block}
 </style>
 </head>
 <body>
@@ -5044,6 +5118,10 @@ function adVerdict(row){
 // Pure rules over real data — anyone could read it and act. ROAS leads:
 // scale the proven money-makers, cut the proven money-losers. Only when no
 // revenue is traced do we fall back to "this burns cash and books nothing".
+// Balanced on purpose: the old version put every scale move first and sliced to
+// 5, so big money-pits got pushed off the list entirely — a scaling bias. Now
+// scaling and killing are SEPARATE, both first-class, and we quantify the
+// reallocation (the instant move: cut the bleeders, point that budget at winners).
 function buildPlaybook(rows){
   const scaleRoas = [], cutRoas = [], cutBlind = [];
   rows.forEach(r => {
@@ -5055,14 +5133,23 @@ function buildPlaybook(rows){
       cutBlind.push({...r, type:"kill"});
     }
   });
-  scaleRoas.sort((a,b)=>b.roas-a.roas);   // best return first
-  cutRoas.sort((a,b)=>b.spend-a.spend);   // biggest bleed first
+  scaleRoas.sort((a,b)=>b.roas-a.roas);                                  // best return first
+  cutRoas.sort((a,b)=>(b.spend-b.tracedRev)-(a.spend-a.tracedRev));      // biggest bleed first
   cutBlind.sort((a,b)=>b.spend-a.spend);
-  // Growth first (pour into winners), then stop the bleeding. Cap at 5.
-  const actions = [...scaleRoas, ...cutRoas, ...cutBlind].slice(0,5);
-  const freedUp = [...cutRoas, ...cutBlind].reduce((s,r)=>s+r.spend,0);
-  const scaleSpend = scaleRoas.reduce((s,r)=>s+r.spend,0);
-  return {actions, freedUp, scaleSpend, killCount:cutRoas.length+cutBlind.length, scaleCount:scaleRoas.length};
+  const scales = scaleRoas;
+  const kills = [...cutRoas, ...cutBlind];
+  // Reclaimable budget = the spend currently sitting on losers, free to move.
+  const freedUp = kills.reduce((s,r)=>s+r.spend,0);
+  const bleed = cutRoas.reduce((s,r)=>s+Math.max(0,r.spend-r.tracedRev),0) + cutBlind.reduce((s,r)=>s+r.spend,0);
+  const scaleSpend = scales.reduce((s,r)=>s+r.spend,0);
+  const winRev = scales.reduce((s,r)=>s+r.tracedRev,0);
+  const blendedWinRoas = scaleSpend>0 ? winRev/scaleSpend : null;        // winners' real blended return
+  const reallocReturn = blendedWinRoas!=null ? freedUp*blendedWinRoas : null; // what that budget could earn instead
+  return {
+    scales: scales.slice(0,4), kills: kills.slice(0,4),
+    freedUp, bleed, scaleSpend, blendedWinRoas, reallocReturn,
+    killCount: kills.length, scaleCount: scales.length,
+  };
 }
 
 // One action card. Collapsed = the move + the one reason + the dollar impact.
@@ -5155,27 +5242,48 @@ function PlaybookCard({a, i, rangeText}){
 }
 
 function ActionPlaybook({rows, rangeText}){
-  const {actions, freedUp, scaleSpend, killCount, scaleCount} = buildPlaybook(rows);
+  const {scales, kills, freedUp, bleed, blendedWinRoas, reallocReturn, killCount, scaleCount} = buildPlaybook(rows);
+  const nothing = scales.length===0 && kills.length===0;
 
   return (
     <div className="ddr-play">
       <div className="ddr-play-top">
         <div className="ddr-play-k">Do this next</div>
-        <div className="ddr-play-h">{actions.length>0
-          ? <span>The <b>{actions.length}</b> highest-ROAS moves to make more money right now. Tap any one for the full story.</span>
-          : <span>Your money's working — nothing to scale hard or cut right now.</span>}</div>
+        <div className="ddr-play-h">{nothing
+          ? <span>Your money's working — nothing screaming to scale or cut right now.</span>
+          : <span>The fastest money moves right now — <b>grow what's printing</b> and <b>stop what's bleeding</b>. Tap any card for the full story.</span>}</div>
       </div>
 
-      {actions.length>0 ? actions.map((a,i)=>(
-        <PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>
-      )) : (
+      {/* Reallocation hero — the instant move the old scaling-only list hid */}
+      {killCount>0 && (
+        <div className="ddr-realloc">
+          <div className="rl-main">
+            <span className="rl-amt">{fmtUsd(freedUp)}</span>
+            <span className="rl-cap">on {killCount} losing ad{killCount===1?"":"s"} {rangeText}</span>
+          </div>
+          <div className="rl-arrow">→</div>
+          <div className="rl-to">
+            {blendedWinRoas!=null && reallocReturn!=null
+              ? <span>Cut them and move that budget to your winners (running at <b>{blendedWinRoas.toFixed(1)}×</b>): it points at <b>{fmtUsd(reallocReturn)}</b> back instead of <b>{fmtUsd(bleed)}</b> burned. That's the single fastest gain on this page.</span>
+              : <span>Cut these and reclaim the budget for the winners below — instant gain, no new spend.</span>}
+          </div>
+        </div>
+      )}
+
+      {nothing && (
         <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is clearly losing money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
       )}
 
-      {(killCount>0 || scaleCount>0) && (
-        <div className="ddr-play-foot">
-          {killCount>0 && <span>Cutting the money-losers above frees up about <b>{fmtUsd(freedUp)}</b> you spent {rangeText}. </span>}
-          {scaleCount>0 && <span>Your proven winners are already running on <b>{fmtUsd(scaleSpend)}</b> — that's the budget to grow first.</span>}
+      {scales.length>0 && (
+        <div className="ddr-pgroup">
+          <div className="ddr-pgh scale"><span className="ar">▲</span>Scale these — proven winners with room to grow</div>
+          {scales.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>)}
+        </div>
+      )}
+      {kills.length>0 && (
+        <div className="ddr-pgroup">
+          <div className="ddr-pgh kill"><span className="ar">▼</span>Kill these — burning cash, reclaim the budget</div>
+          {kills.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>)}
         </div>
       )}
     </div>
@@ -5996,6 +6104,324 @@ function BookingTableCard({rows}){
   );
 }
 
+// ===========================================================================
+// CMO COCKPIT — full visibility, every insight click-to-verify, all computed in
+// code (no AI tokens). Built on data already in the payload.
+// ===========================================================================
+
+// A per-day time series for any slice of the ad feed (filter by adId, keyword,
+// creator, or everything). Reuses explorerRows so every metric is preserved and
+// ratios are computed from summed components per day, never averaged.
+function dailySeriesFor(dashboard, predicate){
+  const src = explorerRows(dashboard).filter(predicate || (()=>true));
+  const byIso = new Map();
+  src.forEach(r=>{
+    if(!byIso.has(r.iso)) byIso.set(r.iso, emptyMetric(r.label));
+    addMetric(byIso.get(r.iso), r);
+  });
+  return Array.from(byIso.keys()).sort().map(iso=>({iso, label:dateLabelFromIso(iso), m:byIso.get(iso)}));
+}
+
+// Tiny inline trend line — proof at a glance, no axes, no chrome.
+function Sparkline({values, color="var(--gold)", width=110, height=30}){
+  const vals = (values||[]).filter(v=>v!=null && !isNaN(v));
+  if(vals.length<2) return <svg className="spark" width={width} height={height}/>;
+  const min=Math.min(...vals), max=Math.max(...vals), span=(max-min)||1;
+  const stepX = width/(vals.length-1);
+  const pts = vals.map((v,i)=>({x:i*stepX, y:height-((v-min)/span)*(height-5)-2.5}));
+  const line = pts.map((p,i)=>(i?"L":"M")+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ");
+  const area = line+` L ${width} ${height} L 0 ${height} Z`;
+  const gid = "sg"+Math.abs((width*31+height*7+vals.length*13+Math.round(vals[0]||0))).toString(36);
+  return (
+    <svg className="spark" width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={color} stopOpacity="0.20"/><stop offset="1" stopColor={color} stopOpacity="0"/>
+      </linearGradient></defs>
+      <path d={area} fill={`url(#${gid})`}/>
+      <path d={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// Direction of travel: average of the last third vs the first third. Honest and
+// cheap — no second fetch, just reads the shape of the series we already have.
+function trendDir(values){
+  const v = (values||[]).filter(x=>x!=null && !isNaN(x));
+  if(v.length<4) return null;
+  const k = Math.max(1, Math.floor(v.length/3));
+  const avg = a=> a.reduce((s,x)=>s+x,0)/a.length;
+  const first = avg(v.slice(0,k)), last = avg(v.slice(-k));
+  if(first===0 && last===0) return null;
+  const pct = first===0 ? 1 : (last-first)/Math.abs(first);
+  if(Math.abs(pct) < 0.05) return {dir:"flat", pct:0};
+  return {dir: pct>0?"up":"down", pct};
+}
+
+// Every metric in the funnel, grouped the way a CMO reads it: money flows from
+// reach → conversations → calls → cash. better:"up"/"down" says which direction
+// is good, so the trend chip can be honestly colored.
+const SCOREBOARD = [
+  {stage:"Reach", color:"var(--blue)", metrics:[
+    {id:"spend", label:"Ad spend", value:m=>m.spend, fmt:v=>fmtUsd(v), axis:fmtCompactUsd, better:"none", explain:"What you put into Meta."},
+    {id:"impressions", label:"Impressions", value:m=>m.imp, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"none", explain:"Times your ads were shown."},
+    {id:"cpm", label:"CPM", value:m=>safeRatio(m.spend*1000,m.imp), fmt:v=>fmtUsd(v,2), axis:v=>fmtUsd(v,0), better:"down", explain:"Cost to be shown 1,000 times."},
+    {id:"ctr", label:"Click-through rate", value:m=>safeRatio(m.clicks*100,m.imp), fmt:v=>fmtPct(v,2), axis:v=>fmtPct(v,1), better:"up", explain:"Share of people who clicked."},
+    {id:"cpc", label:"Cost per click", value:m=>safeRatio(m.spend,m.clicks), fmt:v=>fmtUsd(v,2), axis:v=>fmtUsd(v,1), better:"down", explain:"What each link click costs."},
+    {id:"clicks", label:"Link clicks", value:m=>m.clicks, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"up", explain:"People who clicked through."},
+  ]},
+  {stage:"Conversations", color:"var(--green)", metrics:[
+    {id:"msgs", label:"DMs started", value:m=>m.msgs, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"up", explain:"Conversations your ads opened."},
+    {id:"cost_per_dm", label:"Cost per DM", value:m=>safeRatio(m.spend,m.msgs), fmt:v=>fmtUsd(v,2), axis:v=>fmtUsd(v,1), better:"down", explain:"What it costs to start one DM."},
+    {id:"msg_to_call", label:"DM → call rate", value:m=>safeRatio(m.calls*100,m.msgs), fmt:v=>fmtPct(v,1), axis:v=>fmtPct(v,0), better:"up", explain:"DMs that became a booked call."},
+  ]},
+  {stage:"Calls", color:"var(--gold)", metrics:[
+    {id:"calls", label:"Calls booked", value:m=>m.calls, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"up", explain:"Strategy calls booked."},
+    {id:"cost_per_call_booked", label:"Cost / call booked", value:m=>safeRatio(m.spend,m.calls), fmt:v=>fmtUsd(v,0), axis:v=>fmtUsd(v,0), better:"down", explain:"Spend per booked call."},
+    {id:"taken", label:"Calls taken", value:m=>m.taken, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"up", explain:"Calls that actually happened."},
+    {id:"show_rate", label:"Show rate", value:m=>safeRatio(m.taken*100,m.calls), fmt:v=>fmtPct(v,1), axis:v=>fmtPct(v,0), better:"up", explain:"Booked calls that showed up."},
+    {id:"cost_per_call_taken", label:"Cost / call taken", value:m=>safeRatio(m.spend,m.taken), fmt:v=>fmtUsd(v,0), axis:v=>fmtUsd(v,0), better:"down", explain:"Spend per call that showed."},
+    {id:"close_rate", label:"Close rate", value:m=>safeRatio(m.clients*100,m.taken), fmt:v=>fmtPct(v,1), axis:v=>fmtPct(v,0), better:"up", explain:"Calls that became clients."},
+  ]},
+  {stage:"Money", color:"var(--green)", metrics:[
+    {id:"clients", label:"New clients", value:m=>m.clients, fmt:v=>fmtNum(v), axis:fmtCompactNum, better:"up", explain:"New paying clients from ads."},
+    {id:"cac", label:"Cost per client", value:m=>safeRatio(m.spend,m.clients), fmt:v=>fmtUsd(v,0), axis:v=>fmtUsd(v,0), better:"down", explain:"What you paid to land one client."},
+    {id:"collected", label:"Collected revenue", value:m=>m.collected, fmt:v=>fmtUsd(v), axis:fmtCompactUsd, better:"up", explain:"Cash collected, tied to ads."},
+    {id:"collected_roas", label:"Collected ROAS", value:m=>safeRatio(m.collected,m.spend), fmt:v=>v.toFixed(2)+"×", axis:v=>v.toFixed(1)+"×", better:"up", explain:"Dollars back per $1 spent."},
+  ]},
+];
+
+// Color the trend chip by whether the move is GOOD, not just up/down.
+function trendChip(td, better){
+  if(!td) return null;
+  if(td.dir==="flat") return {arrow:"→", cls:"flat", txt:"holding steady"};
+  const goodDir = better==="up" ? "up" : better==="down" ? "down" : null;
+  const good = goodDir ? td.dir===goodDir : null;
+  const arrow = td.dir==="up" ? "▲" : "▼";
+  const pct = Math.round(Math.abs(td.pct)*100);
+  const cls = good===null ? "neutral" : good ? "good" : "bad";
+  return {arrow, cls, txt:(td.dir==="up"?"up ":"down ")+pct+"%"};
+}
+
+function FunnelScoreboard({dashboard, range}){
+  const series = useMemo(()=>dailySeriesFor(dashboard, ()=>true), [dashboard]);
+  const [openId, setOpenId] = useState(null);
+  if(!series.length) return null;
+  const total = aggregateTotal(series.map(s=>s.m));
+  const labels = series.map(s=>s.label);
+
+  // Find the def for the currently-expanded metric (search every stage).
+  let openDef = null, openStage = null;
+  SCOREBOARD.forEach(st=> st.metrics.forEach(mt=>{ if(mt.id===openId){ openDef=mt; openStage=st; } }));
+
+  return (
+    <div className="ddr-block">
+      <div className="ddr-blabel">
+        <span className="l">Every number in your funnel</span>
+        <span className="m">reach → conversations → calls → cash · click any tile to see its full trend · {rangeLabel(range)}</span>
+      </div>
+      <div className="fs">
+        {SCOREBOARD.map(st=>(
+          <div className="fs-stage" key={st.stage}>
+            <div className="fs-stage-h"><span className="dot" style={{background:st.color}}></span>{st.stage}</div>
+            <div className="fs-grid">
+              {st.metrics.map(mt=>{
+                const daily = series.map(s=>mt.value(s.m));
+                const val = mt.value(total);
+                const chip = trendChip(trendDir(daily), mt.better);
+                const on = openId===mt.id;
+                return (
+                  <button type="button" key={mt.id} className={"fs-tile"+(on?" on":"")} onClick={()=>setOpenId(on?null:mt.id)}>
+                    <div className="fs-top">
+                      <span className="fs-lbl">{mt.label}</span>
+                      {chip && <span className={"fs-chip "+chip.cls}>{chip.arrow} {chip.txt}</span>}
+                    </div>
+                    <div className="fs-val">{mt.fmt(val)}</div>
+                    <Sparkline values={daily} color={st.color} width={150} height={28}/>
+                    <div className="fs-explain">{mt.explain}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {openDef && (
+          <div className="fs-expand">
+            <div className="fs-expand-h">
+              <span className="t">{openDef.label} over time</span>
+              <span className="m">{openDef.explain} {openDef.better==="up"?"Higher is better.":openDef.better==="down"?"Lower is better.":""}</span>
+              <button type="button" className="fs-close" onClick={()=>setOpenId(null)}>✕</button>
+            </div>
+            <LineChart
+              labels={labels}
+              series={[{name:openDef.label, values:series.map(s=>openDef.value(s.m)), color:openStage.color, isPrimary:true, fmt:openDef.fmt}]}
+              fmt={openDef.axis || openDef.fmt} height={220} width={700}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A winner / money-pit card whose claim you can verify: tap it and the real
+// spend-vs-revenue lines for that exact ad word draw out, so you SEE whether it's
+// been winning (or dragging) the whole time or only just turned.
+function PerfTrendCard({row, kind, dashboard}){
+  const [open, setOpen] = useState(false);
+  const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+  const series = useMemo(()=> open ? dailySeriesFor(dashboard, r=> String(r.keyword||"").toUpperCase()===row.keyword) : [], [open, dashboard, row.keyword]);
+  const roasTxt = row.roas!=null ? row.roas.toFixed(1)+"×" : "—";
+  return (
+    <div className={"pt-card "+kind+(open?" open":"")}>
+      <button type="button" className="pt-head" onClick={()=>setOpen(o=>!o)}>
+        <span className="pt-word">{cap(row.keyword)}</span>
+        <span className={"pt-roas "+kind}>{roasTxt}</span>
+        <span className="pt-mini">
+          <span className="s"><b>{fmtUsd(row.spend)}</b> spent</span>
+          <span className="s"><b>{row.traced?fmtUsd(row.tracedRev):"—"}</b> back</span>
+          <span className="s"><b>{fmtNum(row.clients)}</b> clients</span>
+        </span>
+        <span className="pt-chev">{open?"▲ hide proof":"▾ see the trend"}</span>
+      </button>
+      {open && (
+        <div className="pt-body">
+          {series.length>1 ? (
+            <>
+              <div className="pt-proof">The two lines below are this ad word's daily <b style={{color:"var(--gold)"}}>spend</b> and <b style={{color:"var(--green)"}}>collected revenue</b>. {kind==="win"?"Revenue riding above spend is the proof it's earning.":"Spend riding above revenue is the proof it's bleeding."}</div>
+              <LineChart
+                labels={series.map(s=>s.label)}
+                series={[
+                  {name:"Spend", values:series.map(s=>s.m.spend), color:"var(--gold)", fmt:v=>fmtUsd(v)},
+                  {name:"Revenue", values:series.map(s=>s.m.collected), color:"var(--green)", isPrimary:true, fmt:v=>fmtUsd(v)},
+                ]}
+                fmt={fmtCompactUsd} height={190} width={660}/>
+            </>
+          ) : (
+            <div className="pt-proof">Not enough separate days of data to draw a trend for this ad word yet — the totals above are exact.</div>
+          )}
+          <div className="pt-where"><span className="lab">Where to find it</span><b>{(row.accounts||[]).join(" + ")||"—"}</b>{(row.ads||[]).length>0 && <span> · {(row.ads||[]).map(a=>cap(a)).join(", ")}</span>}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WinnersAndPits({rows, dashboard}){
+  const reliable = rows.filter(r=>r.traced && r.roasReliable && r.roas!=null);
+  const winners = reliable.filter(r=>r.roas>=1.5).sort((a,b)=>b.roas-a.roas).slice(0,4);
+  const pits = reliable.filter(r=>r.roas<1).sort((a,b)=>b.spend-a.spend).slice(0,4);
+  if(winners.length===0 && pits.length===0) return null;
+  return (
+    <div className="ddr-block">
+      <div className="ddr-blabel">
+        <span className="l">Winners &amp; money pits</span>
+        <span className="m">your clearest earners and bleeders — tap any one to see the trend that proves it</span>
+      </div>
+      <div className="wp">
+        <div className="wp-col">
+          <div className="wp-colh win"><span className="ar">▲</span>Winning — feed these</div>
+          {winners.length ? winners.map(r=><PerfTrendCard key={r.keyword} row={r} kind="win" dashboard={dashboard}/>)
+            : <div className="wp-none">No ad word has cleared 1.5× with enough spend yet.</div>}
+        </div>
+        <div className="wp-col">
+          <div className="wp-colh lose"><span className="ar">▼</span>Bleeding — cut or fix these</div>
+          {pits.length ? pits.map(r=><PerfTrendCard key={r.keyword} row={r} kind="lose" dashboard={dashboard}/>)
+            : <div className="wp-none">Nothing with real spend is under 1× right now. Clean.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Pearson correlation over [x,y] pairs. Returns null if it can't be computed.
+function pearson(pairs){
+  const n = pairs.length;
+  if(n<3) return null;
+  let sx=0,sy=0,sxx=0,syy=0,sxy=0;
+  pairs.forEach(([x,y])=>{ sx+=x; sy+=y; sxx+=x*x; syy+=y*y; sxy+=x*y; });
+  const dx = Math.sqrt(n*sxx - sx*sx), dy = Math.sqrt(n*syy - sy*sy);
+  if(dx===0 || dy===0) return null;
+  return (n*sxy - sx*sy)/(dx*dy);
+}
+function corrWord(r){
+  const a = Math.abs(r);
+  return a>=0.6 ? "strong" : a>=0.35 ? "a clear" : a>=0.18 ? "a mild" : "little to no";
+}
+
+function CorrelationPanel({rows, dashboard}){
+  // Only ad words with enough spend to trust and real traced ROAS can speak.
+  const pool = rows.filter(r=> r.traced && r.roasReliable && r.roas!=null && r.spend>0);
+  if(pool.length<4) return null;
+
+  // Leading indicators → does each one track ROAS? All computed, no AI.
+  const drivers = [
+    {id:"cpl", label:"Cost per DM", get:r=>r.cpl, fmt:v=>fmtUsd(v,2), lowerIsCheaper:true, x:"cheaper DMs"},
+    {id:"ctr", label:"Click-through rate", get:r=>r.ctr, fmt:v=>fmtPct(v,2), lowerIsCheaper:false, x:"higher click rate"},
+    {id:"rate", label:"DM → call rate", get:r=>r.rate, fmt:v=>fmtPct(v,1), lowerIsCheaper:false, x:"more DMs booking"},
+    {id:"cpc", label:"Cost per booked call", get:r=>r.cpc, fmt:v=>fmtUsd(v,0), lowerIsCheaper:true, x:"cheaper calls"},
+  ];
+  const findings = drivers.map(d=>{
+    const pairs = pool.filter(r=>{ const v=d.get(r); return v!=null && !isNaN(v) && v>0; }).map(r=>[d.get(r), r.roas]);
+    const r = pearson(pairs);
+    return {...d, r, n:pairs.length};
+  }).filter(f=>f.r!=null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+  if(!findings.length) return null;
+
+  // Scatter the strongest relationship so the claim is visible, not just asserted.
+  const lead = findings[0];
+  const leadPairs = pool.filter(r=>{ const v=lead.get(r); return v!=null && !isNaN(v) && v>0; }).map(r=>({x:lead.get(r), y:r.roas, kw:r.keyword, spend:r.spend}));
+  const W=660, H=220, padL=44, padB=30, padT=12, padR=12;
+  const xs=leadPairs.map(p=>p.x), ys=leadPairs.map(p=>p.y);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs)||1, yMin=0, yMax=Math.max(...ys, 2);
+  const sx=v=> padL + ((v-xMin)/((xMax-xMin)||1))*(W-padL-padR);
+  const sy=v=> (H-padB) - ((v-yMin)/((yMax-yMin)||1))*(H-padB-padT);
+  const beY = sy(1); // breakeven ROAS line
+  const cap=(s)=>s?s.charAt(0)+s.slice(1).toLowerCase():s;
+
+  const plain = (f)=>{
+    const dirHelps = (f.r<0) === f.lowerIsCheaper; // negative r + lower-is-cheaper ⇒ helps ROAS
+    const strength = corrWord(f.r);
+    if(strength==="little to no") return <span><b>{f.label}</b> shows little to no link to ROAS across your ads.</span>;
+    return <span>Ads with <b>{f.x}</b> tend to {dirHelps?"earn MORE":"earn LESS"} — {strength} relationship to ROAS{f.label===lead.label?"":""}.</span>;
+  };
+
+  return (
+    <div className="ddr-block">
+      <div className="ddr-blabel">
+        <span className="l">What actually drives the money</span>
+        <span className="m">code-measured links between each lever and ROAS — across {pool.length} ad words with enough spend to trust</span>
+      </div>
+      <div className="corr">
+        <div className="corr-list">
+          {findings.map(f=>(
+            <div className={"corr-row "+corrWord(f.r).replace(/[^a-z]/g,"")} key={f.id}>
+              <div className="corr-bar"><div className="corr-fill" style={{width:Math.round(Math.abs(f.r)*100)+"%", background: ((f.r<0)===f.lowerIsCheaper)?"var(--green)":"var(--red)"}}></div></div>
+              <div className="corr-txt">{plain(f)}</div>
+              <div className="corr-r">r={f.r.toFixed(2)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="corr-scatter">
+          <div className="corr-scatter-h">{lead.label} (→) vs ROAS (↑) — each dot is an ad word, size = spend</div>
+          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="corr-svg">
+            <line x1={padL} y1={beY} x2={W-padR} y2={beY} stroke="var(--text-4)" strokeDasharray="3 3" strokeWidth="1"/>
+            <text x={W-padR} y={beY-4} textAnchor="end" fontSize="8" fill="var(--text-4)">break-even 1×</text>
+            <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="var(--border)" strokeWidth="1"/>
+            <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="var(--border)" strokeWidth="1"/>
+            {leadPairs.map((p,i)=>(
+              <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={Math.max(3, Math.min(11, Math.sqrt(p.spend)/6))}
+                fill={p.y>=1?"var(--green)":"var(--red)"} fillOpacity="0.5" stroke={p.y>=1?"var(--green)":"var(--red)"} strokeWidth="1">
+                <title>{cap(p.kw)} · {lead.fmt(p.x)} · {p.y.toFixed(1)}× · {fmtUsd(p.spend)}</title>
+              </circle>
+            ))}
+            <text x={padL} y={H-padB+18} fontSize="8" fill="var(--text-4)">{lead.fmt(xMin)}</text>
+            <text x={W-padR} y={H-padB+18} textAnchor="end" fontSize="8" fill="var(--text-4)">{lead.fmt(xMax)}</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -6113,6 +6539,9 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         <div className="ddr-stat"><div className="lbl">Cost / booked call</div><div className="val">{blendedCostPerCall>0?fmtUsd(blendedCostPerCall):"—"}</div><div className="sub">judge it next to ROAS</div></div>
       </div>
 
+      {/* Every metric in the funnel — full visibility, each with a trend you can open */}
+      <FunnelScoreboard dashboard={dashboard} range={range}/>
+
       {/* Cheap-leads callout */}
       {wasters.length>0 && (
         <div className="ddr-call">
@@ -6136,8 +6565,14 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         </div>
       </div>
 
+      {/* Winners & money pits — multiple, each click-to-verify with a real trend graph */}
+      <WinnersAndPits rows={rows} dashboard={dashboard}/>
+
       {/* Trend explorer — any metric, split by creator / campaign / ad set / ad / ad word */}
       <TrendExplorer dashboard={dashboard} range={range}/>
+
+      {/* What actually drives the money — code-measured correlations to ROAS */}
+      <CorrelationPanel rows={rows} dashboard={dashboard}/>
 
       {/* ROAS by ad word: collapsed to a card that opens the full table in a modal */}
       <div className="ddr-block">
