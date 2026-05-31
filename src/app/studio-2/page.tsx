@@ -57,6 +57,8 @@ import {
   Video,
   Wand2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 const CANVAS_W = 1080;
@@ -10527,6 +10529,10 @@ export default function Studio2Page() {
                 onPreviewTime={seekVideoPreview}
                 onZoomChange={setVideoTimelineZoom}
                 onSplit={splitVideoAtPlayhead}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={undoStack.length > 0}
+                canRedo={redoStack.length > 0}
                 onMutedChange={(videoMuted) => updateVideoSettings({ videoMuted })}
                 onVolumeChange={(videoVolume) => updateVideoSettings({ videoVolume })}
                 onReset={() => {
@@ -12493,6 +12499,10 @@ function VideoTrimControls({
   onPreviewTime,
   onZoomChange,
   onSplit,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onMutedChange,
   onVolumeChange,
   onReset,
@@ -12508,12 +12518,17 @@ function VideoTrimControls({
   onPreviewTime: (time: number) => void;
   onZoomChange: (zoom: number) => void;
   onSplit: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   onMutedChange: (muted: boolean) => void;
   onVolumeChange: (volume: number) => void;
   onReset: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const draftSegmentsRef = useRef<VideoSegment[]>([]);
+  const playheadDragRef = useRef(false);
   const dragRef = useRef<{
     type: "start" | "end" | "move";
     id: string;
@@ -12524,6 +12539,7 @@ function VideoTrimControls({
     previewTime: number;
   } | null>(null);
   const [draftSegments, setDraftSegmentsState] = useState<VideoSegment[]>([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(segments[0]?.id ?? null);
   const safeDuration = Math.max(0, duration);
   const setDraftSegments = useCallback((next: VideoSegment[]) => {
     draftSegmentsRef.current = next;
@@ -12537,6 +12553,9 @@ function VideoTrimControls({
   const pxPerSecond = 36 + clamp(zoom, 0.5, 4) * 68;
   const trackWidth = Math.max(440, Math.ceil(max * pxPerSecond));
   const previewLeft = clamp((currentTime / max) * trackWidth, 0, trackWidth);
+  const activeSegment = normalizedSegments.find((segment) => segment.id === selectedSegmentId)
+    ?? normalizedSegments.find((segment) => currentTime >= segment.start && currentTime <= (segment.end ?? max))
+    ?? normalizedSegments[0];
   const enabledSegments = normalizedSegments.filter((segment) => segment.enabled);
   const totalEnabledLength = enabledSegments.reduce((sum, segment) => sum + Math.max(0, (segment.end ?? max) - segment.start), 0);
   const canTrim = safeDuration > 0 || normalizedSegments.length > 0;
@@ -12549,6 +12568,33 @@ function VideoTrimControls({
     padding: "0 9px",
     fontSize: 11,
   };
+  const toolbarButton = (active = false, disabled = false): React.CSSProperties => ({
+    width: 31,
+    height: 31,
+    borderRadius: 8,
+    border: active ? `1px solid ${ADS_BRAND.goldBorder}` : `1px solid ${ADS_BRAND.border}`,
+    background: active ? ADS_BRAND.goldSoft : "transparent",
+    color: disabled ? ADS_BRAND.text4 : active ? ADS_BRAND.gold : ADS_BRAND.text2,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    fontFamily: "inherit",
+    fontSize: 13,
+    fontWeight: 900,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.42 : 1,
+  });
+  const getTimeFromClientX = useCallback(
+    (clientX: number) => {
+      const root = rootRef.current;
+      if (!root || !max) return 0;
+      const bounds = root.getBoundingClientRect();
+      const x = clientX - bounds.left + root.scrollLeft;
+      return roundVideoTime(clamp(x / pxPerSecond, 0, max));
+    },
+    [max, pxPerSecond]
+  );
 
   const commitDrag = useCallback(
     (clientX: number) => {
@@ -12586,6 +12632,7 @@ function VideoTrimControls({
       if (!canTrim) return;
       event.preventDefault();
       event.stopPropagation();
+      setSelectedSegmentId(segment.id);
       onStart();
       const end = segment.end ?? max;
       draftSegmentsRef.current = normalizedSegments;
@@ -12604,7 +12651,23 @@ function VideoTrimControls({
     [canTrim, max, normalizedSegments, onPreviewTime, onStart]
   );
 
+  const startPlayheadDrag = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!canTrim) return;
+      event.preventDefault();
+      event.stopPropagation();
+      playheadDragRef.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      onPreviewTime(getTimeFromClientX(event.clientX));
+    },
+    [canTrim, getTimeFromClientX, onPreviewTime]
+  );
+
   const stopDrag = useCallback(() => {
+    if (playheadDragRef.current) {
+      playheadDragRef.current = false;
+      return;
+    }
     const active = dragRef.current;
     if (active) onSegmentsChange(draftSegmentsRef.current, active.previewTime);
     dragRef.current = null;
@@ -12631,26 +12694,113 @@ function VideoTrimControls({
       if (normalizedSegments.length <= 1) return;
       onStart();
       const next = normalizedSegments.filter((segment) => segment.id !== segmentId);
+      setSelectedSegmentId(next[0]?.id ?? null);
       onSegmentsChange(next, next[0]?.start ?? 0);
     },
     [normalizedSegments, onSegmentsChange, onStart]
   );
 
+  const splitAtPlayhead = useCallback(() => {
+    if (!canTrim) return;
+    onSplit();
+  }, [canTrim, onSplit]);
+
+  const deleteActiveSegment = useCallback(() => {
+    if (!activeSegment || normalizedSegments.length <= 1) return;
+    deleteSegment(activeSegment.id);
+  }, [activeSegment, deleteSegment, normalizedSegments.length]);
+
+  const trimActiveSegment = useCallback(
+    (edge: "start" | "end") => {
+      if (!activeSegment || !canTrim) return;
+      const segmentEnd = activeSegment.end ?? max;
+      const nextPoint = edge === "start"
+        ? clamp(currentTime, activeSegment.start, Math.max(activeSegment.start, segmentEnd - minGap))
+        : clamp(currentTime, activeSegment.start + minGap, segmentEnd);
+      onStart();
+      const next = normalizedSegments.map((segment) =>
+        segment.id === activeSegment.id
+          ? edge === "start"
+            ? { ...segment, start: roundVideoTime(nextPoint) }
+            : { ...segment, end: roundVideoTime(nextPoint) }
+          : segment
+      );
+      onSegmentsChange(next, roundVideoTime(nextPoint));
+    },
+    [activeSegment, canTrim, currentTime, max, minGap, normalizedSegments, onSegmentsChange, onStart]
+  );
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minWidth: 0 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={labelStyle}>Video Timeline</span>
-        <span style={{
-          color: ADS_BRAND.gold,
-          background: "rgba(212,178,122,0.1)",
-          border: `1px solid ${ADS_BRAND.goldSoft}`,
-          borderRadius: 999,
-          padding: "3px 8px",
-          fontSize: 11,
-          fontWeight: 800,
-        }}>
-          {formatVideoTime(totalEnabledLength || max)}
-        </span>
+      <div style={{
+        height: 36,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginBottom: 8,
+        border: `1px solid ${ADS_BRAND.border}`,
+        background: ADS_BRAND.panel,
+        borderRadius: 9,
+        padding: "0 8px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <button type="button" style={toolbarButton(true)} title="Select clips">
+            <MousePointer2 size={15} />
+          </button>
+          <button type="button" style={toolbarButton(false, !canUndo)} onClick={onUndo} disabled={!canUndo} title="Undo">
+            <RotateCcw size={15} />
+          </button>
+          <button type="button" style={toolbarButton(false, !canRedo)} onClick={onRedo} disabled={!canRedo} title="Redo">
+            <RotateCw size={15} />
+          </button>
+          <span style={{ width: 1, height: 20, background: ADS_BRAND.border2, margin: "0 3px" }} />
+          <button type="button" style={toolbarButton(false, !activeSegment)} onClick={() => trimActiveSegment("start")} disabled={!activeSegment} title="Trim clip start to playhead">
+            <span style={{ fontSize: 15, lineHeight: 1 }}>[|</span>
+          </button>
+          <button type="button" style={toolbarButton(false, !canTrim)} onClick={splitAtPlayhead} disabled={!canTrim} title="Split at playhead">
+            <Scissors size={15} />
+          </button>
+          <button type="button" style={toolbarButton(false, !activeSegment)} onClick={() => trimActiveSegment("end")} disabled={!activeSegment} title="Trim clip end to playhead">
+            <span style={{ fontSize: 15, lineHeight: 1 }}>|]</span>
+          </button>
+          <button type="button" style={toolbarButton(false, !activeSegment || normalizedSegments.length <= 1)} onClick={deleteActiveSegment} disabled={!activeSegment || normalizedSegments.length <= 1} title="Delete selected clip">
+            <Trash2 size={15} />
+          </button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
+          <span style={{
+            color: ADS_BRAND.gold,
+            background: "rgba(212,178,122,0.1)",
+            border: `1px solid ${ADS_BRAND.goldSoft}`,
+            borderRadius: 999,
+            padding: "3px 8px",
+            fontSize: 11,
+            fontWeight: 800,
+          }}>
+            {formatVideoTime(totalEnabledLength || max)}
+          </span>
+          <button type="button" style={toolbarButton(false)} onClick={() => onZoomChange(clamp(zoom - 0.35, 0.5, 4))} title="Zoom out timeline">
+            <ZoomOut size={15} />
+          </button>
+          <input
+            className="studio2-range"
+            type="range"
+            min={0.5}
+            max={4}
+            step={0.05}
+            value={zoom}
+            onChange={(event) => onZoomChange(Number(event.currentTarget.value))}
+            aria-label="Timeline zoom"
+            style={{
+              width: 128,
+              background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} 100%)`,
+            }}
+          />
+          <button type="button" style={toolbarButton(false)} onClick={() => onZoomChange(clamp(zoom + 0.35, 0.5, 4))} title="Zoom in timeline">
+            <ZoomIn size={15} />
+          </button>
+        </div>
       </div>
 
       <div style={{
@@ -12664,40 +12814,6 @@ function VideoTrimControls({
         display: "flex",
         flexDirection: "column",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-          <button
-            type="button"
-            style={smallButton}
-            disabled={!canTrim}
-            onClick={() => {
-              onStart();
-              onSplit();
-            }}
-          >
-            <Scissors size={13} /> Split
-          </button>
-          <button type="button" style={{ ...smallButton, marginLeft: "auto", padding: "0 7px" }} onClick={() => onZoomChange(clamp(zoom - 0.35, 0.5, 4))}>
-            <Minus size={13} />
-          </button>
-          <input
-            className="studio2-range"
-            type="range"
-            min={0.5}
-            max={4}
-            step={0.05}
-            value={zoom}
-            onChange={(event) => onZoomChange(Number(event.currentTarget.value))}
-            aria-label="Timeline zoom"
-            style={{
-              width: 78,
-              background: `linear-gradient(90deg, ${ADS_BRAND.gold} 0%, ${ADS_BRAND.gold} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} ${((zoom - 0.5) / 3.5) * 100}%, ${ADS_BRAND.border2} 100%)`,
-            }}
-          />
-          <button type="button" style={{ ...smallButton, padding: "0 7px" }} onClick={() => onZoomChange(clamp(zoom + 0.35, 0.5, 4))}>
-            <Plus size={13} />
-          </button>
-        </div>
-
         <div
           ref={rootRef}
           style={{
@@ -12706,54 +12822,63 @@ function VideoTrimControls({
             overflowX: "auto",
             overflowY: "hidden",
             paddingBottom: 4,
-            cursor: canTrim ? "crosshair" : "default",
+            cursor: canTrim ? "pointer" : "default",
           }}
           onClick={(event) => {
             const target = event.target;
             if (target instanceof Element && target.closest("[data-video-segment='true']")) return;
-            const bounds = event.currentTarget.getBoundingClientRect();
-            const x = event.clientX - bounds.left + event.currentTarget.scrollLeft;
-            onPreviewTime(clamp(x / pxPerSecond, 0, max));
+            onPreviewTime(getTimeFromClientX(event.clientX));
           }}
-          onPointerMove={(event) => commitDrag(event.clientX)}
+          onPointerMove={(event) => {
+            if (playheadDragRef.current) {
+              onPreviewTime(getTimeFromClientX(event.clientX));
+              return;
+            }
+            commitDrag(event.clientX);
+          }}
           onPointerUp={stopDrag}
           onPointerCancel={stopDrag}
         >
-          <div style={{ position: "relative", width: trackWidth, height: "100%", minHeight: 116 }}>
-            <div style={{ position: "absolute", inset: "0 0 auto", height: 22, color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800 }}>
+          <div style={{ position: "relative", width: trackWidth, height: "100%", minHeight: 128 }}>
+            <div style={{ position: "absolute", inset: "0 0 auto", height: 30, color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800 }}>
               {Array.from({ length: tickCount }).map((_, index) => {
                 const time = index * tickStep;
                 const left = time * pxPerSecond;
                 return (
-                  <div key={time} style={{ position: "absolute", left, top: 0, width: 1, height: 22, background: "rgba(255,255,255,0.12)" }}>
+                  <div key={time} style={{ position: "absolute", left, top: 0, width: 1, height: 30, background: "rgba(255,255,255,0.12)" }}>
                     <span style={{ position: "absolute", left: 4, top: 0, whiteSpace: "nowrap" }}>{formatVideoTime(time)}</span>
                   </div>
                 );
               })}
             </div>
-            <div style={{ position: "absolute", left: 0, right: 0, top: 34, height: 62, borderRadius: 9, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
+            <div style={{ position: "absolute", left: 0, right: 0, top: 42, height: 68, borderRadius: 9, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
             {normalizedSegments.map((segment, index) => {
               const segmentEnd = segment.end ?? max;
               const left = segment.start * pxPerSecond;
               const width = Math.max(28, (segmentEnd - segment.start) * pxPerSecond);
+              const isSelected = segment.id === selectedSegmentId;
               return (
                 <div
                   key={segment.id}
                   data-video-segment="true"
                   onPointerDown={(event) => startDrag(event, "move", segment)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedSegmentId(segment.id);
+                  }}
                   style={{
                     position: "absolute",
                     left,
-                    top: 39,
+                    top: 48,
                     width,
-                    height: 50,
+                    height: 56,
                     borderRadius: 8,
-                    border: `1px ${segment.enabled ? "solid" : "dashed"} ${segment.enabled ? ADS_BRAND.gold : ADS_BRAND.border2}`,
+                    border: `${isSelected ? 2 : 1}px ${segment.enabled ? "solid" : "dashed"} ${isSelected ? ADS_BRAND.text : segment.enabled ? ADS_BRAND.gold : ADS_BRAND.border2}`,
                     background: segment.enabled
                       ? "linear-gradient(135deg, rgba(212,178,122,0.22), rgba(212,178,122,0.07))"
                       : "rgba(255,255,255,0.035)",
                     opacity: segment.enabled ? 1 : 0.55,
-                    boxShadow: segment.enabled ? "0 0 18px rgba(212,178,122,0.14)" : "none",
+                    boxShadow: isSelected ? "0 0 0 3px rgba(212,178,122,0.16)" : segment.enabled ? "0 0 18px rgba(212,178,122,0.14)" : "none",
                     cursor: "grab",
                     overflow: "hidden",
                   }}
@@ -12861,17 +12986,55 @@ function VideoTrimControls({
                 </div>
               );
             })}
-            <div style={{
-              position: "absolute",
-              left: previewLeft,
-              top: 26,
-              width: 2,
-              height: 76,
-              borderRadius: 999,
-              background: ADS_BRAND.text,
-              boxShadow: "0 0 0 3px rgba(212,178,122,0.16)",
-              pointerEvents: "none",
-            }} />
+            <button
+              type="button"
+              onPointerDown={startPlayheadDrag}
+              aria-label="Drag playhead"
+              title="Drag playhead"
+              style={{
+                position: "absolute",
+                left: previewLeft - 8,
+                top: 28,
+                width: 16,
+                height: 94,
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "ew-resize",
+                zIndex: 8,
+              }}
+            >
+              <span style={{
+                position: "absolute",
+                left: 7,
+                top: 0,
+                width: 2,
+                height: "100%",
+                borderRadius: 999,
+                background: ADS_BRAND.text,
+                boxShadow: "0 0 0 3px rgba(212,178,122,0.16)",
+              }} />
+            </button>
+            <button
+              type="button"
+              onPointerDown={startPlayheadDrag}
+              aria-label="Drag playhead handle"
+              style={{
+                position: "absolute",
+                left: previewLeft - 7,
+                top: 23,
+                width: 14,
+                height: 16,
+                borderRadius: "0 0 6px 6px",
+                border: `1px solid ${ADS_BRAND.text}`,
+                borderTop: "none",
+                background: ADS_BRAND.panel2,
+                boxShadow: "0 0 0 3px rgba(212,178,122,0.16)",
+                cursor: "ew-resize",
+                zIndex: 9,
+              }}
+              title="Drag playhead"
+            />
           </div>
         </div>
 
