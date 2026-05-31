@@ -577,6 +577,24 @@
   .msg-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:11px;border-top:1px solid var(--border-2);flex-wrap:wrap}
   .msg-conf{font-size:11.5px;font-weight:600}
   .msg-foot-note{font-size:11px;color:var(--text-4)}
+  /* Evidence table — the auditable proof under the AI's read */
+  .msg-ev{margin-top:14px;border:1px solid var(--border);border-radius:11px;background:var(--panel);overflow:hidden}
+  .msg-ev-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .msg-ev-head .t{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--text-2)}
+  .msg-ev-head .m{font-size:11px;color:var(--text-4);font-variant-numeric:tabular-nums}
+  .msg-ev-row{display:grid;grid-template-columns:1fr auto;gap:12px 14px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .msg-ev-row:last-child{border-bottom:none}
+  .msg-ev-row.dim{opacity:.62}
+  .msg-ev-copy{font-size:12.5px;line-height:1.5;color:var(--text-1);font-style:italic}
+  .msg-ev-copy .nm{display:block;font-style:normal;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);font-weight:600;margin-bottom:3px}
+  .msg-ev-stats{display:flex;align-items:center;gap:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .msg-ev-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+  .msg-ev-stat .v{font-size:13px;font-weight:650;color:var(--text)}
+  .msg-ev-stat .l{font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);font-weight:600}
+  .msg-ev-stat .v.roas{color:var(--gold)} .msg-ev-stat .v.roas.good{color:var(--green)} .msg-ev-stat .v.roas.bad{color:var(--red)}
+  .msg-ev-early{font-size:9px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--text-4);border:1px solid var(--border);border-radius:99px;padding:2px 7px}
+  .msg-ev-more{padding:9px 14px;font-size:11px;color:var(--text-4);text-align:center}
+  @media(max-width:640px){.msg-ev-row{grid-template-columns:1fr} .msg-ev-stats{justify-content:flex-start}}
 
   /* Keyword chart */
   .kw-panel{padding:18px 20px}
@@ -5317,112 +5335,123 @@ function DataHealth({dashboard}){
 }
 
 // ------- What your messaging is telling us
-// The software reads the words off every ad image (in the background), then ties
-// that messaging to the money (spend / revenue / ROAS / clients) and explains, in
-// plain English, what kind of message is working. This closes the loop between
-// what an ad SAYS and what it MAKES.
-function MessagingInsights({dashboard}){
+// Closes the loop between what an ad SAYS and what it MAKES. The proof comes
+// FIRST: a table of the actual words read off each ad next to its real spend,
+// ROAS, revenue and clients — built straight from the payload (which already
+// carries the stored copy as onImageText), so it renders instantly and a CMO can
+// audit every figure. The AI's plain-English read is layered ON TOP and is
+// best-effort: if it isn't ready, the hard numbers still stand (no blank panel —
+// that was the old bug, where a missing live image URL hid the whole section).
+function MessagingInsights({dashboard, range}){
   const adRoas = useMemo(()=> Array.isArray(dashboard?.adRoas) ? dashboard.adRoas : [], [dashboard]);
   const scope = (dashboard && dashboard.query && dashboard.query.account) || "all";
-  // Ads that have a picture we can read words from.
-  const readableAds = useMemo(()=> adRoas
+  const copyStatus = (dashboard && dashboard.creativeCopyStatus) || null;
+
+  // Every ad whose words we've actually read. This is the evidence base — it does
+  // NOT depend on a live preview image (those expire), only on the stored copy.
+  const analyzed = useMemo(()=> adRoas
     .map(a => ({
       adId: a.adId || a.id || null,
       adName: a.adName || a.label || "",
       clientKey: a.clientKey || "",
       imageUrl: a.previewImageUrl || a.previewThumbnailUrl || null,
-      adSpend: Number(a.adSpend||0),
-      collectedRevenue: Number(a.collectedRevenue||0),
-      collectedRoi: Number(a.collectedRoi||0),
-      newClients: Number(a.newClients||0),
-      roasReliable: typeof a.roasReliable === "boolean" ? a.roasReliable : Number(a.adSpend||0) >= 100,
+      words: String(a.onImageText || "").trim(),
+      spend: Number(a.adSpend||0),
+      revenue: Number(a.collectedRevenue||0),
+      roas: Number(a.collectedRoi||0),
+      clients: Number(a.newClients||0),
+      reliable: typeof a.roasReliable === "boolean" ? a.roasReliable : Number(a.adSpend||0) >= 100,
     }))
-    .filter(a => a.adId && a.imageUrl), [adRoas]);
+    .filter(a => a.adId && a.words)
+    .sort((a,b)=>b.spend-a.spend), [adRoas]);
 
-  // Only read + analyze ads with enough spend to mean something. Reading the
-  // words on all ~170 ads is slow and pointless — most have spent too little to
-  // teach us anything. We focus on the statistically relevant ones (the same
-  // $100+ spend bar the ROAS uses). If nothing's crossed that bar yet, fall back
-  // to the top few by spend so the panel still has something to say. Hovering any
-  // individual ad still reads it on demand, so nothing is lost.
-  const relevantAds = useMemo(()=>{
-    const reliable = readableAds.filter(a => a.roasReliable);
-    if(reliable.length) return reliable;
-    return [...readableAds].sort((a,b)=>b.adSpend-a.adSpend).slice(0,8);
-  }, [readableAds]);
+  // Ads we still haven't read but COULD (we hold a live image). Only these get
+  // sent to the slow vision backfill; if none, we skip it and stay fast.
+  const unreadWithImage = useMemo(()=> adRoas
+    .map(a => ({adId:a.adId||a.id||null, imageUrl:a.previewImageUrl||a.previewThumbnailUrl||null, clientKey:a.clientKey||"", words:String(a.onImageText||"").trim(), spend:Number(a.adSpend||0)}))
+    .filter(a => a.adId && a.imageUrl && !a.words)
+    .sort((a,b)=>b.spend-a.spend), [adRoas]);
+
+  // Focus the AI on ads with enough spend to trust; fall back to the top few by
+  // spend so it always has something defensible to say.
+  const focusAds = useMemo(()=>{
+    const reliable = analyzed.filter(a => a.reliable);
+    return (reliable.length ? reliable : analyzed.slice(0,8)).map(a => ({
+      adId:a.adId, adName:a.adName, clientKey:a.clientKey,
+      adSpend:a.spend, collectedRevenue:a.revenue, collectedRoi:a.roas,
+      newClients:a.clients, roasReliable:a.reliable,
+    }));
+  }, [analyzed]);
 
   const [insight, setInsight] = useState(null);
-  const [phase, setPhase] = useState("idle"); // idle | reading | thinking | ready | empty
+  const [aiPhase, setAiPhase] = useState("idle"); // idle | working | ready | none
   const [progress, setProgress] = useState({read:0, total:0});
 
   useEffect(()=>{
     let cancelled = false;
-    if(!dashboard || dashboard.mock || relevantAds.length === 0){
-      setPhase("empty"); setInsight(null);
-      return;
-    }
-
-    const adsForBackfill = relevantAds.map(a => ({adId:a.adId, imageUrl:a.imageUrl, clientKey:a.clientKey}));
-    const adsForInsight = relevantAds.map(a => ({
-      adId:a.adId, adName:a.adName, clientKey:a.clientKey,
-      adSpend:a.adSpend, collectedRevenue:a.collectedRevenue,
-      collectedRoi:a.collectedRoi, newClients:a.newClients, roasReliable:a.roasReliable,
-    }));
+    if(!dashboard || dashboard.mock){ return; }
 
     const fetchInsight = async () => {
+      if(focusAds.length === 0) return false;
       try{
         const res = await fetch("/api/ads/messaging-insights", {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({scope, ads: adsForInsight}),
+          body: JSON.stringify({scope, ads: focusAds}),
         });
         const json = await res.json().catch(()=>({}));
         if(cancelled) return false;
-        if(json && json.status === "ok" && json.insight){
-          setInsight(json.insight); setPhase("ready");
-          return true;
-        }
+        if(json && json.status === "ok" && json.insight){ setInsight(json.insight); setAiPhase("ready"); return true; }
         return false;
       }catch(_e){ return false; }
     };
 
     const run = async () => {
-      // 1) Maybe it's already analyzed (cache) — show instantly.
+      setAiPhase("working");
+      // 1) Show any cached read instantly.
       const had = await fetchInsight();
       if(cancelled) return;
 
-      // 2) Read any ads we haven't read yet, a few at a time, until done.
-      setPhase(prev => prev === "ready" ? "ready" : "reading");
-      let guard = 0;
-      while(!cancelled && guard < 60){
-        guard++;
-        let data = null;
-        try{
-          const res = await fetch("/api/ads/creative-copy/backfill", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({ads: adsForBackfill}),
-          });
-          data = await res.json().catch(()=>null);
-        }catch(_e){ break; }
-        if(cancelled || !data) break;
-        const total = relevantAds.length;
-        setProgress({read: Math.max(0, total - (data.remaining||0)), total});
-        if(!data.remaining || data.remaining <= 0) break;
-      }
-      if(cancelled) return;
-
-      // 3) Now that more ads are read, get (or refresh) the insight.
-      if(phase !== "ready" || !had){
-        setPhase(prev => prev === "ready" ? "ready" : "thinking");
+      // 2) Read still-unread ads (only those with a live image), in small batches.
+      if(unreadWithImage.length){
+        const batch = unreadWithImage.map(a => ({adId:a.adId, imageUrl:a.imageUrl, clientKey:a.clientKey}));
+        let guard = 0;
+        while(!cancelled && guard < 40){
+          guard++;
+          let data = null;
+          try{
+            const res = await fetch("/api/ads/creative-copy/backfill", {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({ads: batch}),
+            });
+            data = await res.json().catch(()=>null);
+          }catch(_e){ break; }
+          if(cancelled || !data) break;
+          setProgress({read: Math.max(0, unreadWithImage.length - (data.remaining||0)), total: unreadWithImage.length});
+          if(!data.remaining || data.remaining <= 0) break;
+        }
+        if(cancelled) return;
+        // 3) Refresh the read now that more copy exists.
         const ok = await fetchInsight();
-        if(!cancelled && !ok) setPhase(prev => prev === "ready" ? "ready" : "empty");
+        if(!cancelled && !ok && !had) setAiPhase("none");
+      }else if(!had){
+        setAiPhase("none");
       }
     };
 
     run();
     return ()=>{ cancelled = true; };
-  }, [relevantAds, scope, dashboard]);
+  }, [focusAds, unreadWithImage, scope, dashboard]);
 
-  if(!dashboard || dashboard.mock || readableAds.length === 0) return null;
+  // Nothing to show only if we've read no copy AND there's nothing left to read.
+  const pending = copyStatus ? Number(copyStatus.pending||0) : unreadWithImage.length;
+  if(!dashboard || dashboard.mock) return null;
+  if(analyzed.length === 0 && pending === 0) return null;
+
+  const reliableCount = analyzed.filter(a=>a.reliable).length;
+  const evidenceSpend = analyzed.reduce((s,a)=>s+a.spend,0);
+  const shown = analyzed.slice(0, 10);
+  const roasCls = (a)=> !a.reliable ? "" : a.roas>=2 ? "good" : a.roas<1 ? "bad" : "";
+  const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
 
   const conf = insight && insight.confidence ? String(insight.confidence) : null;
   const confColor = conf==="high" ? "var(--green)" : conf==="medium" ? "var(--gold)" : "var(--text-4)";
@@ -5432,23 +5461,11 @@ function MessagingInsights({dashboard}){
     <div className="ddr-block msg-insights">
       <div className="ddr-blabel">
         <span className="l">What your messaging is telling us</span>
-        <span className="m">
-          {phase==="ready"
-            ? "the words on your ads, tied to the money"
-            : progress.total>0
-              ? `reading your ads… ${progress.read} of ${progress.total}`
-              : "reading the words on your ads…"}
-        </span>
+        <span className="m">the actual words on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
       </div>
 
-      {phase !== "ready" && !insight && (
-        <div className="msg-loading">
-          <span className="msg-spin" aria-hidden="true"></span>
-          The software is reading the actual words on each ad and matching them to what they earned. This shows up here once it's done — no need to wait.
-        </div>
-      )}
-
-      {insight && (
+      {/* AI read — layered on top, never blocks the evidence below */}
+      {insight ? (
         <div className="msg-card">
           {insight.headline && <div className="msg-headline">{insight.headline}</div>}
           <div className="msg-grid">
@@ -5466,16 +5483,54 @@ function MessagingInsights({dashboard}){
             )}
           </div>
           {takeaways.length>0 && (
-            <ul className="msg-take">
-              {takeaways.map((t,i)=>(<li key={i}>{t}</li>))}
-            </ul>
+            <ul className="msg-take">{takeaways.map((t,i)=>(<li key={i}>{t}</li>))}</ul>
           )}
-          {conf && (
-            <div className="msg-foot">
-              <span className="msg-conf" style={{color:confColor}}>● {conf} confidence</span>
-              <span className="msg-foot-note">based only on ads with enough spend to trust</span>
+          <div className="msg-foot">
+            {conf && <span className="msg-conf" style={{color:confColor}}>● {conf} confidence</span>}
+            <span className="msg-foot-note">read from {reliableCount} ad{reliableCount===1?"":"s"} with enough spend to trust · every line below is the real number</span>
+          </div>
+        </div>
+      ) : aiPhase==="working" ? (
+        <div className="msg-loading">
+          <span className="msg-spin" aria-hidden="true"></span>
+          {progress.total>0
+            ? `Reading the words on your ads… ${progress.read} of ${progress.total}. The proof table below is already live.`
+            : "Writing the plain-English read of your messaging. The proof table below is already live — no need to wait."}
+        </div>
+      ) : null}
+
+      {/* Evidence — the auditable backbone. Real copy ↔ real money, no AI needed. */}
+      {analyzed.length>0 && (
+        <div className="msg-ev">
+          <div className="msg-ev-head">
+            <span className="t">The ads behind this — words read off the real creative</span>
+            <span className="m">{analyzed.length} ad{analyzed.length===1?"":"s"} · {fmtUsd(evidenceSpend)} spend · {reliableCount} with enough spend to trust{pending>0?` · ${pending} not read yet`:""}</span>
+          </div>
+          {shown.map(a=>(
+            <div className={"msg-ev-row "+(a.reliable?"":"dim")} key={a.adId}>
+              <div className="msg-ev-copy">
+                {a.adName ? <span className="nm">{cap(a.adName)}{a.clientKey?" · "+creatorName(a.clientKey):""}</span> : null}
+                “{a.words.length>180 ? a.words.slice(0,180)+"…" : a.words}”
+              </div>
+              <div className="msg-ev-stats">
+                <span className="msg-ev-stat"><span className={"v roas "+roasCls(a)}>{a.reliable && a.revenue>0 ? a.roas.toFixed(1)+"×" : "—"}</span><span className="l">ROAS</span></span>
+                <span className="msg-ev-stat"><span className="v">{fmtUsd(a.spend)}</span><span className="l">spend</span></span>
+                <span className="msg-ev-stat"><span className="v">{a.revenue>0?fmtUsd(a.revenue):"—"}</span><span className="l">revenue</span></span>
+                <span className="msg-ev-stat"><span className="v">{fmtNum(a.clients)}</span><span className="l">clients</span></span>
+                {!a.reliable && <span className="msg-ev-early">too early</span>}
+              </div>
             </div>
+          ))}
+          {analyzed.length>shown.length && (
+            <div className="msg-ev-more">+ {analyzed.length-shown.length} more read ad{analyzed.length-shown.length===1?"":"s"} (lower spend) feeding the read above</div>
           )}
+        </div>
+      )}
+
+      {analyzed.length===0 && pending>0 && aiPhase!=="working" && (
+        <div className="msg-loading">
+          <span className="msg-spin" aria-hidden="true"></span>
+          Reading the words on your ads for the first time — {pending} to go. This fills in shortly.
         </div>
       )}
     </div>
@@ -5855,7 +5910,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       </div>
 
       {/* What your messaging is telling us — software reads the ad copy and ties it to results */}
-      <MessagingInsights dashboard={dashboard}/>
+      <MessagingInsights dashboard={dashboard} range={range}/>
 
       {coverage!=null && (
         <div className="ddr-block">

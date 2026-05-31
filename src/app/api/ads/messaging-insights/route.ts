@@ -9,29 +9,35 @@ export const maxDuration = 60;
 const MODEL = "claude-sonnet-4-20250514";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours — insights move with the data, not the minute.
 const MIN_SPEND_FOR_RELIABLE = 100; // mirror MIN_SPEND_FOR_RELIABLE_ROAS — don't draw lessons from noise.
+// Bump when the prompt changes so cached insights regenerate against the new
+// rules instead of serving an answer written under the old ones.
+const PROMPT_VERSION = "v2-cmo-evidence";
 
 // The software's job here: connect what each ad SAYS to what it DID (spend,
-// revenue, ROAS, new clients) and explain — in words a 3rd grader gets — which
-// messaging is making money and which isn't. It must ground every claim in the
-// numbers we hand it; it is told NOT to invent figures.
-const SYSTEM_PROMPT = `You analyze advertising performance for a coaching business owner who is NOT technical and has ADHD. He learns visually and wants the point fast.
+// revenue, ROAS, new clients) and explain it in plain English — but every claim
+// must be defensible to a skeptical CMO: backed by the real dollars, the ad
+// count and the ROAS, with the actual words quoted. It must ground every claim
+// in the numbers we hand it; it is told NOT to invent figures.
+const SYSTEM_PROMPT = `You analyze ad-creative performance for a coaching business. Your reader is the founder — smart but not technical — and he may put your words in front of a CMO, so every statement must be defensible straight from the data and never invented.
 
-You are given a list of ads. For each ad you get the WORDS written on it (its hook/message) plus the real results: ad spend, revenue collected, ROAS (revenue ÷ spend), and new clients.
+You receive a list of ads. For each: the exact WORDS on the ad (its hook/message), ad spend ($), revenue collected ($), ROAS (revenue ÷ spend), and new clients. Ads marked reliable:true have enough spend ($100+) to draw conclusions from; reliable:false ads are "too early to tell".
 
-Your job: find the connection between MESSAGING and RESULTS. What kind of message is winning? What kind is losing money? Be concrete — quote the actual words.
+Your job: tie the MESSAGING to the MONEY. Name the angle/wording that wins and the one that loses — and back each with the real numbers and a direct quote.
 
 HARD RULES:
-- Only use the numbers given to you. NEVER invent or estimate a number.
-- Only draw lessons from ads with enough spend to be trustworthy (these are marked reliable:true). Mention low-spend ads only as "too early to tell."
-- Plain English. Short. No jargon. No percentages unless given. Talk like you're explaining to a smart friend over coffee.
-- If there isn't enough data to say something real, say so honestly.
+- Use ONLY the numbers provided. NEVER invent, estimate, or wildly round a figure.
+- Every claim about winning/losing messaging MUST cite: the dollars behind it (combined spend of the ads it covers), HOW MANY ads, and their ROAS — and quote the actual words. Example shape: 'The 3 ads that open with a question ("...") returned 4.1× on $2,300 spent.'
+- Draw firm lessons ONLY from reliable:true ads. If only low-spend ads exist, say it's too early and set confidence "low".
+- Be specific, never generic. "Curiosity hooks work" is useless. "<exact phrase> returned <X>× on $<Y> across <N> ads" is the bar.
+- Plain, direct English. Short sentences. No marketing jargon. No percentages unless they're in the data.
+- If there isn't enough data to say something real, say so honestly rather than reaching.
 
 Return ONLY valid JSON, no markdown:
 {
-  "headline": "<one punchy sentence: the single most useful messaging insight right now>",
-  "winning_message": "<what kind of wording/angle is making money, with a real quoted example. empty string if unclear>",
-  "losing_message": "<what kind of wording/angle is burning money, with a real quoted example. empty string if unclear>",
-  "takeaways": ["<2-4 short plain-English bullets, each a concrete thing he can act on>"],
+  "headline": "<one sentence: the single most useful, number-backed messaging insight right now>",
+  "winning_message": "<the angle/wording making money — name the dollars, the ad count and the ROAS, and quote the words. empty string if genuinely unclear>",
+  "losing_message": "<the angle/wording wasting money — same: dollars, ad count, ROAS, quoted words. empty string if unclear>",
+  "takeaways": ["<2-4 concrete, number-bearing actions he can take this week>"],
   "confidence": "high" | "medium" | "low"
 }`;
 
@@ -113,7 +119,7 @@ export async function POST(req: NextRequest) {
       });
     }
     const inputsHash = createHash("sha1")
-      .update(JSON.stringify(ads.map((a) => [a.words, a.spend, a.revenue, a.clients])))
+      .update(PROMPT_VERSION + "|" + JSON.stringify(ads.map((a) => [a.words, a.spend, a.revenue, a.clients])))
       .digest("hex");
 
     // Cache: same inputs within the TTL → return the stored insight.
