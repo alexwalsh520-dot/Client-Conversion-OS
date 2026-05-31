@@ -42,6 +42,15 @@ export interface WorkerResult {
   errorMessage?: string;
   coachInternalName?: string | null;
   clientFullName?: string;
+  clientFirstName?: string;
+  clientId?: number;
+  /** Trigger type from the row, so the caller can branch into the
+   *  right post-processing (admin DM vs ship+post to nutritiontalk). */
+  triggerType?: "admin_test" | "cron_auto";
+  /** In-memory PDF buffer so the cron_auto post-processor can ship
+   *  to the nutrition-plans CCOS bucket without re-downloading from
+   *  the auto-plans private bucket. Always populated on done. */
+  pdfBuffer?: Buffer;
 }
 
 /**
@@ -61,6 +70,7 @@ export async function processPipelineRun(runId: number): Promise<WorkerResult> {
     .eq("status", "queued")
     .select("id, client_id, client_name, trigger_type")
     .maybeSingle();
+  const claimedTrigger = (claimed?.trigger_type as "admin_test" | "cron_auto" | undefined);
 
   if (claimErr) {
     return {
@@ -173,6 +183,10 @@ export async function processPipelineRun(runId: number): Promise<WorkerResult> {
       signedUrl: signed.signedUrl,
       coachInternalName,
       clientFullName,
+      clientFirstName: firstName,
+      clientId: claimed.client_id,
+      triggerType: claimedTrigger,
+      pdfBuffer: pdf,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
