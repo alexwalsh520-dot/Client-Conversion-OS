@@ -20,6 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/ai-usage";
 import {
   gatherSummaryInputs,
   type SummaryInputs,
@@ -240,6 +241,8 @@ export async function generateSummaryFromInputs(
     ],
     messages: [{ role: "user", content: buildUserPrompt(inputs) }],
   });
+
+  logAiUsage({ feature: "daily-coacher-summary", model: MODEL, usage: response.usage });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {

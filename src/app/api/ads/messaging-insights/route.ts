@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createHash } from "crypto";
 import { getServiceSupabase } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/ai-usage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -243,6 +244,9 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    // Track spend against the AI budget. Fire-and-forget; never blocks/breaks.
+    logAiUsage({ feature: "ads-messaging-insights", model: MODEL, usage: ai.usage });
 
     const textContent = ai.content.find((c) => c.type === "text");
     let insight: unknown = null;

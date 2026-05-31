@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/ai-usage";
 
 // Shared "read the words on an ad image" logic, used by the on-demand single-ad
 // route and the batch backfill route. The result is cached in ad_creative_copy
@@ -101,6 +102,9 @@ async function readWordsOnImage(imageUrl: string): Promise<string> {
       },
     ],
   });
+
+  // Track spend against the AI budget. Fire-and-forget; never blocks/breaks OCR.
+  logAiUsage({ feature: "ads-creative-copy", model: MODEL, usage: response.usage });
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") return "";

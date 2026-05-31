@@ -7,6 +7,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { createClient } from "@supabase/supabase-js";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { listMeetings } from "@/lib/fathom";
@@ -626,6 +627,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
     })),
     messages
   });
+  logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-20250514", usage: response.usage });
 
   // Process tool calls in a loop
   while (response.stop_reason === "tool_use") {
@@ -659,6 +661,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
       })),
       messages
     });
+    logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-20250514", usage: response.usage });
   }
 
   // Extract the final text response

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
+import AiUsageMeter from "@/components/AiUsageMeter";
 import {
   Settings,
   Users,
@@ -358,6 +359,9 @@ export default function SettingsPage() {
           Open Voice Notes
         </Link>
       </div>
+
+      {/* Subtle month-to-date AI spend against the $50 budget. */}
+      <AiUsageMeter />
 
       {/* User Management — Admin only */}
       {isAdmin && (

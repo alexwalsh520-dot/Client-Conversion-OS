@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { fetchSheetData as fetchSheetRows, type SheetRow } from "@/lib/google-sheets";
@@ -453,6 +454,7 @@ ${mtdSummary}`;
         system: CLOSER_BRIEF_PROMPT,
         messages: [{ role: "user", content: `Generate the daily brief for ${closer.name}:\n\n${context}` }],
       });
+      logAiUsage({ feature: "cron-daily-briefs", model: "claude-sonnet-4-20250514", usage: msg.usage });
       const brief = msg.content.filter((b) => b.type === "text").map((b) => b.type === "text" ? b.text : "").join("\n");
       const pdf = generatePDF(`Daily Brief — ${closer.name} (${briefDate})`, brief);
       await uploadFileAsCso(pdf, `brief-${closer.sheetKey.toLowerCase()}-${briefDate}.pdf`,
@@ -492,6 +494,7 @@ ${["Tyson", "Keith"].map((cl) => { const cr = allRows.filter((r) => (r.offer || 
       system: CEO_RECAP_PROMPT,
       messages: [{ role: "user", content: `Generate the CEO Daily Sales Recap:\n\n${ceoContext}` }],
     });
+    logAiUsage({ feature: "cron-ceo-recap", model: "claude-sonnet-4-20250514", usage: msg.usage });
     const recap = msg.content.filter((b) => b.type === "text").map((b) => b.type === "text" ? b.text : "").join("\n");
     const pdf = generatePDF(`CEO Daily Sales Recap (${todayStr})`, recap);
     await uploadFileAsCso(pdf, `ceo-recap-${todayStr}.pdf`,

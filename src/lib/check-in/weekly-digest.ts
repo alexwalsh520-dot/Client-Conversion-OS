@@ -20,6 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/ai-usage";
 import {
   ADMIN_SLACK_USER_ID,
   openDmChannel,
@@ -339,6 +340,8 @@ export async function generateSummaryWithClaude(d: DigestData): Promise<string> 
     max_tokens: 1500,
     messages: [{ role: "user", content: buildSummaryPrompt(d) }],
   });
+
+  logAiUsage({ feature: "check-in-weekly-digest", model: MODEL, usage: response.usage });
 
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") {

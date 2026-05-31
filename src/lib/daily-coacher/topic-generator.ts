@@ -15,6 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/ai-usage";
 import { gatherSummaryInputs, type SummaryInputs, type LiveMessage } from "./summary-inputs";
 import { getTopic, type TopicKey } from "./topics";
 import { getTopicSpec, type TopicSpec } from "./topics/registry";
@@ -263,6 +264,8 @@ export async function generateTopicDraft(
     ],
     messages: [{ role: "user", content: userPrompt }],
   });
+
+  logAiUsage({ feature: "daily-coacher-topic", model: MODEL, usage: response.usage });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const DM_REVIEW_SYSTEM_PROMPT = `You are an elite sales manager reviewing DM conversations for a fitness coaching agency (Core Shift LLC). You evaluate setter conversations and provide clear, actionable coaching. Be blunt, honest, and specific. No fluff, no corporate-speak.
 
@@ -137,6 +138,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "sales-hub-review-transcript", model: "claude-sonnet-4-20250514", usage: message.usage });
 
     // Extract text from response
     const text = message.content

@@ -14,6 +14,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { REFERENCE_PLAN_URLS, buildAutoPlanPrompt } from "./plan-prompt-auto";
+import { logAiUsage } from "@/lib/ai-usage";
 import type { IntakeTargetsResult } from "./intake-targets";
 import type { AdjustedTargets } from "./macro-adjust";
 
@@ -89,6 +90,8 @@ export async function generatePlanHtml(
     max_tokens: MAX_TOKENS,
     messages: [{ role: "user", content }],
   });
+
+  logAiUsage({ feature: "nutrition-generate-plan-html", model: MODEL, usage: response.usage });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {

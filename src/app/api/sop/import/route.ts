@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import mammoth from "mammoth";
 import { polishSopHtml } from "@/lib/sop/polish";
 import { sanitizeSopHtml } from "@/lib/sop/sanitize";
@@ -135,6 +136,8 @@ async function extractPdfTextViaClaude(buffer: Buffer): Promise<string> {
       },
     ],
   });
+
+  logAiUsage({ feature: "sop-import", model: ANTHROPIC_MODEL, usage: response.usage });
 
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") {

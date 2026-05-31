@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { logAiUsage } from "@/lib/ai-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +84,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "studio2-copy-lab-generate", model: "claude-sonnet-4-20250514", usage: response.usage });
 
     const text = response.content.find((part) => part.type === "text")?.text?.trim() || "";
     return NextResponse.json({ copy: text }, { headers: NO_STORE_HEADERS });

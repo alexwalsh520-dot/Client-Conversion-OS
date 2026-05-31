@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const client = new Anthropic();
 
@@ -138,6 +139,15 @@ export async function POST(req: NextRequest) {
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
+
+          // Stream is fully consumed here, so finalMessage() resolves with the
+          // complete usage. Log spend against the AI budget; never blocks/breaks.
+          try {
+            const finalMessage = await stream.finalMessage();
+            logAiUsage({ feature: "ads-ai-copy", model: "claude-sonnet-4-20250514", usage: finalMessage.usage });
+          } catch (usageErr) {
+            console.error("[ai-usage] ai-copy stream usage capture failed (non-fatal):", usageErr);
+          }
         } catch (err) {
           controller.error(err);
         }

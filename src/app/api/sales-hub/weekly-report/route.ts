@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { getMetrics } from "@/lib/manychat";
 import { countSubscriptionSales } from "@/lib/stripe-client";
@@ -353,6 +354,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "sales-hub-weekly-report", model: "claude-sonnet-4-20250514", usage: message.usage });
 
     const report = message.content
       .filter((block) => block.type === "text")

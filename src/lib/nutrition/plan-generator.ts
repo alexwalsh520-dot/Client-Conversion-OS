@@ -9,6 +9,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { IngredientRow } from "./ingredient-filter";
+import { logAiUsage } from "@/lib/ai-usage";
 import type { MacroTargets } from "./macro-calculator";
 import type { DayPlan } from "./macro-validator";
 
@@ -390,6 +391,8 @@ export async function generateDay(
     messages: [{ role: "user", content: buildUserPrompt(input) }],
   });
 
+  logAiUsage({ feature: "nutrition-plan-generator", model: "claude-sonnet-4-5-20250929", usage: response.usage });
+
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
     throw new Error(`Day ${input.dayNumber}: no text response from Claude`);
@@ -654,6 +657,8 @@ export async function editPlan(
     system: buildEditSystemPrompt(),
     messages: [{ role: "user", content: buildEditUserPrompt(input) }],
   });
+
+  logAiUsage({ feature: "nutrition-plan-generator-edit", model: "claude-sonnet-4-5-20250929", usage: response.usage });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {

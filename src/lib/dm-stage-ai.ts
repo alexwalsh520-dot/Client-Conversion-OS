@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const MODEL = "claude-sonnet-4-20250514";
 // Bumped when the prompt changes so webhook re-classifies stale conversations.
@@ -121,6 +122,8 @@ export async function analyzeDmStages(
       },
     ],
   });
+
+  logAiUsage({ feature: "dm-stage-ai", model: MODEL, usage: message.usage });
 
   const text = message.content
     .filter((block) => block.type === "text")

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { listMeetings, FathomMeeting } from "@/lib/fathom";
@@ -491,6 +492,8 @@ export async function POST(req: NextRequest) {
           system: DAILY_BRIEF_SYSTEM_PROMPT,
           messages: [{ role: "user", content: `Generate the daily brief for ${closerName} with these ${closerProspectList.length} prospects:\n\n${contextParts.join("\n")}` }],
         });
+
+        logAiUsage({ feature: "sales-hub-daily-brief", model: "claude-sonnet-4-20250514", usage: message.usage });
 
         const brief = message.content
           .filter((block) => block.type === "text")

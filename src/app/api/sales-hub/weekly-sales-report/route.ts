@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
@@ -263,6 +264,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "sales-hub-weekly-sales-report", model: "claude-sonnet-4-20250514", usage: message.usage });
 
     const report = message.content
       .filter((block) => block.type === "text")

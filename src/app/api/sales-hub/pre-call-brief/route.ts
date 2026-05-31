@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const PRE_CALL_BRIEF_SYSTEM_PROMPT = `You are a pre-call brief generator for a fitness coaching sales team. Given the data about a prospect, create a concise one-page brief that helps the closer go into the call prepared.
 
@@ -90,6 +91,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "sales-hub-pre-call-brief", model: "claude-sonnet-4-20250514", usage: message.usage });
 
     const brief = message.content
       .filter((block) => block.type === "text")

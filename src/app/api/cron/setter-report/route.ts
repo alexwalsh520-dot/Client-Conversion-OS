@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import {
@@ -369,6 +370,8 @@ export async function GET(req: NextRequest) {
       system: ACTION_ITEMS_PROMPT,
       messages: [{ role: "user", content: actionContext }],
     });
+
+    logAiUsage({ feature: "cron-setter-report", model: "claude-sonnet-4-20250514", usage: msg.usage });
 
     const text = msg.content
       .filter((block) => block.type === "text")

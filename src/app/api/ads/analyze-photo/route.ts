@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const client = new Anthropic();
 
@@ -85,6 +86,8 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    logAiUsage({ feature: "ads-analyze-photo", model: "claude-sonnet-4-20250514", usage: response.usage });
 
     // Extract the text content from the response
     const textContent = response.content.find((c) => c.type === "text");

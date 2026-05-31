@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/ai-usage";
 import { getSalesManagerChannel, postAsCso } from "@/lib/slack";
 
 // GHL v1 API
@@ -172,6 +173,8 @@ export async function GET(req: NextRequest) {
             },
           ],
         });
+
+        logAiUsage({ feature: "cron-pre-call-briefs", model: "claude-sonnet-4-20250514", usage: message.usage });
 
         const brief = message.content
           .filter((block) => block.type === "text")

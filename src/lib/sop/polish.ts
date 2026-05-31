@@ -13,6 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeSopHtml } from "./sanitize";
+import { logAiUsage } from "@/lib/ai-usage";
 
 const MODEL = "claude-sonnet-4-5-20250929";
 
@@ -71,6 +72,8 @@ Reformat the raw content above into the SOP template. Return only the formatted 
     ],
     messages: [{ role: "user", content: userPrompt }],
   });
+
+  logAiUsage({ feature: "sop-polish", model: MODEL, usage: response.usage });
 
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") {
