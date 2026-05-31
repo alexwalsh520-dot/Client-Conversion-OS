@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getAdEntities, getAdLevelInsights, type MetaAdEntity } from "@/lib/mozi-meta";
+import {
+  getAdEntities,
+  getAdLevelInsights,
+  getAdSetTargeting,
+  type MetaAdEntity,
+} from "@/lib/mozi-meta";
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, keywordFromAdName } from "@/lib/ads-tracker/normalize";
+import { parseTargeting } from "@/lib/ads-tracker/targeting";
 import { CREATORS, firstEnv, normalizeAdAccountId } from "@/lib/creators";
 
 const ACCOUNTS = CREATORS;
@@ -496,6 +502,54 @@ async function refreshStoredMetaStatuses(
   return updated;
 }
 
+// Pull the audience settings for every ad set in the account and store the
+// parsed, numeric-friendly version keyed by adset_id, so the Deep Dive can
+// later correlate "who saw it" against ROAS. This is pure enrichment — it is
+// called inside its own try/catch by the caller and must NEVER affect the
+// money-accurate spend sync above. Returns how many ad sets were stored.
+async function syncAdSetTargeting(
+  db: ReturnType<typeof getServiceSupabase>,
+  clientKey: string,
+  adAccountId: string,
+  accessToken: string
+): Promise<number> {
+  const adsets = await getAdSetTargeting(adAccountId, { accessToken });
+  const syncedAt = new Date().toISOString();
+  const rows = adsets
+    .map((adset) => {
+      const p = parseTargeting(adset.targeting);
+      return {
+        adset_id: adset.id,
+        client_key: clientKey,
+        adset_name: adset.name || null,
+        age_min: p?.ageMin ?? null,
+        age_max: p?.ageMax ?? null,
+        genders: p?.genders ?? null,
+        geo_count: p?.geoCount ?? null,
+        interest_count: p?.interestCount ?? null,
+        custom_audience_count: p?.customAudienceCount ?? null,
+        has_lookalike: p?.hasLookalike ?? false,
+        placement_count: p?.placementCount ?? null,
+        audience_type: p?.audienceType ?? null,
+        is_advantage: p?.isAdvantage ?? false,
+        raw: adset.targeting ?? null,
+        synced_at: syncedAt,
+      };
+    })
+    .filter((row) => row.adset_id);
+
+  if (rows.length === 0) return 0;
+
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200);
+    const { error } = await db
+      .from("ad_set_targeting")
+      .upsert(chunk, { onConflict: "adset_id" });
+    if (error) throw error;
+  }
+  return rows.length;
+}
+
 async function isAuthorized(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
@@ -531,6 +585,7 @@ export async function POST(req: NextRequest) {
     linkClicks: number;
     statusRows?: number;
     statusRowsUpdated?: number;
+    targetingStored?: number;
     dates?: Array<{
       date: string;
       rowCount: number;
@@ -619,6 +674,16 @@ export async function POST(req: NextRequest) {
         syncedAt
       );
 
+      // Audience enrichment — strictly best-effort. A targeting failure (e.g.
+      // a missing table before the migration runs, or a permissions gap) must
+      // never fail the spend sync, which is the source of truth for the money.
+      let targetingStored = 0;
+      try {
+        targetingStored = await syncAdSetTargeting(db, account.key, adAccountId, token);
+      } catch (error) {
+        console.warn(`[ads-tracker-sync] Targeting sync skipped for ${account.key}`, error);
+      }
+
       results.push({
         account: account.key,
         fetched: insights.length,
@@ -628,6 +693,7 @@ export async function POST(req: NextRequest) {
         linkClicks: replacement.stored.linkClicks,
         statusRows: statusRows.length,
         statusRowsUpdated,
+        targetingStored,
         dates: replacement.dates,
       });
     } catch (error) {

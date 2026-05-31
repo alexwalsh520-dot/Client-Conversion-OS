@@ -6995,6 +6995,15 @@ const CORR_VARS = [
   {id:"cpm",      label:"Cost per 1k views",     short:"CPM",          outcome:false, roasLike:false, dir:"low",  get:a=>a.cpm,       fmt:v=>fmtUsd(v,2),        axis:"$ per 1,000 views"},
   {id:"words",    label:"Copy length (words)",   short:"word count",   outcome:false, roasLike:false, dir:"none", get:a=>a.wordCount, fmt:v=>fmtNum(v)+(v===1?" word":" words"), axis:"words on the ad", copy:true},
   {id:"chars",    label:"Copy length (letters)", short:"letters",      outcome:false, roasLike:false, dir:"none", get:a=>a.charCount, fmt:v=>fmtNum(v)+" letters", axis:"letters on the ad", copy:true},
+  // Targeting — who the ad ran against. dir:"none" on purpose: there's no inherent
+  // "good" direction for an audience, so we let the correlation reveal it. These
+  // only carry data once the Meta targeting sync has run; until then they read
+  // "not enough ads yet" rather than guessing.
+  {id:"tAgeMin",    label:"Audience age floor",  short:"age floor",    outcome:false, roasLike:false, dir:"none", get:a=>a.tAgeMin,     fmt:v=>fmtNum(v),         axis:"youngest age targeted"},
+  {id:"tAgeWidth",  label:"Age range width",     short:"age span",     outcome:false, roasLike:false, dir:"none", get:a=>a.tAgeWidth,   fmt:v=>fmtNum(v)+" yrs",  axis:"age range width (yrs)"},
+  {id:"tInterests", label:"Interests targeted",  short:"# interests",  outcome:false, roasLike:false, dir:"none", get:a=>a.tInterests,  fmt:v=>fmtNum(v),         axis:"# interests (0 = broad)"},
+  {id:"tPlacements",label:"Placements",          short:"# placements", outcome:false, roasLike:false, dir:"none", get:a=>a.tPlacements, fmt:v=>fmtNum(v),         axis:"# placements"},
+  {id:"tGeo",       label:"Locations targeted",  short:"# locations",  outcome:false, roasLike:false, dir:"none", get:a=>a.tGeo,        fmt:v=>fmtNum(v),         axis:"# locations"},
 ];
 
 // Turn one raw adRoas row into the flat numeric record the explorer correlates.
@@ -7022,6 +7031,13 @@ function corrAdRecord(a){
     ctr: Number(a.ctr||0),
     cpc: Number(a.cpc||0),
     cpm: Number(a.cpm||0),
+    // Targeting (filled in by the Meta sync; null until then so it's never faked)
+    tAgeMin: fin(a.targetAgeMin),
+    tAgeWidth: fin(a.targetAgeWidth),
+    tInterests: fin(a.targetInterestCount),
+    tPlacements: fin(a.targetPlacementCount),
+    tGeo: fin(a.targetGeoCount),
+    audienceType: a.audienceType || null,
     reliable: typeof a.roasReliable === "boolean" ? a.roasReliable : spend>=100,
   };
 }
@@ -7121,7 +7137,7 @@ function CorrelationPanel({rows, dashboard}){
     <div className="ddr-block">
       <div className="ddr-blabel">
         <span className="l">What actually drives the money</span>
-        <span className="m">pick an outcome, then see how every lever — including your copy — links to it. r = how tightly they move together (−1 to 1)</span>
+        <span className="m">pick an outcome, then see how every lever — including your copy and who you targeted — links to it. r = how tightly they move together (−1 to 1)</span>
       </div>
 
       <div className="corr-ybar">
@@ -7221,7 +7237,7 @@ function CorrelationPanel({rows, dashboard}){
 // when it BOTH moves with ROAS (|r|≥0.35) AND the two groups' medians sit clearly
 // apart — otherwise it's parked as "overlap". If nothing separates them it says
 // so plainly rather than inventing a pattern. Pure arithmetic, no AI, no causation.
-const SWEET_LEVERS = ["booked","leads","callRate","cpl","closeRate","cpcall","spend","ctr","cpc","cpm","words","chars"];
+const SWEET_LEVERS = ["booked","leads","callRate","cpl","closeRate","cpcall","spend","ctr","cpc","cpm","words","chars","tAgeMin","tAgeWidth","tInterests","tPlacements","tGeo"];
 
 function SweetSpotCard({dashboard}){
   const adRoas = (dashboard && Array.isArray(dashboard.adRoas)) ? dashboard.adRoas : [];

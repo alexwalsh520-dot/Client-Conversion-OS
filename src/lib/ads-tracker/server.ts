@@ -4154,6 +4154,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   // if the copy store is empty or unavailable.
   await attachCreativeCopy(db, payload);
 
+  // Attach the audience each ad ran against (age range, # interests, placements,
+  // broad vs lookalike …) so targeting becomes a correlatable variable next to
+  // copy and cost. Best-effort — never blocks the dashboard.
+  await attachTargeting(db, payload);
+
   return payload;
 }
 
@@ -4206,5 +4211,84 @@ async function attachCreativeCopy(
     };
   } catch (error) {
     console.error("attachCreativeCopy failed (non-fatal):", error);
+  }
+}
+
+// Reads the stored ad-set targeting for every ad in the payload and hangs the
+// numeric audience fields on the matching adRoas row (joined by adsetId, since
+// targeting lives on the ad set). These feed the Deep Dive's correlation engine
+// so "who saw it" can be measured against ROAS. Best-effort only — a missing
+// table or empty store just leaves the fields undefined and the correlation
+// lines read "not enough ads yet" until the next sync fills them in.
+async function attachTargeting(
+  db: ReturnType<typeof getServiceSupabase>,
+  payload: {
+    adRoas?: Array<{ adsetId?: string | null } & Record<string, unknown>>;
+  } & Record<string, unknown>
+) {
+  try {
+    const rows = Array.isArray(payload.adRoas) ? payload.adRoas : [];
+    const adsetIds = Array.from(
+      new Set(rows.map((r) => (r.adsetId ? String(r.adsetId) : "")).filter(Boolean))
+    );
+    if (adsetIds.length === 0) return;
+
+    type TargetingRow = {
+      adset_id: string;
+      age_min: number | null;
+      age_max: number | null;
+      genders: string | null;
+      geo_count: number | null;
+      interest_count: number | null;
+      custom_audience_count: number | null;
+      has_lookalike: boolean | null;
+      placement_count: number | null;
+      audience_type: string | null;
+      is_advantage: boolean | null;
+    };
+
+    const byAdset = new Map<string, TargetingRow>();
+    for (let i = 0; i < adsetIds.length; i += 200) {
+      const chunk = adsetIds.slice(i, i + 200);
+      const { data } = await db
+        .from("ad_set_targeting")
+        .select(
+          "adset_id,age_min,age_max,genders,geo_count,interest_count,custom_audience_count,has_lookalike,placement_count,audience_type,is_advantage"
+        )
+        .in("adset_id", chunk);
+      (data || []).forEach((row: TargetingRow) => byAdset.set(row.adset_id, row));
+    }
+
+    const numOrNull = (v: number | null | undefined) =>
+      v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+
+    let matched = 0;
+    for (const row of rows) {
+      const id = row.adsetId ? String(row.adsetId) : "";
+      const t = id ? byAdset.get(id) : undefined;
+      if (!t) continue;
+      const ageMin = numOrNull(t.age_min);
+      const ageMax = numOrNull(t.age_max);
+      row.targetAgeMin = ageMin;
+      row.targetAgeMax = ageMax;
+      row.targetAgeWidth =
+        ageMin != null && ageMax != null ? Math.max(0, ageMax - ageMin) : null;
+      row.targetGenders = t.genders ?? null;
+      row.targetGeoCount = numOrNull(t.geo_count);
+      row.targetInterestCount = numOrNull(t.interest_count);
+      row.targetCustomAudienceCount = numOrNull(t.custom_audience_count);
+      row.targetPlacementCount = numOrNull(t.placement_count);
+      row.audienceType = t.audience_type ?? null;
+      row.isAdvantage = Boolean(t.is_advantage);
+      matched += 1;
+    }
+
+    payload.targetingStatus = {
+      total: adsetIds.length,
+      matched,
+      pending: adsetIds.length - matched,
+    };
+  } catch (error) {
+    console.error("attachTargeting failed (non-fatal):", error);
   }
 }

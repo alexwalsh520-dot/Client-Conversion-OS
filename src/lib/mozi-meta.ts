@@ -194,3 +194,40 @@ export async function getAdEntities(
 
   return allData;
 }
+
+export interface MetaAdSetTargeting {
+  id: string;
+  name?: string;
+  targeting?: Record<string, unknown>;
+}
+
+/**
+ * Fetch the targeting object for every ad set in an account (ACTIVE and paused),
+ * one paginated request per account sync — not one per ad set. Used to enrich
+ * the Deep Dive so the audience an ad ran against becomes a correlatable
+ * variable next to its copy and cost. Paused ad sets are included on purpose:
+ * the ads that already spent (the ones correlation cares about) often sit in
+ * ad sets that are no longer live.
+ */
+export async function getAdSetTargeting(
+  adAccountId: string,
+  options?: { accessToken?: string }
+): Promise<MetaAdSetTargeting[]> {
+  const fields = ["id", "name", "targeting"].join(",");
+  const initialUrl = `${BASE_URL}/${adAccountId}/adsets?fields=${fields}&limit=500`;
+
+  const allData: MetaAdSetTargeting[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const response: MetaInsightsResponse<MetaAdSetTargeting> =
+      await metaFetch<MetaInsightsResponse<MetaAdSetTargeting>>(
+        nextUrl,
+        options?.accessToken
+      );
+    allData.push(...response.data);
+    nextUrl = response.paging?.next;
+  }
+
+  return allData;
+}
