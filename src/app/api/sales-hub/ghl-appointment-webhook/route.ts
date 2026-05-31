@@ -5,6 +5,7 @@ import {
   extractKeywordFromPayload,
   normalizeKeyword,
 } from "@/lib/ads-tracker/normalize";
+import { creatorKeyFromText } from "@/lib/creators";
 
 /**
  * GHL Appointment Webhook — receives appointment events from GoHighLevel workflows.
@@ -34,27 +35,11 @@ function readString(source: Record<string, unknown> | null | undefined, keys: st
   return null;
 }
 
+// Single source of truth for "which creator does this belong to" lives in
+// creators.ts (creatorKeyFromText). This wrapper keeps the local call sites
+// readable and means onboarding a new creator never touches this file.
 function deriveClientFromText(...values: Array<string | null | undefined>): string | null {
-  const text = values.filter(Boolean).join(" ").toUpperCase();
-  if (!text) return null;
-  if (
-    text.includes("(TS)") ||
-    text.includes("TYSON") ||
-    text.includes("SONNEK") ||
-    text.includes("TYSON SONNEK")
-  ) return "tyson";
-  if (
-    text.includes("(KH)") ||
-    text.includes("KEITH") ||
-    text.includes("HOLLAND") ||
-    text.includes("KEITH HOLLAND")
-  ) return "keith";
-  return null;
-}
-
-function isSalesCalendar(calendarName: string | null | undefined, calendarTitle: string | null | undefined) {
-  const text = `${calendarName || ""} ${calendarTitle || ""}`.toUpperCase();
-  return text.includes("STRATEGY SESSION") || text.includes("(TS)") || text.includes("(KH)");
+  return creatorKeyFromText(...values);
 }
 
 function missingColumn(error: { message?: string } | null, column: string) {
@@ -273,15 +258,18 @@ export async function POST(req: NextRequest) {
     }
 
     const closer_name = assigned_user_id ? (CLOSER_MAP[assigned_user_id] || null) : null;
-    const calendarIsSalesCall = isSalesCalendar(calendar_name, calendar_title);
-    const client = calendarIsSalesCall
-      ? deriveClientFromText(
-          calendar_name,
-          calendar_title,
-          readString(root, ["client", "client_name", "clientName"]),
-          readString(root, ["tags", "contact_source", "contactSource"])
-        )
-      : null;
+    // Always figure out the creator from EVERY available signal — not only when
+    // the calendar name marks it as a sales call. GHL lead tags like
+    // "tyson sonnek lead" reliably identify the creator even when the webhook
+    // payload arrives with empty calendar fields (the cause of the historical
+    // "missing_client" backlog). deriveClientFromText only returns a creator
+    // when the signal is unambiguous, so non-creator calls still resolve null.
+    const client = deriveClientFromText(
+      calendar_name,
+      calendar_title,
+      readString(root, ["client", "client_name", "clientName"]),
+      readString(root, ["tags", "contact_source", "contactSource"])
+    );
     const supabase = getServiceSupabase();
     const directKeywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
     const fallbackKeyword = directKeywordNormalized

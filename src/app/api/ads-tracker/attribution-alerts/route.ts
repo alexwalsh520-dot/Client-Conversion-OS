@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
+import { isCreatorKey } from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,8 @@ const ACTIONS = new Set(["attribute", "organic", "unattributed", "ignore"]);
 const MISSING_DM_KEYWORD_ALERT = "missing_dm_keyword";
 const MISSING_BOOKING_KEYWORD_ALERT = "missing_booking_keyword";
 
-function isClientKey(value: unknown): value is "tyson" | "keith" {
-  return value === "tyson" || value === "keith";
+function isClientKey(value: unknown) {
+  return isCreatorKey(value);
 }
 
 function cleanString(value: unknown) {
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "action must be attribute, organic, unattributed, or ignore" }, { status: 400 });
   }
   if (clientKey && !isClientKey(clientKey)) {
-    return NextResponse.json({ error: "clientKey must be tyson or keith" }, { status: 400 });
+    return NextResponse.json({ error: "clientKey must be a known creator" }, { status: 400 });
   }
   if (action === "attribute" && !keyword && !noKeyword) {
     return NextResponse.json({ error: "keyword is required unless this is marked as paid with no keyword" }, { status: 400 });

@@ -2,6 +2,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import { saleGrossProfit } from "@/lib/economics";
 import { displayKeyword, keywordFromAdName, normalizeKeyword, normalizePersonName } from "./normalize";
+import { creatorKeyFromText, type CreatorKey } from "@/lib/creators";
 
 export type AdsTrackerAccount = "all" | "tyson" | "keith";
 export type AdsTrackerStatus = "active" | "finished" | "all";
@@ -2457,11 +2458,8 @@ async function fetchManychatOriginAdEvents(
   return events;
 }
 
-function adsClientKeyFromManychatClient(client: string | null | undefined): "tyson" | "keith" | null {
-  const value = (client || "").trim().toLowerCase();
-  if (value.includes("tyson")) return "tyson";
-  if (value.includes("keith")) return "keith";
-  return null;
+function adsClientKeyFromManychatClient(client: string | null | undefined): CreatorKey | null {
+  return creatorKeyFromText(client);
 }
 
 function manychatMissingKeywordAlertKey(row: ManychatTagEventRow, clientKey: string) {
@@ -2556,11 +2554,8 @@ function buildMissingManychatKeywordAlerts(
   return alerts;
 }
 
-function adsClientKeyFromGhlClient(value: string | null | undefined): string | null {
-  const normalized = (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_");
-  if (normalized === "tyson" || normalized === "tyson_sonnek") return "tyson";
-  if (normalized === "keith" || normalized === "keith_holland") return "keith";
-  return null;
+function adsClientKeyFromGhlClient(value: string | null | undefined): CreatorKey | null {
+  return creatorKeyFromText(value);
 }
 
 function missingGhlBookingKeywordAlertKey(
