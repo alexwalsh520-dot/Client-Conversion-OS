@@ -892,6 +892,45 @@
 
   .ddr-empty{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:40px;text-align:center;color:var(--text-3);font-size:13px}
   @media(max-width:900px){.ddr-band{grid-template-columns:repeat(2,1fr)} .ddr-srow{grid-template-columns:80px 1fr 96px}}
+
+  /* ---- Trend explorer (pick a metric + split by any dimension) ---- */
+  .tx{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px 18px}
+  .tx-controls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:6px}
+  .tx-field{display:flex;flex-direction:column;gap:5px;min-width:170px;flex:1}
+  .tx-field .lab{font-size:9px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-4);font-weight:700}
+  .tx-select{appearance:none;cursor:pointer;width:100%;padding:8px 30px 8px 11px;background:var(--bg);border:1px solid var(--border-2);border-radius:6px;font-size:12.5px;color:var(--text);font-family:inherit;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%238a8a8a' stroke-width='1.3' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 11px center}
+  .tx-select:focus{border-color:var(--focus,var(--gold));outline:none}
+  .tx-legend{display:flex;flex-wrap:wrap;gap:7px;margin:13px 0 4px}
+  .tx-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:99px;border:1px solid var(--border);background:var(--panel-2);color:var(--text-3);font-size:11.5px;cursor:pointer;transition:all .12s;font-variant-numeric:tabular-nums}
+  .tx-chip:hover{border-color:var(--border-2);color:var(--text-2)}
+  .tx-chip.on{color:var(--text);border-color:var(--border-2);background:var(--panel)}
+  .tx-chip.on .tx-dot{box-shadow:0 0 0 3px color-mix(in srgb, currentColor 18%, transparent)}
+  .tx-chip .tx-dot{width:9px;height:9px;border-radius:99px;flex-shrink:0}
+  .tx-chip .tx-sv{font-size:10px;color:var(--text-4);font-weight:600}
+  .tx-chip.off .tx-dot{opacity:.32}
+  .tx-actions{display:flex;gap:9px;margin-left:auto}
+  .tx-mini{font-size:10.5px;color:var(--text-4);cursor:pointer;border:1px solid var(--border);background:var(--panel-2);border-radius:6px;padding:4px 9px}
+  .tx-mini:hover{color:var(--text-2);border-color:var(--border-2)}
+  .tx-empty{padding:30px;text-align:center;color:var(--text-4);font-size:12.5px}
+  .tx-foot{margin-top:11px;font-size:11px;color:var(--text-4);line-height:1.55}
+  @media(max-width:700px){.tx-field{min-width:100%}}
+
+  /* ---- Collapsible table card + wide modal ---- */
+  .tcard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:15px 17px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:border-color .12s,transform .08s}
+  .tcard:hover{border-color:var(--border-2)}
+  .tcard:active{transform:translateY(1px)}
+  .tcard-main{flex:1;min-width:0}
+  .tcard-title{font-size:13.5px;font-weight:650;color:var(--text);letter-spacing:-0.01em}
+  .tcard-sub{font-size:11.5px;color:var(--text-3);margin-top:3px}
+  .tcard-prev{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .tcard-pill{font-size:10.5px;color:var(--text-2);background:var(--panel-2);border:1px solid var(--border);border-radius:99px;padding:3px 9px;display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+  .tcard-pill .tx-dot{width:7px;height:7px;border-radius:99px}
+  .tcard-open{display:flex;align-items:center;gap:7px;color:var(--gold);font-size:12px;font-weight:600;white-space:nowrap;border:1px solid var(--border-2);border-radius:7px;padding:8px 13px;background:var(--panel-2)}
+  .tcard:hover .tcard-open{background:var(--gold);color:var(--bg);border-color:var(--gold)}
+  .modal.huge{width:min(1080px,calc(100vw - 40px));max-height:84vh;display:flex;flex-direction:column}
+  .modal.huge .modal-body{overflow:auto;padding:14px 18px 18px}
+  .modal-backdrop.tall{align-items:flex-start;padding-top:7vh}
 </style>
 </head>
 <body>
@@ -5443,6 +5482,229 @@ function MessagingInsights({dashboard}){
   );
 }
 
+// ---- Trend explorer -------------------------------------------------------
+// A flat, dimension-preserving view of the daily ad feed. metricRowFromApi strips
+// campaign/ad/ad-set so it can't be grouped; this keeps every dimension, so one
+// metric can be split by creator, campaign, ad set, ad, or ad word — all from the
+// single level:"ad" fetch the page already makes.
+function explorerRows(dashboard){
+  const src = Array.isArray(dashboard && dashboard.dailyRows) ? dashboard.dailyRows : [];
+  const out = [];
+  for(const r of src){
+    const raw = String(r.dateLabel || r.date || "");
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw
+      : (/^\d{4}-\d{2}-\d{2}$/.test(String(r.date||"")) ? r.date : "");
+    if(!iso) continue; // the explorer needs a real calendar day to plot a point
+    const lbl = dateLabelFromIso(iso);
+    out.push({
+      iso, label: lbl,
+      clientKey: r.clientKey || "unknown",
+      campaignId: r.campaignId || null,
+      campaignName: r.campaignName || null,
+      adsetId: r.adsetId || null,
+      adsetName: r.adsetName || null,
+      adId: r.adId || null,
+      adName: r.adName || null,
+      keyword: String(r.keyword || "").toUpperCase(),
+      ...metricRowFromApi(r, lbl),
+    });
+  }
+  return out;
+}
+
+// What each line represents. "Everything combined" = one aggregate line.
+const EXPLORER_DIMS = [
+  {id:"none",     label:"Everything combined", group:()=>({key:"all", name:"All ads combined"})},
+  {id:"creator",  label:"Creator",             group:r=>({key:r.clientKey||"unknown", name:creatorName(r.clientKey)})},
+  {id:"campaign", label:"Campaign",            group:r=>({key:r.campaignId||r.campaignName||"—", name:r.campaignName||"Unnamed campaign"})},
+  {id:"adset",    label:"Ad set",              group:r=>({key:r.adsetId||r.adsetName||"—", name:r.adsetName||r.adsetId||"Unnamed ad set"})},
+  {id:"ad",       label:"Ad",                  group:r=>({key:r.adId||r.adName||"—", name:r.adName||r.adId||"Unnamed ad"})},
+  {id:"keyword",  label:"Ad word / audience",  group:r=>({key:r.keyword||"—", name:r.keyword||"—"})},
+];
+
+// What we plot on the Y axis. Collected ROAS leads (it's the number Alex asked for);
+// the rest reuse the same value/format/axis maths as the standalone metric cards, so
+// ratios (CTR, CPM, ROAS) are computed from summed components per day, never averaged.
+const EXPLORER_METRICS = [
+  {id:"collected_roas", label:"Collected ROAS", color:"var(--green)",
+   value:r=>safeRatio(r.collected, r.spend), format:v=>v.toFixed(2)+"×", axis:v=>v.toFixed(1)+"×"},
+  ...GENERIC_METRIC_DEFS,
+];
+
+const TX_PALETTE = ["var(--gold)","var(--blue)","var(--green)","var(--red)","#b48ead","#d8a657","#83c0c1","#e07a5f","#9a8cce","#6fae90"];
+
+function TrendExplorer({dashboard, range}){
+  const allRows = useMemo(()=>explorerRows(dashboard), [dashboard]);
+  const [metricId, setMetricId] = useState("collected_roas");
+  const [dimId, setDimId] = useState("keyword");
+  const [sel, setSel] = useState({}); // { [dimId]: { [groupKey]: visible? } }
+
+  const metric = EXPLORER_METRICS.find(m=>m.id===metricId) || EXPLORER_METRICS[0];
+  const dim = EXPLORER_DIMS.find(d=>d.id===dimId) || EXPLORER_DIMS[0];
+
+  // X axis: every calendar day with data, in chronological order.
+  const labels = useMemo(()=>{
+    const seen = new Map();
+    allRows.forEach(r=> seen.set(r.iso, r.label));
+    return Array.from(seen.keys()).sort().map(iso=>({iso, label:seen.get(iso)}));
+  }, [allRows]);
+
+  // Group by the chosen dimension; aggregate each group's days and a range total.
+  const groups = useMemo(()=>{
+    const m = new Map();
+    allRows.forEach(r=>{
+      const g = dim.group(r);
+      if(!m.has(g.key)) m.set(g.key, {key:g.key, name:g.name, byIso:new Map()});
+      const grp = m.get(g.key);
+      if(!grp.byIso.has(r.iso)) grp.byIso.set(r.iso, emptyMetric(r.label));
+      addMetric(grp.byIso.get(r.iso), r);
+    });
+    const arr = Array.from(m.values());
+    arr.forEach(g=>{ g.total = aggregateTotal(Array.from(g.byIso.values())); g.spend = g.total.spend; });
+    return arr.sort((a,b)=>b.spend-a.spend);
+  }, [allRows, dimId]);
+
+  const defaultCount = dimId==="none" ? 1 : Math.min(6, groups.length);
+  const visibleKeys = useMemo(()=>{
+    const cur = sel[dimId];
+    if(cur) return new Set(Object.keys(cur).filter(k=>cur[k]));
+    return new Set(groups.slice(0, defaultCount).map(g=>g.key));
+  }, [sel, dimId, groups, defaultCount]);
+
+  const baseSel = ()=> Object.fromEntries(groups.slice(0, defaultCount).map(g=>[g.key,true]));
+  const toggle = (key)=> setSel(prev=>{
+    const base = prev[dimId] || baseSel();
+    return {...prev, [dimId]: {...base, [key]: !base[key]}};
+  });
+  const setAll = (on)=> setSel(prev=>({...prev, [dimId]: Object.fromEntries(groups.map(g=>[g.key,on]))}));
+
+  const visGroups = groups.filter(g=>visibleKeys.has(g.key));
+  const series = visGroups.map(g=>{
+    const ci = groups.indexOf(g);
+    return {
+      name: g.name,
+      color: TX_PALETTE[ci % TX_PALETTE.length],
+      values: labels.map(l=> metric.value(g.byIso.get(l.iso) || emptyMetric(l.label))),
+      fmt: metric.format,
+      isPrimary: visGroups.length===1,
+    };
+  });
+  const chipGroups = groups.slice(0, 14);
+
+  return (
+    <div className="ddr-block">
+      <div className="ddr-blabel"><span className="l">Trend explorer</span><span className="m">pick a metric, split it any way · {rangeLabel(range)}</span></div>
+      <div className="tx">
+        <div className="tx-controls">
+          <div className="tx-field">
+            <span className="lab">Show me</span>
+            <select className="tx-select" value={metricId} onChange={e=>setMetricId(e.target.value)}>
+              {EXPLORER_METRICS.map(m=> <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="tx-field">
+            <span className="lab">Broken out by</span>
+            <select className="tx-select" value={dimId} onChange={e=>setDimId(e.target.value)}>
+              {EXPLORER_DIMS.map(d=> <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {groups.length===0 || labels.length===0 ? (
+          <div className="tx-empty">No day-by-day ad data in this range to chart yet. Widen the dates above.</div>
+        ) : (
+          <>
+            <LineChart series={series.length?series:[{name:metric.label,values:labels.map(()=>0),color:metric.color}]}
+              labels={labels.map(l=>l.label)} fmt={metric.axis} height={236} width={700}/>
+            {dimId!=="none" && (
+              <>
+                <div className="tx-legend">
+                  {chipGroups.map(g=>{
+                    const on = visibleKeys.has(g.key);
+                    const ci = groups.indexOf(g);
+                    return (
+                      <button key={g.key} className={"tx-chip "+(on?"on":"off")} onClick={()=>toggle(g.key)} style={on?{color:TX_PALETTE[ci%TX_PALETTE.length]}:null}>
+                        <span className="tx-dot" style={{background:TX_PALETTE[ci%TX_PALETTE.length]}}></span>
+                        <span>{g.name}</span>
+                        <span className="tx-sv">{metric.format(metric.value(g.total))}</span>
+                      </button>
+                    );
+                  })}
+                  <span className="tx-actions">
+                    <button className="tx-mini" onClick={()=>setAll(true)}>Show all</button>
+                    <button className="tx-mini" onClick={()=>setAll(false)}>Clear</button>
+                  </span>
+                </div>
+                <div className="tx-foot">
+                  Plotting <b>{series.length}</b> of {groups.length} {dim.label.toLowerCase()}{groups.length===1?"":"s"} · click a chip to add or drop a line · ranked by spend.
+                  {chipGroups.length<groups.length ? " Only the top "+chipGroups.length+" by spend are listed." : ""}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The full ad-word table is long; default it to a compact, clickable card that
+// opens the whole sortable/filterable table in a modal — no more infinite scroll
+// living in the middle of the report.
+function BookingTableCard({rows}){
+  const [open, setOpen] = useState(false);
+  const list = rows || [];
+  const top = useMemo(()=> [...list].sort((a,b)=>b.spend-a.spend).slice(0,4), [list]);
+  const totalSpend = list.reduce((s,r)=>s+(r.spend||0),0);
+  const dotFor = (r)=> r.traced ? (r.roas>=2?"var(--green)":r.roas<1?"var(--red)":"var(--gold)") : "var(--text-4)";
+
+  useEffect(()=>{
+    if(!open) return;
+    const onKey = e=>{ if(e.key==="Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return ()=>{ window.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; };
+  }, [open]);
+
+  return (
+    <>
+      <div className="tcard" role="button" tabIndex={0} onClick={()=>setOpen(true)}
+        onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setOpen(true); } }}>
+        <div className="tcard-main">
+          <div className="tcard-title">ROAS by ad word — full table</div>
+          <div className="tcard-sub">{list.length} ad word{list.length===1?"":"s"} · {fmtUsd(totalSpend)} spend · sort, filter & expand every one</div>
+          <div className="tcard-prev">
+            {top.map(r=>(
+              <span className="tcard-pill" key={r.keyword}>
+                <span className="tx-dot" style={{background:dotFor(r)}}></span>
+                {r.keyword.charAt(0)+r.keyword.slice(1).toLowerCase()} · {fmtUsd(r.spend)}
+              </span>
+            ))}
+          </div>
+        </div>
+        <span className="tcard-open">Open table →</span>
+      </div>
+      {open && (
+        <div className="modal-backdrop tall" onClick={()=>setOpen(false)}>
+          <div className="modal huge" onClick={e=>e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">ROAS by ad word</h3>
+                <div className="modal-sub">Tap a row for where to find the ad · tap a column to sort</div>
+              </div>
+              <button className="modal-close" onClick={()=>setOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <BookingTable rows={rows}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -5583,10 +5845,13 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         </div>
       </div>
 
-      {/* ROAS by ad word: sortable, filterable, expandable */}
+      {/* Trend explorer — any metric, split by creator / campaign / ad set / ad / ad word */}
+      <TrendExplorer dashboard={dashboard} range={range}/>
+
+      {/* ROAS by ad word: collapsed to a card that opens the full table in a modal */}
       <div className="ddr-block">
-        <div className="ddr-blabel"><span className="l">ROAS by ad word</span><span className="m">tap a row for where to find the ad · tap a column to sort</span></div>
-        <BookingTable rows={rows}/>
+        <div className="ddr-blabel"><span className="l">ROAS by ad word</span><span className="m">the full table — opens big so you're not scrolling forever</span></div>
+        <BookingTableCard rows={rows}/>
       </div>
 
       {/* What your messaging is telling us — software reads the ad copy and ties it to results */}
