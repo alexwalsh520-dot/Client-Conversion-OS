@@ -23,6 +23,7 @@ import {
   BookOpen,
   FileText,
   Star,
+  Handshake,
 } from "lucide-react";
 
 const navItems = [
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/coaching", label: "Coaching", icon: Users },
+  { href: "/partner-onboarding", label: "Partner Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
@@ -106,6 +108,8 @@ export default function Sidebar() {
   if (pathname === "/testimonials") return null;
   // Public client check-in form — coach-shared URL, no CCOS chrome.
   if (pathname === "/check-in") return null;
+  // Public partner onboarding portal — partner-shared token URL, no CCOS chrome.
+  if (pathname.startsWith("/welcome/")) return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },

@@ -46,6 +46,9 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // URL via Everfit DMs; clients pick themselves from the typeahead
     // and submit. Exact-match (no /check-in/* subroutes today).
     pathname === "/check-in" ||
+    // /welcome/<token> is the public partner-onboarding portal. Partners
+    // open it via an unguessable token link; no CCOS login required.
+    pathname.startsWith("/welcome/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||
@@ -84,6 +87,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
 
   // Settings and its child pages are always accessible (shows limited view for non-admins)
   if (pathname === "/settings" || pathname.startsWith("/settings/")) return <>{children}</>;
+
+  // Partner onboarding back office handles its own admin-vs-PIN gate inside
+  // the page (admins straight in; non-admins enter a shared PIN once). Let
+  // any authenticated user reach it so the in-page gate can do its job.
+  if (pathname === "/partner-onboarding") return <>{children}</>;
 
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {
