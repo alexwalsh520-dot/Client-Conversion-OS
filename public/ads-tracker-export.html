@@ -214,6 +214,53 @@
 	  .workspace-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}
 	  .workspace-empty{padding:28px 20px;color:var(--text-4);font-size:12px}
 	  @media(max-width:1100px){.workspace-grid{grid-template-columns:minmax(180px,1fr) 108px 96px 88px 132px}.workspace-table-head .hide-mid,.workspace-row .hide-mid{display:none}.workspace-search{min-width:220px}}
+	  /* ---- Setter counts (what the setter knows, side-by-side, never in ROAS) ---- */
+	  .sc-panel{border:1px solid var(--border);border-radius:9px;background:var(--panel);overflow:hidden}
+	  .sc-panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;cursor:pointer;user-select:none}
+	  .sc-panel-head:hover{background:var(--panel-2)}
+	  .sc-panel-title{font-size:13px;font-weight:650;color:var(--text);letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+	  .sc-panel-sub{font-size:11px;color:var(--text-3);margin-top:4px;line-height:1.4}
+	  .sc-badge{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;padding:3px 8px;border-radius:999px;border:1px solid rgba(211,180,119,.3);color:var(--gold);background:rgba(211,180,119,.06);white-space:nowrap}
+	  .sc-chevron{color:var(--text-4);font-size:12px;transition:transform .2s ease}
+	  .sc-chevron.open{transform:rotate(90deg)}
+	  .sc-body{border-top:1px solid var(--border);padding:16px 18px;display:grid;gap:16px}
+	  .sc-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+	  .sc-field{display:flex;flex-direction:column;gap:5px}
+	  .sc-label{font-size:10px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-4);font-weight:500}
+	  .sc-client-pills{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--border-2);border-radius:999px;background:var(--bg)}
+	  .sc-pill{height:28px;padding:0 13px;border-radius:999px;color:var(--text-3);font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+	  .sc-pill:hover{color:var(--text-2)}
+	  .sc-pill.active{background:var(--border);color:var(--text)}
+	  .sc-pill .sc-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+	  .sc-pill .sc-dot.keith{background:var(--blue)}
+	  .sc-input{height:32px;border:1px solid var(--border-2);border-radius:7px;background:var(--panel-2);color:var(--text);font-size:12px;padding:0 11px}
+	  .sc-input:focus{border-color:var(--focus)}
+	  .sc-input.kw{width:140px;text-transform:uppercase;font-family:'JetBrains Mono',ui-monospace,monospace}
+	  .sc-input.num{width:84px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace}
+	  .sc-input.note{flex:1;min-width:160px}
+	  .sc-add-btn{height:32px;padding:0 16px;border-radius:7px;border:1px solid var(--gold-dim);background:rgba(211,180,119,.1);color:var(--gold);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+	  .sc-add-btn:hover{background:rgba(211,180,119,.16)}
+	  .sc-add-btn:disabled{opacity:.45;cursor:default}
+	  .sc-cmp{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+	  .sc-cmp-grid{display:grid;grid-template-columns:minmax(120px,1.4fr) 120px 130px 110px 44px;align-items:center;gap:10px}
+	  .sc-cmp-head{min-height:38px;padding:0 14px;border-bottom:1px solid var(--border);font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-4);font-weight:500}
+	  .sc-cmp-head .num,.sc-cmp-row .num{text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace}
+	  .sc-cmp-row{min-height:46px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-2)}
+	  .sc-cmp-row:last-child{border-bottom:none}
+	  .sc-cmp-row:hover{background:var(--panel-2)}
+	  .sc-kw{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--text);letter-spacing:.02em}
+	  .sc-sys{color:var(--text)}
+	  .sc-setter{color:var(--gold)}
+	  .sc-setter.none{color:var(--text-4)}
+	  .sc-gap{font-weight:600}
+	  .sc-gap.pos{color:var(--blue)}
+	  .sc-gap.zero{color:var(--green)}
+	  .sc-gap.neg{color:var(--text-3)}
+	  .sc-del{width:26px;height:26px;border-radius:6px;border:1px solid transparent;color:var(--text-4);font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+	  .sc-del:hover{border-color:var(--border-2);color:var(--red);background:var(--panel-2)}
+	  .sc-cmp-empty{padding:22px 14px;color:var(--text-4);font-size:12px;text-align:center}
+	  .sc-note-cell{font-size:10.5px;color:var(--text-4);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	  @media(max-width:760px){.sc-cmp-grid{grid-template-columns:minmax(90px,1fr) 70px 80px 64px 36px;gap:6px}.sc-input.note{width:100%;flex-basis:100%}}
 	  .resolved-strip{border-top:1px solid var(--border);background:var(--bg-1);padding:12px 20px}
 	  .resolved-head{font-size:10px;text-transform:uppercase;letter-spacing:0.13em;color:var(--text-4);margin-bottom:8px}
 	  .resolved-row{display:grid;grid-template-columns:minmax(0,1fr) 96px 80px;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--panel-2)}
@@ -5155,6 +5202,183 @@ function AttributionAlerts({dashboard, campaigns, onResolve, onToast, onOpenWork
   );
 }
 
+// System-TRACKED wins per keyword for one client, summed straight from the
+// per-ad data the rest of the Deep Dive uses (ad.clients = closed wins the
+// software could trace by keyword). This is the hard number the setter's memory
+// gets compared against — it stays the source of truth for ROAS/profit.
+function systemKeywordWins(campaigns, clientKey){
+  const m = new Map();
+  (campaigns||[]).forEach(c=>{
+    if(clientKey && c.clientKey !== clientKey) return;
+    (c.rows||[]).forEach(r=>{
+      (r.adRows||[]).forEach(ad=>{
+        const kw = String(ad.keyword || ad.adName || "UNKNOWN").toUpperCase().trim();
+        if(!kw || kw==="UNKNOWN") return;
+        m.set(kw, (m.get(kw)||0) + Number(ad.clients||0));
+      });
+    });
+  });
+  return m;
+}
+
+// "What the setter knows." A setter often KNOWS roughly how many wins came from
+// each keyword even when the link/ManyChat trail is missing. We store that here,
+// show it NEXT TO the system-tracked number so the gap is visible, and NEVER let
+// it touch ROAS or profit (those stay on hard tracking only). Clearly labelled
+// setter-reported so nobody mistakes a memory for a measurement.
+function SetterCountsPanel({campaigns, clientFilter, onToast}){
+  const initialClient = (clientFilter==="tyson"||clientFilter==="keith") ? clientFilter : "tyson";
+  const [open, setOpen] = useState(false);
+  const [counts, setCounts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [cmpClient, setCmpClient] = useState(initialClient);
+  const [form, setForm] = useState({keyword:"", count:"", setter:"", note:""});
+
+  const load = async () => {
+    setLoading(true);
+    try{
+      const res = await fetch("/api/ads-tracker/setter-counts", {cache:"no-store"});
+      const json = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(json.error || "Could not load setter counts");
+      setCounts(Array.isArray(json.counts) ? json.counts : []);
+    }catch(err){
+      onToast && onToast(err?.message || "Could not load setter counts");
+    }finally{
+      setLoading(false);
+    }
+  };
+
+  useEffect(()=>{ if(open && counts.length===0) load(); }, [open]);
+
+  const addCount = async () => {
+    const kw = form.keyword.trim();
+    const n = Number(form.count);
+    if(!kw){ onToast && onToast("Add a keyword"); return; }
+    if(!Number.isFinite(n) || n < 0){ onToast && onToast("Count must be a number"); return; }
+    setSaving(true);
+    try{
+      const res = await fetch("/api/ads-tracker/setter-counts", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({clientKey:cmpClient, keyword:kw, count:n, setter:form.setter.trim()||null, note:form.note.trim()||null}),
+      });
+      const json = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(json.error || "Save failed");
+      setForm({keyword:"", count:"", setter:form.setter, note:""});
+      onToast && onToast("Setter count saved");
+      await load();
+    }catch(err){
+      onToast && onToast(err?.message || "Save failed");
+    }finally{
+      setSaving(false);
+    }
+  };
+
+  const removeCount = async (id) => {
+    try{
+      const res = await fetch("/api/ads-tracker/setter-counts?id="+encodeURIComponent(id), {method:"DELETE"});
+      if(!res.ok){ const j = await res.json().catch(()=>({})); throw new Error(j.error || "Delete failed"); }
+      setCounts(x=>x.filter(c=>c.id!==id));
+    }catch(err){
+      onToast && onToast(err?.message || "Delete failed");
+    }
+  };
+
+  const sysMap = systemKeywordWins(campaigns, cmpClient);
+  const clientCounts = counts.filter(c=>c.clientKey===cmpClient);
+  const setterMap = new Map();
+  clientCounts.forEach(c=>{
+    const kw = String(c.keyword||"").toUpperCase().trim();
+    if(!kw) return;
+    const prev = setterMap.get(kw);
+    if(prev){ prev.count += Number(c.count||0); prev.entries.push(c); }
+    else setterMap.set(kw, {count:Number(c.count||0), entries:[c]});
+  });
+  const allKw = Array.from(new Set([...sysMap.keys(), ...setterMap.keys()]))
+    .sort((a,b)=>(setterMap.get(b)?.count||0)-(setterMap.get(a)?.count||0) || (sysMap.get(b)||0)-(sysMap.get(a)||0) || a.localeCompare(b));
+
+  return (
+    <div className="sc-panel">
+      <div className="sc-panel-head" onClick={()=>setOpen(o=>!o)}>
+        <div>
+          <div className="sc-panel-title">
+            <span className={"sc-chevron "+(open?"open":"")}>▶</span>
+            What you know — setter counts
+            <span className="sc-badge">setter-reported · not in ROAS</span>
+          </div>
+          <div className="sc-panel-sub">Type in wins you know came from a keyword even when the system couldn't trace them. Shown beside the tracked number so the gap is visible — your ROAS and profit never change.</div>
+        </div>
+      </div>
+      {open && (
+        <div className="sc-body">
+          <div className="sc-form">
+            <div className="sc-field">
+              <span className="sc-label">Account</span>
+              <div className="sc-client-pills">
+                <button className={"sc-pill "+(cmpClient==="tyson"?"active":"")} onClick={()=>setCmpClient("tyson")}><span className="sc-dot"></span>Tyson</button>
+                <button className={"sc-pill "+(cmpClient==="keith"?"active":"")} onClick={()=>setCmpClient("keith")}><span className="sc-dot keith"></span>Keith</button>
+              </div>
+            </div>
+            <div className="sc-field">
+              <span className="sc-label">Keyword</span>
+              <input className="sc-input kw" value={form.keyword} onChange={e=>setForm(f=>({...f,keyword:e.target.value}))} placeholder="FOCUS" />
+            </div>
+            <div className="sc-field">
+              <span className="sc-label">Wins</span>
+              <input className="sc-input num" type="number" min="0" value={form.count} onChange={e=>setForm(f=>({...f,count:e.target.value}))} placeholder="8" />
+            </div>
+            <div className="sc-field">
+              <span className="sc-label">Setter (optional)</span>
+              <input className="sc-input" style={{width:"120px"}} value={form.setter} onChange={e=>setForm(f=>({...f,setter:e.target.value}))} placeholder="Amara" />
+            </div>
+            <div className="sc-field" style={{flex:1,minWidth:"160px"}}>
+              <span className="sc-label">Note (optional)</span>
+              <input className="sc-input note" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Tyson's campaign, this month" />
+            </div>
+            <button className="sc-add-btn" onClick={addCount} disabled={saving}>{saving?"Saving…":"Add"}</button>
+          </div>
+          <div className="sc-cmp">
+            <div className="sc-cmp-grid sc-cmp-head">
+              <div>Keyword</div>
+              <div className="num">System tracked</div>
+              <div className="num">Setter reported</div>
+              <div className="num">Gap</div>
+              <div></div>
+            </div>
+            {loading ? (
+              <div className="sc-cmp-empty">Loading…</div>
+            ) : allKw.length===0 ? (
+              <div className="sc-cmp-empty">No keywords yet. Add what you know above, or tracked wins will appear here.</div>
+            ) : allKw.map(kw=>{
+              const sys = sysMap.get(kw)||0;
+              const setterRec = setterMap.get(kw);
+              const setter = setterRec?.count;
+              const hasSetter = setterRec!=null;
+              const gap = hasSetter ? setter - sys : null;
+              const gapClass = gap==null ? "neg" : gap>0 ? "pos" : "zero";
+              const note = setterRec?.entries?.map(e=>e.note).filter(Boolean)[0] || null;
+              const delId = setterRec?.entries?.length===1 ? setterRec.entries[0].id : null;
+              return (
+                <div className="sc-cmp-grid sc-cmp-row" key={kw}>
+                  <div>
+                    <span className="sc-kw">{kw}</span>
+                    {note && <div className="sc-note-cell">{note}</div>}
+                  </div>
+                  <div className="num sc-sys">{sys}</div>
+                  <div className={"num sc-setter "+(hasSetter?"":"none")}>{hasSetter?setter:"—"}</div>
+                  <div className={"num sc-gap "+gapClass}>{gap==null?"—":(gap>0?"+"+gap:gap)}</div>
+                  <div>{delId && <button className="sc-del" title="Remove this setter count" onClick={()=>removeCount(delId)}>×</button>}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose}){
   const attribution = dashboard?.attribution || {};
   const alerts = Array.isArray(attribution.unmatchedSales) ? attribution.unmatchedSales : [];
@@ -5304,6 +5528,7 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
             );
           })}
         </div>
+        <SetterCountsPanel campaigns={campaigns} clientFilter={clientFilter} onToast={onToast}/>
       </div>
       {modal && (
         <AttributionAlertModal
