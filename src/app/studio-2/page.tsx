@@ -1076,7 +1076,7 @@ function getCanvasImageSrc(src: string) {
 }
 
 function getMediaPreviewSrc(src: string) {
-  return getCanvasImageSrc(src);
+  return src;
 }
 
 function isHeicMediaName(value: string) {
@@ -2327,6 +2327,7 @@ export default function Studio2Page() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
+  const videoTimeUpdateRef = useRef(0);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const generateWorkspaceRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2399,18 +2400,13 @@ export default function Studio2Page() {
   const currentImage = currentCreative && (currentCreative.mediaKind || "image") === "image"
     ? imageCacheRef.current.get(currentCreative.photoUrl) ?? null
     : null;
-  const currentVideoTrimRange = useMemo(
-    () => currentCreative && (currentCreative.mediaKind || "image") === "video"
-      ? getVideoTrimRange(currentCreative, videoPreviewDuration)
-      : null,
-    [currentCreative, videoPreviewDuration]
-  );
   const currentVideoTimelineSegments = useMemo(
     () => currentCreative && (currentCreative.mediaKind || "image") === "video"
       ? getVideoTimelineSegments(currentCreative, videoPreviewDuration)
       : [],
     [currentCreative, videoPreviewDuration]
   );
+  const videoTimelineDockOpen = editorSidebarMode === "edit" && (currentCreative?.mediaKind || "image") === "video";
   const designFolders = useMemo(
     () => cloudFolders.filter((folder) => (folder.folderType || "design") === "design"),
     [cloudFolders]
@@ -2851,7 +2847,7 @@ export default function Studio2Page() {
     const updateScale = () => {
       const panelW = 326;
       const toolbarH = 60;
-      const dockH = 104;
+      const dockH = videoTimelineDockOpen ? 322 : 132;
       const availableW = Math.max(320, window.innerWidth - panelW - 300);
       const availableH = Math.max(420, window.innerHeight - toolbarH - dockH - 30);
       const next = Math.min(availableW / CANVAS_W, availableH / CANVAS_H, 0.62);
@@ -2860,7 +2856,7 @@ export default function Studio2Page() {
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
-  }, []);
+  }, [videoTimelineDockOpen]);
 
   useEffect(() => {
     const urls = new Set([
@@ -4650,6 +4646,32 @@ export default function Studio2Page() {
     []
   );
 
+  const renderCreativePreviewToCanvas = useCallback(
+    async (creative: Creative, pixelRatio = 0.36) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = CANVAS_W * pixelRatio;
+      canvas.height = CANVAS_H * pixelRatio;
+      const ctx = canvas.getContext("2d")!;
+      let media: HTMLImageElement | HTMLVideoElement | null = null;
+      if ((creative.mediaKind || "image") === "video") {
+        const posterUrl = getMediaPreviewUrl(getAssetForUrl(creative.photoUrl));
+        if (posterUrl) {
+          media = await loadImage(posterUrl);
+        }
+      } else {
+        let image = imageCacheRef.current.get(creative.photoUrl) ?? null;
+        if (!image) {
+          image = await loadImage(creative.photoUrl);
+          imageCacheRef.current.set(creative.photoUrl, image);
+        }
+        media = image;
+      }
+      drawArtwork(ctx, creative, media, pixelRatio);
+      return canvas;
+    },
+    [getAssetForUrl]
+  );
+
   useEffect(() => {
     if (view !== "editor" || editorSidebarMode === "generate" || !creatives.length) return;
     let cancelled = false;
@@ -4658,7 +4680,7 @@ export default function Studio2Page() {
     const renderThumbs = async () => {
       for (const creative of creatives) {
         try {
-          const canvas = await renderCreativeToCanvas(creative, 0.36);
+          const canvas = await renderCreativePreviewToCanvas(creative, 0.36);
           if (cancelled) return;
           nextThumbs[creative.id] = canvas.toDataURL("image/jpeg", 0.86);
           setCreativeThumbs((prev) => ({ ...prev, [creative.id]: nextThumbs[creative.id] }));
@@ -4672,7 +4694,7 @@ export default function Studio2Page() {
     return () => {
       cancelled = true;
     };
-  }, [creatives, editorSidebarMode, renderCreativeToCanvas, view]);
+  }, [creatives, editorSidebarMode, renderCreativePreviewToCanvas, view]);
 
   const exportCurrent = useCallback(async (fileLabel?: string) => {
     if (!currentCreative) return;
@@ -5563,7 +5585,7 @@ export default function Studio2Page() {
       return;
     }
 
-    renderCreativeToCanvas(currentCreative, 0.25)
+    renderCreativePreviewToCanvas(currentCreative, 0.25)
       .then((canvas) => {
         if (!cancelled) setGenerateSourcePreview(canvas.toDataURL("image/png"));
       })
@@ -5574,7 +5596,7 @@ export default function Studio2Page() {
     return () => {
       cancelled = true;
     };
-  }, [currentCreative, editorSidebarMode, renderCreativeToCanvas]);
+  }, [currentCreative, editorSidebarMode, renderCreativePreviewToCanvas]);
 
   useEffect(() => {
     if (editorSidebarMode === "generate" && currentCreative?.id) {
@@ -10166,18 +10188,25 @@ export default function Studio2Page() {
 	                  }}
 	                  onTimeUpdate={(event) => {
 	                    const video = event.currentTarget;
+	                    const now = performance.now();
 	                    const duration = video.duration || videoPreviewDuration;
 	                    const segments = getEnabledVideoSegments(currentCreative, duration);
 	                    const segment = findVideoSegmentAtTime(segments, video.currentTime);
+	                    let jumped = false;
 	                    if (!segment && segments[0]) {
 	                      video.currentTime = segments[0].start;
+	                      jumped = true;
 	                    } else if (segment && video.currentTime >= (segment.end ?? duration) - 0.04) {
 	                      const index = segments.findIndex((item) => item.id === segment.id);
 	                      const next = segments[index + 1] || segments[0];
 	                      video.currentTime = next?.start ?? 0;
+	                      jumped = true;
 	                      if (!video.paused) void video.play().catch(() => undefined);
 	                    }
-	                    setVideoPreviewTime(video.currentTime || 0);
+	                    if (jumped || now - videoTimeUpdateRef.current > 140) {
+	                      videoTimeUpdateRef.current = now;
+	                      setVideoPreviewTime(video.currentTime || 0);
+	                    }
 	                  }}
 	                  onPlay={(event) => {
 	                    const video = event.currentTarget;
@@ -10343,7 +10372,7 @@ export default function Studio2Page() {
               stripRef.current.scrollLeft += event.deltaY;
             }}
             style={{
-              height: 178,
+              height: videoTimelineDockOpen ? 72 : 178,
               width: "100%",
               display: "flex",
               alignItems: "center",
@@ -10351,8 +10380,10 @@ export default function Studio2Page() {
               gap: 10,
               overflowX: "auto",
               overflowY: "visible",
-              padding: "18px 22px",
+              padding: videoTimelineDockOpen ? "8px 18px 4px" : "18px 22px",
               scrollBehavior: "smooth",
+              borderTop: videoTimelineDockOpen ? `1px solid ${ADS_BRAND.border}` : "none",
+              background: videoTimelineDockOpen ? ADS_BRAND.bg : "transparent",
             }}
           >
             {creatives.map((creative, index) => (
@@ -10374,8 +10405,8 @@ export default function Studio2Page() {
                 onMouseLeave={() => setHoveredStripIndex(null)}
                 style={{
                   position: "relative",
-                  width: hoveredStripIndex === index ? 96 : 48,
-                  height: hoveredStripIndex === index ? 164 : 84,
+                  width: videoTimelineDockOpen ? (hoveredStripIndex === index ? 58 : 42) : (hoveredStripIndex === index ? 96 : 48),
+                  height: videoTimelineDockOpen ? (hoveredStripIndex === index ? 58 : 52) : (hoveredStripIndex === index ? 164 : 84),
                   borderRadius: 6,
                   overflow: "hidden",
                   border: index === currentIndex ? `2px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
@@ -10384,7 +10415,7 @@ export default function Studio2Page() {
                   cursor: "pointer",
                   flexShrink: 0,
                   transition: "width 140ms ease, height 140ms ease, transform 140ms ease",
-                  transform: hoveredStripIndex === index ? "translateY(-7px)" : "none",
+                  transform: hoveredStripIndex === index ? (videoTimelineDockOpen ? "translateY(-3px)" : "translateY(-7px)") : "none",
                 }}
                 title={`Ad ${index + 1}`}
               >
@@ -10457,7 +10488,7 @@ export default function Studio2Page() {
               onClick={openNewAdModal}
               style={{
                 width: 48,
-                height: 84,
+                height: videoTimelineDockOpen ? 52 : 84,
                 borderRadius: 6,
                 border: `1px dashed ${ADS_BRAND.border2}`,
                 background: ADS_BRAND.panel3,
@@ -10473,6 +10504,44 @@ export default function Studio2Page() {
               <Plus size={17} />
             </button>
           </div>
+
+          {videoTimelineDockOpen && currentCreative && (
+            <div style={{
+              width: "100%",
+              height: 248,
+              flexShrink: 0,
+              borderTop: `1px solid ${ADS_BRAND.border}`,
+              background: ADS_BRAND.bg,
+              padding: "10px 18px 14px",
+              boxShadow: "0 -18px 50px rgba(0,0,0,0.18)",
+            }}>
+              <VideoTrimControls
+                duration={videoPreviewDuration}
+                segments={currentVideoTimelineSegments}
+                currentTime={videoPreviewTime}
+                zoom={videoTimelineZoom}
+                muted={currentCreative.videoMuted ?? true}
+                volume={currentCreative.videoVolume ?? 1}
+                onStart={pushUndo}
+                onSegmentsChange={updateVideoTimelineSegments}
+                onPreviewTime={seekVideoPreview}
+                onZoomChange={setVideoTimelineZoom}
+                onSplit={splitVideoAtPlayhead}
+                onMutedChange={(videoMuted) => updateVideoSettings({ videoMuted })}
+                onVolumeChange={(videoVolume) => updateVideoSettings({ videoVolume })}
+                onReset={() => {
+                  pushUndo();
+                  updateVideoSettings({
+                    videoTrim: { start: 0, end: null },
+                    videoTimeline: createDefaultVideoTimeline(),
+                    videoMuted: true,
+                    videoVolume: 1,
+                  });
+                  seekVideoPreview(0);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <aside style={{
@@ -10831,33 +10900,6 @@ export default function Studio2Page() {
                 <input type="number" value={currentCreative.imageTransform.offsetX} onFocus={pushUndo} onChange={(e) => updateImage({ offsetX: parseInt(e.target.value) || 0 })} style={inputStyle} />
                 <input type="number" value={currentCreative.imageTransform.offsetY} onFocus={pushUndo} onChange={(e) => updateImage({ offsetY: parseInt(e.target.value) || 0 })} style={inputStyle} />
               </Control>
-              {currentCreative.mediaKind === "video" && currentVideoTrimRange && (
-                <VideoTrimControls
-                  duration={videoPreviewDuration}
-                  segments={currentVideoTimelineSegments}
-                  currentTime={videoPreviewTime}
-                  zoom={videoTimelineZoom}
-                  muted={currentCreative.videoMuted ?? true}
-                  volume={currentCreative.videoVolume ?? 1}
-                  onStart={pushUndo}
-                  onSegmentsChange={updateVideoTimelineSegments}
-                  onPreviewTime={seekVideoPreview}
-                  onZoomChange={setVideoTimelineZoom}
-                  onSplit={splitVideoAtPlayhead}
-                  onMutedChange={(videoMuted) => updateVideoSettings({ videoMuted })}
-                  onVolumeChange={(videoVolume) => updateVideoSettings({ videoVolume })}
-                  onReset={() => {
-                    pushUndo();
-                    updateVideoSettings({
-                      videoTrim: { start: 0, end: null },
-                      videoTimeline: createDefaultVideoTimeline(),
-                      videoMuted: true,
-                      videoVolume: 1,
-                    });
-                    seekVideoPreview(0);
-                  }}
-                />
-              )}
               <button
                 style={{ ...buttonStyle(false), width: "100%", marginTop: 8 }}
                 onClick={() => setEditorMediaActionMode("replace-current")}
@@ -12471,17 +12513,25 @@ function VideoTrimControls({
   onReset: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const draftSegmentsRef = useRef<VideoSegment[]>([]);
   const dragRef = useRef<{
     type: "start" | "end" | "move";
     id: string;
     pointerStartX: number;
     start: number;
     end: number;
+    baseSegments: VideoSegment[];
+    previewTime: number;
   } | null>(null);
+  const [draftSegments, setDraftSegmentsState] = useState<VideoSegment[]>([]);
   const safeDuration = Math.max(0, duration);
+  const setDraftSegments = useCallback((next: VideoSegment[]) => {
+    draftSegmentsRef.current = next;
+    setDraftSegmentsState(next);
+  }, []);
   const normalizedSegments = useMemo(
-    () => normalizeVideoTimeline(segments, null, safeDuration),
-    [segments, safeDuration]
+    () => normalizeVideoTimeline(draftSegments.length ? draftSegments : segments, null, safeDuration),
+    [draftSegments, segments, safeDuration]
   );
   const max = safeDuration || Math.max(...normalizedSegments.map((segment) => segment.end || segment.start + 1), 1);
   const pxPerSecond = 36 + clamp(zoom, 0.5, 4) * 68;
@@ -12505,7 +12555,7 @@ function VideoTrimControls({
       const active = dragRef.current;
       if (!active) return;
       const deltaSeconds = (clientX - active.pointerStartX) / pxPerSecond;
-      const next = normalizedSegments.map((segment) => {
+      const next = active.baseSegments.map((segment) => {
         if (segment.id !== active.id) return segment;
         if (active.type === "start") {
           const start = clamp(active.start + deltaSeconds, 0, Math.max(0, active.end - minGap));
@@ -12520,9 +12570,15 @@ function VideoTrimControls({
         return { ...segment, start: roundVideoTime(start), end: roundVideoTime(start + length) };
       });
       const updated = next.find((segment) => segment.id === active.id);
-      onSegmentsChange(next, updated?.start ?? currentTime);
+      active.previewTime = updated
+        ? active.type === "end"
+          ? (updated.end ?? currentTime)
+          : updated.start
+        : currentTime;
+      setDraftSegments(next);
+      onPreviewTime(active.previewTime);
     },
-    [currentTime, max, minGap, normalizedSegments, onSegmentsChange, pxPerSecond]
+    [currentTime, max, minGap, onPreviewTime, pxPerSecond, setDraftSegments]
   );
 
   const startDrag = useCallback(
@@ -12532,22 +12588,28 @@ function VideoTrimControls({
       event.stopPropagation();
       onStart();
       const end = segment.end ?? max;
+      draftSegmentsRef.current = normalizedSegments;
       dragRef.current = {
         type,
         id: segment.id,
         pointerStartX: event.clientX,
         start: segment.start,
         end,
+        baseSegments: normalizedSegments,
+        previewTime: type === "end" ? end : segment.start,
       };
       event.currentTarget.setPointerCapture?.(event.pointerId);
       onPreviewTime(type === "end" ? end : segment.start);
     },
-    [canTrim, max, onPreviewTime, onStart]
+    [canTrim, max, normalizedSegments, onPreviewTime, onStart]
   );
 
   const stopDrag = useCallback(() => {
+    const active = dragRef.current;
+    if (active) onSegmentsChange(draftSegmentsRef.current, active.previewTime);
     dragRef.current = null;
-  }, []);
+    setDraftSegmentsState([]);
+  }, [onSegmentsChange]);
 
   const toggleSegment = useCallback(
     (segmentId: string) => {
@@ -12575,7 +12637,7 @@ function VideoTrimControls({
   );
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${ADS_BRAND.border}` }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={labelStyle}>Video Timeline</span>
         <span style={{
@@ -12596,7 +12658,11 @@ function VideoTrimControls({
         borderRadius: 8,
         background: ADS_BRAND.bg,
         padding: 10,
-        marginBottom: 12,
+        marginBottom: 10,
+        minHeight: 0,
+        flex: "1 1 auto",
+        display: "flex",
+        flexDirection: "column",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
           <button
@@ -12636,6 +12702,7 @@ function VideoTrimControls({
           ref={rootRef}
           style={{
             width: "100%",
+            flex: 1,
             overflowX: "auto",
             overflowY: "hidden",
             paddingBottom: 4,
@@ -12652,7 +12719,7 @@ function VideoTrimControls({
           onPointerUp={stopDrag}
           onPointerCancel={stopDrag}
         >
-          <div style={{ position: "relative", width: trackWidth, height: 88 }}>
+          <div style={{ position: "relative", width: trackWidth, height: "100%", minHeight: 116 }}>
             <div style={{ position: "absolute", inset: "0 0 auto", height: 22, color: ADS_BRAND.text3, fontSize: 10, fontWeight: 800 }}>
               {Array.from({ length: tickCount }).map((_, index) => {
                 const time = index * tickStep;
@@ -12664,7 +12731,7 @@ function VideoTrimControls({
                 );
               })}
             </div>
-            <div style={{ position: "absolute", left: 0, right: 0, top: 28, height: 50, borderRadius: 8, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
+            <div style={{ position: "absolute", left: 0, right: 0, top: 34, height: 62, borderRadius: 9, background: ADS_BRAND.panel3, border: `1px solid ${ADS_BRAND.border}` }} />
             {normalizedSegments.map((segment, index) => {
               const segmentEnd = segment.end ?? max;
               const left = segment.start * pxPerSecond;
@@ -12677,9 +12744,9 @@ function VideoTrimControls({
                   style={{
                     position: "absolute",
                     left,
-                    top: 32,
+                    top: 39,
                     width,
-                    height: 42,
+                    height: 50,
                     borderRadius: 8,
                     border: `1px ${segment.enabled ? "solid" : "dashed"} ${segment.enabled ? ADS_BRAND.gold : ADS_BRAND.border2}`,
                     background: segment.enabled
@@ -12797,9 +12864,9 @@ function VideoTrimControls({
             <div style={{
               position: "absolute",
               left: previewLeft,
-              top: 22,
+              top: 26,
               width: 2,
-              height: 60,
+              height: 76,
               borderRadius: 999,
               background: ADS_BRAND.text,
               boxShadow: "0 0 0 3px rgba(212,178,122,0.16)",
@@ -12808,7 +12875,7 @@ function VideoTrimControls({
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
           <span style={{ color: ADS_BRAND.text3, fontSize: 11, fontWeight: 800 }}>
             Playhead {formatVideoTime(currentTime)}
           </span>
@@ -12818,7 +12885,7 @@ function VideoTrimControls({
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
         <span style={labelStyle}>Original audio</span>
         <button
           type="button"
