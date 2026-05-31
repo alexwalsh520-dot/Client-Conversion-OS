@@ -139,6 +139,8 @@ export interface AdsTrackerRow {
   name: string;
   campaignId: string | null;
   campaignName: string | null;
+  adsetId: string | null;
+  adsetName: string | null;
   adId: string | null;
   adName: string | null;
   previewImageUrl: string | null;
@@ -197,6 +199,8 @@ interface Group {
   name: string;
   campaignId: string | null;
   campaignName: string | null;
+  adsetId: string | null;
+  adsetName: string | null;
   adId: string | null;
   adName: string | null;
   previewImageUrl: string | null;
@@ -401,6 +405,8 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     name,
     campaignId: null,
     campaignName: null,
+    adsetId: null,
+    adsetName: null,
     adId: null,
     adName: null,
     previewImageUrl: null,
@@ -453,6 +459,8 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     name: group.name,
     campaignId: group.campaignId,
     campaignName: group.campaignName,
+    adsetId: group.adsetId,
+    adsetName: group.adsetName,
     adId: group.adId,
     adName: group.adName,
     previewImageUrl: group.previewImageUrl,
@@ -1235,6 +1243,8 @@ function buildPayload(
       clientKey: row.clientKey,
       campaignId: row.campaignId,
       campaignName: row.campaignName,
+      adsetId: row.adsetId,
+      adsetName: row.adsetName,
       adId: row.adId,
       adName: row.adName,
       previewImageUrl: row.previewImageUrl,
@@ -1394,6 +1404,11 @@ function addMetaRowsToGroups(
     if (query.level === "ad") {
       group.adId = row.ad_id || group.adId;
       group.adName = row.ad_name || group.adName;
+      // An ad belongs to exactly one ad set, so carrying the ad set onto an
+      // ad-level group/day row is accurate. (At campaign level a group spans
+      // multiple ad sets, so we deliberately leave ad set null there.)
+      group.adsetId = row.adset_id || group.adsetId;
+      group.adsetName = row.adset_name || group.adsetName;
       const preview = creativePreviewFromPayload(row.raw_payload);
       group.previewImageUrl = group.previewImageUrl || preview.imageUrl;
       group.previewThumbnailUrl = group.previewThumbnailUrl || preview.thumbnailUrl;
