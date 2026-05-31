@@ -1,0 +1,38 @@
+name: Fresh main guard
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  require-current-main:
+    name: Branch contains latest main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch origin main
+
+      - name: Refuse stale PR branch
+        run: |
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::This branch is stale. Rebase or merge the latest origin/main before shipping so teammate work is not accidentally removed."
+            echo "Run locally:"
+            echo "  git fetch origin"
+            echo "  git rebase --autostash origin/main"
+            echo "  npm run guard:main"
+            exit 1
+          fi
+
+          echo "Branch contains latest origin/main."

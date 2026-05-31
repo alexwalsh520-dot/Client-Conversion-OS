@@ -1,0 +1,16 @@
+---
+description: Keep CCOS changes based on the latest GitHub main
+alwaysApply: true
+---
+
+CCOS is edited by multiple teammates and AI coding agents at the same time. Treat `main` as constantly moving.
+
+Before committing, pushing, or preparing any change for main:
+
+1. `git fetch origin`
+2. Rebase/replay your work on top of latest `origin/main`
+3. Run `npm run guard:main`
+4. Never force-push to `main`
+5. Never revert unrelated teammate changes
+
+If the guard fails, stop and update from `origin/main` before continuing.

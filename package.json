@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "guard": "node scripts/ccos-guard.mjs",
+    "guard:main": "node scripts/assert-fresh-main.mjs",
     "start": "next start",
     "lint": "eslint",
     "video:worker": "node scripts/super-doc-video-worker.mjs",
