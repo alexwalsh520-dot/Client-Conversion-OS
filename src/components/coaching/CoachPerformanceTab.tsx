@@ -199,7 +199,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <span>Completed: <strong>{coach.completedClients}</strong></span>
                 <span>Meetings: <strong>{coach.totalMeetings}</strong></span>
                 <span>EOD Reports: <strong>{coach.eodSubmissions}</strong></span>
-                <span>TrustPilot: <strong>{coach.trustPilot}</strong></span>
+                <span>Written Testimonial: <strong>{coach.trustPilot}</strong></span>
                 <span>Videos: <strong>{coach.videoTestimonials}</strong></span>
                 <span>Retentions: <strong>{coach.retentions}</strong></span>
                 <span>Referrals: <strong>{coach.referrals}</strong></span>
@@ -272,7 +272,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <th>Daily Coacher</th>
                 <th>Client Progress</th>
                 <th>Overall %</th>
-                <th>TP</th>
+                <th>Written</th>
                 <th>Video</th>
                 <th>Retention</th>
                 <th>Referral</th>

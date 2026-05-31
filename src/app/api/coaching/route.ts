@@ -316,7 +316,13 @@ export async function POST(req: NextRequest) {
 
         // Log milestone change for activity feed
         if (data) {
-          const fieldLabel = field === "trustPilotCompleted" ? "TrustPilot"
+          // First milestone was renamed TrustPilot → Written Testimonial
+          // when CCOS started accepting non-TrustPilot reviews. DB columns
+          // stay trust_pilot_* (legacy schema, not worth a migration).
+          // Old milestone_activity_log rows still carry "TrustPilot"; new
+          // rows use the current name. The MilestonesTab activity feed
+          // normalizes both for display.
+          const fieldLabel = field === "trustPilotCompleted" ? "Written Testimonial"
             : field === "videoTestimonialCompleted" ? "Video Testimonial"
             : field === "retentionCompleted" ? "Extension"
             : field === "referralCompleted" ? "Referral" : field;

@@ -57,7 +57,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
     // Due dates per requirements:
-    // TrustPilot: 1 week after start
+    // Written Testimonial (formerly TrustPilot, DB column still trust_pilot_*): 1 week after start
     // Video Testimonial: 20 days before end
     // Retention (Extension): 14 days before end
     // Referral: 1 week before end
@@ -288,7 +288,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
           <div className="metric-card-value" style={{ color: totalOverdue > 0 ? "var(--danger)" : "var(--success)" }}>{totalOverdue}</div>
         </div>
         <div className="glass-static metric-card">
-          <div className="metric-card-label">TrustPilot Done</div>
+          <div className="metric-card-label">Written Testimonial Done</div>
           <div className="metric-card-value">{tpComplete}/{activeClients.length}</div>
         </div>
         <div className="glass-static metric-card">
@@ -303,7 +303,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
 
       {/* Timeline Legend */}
       <div className="glass-static" style={{ padding: 12, marginBottom: 16, display: "flex", gap: 20, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
-        <span><strong>1 wk after start:</strong> TrustPilot Review</span>
+        <span><strong>1 wk after start:</strong> Written Testimonial</span>
         <span><strong>20 days before end:</strong> Video Testimonial</span>
         <span><strong>14 days before end:</strong> Extension</span>
         <span><strong>1 wk before end:</strong> Referral</span>
@@ -364,7 +364,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <MilestoneButton label="TrustPilot" status={tpStatus} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" completionDate={milestone?.trustPilotCompletionDate} dueDate={tpDueDate} client={client} />
+            <MilestoneButton label="Written Testimonial" status={tpStatus} due={tpDue} overdue={tpOverdue} milestoneId={milestone?.id} field="trustPilotCompleted" completionDate={milestone?.trustPilotCompletionDate} dueDate={tpDueDate} client={client} />
             <MilestoneButton label="Video" status={vidStatus} due={vidDue} overdue={vidOverdue} milestoneId={milestone?.id} field="videoTestimonialCompleted" completionDate={milestone?.videoTestimonialCompletionDate} dueDate={vidDueDate} client={client} />
             <MilestoneButton label="Extension" status={retStatus} due={retDue} overdue={retOverdue} milestoneId={milestone?.id} field="retentionCompleted" completionDate={milestone?.retentionCompletionDate} dueDate={retDueDate} client={client} />
             <MilestoneButton label="Referral" status={refStatus} due={refDue} overdue={refOverdue} milestoneId={milestone?.id} field="referralCompleted" completionDate={milestone?.referralCompletionDate} dueDate={refDueDate} client={client} />
@@ -417,7 +417,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 12, color: "var(--text-secondary)" }}>
-                <span>TrustPilot: <strong>{tpAchieved.length}</strong></span>
+                <span>Written Testimonial: <strong>{tpAchieved.length}</strong></span>
                 <span>Video: <strong>{vidAchieved.length}</strong></span>
                 <span>Extension: <strong>{retAchieved.length}</strong></span>
                 <span>Referral: <strong>{refAchieved.length}</strong></span>
@@ -428,7 +428,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border-primary)", fontSize: 12, color: "var(--text-secondary)" }}>
                   {tpAchieved.length > 0 && (
                     <div style={{ marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>TrustPilot:</span>{" "}
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Written Testimonial:</span>{" "}
                       {tpAchieved.map((m) => m.clientName).join(", ")}
                     </div>
                   )}
@@ -472,14 +472,24 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
               const StatusIcon = activity.newStatus === "completed" ? CheckCircle
                 : activity.newStatus === "failed" ? XCircle : RotateCcw;
 
-              // Map field back to the onToggle field name
+              // Map field back to the onToggle field name. Includes
+              // BOTH the legacy "TrustPilot" label (still present in
+              // older milestone_activity_log rows) and the current
+              // "Written Testimonial" label so undo works on both.
               const fieldMap: Record<string, string> = {
-                "TrustPilot": "trustPilotCompleted",
+                "TrustPilot": "trustPilotCompleted", // legacy
+                "Written Testimonial": "trustPilotCompleted",
                 "Video Testimonial": "videoTestimonialCompleted",
                 "Extension": "retentionCompleted",
                 "Referral": "referralCompleted",
               };
               const toggleField = fieldMap[activity.field];
+
+              // Normalize legacy label for display so the activity feed
+              // shows the current product name everywhere, even on
+              // historical rows recorded before the rename.
+              const displayField =
+                activity.field === "TrustPilot" ? "Written Testimonial" : activity.field;
 
               // Find milestone ID for undo
               const milestone = milestones.find(
@@ -503,7 +513,7 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{activity.clientName}</span>
                     <span style={{ color: "var(--text-muted)", margin: "0 6px" }}>—</span>
-                    <span style={{ color: statusColor, fontWeight: 500 }}>{activity.field}: {statusLabel}</span>
+                    <span style={{ color: statusColor, fontWeight: 500 }}>{displayField}: {statusLabel}</span>
                     <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 8 }}>
                       by {activity.changedBy}
                     </span>

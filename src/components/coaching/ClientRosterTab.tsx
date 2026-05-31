@@ -502,7 +502,7 @@ export default function ClientRosterTab({ clients, pauses, milestones, meetings,
             const ms = milestones.find((m) => m.clientName === editingClient?.name || (m.clientId && m.clientId === editingId));
             if (!ms) return null;
             const items = [
-              { label: "TrustPilot", done: ms.trustPilotCompleted, attempted: !!ms.trustPilotPromptedDate, date: ms.trustPilotCompletionDate },
+              { label: "Written Testimonial", done: ms.trustPilotCompleted, attempted: !!ms.trustPilotPromptedDate, date: ms.trustPilotCompletionDate },
               { label: "Video Testimonial", done: ms.videoTestimonialCompleted, attempted: !!ms.videoTestimonialPromptedDate, date: ms.videoTestimonialCompletionDate },
               { label: "Extension", done: ms.retentionCompleted, attempted: !!ms.retentionPromptedDate, date: ms.retentionCompletionDate },
               { label: "Referral", done: ms.referralCompleted, attempted: !!ms.referralPromptedDate, date: ms.referralCompletionDate },
