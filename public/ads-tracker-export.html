@@ -742,6 +742,11 @@
   .ddr-blabel{display:flex;align-items:baseline;justify-content:space-between}
   .ddr-blabel .l{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--text-3);font-weight:600}
   .ddr-blabel .m{font-size:11px;color:var(--text-4)}
+  .ddr-bl-text{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;min-width:0}
+  .mi-copy{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--gold);background:color-mix(in srgb,var(--gold) 10%,var(--panel));border:1px solid color-mix(in srgb,var(--gold) 32%,var(--border-2));border-radius:8px;padding:6px 11px;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .12s ease,color .15s ease;white-space:nowrap}
+  .mi-copy:hover{background:color-mix(in srgb,var(--gold) 18%,var(--panel));border-color:color-mix(in srgb,var(--gold) 50%,var(--border-2));transform:translateY(-1px)}
+  .mi-copy:active{transform:translateY(0)}
+  .mi-copy.done{color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,var(--border-2));background:color-mix(in srgb,var(--green) 12%,var(--panel))}
 
   /* Spend concentration bars */
   .ddr-spend{display:flex;flex-direction:column;gap:9px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 17px}
@@ -5538,6 +5543,135 @@ function DataHealth({dashboard}){
   );
 }
 
+// ------- Copy brief: a paste-anywhere copywriting prompt built ONLY from real numbers.
+// Splits by offer type so free-challenge and paid (direct-CTA) messaging never bleed
+// into each other — a free ad must never over-promise a paid feature. No AI tokens:
+// the winning/losing copy IS the evidence, quoted verbatim with the dollars attached.
+function isFreeOffer(words){ return /\bfree\b/i.test(String(words||"")); }
+
+function legacyCopy(text){
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly","");
+    ta.style.position="fixed"; ta.style.left="-9999px"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch(_e){ return false; }
+}
+function copyText(text){
+  return new Promise((resolve, reject)=>{
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(resolve).catch(()=>{ legacyCopy(text) ? resolve() : reject(); });
+        return;
+      }
+    }catch(_e){}
+    legacyCopy(text) ? resolve() : reject();
+  });
+}
+
+// Honest, data-only signals: only surfaced when winners and losers actually differ.
+function copySignals(winners, losers){
+  const wc = (s)=> String(s||"").trim().split(/\s+/).filter(Boolean).length;
+  const share = (arr, test)=> arr.length ? arr.filter(a=>test(String(a.words||""))).length/arr.length : 0;
+  const avg = (arr, f)=> arr.length ? arr.reduce((s,a)=>s+f(a),0)/arr.length : 0;
+  const out = [];
+  if(winners.length && losers.length){
+    const wAvg = avg(winners, a=>wc(a.words)), lAvg = avg(losers, a=>wc(a.words));
+    if(Math.abs(wAvg-lAvg) >= 4){
+      out.push(wAvg < lAvg
+        ? `Keep it tight — your winners run ~${Math.round(wAvg)} words vs ~${Math.round(lAvg)} on the draggers.`
+        : `Give the offer room — winners run ~${Math.round(wAvg)} words vs ~${Math.round(lAvg)} on the draggers.`);
+    }
+    const wQ = share(winners, w=>/\?/.test(w)), lQ = share(losers, w=>/\?/.test(w));
+    if(Math.abs(wQ-lQ) >= 0.3){
+      out.push(wQ>lQ ? "Open with a question — your winning hooks ask, they don't tell."
+                     : "Lead with the claim, not a question — your winners make a statement.");
+    }
+    const wN = share(winners, w=>/\d/.test(w)), lN = share(losers, w=>/\d/.test(w));
+    if((wN-lN) >= 0.3){
+      out.push("Use specific numbers — a count, a price, a timeframe. Your winners are concrete, the draggers vague.");
+    }
+  }
+  return out;
+}
+
+function buildCopyBrief(analyzed, rangeText){
+  const reliable = (analyzed||[]).filter(a=>a.reliable);
+  const r1 = (n)=> (Math.round((Number(n)||0)*10)/10);
+  const usd = (n)=> "$"+Math.round(Number(n)||0).toLocaleString();
+  const clean = (s)=> String(s||"").replace(/\s+/g," ").trim();
+  const clientsOf = (a)=> Math.round(Number(a.clients)||0);
+  const blendRoas = (arr)=>{ const sp=arr.reduce((s,a)=>s+a.spend,0); const rv=arr.reduce((s,a)=>s+a.revenue,0); return sp>0 ? r1(rv/sp) : 0; };
+  const sep = "============================================================";
+  const out = [];
+
+  const adBlock = (a)=>{
+    const roas = a.revenue>0 ? r1(a.roas)+"x" : "n/a";
+    const c = clientsOf(a);
+    const nm = a.adName ? `  -- ${a.adName}` : "";
+    return `  - ${roas} ROAS | ${usd(a.spend)} spent -> ${usd(a.revenue)} collected | ${c} client${c===1?"":"s"}${nm}\n    "${clean(a.words)}"`;
+  };
+
+  out.push("COPYWRITING BRIEF -- built only from real ad performance" + (rangeText?` (${rangeText})`:""));
+  out.push(`Based on ${reliable.length} ad${reliable.length===1?"":"s"} with $100+ spent, enough to trust the ROAS. Every number below is real -- quote them, never invent new ones.`);
+  out.push("");
+  out.push(sep);
+  out.push("RULE #1 -- TWO OFFERS, NEVER MIX THEM");
+  out.push(sep);
+  out.push("This account runs two different offers. Copy for one must NEVER promise the other:");
+  out.push("  * FREE CHALLENGE ads = the offer is free. Never mention price, payment, or paid-only features. The only ask is to join the free challenge.");
+  out.push("  * DIRECT CTA ads = the paid program. The full offer stack / price / direct buy-now ask lives HERE only.");
+  out.push("Write for ONE of these at a time. Never borrow a paid promise into a free ad, or a free angle into a paid ad.");
+
+  const buildSection = (title, isFree, pool)=>{
+    const winners = pool.filter(a=>a.revenue>0 && a.roas>=1.5).sort((a,b)=>b.roas-a.roas);
+    const losers  = pool.filter(a=>a.roas<1).sort((a,b)=>a.roas-b.roas);
+    if(!winners.length && !losers.length) return;
+    out.push("");
+    out.push(sep);
+    out.push(title);
+    out.push(sep);
+    out.push(isFree
+      ? "OFFER TYPE: a FREE challenge. The winning copy below is exactly what these ads promised -- keep every promise free."
+      : "OFFER TYPE: the paid program (direct CTA). The full offer stack and price are allowed here.");
+    if(winners.length){
+      out.push("");
+      out.push(`>>> WINNING COPY -- DO MORE OF THIS (${winners.length} ad${winners.length===1?"":"s"}, ${usd(winners.reduce((s,a)=>s+a.spend,0))} spent -> ${usd(winners.reduce((s,a)=>s+a.revenue,0))} collected, ${blendRoas(winners)}x blended):`);
+      winners.forEach(a=> out.push(adBlock(a)));
+    }
+    if(losers.length){
+      out.push("");
+      out.push(`>>> LOSING COPY -- DO NOT REPEAT THIS (${losers.length} ad${losers.length===1?"":"s"}, ${usd(losers.reduce((s,a)=>s+a.spend,0))} spent -> only ${usd(losers.reduce((s,a)=>s+a.revenue,0))} back):`);
+      losers.forEach(a=> out.push(adBlock(a)));
+    }
+    out.push("");
+    out.push("DO:");
+    if(winners.length) out.push(`  - Echo the angle in the winning copy above -- it returned ${blendRoas(winners)}x on real spend.`);
+    copySignals(winners, losers).forEach(s=> out.push("  - "+s));
+    out.push(isFree ? "  - Keep the whole promise free; end on joining the free challenge." : "  - Make the paid offer and the buy ask explicit.");
+    out.push("DON'T:");
+    if(losers.length){
+      const lc = losers.reduce((s,a)=>s+clientsOf(a),0);
+      out.push(`  - Reuse the losing angles above -- they burned ${usd(losers.reduce((s,a)=>s+a.spend,0))} for ${lc} client${lc===1?"":"s"}.`);
+    }
+    out.push(isFree ? "  - Never mention price, payment, or a paid-only feature in a free-challenge ad." : "  - Don't water the ask down to sound like a free offer.");
+  };
+
+  buildSection("1) FREE CHALLENGE ADS  (copy contains the word \"free\")", true,  reliable.filter(a=> isFreeOffer(a.words)));
+  buildSection("2) DIRECT CTA ADS  (no \"free\" -- paid offer)",          false, reliable.filter(a=> !isFreeOffer(a.words)));
+
+  out.push("");
+  out.push(sep);
+  out.push("HOW TO USE THIS");
+  out.push(sep);
+  out.push("Pick ONE offer above. Write new ad copy that matches its winning patterns and avoids its losing ones. Keep free-challenge and direct-CTA messaging completely separate so a free ad never over-promises a paid feature.");
+
+  return out.join("\n");
+}
+
 // ------- What your messaging is telling us
 // Closes the loop between what an ad SAYS and what it MAKES. The proof comes
 // FIRST: a table of the actual words read off each ad next to its real spend,
@@ -5592,6 +5726,7 @@ function MessagingInsights({dashboard, range}){
   const [progress, setProgress] = useState({read:0, total:0});
   const [exploreOpen, setExploreOpen] = useState(false);
   const [sortBy, setSortBy] = useState("roas"); // roas | spend | clients
+  const [copied, setCopied] = useState(false);
 
   useEffect(()=>{
     let cancelled = false;
@@ -5656,6 +5791,13 @@ function MessagingInsights({dashboard, range}){
   const reliableCount = analyzed.filter(a=>a.reliable).length;
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
   const quote = (s, n)=> { const t=String(s||"").trim(); return t.length>n ? t.slice(0,n).trim()+"…" : t; };
+
+  // Build the paste-anywhere copywriting brief and drop it on the clipboard.
+  const canCopyBrief = analyzed.some(a=>a.reliable);
+  const doCopyBrief = ()=>{
+    const text = buildCopyBrief(analyzed, range ? rangeLabel(range) : "");
+    copyText(text).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2200); }).catch(()=>{});
+  };
 
   // Head-to-head, computed from REAL numbers — no AI needed, never wrong.
   // Best vs worst by ROAS among ads with enough spend AND revenue to compare.
@@ -5726,8 +5868,16 @@ function MessagingInsights({dashboard, range}){
   return (
     <div className="ddr-block msg-insights">
       <div className="ddr-blabel">
-        <span className="l">What your words are earning</span>
-        <span className="m">the actual copy on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
+        <div className="ddr-bl-text">
+          <span className="l">What your words are earning</span>
+          <span className="m">the actual copy on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
+        </div>
+        {canCopyBrief && (
+          <button type="button" className={"mi-copy"+(copied?" done":"")} onClick={doCopyBrief}
+            title="Copy a copywriting brief — winning vs losing copy with ROAS, split by free-challenge vs paid offer — to paste into any tool">
+            {copied ? "✓ Copied to clipboard" : "⧉ Copy copywriting brief"}
+          </button>
+        )}
       </div>
 
       <div className="mi">
