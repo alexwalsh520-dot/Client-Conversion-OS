@@ -562,14 +562,22 @@ function salesRowKey(row: SheetRow, clientKey: string | null): string {
     normalizePersonName(row.name) ||
     normalizeKeyPart(row.name) ||
     "unknown";
+  // Key on immutable identity only. setter/outcome get filled in or changed as
+  // the sale progresses; including them rotated the key and orphaned saved
+  // resolutions (a resolved person reappeared as unresolved after a sheet edit).
   return [
     "sale",
     row.date || "nodate",
     clientKey || clientFromOffer(row) || "unknown",
     stableRowId,
-    normalizeKeyPart(row.setter) || "nosetter",
-    normalizeKeyPart(row.outcome) || "nooutcome",
   ].join(":");
+}
+
+// Collapse any historical 6-part sale key (…:setter:outcome) onto the stable
+// 4-part key so resolutions saved before this fix still match their alert.
+function stableSaleKey(key: string): string {
+  if (!key.startsWith("sale:")) return key;
+  return key.split(":").slice(0, 4).join(":");
 }
 
 function shouldTrackUnmatchedSale(row: SheetRow): boolean {
@@ -2844,9 +2852,10 @@ async function fetchAttributionResolutions(
 function latestResolutionsBySaleKey(resolutions: AttributionResolution[]) {
   const latest = new Map<string, AttributionResolution>();
   for (const resolution of resolutions) {
-    const previous = latest.get(resolution.saleKey);
+    const key = stableSaleKey(resolution.saleKey);
+    const previous = latest.get(key);
     if (!previous || resolutionPriority(resolution) >= resolutionPriority(previous)) {
-      latest.set(resolution.saleKey, resolution);
+      latest.set(key, resolution);
     }
   }
   return latest;
