@@ -1316,6 +1316,103 @@
   .sweet-none{margin-top:14px;border:1px dashed var(--border-2);border-radius:12px;padding:15px 16px;
     font-size:12.5px;line-height:1.6;color:var(--text-3)} .sweet-none b{color:var(--text-2)}
   .sweet-foot{font-size:10.5px;color:var(--text-4);line-height:1.55;margin-top:12px}
+
+  /* ---- Data-flow brain map — how the ads tab actually moves information ---- */
+  .ddr-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .brain-btn{display:inline-flex;align-items:center;gap:8px;padding:7px 13px 7px 11px;
+    border:1px solid var(--border-2);border-radius:99px;background:var(--bg-1);
+    color:var(--text-3);font-size:11px;letter-spacing:.01em;white-space:nowrap;
+    transition:color .22s,border-color .22s,box-shadow .3s,background .22s;flex:none}
+  .brain-btn:hover{color:var(--gold);border-color:var(--gold-dim);
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 22%,transparent),0 6px 22px -12px color-mix(in srgb,var(--gold) 60%,transparent)}
+  .brain-btn.on{color:var(--gold);border-color:var(--gold-dim);background:color-mix(in srgb,var(--gold) 7%,transparent)}
+  .brain-btn .bic{transition:transform .5s cubic-bezier(.16,1,.3,1),filter .3s}
+  .brain-btn:hover .bic,.brain-btn.on .bic{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--gold) 70%,transparent))}
+  .brain-btn.on .bic{transform:rotate(0deg) scale(1.05)}
+  .brain-btn .bcaret{transition:transform .35s cubic-bezier(.16,1,.3,1);opacity:.7}
+  .brain-btn.on .bcaret{transform:rotate(180deg)}
+
+  .flow-wrap{overflow:hidden;transition:max-height .55s cubic-bezier(.22,1,.36,1),opacity .4s,margin-top .4s;max-height:0;opacity:0;margin-top:0}
+  .flow-wrap.open{max-height:1400px;opacity:1;margin-top:14px}
+  .flow-shell{border:1px solid var(--border-2);border-radius:16px;overflow:hidden;
+    background:radial-gradient(120% 80% at 50% -10%,color-mix(in srgb,var(--gold) 6%,transparent),transparent 60%),var(--panel)}
+  .flow-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:11px 16px;border-bottom:1px solid var(--border)}
+  .flow-bar-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .flow-bar-t{font-size:12.5px;font-weight:650;letter-spacing:-.01em;color:var(--text)}
+  .flow-bar-s{font-size:11px;color:var(--text-3)}
+  .flow-legend{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+  .flow-lg{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3);letter-spacing:.02em}
+  .flow-lg i{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .flow-lg.src i{background:var(--blue)} .flow-lg.cap i{background:var(--gold)}
+  .flow-lg.eng i{background:#c9a0e8} .flow-lg.out i{background:var(--green)} .flow-lg.alt i{background:var(--red)}
+
+  .flow-stage{display:grid;grid-template-columns:1fr 256px;gap:0}
+  @media(max-width:760px){.flow-stage{grid-template-columns:1fr}}
+  .flow-cv-scroll{min-width:0;overflow-x:auto;overflow-y:hidden}
+  @media(max-width:900px){.flow-canvas{min-width:780px}}
+  .flow-canvas{position:relative;width:100%;aspect-ratio:1180/620;
+    background:
+      radial-gradient(60% 50% at 72% 50%,color-mix(in srgb,var(--gold) 4%,transparent),transparent 70%),
+      linear-gradient(0deg,color-mix(in srgb,var(--bg) 60%,transparent),transparent);
+    background-color:var(--bg);
+    -webkit-mask-image:linear-gradient(90deg,#000,#000);overflow:hidden}
+  .flow-grid{position:absolute;inset:0;opacity:.5;
+    background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
+    background-size:34px 34px;-webkit-mask-image:radial-gradient(80% 80% at 50% 45%,#000,transparent 95%);
+            mask-image:radial-gradient(80% 80% at 50% 45%,#000,transparent 95%)}
+  .flow-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .flow-edge{fill:none;stroke:var(--border-2);stroke-width:1.4;transition:stroke .35s,stroke-width .35s,opacity .35s;opacity:.65}
+  .flow-edge.lit{stroke:color-mix(in srgb,var(--gold) 75%,var(--text-3));stroke-width:2;opacity:1;
+    filter:drop-shadow(0 0 4px color-mix(in srgb,var(--gold) 55%,transparent))}
+  .flow-edge.faded{opacity:.12}
+  .flow-orb{fill:var(--gold);opacity:0;transition:opacity .3s}
+  .flow-orb.run{opacity:.95;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--gold) 85%,transparent))}
+  .flow-orb.amb{opacity:.28}
+
+  .flow-node{position:absolute;transform:translate(-50%,-50%);width:142px;
+    border:1px solid var(--border-2);border-radius:12px;background:var(--panel-2);
+    padding:9px 11px;cursor:pointer;text-align:left;
+    transition:transform .4s cubic-bezier(.16,1,.3,1),box-shadow .35s,border-color .3s,opacity .35s,background .3s;
+    box-shadow:0 2px 14px -8px rgba(0,0,0,.6)}
+  .flow-node:hover{border-color:var(--text-4)}
+  .flow-node .fn-ic{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    margin-bottom:7px;color:#0a0a0a}
+  .flow-node .fn-lbl{font-size:11.5px;font-weight:650;letter-spacing:-.01em;color:var(--text);line-height:1.2}
+  .flow-node .fn-sub{font-size:9.5px;color:var(--text-3);line-height:1.3;margin-top:3px;font-family:var(--mono)}
+  .flow-node.dim{opacity:.32;transform:translate(-50%,-50%) scale(.94)}
+  .flow-node.active{transform:translate(-50%,-50%) scale(1.08);border-color:var(--gold-dim);
+    box-shadow:0 10px 34px -12px color-mix(in srgb,var(--gold) 55%,transparent),0 0 0 1px color-mix(in srgb,var(--gold) 30%,transparent);z-index:3}
+  .flow-node.sel{transform:translate(-50%,-50%) scale(1.13);border-color:var(--gold);background:var(--panel);
+    box-shadow:0 14px 44px -10px color-mix(in srgb,var(--gold) 70%,transparent),0 0 0 1px var(--gold-dim);z-index:4}
+  .flow-node.g-src .fn-ic{background:var(--blue)} .flow-node.g-cap .fn-ic{background:var(--gold)}
+  .flow-node.g-eng .fn-ic{background:#c9a0e8} .flow-node.g-out .fn-ic{background:var(--green)}
+  .flow-node.g-alt .fn-ic{background:var(--red)}
+
+  .flow-panel{border-left:1px solid var(--border);padding:16px 16px 18px;display:flex;flex-direction:column;gap:0;
+    background:var(--panel);min-height:100%}
+  @media(max-width:760px){.flow-panel{border-left:none;border-top:1px solid var(--border)}}
+  .flow-panel-empty{display:flex;flex-direction:column;justify-content:center;gap:9px;height:100%;color:var(--text-3)}
+  .flow-panel-empty .fpe-ic{color:var(--gold);opacity:.7}
+  .flow-panel-empty h4{margin:0;font-size:13px;color:var(--text-2);font-weight:600}
+  .flow-panel-empty p{margin:0;font-size:11.5px;line-height:1.6}
+  .fp-kind{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:99px;align-self:flex-start;margin-bottom:11px}
+  .fp-kind.g-src{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+  .fp-kind.g-cap{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold)}
+  .fp-kind.g-eng{background:color-mix(in srgb,#c9a0e8 18%,transparent);color:#c9a0e8}
+  .fp-kind.g-out{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
+  .fp-kind.g-alt{background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red)}
+  .fp-title{font-size:15px;font-weight:680;letter-spacing:-.01em;color:var(--text);margin:0 0 8px;line-height:1.2}
+  .fp-detail{font-size:12px;line-height:1.62;color:var(--text-2);margin:0 0 14px} .fp-detail b{color:var(--text)}
+  .fp-links{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .fp-linkgrp .fpl-h{font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-4);margin-bottom:5px;font-weight:700}
+  .fp-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-2);
+    border:1px solid var(--border-2);background:var(--panel-2);border-radius:7px;padding:4px 8px;margin:0 5px 5px 0;
+    cursor:pointer;transition:border-color .2s,color .2s}
+  .fp-chip:hover{border-color:var(--gold-dim);color:var(--gold)}
+  .fp-chip .fpc-dot{width:6px;height:6px;border-radius:2px}
+  .flow-hint{font-size:10px;color:var(--text-4);text-align:center;padding:8px 0 11px;letter-spacing:.02em}
 </style>
 </head>
 <body>
@@ -7457,7 +7554,232 @@ function DecisionTracker({decisions, dashboard, onUndo}){
   );
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// DATA-FLOW MAP — a living picture of how information actually moves through the
+// ads tab. Keep this current by editing FLOW_NODES / FLOW_EDGES only; the canvas,
+// the glowing connections, and the info panel all redraw themselves from it.
+// Coordinates live in a 1180×620 viewBox (x = left→right flow, y = top→bottom).
+// ───────────────────────────────────────────────────────────────────────────
+const FLOW_NODES = [
+  { id:"meta", group:"src", x:105, y:95, label:"Meta Ads", sub:"spend · copy · audience",
+    icon:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
+    detail:"Your Meta ad accounts (Tyson, Keith, Lucy). Every day we pull spend, impressions, each ad's on-image copy, and its audience settings — the raw fuel for everything below." },
+  { id:"manychat", group:"src", x:105, y:235, label:"ManyChat", sub:"DM keyword capture",
+    icon:["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"],
+    detail:"When someone taps your ad's button, Meta hands ManyChat a keyword (like WIN or EDGE). ManyChat catches it in a custom field — that single word is the thread we follow all the way to the sale." },
+  { id:"ghl", group:"src", x:105, y:380, label:"GHL Calendar", sub:"booked calls + utm_content",
+    icon:["M3 4h18v18H3z","M3 10h18","M8 2v4","M16 2v4"],
+    detail:"When a lead books, GHL records the call. The keyword rides in on the booking link as utm_content=KEYWORD, and we also read the GHL lead tag (e.g. \"tyson sonnek lead\") so we always know whose ad it was — even when the link is empty." },
+  { id:"sales", group:"src", x:105, y:525, label:"Sales Tracker", sub:"collected revenue",
+    icon:["M2 7h20v12H2z","M2 11h20","M6 15h4"],
+    detail:"Your Sales Tracker sheet — every closed deal and the cash actually collected. This is the money side of the equation that ROAS and real profit are built on." },
+  { id:"keyword", group:"cap", x:355, y:235, label:"Keyword Capture", sub:"ad click → field → link",
+    icon:["M20.6 13.4 11 3.8H3.8V11l9.6 9.6a2 2 0 0 0 2.8 0l4.4-4.4a2 2 0 0 0 0-2.8z","M7.5 7.5h.01"],
+    detail:"The hand-off: ad click → ManyChat field → the keyword gets stamped onto the call-booking link. This is the mechanism that lets us tie a real booked call back to the exact ad word that earned it, without guessing by name." },
+  { id:"join", group:"cap", x:590, y:310, label:"Keyword Join", sub:"match by client : keyword",
+    icon:["M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5","M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"],
+    detail:"We line up spend ↔ calls ↔ cash by client + keyword (e.g. tyson:WIN). The keyword is the key that connects all four sources — no fuzzy name-matching, so the numbers don't drift." },
+  { id:"engine", group:"eng", x:815, y:250, label:"Attribution Engine", sub:"stitches it together",
+    icon:["M6 6h12v12H6z","M9 9h6v6H9z","M9 2v2","M15 2v2","M9 20v2","M15 20v2","M2 9h2","M2 15h2","M20 9h2","M20 15h2"],
+    detail:"The brain. It stitches every source into one truth: which ad word brought which calls and which dollars. Anything it can't tie down with confidence is flagged rather than guessed — so the scoreboard only ever shows money we can actually see." },
+  { id:"alerts", group:"alt", x:815, y:470, label:"Alerts & Exceptions", sub:"can't auto-attribute",
+    icon:["M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z","M12 9v4","M12 17h.01"],
+    detail:"Calls or sales the engine couldn't auto-attribute — a missing keyword, or it can't tell which ad. You resolve these in the workspace, and your answers feed straight back into the engine, so the picture gets sharper over time." },
+  { id:"totals", group:"out", x:1065, y:110, label:"ROAS & Totals", sub:"the honest scoreboard",
+    icon:["M3 3v18h18","M7 14l3-3 4 4 5-7"],
+    detail:"ROAS, revenue traced, cost per booked call — the honest scoreboard, built only on cash we can genuinely trace to an ad. It never reads artificially low just because some revenue isn't tagged yet." },
+  { id:"ltgp", group:"out", x:1065, y:255, label:"Real Profit (LTGP:CAC)", sub:"what you keep",
+    icon:["M6 9H4.5a2.5 2.5 0 0 1 0-5H6","M18 9h1.5a2.5 2.5 0 0 0 0-5H18","M6 3h12v6a6 6 0 0 1-12 0z","M9 18h6","M12 15v3"],
+    detail:"The money-first number: what's left after your team's cut (closer, setter, manager) and coaching costs, measured against ad spend. Target 9:1, floor 3:1. This is the number that actually pays you." },
+  { id:"correlation", group:"out", x:1065, y:395, label:"Correlation", sub:"what drives the money",
+    icon:["M5 5 19 19","M6 18a2 2 0 1 0 0-.01","M18 6a2 2 0 1 0 0-.01","M12 12a2 2 0 1 0 0-.01"],
+    detail:"What actually drives the money — the engine measures which levers (copy angle, audience, ad word) move ROAS up or down, so you scale the cause, not the coincidence." },
+  { id:"decisions", group:"out", x:1065, y:530, label:"Decision Center", sub:"scale · kill · close loop",
+    icon:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],
+    detail:"Scale / kill / reallocate moves, plus the close-the-loop tracker that checks weeks later whether each move actually paid off — so decisions are graded by results, not gut feel." },
+];
+const FLOW_EDGES = [
+  ["meta","keyword"],["keyword","manychat"],["manychat","ghl"],
+  ["meta","join"],["manychat","join"],["ghl","join"],["sales","join"],
+  ["join","engine"],["engine","totals"],["engine","alerts"],
+  ["totals","ltgp"],["totals","correlation"],["totals","decisions"],
+];
+const FLOW_GROUP_LABEL = { src:"Source", cap:"Capture & join", eng:"Engine", out:"Output", alt:"Exception" };
+
+function flowEdgePath(a, b){
+  const c = Math.max(70, Math.abs(b.x - a.x) * 0.5);
+  return `M ${a.x} ${a.y} C ${a.x + c} ${a.y}, ${b.x - c} ${b.y}, ${b.x} ${b.y}`;
+}
+
+function FlowIcon({ d }){
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {(Array.isArray(d) ? d : [d]).map((p, i) => <path key={i} d={p} />)}
+    </svg>
+  );
+}
+
+function DataFlowToggle({ open, onToggle }){
+  return (
+    <button className={"brain-btn" + (open ? " on" : "")} onClick={onToggle}
+      aria-expanded={open} title="See how the data flows through this tab">
+      <svg className="bic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v.4a2.6 2.6 0 0 0-2 2.5 2.5 2.5 0 0 0-1 2 2.5 2.5 0 0 0 1.4 2.2A2.5 2.5 0 0 0 7 16.5 2.5 2.5 0 0 0 9.5 19 2.5 2.5 0 0 0 12 16.5V4.5A2.5 2.5 0 0 0 9.5 2Z"/>
+        <path d="M14.5 2A2.5 2.5 0 0 1 17 4.5v.4a2.6 2.6 0 0 1 2 2.5 2.5 2.5 0 0 1 1 2 2.5 2.5 0 0 1-1.4 2.2A2.5 2.5 0 0 1 17 16.5 2.5 2.5 0 0 1 14.5 19 2.5 2.5 0 0 1 12 16.5"/>
+      </svg>
+      <span>How the data flows</span>
+      <svg className="bcaret" width="9" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M1 1l4 4 4-4"/></svg>
+    </button>
+  );
+}
+
+function DataFlowMap({ open, sel, setSel }){
+  const nodeById = useMemo(() => {
+    const m = {}; FLOW_NODES.forEach(n => { m[n.id] = n; }); return m;
+  }, []);
+  const edges = useMemo(() => FLOW_EDGES.map(([from, to]) => ({
+    from, to, d: flowEdgePath(nodeById[from], nodeById[to]),
+  })), [nodeById]);
+
+  const neighbors = useMemo(() => {
+    if(!sel) return new Set();
+    const s = new Set();
+    edges.forEach(e => { if(e.from === sel) s.add(e.to); if(e.to === sel) s.add(e.from); });
+    return s;
+  }, [sel, edges]);
+
+  const selNode = sel ? nodeById[sel] : null;
+  const feedsOut = selNode ? edges.filter(e => e.from === sel).map(e => nodeById[e.to]) : [];
+  const feedsIn  = selNode ? edges.filter(e => e.to === sel).map(e => nodeById[e.from]) : [];
+
+  return (
+      <div className={"flow-wrap" + (open ? " open" : "")}>
+        <div className="flow-shell">
+          <div className="flow-bar">
+            <div className="flow-bar-l">
+              <div className="flow-bar-t">How a click becomes a tracked dollar</div>
+              <div className="flow-bar-s">Tap any step to light up what feeds it and what it feeds.</div>
+            </div>
+            <div className="flow-legend">
+              <span className="flow-lg src"><i></i>Source</span>
+              <span className="flow-lg cap"><i></i>Capture</span>
+              <span className="flow-lg eng"><i></i>Engine</span>
+              <span className="flow-lg alt"><i></i>Exception</span>
+              <span className="flow-lg out"><i></i>Output</span>
+            </div>
+          </div>
+
+          <div className="flow-stage">
+            <div className="flow-cv-scroll">
+            <div className="flow-canvas" onClick={() => setSel(null)}>
+              <div className="flow-grid"></div>
+              <svg className="flow-svg" viewBox="0 0 1180 620" preserveAspectRatio="xMidYMid meet">
+                <g>
+                  {edges.map((e, i) => {
+                    const connected = sel && (e.from === sel || e.to === sel);
+                    const cls = "flow-edge" + (sel ? (connected ? " lit" : " faded") : "");
+                    return <path key={i} className={cls} d={e.d} />;
+                  })}
+                </g>
+                <g>
+                  {edges.map((e, i) => {
+                    const connected = sel && (e.from === sel || e.to === sel);
+                    if(sel && !connected) return null;
+                    if(!sel){
+                      return (
+                        <circle key={i} className="flow-orb amb" r="2.6">
+                          <animateMotion dur="5s" begin={(i * 0.4) + "s"} repeatCount="indefinite" path={e.d} />
+                        </circle>
+                      );
+                    }
+                    return (
+                      <React.Fragment key={i}>
+                        <circle className="flow-orb run" r="3.4">
+                          <animateMotion dur="2.1s" repeatCount="indefinite" path={e.d} />
+                        </circle>
+                        <circle className="flow-orb run" r="3.4">
+                          <animateMotion dur="2.1s" begin="-1.05s" repeatCount="indefinite" path={e.d} />
+                        </circle>
+                      </React.Fragment>
+                    );
+                  })}
+                </g>
+              </svg>
+
+              {FLOW_NODES.map(n => {
+                const state = sel === n.id ? " sel" : neighbors.has(n.id) ? " active" : (sel ? " dim" : "");
+                return (
+                  <button key={n.id} className={"flow-node g-" + n.group + state}
+                    style={{ left:(n.x / 1180 * 100) + "%", top:(n.y / 620 * 100) + "%" }}
+                    onClick={(ev) => { ev.stopPropagation(); setSel(s => s === n.id ? null : n.id); }}>
+                    <span className="fn-ic"><FlowIcon d={n.icon} /></span>
+                    <div className="fn-lbl">{n.label}</div>
+                    <div className="fn-sub">{n.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+            </div>
+
+            <div className="flow-panel">
+              {selNode ? (
+                <React.Fragment>
+                  <span className={"fp-kind g-" + selNode.group}>{FLOW_GROUP_LABEL[selNode.group]}</span>
+                  <h3 className="fp-title">{selNode.label}</h3>
+                  <p className="fp-detail">{selNode.detail}</p>
+                  <div className="fp-links">
+                    {feedsIn.length > 0 && (
+                      <div className="fp-linkgrp">
+                        <div className="fpl-h">Fed by</div>
+                        {feedsIn.map(t => (
+                          <button key={t.id} className="fp-chip" onClick={() => setSel(t.id)}>
+                            <span className={"fpc-dot flow-lg " + t.group} style={{display:"inline-block",width:6,height:6,borderRadius:2,
+                              background:({src:"var(--blue)",cap:"var(--gold)",eng:"#c9a0e8",out:"var(--green)",alt:"var(--red)"})[t.group]}}></span>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {feedsOut.length > 0 && (
+                      <div className="fp-linkgrp">
+                        <div className="fpl-h">Feeds into</div>
+                        {feedsOut.map(t => (
+                          <button key={t.id} className="fp-chip" onClick={() => setSel(t.id)}>
+                            <span style={{display:"inline-block",width:6,height:6,borderRadius:2,
+                              background:({src:"var(--blue)",cap:"var(--gold)",eng:"#c9a0e8",out:"var(--green)",alt:"var(--red)"})[t.group]}}></span>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              ) : (
+                <div className="flow-panel-empty">
+                  <svg className="fpe-ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v.4a2.6 2.6 0 0 0-2 2.5 2.5 2.5 0 0 0-1 2 2.5 2.5 0 0 0 1.4 2.2A2.5 2.5 0 0 0 7 16.5 2.5 2.5 0 0 0 9.5 19 2.5 2.5 0 0 0 12 16.5V4.5A2.5 2.5 0 0 0 9.5 2Z"/>
+                    <path d="M14.5 2A2.5 2.5 0 0 1 17 4.5v.4a2.6 2.6 0 0 1 2 2.5 2.5 2.5 0 0 1 1 2 2.5 2.5 0 0 1-1.4 2.2A2.5 2.5 0 0 1 17 16.5 2.5 2.5 0 0 1 14.5 19 2.5 2.5 0 0 1 12 16.5"/>
+                  </svg>
+                  <h4>The whole pipeline, one picture</h4>
+                  <p>Four sources flow left → right into the engine, then out into the numbers you act on. Tap any box to trace exactly what connects to it and watch the data light up.</p>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flow-hint">This map updates itself as the app grows — it always reflects how the ads tab works today.</div>
+        </div>
+      </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
+  // Brain-icon data-flow map — collapsed by default, lifted here so the toggle
+  // can sit in the header while the full-width map expands just below it.
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowSel, setFlowSel] = useState(null);
+
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
   const roasMap = useMemo(()=>roasByKeyword(dashboard && dashboard.adRoas), [dashboard]);
@@ -7580,9 +7902,13 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   return (
     <div className="ddr">
       <div className="ddr-head">
-        <h2 className="ddr-title">Deep Dive</h2>
+        <div className="ddr-head-row">
+          <h2 className="ddr-title">Deep Dive</h2>
+          <DataFlowToggle open={flowOpen} onToggle={()=>setFlowOpen(o=>!o)}/>
+        </div>
         <div className="ddr-sub">Everything below is tied to <b>ROAS</b> — your real return on ad spend for <b>{rangeLabel(range)}</b>. Change the dates above and it all redraws.</div>
       </div>
+      <DataFlowMap open={flowOpen} sel={flowSel} setSel={setFlowSel}/>
 
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
       <DataHealth dashboard={dashboard}/>
