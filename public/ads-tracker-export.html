@@ -5703,6 +5703,64 @@ function DataHealth({dashboard}){
 // the winning/losing copy IS the evidence, quoted verbatim with the dollars attached.
 function isFreeOffer(words){ return /\bfree\b/i.test(String(words||"")); }
 
+// --- Copy clustering: one MESSAGE, one verdict ----------------------------
+// A copywriting brief reasons about WORDS, not ad rows. The same copy often
+// runs more than once — a straight relaunch, or a near-twin like "Spring
+// Shredding" vs "Summer Shredding". If we treat each run as its own ad, the
+// SAME words can land in "winning" once and "losing" another time (different
+// targeting, audience, timing — none of which is a copy matter). That reads as
+// a self-contradiction. So we collapse essentially-identical copy into ONE
+// entry and blend its real spend/revenue: the words' true return, stated once.
+function copyFingerprint(words){
+  return String(words||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();
+}
+function copyTokenSet(words){
+  return new Set(copyFingerprint(words).split(" ").filter(Boolean));
+}
+function copyJaccard(a, b){
+  if(!a.size && !b.size) return 1;
+  let inter = 0; a.forEach(t=>{ if(b.has(t)) inter++; });
+  const uni = a.size + b.size - inter;
+  return uni>0 ? inter/uni : 0;
+}
+// Two messages are "the same copy" when ≥85% of their words overlap.
+const SAME_COPY_THRESHOLD = 0.85;
+function isSameCopy(wordsA, wordsB){
+  return copyJaccard(copyTokenSet(wordsA), copyTokenSet(wordsB)) >= SAME_COPY_THRESHOLD;
+}
+// Collapse reliable ads into unique messages, blending real dollars. Greedy
+// single-link clustering anchored on the first member (conservative — it never
+// over-merges by drifting the anchor).
+function clusterReliableCopy(analyzed){
+  const ads = (analyzed||[]).filter(a=> a.reliable && copyFingerprint(a.words));
+  const clusters = [];
+  for(const a of ads){
+    const toks = copyTokenSet(a.words);
+    let host = null;
+    for(const c of clusters){ if(copyJaccard(toks, c.toks) >= SAME_COPY_THRESHOLD){ host=c; break; } }
+    if(!host){ host = {toks, items:[]}; clusters.push(host); }
+    host.items.push(a);
+  }
+  return clusters.map(c=>{
+    const items = c.items;
+    const spend   = items.reduce((s,a)=>s+(Number(a.spend)||0),0);
+    const revenue = items.reduce((s,a)=>s+(Number(a.revenue)||0),0);
+    const clients = items.reduce((s,a)=>s+(Number(a.clients)||0),0);
+    const lead = [...items].sort((a,b)=>(Number(b.spend)||0)-(Number(a.spend)||0))[0];
+    const longest = items.reduce((m,a)=> String(a.words||"").length>String(m||"").length ? a.words : m, "");
+    const names = Array.from(new Set(items.map(a=>a.adName).filter(Boolean)));
+    return {
+      adId: lead.adId, clientKey: lead.clientKey,
+      words: longest || lead.words,
+      adName: items.length>1 ? `${names.length||items.length} ads · same copy` : (lead.adName||""),
+      spend, revenue, clients,
+      roas: spend>0 ? revenue/spend : 0,
+      reliable: true,
+      instances: items.length,
+    };
+  });
+}
+
 function legacyCopy(text){
   try{
     const ta = document.createElement("textarea");
@@ -5755,7 +5813,10 @@ function copySignals(winners, losers){
 // Structured brief model — computed ONCE from the real numbers, then rendered two
 // ways: a beautiful in-app preview AND plain text for pasting. No AI tokens.
 function computeBriefModel(analyzed){
-  const reliable = (analyzed||[]).filter(a=>a.reliable);
+  // One row per unique MESSAGE (relaunches/near-twins blended), so the same
+  // words can never appear as both a winner and a loser.
+  const messages = clusterReliableCopy(analyzed);
+  const rawReliable = (analyzed||[]).filter(a=>a.reliable).length;
   const blendRoas = (arr)=>{ const sp=arr.reduce((s,a)=>s+a.spend,0); const rv=arr.reduce((s,a)=>s+a.revenue,0); return sp>0 ? Math.round((rv/sp)*10)/10 : 0; };
   const mk = (isFree, pool)=>{
     const winners = pool.filter(a=>a.revenue>0 && a.roas>=1.5).sort((a,b)=>b.roas-a.roas);
@@ -5773,9 +5834,10 @@ function computeBriefModel(analyzed){
     };
   };
   return {
-    reliableCount: reliable.length,
-    free: mk(true,  reliable.filter(a=> isFreeOffer(a.words))),
-    paid: mk(false, reliable.filter(a=> !isFreeOffer(a.words))),
+    reliableCount: rawReliable,
+    messageCount: messages.length,
+    free: mk(true,  messages.filter(a=> isFreeOffer(a.words))),
+    paid: mk(false, messages.filter(a=> !isFreeOffer(a.words))),
   };
 }
 
@@ -6144,12 +6206,14 @@ function MessagingInsights({dashboard, range}){
   const quote = (s, n)=> { const t=String(s||"").trim(); return t.length>n ? t.slice(0,n).trim()+"…" : t; };
 
   // Head-to-head, computed from REAL numbers — no AI needed, never wrong.
-  // Best vs worst by ROAS among ads with enough spend AND revenue to compare.
-  // (Plain computation, not a hook — it runs after the early returns above.)
-  const ranked = [...analyzed.filter(a=> a.reliable && a.revenue>0)].sort((a,b)=>b.roas-a.roas);
+  // Best vs worst by ROAS, compared across unique MESSAGES (relaunches/near-twins
+  // blended into one) so we never show the same copy as both winning and losing —
+  // when the same words win and lose, the words weren't the cause.
+  const messages = clusterReliableCopy(analyzed);
+  const ranked = messages.filter(a=> a.revenue>0).sort((a,b)=>b.roas-a.roas);
   const best = ranked.length ? ranked[0] : null;
   const worst = ranked.length>1 ? ranked[ranked.length-1] : null;
-  const haveVs = best && worst && best.adId!==worst.adId;
+  const haveVs = best && worst && best.adId!==worst.adId && !isSameCopy(best.words, worst.words);
 
   // One scale for every ROAS bar + the breakeven (1×) marker, so they line up.
   const maxRoas = Math.max(4, ...analyzed.filter(a=>a.reliable&&a.revenue>0).map(a=>a.roas));

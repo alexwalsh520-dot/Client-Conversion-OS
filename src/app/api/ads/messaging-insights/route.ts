@@ -11,33 +11,49 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours — insights move with the d
 const MIN_SPEND_FOR_RELIABLE = 100; // mirror MIN_SPEND_FOR_RELIABLE_ROAS — don't draw lessons from noise.
 // Bump when the prompt changes so cached insights regenerate against the new
 // rules instead of serving an answer written under the old ones.
-const PROMPT_VERSION = "v2-cmo-evidence";
+const PROMPT_VERSION = "v3-copy-only-no-contradict";
+// Two ads count as "the same copy" when ≥85% of their words overlap. The same
+// message often runs more than once (a relaunch, or a near-twin like "Spring"
+// vs "Summer"); blending those into one entry is what stops the brief from
+// calling the same words both winning and losing.
+const SAME_COPY_THRESHOLD = 0.85;
 
 // The software's job here: connect what each ad SAYS to what it DID (spend,
 // revenue, ROAS, new clients) and explain it in plain English — but every claim
 // must be defensible to a skeptical CMO: backed by the real dollars, the ad
 // count and the ROAS, with the actual words quoted. It must ground every claim
 // in the numbers we hand it; it is told NOT to invent figures.
-const SYSTEM_PROMPT = `You analyze ad-creative performance for a coaching business. Your reader is the founder — smart but not technical — and he may put your words in front of a CMO, so every statement must be defensible straight from the data and never invented.
+const SYSTEM_PROMPT = `You are a copywriter analyzing ad COPY for a coaching business. Your reader is the founder — smart but not technical — and he uses your read to write his next ads. Every statement must be defensible straight from the data and never invented.
 
 You receive a list of ads. For each: the exact WORDS on the ad (its hook/message), ad spend ($), revenue collected ($), ROAS (revenue ÷ spend), and new clients. Ads marked reliable:true have enough spend ($100+) to draw conclusions from; reliable:false ads are "too early to tell".
 
-Your job: tie the MESSAGING to the MONEY. Name the angle/wording that wins and the one that loses — and back each with the real numbers and a direct quote.
+Your job is NARROW: tie the WORDS to the MONEY. Name the wording/angle that wins and the one that loses — and back each with the real numbers and a direct quote. You are ONLY a copywriter. You speak ONLY about copy: the words, the hook, the angle, the offer framing, the structure of the message.
+
+STAY IN YOUR LANE — never mention or speculate about anything that is NOT the copy itself:
+- NO targeting, audience, lookalikes, interests, placements, age, or location.
+- NO campaign names, ad sets, budgets, bidding, timing, relaunches, or which creator ran it.
+- NO funnel, DM-setting, or booking-process commentary.
+If two ads have different results but the same words, that difference was NOT caused by the copy — so it is none of your business. Say nothing about why; just don't draw a copy lesson from it.
+
+NEVER CONTRADICT YOURSELF:
+- The input has already been collapsed so each distinct MESSAGE appears once, with its blended return. Treat every entry as a separate message.
+- If two entries read as essentially the same words (a near-identical hook), DO NOT call one winning and the other losing. Same words cannot be both. If their results disagree, the copy is not the deciding factor — leave that copy out of both the winning and losing read entirely.
+- Only call a message "losing" when its words are genuinely DIFFERENT from your winning ones. Winning vs losing must be a real contrast in wording, not the same line under different conditions.
 
 HARD RULES:
 - Use ONLY the numbers provided. NEVER invent, estimate, or wildly round a figure.
-- Every claim about winning/losing messaging MUST cite: the dollars behind it (combined spend of the ads it covers), HOW MANY ads, and their ROAS — and quote the actual words. Example shape: 'The 3 ads that open with a question ("...") returned 4.1× on $2,300 spent.'
+- Every claim about winning/losing copy MUST cite: the dollars behind it, HOW MANY ads, and the ROAS — and quote the actual words. Example shape: 'The 3 ads that open with a question ("...") returned 4.1× on $2,300 spent.'
 - Draw firm lessons ONLY from reliable:true ads. If only low-spend ads exist, say it's too early and set confidence "low".
 - Be specific, never generic. "Curiosity hooks work" is useless. "<exact phrase> returned <X>× on $<Y> across <N> ads" is the bar.
 - Plain, direct English. Short sentences. No marketing jargon. No percentages unless they're in the data.
-- If there isn't enough data to say something real, say so honestly rather than reaching.
+- If there isn't enough genuinely-different copy to contrast, leave losing_message empty rather than reaching for a false contrast.
 
 Return ONLY valid JSON, no markdown:
 {
-  "headline": "<one sentence: the single most useful, number-backed messaging insight right now>",
-  "winning_message": "<the angle/wording making money — name the dollars, the ad count and the ROAS, and quote the words. empty string if genuinely unclear>",
-  "losing_message": "<the angle/wording wasting money — same: dollars, ad count, ROAS, quoted words. empty string if unclear>",
-  "takeaways": ["<2-4 concrete, number-bearing actions he can take this week>"],
+  "headline": "<one sentence: the single most useful, number-backed COPY insight right now>",
+  "winning_message": "<the wording/angle making money — name the dollars, the ad count and the ROAS, and quote the words. empty string if genuinely unclear>",
+  "losing_message": "<DIFFERENT wording that wastes money — same: dollars, ad count, ROAS, quoted words. empty string if there is no genuinely-different losing copy to contrast>",
+  "takeaways": ["<2-4 concrete, number-bearing copy actions he can take this week — about wording only>"],
   "confidence": "high" | "medium" | "low"
 }`;
 
@@ -55,6 +71,73 @@ type AdInput = {
 function num(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+type AdRow = {
+  adName: string;
+  clientKey: string;
+  words: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  clients: number;
+  reliable: boolean;
+};
+
+function copyTokenSet(words: string): Set<string> {
+  return new Set(
+    String(words || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+  );
+}
+function copyJaccard(a: Set<string>, b: Set<string>): number {
+  if (!a.size && !b.size) return 1;
+  let inter = 0;
+  a.forEach((t) => {
+    if (b.has(t)) inter++;
+  });
+  const uni = a.size + b.size - inter;
+  return uni > 0 ? inter / uni : 0;
+}
+
+// Collapse essentially-identical copy (relaunches, near-twins) into ONE entry,
+// blending real spend/revenue. The AI then sees each distinct MESSAGE once and
+// physically cannot label the same words both winning and losing.
+function clusterCopy(rows: AdRow[]): AdRow[] {
+  const clusters: { toks: Set<string>; items: AdRow[] }[] = [];
+  for (const r of rows) {
+    const toks = copyTokenSet(r.words);
+    let host = clusters.find((c) => copyJaccard(toks, c.toks) >= SAME_COPY_THRESHOLD);
+    if (!host) {
+      host = { toks, items: [] };
+      clusters.push(host);
+    }
+    host.items.push(r);
+  }
+  return clusters.map((c) => {
+    const items = c.items;
+    const spend = items.reduce((s, a) => s + a.spend, 0);
+    const revenue = items.reduce((s, a) => s + a.revenue, 0);
+    const clients = items.reduce((s, a) => s + a.clients, 0);
+    const lead = [...items].sort((a, b) => b.spend - a.spend)[0];
+    const longest = items.reduce((m, a) => (a.words.length > m.length ? a.words : m), "");
+    const names = Array.from(new Set(items.map((a) => a.adName).filter(Boolean)));
+    return {
+      adName: items.length > 1 ? `${names.length || items.length} ads · same copy` : lead.adName,
+      clientKey: lead.clientKey,
+      words: longest || lead.words,
+      spend,
+      revenue,
+      roas: spend > 0 ? Math.round((revenue / spend) * 10) / 10 : 0,
+      clients,
+      reliable: items.some((a) => a.reliable),
+    };
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -95,8 +178,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Keep only ads whose image actually has words read off it.
-    const ads = incoming
+    // Keep only ads whose image actually has words read off it, then collapse
+    // essentially-identical copy into one message so the AI never contradicts
+    // itself across two runs of the same words.
+    const withCopy = incoming
       .map((a) => ({
         adName: a.adName,
         clientKey: a.clientKey,
@@ -108,6 +193,7 @@ export async function POST(req: NextRequest) {
         reliable: a.reliable,
       }))
       .filter((a) => a.words);
+    const ads = clusterCopy(withCopy);
 
     const reliableCount = ads.filter((a) => a.reliable).length;
 
