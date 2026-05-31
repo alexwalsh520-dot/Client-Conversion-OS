@@ -145,18 +145,29 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/sync", { method: "POST" });
       const data = await res.json();
-      if (data.success) {
-        setSyncResult({
-          success: true,
-          message: `Synced ${data.rows} rows from ${data.sheets?.length || 0} sheets`,
-        });
-        setLastSync(new Date().toLocaleString());
-      } else {
-        setSyncResult({
-          success: false,
-          message: data.error || "Sync failed",
-        });
+      if (!data.success) {
+        setSyncResult({ success: false, message: data.error || "Sync failed" });
+        return;
       }
+
+      // Also refresh the per-sale data the Ads tab and profit math read. The
+      // summary sync above only updates closer/setter totals; without this the
+      // dashboard's per-sale rows (and any month that fell outside the last
+      // sync window) would stay stale. Both endpoints accept this session and
+      // look back far enough to rebuild recent months in full.
+      const [rowsRes, adsRes] = await Promise.all([
+        fetch("/api/sync/sales-tracker-rows", { method: "POST" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/sync/ads-tracker", { method: "POST" }).then((r) => r.json()).catch(() => null),
+      ]);
+      const salesRows = rowsRes && typeof rowsRes.rowsUpserted === "number" ? rowsRes.rowsUpserted : null;
+
+      setSyncResult({
+        success: true,
+        message:
+          `Synced ${data.rows} rows from ${data.sheets?.length || 0} sheets` +
+          (salesRows != null ? ` · refreshed ${salesRows} sales records` : ""),
+      });
+      setLastSync(new Date().toLocaleString());
     } catch {
       setSyncResult({
         success: false,
