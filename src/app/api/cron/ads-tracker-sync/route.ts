@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Lookback is a SAFETY FLOOR, not the whole story. The real rule (below) is
+// "always re-read from the 1st of last month through today" so the full current
+// month is rebuilt on every run and a missed sync can never leave a permanent
+// hole. A rolling 10-day window used to silently drop everything older than 10
+// days — that lost ~2/3 of a month's sales from the dashboard.
 const DEFAULT_LOOKBACK_DAYS = 10;
-const MAX_LOOKBACK_DAYS = 30;
+const MAX_LOOKBACK_DAYS = 120;
 
 function todayIso() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -10,6 +15,23 @@ function todayIso() {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+// First day of LAST month, in ET. Re-syncing from here every run guarantees the
+// entire current month (and the one before it) is always fully present, so the
+// database is a complete mirror of recent sales rather than a fragile window.
+function firstOfPreviousMonthIso() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value); // 1-12
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  return `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
 }
 
 function shiftDate(date: string, days: number) {
@@ -53,7 +75,12 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const dateTo = params.get("dateTo") || todayIso();
   const lookback = Math.min(Math.max(Number(params.get("lookbackDays") || DEFAULT_LOOKBACK_DAYS), 0), MAX_LOOKBACK_DAYS);
-  const dateFrom = params.get("dateFrom") || shiftDate(dateTo, -lookback);
+  // Default window = whichever reaches FURTHER back: the 1st of last month
+  // (guarantees the full current month is always rebuilt) or the lookback floor.
+  // An explicit dateFrom/lookbackDays param still overrides for manual backfills.
+  const lookbackFrom = shiftDate(dateTo, -lookback);
+  const monthFrom = firstOfPreviousMonthIso();
+  const dateFrom = params.get("dateFrom") || (monthFrom < lookbackFrom ? monthFrom : lookbackFrom);
 
   if (!isIsoDate(dateFrom) || !isIsoDate(dateTo) || dateFrom > dateTo) {
     return NextResponse.json(
