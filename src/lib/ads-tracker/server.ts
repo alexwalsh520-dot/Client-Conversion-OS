@@ -1261,6 +1261,23 @@ function buildPayload(
       // LTGP:CAC — gross profit kept per $1 of ad spend. Target 9×, floor 3×.
       grossProfitRoi: row.grossProfitRoi,
       newClients: row.newClients,
+      contractedRevenue: row.contractedRevenue,
+      // Full per-ad funnel + cost metrics so the Deep Dive can honestly correlate
+      // ANY lever (copy length, cost per DM, click rate, call rate …) against any
+      // outcome at the ad level — the grain where ad copy actually lives.
+      impressions: row.impressions,
+      linkClicks: row.linkClicks,
+      cpm: row.cpm,
+      ctr: row.ctr,
+      cpc: row.cpc,
+      messages: row.messages,
+      costPerMessage: row.costPerMessage,
+      bookedCalls: row.bookedCalls,
+      costPerBookedCall: row.costPerBookedCall,
+      callsTaken: row.callsTaken,
+      costPerCallTaken: row.costPerCallTaken,
+      callClosingRate: row.callClosingRate,
+      messagesConversionRate: row.messagesConversionRate,
     }))
     .sort((a, b) => b.collectedRevenue - a.collectedRevenue);
 

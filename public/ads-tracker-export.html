@@ -1264,6 +1264,21 @@
   .corr-tip .rows b{font-family:var(--mono);color:var(--text-2);font-weight:600}
   .corr-read{margin-top:9px;font-size:11.5px;line-height:1.5;color:var(--text-3);
     border-top:1px solid var(--border);padding-top:8px} .corr-read b{color:var(--text-2)}
+  /* outcome (Y) picker + variable list extras for the all-variable explorer */
+  .corr-ybar{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:12px}
+  .corr-ybar .lab{font-size:11px;color:var(--text-4);letter-spacing:.02em;margin-right:2px}
+  .corr-ychip{font:inherit;font-size:11px;cursor:pointer;background:var(--panel-2);
+    border:1px solid var(--border);color:var(--text-3);border-radius:99px;padding:4px 11px;
+    transition:background .14s,border-color .14s,color .14s}
+  .corr-ychip:hover{border-color:var(--border-2);color:var(--text-2)}
+  .corr-ychip.on{background:color-mix(in srgb,var(--gold) 14%,transparent);
+    border-color:var(--gold);color:var(--gold);font-weight:600}
+  .corr-list{max-height:392px;overflow-y:auto;padding-right:2px}
+  .corr-row.weak{opacity:.62} .corr-row.weak:hover{opacity:1}
+  .corr-row.thin{opacity:.5}
+  .corr-n{font-family:var(--mono);font-size:9px;color:var(--text-4);margin-top:2px}
+  .corr-rwrap{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+  .corr-note{font-size:10.5px;color:var(--text-4);line-height:1.5;margin-top:7px}
 </style>
 </head>
 <body>
@@ -6908,141 +6923,220 @@ function corrWord(r){
   return a>=0.6 ? "strong" : a>=0.35 ? "a clear" : a>=0.18 ? "a mild" : "little to no";
 }
 
-function CorrelationPanel({rows, dashboard}){
-  // Which lever to plot on the X axis, and which dot the mouse is over.
-  // Declared first so the hook order never changes across renders.
-  const [selId, setSelId] = useState(null);
-  const [hover, setHover] = useState(null); // {i, leftPct, topPct}
+// Every per-ad number the Deep Dive can correlate. `get` returns null when the
+// metric doesn't apply to that ad (e.g. no copy read yet, or no DMs to cost out)
+// so a missing value never masquerades as a zero. `dir` = which way is "good":
+// high (more is better), low (cheaper/less is better), or none (neither).
+// `outcome` marks the ones that make sense to put on the Y axis as a result.
+const CORR_VARS = [
+  {id:"roas",     label:"ROAS",                  short:"ROAS",         outcome:true,  roasLike:true,  dir:"high", get:a=>a.roas,      fmt:v=>v.toFixed(1)+"×",   axis:"ROAS — $ back per $1"},
+  {id:"gpRoas",   label:"Profit ROAS (LTGP:CAC)",short:"profit ROAS",  outcome:true,  roasLike:true,  dir:"high", get:a=>a.gpRoas,    fmt:v=>v.toFixed(1)+"×",   axis:"Profit per $1 spent"},
+  {id:"revenue",  label:"Revenue collected",     short:"revenue",      outcome:true,  roasLike:false, dir:"high", get:a=>a.revenue,   fmt:v=>fmtUsd(v),          axis:"$ collected"},
+  {id:"clients",  label:"New clients",           short:"clients",      outcome:true,  roasLike:false, dir:"high", get:a=>a.clients,   fmt:v=>fmtNum(v),          axis:"new clients"},
+  {id:"booked",   label:"Booked calls",          short:"booked calls", outcome:true,  roasLike:false, dir:"high", get:a=>a.booked,    fmt:v=>fmtNum(v),          axis:"booked calls"},
+  {id:"leads",    label:"Leads (DMs)",           short:"DMs",          outcome:true,  roasLike:false, dir:"high", get:a=>a.leads,     fmt:v=>fmtNum(v),          axis:"DMs"},
+  {id:"callRate", label:"DM → call rate",   short:"call rate",    outcome:true,  roasLike:false, dir:"high", get:a=>a.callRate,  fmt:v=>fmtPct(v,1),        axis:"% of DMs that booked"},
+  {id:"cpl",      label:"Cost per DM",           short:"cost / DM",    outcome:true,  roasLike:false, dir:"low",  get:a=>a.cpl,       fmt:v=>fmtUsd(v,2),        axis:"$ per DM"},
+  {id:"closeRate",label:"Call → client rate",short:"close rate",  outcome:false, roasLike:false, dir:"high", get:a=>a.closeRate, fmt:v=>fmtPct(v,1),        axis:"% of calls that closed"},
+  {id:"cpcall",   label:"Cost per booked call",  short:"cost / call",  outcome:false, roasLike:false, dir:"low",  get:a=>a.cpcall,    fmt:v=>fmtUsd(v,0),        axis:"$ per booked call"},
+  {id:"spend",    label:"Ad spend",              short:"spend",        outcome:false, roasLike:false, dir:"none", get:a=>a.spend,     fmt:v=>fmtUsd(v),          axis:"$ spent"},
+  {id:"ctr",      label:"Click-through rate",    short:"click rate",   outcome:false, roasLike:false, dir:"high", get:a=>a.ctr,       fmt:v=>fmtPct(v,2),        axis:"% click-through"},
+  {id:"cpc",      label:"Cost per click",        short:"cost / click", outcome:false, roasLike:false, dir:"low",  get:a=>a.cpc,       fmt:v=>fmtUsd(v,2),        axis:"$ per click"},
+  {id:"cpm",      label:"Cost per 1k views",     short:"CPM",          outcome:false, roasLike:false, dir:"low",  get:a=>a.cpm,       fmt:v=>fmtUsd(v,2),        axis:"$ per 1,000 views"},
+  {id:"words",    label:"Copy length (words)",   short:"word count",   outcome:false, roasLike:false, dir:"none", get:a=>a.wordCount, fmt:v=>fmtNum(v)+(v===1?" word":" words"), axis:"words on the ad", copy:true},
+  {id:"chars",    label:"Copy length (letters)", short:"letters",      outcome:false, roasLike:false, dir:"none", get:a=>a.charCount, fmt:v=>fmtNum(v)+" letters", axis:"letters on the ad", copy:true},
+];
 
-  // Only ad words with enough spend to trust and real traced ROAS can speak.
-  const pool = rows.filter(r=> r.traced && r.roasReliable && r.roas!=null && r.spend>0);
+// Turn one raw adRoas row into the flat numeric record the explorer correlates.
+function corrAdRecord(a){
+  const copy = String(a.onImageText||"").trim();
+  const wc = copy ? (copy.match(/\S+/g)||[]).length : null;
+  const spend = Number(a.adSpend||0);
+  const leads = Number(a.messages||0);
+  const booked = Number(a.bookedCalls||0);
+  const fin = (v)=> (v!=null && Number.isFinite(Number(v))) ? Number(v) : null;
+  return {
+    adId: a.adId || a.id || null,
+    adName: a.adName || a.label || "",
+    copy, wordCount: wc, charCount: copy ? copy.length : null,
+    spend, revenue: Number(a.collectedRevenue||0),
+    roas: Number(a.collectedRoi||0),
+    gpRoas: Number(a.grossProfitRoi||0),
+    clients: Number(a.newClients||0),
+    leads,
+    cpl: fin(a.costPerMessage) ?? (leads>0 ? spend/leads : null),
+    booked,
+    cpcall: fin(a.costPerBookedCall) ?? (booked>0 ? spend/booked : null),
+    callRate: Number(a.messagesConversionRate||0),
+    closeRate: Number(a.callClosingRate||0),
+    ctr: Number(a.ctr||0),
+    cpc: Number(a.cpc||0),
+    cpm: Number(a.cpm||0),
+    reliable: typeof a.roasReliable === "boolean" ? a.roasReliable : spend>=100,
+  };
+}
+
+// "What actually drives the money" — an honest correlation explorer.
+// Pick the OUTCOME you care about (ROAS, booked calls, clients…), then every
+// lever we have — including your ad copy's length — is ranked by how tightly it
+// moves with that outcome (Pearson r, −1…+1). Pure arithmetic, no AI. We only
+// trust ads with enough spend ($100+), show the sample size on every line, and
+// never claim cause — only that two numbers move together.
+function CorrelationPanel({rows, dashboard}){
+  const [yId, setYId] = useState("roas");   // which outcome sits on the Y axis
+  const [selId, setSelId] = useState(null); // which lever is plotted on X
+  const [hover, setHover] = useState(null);
+
+  const adRoas = (dashboard && Array.isArray(dashboard.adRoas)) ? dashboard.adRoas : [];
+  const pool = adRoas.map(corrAdRecord).filter(a=> a.adId && a.reliable && a.spend>0);
   if(pool.length<4) return null;
 
-  // Leading indicators → does each one track ROAS? All computed, no AI.
-  const drivers = [
-    {id:"cpl", label:"Cost per DM", get:r=>r.cpl, fmt:v=>fmtUsd(v,2), lowerIsCheaper:true, x:"cheaper DMs"},
-    {id:"ctr", label:"Click-through rate", get:r=>r.ctr, fmt:v=>fmtPct(v,2), lowerIsCheaper:false, x:"higher click rate"},
-    {id:"rate", label:"DM → call rate", get:r=>r.rate, fmt:v=>fmtPct(v,1), lowerIsCheaper:false, x:"more DMs booking"},
-    {id:"cpc", label:"Cost per booked call", get:r=>r.cpc, fmt:v=>fmtUsd(v,0), lowerIsCheaper:true, x:"cheaper calls"},
-  ];
-  const findings = drivers.map(d=>{
-    const pairs = pool.filter(r=>{ const v=d.get(r); return v!=null && !isNaN(v) && v>0; }).map(r=>[d.get(r), r.roas]);
-    const r = pearson(pairs);
-    return {...d, r, n:pairs.length};
-  }).filter(f=>f.r!=null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
-  if(!findings.length) return null;
-
-  // Default the scatter to the strongest relationship; let Alex switch it.
-  const lead = findings.find(f=>f.id===selId) || findings[0];
   const cap=(s)=>s?s.charAt(0)+s.slice(1).toLowerCase():s;
-  const leadPairs = pool.filter(r=>{ const v=lead.get(r); return v!=null && !isNaN(v) && v>0; })
-    .map(r=>({x:lead.get(r), y:r.roas, kw:r.keyword, spend:r.spend}));
+  const yVar = CORR_VARS.find(v=>v.id===yId) || CORR_VARS[0];
+  const copyReadCount = pool.filter(a=>a.wordCount!=null).length;
 
-  const W=660, H=270, padL=54, padB=52, padT=16, padR=16;
-  const xs=leadPairs.map(p=>p.x), ys=leadPairs.map(p=>p.y);
-  const xMin=Math.min(...xs), xMax=Math.max(...xs)||1, yMin=0, yMax=Math.max(...ys, 2);
+  // Build pairs for one (X,Y): only ads where BOTH numbers genuinely exist.
+  const pairsFor = (xVar)=> pool.reduce((acc,a)=>{
+    const x = xVar.get(a), y = yVar.get(a);
+    if(x!=null && Number.isFinite(x) && y!=null && Number.isFinite(y)) acc.push({x,y,a});
+    return acc;
+  }, []);
+
+  // Rank every other variable against the chosen outcome. r=null when there
+  // aren't enough ads (need 4+) or the column doesn't vary — shown, but parked
+  // at the bottom and clearly labelled, because "no signal" is itself an answer.
+  const findings = CORR_VARS.filter(v=>v.id!==yVar.id).map(v=>{
+    const pts = pairsFor(v);
+    const r = pts.length>=4 ? pearson(pts.map(p=>[p.x,p.y])) : null;
+    return {v, r, n:pts.length};
+  }).sort((a,b)=>{
+    if((a.r==null)!==(b.r==null)) return a.r==null?1:-1;
+    if(a.r==null) return b.n-a.n;
+    return Math.abs(b.r)-Math.abs(a.r);
+  });
+
+  const usable = findings.filter(f=>f.r!=null);
+  if(!usable.length) return null;
+  const lead = findings.find(f=>f.v.id===selId && f.r!=null) || usable[0];
+  const xVar = lead.v;
+
+  // Does pushing this lever UP move the outcome the desirable way?
+  const improves = (r)=> r==null?null : (yVar.dir==="low" ? r<0 : r>0);
+  const barColor = (f)=>{
+    if(f.r==null || corrWord(f.r)==="little to no") return "var(--text-4)";
+    return improves(f.r) ? "var(--green)" : "var(--red)";
+  };
+  const plain = (f)=>{
+    if(f.r==null) return <span><b>{f.v.label}</b> — not enough ads with this number yet to measure.</span>;
+    const s = corrWord(f.r);
+    if(s==="little to no") return <span><b>{f.v.label}</b> shows little to no link to {yVar.short}.</span>;
+    const up = f.r>0;
+    return <span>More <b>{f.v.short}</b> goes with {up?"more":"less"} {yVar.short} — {s} link.</span>;
+  };
+
+  // ---- scatter for the selected lever vs the chosen outcome ----
+  const pts = pairsFor(xVar).map(p=>({x:p.x, y:p.y, nm:p.a.adName, spend:p.a.spend}));
+  const W=660, H=270, padL=58, padB=52, padT=16, padR=16;
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs), yMin=0, yMax=Math.max(...ys, yVar.roasLike?2:0.0001);
   const sx=v=> padL + ((v-xMin)/((xMax-xMin)||1))*(W-padL-padR);
   const sy=v=> (H-padB) - ((v-yMin)/((yMax-yMin)||1))*(H-padB-padT);
-  const beY = sy(1); // breakeven ROAS line
   const rOf = (spend)=> Math.max(4, Math.min(13, Math.sqrt(spend)/5));
+  const beY = sy(1); // break-even, only drawn for ROAS-like outcomes
 
-  // Least-squares trend line over the selected lever — the visual the eye reads
-  // as "as this goes up, ROAS goes ___".
-  const n=leadPairs.length;
+  // Least-squares trend line.
+  const n=pts.length;
   let Sx=0,Sy=0,Sxx=0,Sxy=0;
-  leadPairs.forEach(p=>{ Sx+=p.x; Sy+=p.y; Sxx+=p.x*p.x; Sxy+=p.x*p.y; });
+  pts.forEach(p=>{ Sx+=p.x; Sy+=p.y; Sxx+=p.x*p.x; Sxy+=p.x*p.y; });
   const denom = n*Sxx - Sx*Sx;
   const slope = denom!==0 ? (n*Sxy - Sx*Sy)/denom : 0;
   const intercept = (Sy - slope*Sx)/(n||1);
   const clampY=(v)=> Math.max(yMin, Math.min(yMax, v));
   const tA = clampY(intercept + slope*xMin), tB = clampY(intercept + slope*xMax);
 
-  // Four round-ish ticks per axis.
   const fr=[0,1/3,2/3,1];
   const xTicks = fr.map(t=> xMin + t*((xMax-xMin)||1));
   const yTicks = fr.map(t=> yMin + t*((yMax-yMin)||1));
 
-  const dirHelps = (lead.r<0) === lead.lowerIsCheaper; // does moving this lever the "good" way lift ROAS?
   const strength = corrWord(lead.r);
-
-  const plain = (f)=>{
-    const helps = (f.r<0) === f.lowerIsCheaper;
-    const s = corrWord(f.r);
-    if(s==="little to no") return <span><b>{f.label}</b> shows little to no link to ROAS.</span>;
-    return <span>Ads with <b>{f.x}</b> tend to {helps?"earn MORE":"earn LESS"} — {s} link to ROAS.</span>;
-  };
-
-  // Pixel → percentage of the viewBox, so the HTML tooltip lands on the dot at
-  // any rendered size (the SVG scales but keeps its 0..W / 0..H coordinates).
+  const dotColor = (y)=> yVar.roasLike ? (y>=1?"var(--green)":"var(--red)") : "var(--gold)";
   const leftPct=(v)=> (sx(v)/W)*100, topPct=(v)=> (sy(v)/H)*100;
-  const hp = hover!=null && leadPairs[hover] ? leadPairs[hover] : null;
+  const hp = hover!=null && pts[hover] ? pts[hover] : null;
 
   const readout = strength==="little to no"
-    ? <span><b>{lead.label}</b> barely moves ROAS — picking ads by this number won't reliably win or lose you money.</span>
-    : <span>Reading left → right: as <b>{lead.label.toLowerCase()}</b> {lead.lowerIsCheaper?"rises":"rises"}, ROAS tends to {slope>=0?"rise":"fall"}. Your sweet spot is the {dirHelps?(lead.lowerIsCheaper?"top-left":"top-right"):(lead.lowerIsCheaper?"top-left":"top-right")} — high ROAS at {lead.lowerIsCheaper?"a low cost":"a strong rate"}. Green dots cleared break-even; red didn't.</span>;
+    ? <span><b>{xVar.label}</b> barely moves {yVar.short} — across these ads, choosing by this number won't reliably change the result.</span>
+    : <span>Reading left → right: as <b>{xVar.short}</b> rises, {yVar.short} tends to {slope>=0?"rise":"fall"} ({strength} link, {lead.n} ads). {yVar.roasLike?"Green dots cleared break-even; red didn't.":"Bigger dots = more spend."}</span>;
 
   return (
     <div className="ddr-block">
       <div className="ddr-blabel">
         <span className="l">What actually drives the money</span>
-        <span className="m">code-measured links between each lever and ROAS — across {pool.length} ad words with enough spend to trust</span>
+        <span className="m">pick an outcome, then see how every lever — including your copy — links to it. r = how tightly they move together (−1 to 1)</span>
       </div>
+
+      <div className="corr-ybar">
+        <span className="lab">Outcome:</span>
+        {CORR_VARS.filter(v=>v.outcome).map(v=>(
+          <button type="button" key={v.id} className={"corr-ychip"+(v.id===yVar.id?" on":"")}
+            onClick={()=>{ setYId(v.id); setSelId(null); setHover(null); }}>{v.label}</button>
+        ))}
+      </div>
+
       <div className="corr">
         <div className="corr-list">
           {findings.map(f=>{
-            const on = f.id===lead.id;
+            const on = f.v.id===lead.v.id;
+            const weak = f.r!=null && corrWord(f.r)==="little to no";
             return (
-              <button type="button" className={"corr-row"+(on?" on":"")} key={f.id} onClick={()=>setSelId(f.id)} title={"Plot "+f.label+" on the chart"}>
-                <div className="corr-bar"><div className="corr-fill" style={{width:Math.round(Math.abs(f.r)*100)+"%", background: ((f.r<0)===f.lowerIsCheaper)?"var(--green)":"var(--red)"}}></div></div>
+              <button type="button" className={"corr-row"+(on?" on":"")+(f.r==null?" thin":weak?" weak":"")} key={f.v.id}
+                onClick={()=> f.r!=null && setSelId(f.v.id)} title={f.r!=null?("Plot "+f.v.label+" on the chart"):"Need more ads to measure"}>
+                <div className="corr-bar"><div className="corr-fill" style={{width:(f.r!=null?Math.round(Math.abs(f.r)*100):0)+"%", background:barColor(f)}}></div></div>
                 <div className="corr-txt">{plain(f)}</div>
-                <div className="corr-r">r={f.r.toFixed(2)}</div>
+                <div className="corr-rwrap">
+                  <div className="corr-r">{f.r!=null?("r="+f.r.toFixed(2)):"—"}</div>
+                  <div className="corr-n">{f.n} ad{f.n===1?"":"s"}</div>
+                </div>
               </button>
             );
           })}
-          <div className="corr-hint">Tap a lever to plot it ↗</div>
+          <div className="corr-hint">Tap any lever to plot it ↗</div>
         </div>
 
         <div className="corr-scatter">
-          <div className="corr-scatter-h"><b style={{color:"var(--text-2)"}}>{lead.label}</b> <span className="ax">→ across</span> vs <b style={{color:"var(--text-2)"}}>ROAS</b> <span className="ax">↑ up</span> · each dot = one ad word, bigger = more spend</div>
+          <div className="corr-scatter-h"><b style={{color:"var(--text-2)"}}>{xVar.label}</b> <span className="ax">→ across</span> vs <b style={{color:"var(--text-2)"}}>{yVar.label}</b> <span className="ax">↑ up</span> · each dot = one ad, bigger = more spend</div>
           <div className="corr-plot">
             <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="corr-svg" preserveAspectRatio="none"
               onMouseLeave={()=>setHover(null)}>
-              {/* good zone tint: above break-even */}
-              <rect x={padL} y={padT} width={W-padL-padR} height={Math.max(0,beY-padT)} fill="var(--green)" fillOpacity="0.04"/>
-              {/* gridlines + y tick labels (ROAS) */}
+              {yVar.roasLike && <rect x={padL} y={padT} width={W-padL-padR} height={Math.max(0,beY-padT)} fill="var(--green)" fillOpacity="0.04"/>}
               {yTicks.map((t,i)=>(
                 <g key={"y"+i}>
                   <line x1={padL} y1={sy(t)} x2={W-padR} y2={sy(t)} stroke="var(--border)" strokeWidth="1" strokeOpacity={i===0?0:0.55}/>
-                  <text x={padL-8} y={sy(t)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{t.toFixed(1)}×</text>
+                  <text x={padL-8} y={sy(t)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{yVar.fmt(t)}</text>
                 </g>
               ))}
-              {/* x tick labels (selected lever) */}
               {xTicks.map((t,i)=>(
                 <g key={"x"+i}>
                   <line x1={sx(t)} y1={padT} x2={sx(t)} y2={H-padB} stroke="var(--border)" strokeWidth="1" strokeOpacity="0.35"/>
-                  <text x={sx(t)} y={H-padB+16} textAnchor={i===0?"start":i===xTicks.length-1?"end":"middle"} fontSize="9" fill="var(--text-4)">{lead.fmt(t)}</text>
+                  <text x={sx(t)} y={H-padB+16} textAnchor={i===0?"start":i===xTicks.length-1?"end":"middle"} fontSize="9" fill="var(--text-4)">{xVar.fmt(t)}</text>
                 </g>
               ))}
-              {/* break-even line */}
-              <line x1={padL} y1={beY} x2={W-padR} y2={beY} stroke="var(--gold)" strokeDasharray="4 3" strokeWidth="1" strokeOpacity="0.7"/>
-              <text x={W-padR-2} y={beY-5} textAnchor="end" fontSize="9" fill="var(--gold)">break-even 1×</text>
-              {/* trend line */}
+              {yVar.roasLike && <>
+                <line x1={padL} y1={beY} x2={W-padR} y2={beY} stroke="var(--gold)" strokeDasharray="4 3" strokeWidth="1" strokeOpacity="0.7"/>
+                <text x={W-padR-2} y={beY-5} textAnchor="end" fontSize="9" fill="var(--gold)">break-even 1×</text>
+              </>}
               {strength!=="little to no" && (
-                <line x1={sx(xMin)} y1={sy(tA)} x2={sx(xMax)} y2={sy(tB)} stroke={dirHelps?"var(--green)":"var(--red)"} strokeWidth="2" strokeOpacity="0.55" strokeLinecap="round"/>
+                <line x1={sx(xMin)} y1={sy(tA)} x2={sx(xMax)} y2={sy(tB)} stroke={improves(lead.r)?"var(--green)":"var(--red)"} strokeWidth="2" strokeOpacity="0.55" strokeLinecap="round"/>
               )}
-              {/* axis frame */}
               <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="var(--border-2)" strokeWidth="1"/>
               <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="var(--border-2)" strokeWidth="1"/>
-              {/* axis titles */}
-              <text x={(padL+W-padR)/2} y={H-6} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600">{lead.label} {lead.lowerIsCheaper?"(cheaper ← → pricier)":"(lower ← → higher)"}</text>
-              <text x={14} y={(padT+H-padB)/2} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600" transform={`rotate(-90 14 ${(padT+H-padB)/2})`}>ROAS — $ back per $1</text>
-              {/* dots */}
-              {leadPairs.map((p,i)=>{
+              <text x={(padL+W-padR)/2} y={H-6} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600">{xVar.axis}</text>
+              <text x={14} y={(padT+H-padB)/2} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontWeight="600" transform={`rotate(-90 14 ${(padT+H-padB)/2})`}>{yVar.axis}</text>
+              {pts.map((p,i)=>{
                 const isHover = hover===i;
                 return (
                   <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={rOf(p.spend)+(isHover?3:0)}
-                    fill={p.y>=1?"var(--green)":"var(--red)"} fillOpacity={isHover?0.85:0.45}
-                    stroke={p.y>=1?"var(--green)":"var(--red)"} strokeWidth={isHover?2:1}
+                    fill={dotColor(p.y)} fillOpacity={isHover?0.85:0.45}
+                    stroke={dotColor(p.y)} strokeWidth={isHover?2:1}
                     style={{cursor:"pointer", transition:"r .1s ease, fill-opacity .1s ease"}}
                     onMouseEnter={()=>setHover(i)} onMouseMove={()=>setHover(i)}/>
                 );
@@ -7050,16 +7144,20 @@ function CorrelationPanel({rows, dashboard}){
             </svg>
             {hp && (
               <div className="corr-tip" style={{left:leftPct(hp.x)+"%", top:topPct(hp.y)+"%"}}>
-                <div className="kw">{cap(hp.kw)}</div>
+                <div className="kw">{cap(hp.nm)||"this ad"}</div>
                 <div className="rows">
-                  <span><i>{lead.label}</i><b>{lead.fmt(hp.x)}</b></span>
-                  <span><i>ROAS</i><b style={{color:hp.y>=1?"var(--green)":"var(--red)"}}>{hp.y.toFixed(1)}×</b></span>
-                  <span><i>Spend</i><b>{fmtUsd(hp.spend)}</b></span>
+                  <span><i>{xVar.short}</i><b>{xVar.fmt(hp.x)}</b></span>
+                  <span><i>{yVar.short}</i><b style={yVar.roasLike?{color:hp.y>=1?"var(--green)":"var(--red)"}:null}>{yVar.fmt(hp.y)}</b></span>
+                  <span><i>spend</i><b>{fmtUsd(hp.spend)}</b></span>
                 </div>
               </div>
             )}
           </div>
           <div className="corr-read">{readout}</div>
+          <div className="corr-note">
+            Measured across {pool.length} ads with $100+ spend ({copyReadCount} have their copy read, so copy-length lines use those).
+            Correlation shows what moves <i>together</i> — not proof one causes the other. Same words but a different result? Something off the page (who saw it, when it ran) drove that, not the copy.
+          </div>
         </div>
       </div>
     </div>
