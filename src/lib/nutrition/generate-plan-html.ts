@@ -85,11 +85,17 @@ export async function generatePlanHtml(
     },
   ];
 
-  const response = await anthropic.messages.create({
+  // Use the streaming API. The Anthropic SDK refuses non-streaming
+  // requests when max_tokens is high enough that the call could exceed
+  // 10 minutes (which is true at our 32k ceiling). messages.stream()
+  // accepts the same params; .finalMessage() resolves with the same
+  // response shape as messages.create() once the stream completes.
+  const stream = anthropic.messages.stream({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     messages: [{ role: "user", content }],
   });
+  const response = await stream.finalMessage();
 
   logAiUsage({ feature: "nutrition-generate-plan-html", model: MODEL, usage: response.usage });
 
