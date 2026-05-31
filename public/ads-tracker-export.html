@@ -29,6 +29,7 @@
     --gold-dim: #8a7348;
     --blue: #7aa7d4;
     --focus: #2a2a2a;
+    --mono: 'JetBrains Mono',ui-monospace,monospace;
   }
   html.light{
     --bg:#f6f6f4;
@@ -1146,6 +1147,41 @@
   .ddr-pgh{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;padding-left:2px}
   .ddr-pgh .ar{font-size:12px}
   .ddr-pgh.scale{color:var(--green)} .ddr-pgh.kill{color:var(--red)}
+
+  /* "I did this" — the close-the-loop confirm inside a playbook card */
+  .ddr-pdid{margin-top:12px;width:100%;display:flex;align-items:center;justify-content:center;gap:9px;font:inherit;font-size:12.5px;font-weight:650;letter-spacing:.01em;padding:11px 14px;border-radius:10px;cursor:pointer;transition:transform .12s ease,box-shadow .2s ease,background .18s ease;border:1px solid}
+  .ddr-pdid .ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:800}
+  .ddr-pdid.kill{color:var(--red);background:color-mix(in srgb,var(--red) 9%,var(--panel));border-color:color-mix(in srgb,var(--red) 34%,var(--border-2))}
+  .ddr-pdid.kill .ic{background:color-mix(in srgb,var(--red) 18%,transparent)}
+  .ddr-pdid.scale{color:var(--green);background:color-mix(in srgb,var(--green) 9%,var(--panel));border-color:color-mix(in srgb,var(--green) 34%,var(--border-2))}
+  .ddr-pdid.scale .ic{background:color-mix(in srgb,var(--green) 18%,transparent)}
+  .ddr-pdid:hover{transform:translateY(-1px);box-shadow:0 8px 22px -12px currentColor}
+  .ddr-pdid:active{transform:translateY(0)}
+
+  /* ---- Decision tracker: every logged move, traced to a real result ---- */
+  .ddt{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--gold) 16%,var(--border));background:radial-gradient(120% 150% at 100% 0%,color-mix(in srgb,var(--gold) 6%,var(--panel)),var(--panel) 60%)}
+  .ddt-head{display:flex;flex-direction:column;gap:3px}
+  .ddt-k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--gold)}
+  .ddt-h{font-size:12.5px;line-height:1.45;color:var(--text-3)}
+  .ddt-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:11px}
+  .ddt-card{display:flex;flex-direction:column;gap:9px;padding:13px 14px;border-radius:12px;border:1px solid var(--border);background:var(--panel)}
+  .ddt-card.kill{border-left:3px solid var(--red)} .ddt-card.scale{border-left:3px solid var(--green)}
+  .ddt-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ddt-badge{font-size:9px;font-weight:800;letter-spacing:.08em;padding:3px 7px;border-radius:6px}
+  .ddt-badge.kill{color:var(--red);background:color-mix(in srgb,var(--red) 14%,transparent)}
+  .ddt-badge.scale{color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent)}
+  .ddt-word{font-size:14px;font-weight:680;color:var(--text);letter-spacing:-.01em}
+  .ddt-when{font-size:10.5px;color:var(--text-4)}
+  .ddt-undo{margin-left:auto;font:inherit;font-size:10.5px;color:var(--text-4);background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer;transition:color .15s,border-color .15s}
+  .ddt-undo:hover{color:var(--text-2);border-color:var(--border-2)}
+  .ddt-base{font-size:11px;color:var(--text-4);font-family:var(--mono)}
+  .ddt-base b{color:var(--text-2)}
+  .ddt-result{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:10px;border:1px solid var(--border-2);background:color-mix(in srgb,var(--bg) 40%,var(--panel-2))}
+  .ddt-dot{flex-shrink:0;width:8px;height:8px;border-radius:50%;margin-top:5px}
+  .ddt-verdict{font-size:12.5px;line-height:1.45;font-weight:600}
+  .ddt-spark{display:flex;align-items:center;gap:10px}
+  .ddt-spark .spark{display:block}
+  .ddt-sparklbl{font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.05em}
 
   /* ---- Funnel scoreboard: every metric, sparkline, meaning, click-to-trend ---- */
   .fs{display:flex;flex-direction:column;gap:16px}
@@ -5224,26 +5260,16 @@ function buildPlaybook(rows){
   scaleRoas.sort((a,b)=>b.roas-a.roas);                                  // best return first
   cutRoas.sort((a,b)=>(b.spend-b.tracedRev)-(a.spend-a.tracedRev));      // biggest bleed first
   cutBlind.sort((a,b)=>b.spend-a.spend);
-  const scales = scaleRoas;
-  const kills = [...cutRoas, ...cutBlind];
-  // Reclaimable budget = the spend currently sitting on losers, free to move.
-  const freedUp = kills.reduce((s,r)=>s+r.spend,0);
-  const bleed = cutRoas.reduce((s,r)=>s+Math.max(0,r.spend-r.tracedRev),0) + cutBlind.reduce((s,r)=>s+r.spend,0);
-  const scaleSpend = scales.reduce((s,r)=>s+r.spend,0);
-  const winRev = scales.reduce((s,r)=>s+r.tracedRev,0);
-  const blendedWinRoas = scaleSpend>0 ? winRev/scaleSpend : null;        // winners' real blended return
-  const reallocReturn = blendedWinRoas!=null ? freedUp*blendedWinRoas : null; // what that budget could earn instead
-  return {
-    scales: scales.slice(0,4), kills: kills.slice(0,4),
-    freedUp, bleed, scaleSpend, blendedWinRoas, reallocReturn,
-    killCount: kills.length, scaleCount: scales.length,
-  };
+  // Full sorted lists. ActionPlaybook drops any move already acted on, then
+  // recomputes the reallocation hero over what's LEFT — so a killed bleeder
+  // stops counting toward "budget to reclaim" the moment Alex marks it done.
+  return { scales: scaleRoas, kills: [...cutRoas, ...cutBlind] };
 }
 
 // One action card. Collapsed = the move + the one reason + the dollar impact.
 // Tap it open for the full money chain, every supporting number, where the ad
 // lives in Meta, and exactly what to do next.
-function PlaybookCard({a, i, rangeText}){
+function PlaybookCard({a, i, rangeText, onDid}){
   const [open, setOpen] = useState(false);
   const low = (s)=> String(s||"").toLowerCase();
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
@@ -5323,23 +5349,47 @@ function PlaybookCard({a, i, rangeText}){
 
           {/* Plain-English instruction */}
           <div className="ddr-pdo">{doText}</div>
+
+          {/* Close the loop — mark it done so the page stops nagging and starts tracing the result */}
+          {onDid && (
+            <button type="button" className={"ddr-pdid "+a.type} onClick={(e)=>{e.stopPropagation(); onDid(a);}}>
+              <span className="ic">✓</span>
+              <span>I did this — {a.type==="kill" ? "I turned it off" : "I raised its budget"}. Track the result.</span>
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function ActionPlaybook({rows, rangeText}){
-  const {scales, kills, freedUp, bleed, blendedWinRoas, reallocReturn, killCount, scaleCount} = buildPlaybook(rows);
-  const nothing = scales.length===0 && kills.length===0;
+function ActionPlaybook({rows, rangeText, decByKey, onDid}){
+  const {scales, kills} = buildPlaybook(rows);
+  const acted = decByKey || {};
+  const isActed = (a)=> !!acted[String(a.keyword||"").toLowerCase()];
+  // Drop anything Alex has already acted on — the whole point of the feedback
+  // loop is to stop nagging him to do what's done. The tracker below keeps it.
+  const aScales = scales.filter(a=>!isActed(a)).slice(0,4);
+  const aKills  = kills.filter(a=>!isActed(a)).slice(0,4);
+  const actedCount = scales.filter(isActed).length + kills.filter(isActed).length;
+
+  // Reallocation hero recomputed over ONLY the moves still on the table.
+  const freedUp = aKills.reduce((s,r)=>s+r.spend,0);
+  const bleed = aKills.reduce((s,r)=>s+(r.traced?Math.max(0,r.spend-r.tracedRev):r.spend),0);
+  const scaleSpend = aScales.reduce((s,r)=>s+r.spend,0);
+  const winRev = aScales.reduce((s,r)=>s+r.tracedRev,0);
+  const blendedWinRoas = scaleSpend>0 ? winRev/scaleSpend : null;
+  const reallocReturn = blendedWinRoas!=null ? freedUp*blendedWinRoas : null;
+  const killCount = aKills.length;
+  const nothing = aScales.length===0 && aKills.length===0;
 
   return (
     <div className="ddr-play">
       <div className="ddr-play-top">
         <div className="ddr-play-k">Do this next</div>
         <div className="ddr-play-h">{nothing
-          ? <span>Your money's working — nothing screaming to scale or cut right now.</span>
-          : <span>The fastest money moves right now — <b>grow what's printing</b> and <b>stop what's bleeding</b>. Tap any card for the full story.</span>}</div>
+          ? <span>{actedCount>0 ? <span>You've acted on every move here — nothing new screaming to scale or cut. Watch the results below.</span> : <span>Your money's working — nothing screaming to scale or cut right now.</span>}</span>
+          : <span>The fastest money moves right now — <b>grow what's printing</b> and <b>stop what's bleeding</b>. Tap any card for the full story.{actedCount>0?<span> ({actedCount} already done — tracked below.)</span>:null}</span>}</div>
       </div>
 
       {/* Reallocation hero — the instant move the old scaling-only list hid */}
@@ -5362,16 +5412,16 @@ function ActionPlaybook({rows, rangeText}){
         <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is clearly losing money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
       )}
 
-      {scales.length>0 && (
+      {aScales.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh scale"><span className="ar">▲</span>Scale these — proven winners with room to grow</div>
-          {scales.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>)}
+          {aScales.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
-      {kills.length>0 && (
+      {aKills.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh kill"><span className="ar">▼</span>Kill these — burning cash, reclaim the budget</div>
-          {kills.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText}/>)}
+          {aKills.map((a,i)=><PlaybookCard a={a} i={i} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
     </div>
@@ -6840,6 +6890,113 @@ function CorrelationPanel({rows, dashboard}){
   );
 }
 
+function todayIso(){ return new Date().toISOString().slice(0,10); }
+
+// ---- Close the loop: trace a logged decision forward to a real result ----
+// Pure data, no AI. Takes a decision (with the baseline snapshot stored the
+// moment Alex acted) and the daily series for that ad word, splits it on the
+// decision date, and measures what actually happened after. A kill is proven by
+// spend stopping; a scale by ROAS holding as the budget grew.
+function traceDecision(decision, dashboard){
+  const key = String(decision.decision_key||"").toLowerCase();
+  const base = decision.baseline || {};
+  const decidedIso = base.decidedIso || (decision.decided_at ? String(decision.decided_at).slice(0,10) : "");
+  const series = dailySeriesFor(dashboard, r=> String(r.keyword||"").toLowerCase()===key);
+  const before = series.filter(s=> decidedIso && s.iso <  decidedIso);
+  const after  = series.filter(s=> decidedIso && s.iso >= decidedIso);
+  const sum = (arr,f)=> arr.reduce((s,x)=>s+(f(x)||0),0);
+  const afterSpend = sum(after, s=>s.m.spend);
+  const afterRev   = sum(after, s=>s.m.collected);
+  const afterDays  = after.length;
+  const beforeDays = before.length;
+  const beforeDailySpend = beforeDays ? sum(before,s=>s.m.spend)/beforeDays : null;
+  const afterDailySpend  = afterDays ? afterSpend/afterDays : 0;
+  const afterRoas = afterSpend>0 ? afterRev/afterSpend : null;
+  const spendVals = series.map(s=>s.m.spend||0);
+
+  // Verdict in plain English.
+  let tone = "watch", text = "";
+  if(decision.action==="kill"){
+    if(afterDays===0){
+      tone="watch"; text="Watching — no fresh data since you turned it off. The trace fills in as new days sync.";
+    } else if(afterDailySpend <= (beforeDailySpend!=null ? beforeDailySpend*0.25 : 1)){
+      tone="good";
+      const wasRate = beforeDailySpend!=null ? fmtUsd(beforeDailySpend)+"/day" : "what it was burning";
+      text="Confirmed off — spend dropped from "+wasRate+" to "+fmtUsd(afterDailySpend)+"/day. The bleed stopped.";
+    } else {
+      tone="bad"; text="Still spending — "+fmtUsd(afterDailySpend)+"/day since you marked it killed. Did the ad actually get turned off?";
+    }
+  } else { // scale
+    if(afterDays===0){
+      tone="watch"; text="Watching — no fresh data since you scaled it. Check back as new days roll in.";
+    } else if(afterRoas==null){
+      tone="watch"; text="Spent "+fmtUsd(afterSpend)+" since you scaled, no traced revenue back yet — watching.";
+    } else if(base.roas!=null && afterRoas >= base.roas*0.8){
+      tone="good"; text="Holding — "+afterRoas.toFixed(1)+"× since you scaled, vs "+base.roas.toFixed(1)+"× before. Keep pushing.";
+    } else if(base.roas==null && afterRoas >= 2){
+      tone="good"; text="Strong — "+afterRoas.toFixed(1)+"× on the spend since you scaled it.";
+    } else {
+      tone="mid"; text="Slipped — "+afterRoas.toFixed(1)+"× since scaling"+(base.roas!=null?", down from "+base.roas.toFixed(1)+"×":"")+". Watch before adding more budget.";
+    }
+  }
+  return {key, base, decidedIso, before, after, afterSpend, afterRev, afterDays, beforeDailySpend, afterDailySpend, afterRoas, spendVals, tone, text};
+}
+
+// The tracker panel: every move Alex has logged, with its before→after trace.
+// This is the half that closes the loop — the page proves whether the decision
+// actually worked instead of just telling him what to do and forgetting.
+function DecisionTracker({decisions, dashboard, onUndo}){
+  const list = Array.isArray(decisions) ? decisions : [];
+  if(list.length===0) return null;
+  const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+  const daysAgo = (iso)=>{
+    if(!iso) return "";
+    const d = Math.round((Date.now() - new Date(iso+"T00:00:00").getTime())/86400000);
+    return d<=0 ? "today" : d===1 ? "yesterday" : d+" days ago";
+  };
+  const toneColor = {good:"var(--green)", bad:"var(--red)", mid:"var(--gold)", watch:"var(--text-4)"};
+
+  return (
+    <div className="ddt">
+      <div className="ddt-head">
+        <div className="ddt-k">Decisions you've made — are they working?</div>
+        <div className="ddt-h">Every move you marked done, traced forward to what actually happened. This is the loop closing.</div>
+      </div>
+      <div className="ddt-list">
+        {list.map((d)=>{
+          const t = traceDecision(d, dashboard);
+          const col = toneColor[t.tone] || "var(--text-4)";
+          return (
+            <div className={"ddt-card "+d.action} key={d.decision_key}>
+              <div className="ddt-top">
+                <span className={"ddt-badge "+d.action}>{d.action==="kill" ? "TURNED OFF" : "SCALED"}</span>
+                <span className="ddt-word">{cap(d.label||d.decision_key)}</span>
+                <span className="ddt-when">marked {daysAgo(t.decidedIso)}</span>
+                <button type="button" className="ddt-undo" onClick={()=>onUndo&&onUndo(d.decision_key)} title="Undo — put this move back on the action list">undo</button>
+              </div>
+
+              <div className="ddt-base">
+                <span>When you acted:</span>
+                <b>{fmtUsd(t.base.spend||0)}</b> spent · <b>{t.base.roas!=null?t.base.roas.toFixed(1)+"×":"—"}</b> ROAS · <b>{fmtNum(t.base.clients||0)}</b> client{(t.base.clients||0)===1?"":"s"}
+              </div>
+
+              <div className="ddt-result" style={{borderColor:"color-mix(in srgb,"+col+" 38%,var(--border-2))"}}>
+                <span className="ddt-dot" style={{background:col, boxShadow:"0 0 8px "+col}}></span>
+                <span className="ddt-verdict" style={{color:col}}>{t.text}</span>
+              </div>
+
+              <div className="ddt-spark">
+                <Sparkline values={t.spendVals} color={col} width={220} height={34}/>
+                <span className="ddt-sparklbl">daily spend{t.afterDays>0?` · ${t.afterDays} day${t.afterDays===1?"":"s"} since`:""}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, range, loading}){
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -6850,6 +7007,50 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       .map(r => withRoas(r, roasMap));
     return list.sort((a,b)=>b.spend-a.spend);
   }, [campaigns, roasMap]);
+
+  // ---- The decision feedback loop ----
+  // Logged moves live in Supabase via /api/ads/decisions, scoped to the account
+  // in view. One source of truth, lifted here so the action board (which hides
+  // acted moves) and the tracker (which traces them) never disagree.
+  const scope = (dashboard && dashboard.query && dashboard.query.account) || "all";
+  const [decisions, setDecisions] = useState([]);
+  useEffect(()=>{
+    let cancelled = false;
+    fetch("/api/ads/decisions?account="+encodeURIComponent(scope))
+      .then(r=>r.json())
+      .then(j=>{ if(!cancelled && j && Array.isArray(j.decisions)) setDecisions(j.decisions); })
+      .catch(()=>{});
+    return ()=>{ cancelled = true; };
+  }, [scope]);
+  const decByKey = useMemo(()=>{
+    const m = {}; decisions.forEach(d=>{ if(d && d.decision_key) m[d.decision_key]=d; }); return m;
+  }, [decisions]);
+  const onDecide = (a)=>{
+    const key = String(a.keyword||"").toLowerCase();
+    if(!key) return;
+    const baseline = {
+      spend: Math.round(a.spend||0),
+      tracedRev: Math.round(a.tracedRev||0),
+      roas: a.roas==null ? null : Math.round(a.roas*100)/100,
+      leads: Math.round(a.leads||0),
+      booked: Math.round(a.booked||0),
+      clients: Math.round(a.clients||0),
+      decidedIso: todayIso(),
+    };
+    // Optimistic: hide the move instantly, then confirm with the server.
+    const optimistic = { account:scope, decision_key:key, label:a.keyword, action:a.type, source:"playbook", baseline, status:"acting", decided_at:new Date().toISOString() };
+    setDecisions(d=>[optimistic, ...d.filter(x=>x.decision_key!==key)]);
+    fetch("/api/ads/decisions", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ account:scope, decisionKey:key, label:a.keyword, action:a.type, source:"playbook", baseline }),
+    }).then(r=>r.json()).then(j=>{
+      if(j && j.decision) setDecisions(d=>[j.decision, ...d.filter(x=>x.decision_key!==key)]);
+    }).catch(()=>{});
+  };
+  const onUndo = (key)=>{
+    setDecisions(d=>d.filter(x=>x.decision_key!==key));
+    fetch("/api/ads/decisions?account="+encodeURIComponent(scope)+"&key="+encodeURIComponent(key), {method:"DELETE"}).catch(()=>{});
+  };
 
   if(loading) return <div className="ddr-empty">Loading the numbers…</div>;
   if(!rows.length) return <div className="ddr-empty">No ad activity in this date range. Try widening the dates above.</div>;
@@ -6926,8 +7127,11 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
       <DataHealth dashboard={dashboard}/>
 
-      {/* Do This Next — the simple, ROAS-first action board */}
-      <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)}/>
+      {/* Do This Next — the simple, ROAS-first action board (acted moves hidden) */}
+      <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
+
+      {/* Close the loop — moves Alex marked done, traced to a real result */}
+      <DecisionTracker decisions={decisions} dashboard={dashboard} onUndo={onUndo}/>
 
       {/* Real profit return (LTGP:CAC) — the money-first hero */}
       {profitReturn!=null && (
