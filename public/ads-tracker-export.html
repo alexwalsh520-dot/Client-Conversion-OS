@@ -5289,19 +5289,31 @@ function MessagingInsights({dashboard}){
     }))
     .filter(a => a.adId && a.imageUrl), [adRoas]);
 
+  // Only read + analyze ads with enough spend to mean something. Reading the
+  // words on all ~170 ads is slow and pointless — most have spent too little to
+  // teach us anything. We focus on the statistically relevant ones (the same
+  // $100+ spend bar the ROAS uses). If nothing's crossed that bar yet, fall back
+  // to the top few by spend so the panel still has something to say. Hovering any
+  // individual ad still reads it on demand, so nothing is lost.
+  const relevantAds = useMemo(()=>{
+    const reliable = readableAds.filter(a => a.roasReliable);
+    if(reliable.length) return reliable;
+    return [...readableAds].sort((a,b)=>b.adSpend-a.adSpend).slice(0,8);
+  }, [readableAds]);
+
   const [insight, setInsight] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | reading | thinking | ready | empty
   const [progress, setProgress] = useState({read:0, total:0});
 
   useEffect(()=>{
     let cancelled = false;
-    if(!dashboard || dashboard.mock || readableAds.length === 0){
+    if(!dashboard || dashboard.mock || relevantAds.length === 0){
       setPhase("empty"); setInsight(null);
       return;
     }
 
-    const adsForBackfill = readableAds.map(a => ({adId:a.adId, imageUrl:a.imageUrl, clientKey:a.clientKey}));
-    const adsForInsight = readableAds.map(a => ({
+    const adsForBackfill = relevantAds.map(a => ({adId:a.adId, imageUrl:a.imageUrl, clientKey:a.clientKey}));
+    const adsForInsight = relevantAds.map(a => ({
       adId:a.adId, adName:a.adName, clientKey:a.clientKey,
       adSpend:a.adSpend, collectedRevenue:a.collectedRevenue,
       collectedRoi:a.collectedRoi, newClients:a.newClients, roasReliable:a.roasReliable,
@@ -5342,7 +5354,7 @@ function MessagingInsights({dashboard}){
           data = await res.json().catch(()=>null);
         }catch(_e){ break; }
         if(cancelled || !data) break;
-        const total = readableAds.length;
+        const total = relevantAds.length;
         setProgress({read: Math.max(0, total - (data.remaining||0)), total});
         if(!data.remaining || data.remaining <= 0) break;
       }
@@ -5358,7 +5370,7 @@ function MessagingInsights({dashboard}){
 
     run();
     return ()=>{ cancelled = true; };
-  }, [readableAds, scope, dashboard]);
+  }, [relevantAds, scope, dashboard]);
 
   if(!dashboard || dashboard.mock || readableAds.length === 0) return null;
 

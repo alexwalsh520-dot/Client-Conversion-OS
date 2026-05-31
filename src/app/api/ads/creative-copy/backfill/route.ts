@@ -4,9 +4,12 @@ import { getOrExtractCreativeCopy, findUnreadAdIds } from "@/lib/ads-tracker/cre
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// How many ads to read per call — bounded so a serverless invocation never
-// times out. The client calls repeatedly until `remaining` hits 0.
-const BATCH = 4;
+// How many ads to read per call. The reads run concurrently (one Claude vision
+// call each), so the whole batch finishes in roughly the time of a single read
+// — that's what keeps it fast. Bounded so a serverless invocation (60s) never
+// times out even if a few images are slow. The client calls repeatedly until
+// `remaining` hits 0, so a typical ~30 relevant ads clear in 3-4 quick calls.
+const BATCH = 8;
 
 type AdInput = { adId?: unknown; imageUrl?: unknown; clientKey?: unknown };
 
@@ -34,16 +37,19 @@ export async function POST(req: NextRequest) {
     const todo = ads.filter((a) => unread.has(a.adId));
     const batch = todo.slice(0, BATCH);
 
+    // Read the whole batch at once. One slow/bad image can't hold up the others,
+    // and the call finishes in about the time of the single slowest read.
+    const results = await Promise.allSettled(
+      batch.map((ad) => getOrExtractCreativeCopy(ad))
+    );
     let processed = 0;
-    for (const ad of batch) {
-      try {
-        await getOrExtractCreativeCopy(ad);
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
         processed += 1;
-      } catch (err) {
-        // One bad image shouldn't stop the rest — log and move on.
-        console.error("Backfill read failed for ad", ad.adId, err);
+      } else {
+        console.error("Backfill read failed for ad", batch[i].adId, r.reason);
       }
-    }
+    });
 
     return NextResponse.json({
       processed,
