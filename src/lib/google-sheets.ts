@@ -249,14 +249,18 @@ function getOfferForRow(
 
 /**
  * Fetch raw values from a single monthly tab via Google Sheets API v4.
- * Range: A8:Z1000 (row 8 = headers, rows 9+ = data).
+ * Range: A8:Z (row 8 = headers, rows 9+ = data). The row bound is left open
+ * on purpose — a fixed ceiling (e.g. row 1000) would silently drop every sale
+ * past that row in a high-volume month, the exact kind of invisible gap that
+ * once hid two-thirds of a month's revenue. The API only returns populated
+ * rows, so an open range costs nothing on a quiet month.
  */
 async function fetchTabValues(
   tab: string
 ): Promise<(string | undefined)[][]> {
   const sheetId = getSheetId();
   const apiKey = getApiKey();
-  const range = encodeURIComponent(`${tab}!A8:Z1000`);
+  const range = encodeURIComponent(`${tab}!A8:Z`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
   const response = await fetch(url, { cache: "no-store" });
@@ -288,7 +292,7 @@ async function fetchSubscriptionTabValues(
 ): Promise<(string | undefined)[][]> {
   const sheetId = getSheetId();
   const apiKey = getApiKey();
-  const range = encodeURIComponent(`${tab}!AG4:AN1000`);
+  const range = encodeURIComponent(`${tab}!AG4:AN`);
   const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
 
   const response = await fetch(url, { cache: "no-store" });
