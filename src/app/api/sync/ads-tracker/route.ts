@@ -9,6 +9,7 @@ import {
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, keywordFromAdName } from "@/lib/ads-tracker/normalize";
 import { parseTargeting } from "@/lib/ads-tracker/targeting";
+import { storeCreativeImagesBatch } from "@/lib/ads-tracker/creative-image";
 import { CREATORS, firstEnv, normalizeAdAccountId } from "@/lib/creators";
 
 const ACCOUNTS = CREATORS;
@@ -586,6 +587,7 @@ export async function POST(req: NextRequest) {
     statusRows?: number;
     statusRowsUpdated?: number;
     targetingStored?: number;
+    imagesStored?: number;
     dates?: Array<{
       date: string;
       rowCount: number;
@@ -684,6 +686,25 @@ export async function POST(req: NextRequest) {
         console.warn(`[ads-tracker-sync] Targeting sync skipped for ${account.key}`, error);
       }
 
+      // Durable creative images — best-effort, never affects the money sync.
+      // Meta's preview URLs are fresh right now, so this is the one moment we can
+      // reliably grab the bytes before they expire. Only ads we haven't stored
+      // yet get fetched, so re-syncs stay cheap.
+      let imagesStored = 0;
+      try {
+        const imageInputs = statusRows.map((status) => {
+          const preview = creativePreviewFromEntity(status);
+          return {
+            adId: status.id || "",
+            imageUrl: preview?.image_url || preview?.thumbnail_url || null,
+            clientKey: account.key,
+          };
+        });
+        imagesStored = await storeCreativeImagesBatch(imageInputs);
+      } catch (error) {
+        console.warn(`[ads-tracker-sync] Creative image store skipped for ${account.key}`, error);
+      }
+
       results.push({
         account: account.key,
         fetched: insights.length,
@@ -694,6 +715,7 @@ export async function POST(req: NextRequest) {
         statusRows: statusRows.length,
         statusRowsUpdated,
         targetingStored,
+        imagesStored,
         dates: replacement.dates,
       });
     } catch (error) {

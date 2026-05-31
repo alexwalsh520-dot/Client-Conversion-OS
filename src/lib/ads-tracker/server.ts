@@ -4203,12 +4203,63 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   // if the copy store is empty or unavailable.
   await attachCreativeCopy(db, payload);
 
+  // Swap each ad's expiring Facebook preview URL for the durable copy we stored in
+  // our own bucket at sync time, so the real creative shows on any date range.
+  // Best-effort — leaves the live Facebook URL in place when nothing is stored.
+  await attachStoredImages(db, payload);
+
   // Attach the audience each ad ran against (age range, # interests, placements,
   // broad vs lookalike …) so targeting becomes a correlatable variable next to
   // copy and cost. Best-effort — never blocks the dashboard.
   await attachTargeting(db, payload);
 
   return payload;
+}
+
+// Replaces each ad's preview URLs with the stable copy we stored at sync time.
+// Facebook's preview URLs expire within days; the stored URL never does, so older
+// date ranges still show the real creative. Best-effort only — a missing stored
+// image leaves the live Facebook URL untouched as the fallback.
+async function attachStoredImages(
+  db: ReturnType<typeof getServiceSupabase>,
+  payload: {
+    adRoas?: Array<{
+      adId?: string | null;
+      previewImageUrl?: string | null;
+      previewThumbnailUrl?: string | null;
+    }>;
+  } & Record<string, unknown>
+) {
+  try {
+    const rows = Array.isArray(payload.adRoas) ? payload.adRoas : [];
+    const adIds = Array.from(
+      new Set(rows.map((r) => (r.adId ? String(r.adId) : "")).filter(Boolean))
+    );
+    if (adIds.length === 0) return;
+
+    const storedByAd = new Map<string, string>();
+    for (let i = 0; i < adIds.length; i += 200) {
+      const chunk = adIds.slice(i, i + 200);
+      const { data } = await db
+        .from("ad_creative_image")
+        .select("ad_id,stored_image_url")
+        .in("ad_id", chunk);
+      (data || []).forEach((row: { ad_id: string; stored_image_url: string | null }) => {
+        if (row.stored_image_url) storedByAd.set(row.ad_id, row.stored_image_url);
+      });
+    }
+
+    for (const row of rows) {
+      const id = row.adId ? String(row.adId) : "";
+      const stored = id ? storedByAd.get(id) : undefined;
+      if (stored) {
+        row.previewImageUrl = stored;
+        row.previewThumbnailUrl = stored;
+      }
+    }
+  } catch (error) {
+    console.error("attachStoredImages failed (non-fatal):", error);
+  }
 }
 
 // Reads the stored on-image text for every ad in the payload and hangs it on the
