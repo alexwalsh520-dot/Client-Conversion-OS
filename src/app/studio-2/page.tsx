@@ -1551,16 +1551,21 @@ function drawArtwork(
   const isVideoCreative = (creative.mediaKind || "image") === "video";
   const hasVideoMedia =
     media && typeof HTMLVideoElement !== "undefined" && media instanceof HTMLVideoElement;
+  const canDrawVideoMedia =
+    hasVideoMedia &&
+    media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    media.videoWidth > 0 &&
+    media.videoHeight > 0;
 
-  if (!isVideoCreative || media) {
+  if (!isVideoCreative || !media || canDrawVideoMedia) {
     ctx.fillStyle = CREATIVE_BG;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
 
   if (media) {
-    if (hasVideoMedia) {
+    if (canDrawVideoMedia) {
       drawCoverVideo(ctx, media, creative.imageTransform);
-    } else {
+    } else if (!hasVideoMedia) {
       drawCoverImage(ctx, media as HTMLImageElement, creative.imageTransform);
     }
   }
@@ -2364,6 +2369,7 @@ export default function Studio2Page() {
   const dragRef = useRef<DragState | null>(null);
   const hydratedRef = useRef(false);
   const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoPendingSeekRef = useRef<number | null>(null);
   const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(true);
   const [videoPreviewDuration, setVideoPreviewDuration] = useState(0);
   const [videoPreviewTime, setVideoPreviewTime] = useState(0);
@@ -2905,7 +2911,8 @@ export default function Studio2Page() {
     const ctx = canvas.getContext("2d")!;
     const overlayCtx = overlay.getContext("2d")!;
     if (currentCreative) {
-      drawArtwork(ctx, currentCreative, currentImage, dpr, editingBlockId);
+      const liveVideo = (currentCreative.mediaKind || "image") === "video" ? videoPreviewRef.current : null;
+      drawArtwork(ctx, currentCreative, liveVideo || currentImage, dpr, editingBlockId);
     } else {
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2928,6 +2935,22 @@ export default function Studio2Page() {
   useEffect(() => {
     renderPreview();
   }, [renderPreview, viewScale]);
+
+  useEffect(() => {
+    if ((currentCreative?.mediaKind || "image") !== "video") return;
+    renderPreview();
+  }, [currentCreative?.id, currentCreative?.mediaKind, renderPreview, videoPreviewTime]);
+
+  useEffect(() => {
+    if ((currentCreative?.mediaKind || "image") !== "video" || !videoPreviewPlaying) return;
+    let frame = 0;
+    const tick = () => {
+      renderPreview();
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentCreative?.id, currentCreative?.mediaKind, renderPreview, videoPreviewPlaying]);
 
   useEffect(() => {
     if (editorSidebarMode !== "edit" || !currentCreative || (currentCreative.mediaKind || "image") === "video") return;
@@ -3221,17 +3244,25 @@ export default function Studio2Page() {
 
   const seekVideoPreview = useCallback((time: number) => {
     const video = videoPreviewRef.current;
-    if (!video) return;
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : videoPreviewDuration;
+    const duration = video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : videoPreviewDuration;
     const nextTime = clamp(time, 0, Math.max(duration, 0));
-    video.currentTime = nextTime;
+    videoPendingSeekRef.current = nextTime;
+    if (video && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      try {
+        if (Math.abs(video.currentTime - nextTime) > 0.015) video.currentTime = nextTime;
+      } catch {
+        // The pending seek is applied as soon as metadata/data is ready.
+      }
+    }
     setVideoPreviewTime(nextTime);
-  }, [videoPreviewDuration]);
+    window.requestAnimationFrame(() => renderPreview());
+  }, [renderPreview, videoPreviewDuration]);
 
   const toggleVideoPlayback = useCallback(() => {
     const video = videoPreviewRef.current;
     if (!video || !currentCreative || (currentCreative.mediaKind || "image") !== "video") return;
     if (video.paused) {
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) video.load();
       void video.play().then(() => setVideoPreviewPlaying(true)).catch(() => undefined);
       return;
     }
@@ -10205,7 +10236,7 @@ export default function Studio2Page() {
 	                  muted={currentCreative.videoMuted ?? true}
 	                  autoPlay
 	                  playsInline
-	                  preload="metadata"
+	                  preload="auto"
 	                  onLoadedMetadata={(event) => {
 	                    const video = event.currentTarget;
 	                    const duration = Number.isFinite(video.duration) ? video.duration : 0;
@@ -10213,14 +10244,41 @@ export default function Studio2Page() {
 	                    const start = getFirstVideoSegmentStart(currentCreative, duration);
 	                    video.volume = clamp(currentCreative.videoVolume ?? 1, 0, 1);
 	                    video.muted = currentCreative.videoMuted ?? true;
-	                    if (!findVideoSegmentAtTime(getEnabledVideoSegments(currentCreative, duration), video.currentTime)) {
-	                      video.currentTime = start;
+	                    const pendingSeek = videoPendingSeekRef.current;
+	                    const targetTime = typeof pendingSeek === "number"
+	                      ? clamp(pendingSeek, 0, duration || pendingSeek)
+	                      : findVideoSegmentAtTime(getEnabledVideoSegments(currentCreative, duration), video.currentTime)
+	                        ? video.currentTime
+	                        : start;
+	                    try {
+	                      video.currentTime = targetTime;
+	                    } catch {
+	                      videoPendingSeekRef.current = targetTime;
 	                    }
-	                    setVideoPreviewTime(video.currentTime || start);
+	                    setVideoPreviewTime(targetTime);
+	                    window.requestAnimationFrame(() => renderPreview());
 	                  }}
 	                  onLoadedData={(event) => {
 	                    setVideoPreviewPlaying(!event.currentTarget.paused);
-	                    void event.currentTarget.play().catch(() => undefined);
+	                    window.requestAnimationFrame(() => renderPreview());
+	                    if (videoPreviewPlaying) void event.currentTarget.play().catch(() => undefined);
+	                  }}
+	                  onCanPlay={(event) => {
+	                    const pendingSeek = videoPendingSeekRef.current;
+	                    if (typeof pendingSeek === "number") {
+	                      try {
+	                        event.currentTarget.currentTime = pendingSeek;
+	                        videoPendingSeekRef.current = null;
+	                      } catch {
+	                        // Keep it pending for the next ready event.
+	                      }
+	                    }
+	                    window.requestAnimationFrame(() => renderPreview());
+	                  }}
+	                  onSeeked={(event) => {
+	                    videoPendingSeekRef.current = null;
+	                    setVideoPreviewTime(event.currentTarget.currentTime || 0);
+	                    window.requestAnimationFrame(() => renderPreview());
 	                  }}
 	                  onTimeUpdate={(event) => {
 	                    const video = event.currentTarget;
@@ -10242,6 +10300,7 @@ export default function Studio2Page() {
 	                    if (jumped || now - videoTimeUpdateRef.current > 140) {
 	                      videoTimeUpdateRef.current = now;
 	                      setVideoPreviewTime(video.currentTime || 0);
+	                      window.requestAnimationFrame(() => renderPreview());
 	                    }
 	                  }}
 	                  onPlay={(event) => {
@@ -10252,8 +10311,16 @@ export default function Studio2Page() {
 	                      video.currentTime = segments[0]?.start ?? 0;
 	                    }
 	                    setVideoPreviewPlaying(true);
+	                    window.requestAnimationFrame(() => renderPreview());
 	                  }}
-	                  onPause={() => setVideoPreviewPlaying(false)}
+	                  onPause={() => {
+	                    setVideoPreviewPlaying(false);
+	                    window.requestAnimationFrame(() => renderPreview());
+	                  }}
+	                  onError={() => {
+	                    setVideoPreviewPlaying(false);
+	                    window.requestAnimationFrame(() => renderPreview());
+	                  }}
                   style={{
                     position: "absolute",
                     inset: 0,
@@ -12716,7 +12783,19 @@ function VideoTrimControls({
       event.preventDefault();
       event.stopPropagation();
       playheadDragRef.current = true;
-      event.currentTarget.setPointerCapture?.(event.pointerId);
+      const move = (moveEvent: PointerEvent) => {
+        if (!playheadDragRef.current) return;
+        onPreviewTime(getTimeFromClientX(moveEvent.clientX));
+      };
+      const stop = () => {
+        playheadDragRef.current = false;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", stop);
+        window.removeEventListener("pointercancel", stop);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", stop);
+      window.addEventListener("pointercancel", stop);
       onPreviewTime(getTimeFromClientX(event.clientX));
     },
     [canTrim, getTimeFromClientX, onPreviewTime]
