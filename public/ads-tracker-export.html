@@ -949,6 +949,102 @@
   .modal.huge{width:min(1080px,calc(100vw - 40px));max-height:84vh;display:flex;flex-direction:column}
   .modal.huge .modal-body{overflow:auto;padding:14px 18px 18px}
   .modal-backdrop.tall{align-items:flex-start;padding-top:7vh}
+
+  /* ---- Custom in-app picker (replaces the native OS <select>) ---- */
+  .pk{position:relative;width:100%}
+  .pk-btn{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border-2);border-radius:8px;font-size:13px;color:var(--text);text-align:left;transition:border-color .14s,background .14s}
+  .pk-btn:hover{border-color:var(--gold-dim)}
+  .pk.open .pk-btn{border-color:var(--gold);background:var(--panel)}
+  .pk-val{flex:1;font-weight:560;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pk-chev{width:9px;height:9px;flex-shrink:0;color:var(--text-3);transition:transform .16s ease,color .14s}
+  .pk.open .pk-chev{transform:rotate(180deg);color:var(--gold)}
+  .pk-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;width:max-content;max-width:340px;max-height:340px;overflow-y:auto;background:var(--panel);border:1px solid var(--border-2);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.2);padding:5px;z-index:60;animation:pk-pop .15s cubic-bezier(.2,.9,.3,1)}
+  html.light .pk-menu{box-shadow:0 18px 44px rgba(0,0,0,.16)}
+  @keyframes pk-pop{from{opacity:0;transform:translateY(-5px) scale(.985)}to{opacity:1;transform:none}}
+  .pk-grp{font-size:8.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-4);font-weight:700;padding:9px 11px 4px}
+  .pk-grp:first-child{padding-top:4px}
+  .pk-opt{display:flex;align-items:center;gap:9px;width:100%;padding:8px 11px;border-radius:7px;font-size:12.5px;color:var(--text-2);text-align:left;transition:background .1s,color .1s}
+  .pk-opt:hover{background:var(--row-hover);color:var(--text)}
+  .pk-opt.on{color:var(--text);background:color-mix(in srgb,var(--gold) 12%,transparent)}
+  .pk-check{width:13px;flex-shrink:0;color:var(--gold);font-size:11px;font-weight:800;text-align:center}
+  .pk-opt-l{flex:1;white-space:nowrap}
+  .pk-opt-m{font-size:10px;color:var(--text-4);font-variant-numeric:tabular-nums}
+
+  /* ---- Messaging: what your ads SAY → what it EARNS ---- */
+  .mi{display:flex;flex-direction:column;gap:14px}
+  /* Verdict hero */
+  .mi-verdict{position:relative;overflow:hidden;border:1px solid color-mix(in srgb,var(--gold) 26%,var(--border-2));border-radius:14px;padding:18px 20px;
+    background:radial-gradient(120% 140% at 0% 0%, color-mix(in srgb,var(--gold) 9%,var(--panel)) 0%, var(--panel) 55%)}
+  .mi-verdict .ey{font-size:9px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);font-weight:700;margin-bottom:7px;display:flex;align-items:center;gap:7px}
+  .mi-verdict .ey .pulse{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 0 color-mix(in srgb,var(--gold) 60%,transparent);animation:mi-pulse 2.4s infinite}
+  @keyframes mi-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--gold) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .mi-verdict .hl{font-size:18.5px;line-height:1.42;font-weight:680;letter-spacing:-0.015em;color:var(--text)}
+  .mi-take{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+  .mi-take .tk{font-size:11.5px;line-height:1.35;color:var(--text-2);background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;max-width:100%}
+  .mi-take .tk b{color:var(--text)}
+  .mi-conf{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:12px}
+
+  /* Head-to-head: best vs worst, from real numbers */
+  .mi-vs{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  @media(max-width:680px){.mi-vs{grid-template-columns:1fr}}
+  .mi-side{position:relative;border-radius:13px;padding:15px 16px 14px;border:1px solid var(--border-2);background:var(--panel);overflow:hidden;transition:transform .12s,box-shadow .16s}
+  .mi-side:hover{transform:translateY(-2px)}
+  .mi-side.win{border-color:color-mix(in srgb,var(--green) 38%,transparent);background:linear-gradient(170deg,color-mix(in srgb,var(--green) 9%,var(--panel)),var(--panel) 62%)}
+  .mi-side.lose{border-color:color-mix(in srgb,var(--red) 36%,transparent);background:linear-gradient(170deg,color-mix(in srgb,var(--red) 9%,var(--panel)),var(--panel) 62%)}
+  .mi-side .tag{font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:11px}
+  .mi-side.win .tag{color:var(--green)} .mi-side.lose .tag{color:var(--red)}
+  .mi-side .tag .ar{font-size:12px}
+  .mi-quote{font-size:14.5px;line-height:1.46;font-weight:560;color:var(--text);letter-spacing:-0.01em;min-height:1.46em}
+  .mi-quote .qm{color:var(--text-4);font-weight:400}
+  .mi-side .nm{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);font-weight:600;margin-top:9px}
+  .mi-bignum{display:flex;align-items:baseline;gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+  .mi-bignum .r{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:500;letter-spacing:-0.02em;line-height:1}
+  .mi-side.win .mi-bignum .r{color:var(--green)} .mi-side.lose .mi-bignum .r{color:var(--red)}
+  .mi-bignum .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-4);font-weight:600}
+  .mi-side .strip{display:flex;gap:16px;margin-top:11px}
+  .mi-side .strip .s{display:flex;flex-direction:column;gap:1px}
+  .mi-side .strip .s .v{font-size:13px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums}
+  .mi-side .strip .s .l{font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);font-weight:600}
+
+  /* Explore — the depth layer, opens on demand */
+  .mi-explore{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
+  .mi-exhead{display:flex;align-items:center;gap:12px;width:100%;padding:13px 15px;text-align:left;transition:background .12s}
+  .mi-exhead:hover{background:var(--row-hover)}
+  .mi-exhead .t{flex:1}
+  .mi-exhead .t .h{font-size:13px;font-weight:620;color:var(--text)}
+  .mi-exhead .t .s{font-size:11px;color:var(--text-4);margin-top:2px;font-variant-numeric:tabular-nums}
+  .mi-exhead .chev{color:var(--text-3);font-size:11px;transition:transform .18s}
+  .mi-explore.open .mi-exhead .chev{transform:rotate(90deg);color:var(--gold)}
+  .mi-sort{display:flex;gap:5px;padding:0 15px 12px}
+  .mi-sort .sb{font-size:10.5px;color:var(--text-3);padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--panel-2);transition:all .12s}
+  .mi-sort .sb:hover{color:var(--text-2);border-color:var(--border-2)}
+  .mi-sort .sb.on{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,transparent);background:color-mix(in srgb,var(--gold) 10%,transparent)}
+  .mi-cards{display:flex;flex-direction:column}
+  .mi-c{display:grid;grid-template-columns:1fr 188px;gap:16px;align-items:center;padding:13px 15px;border-top:1px solid var(--border);animation:mi-rise .32s both}
+  @keyframes mi-rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .mi-c.dim{opacity:.55}
+  .mi-c-words{font-size:13px;line-height:1.5;color:var(--text-1,var(--text))}
+  .mi-c-words .nm{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);font-weight:700;margin-bottom:4px}
+  .mi-c-right{display:flex;flex-direction:column;gap:7px}
+  .mi-roasrow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .mi-roasrow .rv{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:500;letter-spacing:-0.01em}
+  .mi-roasrow .rv.good{color:var(--green)} .mi-roasrow .rv.bad{color:var(--red)} .mi-roasrow .rv.mid{color:var(--gold)} .mi-roasrow .rv.na{color:var(--text-4)}
+  .mi-roasrow .rl{font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);font-weight:600}
+  /* ROAS bar with a breakeven (1×) marker — instant money-or-not read */
+  .mi-bar{position:relative;height:7px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border);overflow:visible}
+  .mi-bar .fill{position:absolute;top:0;left:0;bottom:0;border-radius:99px;transition:width .5s cubic-bezier(.3,.9,.3,1)}
+  .mi-bar .fill.good{background:linear-gradient(90deg,var(--green-dim),var(--green))}
+  .mi-bar .fill.bad{background:linear-gradient(90deg,var(--red-dim),var(--red))}
+  .mi-bar .be{position:absolute;top:-3px;bottom:-3px;width:1.5px;background:var(--text-3);opacity:.8}
+  .mi-bar .be:after{content:"1×";position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:7.5px;color:var(--text-4);font-weight:700;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+  .mi-c-meta{display:flex;gap:13px}
+  .mi-c-meta .s{display:flex;flex-direction:column;gap:0}
+  .mi-c-meta .s .v{font-size:11.5px;font-weight:620;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .mi-c-meta .s .l{font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-4);font-weight:600}
+  .mi-c-early{font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--text-4);border:1px solid var(--border);border-radius:99px;padding:2px 8px;align-self:flex-start}
+  @media(max-width:680px){.mi-c{grid-template-columns:1fr}}
+  .mi-quiet{padding:11px 15px;border-top:1px solid var(--border);font-size:11px;color:var(--text-4)}
+  .mi-loading{display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:11px;background:var(--bg-2,var(--panel-2));border:1px solid var(--border);color:var(--text-3);font-size:12.5px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -5386,6 +5482,8 @@ function MessagingInsights({dashboard, range}){
   const [insight, setInsight] = useState(null);
   const [aiPhase, setAiPhase] = useState("idle"); // idle | working | ready | none
   const [progress, setProgress] = useState({read:0, total:0});
+  const [exploreOpen, setExploreOpen] = useState(false);
+  const [sortBy, setSortBy] = useState("roas"); // roas | spend | clients
 
   useEffect(()=>{
     let cancelled = false;
@@ -5448,91 +5546,166 @@ function MessagingInsights({dashboard, range}){
   if(analyzed.length === 0 && pending === 0) return null;
 
   const reliableCount = analyzed.filter(a=>a.reliable).length;
-  const evidenceSpend = analyzed.reduce((s,a)=>s+a.spend,0);
-  const shown = analyzed.slice(0, 10);
-  const roasCls = (a)=> !a.reliable ? "" : a.roas>=2 ? "good" : a.roas<1 ? "bad" : "";
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
+  const quote = (s, n)=> { const t=String(s||"").trim(); return t.length>n ? t.slice(0,n).trim()+"…" : t; };
+
+  // Head-to-head, computed from REAL numbers — no AI needed, never wrong.
+  // Best vs worst by ROAS among ads with enough spend AND revenue to compare.
+  // (Plain computation, not a hook — it runs after the early returns above.)
+  const ranked = [...analyzed.filter(a=> a.reliable && a.revenue>0)].sort((a,b)=>b.roas-a.roas);
+  const best = ranked.length ? ranked[0] : null;
+  const worst = ranked.length>1 ? ranked[ranked.length-1] : null;
+  const haveVs = best && worst && best.adId!==worst.adId;
+
+  // One scale for every ROAS bar + the breakeven (1×) marker, so they line up.
+  const maxRoas = Math.max(4, ...analyzed.filter(a=>a.reliable&&a.revenue>0).map(a=>a.roas));
+  const scale = (v)=> Math.max(0, Math.min(100, (v/maxRoas)*100));
+  const bePos = scale(1);
+  const roasCls = (a)=> !(a.reliable && a.revenue>0) ? "na" : a.roas>=2 ? "good" : a.roas<1 ? "bad" : "mid";
+  const roasTxt = (a)=> (a.reliable && a.revenue>0) ? a.roas.toFixed(1)+"×" : "—";
+
+  // The depth layer: reliable ads sorted the way Alex asks, then the "too early" ones quietly after.
+  const sortKey = sortBy==="spend" ? (a=>a.spend) : sortBy==="clients" ? (a=>a.clients) : (a=> a.revenue>0?a.roas:-1);
+  const reliableAds = [...analyzed.filter(a=>a.reliable)].sort((a,b)=>sortKey(b)-sortKey(a));
+  const earlyAds = [...analyzed.filter(a=>!a.reliable)].sort((a,b)=>b.spend-a.spend);
 
   const conf = insight && insight.confidence ? String(insight.confidence) : null;
   const confColor = conf==="high" ? "var(--green)" : conf==="medium" ? "var(--gold)" : "var(--text-4)";
   const takeaways = insight && Array.isArray(insight.takeaways) ? insight.takeaways.filter(Boolean) : [];
 
+  // The headline: AI's if we have it; otherwise a plain, defensible read of the gap.
+  const headline = (insight && insight.headline) ? insight.headline
+    : haveVs ? `Your best-performing words returned ${best.roas.toFixed(1)}× — your worst, ${worst.roas.toFixed(1)}×. Same budget, different message.`
+    : best ? `Your top ad is returning ${best.roas.toFixed(1)}× on ${fmtUsd(best.spend)}. Keep feeding what's working.`
+    : "Reading the words on your ads and tying them to the money.";
+
+  const card = (a, dim)=> (
+    <div className={"mi-c"+(dim?" dim":"")} key={a.adId}>
+      <div className="mi-c-words">
+        {a.adName ? <span className="nm">{cap(a.adName)}{a.clientKey?" · "+creatorName(a.clientKey):""}</span> : null}
+        “{quote(a.words, 220)}”
+      </div>
+      <div className="mi-c-right">
+        {dim ? (
+          <>
+            <span className="mi-c-early">too early</span>
+            <div className="mi-c-meta">
+              <div className="s"><span className="v">{fmtUsd(a.spend)}</span><span className="l">spend</span></div>
+              <div className="s"><span className="v">{fmtNum(a.clients)}</span><span className="l">clients</span></div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mi-roasrow">
+              <span className={"rv "+roasCls(a)}>{roasTxt(a)}</span>
+              <span className="rl">ROAS</span>
+            </div>
+            <div className="mi-bar">
+              <div className={"fill "+(a.roas>=1?"good":"bad")} style={{width:scale(a.revenue>0?a.roas:0)+"%"}}></div>
+              <div className="be" style={{left:bePos+"%"}}></div>
+            </div>
+            <div className="mi-c-meta">
+              <div className="s"><span className="v">{fmtUsd(a.spend)}</span><span className="l">spend</span></div>
+              <div className="s"><span className="v">{a.revenue>0?fmtUsd(a.revenue):"—"}</span><span className="l">revenue</span></div>
+              <div className="s"><span className="v">{fmtNum(a.clients)}</span><span className="l">clients</span></div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="ddr-block msg-insights">
       <div className="ddr-blabel">
-        <span className="l">What your messaging is telling us</span>
-        <span className="m">the actual words on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
+        <span className="l">What your words are earning</span>
+        <span className="m">the actual copy on your ads, tied to the money{range?" · "+rangeLabel(range):""}</span>
       </div>
 
-      {/* AI read — layered on top, never blocks the evidence below */}
-      {insight ? (
-        <div className="msg-card">
-          {insight.headline && <div className="msg-headline">{insight.headline}</div>}
-          <div className="msg-grid">
-            {insight.winning_message && (
-              <div className="msg-col win">
-                <div className="msg-col-h">What's working</div>
-                <div className="msg-col-b">{insight.winning_message}</div>
-              </div>
-            )}
-            {insight.losing_message && (
-              <div className="msg-col lose">
-                <div className="msg-col-h">What's burning money</div>
-                <div className="msg-col-b">{insight.losing_message}</div>
-              </div>
-            )}
-          </div>
+      <div className="mi">
+        {/* Verdict hero — the one-line read, certain and calm */}
+        <div className="mi-verdict">
+          <div className="ey"><span className="pulse"></span>The read</div>
+          <div className="hl">{headline}</div>
           {takeaways.length>0 && (
-            <ul className="msg-take">{takeaways.map((t,i)=>(<li key={i}>{t}</li>))}</ul>
+            <div className="mi-take">
+              {takeaways.slice(0,4).map((t,i)=>(<span className="tk" key={i}>{t}</span>))}
+            </div>
           )}
-          <div className="msg-foot">
-            {conf && <span className="msg-conf" style={{color:confColor}}>● {conf} confidence</span>}
-            <span className="msg-foot-note">read from {reliableCount} ad{reliableCount===1?"":"s"} with enough spend to trust · every line below is the real number</span>
-          </div>
+          {conf && <div className="mi-conf" style={{color:confColor}}>● {conf} confidence{!insight?"":""}</div>}
+          {!insight && aiPhase==="working" && (
+            <div className="mi-conf" style={{color:"var(--text-4)"}}>
+              {progress.total>0 ? `reading the words… ${progress.read} of ${progress.total}` : "writing the deeper read…"}
+            </div>
+          )}
         </div>
-      ) : aiPhase==="working" ? (
-        <div className="msg-loading">
-          <span className="msg-spin" aria-hidden="true"></span>
-          {progress.total>0
-            ? `Reading the words on your ads… ${progress.read} of ${progress.total}. The proof table below is already live.`
-            : "Writing the plain-English read of your messaging. The proof table below is already live — no need to wait."}
-        </div>
-      ) : null}
 
-      {/* Evidence — the auditable backbone. Real copy ↔ real money, no AI needed. */}
-      {analyzed.length>0 && (
-        <div className="msg-ev">
-          <div className="msg-ev-head">
-            <span className="t">The ads behind this — words read off the real creative</span>
-            <span className="m">{analyzed.length} ad{analyzed.length===1?"":"s"} · {fmtUsd(evidenceSpend)} spend · {reliableCount} with enough spend to trust{pending>0?` · ${pending} not read yet`:""}</span>
-          </div>
-          {shown.map(a=>(
-            <div className={"msg-ev-row "+(a.reliable?"":"dim")} key={a.adId}>
-              <div className="msg-ev-copy">
-                {a.adName ? <span className="nm">{cap(a.adName)}{a.clientKey?" · "+creatorName(a.clientKey):""}</span> : null}
-                “{a.words.length>180 ? a.words.slice(0,180)+"…" : a.words}”
-              </div>
-              <div className="msg-ev-stats">
-                <span className="msg-ev-stat"><span className={"v roas "+roasCls(a)}>{a.reliable && a.revenue>0 ? a.roas.toFixed(1)+"×" : "—"}</span><span className="l">ROAS</span></span>
-                <span className="msg-ev-stat"><span className="v">{fmtUsd(a.spend)}</span><span className="l">spend</span></span>
-                <span className="msg-ev-stat"><span className="v">{a.revenue>0?fmtUsd(a.revenue):"—"}</span><span className="l">revenue</span></span>
-                <span className="msg-ev-stat"><span className="v">{fmtNum(a.clients)}</span><span className="l">clients</span></span>
-                {!a.reliable && <span className="msg-ev-early">too early</span>}
+        {/* Head-to-head — best vs worst, straight from real dollars */}
+        {haveVs && (
+          <div className="mi-vs">
+            <div className="mi-side win">
+              <div className="tag"><span className="ar">▲</span>This is winning</div>
+              <div className="mi-quote"><span className="qm">“</span>{quote(best.words,150)}<span className="qm">”</span></div>
+              {best.adName ? <div className="nm">{cap(best.adName)}{best.clientKey?" · "+creatorName(best.clientKey):""}</div> : null}
+              <div className="mi-bignum"><span className="r">{best.roas.toFixed(1)}×</span><span className="rl">return on spend</span></div>
+              <div className="strip">
+                <div className="s"><span className="v">{fmtUsd(best.spend)}</span><span className="l">spent</span></div>
+                <div className="s"><span className="v">{fmtUsd(best.revenue)}</span><span className="l">collected</span></div>
+                <div className="s"><span className="v">{fmtNum(best.clients)}</span><span className="l">clients</span></div>
               </div>
             </div>
-          ))}
-          {analyzed.length>shown.length && (
-            <div className="msg-ev-more">+ {analyzed.length-shown.length} more read ad{analyzed.length-shown.length===1?"":"s"} (lower spend) feeding the read above</div>
-          )}
-        </div>
-      )}
+            <div className="mi-side lose">
+              <div className="tag"><span className="ar">▼</span>This is dragging</div>
+              <div className="mi-quote"><span className="qm">“</span>{quote(worst.words,150)}<span className="qm">”</span></div>
+              {worst.adName ? <div className="nm">{cap(worst.adName)}{worst.clientKey?" · "+creatorName(worst.clientKey):""}</div> : null}
+              <div className="mi-bignum"><span className="r">{worst.roas.toFixed(1)}×</span><span className="rl">return on spend</span></div>
+              <div className="strip">
+                <div className="s"><span className="v">{fmtUsd(worst.spend)}</span><span className="l">spent</span></div>
+                <div className="s"><span className="v">{fmtUsd(worst.revenue)}</span><span className="l">collected</span></div>
+                <div className="s"><span className="v">{fmtNum(worst.clients)}</span><span className="l">clients</span></div>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {analyzed.length===0 && pending>0 && aiPhase!=="working" && (
-        <div className="msg-loading">
-          <span className="msg-spin" aria-hidden="true"></span>
-          Reading the words on your ads for the first time — {pending} to go. This fills in shortly.
-        </div>
-      )}
+        {/* Depth on demand — every ad, its words, its ROAS bar */}
+        {analyzed.length>0 && (
+          <div className={"mi-explore"+(exploreOpen?" open":"")}>
+            <button type="button" className="mi-exhead" onClick={()=>setExploreOpen(o=>!o)}>
+              <span className="chev">▶</span>
+              <span className="t">
+                <span className="h">Explore all {analyzed.length} ad{analyzed.length===1?"":"s"}</span>
+                <span className="s">{reliableCount} with enough spend to trust{earlyAds.length?` · ${earlyAds.length} still too early`:""}{pending>0?` · ${pending} not read yet`:""}</span>
+              </span>
+            </button>
+            {exploreOpen && (
+              <>
+                {reliableAds.length>1 && (
+                  <div className="mi-sort">
+                    {[["roas","Best ROAS"],["spend","Most spent"],["clients","Most clients"]].map(([k,lbl])=>(
+                      <button key={k} type="button" className={"sb"+(sortBy===k?" on":"")} onClick={()=>setSortBy(k)}>{lbl}</button>
+                    ))}
+                  </div>
+                )}
+                <div className="mi-cards">
+                  {reliableAds.map(a=>card(a,false))}
+                  {earlyAds.length>0 && (
+                    <div className="mi-quiet">Too early to call — under $100 spent, not enough to trust the ROAS yet ({earlyAds.length})</div>
+                  )}
+                  {earlyAds.map(a=>card(a,true))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {analyzed.length===0 && pending>0 && (
+          <div className="mi-loading">
+            <span className="msg-spin" aria-hidden="true"></span>
+            Reading the words on your ads for the first time — {pending} to go. This fills in shortly.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -5588,6 +5761,71 @@ const EXPLORER_METRICS = [
 
 const TX_PALETTE = ["var(--gold)","var(--blue)","var(--green)","var(--red)","#b48ead","#d8a657","#83c0c1","#e07a5f","#9a8cce","#6fae90"];
 
+// Group the metrics so the picker reads like plain questions, not a flat wall of
+// 16 options. Less to scan, sorted by how often Alex actually reaches for them.
+const EXPLORER_METRIC_GROUPS = [
+  {label:"Money", ids:["collected_roas","collected_revenue","spend"]},
+  {label:"Getting clients", ids:["new_clients","calls_booked","calls_taken","messages","call_close_rate","message_to_call_rate"]},
+  {label:"Cost & efficiency", ids:["cpc","cpm","cost_per_call_booked","cost_per_call_taken","ctr","link_clicks","impressions"]},
+];
+function buildMetricPickerGroups(){
+  const byId = Object.fromEntries(EXPLORER_METRICS.map(m=>[m.id,m]));
+  const used = new Set();
+  const groups = EXPLORER_METRIC_GROUPS.map(g=>({
+    label:g.label,
+    options:g.ids.filter(id=>byId[id]).map(id=>{ used.add(id); return {value:id, label:byId[id].label}; }),
+  })).filter(g=>g.options.length);
+  const leftover = EXPLORER_METRICS.filter(m=>!used.has(m.id));
+  if(leftover.length) groups.push({label:"More", options:leftover.map(m=>({value:m.id, label:m.label}))});
+  return groups;
+}
+
+// In-app dropdown that replaces the native OS <select> — same keyboard/click feel,
+// but it inherits the app's theme and never pops a macOS chrome menu. `groups` is
+// [{label, options:[{value,label,meta}]}]; a group with no label renders flat.
+function Picker({value, groups, onChange, ariaLabel}){
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const flat = useMemo(()=> groups.flatMap(g=>g.options), [groups]);
+  const current = flat.find(o=>o.value===value) || flat[0];
+  useEffect(()=>{
+    if(!open) return;
+    const onDoc = e=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = e=>{ if(e.key==="Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    return ()=>{ document.removeEventListener("mousedown", onDoc); window.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <div className={"pk"+(open?" open":"")} ref={ref}>
+      <button type="button" className="pk-btn" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onClick={()=>setOpen(o=>!o)}>
+        <span className="pk-val">{current ? current.label : "—"}</span>
+        <svg className="pk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      {open && (
+        <div className="pk-menu" role="listbox">
+          {groups.map((g,gi)=>(
+            <React.Fragment key={gi}>
+              {g.label ? <div className="pk-grp">{g.label}</div> : null}
+              {g.options.map(o=>{
+                const on = o.value===value;
+                return (
+                  <button key={o.value} type="button" role="option" aria-selected={on} className={"pk-opt"+(on?" on":"")}
+                    onClick={()=>{ onChange(o.value); setOpen(false); }}>
+                    <span className="pk-check">{on?"✓":""}</span>
+                    <span className="pk-opt-l">{o.label}</span>
+                    {o.meta ? <span className="pk-opt-m">{o.meta}</span> : null}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TrendExplorer({dashboard, range}){
   const allRows = useMemo(()=>explorerRows(dashboard), [dashboard]);
   const [metricId, setMetricId] = useState("collected_roas");
@@ -5596,6 +5834,8 @@ function TrendExplorer({dashboard, range}){
 
   const metric = EXPLORER_METRICS.find(m=>m.id===metricId) || EXPLORER_METRICS[0];
   const dim = EXPLORER_DIMS.find(d=>d.id===dimId) || EXPLORER_DIMS[0];
+  const metricGroups = useMemo(()=> buildMetricPickerGroups(), []);
+  const dimGroups = useMemo(()=> [{label:null, options:EXPLORER_DIMS.map(d=>({value:d.id, label:d.label}))}], []);
 
   // X axis: every calendar day with data, in chronological order.
   const labels = useMemo(()=>{
@@ -5653,15 +5893,11 @@ function TrendExplorer({dashboard, range}){
         <div className="tx-controls">
           <div className="tx-field">
             <span className="lab">Show me</span>
-            <select className="tx-select" value={metricId} onChange={e=>setMetricId(e.target.value)}>
-              {EXPLORER_METRICS.map(m=> <option key={m.id} value={m.id}>{m.label}</option>)}
-            </select>
+            <Picker ariaLabel="Metric to plot" value={metricId} groups={metricGroups} onChange={setMetricId}/>
           </div>
           <div className="tx-field">
             <span className="lab">Broken out by</span>
-            <select className="tx-select" value={dimId} onChange={e=>setDimId(e.target.value)}>
-              {EXPLORER_DIMS.map(d=> <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
+            <Picker ariaLabel="How to split it" value={dimId} groups={dimGroups} onChange={setDimId}/>
           </div>
         </div>
 
