@@ -34,10 +34,6 @@
     {
       "path": "/api/cron/check-in-weekly-digest",
       "schedule": "0 11 * * 0"
-    },
-    {
-      "path": "/api/cron/nutrition-auto-pipeline",
-      "schedule": "0 1 * * *"
     }
   ]
 }
