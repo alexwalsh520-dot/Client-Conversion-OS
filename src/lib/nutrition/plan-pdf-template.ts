@@ -1,22 +1,23 @@
 // Locked HTML/CSS shell for the auto-generated 7-day meal plan PDF.
 //
-// Design philosophy: the LLM produces ONLY the content (sections,
-// meals, ingredients, narrative). The visual shell — typography,
-// spacing, table styling, page margins, print rules — is locked here
-// in CCOS code. This way the LLM can have a bad day without producing
-// an off-brand or broken PDF.
+// Design philosophy: the LLM produces ONLY the content. The visual
+// shell — typography, spacing, table styling, colors, page rules —
+// is locked here in CCOS code. This way the LLM can have a bad day
+// without producing an off-brand or broken PDF.
 //
-// The CSS is hand-tuned to mirror the existing Jake Ryan / Justin
-// Reasoner reference plans the coach attaches to Claude.ai today:
-// white background, system sans-serif, restrained section dividers,
-// detailed per-meal ingredient tables (kcal/P/C/F columns), daily
-// total comparison strips, multi-section Practical Execution and
-// Practical Substitutions narratives, 7-day categorized shopping list,
-// per-day variance disclosure table.
+// Design language (v2, post-redesign):
+//   - Cover page: very dark green-black background, lime-green accent,
+//     editorial serif headline, KPI strip at the bottom.
+//   - Interior pages: warm cream background, dark ink, same lime-green
+//     accent used sparingly for section eyebrows and subtle dividers.
+//   - Typography: Georgia (system serif) for headlines, system sans
+//     for body and tables. Headlines lean large and tight to evoke
+//     editorial / magazine layouts.
 //
-// Print sizing: US Letter (8.5" × 11"), 0.55"/0.6" margins. Headless
-// Chromium renders the HTML at this size + adds a footer with page
-// numbers via puppeteer's displayHeaderFooter.
+// Print sizing: US Letter (8.5" × 11"). The @page rule sets zero
+// margin so the cover page can bleed dark to the edges; per-page
+// padding is handled inside the .cover / .page-content containers
+// instead.
 
 /**
  * Wraps an LLM-produced HTML body in the locked outer shell.
@@ -49,14 +50,15 @@ ${innerBodyHtml}
  * `<span class="totalPages">` for the current values.
  *
  * IMPORTANT: the footer template runs OUTSIDE the main page's CSS,
- * so styles must be inline. Default font is huge; explicit 9pt.
+ * so styles must be inline. Hidden on the first page (the cover)
+ * via the `.page1` rule which Chromium auto-applies.
  */
 export function buildFooterTemplate(clientFullName: string): string {
   const safeName = escapeForFooter(clientFullName);
   return `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; font-size: 9pt; color: #5e5e68; width: 100%; padding: 0 0.55in; display: flex; justify-content: space-between; -webkit-print-color-adjust: exact;">
-  <span>${safeName} &nbsp;|&nbsp; 7-Day Meal Plan</span>
-  <span>Page <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; font-size: 9pt; color: #8a857a; width: 100%; padding: 0 0.55in; display: flex; justify-content: space-between; -webkit-print-color-adjust: exact;">
+  <span>${safeName}</span>
+  <span>7-Day Meal Plan &nbsp;·&nbsp; Page <span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>`;
 }
 
@@ -71,14 +73,24 @@ function escapeForFooter(s: string): string {
 
 /**
  * CSS lives as a string constant so it ships in the rendered HTML.
- * No @import, no web fonts, no remote assets. System font stack only.
+ * No @import, no remote fonts, no remote assets — system stacks only.
+ *
+ * Colors (locked design tokens):
+ *   --cream     #faf7f0   warm off-white background for interior pages
+ *   --ink       #1a1a1c   primary dark text on cream
+ *   --muted     #8a857a   secondary text / page footer
+ *   --rule      #e6e0d2   subtle horizontal rules + table borders
+ *   --dark      #0d1310   near-black green for cover background
+ *   --light     #f5f3ec   light text on dark backgrounds
+ *   --accent    #c8e64a   lime green accent used for section
+ *                          eyebrows and the highlighted "Meal Plan" word
+ *   --accent-d  #94b428   darker green for body accents on cream
  */
 const LOCKED_CSS = `
-/* ----- Page setup (print) ----- */
+/* ----- Page setup ----- */
 @page {
   size: letter;
-  /* Bottom margin reserves space for the puppeteer-injected footer */
-  margin: 0.55in 0.55in 0.7in 0.55in;
+  margin: 0;
 }
 
 /* ----- Reset + base ----- */
@@ -88,200 +100,448 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                "Helvetica Neue", Arial, sans-serif;
   font-size: 10.5pt;
-  line-height: 1.5;
-  color: #1c1c20;
-  background: #ffffff;
+  line-height: 1.55;
+  color: #1a1a1c;
+  background: #faf7f0;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* ----- Cover header ----- */
-.cover { margin-bottom: 18pt; }
-.cover h1 {
-  font-size: 22pt;
-  font-weight: 700;
-  margin: 0 0 4pt;
-  letter-spacing: -0.02em;
-  color: #0d0d12;
+/* ----- Cover page (.cover) ----- */
+/* Fills the full first page with a dark background that bleeds to the
+   edge of the sheet. Negative-zero margin via the @page rule above. */
+.cover {
+  background: #0d1310;
+  color: #f5f3ec;
+  min-height: 11in;
+  width: 8.5in;
+  padding: 0.7in 0.7in 0.5in;
+  position: relative;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
 }
-.cover .subtitle {
-  font-size: 11pt;
-  color: #5e5e68;
-  margin: 0 0 16pt;
+.cover .cover-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a8f7e;
+  margin-bottom: 0;
 }
-
-/* ----- Info table (Client/Goal/Meal structure/etc.) ----- */
-.info-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 20pt;
-}
-.info-table tr { border-top: 1px solid #e5e5ea; }
-.info-table tr:last-child { border-bottom: 1px solid #e5e5ea; }
-.info-table th {
-  text-align: left;
+.cover .cover-top .brand {
+  color: #c8e64a;
   font-weight: 600;
-  color: #3a3a44;
-  vertical-align: top;
-  padding: 8pt 14pt 8pt 0;
-  width: 26%;
-  font-size: 10.5pt;
+  letter-spacing: 0.18em;
 }
-.info-table td {
-  vertical-align: top;
-  padding: 8pt 0;
-  color: #1c1c20;
-  font-size: 10.5pt;
-  line-height: 1.55;
+.cover .cover-top .meta {
+  text-align: right;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 9pt;
+  color: #b8b3a4;
+}
+.cover .cover-top .meta div { line-height: 1.5; }
+
+/* Push the title block down a third of the page so the eyebrow has
+   room to breathe and the KPI strip sits at the bottom. */
+.cover .cover-headline {
+  margin-top: 1.4in;
+  flex: 1;
+}
+.cover .cover-headline .eyebrow {
+  font-size: 9.5pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8a8f7e;
+  margin-bottom: 18pt;
+  padding-bottom: 14pt;
+  border-bottom: 1px solid #2a2e26;
+}
+.cover h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 68pt;
+  line-height: 0.95;
+  font-weight: 400;
+  margin: 0 0 8pt;
+  letter-spacing: -0.02em;
+  color: #f5f3ec;
+}
+.cover h1 .accent {
+  color: #c8e64a;
+  font-style: italic;
+}
+.cover .cover-subtitle {
+  font-size: 11.5pt;
+  color: #b8b3a4;
+  margin: 28pt 0 0;
+  font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  letter-spacing: 0.01em;
 }
 
-/* ----- Section ----- */
-section.plan-section {
-  margin-top: 18pt;
+/* Client identity strip just above the KPI grid */
+.cover .client-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 60pt 0 28pt;
+  padding-bottom: 14pt;
+  font-family: Georgia, "Times New Roman", serif;
+}
+.cover .client-strip .client-name {
+  font-size: 18pt;
+  color: #f5f3ec;
+  font-weight: 400;
+}
+.cover .client-strip .client-meta {
+  font-size: 10pt;
+  color: #b8b3a4;
+  font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cover .client-strip .client-meta .label {
+  color: #8a8f7e;
+  margin-right: 4pt;
+}
+.cover .client-strip .client-meta .val {
+  color: #f5f3ec;
+  font-weight: 600;
+  margin-right: 18pt;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 10.5pt;
+}
+
+/* KPI strip (calories / protein / carbs / fat / sodium cap) at the
+   bottom of the cover. Built from the LLM's .info-table values plus
+   the macro-table — the LLM is asked in the prompt template to
+   structure these exact classes inside .cover. */
+.cover .kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin-top: auto;
+  padding-top: 16pt;
+  border-top: 1px solid #2a2e26;
+}
+.cover .kpi-strip .kpi {
+  padding: 0 16pt;
+  border-right: 1px solid #2a2e26;
+}
+.cover .kpi-strip .kpi:first-child { padding-left: 0; }
+.cover .kpi-strip .kpi:last-child { border-right: none; padding-right: 0; }
+.cover .kpi-strip .kpi .label {
+  font-size: 8.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a8f7e;
+  margin-bottom: 8pt;
+}
+.cover .kpi-strip .kpi .val {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28pt;
+  font-weight: 400;
+  color: #f5f3ec;
+  line-height: 1;
+}
+.cover .kpi-strip .kpi .val.accent { color: #c8e64a; }
+.cover .kpi-strip .kpi .val .unit {
+  font-size: 12pt;
+  color: #8a8f7e;
+  margin-left: 2pt;
+  vertical-align: baseline;
+}
+.cover .cover-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24pt;
+  font-size: 8.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a8f7e;
+}
+
+/* ----- Interior pages ----- */
+section.plan-section,
+.page-section {
+  padding: 0.7in 0.7in 0.5in;
   page-break-inside: auto;
 }
-section.plan-section.page-break {
+section.plan-section.page-break,
+.page-break {
   page-break-before: always;
 }
+
+/* Section eyebrow + headline pattern used on Strategy, Lifestyle,
+   Practical Execution, Substitutions, Shopping List */
+.section-eyebrow {
+  font-size: 9pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #94b428;
+  font-weight: 600;
+  margin-bottom: 8pt;
+}
 section.plan-section h2 {
-  font-size: 14pt;
-  font-weight: 700;
-  margin: 0 0 10pt;
-  color: #0d0d12;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28pt;
+  line-height: 1.05;
+  font-weight: 400;
   letter-spacing: -0.01em;
+  margin: 0 0 18pt;
+  color: #1a1a1c;
 }
 section.plan-section h3 {
-  font-size: 12pt;
-  font-weight: 700;
-  margin: 14pt 0 6pt;
-  color: #0d0d12;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14pt;
+  line-height: 1.2;
+  font-weight: 600;
+  margin: 18pt 0 4pt;
+  color: #1a1a1c;
 }
 section.plan-section h4 {
   font-size: 10.5pt;
   font-weight: 700;
   margin: 8pt 0 4pt;
-  color: #1c1c20;
+  color: #1a1a1c;
 }
-section.plan-section p { margin: 0 0 8pt; }
+section.plan-section p {
+  margin: 0 0 10pt;
+  color: #3a3a3c;
+}
 section.plan-section p:last-child { margin-bottom: 0; }
 
-/* ----- Daily macro targets table (top of doc) ----- */
-.macro-table {
+/* ----- Info table (legacy structure, kept on cover) ----- */
+.info-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 4pt;
-  border: 1px solid #d8d8de;
+  margin: 0 0 20pt;
 }
-.macro-table th,
-.macro-table td {
+.info-table tr { border-top: 1px solid #2a2e26; }
+.info-table tr:last-child { border-bottom: 1px solid #2a2e26; }
+.info-table th {
   text-align: left;
-  padding: 8pt 12pt;
-  font-size: 10.5pt;
-}
-.macro-table th {
-  font-weight: 600;
-  color: #3a3a44;
-  background: #f5f5f7;
+  font-weight: 500;
+  color: #8a8f7e;
+  vertical-align: top;
+  padding: 8pt 14pt 8pt 0;
+  width: 28%;
+  font-size: 9.5pt;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 9pt;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid #d8d8de;
 }
-.macro-table td {
+.info-table td {
+  vertical-align: top;
+  padding: 8pt 0;
+  color: #d8d4c4;
+  font-size: 10.5pt;
+  line-height: 1.55;
+}
+
+/* ----- Daily macro targets table (top of doc, after cover) -----
+   When this appears on a cream interior page, restyle as a clean
+   KPI row. The cover version is restyled separately via .cover */
+.macro-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0 0 18pt;
+}
+.macro-table tr:first-child th {
+  font-size: 8.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a857a;
   font-weight: 600;
-  color: #0d0d12;
-  font-size: 12pt;
+  padding: 0 0 8pt;
+  text-align: left;
+  border-bottom: 1px solid #e6e0d2;
+}
+.macro-table tr:nth-child(2) td {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22pt;
+  font-weight: 400;
+  color: #1a1a1c;
+  padding: 12pt 0 0;
+  text-align: left;
+  line-height: 1;
 }
 
 /* ----- Day block ----- */
 .day-block {
-  margin-top: 14pt;
-  margin-bottom: 14pt;
+  margin: 0 0 24pt;
   page-break-inside: avoid;
 }
 .day-block .day-header {
-  border-bottom: 1.5px solid #0d0d12;
-  padding-bottom: 4pt;
-  margin-bottom: 8pt;
+  display: flex;
+  align-items: baseline;
+  gap: 20pt;
+  margin-bottom: 14pt;
+  padding-bottom: 0;
+  border-bottom: 1px solid #1a1a1c;
+  padding-bottom: 10pt;
 }
 .day-block .day-header h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 32pt;
+  line-height: 1;
+  font-weight: 400;
   margin: 0;
-  font-size: 12pt;
-  font-weight: 700;
-  color: #0d0d12;
+  color: #1a1a1c;
+  flex-shrink: 0;
+}
+.day-block .day-header h3 .day-num {
+  color: #94b428;
+  font-style: italic;
+  margin-right: 8pt;
 }
 .day-block .day-header .day-theme {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16pt;
   font-style: italic;
-  color: #5e5e68;
-  font-size: 10.5pt;
-  margin-top: 2pt;
+  color: #3a3a3c;
+  font-weight: 400;
+  line-height: 1.2;
+}
+.day-block .day-header .day-of-week {
+  font-size: 9pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8a857a;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4pt;
 }
 
-/* Daily-totals strip just under the day header */
+/* Daily totals strip — cleaner than the old version */
 .daily-totals-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 0 0 18pt;
+  border-bottom: 1px solid #e6e0d2;
+  padding-bottom: 14pt;
+}
+.daily-totals-strip table { display: none; } /* hide legacy table markup */
+.daily-totals-strip .totals-col {
+  padding-right: 14pt;
+  border-right: 1px solid #e6e0d2;
+}
+.daily-totals-strip .totals-col:last-child { border-right: none; padding-right: 0; }
+.daily-totals-strip .totals-col .label {
+  font-size: 8.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a857a;
+  font-weight: 600;
+  margin-bottom: 6pt;
+}
+.daily-totals-strip .totals-col .val {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22pt;
+  font-weight: 400;
+  color: #1a1a1c;
+  line-height: 1;
+}
+.daily-totals-strip .totals-col .val .target {
+  font-size: 11pt;
+  color: #8a857a;
+  font-family: -apple-system, Arial, sans-serif;
+  margin-left: 4pt;
+}
+/* Backwards-compat: the LLM still emits the old <table class="daily-totals-strip">
+   structure. Restyle it inline to look like the new grid. */
+table.daily-totals-strip {
+  display: table;
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 10pt;
+  margin-bottom: 16pt;
+  border-bottom: 1px solid #e6e0d2;
+  padding-bottom: 0;
+}
+table.daily-totals-strip th,
+table.daily-totals-strip td {
+  text-align: left;
+  padding: 6pt 12pt 6pt 0;
   font-size: 9.5pt;
 }
-.daily-totals-strip th,
-.daily-totals-strip td {
-  text-align: left;
-  padding: 5pt 10pt 5pt 0;
-}
-.daily-totals-strip th {
+table.daily-totals-strip th {
   font-weight: 600;
-  color: #5e5e68;
+  color: #8a857a;
   text-transform: uppercase;
   font-size: 8.5pt;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.14em;
+  border-bottom: 1px solid #e6e0d2;
 }
-.daily-totals-strip td {
-  color: #1c1c20;
-  font-weight: 600;
+table.daily-totals-strip tr:nth-child(2) td {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16pt;
+  font-weight: 400;
+  color: #1a1a1c;
+  padding-top: 10pt;
+  line-height: 1;
+}
+table.daily-totals-strip tr:nth-child(3) td {
+  font-size: 9pt;
+  color: #8a857a;
+  padding-bottom: 10pt;
 }
 
 /* Per-meal block within a day */
 .meal-block {
-  margin: 8pt 0 12pt;
+  margin: 14pt 0 18pt;
   page-break-inside: avoid;
 }
 .meal-block h4 {
-  margin: 0 0 4pt;
-  font-size: 10.5pt;
-  font-weight: 700;
-  color: #1c1c20;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15pt;
+  font-weight: 400;
+  margin: 0 0 8pt;
+  color: #1a1a1c;
+  display: flex;
+  align-items: baseline;
+  gap: 12pt;
+  flex-wrap: wrap;
+}
+/* Convert the LLM's "Meal Type (~Time): Name" into a badge + title.
+   Since the LLM outputs all of this as a single h4 string, we can't
+   easily split — instead we just style the h4 cleanly. */
+.meal-block h4::before {
+  content: "";
 }
 
-/* Per-meal ingredient table (6 cols: Ingredient | Amount | kcal | P | C | F) */
+/* Ingredients table */
 table.ingredients-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 4pt 0 0;
+  margin: 6pt 0 0;
   font-size: 9.5pt;
 }
 table.ingredients-table th {
   text-align: left;
   font-weight: 600;
-  color: #5e5e68;
-  background: #fafafc;
-  border-bottom: 1px solid #d8d8de;
-  padding: 5pt 8pt;
-  font-size: 8.5pt;
+  color: #8a857a;
+  background: transparent;
+  border-bottom: 1px solid #1a1a1c;
+  padding: 4pt 8pt 4pt 0;
+  font-size: 8pt;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.14em;
 }
 table.ingredients-table td {
-  padding: 4pt 8pt;
-  border-bottom: 1px solid #f0f0f3;
-  color: #1c1c20;
+  padding: 6pt 8pt 6pt 0;
+  border-bottom: 1px solid #f0ebde;
+  color: #1a1a1c;
 }
 table.ingredients-table tr.meal-subtotal td {
   font-weight: 700;
-  background: #f5f5f7;
-  border-top: 1px solid #d8d8de;
-  border-bottom: 1px solid #d8d8de;
-  padding: 6pt 8pt;
+  background: transparent;
+  border-top: 1px solid #1a1a1c;
+  border-bottom: none;
+  padding: 8pt 8pt 0 0;
+  color: #1a1a1c;
 }
 /* Right-align numeric columns (2nd onward) */
 table.ingredients-table th:not(:first-child),
@@ -291,71 +551,86 @@ table.ingredients-table td:not(:first-child) {
   font-variant-numeric: tabular-nums;
 }
 
-/* ----- Lifestyle notes block ----- */
-.lifestyle-notes h3 {
-  margin-top: 12pt;
-}
-
-/* ----- Practical Execution / Substitutions ----- */
+/* ----- Lifestyle Notes / Practical Execution / Substitutions ----- */
+.lifestyle-notes h3,
 .execution h3,
 .substitutions h3 {
-  margin-top: 12pt;
+  border-left: 3px solid #c8e64a;
+  padding-left: 14pt;
+  margin-left: -14pt;
+  margin-top: 24pt;
+  margin-bottom: 6pt;
 }
-.substitutions .sub-q {
-  font-weight: 700;
-  color: #0d0d12;
-  margin-top: 10pt;
-}
-.substitutions .sub-a {
-  margin: 2pt 0 8pt;
-  padding-left: 12pt;
+.execution h3:first-of-type,
+.lifestyle-notes h3:first-of-type,
+.substitutions h3:first-of-type {
+  margin-top: 8pt;
 }
 
-/* ----- 7-day shopping list ----- */
+/* Substitutions Q/A */
+.substitutions .sub-q {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13pt;
+  font-weight: 600;
+  color: #1a1a1c;
+  margin-top: 18pt;
+  border-left: 3px solid #c8e64a;
+  padding-left: 14pt;
+  margin-left: -14pt;
+}
+.substitutions .sub-a {
+  margin: 4pt 0 0 0;
+  padding-left: 0;
+  color: #3a3a3c;
+}
+
+/* ----- 7-Day Shopping List ----- */
+.shopping-list h3 { display: none; } /* category names come via h4 */
 .shopping-list .category-block {
-  margin-bottom: 14pt;
+  margin-bottom: 0;
   page-break-inside: avoid;
 }
-.shopping-list h3 {
-  margin-top: 12pt;
+/* Two-column layout — categories flow naturally across two columns
+   for that magazine-spread feel. */
+.shopping-list > .category-block,
+.shopping-list .categories-grid {
+  break-inside: avoid;
 }
-.shopping-list h4 {
-  font-size: 11pt;
+.shopping-list .category-block h4 {
+  font-size: 9pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #94b428;
   font-weight: 700;
-  margin: 10pt 0 4pt;
-  color: #0d0d12;
+  margin: 18pt 0 8pt;
+  padding-bottom: 4pt;
+  border-bottom: 1px solid #1a1a1c;
 }
 table.shopping-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 9.5pt;
+  font-size: 10pt;
+  margin: 0;
 }
-table.shopping-table th {
-  text-align: left;
-  font-weight: 600;
-  color: #5e5e68;
-  background: #fafafc;
-  border-bottom: 1px solid #d8d8de;
-  padding: 5pt 8pt;
-  font-size: 8.5pt;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+table.shopping-table th { display: none; } /* headers redundant given the section eyebrow */
 table.shopping-table td {
-  padding: 4pt 8pt;
-  border-bottom: 1px solid #f0f0f3;
+  padding: 6pt 8pt 6pt 0;
+  border-bottom: 1px solid #f0ebde;
+  color: #1a1a1c;
+  vertical-align: baseline;
 }
-table.shopping-table td:nth-child(2),
-table.shopping-table th:nth-child(2) {
+table.shopping-table td:nth-child(2) {
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  width: 18%;
+  font-weight: 600;
 }
-table.shopping-table td:nth-child(3),
-table.shopping-table th:nth-child(3) {
-  color: #5e5e68;
-  width: 35%;
+table.shopping-table td:nth-child(3) {
+  color: #8a857a;
+  font-size: 9pt;
+  text-align: left;
+  padding-left: 8pt;
+  width: 32%;
 }
 
 /* ----- Variance disclosure table ----- */
@@ -368,17 +643,17 @@ table.variance-table {
 table.variance-table th {
   text-align: left;
   font-weight: 600;
-  color: #5e5e68;
-  background: #fafafc;
-  border-bottom: 1px solid #d8d8de;
-  padding: 5pt 8pt;
+  color: #8a857a;
+  background: transparent;
+  border-bottom: 1px solid #1a1a1c;
+  padding: 5pt 8pt 5pt 0;
   font-size: 8.5pt;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.14em;
 }
 table.variance-table td {
-  padding: 5pt 8pt;
-  border-bottom: 1px solid #f0f0f3;
+  padding: 6pt 8pt 6pt 0;
+  border-bottom: 1px solid #f0ebde;
   font-variant-numeric: tabular-nums;
 }
 table.variance-table th:not(:first-child),
@@ -388,29 +663,32 @@ table.variance-table td:not(:first-child) {
 }
 table.variance-table tr.target-row td {
   font-weight: 700;
-  background: #f5f5f7;
-  border-top: 1px solid #d8d8de;
+  border-top: 1px solid #1a1a1c;
+  border-bottom: none;
+  background: transparent;
+  padding-top: 8pt;
 }
 
-/* ----- Trailing attribution / plan-id footer ----- */
+/* ----- Trailing attribution ----- */
 .plan-attribution {
-  margin-top: 22pt;
-  padding-top: 10pt;
-  border-top: 1px solid #d8d8de;
+  margin: 32pt 0.7in;
+  padding-top: 14pt;
+  border-top: 1px solid #e6e0d2;
   font-size: 9pt;
-  color: #5e5e68;
+  color: #8a857a;
+  letter-spacing: 0.02em;
 }
 
 /* Generic helpers */
-strong { font-weight: 700; color: #0d0d12; }
+strong { font-weight: 700; color: #1a1a1c; }
 em { font-style: italic; }
-ul, ol { margin: 0 0 8pt; padding-left: 18pt; }
-li { margin-bottom: 2pt; }
+ul, ol { margin: 0 0 10pt; padding-left: 18pt; }
+li { margin-bottom: 4pt; color: #3a3a3c; }
 
-/* Page break hints for the LLM */
-.page-break-before { page-break-before: always; }
-.page-break-after { page-break-after: always; }
-.avoid-break { page-break-inside: avoid; }
+/* Force page breaks for major sections so each gets its own opener */
+.shopping-list { page-break-before: always; }
+.execution { page-break-before: always; }
+.variance-table { page-break-inside: avoid; }
 `;
 
 // ---------------------------------------------------------------------------
@@ -419,13 +697,8 @@ li { margin-bottom: 2pt; }
 
 /**
  * Comprehensive sample body for renderer smoke-testing. Mirrors the
- * full Jake Ryan structure: cover, info table, macros, strategy &
- * approach, lifestyle notes, full 7 days with ingredient tables,
- * practical execution sections, practical substitutions, shopping
- * list, variance disclosure, attribution footer.
- *
- * NOT used for shipped plans — that content comes from the LLM. This
- * exists so we can preview the template without burning an LLM call.
+ * full Jake-Ryan/Oscar-style structure so we can verify the redesigned
+ * CSS without burning an LLM call. NOT used for shipped plans.
  */
 export function buildSampleBodyForTesting(): string {
   return [
@@ -444,22 +717,46 @@ export function buildSampleBodyForTesting(): string {
 
 const SAMPLE_COVER = `
 <div class="cover">
-  <h1>7-Day Meal Plan · Jake Ryan</h1>
-  <p class="subtitle">Bulk for muscle gain · 4 meals/day</p>
-  <table class="info-table">
-    <tr><th>Client</th><td>Jake Ryan · Age 25 · 6'3", 200 lb</td></tr>
-    <tr><th>Goal</th><td>Reach 215 lb by adding muscle. Body fat is not a major concern, but the surplus stays modest so the gains come on as muscle.</td></tr>
-    <tr><th>Meal structure</th><td>4 meals/day · Breakfast ~7:00 AM · Lunch ~12:00 PM (packable for work) · Afternoon snack ~3:30 PM · Dinner ~7:00 PM</td></tr>
-    <tr><th>Supplements / Meds</th><td>None</td></tr>
-    <tr><th>Avoiding</th><td>Heavy condiments and sauces (ketchup, mayo, mustard, BBQ, ranch). Alfredo and salty sauces (tamari, soy) are fine.</td></tr>
-    <tr><th>Sleep / Hydration</th><td>7 hrs · ~64 oz water now (push toward 100 oz to support the bulk)</td></tr>
-    <tr><th>Generated</th><td>May 25, 2026 · Coach: Shaun, CCOS Nutrition</td></tr>
-  </table>
+  <div class="cover-top">
+    <div class="brand">CCOS Nutrition</div>
+    <div class="meta">
+      <div>Generated May 25, 2026</div>
+      <div>Coach: Shaun</div>
+    </div>
+  </div>
+
+  <div class="cover-headline">
+    <div class="eyebrow">Personalized Nutrition Protocol</div>
+    <h1>7-Day<br/><span class="accent">Meal Plan</span></h1>
+    <div class="cover-subtitle">Bulk for muscle gain · 4 meals/day · Anchored in foods you already love.</div>
+  </div>
+
+  <div class="client-strip">
+    <div class="client-name">Jake Ryan</div>
+    <div class="client-meta">
+      <span class="label">Age</span><span class="val">25</span>
+      <span class="label">Ht</span><span class="val">6'3"</span>
+      <span class="label">Wt</span><span class="val">200 lbs</span>
+    </div>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi"><div class="label">Calories</div><div class="val accent">2900<span class="unit"></span></div></div>
+    <div class="kpi"><div class="label">Protein</div><div class="val">200<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Carbs</div><div class="val">388<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Fat</div><div class="val">61<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Sodium cap</div><div class="val">2300<span class="unit">mg</span></div></div>
+  </div>
+
+  <div class="cover-footer">
+    <span>Slow bulk · ~0.5 lb/week</span>
+    <span>Prepared exclusively for Jake Ryan</span>
+  </div>
 </div>`;
 
 const SAMPLE_MACROS = `
 <section class="plan-section">
-  <h2>Daily macro targets</h2>
+  <div class="section-eyebrow">Daily macro targets</div>
   <table class="macro-table">
     <tr>
       <th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Sodium (cap)</th>
@@ -472,7 +769,8 @@ const SAMPLE_MACROS = `
 
 const SAMPLE_STRATEGY = `
 <section class="plan-section">
-  <h2>Strategy & Approach</h2>
+  <div class="section-eyebrow">Strategy & Approach</div>
+  <h2>The plan, and why it works</h2>
   <p>2900 cals, 200g protein, 388g carbs, 61g fat. That's the target, and it's a small surplus, a bit more than you burn, because the goal is to add muscle and bring you up to 215 lb. The coach set the calories just above the basic suggestion on purpose, only about 85 cals over, which makes this a slow bulk, not a dirty one.</p>
   <p>The plan is built straight from the foods you said you love. Bacon and eggs are on the menu most mornings, just with the portion dialed in so the sodium stays in line. Seafood is a major feature: salmon, shrimp, scallops, tuna, and cod each show up across the week. Italian and pasta nights are anchored by spaghetti with meat sauce and garlic bread, fettuccine Alfredo with shrimp, and chicken Alfredo.</p>
   <p>The four meals are built to fix the biggest gap in your current pattern. You said you often skip dinner and sometimes default to two PB and honey sandwiches, which on a bulk is actually leaving a ton of calories on the table.</p>
@@ -480,7 +778,8 @@ const SAMPLE_STRATEGY = `
 
 const SAMPLE_LIFESTYLE = `
 <section class="plan-section lifestyle-notes">
-  <h2>Lifestyle Notes</h2>
+  <div class="section-eyebrow">Lifestyle Notes</div>
+  <h2>Habits that make the plan work</h2>
   <h3>Hydration</h3>
   <p>You're at about half a gallon (64 oz) a day, which is decent, but on a bulk like this it needs to come up. The target is 100 oz over the next couple of weeks, building one bottle at a time. The high protein also puts your kidneys to work, so good water keeps everything running.</p>
   <h3>Sleep</h3>
@@ -489,8 +788,9 @@ const SAMPLE_LIFESTYLE = `
 
 const SAMPLE_DAILY_BREAKDOWN = `
 <section class="plan-section">
-  <h2>Daily Breakdown</h2>
-  <p>Each day below starts with a daily-total comparison strip so you can see how the day adds up against your targets. Every meal then lists ingredients with gram weights, per-ingredient macros, and a subtotal. Cooked weights are listed for all meats, seafood, pasta, and rice.</p>
+  <div class="section-eyebrow">Daily Breakdown</div>
+  <h2>Seven days, in detail</h2>
+  <p>Each day starts with a totals strip showing how the day adds up against your targets. Every meal lists ingredients with gram weights, per-ingredient macros, and a subtotal. Cooked weights are listed for all meats, seafood, pasta, and rice.</p>
 
   ${[1,2,3,4,5,6,7].map((n) => sampleDayBlock(n)).join("\n")}
 </section>`;
@@ -501,9 +801,13 @@ function sampleDayBlock(dayNum: number): string {
   return `
 <div class="day-block">
   <div class="day-header">
-    <h3>Day ${dayNum}, ${dayName}</h3>
-    <div class="day-theme">${theme}</div>
+    <h3><span class="day-num">${dayNum}</span></h3>
+    <div>
+      <span class="day-of-week">${dayName}</span>
+      <span class="day-theme">${theme}</span>
+    </div>
   </div>
+
   <table class="daily-totals-strip">
     <tr><th></th><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr>
     <tr><td>Daily total</td><td>2891</td><td>199 g</td><td>379 g</td><td>61.7 g</td></tr>
@@ -565,9 +869,9 @@ function sampleDayBlock(dayNum: number): string {
         <tr><td>Ground beef (93/7), cooked</td><td>135 g</td><td>235</td><td>35.1</td><td>0.0</td><td>9.5</td></tr>
         <tr><td>Marinara sauce</td><td>60 g</td><td>32</td><td>1.0</td><td>5.4</td><td>0.8</td></tr>
         <tr><td>Parmesan cheese</td><td>4 g</td><td>17</td><td>1.5</td><td>0.2</td><td>1.1</td></tr>
-        <tr><td>Garlic bread (butter spread)</td><td>40 g</td><td>140</td><td>3.4</td><td>20.0</td><td>5.2</td></tr>
+        <tr><td>Garlic bread</td><td>40 g</td><td>140</td><td>3.4</td><td>20.0</td><td>5.2</td></tr>
         <tr><td>Spinach, cooked</td><td>80 g</td><td>18</td><td>2.4</td><td>3.0</td><td>0.2</td></tr>
-        <tr class="meal-subtotal"><td>Meal subtotal</td><td></td><td>989</td><td>63.5</td><td>135.0</td><td>20.3</td></tr>
+        <tr class="meal-subtotal"><td>Meal subtotal</td><td></td><td>979</td><td>63.1</td><td>132.8</td><td>20.2</td></tr>
       </tbody>
     </table>
   </div>
@@ -575,8 +879,9 @@ function sampleDayBlock(dayNum: number): string {
 }
 
 const SAMPLE_EXECUTION = `
-<section class="plan-section execution page-break">
-  <h2>Practical Execution</h2>
+<section class="plan-section execution">
+  <div class="section-eyebrow">Practical Execution</div>
+  <h2>Making it work in real life</h2>
 
   <h3>Hitting 200g of protein</h3>
   <p>200g a day, a gram per pound, is the number that turns the calorie surplus into actual muscle. It's spread across all four meals at about 50g each. Eggs and bacon cover breakfast, your packable lunch has 150 to 200g of chicken, fish, or shrimp, the afternoon snack pulls 20 to 30g from yogurt or cottage cheese, and dinner is the big anchor with another 30 to 50g from your pasta dish, salmon, or scallops. Weigh your meats and seafood cooked, not raw.</p>
@@ -596,8 +901,9 @@ const SAMPLE_EXECUTION = `
 
 const SAMPLE_SUBSTITUTIONS = `
 <section class="plan-section substitutions">
-  <h2>Practical Substitutions</h2>
-  <p>Swaps so you can flex without rewriting the plan. Same-weight protein swaps stay macro-equivalent. Stay close to the gram weight listed.</p>
+  <div class="section-eyebrow">Practical Substitutions</div>
+  <h2>Swaps so you can flex</h2>
+  <p>Same-weight protein swaps stay macro-equivalent. Stay close to the gram weight listed.</p>
 
   <div class="sub-q">Tired of the protein at a meal?</div>
   <div class="sub-a">Chicken breast, chicken thigh, 93/7 ground beef, sirloin steak, salmon, shrimp, cod, tilapia, scallops, canned tuna, and eggs all swap one-for-one at the same cooked weight and stay close on macros. Greek yogurt and cottage cheese cover breakfast and snacks.</div>
@@ -613,14 +919,14 @@ const SAMPLE_SUBSTITUTIONS = `
 </section>`;
 
 const SAMPLE_SHOPPING_LIST = `
-<section class="plan-section shopping-list page-break">
-  <h2>7-Day Shopping List</h2>
+<section class="plan-section shopping-list">
+  <div class="section-eyebrow">7-Day Shopping List</div>
+  <h2>Everything, in one trip</h2>
   <p>Total grams across all 7 days. Buy slightly more than listed to account for trim, packaging, and small portion variation.</p>
 
   <div class="category-block">
     <h4>Proteins</h4>
     <table class="shopping-table">
-      <thead><tr><th>Item</th><th>Total (7 days)</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td>Whole eggs</td><td>840 g</td><td>about 17 large eggs</td></tr>
         <tr><td>Chicken breast, cooked</td><td>770 g</td><td>~1000g raw</td></tr>
@@ -634,7 +940,6 @@ const SAMPLE_SHOPPING_LIST = `
   <div class="category-block">
     <h4>Dairy</h4>
     <table class="shopping-table">
-      <thead><tr><th>Item</th><th>Total (7 days)</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td>Skim milk</td><td>2650 g</td><td></td></tr>
         <tr><td>Greek yogurt (nonfat)</td><td>650 g</td><td></td></tr>
@@ -647,7 +952,6 @@ const SAMPLE_SHOPPING_LIST = `
   <div class="category-block">
     <h4>Grains & Starches</h4>
     <table class="shopping-table">
-      <thead><tr><th>Item</th><th>Total (7 days)</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td>Jasmine rice, cooked</td><td>1840 g</td><td>~605g dry</td></tr>
         <tr><td>Pasta, cooked</td><td>1130 g</td><td>~510g dry</td></tr>
@@ -659,7 +963,6 @@ const SAMPLE_SHOPPING_LIST = `
   <div class="category-block">
     <h4>Vegetables</h4>
     <table class="shopping-table">
-      <thead><tr><th>Item</th><th>Total (7 days)</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td>Broccoli, cooked</td><td>530 g</td><td></td></tr>
         <tr><td>Spinach, cooked</td><td>290 g</td><td></td></tr>
@@ -671,7 +974,8 @@ const SAMPLE_SHOPPING_LIST = `
 
 const SAMPLE_VARIANCE = `
 <section class="plan-section">
-  <h2>Variance Disclosure</h2>
+  <div class="section-eyebrow">Variance Disclosure</div>
+  <h2>How honest the math is</h2>
   <table class="variance-table">
     <thead><tr><th>Day</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Max drift</th></tr></thead>
     <tbody>
@@ -690,5 +994,5 @@ const SAMPLE_VARIANCE = `
 
 const SAMPLE_ATTRIBUTION = `
 <div class="plan-attribution">
-  Plan generated for Jake Ryan. Macros calculated from USDA reference values; individual product labels may vary by 5 to 10 percent. Plan ID: JR-20260525-001. Coach: Shaun, CCOS Nutrition. Generated May 25, 2026.
+  Plan generated for Jake Ryan. Macros calculated from USDA reference values; individual product labels may vary by 5 to 10 percent. Coach: Shaun, CCOS Nutrition. Generated May 25, 2026.
 </div>`;

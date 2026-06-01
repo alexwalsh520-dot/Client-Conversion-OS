@@ -252,53 +252,88 @@ function htmlTemplateContract(args: {
   const { clientFirstName, onPlanCoach, generatedDateLabel, targets } = args;
   return `
 \`\`\`
+<!-- COVER PAGE: dark background, editorial serif. The class structure
+     below is load-bearing — do not change class names or nesting. -->
 <div class="cover">
-  <h1>7-Day Meal Plan · ${clientFirstName} [LAST NAME]</h1>
-  <p class="subtitle">[Goal phrase] · [N] meals/day</p>
-  <table class="info-table">
-    <tr><th>Client</th><td>[Full name · Age · Height · Weight]</td></tr>
-    <tr><th>Goal</th><td>[1-2 sentences on goal + approach]</td></tr>
-    <tr><th>Meal structure</th><td>[Meal count, names, and approximate times]</td></tr>
-    <tr><th>Supplements / Meds</th><td>[Listed or "None"]</td></tr>
-    <tr><th>Avoiding</th><td>[Foods-to-avoid, condiment rules, allergies]</td></tr>
-    <tr><th>Sleep / Hydration</th><td>[Current sleep + water; brief targets]</td></tr>
-    <tr><th>Generated</th><td>${generatedDateLabel} · Coach: ${onPlanCoach}, CCOS Nutrition</td></tr>
-  </table>
+  <div class="cover-top">
+    <div class="brand">CCOS Nutrition</div>
+    <div class="meta">
+      <div>Generated ${generatedDateLabel}</div>
+      <div>Coach: ${onPlanCoach}</div>
+    </div>
+  </div>
+
+  <div class="cover-headline">
+    <div class="eyebrow">Personalized Nutrition Protocol</div>
+    <h1>7-Day<br/><span class="accent">Meal Plan</span></h1>
+    <div class="cover-subtitle">[Goal phrase] · [N] meals/day · [One-line plan ethos, e.g. "Anchored in foods you already love."]</div>
+  </div>
+
+  <div class="client-strip">
+    <div class="client-name">${clientFirstName} [LAST NAME]</div>
+    <div class="client-meta">
+      <span class="label">Age</span><span class="val">[N]</span>
+      <span class="label">Ht</span><span class="val">[H]</span>
+      <span class="label">Wt</span><span class="val">[W] lbs</span>
+    </div>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi"><div class="label">Calories</div><div class="val accent">${targets.calories}<span class="unit"></span></div></div>
+    <div class="kpi"><div class="label">Protein</div><div class="val">${targets.proteinG}<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Carbs</div><div class="val">${targets.carbsG}<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Fat</div><div class="val">${targets.fatG}<span class="unit">g</span></div></div>
+    <div class="kpi"><div class="label">Sodium cap</div><div class="val">${targets.sodiumCapMg}<span class="unit">mg</span></div></div>
+  </div>
+
+  <div class="cover-footer">
+    <span>[2-4 word plan descriptor, e.g. "Slow bulk · ~0.5 lb/week"]</span>
+    <span>Prepared exclusively for ${clientFirstName} [LAST NAME]</span>
+  </div>
 </div>
 
+<!-- DAILY MACRO TARGETS - second page, light cream background -->
 <section class="plan-section">
-  <h2>Daily macro targets</h2>
+  <div class="section-eyebrow">Daily macro targets</div>
   <table class="macro-table">
     <tr><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Sodium (cap)</th></tr>
     <tr><td>${targets.calories} kcal</td><td>${targets.proteinG} g</td><td>${targets.carbsG} g</td><td>${targets.fatG} g</td><td>≤ ${targets.sodiumCapMg} mg</td></tr>
   </table>
 </section>
 
+<!-- STRATEGY (use section-eyebrow + large h2 headline + 2-3 paragraphs) -->
 <section class="plan-section">
-  <h2>Strategy & Approach</h2>
+  <div class="section-eyebrow">Strategy & Approach</div>
+  <h2>[Headline phrase about the plan and why it works]</h2>
   <p>[Paragraph 1]</p>
   <p>[Paragraph 2]</p>
   <p>[Optional paragraph 3]</p>
 </section>
 
+<!-- LIFESTYLE NOTES (conditional — include only sub-sections that apply) -->
 <section class="plan-section lifestyle-notes">
-  <h2>Lifestyle Notes</h2>
-  <!-- Include ONLY the sub-sections that apply. Skip the whole section if none. -->
+  <div class="section-eyebrow">Lifestyle Notes</div>
+  <h2>[Headline phrase like "Habits that make the plan work"]</h2>
   <h3>Hydration</h3>
   <p>[Paragraph]</p>
   <h3>Sleep</h3>
   <p>[Paragraph]</p>
 </section>
 
+<!-- DAILY BREAKDOWN with redesigned day-header structure -->
 <section class="plan-section">
-  <h2>Daily Breakdown</h2>
+  <div class="section-eyebrow">Daily Breakdown</div>
+  <h2>Seven days, in detail</h2>
   <p>[1 paragraph intro: weighing convention, what each day shows.]</p>
 
-  <!-- Repeat the day-block 7 times, one per day -->
+  <!-- Repeat the day-block 7 times -->
   <div class="day-block">
     <div class="day-header">
-      <h3>Day 1, Monday</h3>
-      <div class="day-theme">[Short day theme e.g. "Spaghetti night"]</div>
+      <h3><span class="day-num">1</span></h3>
+      <div>
+        <span class="day-of-week">Monday</span>
+        <span class="day-theme">[Short day theme e.g. "Spaghetti night"]</span>
+      </div>
     </div>
     <table class="daily-totals-strip">
       <tr><th></th><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr>
@@ -313,50 +348,56 @@ function htmlTemplateContract(args: {
         <thead><tr><th>Ingredient</th><th>Amount</th><th>kcal</th><th>P (g)</th><th>C (g)</th><th>F (g)</th></tr></thead>
         <tbody>
           <tr><td>[Ingredient]</td><td>[N] g</td><td>[N]</td><td>[N]</td><td>[N]</td><td>[N]</td></tr>
-          <!-- one row per ingredient -->
           <tr class="meal-subtotal"><td>Meal subtotal</td><td></td><td>[N]</td><td>[N]</td><td>[N]</td><td>[N]</td></tr>
         </tbody>
       </table>
     </div>
-    <!-- repeat meal-block for lunch, snack, dinner, etc. -->
+    <!-- repeat meal-block for each meal -->
   </div>
   <!-- repeat day-block for Day 2-7 -->
 </section>
 
-<section class="plan-section execution page-break">
-  <h2>Practical Execution</h2>
+<!-- PRACTICAL EXECUTION (forced page break before this section via CSS) -->
+<section class="plan-section execution">
+  <div class="section-eyebrow">Practical Execution</div>
+  <h2>Making it work in real life</h2>
   <h3>[Sub-section title 1]</h3>
   <p>[Paragraph]</p>
   <h3>[Sub-section title 2]</h3>
   <p>[Paragraph]</p>
-  <!-- repeat 6-10 times -->
+  <!-- repeat 5-10 times -->
 </section>
 
+<!-- PRACTICAL SUBSTITUTIONS -->
 <section class="plan-section substitutions">
-  <h2>Practical Substitutions</h2>
+  <div class="section-eyebrow">Practical Substitutions</div>
+  <h2>Swaps so you can flex</h2>
   <p>[1 line intro: same-weight swaps stay macro-equivalent, etc.]</p>
   <div class="sub-q">[Question]</div>
   <div class="sub-a">[Answer]</div>
-  <!-- repeat 6-9 times -->
+  <!-- repeat 5-8 times -->
 </section>
 
-<section class="plan-section shopping-list page-break">
-  <h2>7-Day Shopping List</h2>
-  <p>[1 line intro: total grams across all 7 days.]</p>
+<!-- SHOPPING LIST (forced page break via CSS) -->
+<section class="plan-section shopping-list">
+  <div class="section-eyebrow">7-Day Shopping List</div>
+  <h2>Everything, in one trip</h2>
+  <p>[1 line intro about total grams across all 7 days.]</p>
   <div class="category-block">
     <h4>Proteins</h4>
     <table class="shopping-table">
-      <thead><tr><th>Item</th><th>Total (7 days)</th><th>Notes</th></tr></thead>
       <tbody>
-        <tr><td>[Item]</td><td>[N] g</td><td>[Optional]</td></tr>
+        <tr><td>[Item]</td><td>[N] g</td><td>[Optional raw weight note]</td></tr>
       </tbody>
     </table>
   </div>
   <!-- repeat category-block for Dairy, Grains & Starches, Fruit, Vegetables, Fats Nuts & Pantry -->
 </section>
 
+<!-- VARIANCE -->
 <section class="plan-section">
-  <h2>Variance Disclosure</h2>
+  <div class="section-eyebrow">Variance Disclosure</div>
+  <h2>How honest the math is</h2>
   <table class="variance-table">
     <thead><tr><th>Day</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Max drift</th></tr></thead>
     <tbody>
