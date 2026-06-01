@@ -1635,6 +1635,30 @@ function drawStyledTextLine(ctx: CanvasRenderingContext2D, block: TextBlock, lin
   }
 }
 
+function drawCreativeTextBlocks(
+  ctx: CanvasRenderingContext2D,
+  creative: Creative,
+  editingTextBlockId?: string | null
+) {
+  for (const block of creative.textBlocks) {
+    const metrics = measureTextBlock(ctx, block);
+    setBlockFont(ctx, block);
+
+    for (const line of metrics.lines) {
+      if (block.bgOpacity > 0) {
+        ctx.fillStyle = `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`;
+        roundRect(ctx, line.x, line.bgY, line.bgW, line.bgH, block.borderRadius);
+        ctx.fill();
+      }
+    }
+
+    for (const line of metrics.lines) {
+      if (block.id === editingTextBlockId) continue;
+      drawStyledTextLine(ctx, block, line);
+    }
+  }
+}
+
 function drawArtwork(
   ctx: CanvasRenderingContext2D,
   creative: Creative,
@@ -1667,24 +1691,20 @@ function drawArtwork(
     }
   }
 
-  for (const block of creative.textBlocks) {
-    const metrics = measureTextBlock(ctx, block);
-    setBlockFont(ctx, block);
+  drawCreativeTextBlocks(ctx, creative, editingTextBlockId);
 
-    for (const line of metrics.lines) {
-      if (block.bgOpacity > 0) {
-        ctx.fillStyle = `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`;
-        roundRect(ctx, line.x, line.bgY, line.bgW, line.bgH, block.borderRadius);
-        ctx.fill();
-      }
-    }
+  ctx.restore();
+}
 
-    for (const line of metrics.lines) {
-      if (block.id === editingTextBlockId) continue;
-      drawStyledTextLine(ctx, block, line);
-    }
-  }
-
+function drawArtworkTextOverlay(
+  ctx: CanvasRenderingContext2D,
+  creative: Creative,
+  pixelRatio: number
+) {
+  ctx.save();
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  drawCreativeTextBlocks(ctx, creative);
   ctx.restore();
 }
 
@@ -4813,6 +4833,88 @@ export default function Studio2Page() {
     []
   );
 
+  const renderCreativeTextOverlayDataUrl = useCallback((creative: Creative) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = CANVAS_W;
+    canvas.height = CANVAS_H;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not prepare Studio text overlay.");
+    drawArtworkTextOverlay(ctx, creative, 1);
+    return canvas.toDataURL("image/png");
+  }, []);
+
+  const getVideoDurationForExport = useCallback(async (creative: Creative) => {
+    const video = document.createElement("video");
+    const resolvedSrc = getCanvasImageSrc(creative.photoUrl);
+    if (/^https?:\/\//i.test(resolvedSrc)) video.crossOrigin = "anonymous";
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.muted = true;
+    video.src = resolvedSrc;
+    video.load();
+    try {
+      await ensureVideoMetadata(video);
+      return Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+    }
+  }, []);
+
+  const renderCreativeToServerVideoBlob = useCallback(
+    async (creative: Creative, label = "video") => {
+      if (!/^https?:\/\//i.test(creative.photoUrl)) {
+        throw new Error("Server video export needs uploaded media.");
+      }
+
+      setExportStatus(`Rendering ${label} as MP4...`);
+      const duration = await getVideoDurationForExport(creative);
+      const segments = getEnabledVideoSegments(creative, duration)
+        .map((segment) => ({
+          start: segment.start,
+          end: Number.isFinite(segment.end as number)
+            ? clamp(segment.end as number, segment.start, duration || (segment.end as number))
+            : null,
+          enabled: segment.enabled !== false,
+        }))
+        .filter((segment) => segment.enabled && (segment.end === null || segment.end > segment.start));
+
+      const res = await fetch("/api/studio-2/export-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: creative.photoUrl,
+          overlayDataUrl: renderCreativeTextOverlayDataUrl(creative),
+          segments,
+          muted: creative.videoMuted ?? true,
+          volume: clamp(creative.videoVolume ?? 1, 0, 1),
+          imageTransform: creative.imageTransform,
+          filename: `${label.replace(/[^\w.\- ]+/g, "").trim() || "studio-2-video"}.mp4`,
+        }),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.startsWith("video/")) {
+        const blob = await res.blob();
+        if (!blob.size) throw new Error("Finished MP4 was empty.");
+        return { blob, extension: "mp4", contentType: "video/mp4" };
+      }
+      const data = contentType.includes("application/json") ? await res.json() : null;
+      if (!res.ok) {
+        throw new Error(data?.error || "Server MP4 export failed.");
+      }
+      const downloadUrl = data?.downloadUrl || data?.url;
+      if (!downloadUrl) throw new Error("Server MP4 export did not return a download URL.");
+
+      setExportStatus(`Downloading ${label}...`);
+      const downloadRes = await fetch(downloadUrl);
+      if (!downloadRes.ok) throw new Error("Finished MP4 could not be downloaded.");
+      const blob = await downloadRes.blob();
+      if (!blob.size) throw new Error("Finished MP4 was empty.");
+      return { blob, extension: "mp4", contentType: "video/mp4" };
+    },
+    [getVideoDurationForExport, renderCreativeTextOverlayDataUrl]
+  );
+
   const renderCreativeToFastVideoBlob = useCallback(
     async (creative: Creative, label = "video") => {
       if (typeof VideoEncoder === "undefined") {
@@ -4964,6 +5066,12 @@ export default function Studio2Page() {
       if ((creative.mediaKind || "image") !== "video") {
         throw new Error("This ad is not a video.");
       }
+      try {
+        return await renderCreativeToServerVideoBlob(creative, label);
+      } catch (error) {
+        console.warn("Studio server MP4 export failed; trying browser fallback.", error);
+        setExportStatus(`Server export unavailable. Finishing ${label} in this browser...`);
+      }
       let fastExportError: unknown = null;
       if (creative.videoMuted ?? true) {
         try {
@@ -5097,7 +5205,7 @@ export default function Studio2Page() {
         await audioContext?.close().catch(() => undefined);
       }
     },
-    [renderCreativeToFastVideoBlob]
+    [renderCreativeToFastVideoBlob, renderCreativeToServerVideoBlob]
   );
 
   const renderCreativeToExportBlob = useCallback(

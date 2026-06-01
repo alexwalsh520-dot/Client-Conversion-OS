@@ -31,6 +31,10 @@ export async function GET(req: NextRequest) {
       "Content-Type": upstream.headers.get("Content-Type") || "application/octet-stream",
       "Cache-Control": range ? "no-store" : "public, max-age=31536000, immutable",
     });
+    const downloadName = req.nextUrl.searchParams.get("download");
+    if (downloadName) {
+      headers.set("Content-Disposition", `attachment; filename="${sanitizeDownloadName(downloadName)}"`);
+    }
     const contentLength = upstream.headers.get("Content-Length");
     const contentRange = upstream.headers.get("Content-Range");
     const acceptRanges = upstream.headers.get("Accept-Ranges");
@@ -46,4 +50,8 @@ export async function GET(req: NextRequest) {
     console.error("Studio 2 media proxy error:", err);
     return NextResponse.json({ error: "Failed to load media" }, { status: 500 });
   }
+}
+
+function sanitizeDownloadName(value: string) {
+  return value.replace(/[^\w.\- ]+/g, "").trim().slice(0, 120) || "download";
 }
