@@ -1,5 +1,10 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { findExistingInstagramContactIdForManychatLead } from "@/lib/dm-contact-linking";
+import {
+  buildDmFollowupGhlNote,
+  buildDmFollowupLinkBundle,
+  isFollowupQueueTag,
+} from "@/lib/meta-business-suite";
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -8,19 +13,28 @@ export interface ManychatDmEvent {
   subscriberId: string;
   firstName?: string | null;
   lastName?: string | null;
+  email?: string | null;
   instagramHandle?: string | null;
+  instagramProfileUrl?: string | null;
+  manychatInboxUrl?: string | null;
+  metaBusinessSuiteUrl?: string | null;
+  metaThreadId?: string | null;
+  metaAssetId?: string | null;
+  metaMailboxId?: string | null;
+  metaBusinessId?: string | null;
   tagName: string;
   client: string;
   setterName?: string | null;
   eventAt: string;
 }
 
-export type ClientKey = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
+export type ClientKey = string;
 
 const CLIENT_LABELS: Record<ClientKey, string> = {
   tyson_sonnek: "Tyson Sonnek",
   keith_holland: "Keith Holland",
   lucy_hubbard: "Lucy Hubbard",
+  antwan: "Antwan",
 };
 
 const TAG_TO_DATE_FIELD: Record<string, string> = {
@@ -43,11 +57,21 @@ interface ContactLinkRow {
   ghl_contact_id: string;
 }
 
+interface GhlNote {
+  id?: string | null;
+  _id?: string | null;
+  body?: string | null;
+  content?: string | null;
+  note?: string | null;
+}
+
 let cachedFieldIds: Record<string, string> | null = null;
 
 function getHeaders(): Record<string, string> {
-  const apiKey = process.env.GHL_API_KEY;
-  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  const apiKey =
+    process.env.DM_SETTER_GHL_API_KEY?.trim() ||
+    process.env.GHL_API_KEY?.trim();
+  if (!apiKey) throw new Error("DM_SETTER_GHL_API_KEY or GHL_API_KEY not configured");
 
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -57,8 +81,10 @@ function getHeaders(): Record<string, string> {
 }
 
 function getLocationId(): string {
-  const locationId = process.env.GHL_LOCATION_ID;
-  if (!locationId) throw new Error("GHL_LOCATION_ID not configured");
+  const locationId =
+    process.env.DM_SETTER_GHL_LOCATION_ID?.trim() ||
+    process.env.GHL_LOCATION_ID?.trim();
+  if (!locationId) throw new Error("DM_SETTER_GHL_LOCATION_ID or GHL_LOCATION_ID not configured");
   return locationId;
 }
 
@@ -77,6 +103,43 @@ async function ghlFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return res.json() as Promise<T>;
+}
+
+async function addContactNote(contactId: string, body: string) {
+  await ghlFetch(`/contacts/${contactId}/notes`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+async function getContactNotes(contactId: string) {
+  const response = await ghlFetch<{
+    notes?: GhlNote[];
+    contactNotes?: GhlNote[];
+  }>(`/contacts/${contactId}/notes`);
+
+  return response.notes || response.contactNotes || [];
+}
+
+async function deleteContactNote(contactId: string, noteId: string) {
+  await ghlFetch(`/contacts/${contactId}/notes/${noteId}`, {
+    method: "DELETE",
+  });
+}
+
+function noteBody(note: GhlNote) {
+  return note.body || note.content || note.note || "";
+}
+
+function noteId(note: GhlNote) {
+  return note.id || note._id || null;
+}
+
+function isOldCcosFollowupNote(body: string) {
+  return (
+    body.includes("CCOS Instagram follow-up links") ||
+    body.includes("CCOS_META_INBOX_LINK:")
+  );
 }
 
 function normalizeTagName(value: string): string {
@@ -117,12 +180,24 @@ export function normalizeClientKey(raw: string): ClientKey {
   ) {
     return "lucy_hubbard";
   }
+  if (["antwan", "client_antwan"].includes(value)) {
+    return "antwan";
+  }
 
-  throw new Error(`Unsupported client value: ${raw}`);
+  const slug = value.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!slug) throw new Error(`Unsupported client value: ${raw}`);
+  return slug;
 }
 
 export function getClientLabel(clientKey: ClientKey): string {
-  return CLIENT_LABELS[clientKey];
+  const label = CLIENT_LABELS[clientKey];
+  if (label) return label;
+
+  return clientKey
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function buildDisplayName(event: ManychatDmEvent): { firstName: string; lastName?: string } {
@@ -238,6 +313,27 @@ function buildCustomFieldsPayload(
     pairs.push(["instagram_handle", event.instagramHandle.replace(/^@/, "")]);
   }
 
+  if (event.manychatInboxUrl) {
+    pairs.push(["manychat_inbox_url", event.manychatInboxUrl]);
+  }
+
+  const links = buildDmFollowupLinkBundle({
+    client: event.client,
+    subscriberId: event.subscriberId,
+    instagramHandle: event.instagramHandle,
+    instagramProfileUrl: event.instagramProfileUrl,
+    manychatInboxUrl: event.manychatInboxUrl,
+    metaBusinessSuiteUrl: event.metaBusinessSuiteUrl,
+    metaThreadId: event.metaThreadId,
+    metaAssetId: event.metaAssetId,
+    metaMailboxId: event.metaMailboxId,
+    metaBusinessId: event.metaBusinessId,
+  });
+
+  if (links.metaBusinessSuiteUrl) {
+    pairs.push(["meta_business_suite_url", links.metaBusinessSuiteUrl]);
+  }
+
   if (eventFieldName) {
     pairs.push([eventFieldName, toDateOnly(event.eventAt)]);
   }
@@ -247,6 +343,70 @@ function buildCustomFieldsPayload(
     if (!id) return [];
     return [{ id, field_value: value }];
   });
+}
+
+async function maybeAddMetaBusinessSuiteNote(params: {
+  contactId: string;
+  event: ManychatDmEvent;
+  clientLabel: string;
+}) {
+  if (!isFollowupQueueTag(params.event.tagName)) {
+    return { added: false, reason: "not_followup_tag" };
+  }
+
+  const links = buildDmFollowupLinkBundle({
+    client: params.event.client,
+    subscriberId: params.event.subscriberId,
+    instagramHandle: params.event.instagramHandle,
+    instagramProfileUrl: params.event.instagramProfileUrl,
+    manychatInboxUrl: params.event.manychatInboxUrl,
+    metaBusinessSuiteUrl: params.event.metaBusinessSuiteUrl,
+    metaThreadId: params.event.metaThreadId,
+    metaAssetId: params.event.metaAssetId,
+    metaMailboxId: params.event.metaMailboxId,
+    metaBusinessId: params.event.metaBusinessId,
+  });
+
+  if (!links.instagramDmUrl) {
+    return { added: false, reason: "missing_instagram_handle" };
+  }
+
+  const notes = await getContactNotes(params.contactId);
+  const hasExistingDeepLink = notes.some((note) => noteBody(note).trim() === links.instagramDmUrl);
+
+  for (const note of notes) {
+    const id = noteId(note);
+    if (id && isOldCcosFollowupNote(noteBody(note))) {
+      await deleteContactNote(params.contactId, id);
+    }
+  }
+
+  if (hasExistingDeepLink) {
+    return {
+      added: false,
+      reason: "already_exists",
+      instagramDmUrl: links.instagramDmUrl,
+    };
+  }
+
+  const leadName =
+    [params.event.firstName, params.event.lastName].filter(Boolean).join(" ").trim() ||
+    params.event.instagramHandle?.replace(/^@/, "") ||
+    "Instagram Lead";
+
+  const note = buildDmFollowupGhlNote({
+    leadName,
+    clientLabel: params.clientLabel,
+    subscriberId: params.event.subscriberId,
+    tagName: params.event.tagName,
+    links,
+  });
+
+  await addContactNote(params.contactId, note);
+  return {
+    added: true,
+    instagramDmUrl: links.instagramDmUrl,
+  };
 }
 
 async function createContact(
@@ -265,6 +425,7 @@ async function createContact(
     locationId: getLocationId(),
     firstName: name.firstName,
     lastName: name.lastName || "",
+    ...(event.email ? { email: event.email } : {}),
     source: "ManyChat DM Sync",
     tags,
     customFields: buildCustomFieldsPayload(fieldIds, event, clientLabel),
@@ -291,6 +452,7 @@ async function updateContact(
   const body = {
     firstName: name.firstName,
     lastName: name.lastName || "",
+    ...(event.email ? { email: event.email } : {}),
     customFields: buildCustomFieldsPayload(fieldIds, event, clientLabel),
   };
 
@@ -315,7 +477,18 @@ export async function syncManychatEventToGhl(event: ManychatDmEvent) {
 
   if (existingLink?.ghl_contact_id) {
     await updateContact(existingLink.ghl_contact_id, normalizedEvent, clientLabel, fieldIds);
-    return { clientKey, clientLabel, contactId: existingLink.ghl_contact_id, created: false };
+    let metaInboxNote;
+    try {
+      metaInboxNote = await maybeAddMetaBusinessSuiteNote({
+        contactId: existingLink.ghl_contact_id,
+        event: normalizedEvent,
+        clientLabel,
+      });
+    } catch (err) {
+      console.error("[ghl-dm-sync] Meta Business Suite note failed:", err);
+      metaInboxNote = { added: false, reason: "note_error" };
+    }
+    return { clientKey, clientLabel, contactId: existingLink.ghl_contact_id, created: false, metaInboxNote };
   }
 
   const existingInstagramContactId = await findExistingInstagramContactIdForManychatLead({
@@ -328,17 +501,41 @@ export async function syncManychatEventToGhl(event: ManychatDmEvent) {
   if (existingInstagramContactId) {
     await updateContact(existingInstagramContactId, normalizedEvent, clientLabel, fieldIds);
     await saveContactLink(clientKey, normalizedEvent.subscriberId, existingInstagramContactId);
+    let metaInboxNote;
+    try {
+      metaInboxNote = await maybeAddMetaBusinessSuiteNote({
+        contactId: existingInstagramContactId,
+        event: normalizedEvent,
+        clientLabel,
+      });
+    } catch (err) {
+      console.error("[ghl-dm-sync] Meta Business Suite note failed:", err);
+      metaInboxNote = { added: false, reason: "note_error" };
+    }
     return {
       clientKey,
       clientLabel,
       contactId: existingInstagramContactId,
       created: false,
       linkedExistingInstagramContact: true,
+      metaInboxNote,
     };
   }
 
   const contactId = await createContact(normalizedEvent, clientLabel, fieldIds);
   await saveContactLink(clientKey, event.subscriberId, contactId);
 
-  return { clientKey, clientLabel, contactId, created: true };
+  let metaInboxNote;
+  try {
+    metaInboxNote = await maybeAddMetaBusinessSuiteNote({
+      contactId,
+      event: normalizedEvent,
+      clientLabel,
+    });
+  } catch (err) {
+    console.error("[ghl-dm-sync] Meta Business Suite note failed:", err);
+    metaInboxNote = { added: false, reason: "note_error" };
+  }
+
+  return { clientKey, clientLabel, contactId, created: true, metaInboxNote };
 }

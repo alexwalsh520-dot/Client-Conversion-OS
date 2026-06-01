@@ -26,8 +26,10 @@ interface GhlSearchContact {
 }
 
 function getHeaders(): Record<string, string> {
-  const apiKey = process.env.GHL_API_KEY;
-  if (!apiKey) throw new Error("GHL_API_KEY not configured");
+  const apiKey =
+    process.env.DM_SETTER_GHL_API_KEY?.trim() ||
+    process.env.GHL_API_KEY?.trim();
+  if (!apiKey) throw new Error("DM_SETTER_GHL_API_KEY or GHL_API_KEY not configured");
 
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -37,8 +39,10 @@ function getHeaders(): Record<string, string> {
 }
 
 function getLocationId(): string {
-  const locationId = process.env.GHL_LOCATION_ID;
-  if (!locationId) throw new Error("GHL_LOCATION_ID not configured");
+  const locationId =
+    process.env.DM_SETTER_GHL_LOCATION_ID?.trim() ||
+    process.env.GHL_LOCATION_ID?.trim();
+  if (!locationId) throw new Error("DM_SETTER_GHL_LOCATION_ID or GHL_LOCATION_ID not configured");
   return locationId;
 }
 
