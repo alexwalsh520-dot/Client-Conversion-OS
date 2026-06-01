@@ -1181,6 +1181,21 @@ function looksLikeVideoUrl(value: string) {
   return /\.(mp4|mov|m4v|webm|avi|mkv)(?:$|\?)/i.test(value);
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(href);
+  }, 60_000);
+}
+
 function MediaAssetPreview({
   asset,
   style,
@@ -4949,16 +4964,28 @@ export default function Studio2Page() {
       if ((creative.mediaKind || "image") !== "video") {
         throw new Error("This ad is not a video.");
       }
+      let fastExportError: unknown = null;
       if (creative.videoMuted ?? true) {
         try {
           return await renderCreativeToFastVideoBlob(creative, label);
-        } catch {
+        } catch (error) {
+          fastExportError = error;
+          console.warn("Studio fast MP4 export failed; trying recorder fallback.", error);
           setExportStatus(`Fast export unavailable. Finishing ${label} the slower way...`);
         }
       }
       const recorderFormat = getVideoRecorderFormat();
       if (!recorderFormat || typeof MediaRecorder === "undefined") {
-        throw new Error("This browser cannot export MP4 video from Studio 2.0.");
+        if (!(creative.videoMuted ?? true)) {
+          setExportStatus("Original audio is not available for MP4 export in this browser. Exporting a muted MP4...");
+          try {
+            return await renderCreativeToFastVideoBlob({ ...creative, videoMuted: true, videoVolume: 0 }, label);
+          } catch (error) {
+            fastExportError = fastExportError || error;
+          }
+        }
+        const detail = fastExportError instanceof Error ? ` ${fastExportError.message}` : "";
+        throw new Error(`This browser could not create a Studio MP4 video.${detail}`);
       }
 
       const canvas = document.createElement("canvas");
@@ -5051,6 +5078,17 @@ export default function Studio2Page() {
         const blob = await stopped;
         if (!blob.size) throw new Error("Video export produced an empty file.");
         return { blob, extension: recorderFormat.extension, contentType: recorderFormat.mimeType };
+      } catch (error) {
+        if (!(creative.videoMuted ?? true)) {
+          console.warn("Studio recorder MP4 export failed; trying muted fast export.", error);
+          setExportStatus("Original audio export failed. Exporting a muted MP4...");
+          try {
+            return await renderCreativeToFastVideoBlob({ ...creative, videoMuted: true, videoVolume: 0 }, label);
+          } catch (fallbackError) {
+            fastExportError = fastExportError || fallbackError;
+          }
+        }
+        throw error;
       } finally {
         video.pause();
         video.removeAttribute("src");
@@ -5136,12 +5174,7 @@ export default function Studio2Page() {
     setExportStatus("Exporting current ad...");
     try {
       const exportFile = await renderCreativeToExportBlob(currentCreative, currentIndex);
-      const link = document.createElement("a");
-      const href = URL.createObjectURL(exportFile.blob);
-      link.download = `${fileLabel || projectName || "studio-2"}-ad-${currentIndex + 1}.${exportFile.extension}`;
-      link.href = href;
-      link.click();
-      URL.revokeObjectURL(href);
+      downloadBlob(exportFile.blob, `${fileLabel || projectName || "studio-2"}-ad-${currentIndex + 1}.${exportFile.extension}`);
       setCreatives((prev) =>
         prev.map((creative, index) => index === currentIndex ? { ...creative, status: "exported" } : creative)
       );
@@ -5181,12 +5214,7 @@ export default function Studio2Page() {
 
     setExportStatus("Zipping...");
     const blob = await zip.generateAsync({ type: "blob" });
-    const link = document.createElement("a");
-    const href = URL.createObjectURL(blob);
-    link.href = href;
-    link.download = `${folderName}.zip`;
-    link.click();
-    URL.revokeObjectURL(href);
+    downloadBlob(blob, `${folderName}.zip`);
     setCreatives((prev) => prev.map((creative) => ({ ...creative, status: "exported" })));
     setExportStatus("");
   }, [creatives, projectName, renderCreativeToExportBlob]);
@@ -5202,12 +5230,7 @@ export default function Studio2Page() {
       setExportStatus(`Exporting ad ${index + 1}...`);
       try {
         const exportFile = await renderCreativeToExportBlob(creatives[index], index);
-        const href = URL.createObjectURL(exportFile.blob);
-        const link = document.createElement("a");
-        link.download = `${folderLabel || projectName || "studio-2"}-ad-${index + 1}.${exportFile.extension}`;
-        link.href = href;
-        link.click();
-        URL.revokeObjectURL(href);
+        downloadBlob(exportFile.blob, `${folderLabel || projectName || "studio-2"}-ad-${index + 1}.${exportFile.extension}`);
         setExportStatus("");
       } catch (err) {
         setExportStatus(err instanceof Error ? err.message : "Export failed.");
@@ -5232,12 +5255,7 @@ export default function Studio2Page() {
     }
 
     const blob = await zip.generateAsync({ type: "blob" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = `${folderName}.zip`;
-    link.click();
-    URL.revokeObjectURL(href);
+    downloadBlob(blob, `${folderName}.zip`);
     setExportStatus("");
   }, [creatives, projectName, renderCreativeToExportBlob]);
 
@@ -5853,12 +5871,7 @@ export default function Studio2Page() {
         const res = await fetch(getMediaPreviewSrc(asset.url));
         if (!res.ok) throw new Error("Download failed");
         const blob = await res.blob();
-        const href = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = href;
-        link.download = asset.filename || "generated-ad.png";
-        link.click();
-        URL.revokeObjectURL(href);
+        downloadBlob(blob, asset.filename || "generated-ad.png");
       } else {
         const JSZip = (await import("jszip")).default;
         const zip = new JSZip();
@@ -5870,12 +5883,7 @@ export default function Studio2Page() {
           zip.file(asset.filename || `generated-ad-${index + 1}.${ext}`, blob);
         }));
         const blob = await zip.generateAsync({ type: "blob" });
-        const href = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = href;
-        link.download = `${projectName || "generated-ads"}.zip`;
-        link.click();
-        URL.revokeObjectURL(href);
+        downloadBlob(blob, `${projectName || "generated-ads"}.zip`);
       }
     } finally {
       setGenerateStatus("");
