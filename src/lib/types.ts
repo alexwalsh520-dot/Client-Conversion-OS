@@ -198,6 +198,10 @@ export interface Expense {
   commissions: number;
   platform: string;
   comments: string;
+  /** Payroll-workflow fields (migration 038) */
+  paid?: boolean;
+  paymentVia?: string;     // "Upwork" / "Direct" / freeform
+  paymentCadence?: string; // "Monthly" / "Twice Monthly" / "Weekly" / etc
   createdAt?: string;
 }
 

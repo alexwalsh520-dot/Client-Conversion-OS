@@ -659,7 +659,7 @@ export async function POST(req: NextRequest) {
 
       // ---- Expenses ----
       case "upsert_expense": {
-        const row = {
+        const row: Record<string, unknown> = {
           month: payload.month,
           name: payload.name,
           role: payload.role || "",
@@ -668,6 +668,12 @@ export async function POST(req: NextRequest) {
           platform: payload.platform || "",
           comments: payload.comments || "",
         };
+        // Payroll-workflow fields (migration 038). Only include the ones
+        // the caller actually sent so a partial update (e.g. inline
+        // "paid" checkbox toggle) doesn't blank out the others.
+        if (payload.paid !== undefined) row.paid = Boolean(payload.paid);
+        if (payload.paymentVia !== undefined) row.payment_via = payload.paymentVia || null;
+        if (payload.paymentCadence !== undefined) row.payment_cadence = payload.paymentCadence || null;
         if (payload.id) Object.assign(row, { id: payload.id });
 
         const { data, error } = await db

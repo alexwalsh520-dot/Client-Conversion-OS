@@ -21,6 +21,18 @@ import {
   referenceInvoiceDate,
   sumMonthsRemaining,
 } from "@/lib/coaching/months-remaining";
+import { listKnownCoaches } from "@/lib/nutrition/coach-resolver";
+
+// Dropdown options for the new payroll-workflow fields (migration 038).
+// Free-form text in the DB; these just provide friendly autocomplete.
+const PAYMENT_VIA_OPTIONS = ["Upwork", "Direct", "Wise", "Mercury", "Other"];
+const PAYMENT_CADENCE_OPTIONS = [
+  "Monthly",
+  "Twice Monthly",
+  "Weekly",
+  "Biweekly",
+  "One-off",
+];
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -81,13 +93,44 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
   // ---- Expense Form ----
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", role: "", base: "", commissions: "", platform: "", comments: "" });
+  const [form, setForm] = useState({
+    name: "",
+    role: "",
+    base: "",
+    commissions: "",
+    platform: "",
+    comments: "",
+    paymentVia: "",
+    paymentCadence: "",
+  });
 
   const resetForm = () => {
-    setForm({ name: "", role: "", base: "", commissions: "", platform: "", comments: "" });
+    setForm({
+      name: "",
+      role: "",
+      base: "",
+      commissions: "",
+      platform: "",
+      comments: "",
+      paymentVia: "",
+      paymentCadence: "",
+    });
     setEditingId(null);
     setShowForm(false);
   };
+
+  // Quick-fill from the coach roster so Alex can pick a real internal
+  // name (Farrukh, Shiraad, etc.) instead of remembering aliases
+  // (Mark, Shaun). Only pre-fills name + role; everything else stays
+  // editable.
+  const quickFillFromCoach = (internalName: string) => {
+    setForm((f) => ({
+      ...f,
+      name: internalName,
+      role: f.role || "Coach",
+    }));
+  };
+  const knownCoaches = listKnownCoaches();
 
   const startEdit = (e: Expense) => {
     setForm({
@@ -97,6 +140,8 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
       commissions: String(e.commissions),
       platform: e.platform,
       comments: e.comments,
+      paymentVia: e.paymentVia ?? "",
+      paymentCadence: e.paymentCadence ?? "",
     });
     setEditingId(e.id || null);
     setShowForm(true);
@@ -113,8 +158,33 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
       commissions: Number(form.commissions) || 0,
       platform: form.platform.trim(),
       comments: form.comments.trim(),
+      paymentVia: form.paymentVia.trim(),
+      paymentCadence: form.paymentCadence.trim(),
     });
     resetForm();
+  };
+
+  // Inline "paid" checkbox toggle. Sends a partial update (id + paid
+  // only) so the API doesn't blank out the other fields. Defined here
+  // so the table row can fire it without opening the edit form.
+  const togglePaid = async (expense: Expense) => {
+    if (!expense.id) return;
+    await onSaveExpense({
+      id: expense.id,
+      // The upsert action in /api/coaching requires month + name to
+      // build the row. Pass the existing values through so nothing
+      // is wiped on partial update.
+      month: expense.month,
+      name: expense.name,
+      role: expense.role,
+      base: expense.base,
+      commissions: expense.commissions,
+      platform: expense.platform,
+      comments: expense.comments,
+      paymentVia: expense.paymentVia ?? "",
+      paymentCadence: expense.paymentCadence ?? "",
+      paid: !(expense.paid ?? false),
+    });
   };
 
   // ---- Filtered Data ----
@@ -312,13 +382,50 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
         {/* Add/Edit Form */}
         {showForm && (
           <div className="glass-static" style={{ padding: 16, marginBottom: 16, borderRadius: 10 }}>
+            {/* Quick fill from coach roster — only on Add, not Edit, so
+                Alex doesn't accidentally overwrite an existing row's name. */}
+            {!editingId && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px dashed rgba(255,255,255,0.08)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>Quick fill:</span>
+                {knownCoaches.map((c) => (
+                  <button
+                    key={c.internal}
+                    onClick={() => quickFillFromCoach(c.internal)}
+                    style={{
+                      padding: "3px 10px",
+                      borderRadius: 4,
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: form.name === c.internal ? "var(--accent)" : "rgba(255,255,255,0.04)",
+                      color: form.name === c.internal ? "#000" : "var(--text-secondary)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {c.internal}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
                 <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Name *</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Waleed"
+                  placeholder="e.g. Farrukh (real name, not alias)"
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text-primary)", fontSize: 13 }}
                 />
               </div>
@@ -352,15 +459,41 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
                 />
               </div>
               <div>
-                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Platform</label>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Paid via</label>
+                <select
+                  value={form.paymentVia}
+                  onChange={(e) => setForm({ ...form, paymentVia: e.target.value })}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text-primary)", fontSize: 13 }}
+                >
+                  <option value="">— select —</option>
+                  {PAYMENT_VIA_OPTIONS.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Cadence</label>
+                <select
+                  value={form.paymentCadence}
+                  onChange={(e) => setForm({ ...form, paymentCadence: e.target.value })}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text-primary)", fontSize: 13 }}
+                >
+                  <option value="">— select —</option>
+                  {PAYMENT_CADENCE_OPTIONS.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Platform (legacy)</label>
                 <input
                   value={form.platform}
                   onChange={(e) => setForm({ ...form, platform: e.target.value })}
-                  placeholder="e.g. Upwork, Mercury"
+                  placeholder="e.g. Mercury account ID"
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text-primary)", fontSize: 13 }}
                 />
               </div>
-              <div>
+              <div style={{ gridColumn: "span 2" }}>
                 <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Comments</label>
                 <input
                   value={form.comments}
@@ -397,10 +530,14 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
             <thead>
               <tr>
                 <th>#</th>
+                <th style={{ width: 50, textAlign: "center" }}>Paid</th>
                 <th>Name</th>
                 <th>Role</th>
                 <th>Base</th>
                 <th>Commissions</th>
+                <th>Total Owed</th>
+                <th>Via</th>
+                <th>Cadence</th>
                 <th>Platform</th>
                 <th>Comments</th>
                 <th style={{ width: 80 }}>Actions</th>
@@ -409,39 +546,62 @@ export default function ExpensesTab({ expenses, clients, onSaveExpense, onDelete
             <tbody>
               {monthExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: 24, color: "var(--text-muted)", fontSize: 13 }}>
+                  <td colSpan={12} style={{ textAlign: "center", padding: 24, color: "var(--text-muted)", fontSize: 13 }}>
                     No expenses for {MONTHS[monthIndex]} {year}. Click &quot;Add Expense&quot; to start.
                   </td>
                 </tr>
               ) : (
-                monthExpenses.map((e, i) => (
-                  <tr key={e.id}>
-                    <td>{i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{e.name}</td>
-                    <td>{e.role}</td>
-                    <td>{fmtMoney(e.base)}</td>
-                    <td>{e.commissions > 0 ? fmtMoney(e.commissions) : "—"}</td>
-                    <td>{e.platform || "—"}</td>
-                    <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.comments || "—"}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button onClick={() => startEdit(e)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }} title="Edit">
-                          <Edit3 size={14} />
-                        </button>
-                        <button onClick={() => { if (confirm("Delete this expense?")) onDeleteExpense(e.id!); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", padding: 4 }} title="Delete">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                monthExpenses.map((e, i) => {
+                  const totalOwed = (e.base || 0) + (e.commissions || 0);
+                  const isPaid = e.paid ?? false;
+                  return (
+                    <tr key={e.id} style={{ opacity: isPaid ? 0.55 : 1 }}>
+                      <td>{i + 1}</td>
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={isPaid}
+                          onChange={() => togglePaid(e)}
+                          title={isPaid ? "Mark unpaid" : "Mark paid"}
+                          style={{ cursor: "pointer", width: 16, height: 16, accentColor: "var(--success, #5ec97a)" }}
+                        />
+                      </td>
+                      <td style={{ fontWeight: 600, textDecoration: isPaid ? "line-through" : "none" }}>{e.name}</td>
+                      <td>{e.role}</td>
+                      <td>{fmtMoney(e.base)}</td>
+                      <td>{e.commissions > 0 ? fmtMoney(e.commissions) : "—"}</td>
+                      <td style={{ fontWeight: 700, color: isPaid ? "var(--text-muted)" : "var(--text-primary)" }}>{fmtMoney(totalOwed)}</td>
+                      <td>{e.paymentVia || "—"}</td>
+                      <td>{e.paymentCadence || "—"}</td>
+                      <td>{e.platform || "—"}</td>
+                      <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.comments || "—"}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button onClick={() => startEdit(e)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }} title="Edit">
+                            <Edit3 size={14} />
+                          </button>
+                          <button onClick={() => { if (confirm("Delete this expense?")) onDeleteExpense(e.id!); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", padding: 4 }} title="Delete">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
               {monthExpenses.length > 0 && (
                 <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border-primary)" }}>
-                  <td colSpan={3} style={{ textAlign: "right" }}>Total Expenses</td>
+                  <td colSpan={4} style={{ textAlign: "right" }}>Totals</td>
                   <td>{fmtMoney(monthExpenses.reduce((s, e) => s + e.base, 0))}</td>
                   <td>{fmtMoney(monthExpenses.reduce((s, e) => s + e.commissions, 0))}</td>
-                  <td colSpan={3} style={{ fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(totalExpenses)}</td>
+                  <td style={{ color: "var(--danger)" }}>{fmtMoney(totalExpenses)}</td>
+                  <td colSpan={2} style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Paid {monthExpenses.filter((e) => e.paid).length}/{monthExpenses.length} · Outstanding{" "}
+                    <strong style={{ color: "var(--accent)" }}>
+                      {fmtMoney(monthExpenses.filter((e) => !e.paid).reduce((s, e) => s + e.base + e.commissions, 0))}
+                    </strong>
+                  </td>
+                  <td colSpan={3}></td>
                 </tr>
               )}
             </tbody>

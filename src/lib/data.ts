@@ -584,6 +584,9 @@ export async function getExpenses(): Promise<Expense[]> {
       commissions: Number(row.commissions) || 0,
       platform: row.platform || "",
       comments: row.comments || "",
+      paid: Boolean(row.paid),
+      paymentVia: row.payment_via || "",
+      paymentCadence: row.payment_cadence || "",
       createdAt: row.created_at,
     }));
   } catch {
