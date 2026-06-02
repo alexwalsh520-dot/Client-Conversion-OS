@@ -87,9 +87,16 @@ function escapeForFooter(s: string): string {
  *   --accent-d  #94b428   darker green for body accents on cream
  */
 const LOCKED_CSS = `
-/* ----- Page setup ----- */
+/* ----- Page setup -----
+   Interior pages need real bottom margin so the Puppeteer-injected
+   footer (page number + client name) has somewhere to render without
+   overlapping body content. @page :first removes margin only for the
+   cover page so its dark background can bleed to all four edges. */
 @page {
   size: letter;
+  margin: 0.7in 0.6in 0.85in 0.6in;
+}
+@page :first {
   margin: 0;
 }
 
@@ -107,15 +114,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* ----- Cover page (.cover) ----- */
-/* Fills the full first page with a dark background that bleeds to the
-   edge of the sheet. Negative-zero margin via the @page rule above. */
+/* ----- Cover page (.cover) -----
+   Fills the full first page with a dark background that bleeds to the
+   sheet edge. @page :first { margin: 0 } above makes the bleed
+   possible; this element fills the page with its own padding. */
 .cover {
   background: #0d1310;
   color: #f5f3ec;
   min-height: 11in;
   width: 8.5in;
-  padding: 0.7in 0.7in 0.5in;
+  padding: 0.75in 0.75in 0.6in;
   position: relative;
   page-break-after: always;
   display: flex;
@@ -263,15 +271,25 @@ body {
   color: #8a8f7e;
 }
 
-/* ----- Interior pages ----- */
+/* ----- Interior pages -----
+   Padding is now ZERO because the @page margin handles the outer
+   spacing. The previous version doubled it (page margin + section
+   padding) and didn't account for the footer, causing the overlap.
+   Each section just stacks vertically with consistent inter-section
+   spacing via margin-top. */
 section.plan-section,
 .page-section {
-  padding: 0.7in 0.7in 0.5in;
+  padding: 0;
+  margin-top: 36pt;
   page-break-inside: auto;
+}
+section.plan-section:first-of-type {
+  margin-top: 0;
 }
 section.plan-section.page-break,
 .page-break {
   page-break-before: always;
+  margin-top: 0;
 }
 
 /* Section eyebrow + headline pattern used on Strategy, Lifestyle,
@@ -376,34 +394,34 @@ section.plan-section p:last-child { margin-bottom: 0; }
 }
 .day-block .day-header {
   display: flex;
-  align-items: baseline;
-  gap: 20pt;
-  margin-bottom: 14pt;
-  padding-bottom: 0;
+  align-items: center;
+  gap: 22pt;
+  margin-bottom: 16pt;
+  padding-bottom: 12pt;
   border-bottom: 1px solid #1a1a1c;
-  padding-bottom: 10pt;
 }
 .day-block .day-header h3 {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 32pt;
-  line-height: 1;
+  font-size: 40pt;
+  line-height: 0.9;
   font-weight: 400;
   margin: 0;
   color: #1a1a1c;
   flex-shrink: 0;
+  min-width: 36pt;
 }
 .day-block .day-header h3 .day-num {
   color: #94b428;
   font-style: italic;
-  margin-right: 8pt;
 }
 .day-block .day-header .day-theme {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 16pt;
+  font-size: 18pt;
   font-style: italic;
-  color: #3a3a3c;
+  color: #1a1a1c;
   font-weight: 400;
   line-height: 1.2;
+  display: block;
 }
 .day-block .day-header .day-of-week {
   font-size: 9pt;
@@ -412,7 +430,7 @@ section.plan-section p:last-child { margin-bottom: 0; }
   color: #8a857a;
   font-weight: 600;
   display: block;
-  margin-bottom: 4pt;
+  margin-bottom: 6pt;
 }
 
 /* Daily totals strip — cleaner than the old version */
@@ -671,7 +689,7 @@ table.variance-table tr.target-row td {
 
 /* ----- Trailing attribution ----- */
 .plan-attribution {
-  margin: 32pt 0.7in;
+  margin-top: 40pt;
   padding-top: 14pt;
   border-top: 1px solid #e6e0d2;
   font-size: 9pt;
