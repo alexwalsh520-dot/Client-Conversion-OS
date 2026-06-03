@@ -1002,64 +1002,46 @@
   .ddr-play-note .ic{width:26px;height:26px;border-radius:99px;background:color-mix(in srgb,var(--gold) 14%,transparent);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
   .ddr-play-note b{color:var(--text-2)}
   .ddr-play-note i{font-style:italic;color:var(--text-2)}
-  /* ── Money cockpit: spend more = more profit ── */
-  .mc{margin:16px 0 22px;padding:20px;border:1px solid var(--border-2);border-radius:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 6%,var(--panel)),var(--panel) 62%);position:relative;overflow:hidden}
-  .mc-head{margin-bottom:16px}
-  .mc-kick{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:700}
-  .mc-h{font-size:21px;font-weight:750;color:var(--text);margin:6px 0 7px;letter-spacing:-.01em}
-  .mc-h em{color:var(--gold);font-style:italic}
-  .mc-sub{font-size:13px;line-height:1.6;color:var(--text-3);max-width:780px;margin:0}
-  .mc-sub b{color:var(--text-2)}
-  .mc-proof{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px;margin-bottom:18px}
-  .mc-pf{padding:14px 15px;border:1px solid var(--border);border-radius:13px;background:var(--bg-1)}
-  .mc-pf.big{background:linear-gradient(180deg,color-mix(in srgb,var(--green) 13%,var(--bg-1)),var(--bg-1));border-color:color-mix(in srgb,var(--green) 30%,var(--border))}
-  .mc-pf-v{font-size:30px;font-weight:780;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
-  .mc-pf.big .mc-pf-v{color:var(--green)}
-  .mc-pf-l{font-size:11.5px;line-height:1.45;color:var(--text-3);margin-top:8px}
-  .mc-pf-l b{color:var(--text-2)}
-  .mc-proj{margin-bottom:18px;padding:16px;border:1px solid var(--border);border-radius:13px;background:var(--bg-1)}
-  .mc-proj-lab{font-size:12px;color:var(--text-3);margin-bottom:14px}
-  .mc-proj-lab b{color:var(--text-2)}
-  .mc-bars{display:flex;align-items:flex-end;gap:10px}
-  .mc-bar{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;min-width:0}
-  .mc-bar-net{font-size:13px;font-weight:720;color:var(--text-2);font-variant-numeric:tabular-nums}
-  .mc-bar.now .mc-bar-net{color:var(--gold)}
-  .mc-bar-track{height:122px;display:flex;align-items:flex-end;width:100%;justify-content:center}
-  .mc-bar-col{width:60%;min-width:24px;border-radius:7px 7px 0 0;background:linear-gradient(180deg,color-mix(in srgb,var(--green) 55%,transparent),color-mix(in srgb,var(--green) 16%,transparent));transition:height .5s cubic-bezier(.2,.8,.2,1)}
-  .mc-bar.now .mc-bar-col{background:linear-gradient(180deg,var(--gold),var(--gold-dim));box-shadow:0 0 22px -4px color-mix(in srgb,var(--gold) 60%,transparent)}
-  .mc-bar-x{font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
-  .mc-bar.now .mc-bar-x{color:var(--gold)}
-  .mc-bar-meta{font-size:9.5px;color:var(--text-4);line-height:1.3}
-  .mc-scale{margin-bottom:16px}
-  .mc-smrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:11px}
-  .mc-sm{padding:11px 13px;border:1px solid var(--border);border-radius:11px;background:var(--bg-1)}
-  .mc-sm.hot{border-color:color-mix(in srgb,var(--green) 32%,var(--border));background:linear-gradient(180deg,color-mix(in srgb,var(--green) 10%,var(--bg-1)),var(--bg-1))}
-  .mc-sm .l{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-4)}
-  .mc-sm .v{font-size:18px;font-weight:740;color:var(--text);margin-top:3px;font-variant-numeric:tabular-nums}
-  .mc-sm.hot .v{color:var(--green)}
-  .mc-sm .s2{font-size:10px;font-weight:500;color:var(--text-4)}
-  .mc-lines{display:flex;flex-wrap:wrap;gap:8px}
-  .mc-line{font-size:11.5px;padding:5px 11px;border-radius:99px;border:1px solid var(--border);color:var(--text-3);background:var(--bg-1)}
-  .mc-line b{color:var(--text)}
-  .mc-line.star{border-color:color-mix(in srgb,var(--gold) 35%,var(--border))}
-  .mc-line.star b{color:var(--gold)}
-  .mc-line.kill{border-color:color-mix(in srgb,var(--red) 30%,var(--border))}
-  .mc-line.kill b{color:var(--red)}
-  .mc-line.you b{color:var(--green)}
-  .mc-clients{padding:15px;border:1px solid var(--border);border-radius:13px;background:var(--bg-1)}
-  .mc-cl-lab{font-size:12px;color:var(--text-2);font-weight:650;margin-bottom:11px}
-  .mc-cl-lab .s2{font-weight:400;color:var(--text-4)}
-  .mc-ctab{display:flex;flex-direction:column;gap:2px}
-  .mc-ctr{display:grid;grid-template-columns:1.3fr 1fr 1fr .8fr 1fr 1.1fr;gap:8px;align-items:center;padding:9px 10px;border-radius:9px;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--text-2)}
-  .mc-ctr.head{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);padding:4px 10px}
-  .mc-ctr:not(.head){background:var(--panel)}
-  .mc-ctr .nm{font-weight:680;color:var(--text)}
-  .mc-ctr .pos{color:var(--green);font-weight:680}
-  .mc-ctr .neg{color:var(--red);font-weight:680}
-  .mc-ok{color:var(--green)}.mc-bad{color:var(--red)}
-  .mc-na{color:var(--text-4);font-style:italic;font-size:11px}
-  .mc-cl-note{font-size:10.5px;color:var(--text-4);margin-top:9px}
-  @media(max-width:760px){.mc-proof{grid-template-columns:1fr}.mc-smrow{grid-template-columns:1fr 1fr}.mc-ctab{overflow-x:auto}.mc-ctr{min-width:520px}}
+  /* ── Profit scale table: spend more = more profit ── */
+  .ps{margin:16px 0 22px;padding:22px 22px 18px;border:1px solid var(--border-2);border-radius:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 5%,var(--panel)),var(--panel) 55%)}
+  .ps-top{margin-bottom:16px}
+  .ps-h{font-size:23px;font-weight:760;color:var(--text);letter-spacing:-.015em;margin:0 0 5px}
+  .ps-h em{color:var(--gold);font-style:italic}
+  .ps-sub{font-size:13px;color:var(--text-3);margin:0;line-height:1.5}
+  .ps-ctl{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+  .ps-ctl-l{font-size:12px;color:var(--text-3);margin-right:2px}
+  .ps-chip{font-size:12.5px;font-weight:650;padding:5px 12px;border-radius:99px;border:1px solid var(--border);background:var(--bg-1);color:var(--text-3);cursor:pointer;transition:all .12s}
+  .ps-chip:hover{border-color:var(--border-2);color:var(--text-2)}
+  .ps-chip.on{background:color-mix(in srgb,var(--gold) 18%,transparent);border-color:var(--gold);color:var(--gold)}
+  .ps-rows{display:flex;flex-direction:column;gap:8px}
+  .ps-rowwrap{display:flex;flex-direction:column}
+  .ps-row{display:grid;grid-template-columns:minmax(150px,1fr) 2fr 22px;align-items:center;gap:18px;width:100%;text-align:left;padding:15px 16px;border:1px solid var(--border);border-radius:13px;background:var(--bg-1);cursor:pointer;transition:border-color .14s}
+  .ps-row:hover{border-color:var(--border-2)}
+  .ps-row.now{border-color:color-mix(in srgb,var(--gold) 40%,var(--border));background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 8%,var(--bg-1)),var(--bg-1))}
+  .ps-row.open{border-radius:13px 13px 0 0}
+  .ps-rev{font-size:21px;font-weight:760;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+  .ps-revsub{font-size:10.5px;color:var(--text-4);margin-top:5px}
+  .ps-here{color:var(--gold);font-weight:700;letter-spacing:.02em}
+  .ps-netcell{min-width:0}
+  .ps-track{height:9px;border-radius:99px;background:color-mix(in srgb,var(--green) 9%,transparent);overflow:hidden;margin-bottom:7px}
+  .ps-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--green) 45%,transparent),var(--green));transition:width .45s cubic-bezier(.2,.8,.2,1)}
+  .ps-row.now .ps-fill{background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
+  .ps-netrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .ps-net{font-size:24px;font-weight:780;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
+  .ps-row.now .ps-net{color:var(--gold)}
+  .ps-permo{font-size:11px;font-weight:500;color:var(--text-4)}
+  .ps-delta{font-size:12.5px;font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent);padding:2px 8px;border-radius:99px}
+  .ps-caret{font-size:16px;color:var(--text-4);text-align:center;font-weight:600}
+  .ps-detail{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;font-size:11.5px;color:var(--text-3);border:1px solid var(--border);border-top:none;border-radius:0 0 13px 13px;background:var(--panel)}
+  .ps-detail b{color:var(--text)}
+  .ps-foot{margin-top:15px;font-size:13.5px;line-height:1.5;color:var(--text-2);text-align:center;padding-top:14px;border-top:1px dashed var(--border)}
+  .ps-foot b{color:var(--text)}
+  .ps-pop{color:var(--green)!important;font-size:16px}
+  @media(max-width:640px){.ps-row{grid-template-columns:1fr;gap:10px}.ps-caret{display:none}}
+  .ddr-oldtoggle{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:16px 0 4px;padding:13px 16px;border:1px dashed var(--border-2);border-radius:12px;background:transparent;color:var(--text-3);font-size:13px;font-weight:600;cursor:pointer;transition:all .14s}
+  .ddr-oldtoggle:hover{border-color:var(--text-4);color:var(--text-2);background:var(--bg-1)}
+  .ddr-oldtoggle .car{color:var(--gold);font-size:11px}
+  .ddr-oldtoggle .sub2{font-weight:400;color:var(--text-4)}
   @media(max-width:700px){.ddr-pcard{grid-template-columns:46px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
   /* Interactive booking table: sticky header, sortable, filterable, expandable */
@@ -8442,81 +8424,69 @@ function DataFlowMap({ open, sel, setSel }){
 function MoneyCockpit({model}){
   if(!model) return null;
   const m = model;
-  const pct = (x)=> (x==null||isNaN(x))? "—" : fmtPct(x*100, 0);
-  const x1 = (x)=> (x==null||isNaN(x))? "—" : x.toFixed(2)+"×";
-  const proj = Array.isArray(m.projection) ? m.projection : [];
-  const maxNet = Math.max(1, ...proj.map(p=>p.netProfit||0));
-  const clients = Array.isArray(m.clients) ? m.clients : [];
+  const margin = m.variableMargin, fixed = m.fixedCosts;
+  const curRev = m.collected, curRoas = m.cashRoas, curNet = m.netProfit;
+  if(!(curRev>0) || !(curRoas>0)) return null;
+  // "Even if ROAS slips as you scale" scenarios — today's, then a few lower.
+  const lower = [3.5,3,2.5,2].filter(r=> r < curRoas-0.05);
+  const roasOpts = [Math.round(curRoas*10)/10, ...lower].slice(0,4);
+  const [roas, setRoas] = useState(roasOpts[0]);
+  const [open, setOpen] = useState(null);
+  const targetX = 3/margin;
+  const tiers = [1,2,4,8].map(mult=>{
+    const isNow = mult===1;
+    const r = isNow ? curRoas : roas;
+    const rev = curRev*mult;
+    const spend = rev/r;
+    const net = isNow ? curNet : (rev*margin - spend - fixed);
+    return { mult, isNow, rev, spend, net, nMargin: rev>0?net/rev:0,
+      fixedPct: fixed/rev, killFloor: (spend+fixed)/(spend*margin), delta: net-curNet };
+  });
+  const maxNet = Math.max(...tiers.map(t=>t.net), 1);
+  const topGain = tiers[tiers.length-1].net - curNet;
   return (
-    <div className="mc">
-      <div className="mc-head">
-        <span className="mc-kick">The bottom line</span>
-        <h3 className="mc-h">Spending more makes you <em>more</em> money — here's the proof.</h3>
-        <p className="mc-sub">You keep the same <b>{pct(m.variableMargin)}</b> of every sale no matter how big you get, and your fixed costs don't grow. So every extra dollar of profitable ad spend drops to the bottom line <i>and</i> shrinks the fixed-cost drag. Protecting a high ROAS by spending less just leaves money on the table.</p>
+    <div className="ps">
+      <div className="ps-top">
+        <h3 className="ps-h">The more you spend, the more you <em>keep</em>.</h3>
+        <p className="ps-sub">Bigger spend means bigger profit — even when ROAS drops as you scale. Live, from your real numbers.</p>
       </div>
-
-      <div className="mc-proof">
-        <div className="mc-pf big">
-          <div className="mc-pf-v">{fmtUsd(m.netProfitPerExtraDollar,2)}</div>
-          <div className="mc-pf-l">net profit from every extra <b>$1</b> of ad spend, at today's efficiency</div>
-        </div>
-        <div className="mc-pf">
-          <div className="mc-pf-v">{x1(m.roasFloorIfYouDouble)}</div>
-          <div className="mc-pf-l">you could <b>double</b> spend, let ROAS fall all the way to here, and <b>still</b> out-earn today</div>
-        </div>
-        <div className="mc-pf">
-          <div className="mc-pf-v">{pct(m.netMargin)}</div>
-          <div className="mc-pf-l">net margin now — it <b>climbs</b> as you scale (fixed costs shrink)</div>
-        </div>
+      <div className="ps-ctl">
+        <span className="ps-ctl-l">As you grow, even if ROAS slips to</span>
+        {roasOpts.map(r=>(
+          <button key={r} type="button" className={"ps-chip"+(Math.abs(r-roas)<0.05?" on":"")} onClick={()=>setRoas(r)}>
+            {Math.abs(r-roasOpts[0])<0.05 ? "today "+r.toFixed(1)+"×" : r.toFixed(1)+"×"}
+          </button>
+        ))}
       </div>
-
-      <div className="mc-proj">
-        <div className="mc-proj-lab">Same efficiency, more spend → your monthly <b>net profit</b>:</div>
-        <div className="mc-bars">
-          {proj.map(p=>(
-            <div className={"mc-bar"+(p.isCurrent?" now":"")} key={p.label}>
-              <div className="mc-bar-net">{fmtUsd(p.netProfit)}</div>
-              <div className="mc-bar-track"><div className="mc-bar-col" style={{height: Math.max(4, (p.netProfit/maxNet)*118)+"px"}}></div></div>
-              <div className="mc-bar-x">{p.isCurrent?"you now":p.label}</div>
-              <div className="mc-bar-meta">{fmtUsd(p.adSpend)} spend · {pct(p.netMargin)} margin</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mc-scale">
-        <div className="mc-smrow">
-          <div className="mc-sm"><div className="l">Revenue / mo</div><div className="v">{fmtUsd(m.collected)}</div></div>
-          <div className="mc-sm"><div className="l">Ad spend</div><div className="v">{fmtUsd(m.adSpend)}</div></div>
-          <div className="mc-sm"><div className="l">Fixed costs</div><div className="v">{fmtUsd(m.fixedCosts)}<span className="s2"> · {pct(m.fixedCosts/m.collected)} of rev</span></div></div>
-          <div className="mc-sm hot"><div className="l">Net profit / mo</div><div className="v">{fmtUsd(m.netProfit)}</div></div>
-        </div>
-        <div className="mc-lines">
-          <span className="mc-line star">⭐ Winner bar (feed it): <b>{x1(m.starRoas)}</b></span>
-          <span className="mc-line kill">🛑 Kill floor at this scale: <b>{x1(m.breakevenRoas)}</b></span>
-          <span className="mc-line you">You're at <b>{x1(m.cashRoas)}</b> cash ROAS</span>
-        </div>
-      </div>
-
-      {clients.length>0 && (
-        <div className="mc-clients">
-          <div className="mc-cl-lab">Per creator — who's earning their keep <span className="s2">(fixed costs split by ad-spend share, at today's scale)</span></div>
-          <div className="mc-ctab">
-            <div className="mc-ctr head"><span>Creator</span><span>Spend</span><span>Revenue</span><span>ROAS</span><span>Net / mo</span><span>Verdict</span></div>
-            {clients.map(c=>(
-              <div className="mc-ctr" key={c.key}>
-                <span className="nm">{c.name}</span>
-                <span>{fmtUsd(c.adSpend)}</span>
-                <span>{fmtUsd(c.collected)}</span>
-                <span>{x1(c.cashRoas)}</span>
-                <span className={c.netProfit>=0?"pos":"neg"}>{fmtUsd(c.netProfit)}</span>
-                <span>{c.adSpend<=0 ? <em className="mc-na">no spend yet</em> : c.carryingWeight ? <b className="mc-ok">✅ carrying</b> : <b className="mc-bad">🛑 dragging</b>}</span>
+      <div className="ps-rows">
+        {tiers.map(t=>(
+          <div className="ps-rowwrap" key={t.mult}>
+            <button type="button" className={"ps-row"+(t.isNow?" now":"")+(open===t.mult?" open":"")} onClick={()=>setOpen(open===t.mult?null:t.mult)}>
+              <div className="ps-revcell">
+                <div className="ps-rev">{fmtUsd(t.rev)}</div>
+                <div className="ps-revsub">{t.isNow ? <span className="ps-here">● you are here</span> : <span>{t.mult}× bigger · {fmtUsd(t.spend)} spend</span>}</div>
               </div>
-            ))}
+              <div className="ps-netcell">
+                <div className="ps-track"><div className="ps-fill" style={{width: Math.max(6,(t.net/maxNet)*100)+"%"}}></div></div>
+                <div className="ps-netrow">
+                  <span className="ps-net">{fmtUsd(t.net)}<span className="ps-permo"> net/mo</span></span>
+                  {!t.isNow && t.delta>0 && <span className="ps-delta">+{fmtUsd(t.delta)}</span>}
+                </div>
+              </div>
+              <span className="ps-caret">{open===t.mult?"–":"+"}</span>
+            </button>
+            {open===t.mult && (
+              <div className="ps-detail">
+                <span>Net margin <b>{fmtPct(t.nMargin*100,0)}</b></span>
+                <span>Fixed <b>{fmtUsd(fixed)}</b> · {fmtPct(t.fixedPct*100,0)} of rev</span>
+                <span>🛑 Kill floor <b>{t.killFloor.toFixed(2)}×</b></span>
+                <span>⭐ Target <b>{targetX.toFixed(1)}×</b></span>
+              </div>
+            )}
           </div>
-          {m.unattributedCollected>0 && <div className="mc-cl-note">{fmtUsd(m.unattributedCollected)} of revenue couldn't be tied to a creator — counted in the business total above, not split per creator.</div>}
-        </div>
-      )}
+        ))}
+      </div>
+      <div className="ps-foot">Go from <b>{fmtUsd(curRev)}</b> to <b>{fmtUsd(curRev*8)}</b>/mo and you pocket <b className="ps-pop">{fmtUsd(topGain)}</b> more profit every month{roas<curRoas-0.05?" — even at just "+roas.toFixed(1)+"× ROAS":""}.</div>
     </div>
   );
 }
@@ -8526,6 +8496,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   // can sit in the header while the full-width map expands just below it.
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowSel, setFlowSel] = useState(null);
+  const [showOld, setShowOld] = useState(false);
 
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -8669,6 +8640,12 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       {/* Do This Next — the simple, ROAS-first action board (acted moves hidden) */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
 
+      {/* Everything that isn't a daily decision — tucked away, one click to open */}
+      <button type="button" className="ddr-oldtoggle" onClick={()=>setShowOld(s=>!s)}>
+        <span className="car">{showOld?"▾":"▸"}</span> Old deep dive <span className="sub2">— every other number, chart &amp; table</span>
+      </button>
+      {showOld && (<React.Fragment>
+
       {/* Close the loop — moves Alex marked done, traced to a real result */}
       <DecisionTracker decisions={decisions} dashboard={dashboard} onUndo={onUndo}/>
 
@@ -8774,6 +8751,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
           </div>
         </div>
       )}
+      </React.Fragment>)}
     </div>
   );
 }
