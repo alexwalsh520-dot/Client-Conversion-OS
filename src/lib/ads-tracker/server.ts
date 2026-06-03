@@ -2618,10 +2618,62 @@ function missingGhlBookingKeywordAlertKey(
   return `ghl_booking_missing_keyword:${clientKey}:${stableId}`;
 }
 
+// A booked call's ORIGIN is a property of the person, not the calendar slot.
+// GoHighLevel writes a brand-new appointment row (a new appointment_id) every
+// time a contact re-books or reschedules, so one human can have 2–3 separate
+// "no ad keyword" booking alerts. Because the alert keys on appointment_id, a
+// setter who resolved one of them saw the SAME person reappear under the next
+// appointment_id ("I fixed it, it came back"). Once a setter has told us where a
+// contact came from, that answer holds for every booking that contact ever
+// makes — so we suppress all of a contact's booking alerts as soon as ANY of
+// their booking appointments is resolved. Built from contactId (stable per
+// person in GHL) with a normalized-name fallback.
+function resolvedBookingContactKeys(resolutions: AttributionResolution[]): Set<string> {
+  const resolved = new Set<string>();
+  for (const r of resolutions) {
+    if (!r.saleKey.startsWith("ghl_booking_missing_keyword:")) continue;
+    const client = (r.clientKey || "").trim();
+    if (!client) continue;
+    const contactId = (r.contactId || "").trim();
+    if (contactId) resolved.add(`${client}:id:${contactId}`);
+    const name = normalizePersonName(r.contactName);
+    if (name) resolved.add(`${client}:name:${name}`);
+  }
+  return resolved;
+}
+
+// Is this appointment's contact already covered by a resolution (any of their
+// bookings)? Mirrors the keys produced by resolvedBookingContactKeys.
+function isBookingContactResolved(
+  appointment: GhlAppointmentRow,
+  clientKey: string,
+  resolvedContactKeys: Set<string>
+): boolean {
+  const contactId = (appointment.contact_id || "").trim();
+  if (contactId && resolvedContactKeys.has(`${clientKey}:id:${contactId}`)) return true;
+  const name = normalizePersonName(appointment.contact_name);
+  if (name && resolvedContactKeys.has(`${clientKey}:name:${name}`)) return true;
+  return false;
+}
+
+// Stable per-contact identity used to collapse a contact's many appointment
+// rows down to a single alert card (so the setter resolves a person once).
+function bookingContactDedupeKey(
+  appointment: GhlAppointmentRow,
+  clientKey: string
+): string {
+  const contactId = (appointment.contact_id || "").trim();
+  if (contactId) return `${clientKey}:id:${contactId}`;
+  const name = normalizePersonName(appointment.contact_name);
+  if (name) return `${clientKey}:name:${name}`;
+  return `${clientKey}:appt:${appointment.appointment_id || "unknown"}`;
+}
+
 function buildMissingGhlBookingKeywordEvents(
   appointments: GhlAppointmentRow[],
   clientFilter: string[],
-  resolutionBySaleKey: Map<string, AttributionResolution>
+  resolutionBySaleKey: Map<string, AttributionResolution>,
+  resolvedContactKeys: Set<string>
 ): KeywordEvent[] {
   const events: KeywordEvent[] = [];
 
@@ -2631,6 +2683,9 @@ function buildMissingGhlBookingKeywordEvents(
     if (!appointment.appointment_id) continue;
     if (!isBookableAppointment(appointment)) continue;
     if (normalizeKeyword(appointment.keyword_normalized || appointment.keyword_raw)) continue;
+
+    // Contact already resolved on a different appointment → stay quiet.
+    if (isBookingContactResolved(appointment, clientKey, resolvedContactKeys)) continue;
 
     const alertKey = missingGhlBookingKeywordAlertKey(appointment, clientKey);
     if (resolutionBySaleKey.has(alertKey)) continue;
@@ -2671,7 +2726,25 @@ function buildMissingGhlBookingKeywordAlerts(
       .filter((value): value is string => Boolean(value))
   );
 
-  return events
+  // Collapse a contact's many appointment rows (reschedules / re-books) into a
+  // single alert card, keeping the most recent booking. One person = one to-do,
+  // so resolving them once clears them for good.
+  const latestEventByContact = new Map<string, KeywordEvent>();
+  for (const event of events) {
+    const contactId = (event.contact_id || "").trim();
+    const name = normalizePersonName(event.contact_name);
+    const dedupeKey = contactId
+      ? `${event.client_key}:id:${contactId}`
+      : name
+        ? `${event.client_key}:name:${name}`
+        : `${event.client_key}:appt:${event.appointment_id || event.attribution_resolution_id}`;
+    const existing = latestEventByContact.get(dedupeKey);
+    if (!existing || String(event.event_at) > String(existing.event_at)) {
+      latestEventByContact.set(dedupeKey, event);
+    }
+  }
+
+  return [...latestEventByContact.values()]
     .filter((event) => event.attribution_resolution_id)
     .filter((event) => !resolutionBySaleKey.has(event.attribution_resolution_id as string))
     .filter((event) => {
@@ -3770,6 +3843,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     ...automaticAttributionResolutions,
   ];
   const resolutionBySaleKey = latestResolutionsBySaleKey(allAttributionResolutions);
+  // Contacts whose booking origin a setter has already resolved (on ANY of their
+  // appointments). Suppresses the "same person reappears under a new
+  // appointment_id" bug for every one of their re-books.
+  const resolvedBookingContacts = resolvedBookingContactKeys(allAttributionResolutions);
   const manualStandaloneResolutionEvents = allAttributionResolutions
     .map(attributionOverrideEventForStandaloneResolution)
     .filter((event): event is KeywordEvent => Boolean(event))
@@ -3793,12 +3870,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const dashboardMissingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
     ghlAppointments,
     clientFilter,
-    resolutionBySaleKey
+    resolutionBySaleKey,
+    resolvedBookingContacts
   );
   const alertMissingGhlBookingKeywordEvents = buildMissingGhlBookingKeywordEvents(
     alertGhlAppointments,
     alertClientFilter,
-    resolutionBySaleKey
+    resolutionBySaleKey,
+    resolvedBookingContacts
   );
   const missingGhlBookingKeywordAlerts = buildMissingGhlBookingKeywordAlerts(
     alertMissingGhlBookingKeywordEvents,
