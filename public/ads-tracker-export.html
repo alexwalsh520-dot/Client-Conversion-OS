@@ -1314,9 +1314,14 @@
   .ddr-pdid.kill,.ddr-pdid.scale{color:var(--text-2)!important;background:var(--panel-2)!important;border-color:var(--border)!important}
   .ddr-pdid.kill .ic,.ddr-pdid.scale .ic{background:var(--bg-2)!important}
   .ddr-pdid:hover{box-shadow:none!important;border-color:var(--border-2)!important}
-  .ddr-pwhy{font-size:13px!important}
-  .ddr-pconf{font-size:12px!important}
-  .ddr-pimpact .cap{font-size:10px!important}
+  .ddr-play{background:var(--panel)!important;border-color:var(--border)!important}
+  .ddr-pcard::before{display:none!important}
+  .ddr-pword{font-size:16px;font-weight:650;color:var(--text);text-transform:capitalize;line-height:1.2}
+  .ddr-psub{font-size:12.5px;color:var(--text-4);margin-top:4px;font-variant-numeric:tabular-nums}
+  .ddr-pchev{font-size:15px;color:var(--text-4);text-align:center;margin-top:3px}
+  .ddr-pimpact .big{font-size:20px!important}
+  .ddr-pgh.scale,.ddr-pgh.kill{font-size:11px;letter-spacing:.1em;margin-bottom:0!important}
+  .ddr-pgroup{display:flex!important;flex-direction:column;gap:8px;margin-top:18px!important}
 
   /* ---- Decision tracker: every logged move, traced to a real result ---- */
   .ddt{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--gold) 16%,var(--border));background:radial-gradient(120% 150% at 100% 0%,color-mix(in srgb,var(--gold) 6%,var(--panel)),var(--panel) 60%)}
@@ -5951,23 +5956,14 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
         <CreativeImg kind="thumb" src={hero && hero.thumb} alt={hero ? ("Real ad creative for "+word) : ""} badge={i+1}/>
       </span>
       <div className="ddr-pmid">
-        <div className="ddr-pmove">
-          <span className="verb">{a.type==="kill" ? "Turn off" : "Spend more on"}</span>{" "}
-          <span className="word">{word}</span>
-        </div>
-        <div className="ddr-pwhy">{why}</div>
-        <div className={"ddr-pconf "+conf.cls}>
-          <span className="dot"></span>
-          <b>{conf.label}</b>
-          <span className="sep">·</span>
-          {conf.note}
-        </div>
-        <div className="ddr-pbar"><span style={{width:barPct+"%"}}></span></div>
+        <div className="ddr-pword">{cap(word)}</div>
+        <div className="ddr-psub">{a.traced
+          ? <span>{fmtUsd(a.spend)} → {fmtUsd(a.tracedRev)}</span>
+          : <span>{fmtNum(a.leads)} leads · {fmtNum(a.booked)} booked</span>}</div>
       </div>
       <div className="ddr-pimpact">
-        <div className="big">{impactBig}</div>
-        <div className="cap">{impactCap}</div>
-        <div className="ddr-pchev">{open ? "▲ less" : "▾ details"}</div>
+        <div className="big">{a.roas!=null ? a.roas.toFixed(1)+"×" : "—"}</div>
+        <div className="ddr-pchev">{open ? "−" : "+"}</div>
       </div>
 
       {open && (
@@ -6100,51 +6096,25 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
 
   return (
     <div className="ddr-play">
-      <div className="ddr-play-top">
-        <div className="ddr-play-k">Do this next</div>
-        <div className="ddr-play-h">{nothing
-          ? <span>{actedCount>0 ? <span>You've acted on every move here — nothing new screaming to scale or cut. Watch the results below.</span> : <span>Your money's working — nothing screaming to scale or cut right now.</span>}</span>
-          : <span>The fastest money moves right now — <b>grow what's printing</b> and <b>stop what's bleeding</b>. Tap any card for the full story.{actedCount>0?<span> ({actedCount} already done — tracked below.)</span>:null}</span>}</div>
-      </div>
-
-      {/* Reallocation hero — the instant move the old scaling-only list hid */}
-      {killCount>0 && (
-        <div className="ddr-realloc">
-          <div className="rl-main">
-            <span className="rl-amt">{fmtUsd(freedUp)}</span>
-            <span className="rl-cap">on {killCount} losing ad{killCount===1?"":"s"} {rangeText}</span>
-          </div>
-          <div className="rl-arrow">→</div>
-          <div className="rl-to">
-            {blendedWinRoas!=null && reallocReturn!=null
-              ? <span>Cut them and move that budget to your winners (running at <b>{blendedWinRoas.toFixed(1)}×</b>): it points at <b>{fmtUsd(reallocReturn)}</b> back instead of <b>{fmtUsd(bleed)}</b> burned. That's the single fastest gain on this page.</span>
-              : <span>Cut these and reclaim the budget for the winners below — instant gain, no new spend.</span>}
-          </div>
-        </div>
-      )}
-
       {nothing && (
-        <div className="ddr-play-clean"><span className="ic">✓</span><span>No ad word is clearly losing money or screaming to be scaled in this date range. Keep the current ads running.</span></div>
+        <div className="ddr-play-clean">Nothing to scale or cut right now.</div>
       )}
 
       {aScales.length>0 && (
         <div className="ddr-pgroup">
-          <div className="ddr-pgh scale"><span className="ar">▲</span>Scale these — proven winners with room to grow</div>
+          <div className="ddr-pgh scale">Scale</div>
           {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
       {aKills.length>0 && (
         <div className="ddr-pgroup">
-          <div className="ddr-pgh kill"><span className="ar">▼</span>Kill these — burning cash, reclaim the budget</div>
+          <div className="ddr-pgh kill">Turn off</div>
           {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
 
       {!nothing && aKills.length===0 && thin>0 && (
-        <div className="ddr-play-note">
-          <span className="ic">🕗</span>
-          <span>Nothing's clearly losing money in this window <i>yet</i>. <b>{thin}</b> ad{thin===1?"":"s"} {rangeText} {thin===1?"hasn't":"haven't"} spent enough (or pulled enough leads) to call a loser with confidence. A <b>turn-off</b> needs roughly <b>$100+</b> of traced spend or <b>25+</b> leads behind it — so a short window shows fewer, and a <b>wider date range (try 30 days)</b> surfaces the obvious ones. That gap is expected, not a glitch.</span>
-        </div>
+        <div className="ddr-play-note">Nothing losing money in this window yet.</div>
       )}
     </div>
   );
@@ -6348,50 +6318,23 @@ function DataHealth({dashboard}){
 
   const alarm = broken.length > 0 || stale;
 
-  // Everything current → quiet green confidence line.
-  if(!alarm){
-    return (
-      <div style={{display:"flex",alignItems:"center",gap:9,padding:"8px 13px",marginBottom:14,
-        borderRadius:10,background:"color-mix(in srgb, var(--green) 9%, transparent)",
-        border:"1px solid color-mix(in srgb, var(--green) 26%, transparent)"}}>
-        <span style={{width:8,height:8,borderRadius:"50%",background:"var(--green)",flexShrink:0}}></span>
-        <span style={{fontSize:12.5,color:"var(--text-2)"}}>
-          Ad data is current{freshText?<span> — last updated <b style={{color:"var(--text)"}}>{freshText}</b></span>:null}. Every active account is reporting, so the numbers below are complete.
-        </span>
-        {notLive.length>0 && (
-          <span style={{fontSize:11.5,color:"var(--text-4)",marginLeft:"auto"}}>
-            {notLive.map(n=>n.name).join(", ")} not reporting yet (new account)
-          </span>
-        )}
-      </div>
-    );
-  }
+  // Everything current → say nothing.
+  if(!alarm) return null;
 
-  // Something's wrong → loud, plain-English, with the fix.
+  // A problem → one terse line per issue, monochrome with a small red dot.
   return (
-    <div style={{padding:"13px 15px",marginBottom:16,borderRadius:12,
-      background:"color-mix(in srgb, var(--red) 10%, transparent)",
-      border:"1px solid color-mix(in srgb, var(--red) 38%, transparent)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
-        <span style={{width:9,height:9,borderRadius:"50%",background:"var(--red)",flexShrink:0}}></span>
-        <span style={{fontSize:13.5,fontWeight:700,color:"var(--text)"}}>Some ad data has stopped coming in — read this before trusting the numbers</span>
-      </div>
+    <div style={{padding:"11px 14px",marginBottom:16,borderRadius:10,
+      background:"var(--panel-2)",border:"1px solid var(--border-2)",display:"flex",flexDirection:"column",gap:6}}>
       {broken.map(b => (
-        <div key={b.key} style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.55,marginBottom:5}}>
-          <b style={{color:"var(--text)"}}>{b.name}</b>'s ad spend stopped updating — <b style={{color:"var(--text)"}}>{b.days} day{b.days>1?"s":""} missing</b> ({dateLabelFromIso(b.from)}{b.from!==b.to?" – "+dateLabelFromIso(b.to):""}). Until this is fixed, every total below is missing {b.name}'s ads, so the real ROAS is higher than it looks.
+        <div key={b.key} style={{display:"flex",alignItems:"center",gap:9,fontSize:13,color:"var(--text-2)"}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:"var(--red)",flexShrink:0}}></span>
+          <span><b style={{color:"var(--text)"}}>{b.name}</b> not reporting — {b.days}d missing. Totals below exclude {b.name}.</span>
         </div>
       ))}
       {stale && broken.length===0 && (
-        <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.55,marginBottom:5}}>
-          The last ad-data update was <b style={{color:"var(--text)"}}>{freshText}</b>. The numbers below may be out of date until the next successful update.
-        </div>
-      )}
-      <div style={{fontSize:11.5,color:"var(--text-4)",marginTop:7,lineHeight:1.5}}>
-        Usually this means that creator's Meta connection needs refreshing (a new access key in the dashboard's settings). Send the affected creator over and it can be sorted.
-      </div>
-      {notLive.length>0 && (
-        <div style={{fontSize:11,color:"var(--text-4)",marginTop:6}}>
-          ({notLive.map(n=>n.name).join(", ")} {notLive.length>1?"are":"is"} not reporting yet — expected for a brand-new account, not a problem.)
+        <div style={{display:"flex",alignItems:"center",gap:9,fontSize:13,color:"var(--text-2)"}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:"var(--gold)",flexShrink:0}}></span>
+          <span>Ad data may be stale — last update {freshText}.</span>
         </div>
       )}
     </div>
@@ -8632,7 +8575,6 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
           <h2 className="ddr-title">Deep Dive</h2>
           <DataFlowToggle open={flowOpen} onToggle={()=>setFlowOpen(o=>!o)}/>
         </div>
-        <div className="ddr-sub">Everything below is tied to <b>ROAS</b> — your real return on ad spend for <b>{rangeLabel(range)}</b>. Change the dates above and it all redraws.</div>
       </div>
       <DataFlowMap open={flowOpen} sel={flowSel} setSel={setFlowSel}/>
 
