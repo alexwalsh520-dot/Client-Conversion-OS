@@ -8681,8 +8681,21 @@ function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
     fetch("/api/ads/decisions?account="+encodeURIComponent(scope)+"&key="+encodeURIComponent(key), {method:"DELETE"}).catch(()=>{});
   };
 
-  if(loading) return <div className="ddr-empty">Loading the numbers…</div>;
-  if(!rows.length) return <div className="ddr-empty">No ad activity in this date range. Try widening the dates above.</div>;
+  // Pager bar is reused in the empty/loading states too, so you can always flip
+  // to another creator even when this one has no activity in the range.
+  const pagerBar = pager ? (
+    <div className="ddr-pager">
+      <button type="button" className="ddr-pager-arrow" onClick={pager.onPrev} aria-label="Previous creator">←</button>
+      <div className="ddr-pager-mid">
+        <span className="ddr-pager-name">{pager.name}</span>
+        <span className="ddr-pager-count">{pager.idx+1} of {pager.count}</span>
+      </div>
+      <button type="button" className="ddr-pager-arrow" onClick={pager.onNext} aria-label="Next creator">→</button>
+    </div>
+  ) : null;
+
+  if(loading) return <div className="ddr">{pagerBar}<div className="ddr-empty">Loading the numbers…</div></div>;
+  if(!rows.length) return <div className="ddr">{pagerBar}<div className="ddr-empty">No ad activity for {pager?pager.name:"this account"} in this date range.</div></div>;
 
   const totalSpend = rows.reduce((s,r)=>s+r.spend,0);
   const totalLeads = rows.reduce((s,r)=>s+r.leads,0);
@@ -8762,16 +8775,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
 
       {/* All-accounts pager: flip through each creator's full view one at a time
           instead of merging everyone into one mush. Quiet, monochrome, sparse. */}
-      {pager && (
-        <div className="ddr-pager">
-          <button type="button" className="ddr-pager-arrow" onClick={pager.onPrev} aria-label="Previous creator">←</button>
-          <div className="ddr-pager-mid">
-            <span className="ddr-pager-name">{pager.name}</span>
-            <span className="ddr-pager-count">{pager.idx+1} of {pager.count}</span>
-          </div>
-          <button type="button" className="ddr-pager-arrow" onClick={pager.onNext} aria-label="Next creator">→</button>
-        </div>
-      )}
+      {pagerBar}
 
       {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
