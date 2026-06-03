@@ -1002,42 +1002,32 @@
   .ddr-play-note .ic{width:26px;height:26px;border-radius:99px;background:color-mix(in srgb,var(--gold) 14%,transparent);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
   .ddr-play-note b{color:var(--text-2)}
   .ddr-play-note i{font-style:italic;color:var(--text-2)}
-  /* ── Profit scale table: spend more = more profit ── */
-  .ps{margin:16px 0 22px;padding:22px 22px 18px;border:1px solid var(--border-2);border-radius:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 5%,var(--panel)),var(--panel) 55%)}
-  .ps-top{margin-bottom:16px}
-  .ps-h{font-size:23px;font-weight:760;color:var(--text);letter-spacing:-.015em;margin:0 0 5px}
-  .ps-h em{color:var(--gold);font-style:italic}
-  .ps-sub{font-size:13px;color:var(--text-3);margin:0;line-height:1.5}
-  .ps-ctl{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:16px}
-  .ps-ctl-l{font-size:12px;color:var(--text-3);margin-right:2px}
-  .ps-chip{font-size:12.5px;font-weight:650;padding:5px 12px;border-radius:99px;border:1px solid var(--border);background:var(--bg-1);color:var(--text-3);cursor:pointer;transition:all .12s}
+  /* ── Profit scale table (minimal, monochrome) ── */
+  .ps{margin:14px 0 20px;padding:24px 24px 20px}
+  .ps-top{margin-bottom:18px}
+  .ps-h{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-.01em;margin:0 0 6px}
+  .ps-sub{font-size:13px;color:var(--text-3);margin:0;line-height:1.55;max-width:680px}
+  .ps-ctl{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:20px}
+  .ps-ctl-l{font-size:12.5px;color:var(--text-4);margin-right:3px}
+  .ps-chip{font-size:12.5px;font-weight:500;padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-3);cursor:pointer;transition:all .12s}
   .ps-chip:hover{border-color:var(--border-2);color:var(--text-2)}
-  .ps-chip.on{background:color-mix(in srgb,var(--gold) 18%,transparent);border-color:var(--gold);color:var(--gold)}
-  .ps-rows{display:flex;flex-direction:column;gap:8px}
-  .ps-rowwrap{display:flex;flex-direction:column}
-  .ps-row{display:grid;grid-template-columns:minmax(150px,1fr) 2fr 22px;align-items:center;gap:18px;width:100%;text-align:left;padding:15px 16px;border:1px solid var(--border);border-radius:13px;background:var(--bg-1);cursor:pointer;transition:border-color .14s}
-  .ps-row:hover{border-color:var(--border-2)}
-  .ps-row.now{border-color:color-mix(in srgb,var(--gold) 40%,var(--border));background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 8%,var(--bg-1)),var(--bg-1))}
-  .ps-row.open{border-radius:13px 13px 0 0}
-  .ps-rev{font-size:21px;font-weight:760;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
-  .ps-revsub{font-size:10.5px;color:var(--text-4);margin-top:5px}
-  .ps-here{color:var(--gold);font-weight:700;letter-spacing:.02em}
-  .ps-netcell{min-width:0}
-  .ps-track{height:9px;border-radius:99px;background:color-mix(in srgb,var(--green) 9%,transparent);overflow:hidden;margin-bottom:7px}
-  .ps-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--green) 45%,transparent),var(--green));transition:width .45s cubic-bezier(.2,.8,.2,1)}
-  .ps-row.now .ps-fill{background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
-  .ps-netrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .ps-net{font-size:24px;font-weight:780;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
-  .ps-row.now .ps-net{color:var(--gold)}
-  .ps-permo{font-size:11px;font-weight:500;color:var(--text-4)}
-  .ps-delta{font-size:12.5px;font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent);padding:2px 8px;border-radius:99px}
-  .ps-caret{font-size:16px;color:var(--text-4);text-align:center;font-weight:600}
-  .ps-detail{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;font-size:11.5px;color:var(--text-3);border:1px solid var(--border);border-top:none;border-radius:0 0 13px 13px;background:var(--panel)}
-  .ps-detail b{color:var(--text)}
-  .ps-foot{margin-top:15px;font-size:13.5px;line-height:1.5;color:var(--text-2);text-align:center;padding-top:14px;border-top:1px dashed var(--border)}
-  .ps-foot b{color:var(--text)}
-  .ps-pop{color:var(--green)!important;font-size:16px}
-  @media(max-width:640px){.ps-row{grid-template-columns:1fr;gap:10px}.ps-caret{display:none}}
+  .ps-chip.on{border-color:var(--text-3);color:var(--text);background:var(--bg-1)}
+  .ps-tablewrap{overflow-x:auto}
+  .ps-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .ps-table th{font-size:11px;font-weight:500;color:var(--text-4);text-align:right;padding:0 0 13px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .ps-table th:first-child{text-align:left}
+  .ps-table th:not(:first-child),.ps-table td:not(:first-child){padding-left:24px}
+  .ps-table td{font-size:14px;color:var(--text-3);text-align:right;padding:16px 0;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);white-space:nowrap}
+  .ps-table tr:last-child td{border-bottom:none}
+  .ps-table td.rev{text-align:left;font-weight:600;color:var(--text);font-size:15px}
+  .ps-table td.mut{color:var(--text-4)}
+  .ps-table td.hero{color:var(--text);font-weight:650;font-size:16px}
+  .ps-table tr.now td{color:var(--text-2)}
+  .ps-table tr.now td.rev,.ps-table tr.now td.hero{color:var(--gold)}
+  .ps-here{display:inline-block;margin-left:10px;font-size:10px;font-weight:600;color:var(--gold);letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
+  .ps-foot{margin-top:18px;font-size:13px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .ps-foot b{color:var(--text);font-weight:650}
+  @media(max-width:640px){.ps{padding:18px}.ps-table th:not(:first-child),.ps-table td:not(:first-child){padding-left:14px}}
   .ddr-oldtoggle{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:16px 0 4px;padding:13px 16px;border:1px dashed var(--border-2);border-radius:12px;background:transparent;color:var(--text-3);font-size:13px;font-weight:600;cursor:pointer;transition:all .14s}
   .ddr-oldtoggle:hover{border-color:var(--text-4);color:var(--text-2);background:var(--bg-1)}
   .ddr-oldtoggle .car{color:var(--gold);font-size:11px}
@@ -1303,6 +1293,30 @@
   .ddr-pdid.scale .ic{background:color-mix(in srgb,var(--green) 18%,transparent)}
   .ddr-pdid:hover{transform:translateY(-1px);box-shadow:0 8px 22px -12px currentColor}
   .ddr-pdid:active{transform:translateY(0)}
+  /* ── Minimal monochrome action board: color reserved, secondary hidden ── */
+  .ddr-play-h b{color:var(--text)!important}
+  .ddr-realloc{background:var(--panel)!important;border-color:var(--border)!important}
+  .ddr-realloc .rl-amt{color:var(--text)!important;font-weight:600!important}
+  .ddr-pgh.scale,.ddr-pgh.kill{color:var(--text-4)!important}
+  .ddr-pcard.scale,.ddr-pcard.kill{background:var(--panel-2)!important}
+  .ddr-pcard.scale::before{background:var(--border-2)!important}
+  .ddr-pcard.kill::before{background:var(--text-4)!important}
+  .ddr-pcard.scale:hover,.ddr-pcard.kill:hover{border-color:var(--border-2)!important;box-shadow:none!important;transform:none!important}
+  .ddr-pcard.scale .ddr-pnum,.ddr-pcard.kill .ddr-pnum{color:var(--text-3)!important;border-color:var(--border)!important}
+  .ddr-pcard.scale .ddr-pmove .verb,.ddr-pcard.kill .ddr-pmove .verb{color:var(--text-3)!important}
+  .ddr-pcard.scale .ddr-pwhy .ar,.ddr-pcard.kill .ddr-pwhy .ar{color:var(--text-4)!important}
+  .ddr-pcard.scale .ddr-pthumb,.ddr-pcard.kill .ddr-pthumb{border-color:var(--border)!important}
+  .ddr-pcard.kill .ddr-pimpact .big,.ddr-pcard.scale .ddr-pimpact .big{color:var(--text)!important}
+  .ddr-pconf .dot{display:none!important}
+  .ddr-pconf.hi b,.ddr-pconf.md b,.ddr-pconf.lo b{color:var(--text-3)!important}
+  .ddr-pbar{display:none!important}
+  .ddr-pcard.scale .ddr-pdo,.ddr-pcard.kill .ddr-pdo{border-left-color:var(--border-2)!important}
+  .ddr-pdid.kill,.ddr-pdid.scale{color:var(--text-2)!important;background:var(--panel-2)!important;border-color:var(--border)!important}
+  .ddr-pdid.kill .ic,.ddr-pdid.scale .ic{background:var(--bg-2)!important}
+  .ddr-pdid:hover{box-shadow:none!important;border-color:var(--border-2)!important}
+  .ddr-pwhy{font-size:13px!important}
+  .ddr-pconf{font-size:12px!important}
+  .ddr-pimpact .cap{font-size:10px!important}
 
   /* ---- Decision tracker: every logged move, traced to a real result ---- */
   .ddt{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--gold) 16%,var(--border));background:radial-gradient(120% 150% at 100% 0%,color-mix(in srgb,var(--gold) 6%,var(--panel)),var(--panel) 60%)}
@@ -8431,24 +8445,22 @@ function MoneyCockpit({model}){
   const lower = [3.5,3,2.5,2].filter(r=> r < curRoas-0.05);
   const roasOpts = [Math.round(curRoas*10)/10, ...lower].slice(0,4);
   const [roas, setRoas] = useState(roasOpts[0]);
-  const [open, setOpen] = useState(null);
   const targetX = 3/margin;
-  const tiers = [1,2,4,8].map(mult=>{
+  const tiers = [0.4,1,2,4,6].map(mult=>{
     const isNow = mult===1;
     const r = isNow ? curRoas : roas;
     const rev = curRev*mult;
     const spend = rev/r;
     const net = isNow ? curNet : (rev*margin - spend - fixed);
-    return { mult, isNow, rev, spend, net, nMargin: rev>0?net/rev:0,
-      fixedPct: fixed/rev, killFloor: (spend+fixed)/(spend*margin), delta: net-curNet };
+    return { mult, isNow, rev, spend, fixedPct: fixed/rev,
+      killFloor: (spend+fixed)/(spend*margin), nMargin: rev>0?net/rev:0, net };
   });
-  const maxNet = Math.max(...tiers.map(t=>t.net), 1);
-  const topGain = tiers[tiers.length-1].net - curNet;
+  const topNet = tiers[tiers.length-1].net;
   return (
     <div className="ps">
       <div className="ps-top">
-        <h3 className="ps-h">The more you spend, the more you <em>keep</em>.</h3>
-        <p className="ps-sub">Bigger spend means bigger profit — even when ROAS drops as you scale. Live, from your real numbers.</p>
+        <h3 className="ps-h">The more you spend, the more you keep.</h3>
+        <p className="ps-sub">Your business at every size. Net profit climbs fast as you scale — fixed costs stop mattering. Even if ROAS slips, bigger means far more money.</p>
       </div>
       <div className="ps-ctl">
         <span className="ps-ctl-l">As you grow, even if ROAS slips to</span>
@@ -8458,35 +8470,28 @@ function MoneyCockpit({model}){
           </button>
         ))}
       </div>
-      <div className="ps-rows">
-        {tiers.map(t=>(
-          <div className="ps-rowwrap" key={t.mult}>
-            <button type="button" className={"ps-row"+(t.isNow?" now":"")+(open===t.mult?" open":"")} onClick={()=>setOpen(open===t.mult?null:t.mult)}>
-              <div className="ps-revcell">
-                <div className="ps-rev">{fmtUsd(t.rev)}</div>
-                <div className="ps-revsub">{t.isNow ? <span className="ps-here">● you are here</span> : <span>{t.mult}× bigger · {fmtUsd(t.spend)} spend</span>}</div>
-              </div>
-              <div className="ps-netcell">
-                <div className="ps-track"><div className="ps-fill" style={{width: Math.max(6,(t.net/maxNet)*100)+"%"}}></div></div>
-                <div className="ps-netrow">
-                  <span className="ps-net">{fmtUsd(t.net)}<span className="ps-permo"> net/mo</span></span>
-                  {!t.isNow && t.delta>0 && <span className="ps-delta">+{fmtUsd(t.delta)}</span>}
-                </div>
-              </div>
-              <span className="ps-caret">{open===t.mult?"–":"+"}</span>
-            </button>
-            {open===t.mult && (
-              <div className="ps-detail">
-                <span>Net margin <b>{fmtPct(t.nMargin*100,0)}</b></span>
-                <span>Fixed <b>{fmtUsd(fixed)}</b> · {fmtPct(t.fixedPct*100,0)} of rev</span>
-                <span>🛑 Kill floor <b>{t.killFloor.toFixed(2)}×</b></span>
-                <span>⭐ Target <b>{targetX.toFixed(1)}×</b></span>
-              </div>
-            )}
-          </div>
-        ))}
+      <div className="ps-tablewrap">
+        <table className="ps-table">
+          <thead><tr>
+            <th>Monthly revenue</th><th>Ad spend</th><th>Fixed %</th>
+            <th>Kill floor</th><th>Target</th><th>Net margin</th><th className="hero">Net profit / mo</th>
+          </tr></thead>
+          <tbody>
+            {tiers.map(t=>(
+              <tr key={t.mult} className={t.isNow?"now":""}>
+                <td className="rev">{fmtUsd(t.rev)}{t.isNow && <span className="ps-here">you are here</span>}</td>
+                <td>{fmtUsd(t.spend)}</td>
+                <td className="mut">{fmtPct(t.fixedPct*100,0)}</td>
+                <td className="mut">{t.killFloor.toFixed(1)}×</td>
+                <td className="mut">{targetX.toFixed(1)}×</td>
+                <td className="mut">{fmtPct(t.nMargin*100,0)}</td>
+                <td className="hero">{fmtUsd(t.net)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <div className="ps-foot">Go from <b>{fmtUsd(curRev)}</b> to <b>{fmtUsd(curRev*8)}</b>/mo and you pocket <b className="ps-pop">{fmtUsd(topGain)}</b> more profit every month{roas<curRoas-0.05?" — even at just "+roas.toFixed(1)+"× ROAS":""}.</div>
+      <div className="ps-foot">{fmtUsd(curRev)}/mo → {fmtUsd(curRev*6)}/mo turns {fmtUsd(curNet)} into <b>{fmtUsd(topNet)}</b>{roas<curRoas-0.05?" — even at "+roas.toFixed(1)+"× ROAS":""}.</div>
     </div>
   );
 }
