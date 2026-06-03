@@ -2972,12 +2972,23 @@ async function fetchAttributionResolutions(
 
 function latestResolutionsBySaleKey(resolutions: AttributionResolution[]) {
   const latest = new Map<string, AttributionResolution>();
-  for (const resolution of resolutions) {
-    const key = stableSaleKey(resolution.saleKey);
+  const consider = (key: string, resolution: AttributionResolution) => {
     const previous = latest.get(key);
     if (!previous || resolutionPriority(resolution) >= resolutionPriority(previous)) {
       latest.set(key, resolution);
     }
+  };
+  for (const resolution of resolutions) {
+    consider(stableSaleKey(resolution.saleKey), resolution);
+    // Also index a sale resolution by a STABLE per-person alias (creator + name),
+    // not just the exact sale key. The exact key embeds mutable sheet fields
+    // (call number, date, outcome) that rotate when the row is edited after
+    // resolution, which orphaned the saved answer and made a resolved sale
+    // reappear in the queue. The alias lets a resolved person stay resolved
+    // regardless of later edits. Exact key still wins at lookup time (see
+    // getSaleResolution); the alias is a fallback for rotated rows only.
+    const alias = saleContactAliasKeyForResolution(resolution);
+    if (alias) consider(alias, resolution);
   }
   return latest;
 }
@@ -2986,6 +2997,47 @@ function resolutionPriority(resolution: AttributionResolution) {
   if (resolution.source === ALERT_RESOLUTION_SOURCE) return 2;
   if (resolution.source === AUTO_ATTRIBUTION_SOURCE) return 1;
   return 0;
+}
+
+// ── Per-person sale-resolution alias ───────────────────────────────────────
+// A sale's ORIGIN belongs to the person, not to the row's mutable fingerprint.
+// These helpers build a stable "salecontact:<creator>:<normalized name>" key so
+// a resolved sale is still found after the sheet's call number / date / outcome
+// changes. The "salecontact:" prefix can never collide with a real "sale:" key.
+function saleContactAliasKeyFromParts(client: string, name: string | null | undefined): string | null {
+  const normalizedName = normalizePersonName(name);
+  if (!normalizedName) return null;
+  return `salecontact:${client || "unknown"}:${normalizedName}`;
+}
+
+function saleContactAliasKeyForResolution(resolution: AttributionResolution): string | null {
+  if (!resolution.saleKey.startsWith("sale:")) return null;
+  // Use the exact creator segment the sale key was built from, so it matches
+  // the creator a live row resolves to via salesRowKey.
+  const client = resolution.saleKey.split(":")[2] || resolution.clientKey || "unknown";
+  return saleContactAliasKeyFromParts(client, resolution.contactName);
+}
+
+function saleContactAliasKeyForRow(row: SheetRow, clientKey: string | null): string | null {
+  return saleContactAliasKeyFromParts(clientKey || clientFromOffer(row) || "unknown", row.name);
+}
+
+// Resolve a sale row to its saved resolution: exact sale key first (per-sale
+// precision preserved), then the per-person alias as a fallback for rows whose
+// key rotated after resolution. When both exist, the higher-priority (manual
+// over auto) wins so a stray auto-write can't shadow a human's manual answer.
+function getSaleResolution(
+  map: Map<string, AttributionResolution>,
+  row: SheetRow,
+  clientKey: string | null
+): AttributionResolution | undefined {
+  const exact = map.get(salesRowKey(row, clientKey));
+  const aliasKey = saleContactAliasKeyForRow(row, clientKey);
+  const aliased = aliasKey ? map.get(aliasKey) : undefined;
+  if (exact && aliased) {
+    return resolutionPriority(aliased) > resolutionPriority(exact) ? aliased : exact;
+  }
+  return exact || aliased;
 }
 
 async function persistAutomaticSalesAttributions({
@@ -3398,7 +3450,7 @@ function buildAttributionEventsHistory({
     if (isTestSalesRow(row)) continue;
     const clientKey = clientFromOffer(row);
     const saleKey = salesRowKey(row, clientKey);
-    const resolution = resolutionBySaleKey.get(saleKey);
+    const resolution = getSaleResolution(resolutionBySaleKey, row, clientKey);
     const match = matchedBookingForSalesRow(row, matchIndex);
     const keyword = normalizeKeyword(
       resolution?.keywordNormalized ||
@@ -3908,7 +3960,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
       );
       return attributionOverrideEventForRow(
         row,
-        resolutionBySaleKey.get(salesRowKey(row, clientKey)),
+        getSaleResolution(resolutionBySaleKey, row, clientKey),
         clientKey,
         hasRealGhlBooking
       );
@@ -3939,7 +3991,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const resolvedAlerts = attributionSalesRows
     .map((row) => {
       const clientKey = clientFromOffer(row);
-      const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+      const resolution = getSaleResolution(resolutionBySaleKey, row, clientKey);
       return resolution ? resolvedAlertForRow(row, clientKey, resolution) : null;
     })
     .filter((alert): alert is ResolvedAttributionAlert => Boolean(alert))
@@ -3952,7 +4004,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const includeUnmatchedSales = (row: SheetRow, clientKey: string | null) =>
     Boolean(clientKey && clientFilter.includes(clientKey)) &&
     !backfilledDateKeys.has(`${clientKey}:${row.date}`) &&
-    !resolutionBySaleKey.has(salesRowKey(row, clientKey));
+    !getSaleResolution(resolutionBySaleKey, row, clientKey);
 
   const salesMatchStats = emptySalesMatchStats();
   const unmatchedSales = applySalesToGroups(groups, attributionSalesRows, bookings, {
@@ -3996,7 +4048,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const includeUnmatchedAlertSales = (row: SheetRow, clientKey: string | null) =>
     Boolean(clientKey && alertClientFilter.includes(clientKey)) &&
     !alertBackfilledDateKeys.has(`${clientKey}:${row.date}`) &&
-    !resolutionBySaleKey.has(salesRowKey(row, clientKey));
+    !getSaleResolution(resolutionBySaleKey, row, clientKey);
   const alertUnmatchedSales = applySalesToGroups(new Map<string, Group>(), alertAttributionSalesRows, alertBookings, {
     groupId: (match) =>
       resolvedAttributionGroupId(
@@ -4221,14 +4273,14 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const allTimeResolvedAlerts = alertAttributionSalesRows
     .map((row) => {
       const clientKey = clientFromOffer(row);
-      const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+      const resolution = getSaleResolution(resolutionBySaleKey, row, clientKey);
       return resolution ? resolvedAlertForRow(row, clientKey, resolution) : null;
     })
     .filter((alert): alert is ResolvedAttributionAlert => Boolean(alert));
   const allTimeResolvedPaidRevenue = alertAttributionSalesRows.reduce((sum, row) => {
     const clientKey = clientFromOffer(row);
     if (!clientKey || alertBackfilledDateKeys.has(`${clientKey}:${row.date}`)) return sum;
-    const resolution = resolutionBySaleKey.get(salesRowKey(row, clientKey));
+    const resolution = getSaleResolution(resolutionBySaleKey, row, clientKey);
     return resolution?.action === "attribute" ? sum + saleAmount(row) : sum;
   }, 0);
   const allTimePaidAttributedRevenue = allTimeBackfillPaidRevenue + allTimeResolvedPaidRevenue;
