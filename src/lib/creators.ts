@@ -12,7 +12,7 @@
 // (they show "not configured" instead of erroring).
 // ─────────────────────────────────────────────────────────────────────────
 
-export type CreatorKey = "tyson" | "keith" | "lucy";
+export type CreatorKey = "tyson" | "keith" | "lucy" | "antwan";
 
 export interface Creator {
   /** Short internal key used across the ads pipeline. */
@@ -65,6 +65,16 @@ export const CREATORS: readonly Creator[] = [
     tokenEnv: ["META_ACCESS_TOKEN_LUCY_HUBBARD", "META_ACCESS_TOKEN_LUCY", "META_ACCESS_TOKEN"],
     // No defaultAdAccountId yet — supplied via Vercel env var once Lucy is connected.
     matchTokens: ["lucy", "hubbard"],
+  },
+  {
+    key: "antwan",
+    name: "Antwan",
+    // Default until Antwan's ad-account timezone is confirmed.
+    timezone: "America/New_York",
+    adAccountEnv: ["META_AD_ACCOUNT_ANTWAN_RARCUS", "META_AD_ACCOUNT_ANTWAN"],
+    tokenEnv: ["META_ACCESS_TOKEN_ANTWAN_RARCUS", "META_ACCESS_TOKEN_ANTWAN", "META_ACCESS_TOKEN"],
+    defaultAdAccountId: "act_275999723846625", // Against All Odds Fitness (never-expire System User token)
+    matchTokens: ["antwan", "rarcus", "against all odds"],
   },
 ];
 
