@@ -1118,6 +1118,48 @@
   .ddr-var-dl.on:disabled{cursor:default;opacity:.6}
   .ddr-var-empty{font-size:13px;color:var(--text-4);padding:8px 0}
   @media(max-width:640px){.ddr-var-grid{grid-template-columns:repeat(3,1fr)}}
+  /* Generate popup */
+  .ddr-gp-back{position:fixed;inset:0;z-index:60;background:color-mix(in srgb,#000 64%,transparent);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:48px 18px;overflow-y:auto}
+  .ddr-gp{width:100%;max-width:620px;background:var(--panel);border:1px solid var(--border-2);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden}
+  .ddr-gp-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border)}
+  .ddr-gp-title{font-size:15px;font-weight:650;color:var(--text)}
+  .ddr-gp-title span{margin-left:8px;font-weight:500;color:var(--text-4)}
+  .ddr-gp-x{width:28px;height:28px;border-radius:8px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text-3);font-size:12px;cursor:pointer;transition:border-color .14s,color .14s}
+  .ddr-gp-x:hover{border-color:var(--text-3);color:var(--text)}
+  .ddr-gp-body{padding:18px;display:flex;flex-direction:column;gap:16px}
+  .ddr-gp-refs{display:flex;gap:10px;flex-wrap:wrap}
+  .ddr-gp-ref{position:relative;width:64px}
+  .ddr-gp-ref img{width:64px;height:64px;object-fit:cover;border-radius:9px;border:1px solid var(--border-2);display:block}
+  .ddr-gp-ref-ph{width:64px;height:64px;border-radius:9px;border:1px dashed var(--border-2);display:flex;align-items:center;justify-content:center;color:var(--text-4);font-size:11px;background:var(--bg-1)}
+  .ddr-gp-ref-tag{display:block;text-align:center;margin-top:4px;font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--text-4)}
+  .ddr-gp-ref-rm{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:1px solid var(--border-2);background:var(--panel);color:var(--text-3);font-size:9px;cursor:pointer;line-height:1}
+  .ddr-gp-ref-rm:hover{color:var(--red);border-color:var(--red)}
+  .ddr-gp-ref-add{width:64px;height:64px;border-radius:9px;border:1px dashed var(--border-2);background:var(--bg-1);color:var(--text-4);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9.5px;transition:border-color .14s,color .14s}
+  .ddr-gp-ref-add:hover{border-color:var(--text-3);color:var(--text-2)}
+  .ddr-gp-ref-plus{font-size:18px;line-height:1}
+  .ddr-gp-presets{display:flex;gap:8px;flex-wrap:wrap}
+  .ddr-gp-preset{font-size:12px;padding:6px 11px;border-radius:999px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text-3);cursor:pointer;transition:border-color .14s,color .14s}
+  .ddr-gp-preset:hover{border-color:var(--text-3);color:var(--text)}
+  .ddr-gp-chat textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:64px;border:1px solid var(--border-2);border-radius:10px;background:var(--bg-1);color:var(--text);font:inherit;font-size:13px;line-height:1.5;padding:11px 13px}
+  .ddr-gp-chat textarea:focus{outline:none;border-color:var(--text-3)}
+  .ddr-gp-chat textarea::placeholder{color:var(--text-4)}
+  .ddr-gp-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .ddr-gp-count{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-3)}
+  .ddr-gp-count button{width:24px;height:24px;border-radius:7px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text-2);font-size:14px;cursor:pointer}
+  .ddr-gp-count button:disabled{opacity:.4;cursor:default}
+  .ddr-gp-count b{font-size:14px;color:var(--text);min-width:14px;text-align:center}
+  .ddr-gp-go{margin-left:auto;font-size:13px;font-weight:600;padding:9px 18px;border-radius:9px;border:1px solid var(--gold);background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold);cursor:pointer;transition:background .14s}
+  .ddr-gp-go:hover:not(:disabled){background:color-mix(in srgb,var(--gold) 26%,transparent)}
+  .ddr-gp-go:disabled{cursor:default;opacity:.7}
+  .ddr-gp-results{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;border-top:1px solid var(--border);padding-top:16px}
+  .ddr-gp-cell{aspect-ratio:1}
+  .ddr-gp-img{width:100%;height:100%;border-radius:9px;border:1px solid var(--border);background:var(--bg-1);overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .ddr-gp-img.creating{animation:ddrVarPulse 1.3s ease-in-out infinite}
+  .ddr-gp-img img{width:100%;height:100%;object-fit:cover;display:block}
+  .ddr-gp-fail{font-size:10.5px;color:var(--red)}
+  .ddr-gp-spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--border-2);border-top-color:var(--text-3);animation:ddrSpin .8s linear infinite}
+  @keyframes ddrSpin{to{transform:rotate(360deg)}}
+  @media(max-width:560px){.ddr-gp-results{grid-template-columns:repeat(3,1fr)}}
   .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
   .ddr-rules .rg{display:flex;flex-direction:column;gap:5px}
   .ddr-rules .rgh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
@@ -8541,6 +8583,121 @@ function DataFlowMap({ open, sel, setSel }){
 const VAR_KIND_LABEL = {background:"background", highlightWord:"highlight word", copyTweak:"copy"};
 function varKindLabel(k){ return VAR_KIND_LABEL[k] || k || ""; }
 
+// Generate presets — lifted verbatim from Studio 2's generate tab, adapted here.
+const VAR_GEN_PRESETS = [
+  {id:"same-style", label:"Same text style", prompt:"Use the exact same bold font style, line spacing, black rounded background highlights, text placement style, and overall Instagram Story ad format."},
+  {id:"same-person", label:"Keep person identical", prompt:"Keep the person, body, face, pose, lighting, and background image as identical as possible. Only make the requested ad variation."},
+  {id:"copy-only", label:"Copy only", prompt:"Only vary the ad copy slightly. Keep the image, layout, text styling, highlight backgrounds, and visual composition the same."},
+  {id:"premium-readable", label:"More premium", prompt:"Make the final ad feel cleaner, more premium, and easier to read while preserving the same direct-response style."},
+];
+const VAR_GEN_MAX = 10;
+const VAR_GEN_MAX_REF_BYTES = 6*1024*1024;
+function readFileAsDataUrl(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error||new Error("read failed")); r.readAsDataURL(file); });
+}
+
+// The Generate popup — a Studio-2-style chat: the winning ad is the default
+// reference, you can add a second (upload now; R2 library next), pick presets,
+// type a prompt, choose how many, and watch each image stream in as it finishes.
+function GeneratePopup({winner, onClose, onDone}){
+  const [prompt,setPrompt]=useState("");
+  const [count,setCount]=useState(4);
+  const [refs,setRefs]=useState([]);     // extra references: {dataUrl,name}
+  const [slots,setSlots]=useState([]);   // {status:"creating"|"ready"|"failed", url, error}
+  const [running,setRunning]=useState(false);
+  const fileRef=useRef(null);
+  const doneCount = slots.filter(s=>s.status!=="creating").length;
+
+  const applyPreset=(p)=> setPrompt(prev=> prev.trim()? (prev.trim()+" "+p.prompt) : p.prompt);
+  const pickFiles=async (e)=>{
+    const files=[...(e.target.files||[])]; if(e.target) e.target.value="";
+    for(const f of files){
+      if(f.size>VAR_GEN_MAX_REF_BYTES) continue;
+      try{ const dataUrl=await readFileAsDataUrl(f); setRefs(prev=> prev.length>=3?prev:[...prev,{dataUrl,name:f.name||"reference"}]); }catch(_){}
+    }
+  };
+  const removeRef=(i)=> setRefs(prev=>prev.filter((_,k)=>k!==i));
+
+  const run=async ()=>{
+    if(running) return;
+    const instruction = prompt.trim() || "Create a fresh variation of this winning ad. Keep the same person, layout, and on-image text; vary the background to a clean, on-brand alternative.";
+    const n=Math.max(1,Math.min(VAR_GEN_MAX,count));
+    const jobId = winner.adId+"-"+Date.now();
+    const extraReferenceUrls = refs.map(r=>r.dataUrl);
+    setRunning(true);
+    setSlots(Array.from({length:n}).map(()=>({status:"creating",url:null,error:null})));
+    const tasks = Array.from({length:n}).map((_,i)=>
+      fetch("/api/ads/variations/generate-one",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({adId:winner.adId,prompt:instruction,kind:"background",jobId,index:i,extraReferenceUrls})})
+        .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error((d&&d.error)||("Failed ("+r.status+")")); return d.variation; })
+        .then(v=> setSlots(prev=>prev.map((s,k)=>k===i?{status:"ready",url:v&&v.image_url,error:null}:s)))
+        .catch(e=> setSlots(prev=>prev.map((s,k)=>k===i?{status:"failed",url:null,error:String(e&&e.message||e)}:s)))
+    );
+    await Promise.allSettled(tasks);
+    setRunning(false);
+    if(onDone) onDone();
+  };
+
+  return (
+    <div className="ddr-gp-back" onClick={onClose}>
+      <div className="ddr-gp" onClick={e=>e.stopPropagation()}>
+        <div className="ddr-gp-head">
+          <div className="ddr-gp-title">Generate variations <span>{winner.name}</span></div>
+          <button type="button" className="ddr-gp-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="ddr-gp-body">
+          <div className="ddr-gp-refs">
+            <div className="ddr-gp-ref">
+              {winner.ref ? <img src={winner.ref} alt="" referrerPolicy="no-referrer"/> : <span className="ddr-gp-ref-ph">ad</span>}
+              <span className="ddr-gp-ref-tag">Winning ad</span>
+            </div>
+            {refs.map((r,i)=>(
+              <div className="ddr-gp-ref" key={i}>
+                <img src={r.dataUrl} alt=""/>
+                <button type="button" className="ddr-gp-ref-rm" onClick={()=>removeRef(i)} aria-label="Remove reference">✕</button>
+                <span className="ddr-gp-ref-tag">Reference</span>
+              </div>
+            ))}
+            {refs.length<3 && (
+              <button type="button" className="ddr-gp-ref-add" onClick={()=>fileRef.current&&fileRef.current.click()} title="Add a reference image">
+                <span className="ddr-gp-ref-plus">+</span><span>Add reference</span>
+              </button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickFiles}/>
+          </div>
+          <div className="ddr-gp-presets">
+            {VAR_GEN_PRESETS.map(p=>(
+              <button type="button" key={p.id} className="ddr-gp-preset" onClick={()=>applyPreset(p)} title={p.prompt}>{p.label}</button>
+            ))}
+          </div>
+          <div className="ddr-gp-chat">
+            <textarea rows={3} placeholder="Tell the engine what to change — e.g. swap the background to a sunrise beach, keep the person and the text exactly." value={prompt} onChange={e=>setPrompt(e.target.value)} />
+          </div>
+          <div className="ddr-gp-foot">
+            <div className="ddr-gp-count">
+              <span>How many</span>
+              <button type="button" onClick={()=>setCount(c=>Math.max(1,c-1))} disabled={running||count<=1}>−</button>
+              <b>{count}</b>
+              <button type="button" onClick={()=>setCount(c=>Math.min(VAR_GEN_MAX,c+1))} disabled={running||count>=VAR_GEN_MAX}>+</button>
+            </div>
+            <button type="button" className="ddr-gp-go" onClick={run} disabled={running}>{running ? ("Generating… "+doneCount+"/"+slots.length) : ("Generate "+count)}</button>
+          </div>
+          {slots.length>0 && (
+            <div className="ddr-gp-results">
+              {slots.map((s,i)=>(
+                <div className="ddr-gp-cell" key={i}>
+                  <div className={"ddr-gp-img "+s.status}>
+                    {s.status==="ready" && s.url ? <img src={s.url} alt="" loading="lazy"/> : s.status==="failed" ? <span className="ddr-gp-fail" title={s.error||""}>failed</span> : <span className="ddr-gp-spin"/>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdVariations({rows}){
   const capw = (s)=>{ s=String(s||""); return s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : "—"; };
   const [pick, setPick] = useState(null);
@@ -8550,8 +8707,9 @@ function AdVariations({rows}){
   const [sopDraft, setSopDraft] = useState("");        // editable SOP text (committed on blur)
   // adId -> { loading, error, jobId, createdAt, variations:[] }
   const [jobs, setJobs] = useState({});
-  const [genId, setGenId] = useState(null);   // adId currently (re)generating
+  const [genId, setGenId] = useState(null);   // adId currently (re)generating (legacy batch)
   const [genErr, setGenErr] = useState({});    // adId -> error string
+  const [genOpen, setGenOpen] = useState(null); // winner object whose Generate popup is open
 
   const winners = useMemo(()=>(Array.isArray(rows)?rows:[])
     .filter(r=>r.traced && r.roas!=null && r.roas>=3)
@@ -8707,8 +8865,8 @@ function AdVariations({rows}){
                   {genErr[a.adId] && <div className="ddr-var-err">{genErr[a.adId]}</div>}
                   <div className="ddr-var-bar">
                     <span>{mixLine}</span>
-                    <button type="button" className="ddr-var-dl on" disabled={generating||!!genId} onClick={()=>regen(a.adId)}>
-                      {generating ? "Generating "+total+"… ~2 min" : "Regenerate"}
+                    <button type="button" className="ddr-var-dl on" onClick={()=>setGenOpen({name:capw(a.name), adId:a.adId, ref:a.ref})}>
+                      Generate variations
                     </button>
                   </div>
                 </div>
@@ -8717,6 +8875,13 @@ function AdVariations({rows}){
           );})}
         </div>
       ) : <div className="ddr-var-empty">No winner ready to vary yet — an ad needs traced revenue at 3×+ ROAS to qualify.</div>}
+      {genOpen && (
+        <GeneratePopup
+          winner={genOpen}
+          onClose={()=>setGenOpen(null)}
+          onDone={()=>{ if(genOpen) loadJob(genOpen.adId); }}
+        />
+      )}
     </div>
   );
 }
