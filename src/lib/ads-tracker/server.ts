@@ -1002,6 +1002,44 @@ async function fetchFreshSalesRows(
   }
 }
 
+// The synced copy counts as "fresh" if it was synced within this window. A
+// background cron refreshes it ~every 10 min; 20 min tolerates one missed run.
+const SALES_COPY_FRESH_MS = 20 * 60 * 1000;
+
+async function salesCopyLatestSyncedAt(
+  db: ReturnType<typeof getServiceSupabase>
+): Promise<number | null> {
+  const { data, error } = await db
+    .from("sales_tracker_rows")
+    .select("synced_at")
+    .order("synced_at", { ascending: false })
+    .limit(1);
+  if (error || !data || !data.length) return null;
+  const syncedAt = (data[0] as { synced_at?: string | null }).synced_at;
+  if (!syncedAt) return null;
+  const t = Date.parse(String(syncedAt));
+  return Number.isFinite(t) ? t : null;
+}
+
+// Read sales from the synced Supabase copy (~100ms) instead of the live Google
+// Sheet (~seconds per round-trip — the old per-load latency floor that made the
+// whole tab slow). The copy is verified byte-identical to the live sheet and is
+// refreshed by a background cron ~every 10 min. If the copy is missing OR STALE
+// (cron lagging beyond SALES_COPY_FRESH_MS), fall back to the live sheet, so the
+// dashboard is fast when the copy is fresh and NEVER silently out of date.
+async function fetchSalesRowsFast(
+  db: ReturnType<typeof getServiceSupabase>,
+  query: AdsTrackerQuery,
+  clientFilter: string[]
+): Promise<SheetRow[]> {
+  const latest = await salesCopyLatestSyncedAt(db);
+  if (latest != null && Date.now() - latest <= SALES_COPY_FRESH_MS) {
+    const copy = await fetchSalesRowsFromSupabase(db, query, clientFilter);
+    if (copy && copy.length) return copy;
+  }
+  return fetchFreshSalesRows(db, query, clientFilter);
+}
+
 // Deterministic candidate order so matchSalesRow's .find()/[0] always pick the
 // SAME booking across identical loads. Supabase row order is NOT guaranteed, so
 // an unsorted candidate list let a sale's revenue flip between ads on reload
@@ -3769,7 +3807,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         .limit(20),
       fetchKeywordBackfillRows(db, query, clientFilter),
       fetchAttributionResolutions(db),
-      fetchFreshSalesRows(db, query, clientFilter),
+      fetchSalesRowsFast(db, query, clientFilter),
       fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo),
       fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo),
       fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo),
@@ -3780,7 +3818,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
         alertDashboardEventQueryFrom,
         alertEventQueryTo
       ),
-      fetchFreshSalesRows(db, alertQuery, alertClientFilter),
+      fetchSalesRowsFast(db, alertQuery, alertClientFilter),
     ]);
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
