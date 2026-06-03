@@ -60,9 +60,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "generation failed";
-    // Missing reference image or missing API key are caller-actionable → 422.
+    // Caller-actionable problems (no reference image to vary, or the image
+    // provider's credential needs attention) → 422 so the UI shows a clear
+    // "do this" message instead of a generic failure.
     const isUnprocessable =
       message.includes("No stored creative image") ||
+      message.includes("Higgsfield needs a fresh login token") ||
       message.includes("OPENAI_API_KEY not set");
     return NextResponse.json({ error: message }, { status: isUnprocessable ? 422 : 500 });
   }

@@ -1052,7 +1052,19 @@
   .ddr-oldtoggle .car{color:var(--gold);font-size:11px}
   .ddr-oldtoggle .sub2{font-weight:400;color:var(--text-4)}
   .ddr-var{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
-  .ddr-var-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px}
+  .ddr-var-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+  .ddr-var-h{font-size:16px;font-weight:650;color:var(--text)}
+  .ddr-var-sub{font-size:12.5px;color:var(--text-4);margin-top:3px;max-width:42ch}
+  .ddr-var-set{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+  .ddr-var-set[aria-busy=true]{opacity:.55}
+  .ddr-var-step{display:flex;flex-direction:column;gap:5px}
+  .ddr-var-step-l{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-4)}
+  .ddr-var-step-c{display:inline-flex;align-items:center;gap:9px}
+  .ddr-var-step-c button{width:22px;height:22px;border-radius:6px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text-2);font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:border-color .14s,color .14s}
+  .ddr-var-step-c button:hover:not(:disabled){border-color:var(--text-3);color:var(--text)}
+  .ddr-var-step-c button:disabled{opacity:.4;cursor:default}
+  .ddr-var-step-n{font-size:14px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums;min-width:14px;text-align:center}
+  .ddr-var-step-tot{padding-left:14px;border-left:1px solid var(--border)}
   .ddr-var-list{display:flex;flex-direction:column;gap:8px}
   .ddr-var-item{display:flex;flex-direction:column}
   .ddr-var-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;width:100%;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-1);cursor:pointer;transition:border-color .14s}
@@ -1063,13 +1075,24 @@
   .ddr-var-go{font-size:12.5px;color:var(--text-4);display:inline-flex;align-items:center;gap:8px}
   .ddr-var-cv{font-size:15px;color:var(--text-4)}
   .ddr-var-gen{border:1px solid var(--text-4);border-top:none;border-radius:0 0 10px 10px;padding:16px;background:var(--bg-1)}
+  .ddr-var-ref{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .ddr-var-refimg{width:42px;height:42px;object-fit:cover;border-radius:7px;border:1px solid var(--border-2);background:var(--panel)}
+  .ddr-var-ref-l{font-size:11.5px;color:var(--text-4);letter-spacing:.02em}
   .ddr-var-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
   .ddr-var-cell{display:flex;flex-direction:column;gap:5px}
-  .ddr-var-img{aspect-ratio:1;border:1px dashed var(--border-2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-4);font-size:12px;background:var(--panel)}
+  .ddr-var-img{aspect-ratio:1;border:1px dashed var(--border-2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-4);font-size:12px;background:var(--panel);overflow:hidden}
+  .ddr-var-img.full{border-style:solid;border-color:var(--border)}
+  .ddr-var-img.full img{width:100%;height:100%;object-fit:cover;display:block}
+  .ddr-var-img.gen{position:relative;border-style:solid;animation:ddrVarPulse 1.3s ease-in-out infinite}
+  @keyframes ddrVarPulse{0%,100%{background:var(--panel)}50%{background:var(--panel-2)}}
   .ddr-var-tag{font-size:10px;color:var(--text-4);text-align:center}
+  .ddr-var-err{margin-top:12px;font-size:12px;color:var(--red);background:color-mix(in srgb,var(--red) 9%,transparent);border:1px solid color-mix(in srgb,var(--red) 26%,transparent);border-radius:8px;padding:8px 11px}
   .ddr-var-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--text-4)}
   .ddr-var-bar>span:first-child{color:var(--text-2);font-weight:600}
   .ddr-var-dl{margin-left:auto;font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:8px;border:1px solid var(--border-2);background:transparent;color:var(--text-4);cursor:not-allowed}
+  .ddr-var-dl.on{color:var(--text);border-color:var(--text-3);cursor:pointer;transition:border-color .14s,background .14s}
+  .ddr-var-dl.on:hover:not(:disabled){border-color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
+  .ddr-var-dl.on:disabled{cursor:default;opacity:.6}
   .ddr-var-empty{font-size:13px;color:var(--text-4);padding:8px 0}
   @media(max-width:640px){.ddr-var-grid{grid-template-columns:repeat(3,1fr)}}
   .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
@@ -1678,7 +1701,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
 
 // ------- Icons (minimal, stroke)
 const Icon = ({ d, size=14, stroke=1.4 }) => (
@@ -8487,47 +8510,152 @@ function DataFlowMap({ open, sel, setSel }){
 // The daily, visual proof that scaling ad spend grows NET profit — built to
 // dissolve the ROAS-protection limiting belief. All numbers come from the
 // server money model (whole-business, trailing 30 days, canonical economics).
-// Make variations — scaffold for the automated creative engine (Higgsfield).
-// Surfaces the current winning ads as variation candidates; generation wires next.
+// Variations factory — the automated creative engine (Higgsfield gpt_image_2).
+// Surfaces your winning ads and the variations the engine has already generated
+// from each, so you open this every morning to ready-to-launch creative. Reads
+// live from /api/ads/variations (per ad), /settings (the editable mix), and
+// /generate (the Regenerate action). Nothing here is mocked.
+const VAR_KIND_LABEL = {background:"background", highlightWord:"highlight word", copyTweak:"copy"};
+function varKindLabel(k){ return VAR_KIND_LABEL[k] || k || ""; }
+
 function AdVariations({rows}){
   const capw = (s)=>{ s=String(s||""); return s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : "—"; };
   const [pick, setPick] = useState(null);
-  const winners = (Array.isArray(rows)?rows:[])
+  const [settings, setSettings] = useState(null);
+  const [setBusy, setSetBusy] = useState(false);
+  // adId -> { loading, error, jobId, createdAt, variations:[] }
+  const [jobs, setJobs] = useState({});
+  const [genId, setGenId] = useState(null);   // adId currently (re)generating
+  const [genErr, setGenErr] = useState({});    // adId -> error string
+
+  const winners = useMemo(()=>(Array.isArray(rows)?rows:[])
     .filter(r=>r.traced && r.roas!=null && r.roas>=3)
     .sort((a,b)=>b.roas-a.roas).slice(0,3)
-    .map(r=>({name:r.keyword, roas:r.roas}));
+    .map(r=>{ const p=(r.previews&&r.previews[0])||null; return {name:r.keyword, roas:r.roas, adId:p&&p.adId, ref:p&&(p.thumb||p.full)}; })
+    .filter(w=>w.adId), [rows]);
+
+  // Load the live settings (the mix the engine uses) once.
+  useEffect(()=>{
+    let off=false;
+    fetch("/api/ads/variations/settings").then(r=>r.json()).then(d=>{ if(!off && d && d.settings) setSettings(d.settings); }).catch(()=>{});
+    return ()=>{ off=true; };
+  }, []);
+
+  // Pull each winner's most-recent batch so the "N ready" counts are real and
+  // expanding is instant. Re-runs when the winner set changes.
+  const loadJob = useCallback((adId)=>{
+    if(!adId) return;
+    setJobs(prev=>({...prev, [adId]:{...(prev[adId]||{}), loading:true, error:null}}));
+    fetch("/api/ads/variations?adId="+encodeURIComponent(adId))
+      .then(r=>r.json())
+      .then(d=>{ setJobs(prev=>({...prev, [adId]:{loading:false, error:d&&d.error?d.error:null, jobId:d&&d.jobId, createdAt:d&&d.createdAt, variations:(d&&d.variations)||[]}})); })
+      .catch(e=>{ setJobs(prev=>({...prev, [adId]:{loading:false, error:String(e&&e.message||e), variations:[]}})); });
+  }, []);
+  useEffect(()=>{ winners.forEach(w=>loadJob(w.adId)); }, [winners, loadJob]);
+
+  const saveMix = (kind, delta)=>{
+    if(!settings) return;
+    const mix = {...settings.mix};
+    mix[kind] = Math.max(0, (Number(mix[kind])||0) + delta);
+    const next = {...settings, mix, variationsPerJob:(mix.background+mix.highlightWord+mix.copyTweak)};
+    setSettings(next);                       // optimistic
+    setSetBusy(true);
+    fetch("/api/ads/variations/settings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({mix})})
+      .then(r=>r.json()).then(d=>{ if(d&&d.settings) setSettings(d.settings); }).catch(()=>{}).finally(()=>setSetBusy(false));
+  };
+
+  const regen = (adId)=>{
+    if(!adId || genId) return;
+    setGenId(adId); setGenErr(prev=>({...prev, [adId]:null}));
+    fetch("/api/ads/variations/generate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({adId})})
+      .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error((d&&d.error)||("Generation failed ("+r.status+")")); return d; })
+      .then(d=>{ setJobs(prev=>({...prev, [adId]:{loading:false, error:null, jobId:d.jobId, createdAt:null, variations:d.variations||[]}}));
+                 if(d&&d.failed>0 && (!d.variations||!d.variations.length)) setGenErr(prev=>({...prev,[adId]:(d.errors&&d.errors[0])||"Generation failed."})); })
+      .catch(e=>setGenErr(prev=>({...prev,[adId]:String(e&&e.message||e)})))
+      .finally(()=>setGenId(null));
+  };
+
+  const total = settings ? settings.variationsPerJob : 10;
+  const mixLine = settings
+    ? settings.mix.background+" background · "+settings.mix.highlightWord+" highlighted word · "+settings.mix.copyTweak+" copy tweak"
+    : "6 background · 2 highlighted word · 2 copy tweak";
+
   return (
     <div className="ddr-var">
-      <div className="ddr-var-h">Variations factory</div>
+      <div className="ddr-var-head">
+        <div>
+          <div className="ddr-var-h">Variations factory</div>
+          <div className="ddr-var-sub">Fresh variations of your winners, made by the engine — ready each morning.</div>
+        </div>
+        {settings && (
+          <div className="ddr-var-set" aria-busy={setBusy}>
+            {[["background","Backgrounds"],["highlightWord","Highlighted word"],["copyTweak","Copy tweaks"]].map(([k,lbl])=>(
+              <div className="ddr-var-step" key={k}>
+                <span className="ddr-var-step-l">{lbl}</span>
+                <div className="ddr-var-step-c">
+                  <button type="button" onClick={()=>saveMix(k,-1)} disabled={setBusy||settings.mix[k]<=0}>−</button>
+                  <span className="ddr-var-step-n">{settings.mix[k]}</span>
+                  <button type="button" onClick={()=>saveMix(k,1)} disabled={setBusy}>+</button>
+                </div>
+              </div>
+            ))}
+            <div className="ddr-var-step ddr-var-step-tot"><span className="ddr-var-step-l">Per job</span><span className="ddr-var-step-n">{total}</span></div>
+          </div>
+        )}
+      </div>
       {winners.length>0 ? (
         <div className="ddr-var-list">
-          {winners.map((a,i)=>(
-            <div className="ddr-var-item" key={i}>
+          {winners.map((a,i)=>{
+            const job = jobs[a.adId] || {};
+            const vars = job.variations || [];
+            const generating = genId===a.adId;
+            const ready = generating ? null : (job.loading ? null : vars.length);
+            const cells = generating ? Array.from({length:total}).map(()=>null) : vars;
+            return (
+            <div className="ddr-var-item" key={a.adId}>
               <button type="button" className={"ddr-var-row"+(pick===i?" on":"")} onClick={()=>setPick(pick===i?null:i)}>
                 <span className="nm">{capw(a.name)}</span>
                 <span className="rs">{a.roas.toFixed(1)}×</span>
-                <span className="ddr-var-go">10 ready <span className="ddr-var-cv">{pick===i?"−":"+"}</span></span>
+                <span className="ddr-var-go">
+                  {generating ? "generating…" : job.loading ? "loading…" : ready>0 ? ready+" ready" : "none yet"}
+                  <span className="ddr-var-cv">{pick===i?"−":"+"}</span>
+                </span>
               </button>
               {pick===i && (
                 <div className="ddr-var-gen">
-                  <div className="ddr-var-grid">
-                    {Array.from({length:10}).map((_,k)=>(
-                      <div className="ddr-var-cell" key={k}>
-                        <div className="ddr-var-img">{k+1}</div>
-                        <span className="ddr-var-tag">{k<6?"background":k<8?"highlight word":"copy"}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {a.ref && (
+                    <div className="ddr-var-ref">
+                      <img className="ddr-var-refimg" src={a.ref} alt={capw(a.name)} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
+                      <span className="ddr-var-ref-l">Varying from this winner</span>
+                    </div>
+                  )}
+                  {(!generating && !job.loading && vars.length===0) ? (
+                    <div className="ddr-var-empty">No variations made yet — hit Regenerate to build the first batch.</div>
+                  ) : (
+                    <div className="ddr-var-grid">
+                      {cells.map((v,k)=>(
+                        <div className="ddr-var-cell" key={v?v.id:k}>
+                          <div className={"ddr-var-img"+(v&&v.image_url?" full":"")+(generating?" gen":"")}>
+                            {v&&v.image_url ? <img src={v.image_url} alt="" loading="lazy"/> : (generating ? "" : k+1)}
+                          </div>
+                          <span className="ddr-var-tag">{v?varKindLabel(v.kind):(k<(settings?settings.mix.background:6)?"background":k<(settings?settings.mix.background+settings.mix.highlightWord:8)?"highlight word":"copy")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {genErr[a.adId] && <div className="ddr-var-err">{genErr[a.adId]}</div>}
                   <div className="ddr-var-bar">
-                    <span>6 new background · 2 new highlighted word · 2 copy tweak</span>
-                    <button type="button" className="ddr-var-dl" disabled>Regenerate</button>
+                    <span>{mixLine}</span>
+                    <button type="button" className="ddr-var-dl on" disabled={generating||!!genId} onClick={()=>regen(a.adId)}>
+                      {generating ? "Generating "+total+"… ~2 min" : "Regenerate"}
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-          ))}
+          );})}
         </div>
-      ) : <div className="ddr-var-empty">No winner ready to vary yet.</div>}
+      ) : <div className="ddr-var-empty">No winner ready to vary yet — an ad needs traced revenue at 3×+ ROAS to qualify.</div>}
     </div>
   );
 }
