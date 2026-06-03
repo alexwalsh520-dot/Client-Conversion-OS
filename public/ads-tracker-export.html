@@ -188,6 +188,13 @@
 	  .workspace-sub{font-size:12px;color:var(--text-3);margin-top:7px}
 	  .workspace-close{height:34px;padding:0 14px;border:1px solid var(--border-2);border-radius:7px;background:var(--panel);color:var(--text-2);font-size:12px;font-weight:500}
 	  .workspace-close:hover{background:var(--panel-2);color:var(--text)}
+  /* Stale-while-revalidate pill: previous data stays on screen while fresh data
+     loads in the background; this glowing pill signals the refresh so a data jump
+     is never confusing. */
+  .swr-pill{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;display:inline-flex;align-items:center;gap:9px;padding:9px 16px;border-radius:999px;background:rgba(18,18,22,.92);border:1px solid rgba(201,169,110,.5);color:var(--gold,#c9a96e);font-size:12.5px;font-weight:600;letter-spacing:.02em;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 26px rgba(0,0,0,.5),0 0 18px rgba(201,169,110,.25);animation:swrGlow 1.7s ease-in-out infinite}
+  .swr-pill .swr-dot{width:8px;height:8px;border-radius:50%;background:var(--gold,#c9a96e);box-shadow:0 0 9px var(--gold,#c9a96e);animation:swrPulse 1s ease-in-out infinite}
+  @keyframes swrGlow{0%,100%{box-shadow:0 8px 26px rgba(0,0,0,.5),0 0 16px rgba(201,169,110,.22)}50%{box-shadow:0 8px 26px rgba(0,0,0,.5),0 0 32px rgba(201,169,110,.48)}}
+  @keyframes swrPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.65)}}
 	  .workspace-body{padding:18px 28px 28px;overflow:auto;display:grid;gap:14px}
 	  .workspace-toolbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
 	  .workspace-filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -10070,6 +10077,7 @@ function App(){
   const [toast, setToast] = useState(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  const [revalidating, setRevalidating] = useState(false); // background refresh in flight → shows the "Updating…" pill
 
   // ----- "All accounts" pager -----
   // The owner does NOT want a merged all-creators mash-up (it hides danger). On
@@ -10137,20 +10145,24 @@ function App(){
   };
 
   const loadDashboard = async ({silent=false, force=false}={}) => {
-    // Locked snapshot: if we already have this exact range saved (and it's still
-    // valid for today), show that same copy instantly — no refetch, no re-roll.
-    if(!force){
-      const cached = readSnapshot(effectiveAccount, dateRange);
-      if(cached){
-        setDashboard(cached);
-        setLoadError(null);
-        setLoading(false);
-        setFromCache(true);
-        return;
-      }
-    }
-    if(!silent) setLoading(true);
+    const today = todayEt();
+    const includesToday = dateRange.dateTo >= today;
+    // Show the saved copy of this exact range INSTANTLY — no blank, no spinner.
+    const cached = !force ? readSnapshot(effectiveAccount, dateRange) : null;
+    if(cached){ setDashboard(cached); setLoadError(null); setFromCache(true); }
+    // A fully-past range never changes → show the locked snapshot and stop, so
+    // payroll-grade numbers don't re-roll. Only ranges that include today get a
+    // background refresh, where new data can actually land.
+    if(cached && !includesToday && !force){ setLoading(false); setRevalidating(false); return; }
+
+    const haveData = !!(cached || dashboard);
+    // Stale-while-revalidate: if something is already on screen, KEEP it up and
+    // show the glowing "Updating…" pill while fresh data loads in the background,
+    // then swap it in. Only show the full-screen loader when there's nothing yet.
+    if(haveData){ setLoading(false); setRevalidating(true); }
+    else if(!silent){ setLoading(true); }
     setLoadError(null);
+
     const params = new URLSearchParams({
       account: effectiveAccount,
       status:"all",
@@ -10167,21 +10179,24 @@ function App(){
       setFromCache(false);
     }catch(err){
       console.error(err);
-      // Live fetch failed — fall back to the last saved copy of this range
-      // (even if stale) rather than wiping the screen to an error.
+      // Live fetch failed — fall back to the last saved copy rather than wiping
+      // the screen. If we were already showing data, just keep it and say so.
       const stale = readSnapshot(effectiveAccount, dateRange, true);
       if(stale){
         setDashboard(stale);
         setLoadError(null);
         setFromCache(true);
-        showToast("Showing saved data · live unavailable");
-      }else{
+        if(!haveData) showToast("Showing saved data · live unavailable");
+      }else if(!haveData){
         setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[], eventsHistory:[]});
         setLoadError(err?.message || "Live data unavailable");
         showToast("Live data unavailable");
+      }else{
+        showToast("Couldn't refresh · showing last numbers");
       }
     }finally{
       setLoading(false);
+      setRevalidating(false);
     }
   };
 
@@ -10287,6 +10302,7 @@ function App(){
 
   return (
     <div className="app">
+        {revalidating && <div className="swr-pill" role="status" aria-live="polite"><span className="swr-dot"></span>Updating live data…</div>}
         <div className="page">
           {/* Header */}
           <div className="page-head">
