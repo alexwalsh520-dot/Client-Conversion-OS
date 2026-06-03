@@ -16,7 +16,7 @@
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard" | "zoe_and_emily";
+type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -49,7 +49,6 @@ const CLIENT_SETTERS: Record<Client, string[]> = {
   tyson_sonnek: ["amara", "kelechi", "debbie"],
   keith_holland: ["gideon"],
   lucy_hubbard: [],
-  zoe_and_emily: [],
 };
 
 const FUNNEL_STAGE_DEFS = [
@@ -144,7 +143,6 @@ function matchesClientOffer(client: Client, offer: string | null | undefined): b
   if (client === "tyson_sonnek") return normalized.includes("tyson");
   if (client === "keith_holland") return normalized.includes("keith");
   if (client === "lucy_hubbard") return normalized.includes("lucy") || normalized.includes("hubbard");
-  if (client === "zoe_and_emily") return normalized.includes("zoe") || normalized.includes("emily");
   return false;
 }
 
@@ -305,7 +303,8 @@ export async function getMetrics(
     let salesTrackerBookedCount = 0;
 
     try {
-      const salesRows = await fetchSheetData(dateFrom, addDays(dateTo, 30));
+      const salesRows = (await fetchSheetData(dateFrom, addDays(dateTo, 30)))
+        .filter((row) => row.programLength !== "Subscription");
       salesTrackerBookedCount = salesRows.filter((row) => matchesClientOffer(client, row.offer)).length;
       const bookedNames = new Set(
         salesRows
@@ -424,9 +423,7 @@ export async function getTags(client: Client): Promise<{ id: number; name: strin
       ? process.env.MANYCHAT_API_KEY_TYSON
       : client === "keith_holland"
         ? process.env.MANYCHAT_API_KEY_KEITH
-        : client === "lucy_hubbard"
-          ? process.env.MANYCHAT_API_KEY_LUCY_HUBBARD
-          : process.env.MANYCHAT_API_KEY_ZOE_EMILY;
+        : process.env.MANYCHAT_API_KEY_LUCY_HUBBARD;
   if (!key) return [];
 
   try {

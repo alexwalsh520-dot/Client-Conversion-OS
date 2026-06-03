@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
-  const client = searchParams.get("client"); // optional — filters by Offer column (Q)
+  const client = searchParams.get("client"); // optional — filters by Offer column
 
   if (!dateFrom || !dateTo) {
     return NextResponse.json(
@@ -25,9 +25,10 @@ export async function GET(req: NextRequest) {
       fetchSheetData(dateFrom, dateTo),
       fetchSubscriptionsSold(dateFrom, dateTo),
     ]);
-    const unattributedRows = allRows.filter((row) => !row.offer.trim()).length;
+    const callRows = allRows.filter((row) => row.programLength !== "Subscription");
+    const unattributedRows = callRows.filter((row) => !row.offer.trim()).length;
 
-    let rows: SheetRow[] = allRows;
+    let rows: SheetRow[] = callRows;
 
     // Optionally filter by client (maps to the Offer column)
     if (client) {
