@@ -1348,6 +1348,40 @@
   .ddr-pimpact .big{font-size:20px!important}
   .ddr-pgh.scale,.ddr-pgh.kill{font-size:11px;letter-spacing:.1em;margin-bottom:0!important}
   .ddr-pgroup{display:flex!important;flex-direction:column;gap:8px;margin-top:18px!important}
+  /* Expanded decision card — editorial-financial hierarchy */
+  @keyframes pm-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .ddr-pmore{grid-column:1/-1!important;display:flex!important;flex-direction:column;gap:24px;margin-top:18px;padding-top:20px;border-top:1px solid var(--border)}
+  .ddr-pmore>*{animation:pm-in .34s cubic-bezier(.2,.8,.2,1) both}
+  .ddr-pmore>*:nth-child(2){animation-delay:.05s}
+  .ddr-pmore>*:nth-child(3){animation-delay:.10s}
+  .ddr-pmore>*:nth-child(4){animation-delay:.13s}
+  .ddr-pmore>*:nth-child(5){animation-delay:.16s}
+  .ddr-pmore>*:nth-child(6){animation-delay:.19s}
+  /* 1 — verdict (the lead) */
+  .pm-call{display:flex;flex-direction:column;gap:5px}
+  .pm-act{font-size:17px;font-weight:600;color:var(--text);letter-spacing:-.012em;line-height:1.25}
+  .pm-rsn{font-size:13px;color:var(--text-3);line-height:1.5}
+  /* 2 — money flow (endpoints lead, path recedes) */
+  .pm-flow{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+  .pm-end{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+  .pm-end-v{font-size:27px;font-weight:600;letter-spacing:-.025em;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
+  .pm-end.out{margin-left:auto;text-align:right}
+  .pm-end.out.win .pm-end-v{color:var(--gold)}
+  .pm-end-l{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4)}
+  .pm-path{display:flex;align-items:center;gap:11px;flex-wrap:wrap;font-size:13px;color:var(--text-4)}
+  .pm-path b{color:var(--text-2);font-weight:600;font-variant-numeric:tabular-nums}
+  .pm-path .d{opacity:.4}
+  .pm-path .z{opacity:.4}
+  /* 3 — ad proof */
+  .pm-ad{display:flex;gap:16px;align-items:flex-start}
+  .pm-ad .ddr-padimg-wrap{flex-shrink:0}
+  .pm-copy{margin:0;font-size:13px;line-height:1.6;color:var(--text-3);font-style:italic;max-width:64ch}
+  /* divider */
+  .pm-rule{height:1px;background:var(--border)}
+  /* 4 — fine print (recedes) */
+  .pm-fine{display:flex;flex-direction:column;gap:10px}
+  .pm-costs,.pm-where{display:flex;flex-wrap:wrap;gap:7px 24px;font-size:12.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .pm-costs i,.pm-where i{font-style:normal;color:var(--text-4);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;margin-right:7px}
 
   /* ---- Decision tracker: every logged move, traced to a real result ---- */
   .ddt{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--gold) 16%,var(--border));background:radial-gradient(120% 150% at 100% 0%,color-mix(in srgb,var(--gold) 6%,var(--panel)),var(--panel) 60%)}
@@ -5963,11 +5997,13 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
   const hideHov = ()=> setHov(null);
   const openImg = (e, p)=>{ e.stopPropagation(); const url=bigUrl(p); if(url) window.open(url, "_blank", "noopener,noreferrer"); };
 
-  const doText = a.type==="scale"
-    ? <span><span className="h">What to do</span>Raise this ad's daily budget <b>20–30%</b> and keep it running. Watch that its ROAS holds near <b>{a.roas.toFixed(1)}×</b> as spend grows — if it does, raise it again.</span>
+  // Self-contained verdict — action leads (bold), the reason (with numbers) supports.
+  const roasTxt = a.roas!=null ? a.roas.toFixed(1)+"×" : "—";
+  const whyLine = a.type==="scale"
+    ? <><span className="pm-act">Raise the ad set's budget 20–30%.</span><span className="pm-rsn">ROAS {roasTxt}, {a.roas>=4?"above your 4× target":"above the 2× floor"}.</span></>
     : blind
-      ? <span><span className="h">What to do</span>Pause it and move the budget to a "Scale it" ad above. <b>Or</b>, if you believe it really is making sales, make sure those sales get tagged with this ad's ManyChat link — then its true ROAS will show up here.</span>
-      : <span><span className="h">What to do</span>Pause it. For every <b>$1</b> in, only <b>{fmtUsd(a.roas)}</b> comes back. Move that <b>{fmtUsd(a.spend)}</b> into a "Scale it" ad above.</span>;
+      ? <><span className="pm-act">Turn it off.</span><span className="pm-rsn">No sales traced on {fmtUsd(a.spend)} spent — or tag its ManyChat link to prove them.</span></>
+      : <><span className="pm-act">Turn it off.</span><span className="pm-rsn">ROAS {roasTxt}, under your 2× floor — move the budget to a winner.</span></>;
 
   return (
     <div className={"ddr-pcard "+a.type+(open?" open":"")} onClick={()=>setOpen(o=>!o)}>
@@ -5994,81 +6030,66 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
 
       {open && (
         <div className="ddr-pmore" onClick={(e)=>e.stopPropagation()}>
-          {/* The actual ad(s) behind this word — real creative + the copy we read.
-              The proof that this move points at a live Facebook ad, not a guess. */}
-          {previews.length>0 && (
-            <div className="ddr-pads">
-              <span className="lab">The real ad{previews.length>1?"s":""} behind "{word}"</span>
-              <div className="ddr-padlist">
-                {previews.slice(0,4).map((p,idx)=>(
-                  <div className="ddr-paditem" key={p.adId||idx}>
-                    <span
-                      className={"ddr-padimg-wrap"+(p.thumb?" live":"")}
-                      onMouseEnter={p.thumb ? (e)=>showHov(e, p) : undefined}
-                      onMouseMove={p.thumb ? (e)=>moveHov(e, p) : undefined}
-                      onMouseLeave={hideHov}
-                      onClick={p.thumb ? (e)=>openImg(e, p) : undefined}
-                      title={p.thumb ? "Click to open the full ad image" : undefined}
-                    >
-                      <CreativeImg kind="full" src={p.thumb} alt={"Real ad creative: "+(p.adName||word)}/>
-                    </span>
-                    <div className="ddr-padmeta">
-                      <b>{cap(p.adName||word)}</b>
-                      <span className="acct">{[p.account?cap(p.account):null, p.spend>0?fmtUsd(p.spend)+" spent":null].filter(Boolean).join(" · ")||"—"}</span>
-                      {p.copy
-                        ? <div className="ddr-padcopy">"{p.copy}"</div>
-                        : <div className="ddr-padcopy none">Copy not read off this image yet</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {/* 1 — the verdict: what to do, the card's own reason. The lead. */}
+          <div className="pm-call">{whyLine}</div>
+
+          {/* 2 — the money flow: in → path → out. Endpoints lead, path recedes. */}
+          <div className="pm-flow">
+            <div className="pm-end">
+              <div className="pm-end-v">{fmtUsd(a.spend)}</div>
+              <div className="pm-end-l">spent</div>
+            </div>
+            <div className="pm-path">
+              <span><b>{fmtNum(a.leads)}</b> leads</span>
+              <span className="d">·</span>
+              <span><b>{fmtNum(a.booked)}</b> booked</span>
+              <span className="d">·</span>
+              <span className={a.taken>0?"":"z"}><b>{fmtNum(a.taken)}</b> showed</span>
+              <span className="d">·</span>
+              <span className={a.clients>0?"":"z"}><b>{fmtNum(a.clients)}</b> clients</span>
+            </div>
+            <div className={"pm-end out"+(a.type==="scale" && a.traced?" win":"")}>
+              <div className="pm-end-v">{a.traced?fmtUsd(a.tracedRev):"—"}</div>
+              <div className="pm-end-l">{a.traced?"collected":"not traced"}</div>
+            </div>
+          </div>
+
+          {/* 3 — the ad: proof it's a live, real ad (image + what it says) */}
+          {hero && (hero.thumb || hero.copy) && (
+            <div className="pm-ad">
+              {hero.thumb && (
+                <span className="ddr-padimg-wrap live"
+                  onMouseEnter={(e)=>showHov(e,hero)} onMouseMove={(e)=>moveHov(e,hero)}
+                  onMouseLeave={hideHov} onClick={(e)=>openImg(e,hero)} title="Click to open the full ad image">
+                  <CreativeImg kind="full" src={hero.thumb} alt={"Ad creative: "+word}/>
+                </span>
+              )}
+              {hero.copy && <p className="pm-copy">{hero.copy}</p>}
             </div>
           )}
-          {/* The money chain — spend in, cash out */}
-          <div className="ddr-chain">
-            <div className="seg"><b>{fmtUsd(a.spend)}</b><span className="cl">Spent</span></div>
-            <span className="arr">→</span>
-            <div className="seg"><b>{fmtNum(a.leads)}</b><span className="cl">Leads</span></div>
-            <span className="arr">→</span>
-            <div className="seg"><b>{fmtNum(a.booked)}</b><span className="cl">Booked</span></div>
-            <span className="arr">→</span>
-            <div className="seg"><b>{fmtNum(a.taken)}</b><span className="cl">Showed</span></div>
-            <span className="arr">→</span>
-            <div className="seg"><b>{fmtNum(a.clients)}</b><span className="cl">Clients</span></div>
-            <span className="arr">→</span>
-            <div className={"seg rev"+(a.traced?"":" dim")}><b>{a.traced?fmtUsd(a.tracedRev):"—"}</b><span className="cl">{a.traced?"Collected":"Not traced"}</span></div>
-          </div>
 
-          {/* Every supporting number */}
-          <div className="ddr-mgrid">
-            <div className="ddr-mstat"><div className="l">ROAS</div><div className="v">{a.traced?(a.roas!=null?a.roas.toFixed(2)+"×":"—"):"not traced"}</div></div>
-            <div className="ddr-mstat"><div className="l">Cost / lead</div><div className="v">{a.cpl>0?fmtUsd(a.cpl):"—"}</div></div>
-            <div className="ddr-mstat"><div className="l">Cost / booked call</div><div className="v">{a.cpc>0?fmtUsd(a.cpc):"—"}</div></div>
-            <div className="ddr-mstat"><div className="l">Book rate</div><div className="v">{a.leads>0?fmtPct(a.rate,1):"—"}</div></div>
-            <div className="ddr-mstat"><div className="l">Calls shown up</div><div className="v">{fmtNum(a.taken)}</div></div>
-            <div className="ddr-mstat"><div className="l">New clients</div><div className="v">{fmtNum(a.clients)}</div></div>
-          </div>
+          <div className="pm-rule"></div>
 
-          {/* Where to find the ad in Meta */}
-          <div className="ddr-pfind">
-            <span className="lab">Where to find it</span>
-            <b>{(a.accounts||[]).join(" + ") || "—"}</b>
-            {(a.campaigns||[]).length>0 && <span> · {a.campaigns.join(", ")}</span>}
-            <div>
-              {(a.ads||[]).length>0
-                ? (a.ads||[]).map(n=> <span className="bk-pill" key={n}>{cap(n)}</span>)
-                : <span style={{color:"var(--text-4)"}}>ad name unavailable</span>}
+          {/* 4 — fine print: costs + where to act. Recedes. */}
+          <div className="pm-fine">
+            {(a.cpl>0 || a.cpc>0 || a.leads>0) && (
+              <div className="pm-costs">
+                {a.cpl>0 && <span><i>Cost/lead</i>{fmtUsd(a.cpl)}</span>}
+                {a.cpc>0 && <span><i>Cost/booked call</i>{fmtUsd(a.cpc)}</span>}
+                {a.leads>0 && <span><i>Book rate</i>{fmtPct(a.rate,1)}</span>}
+              </div>
+            )}
+            <div className="pm-where">
+              <span><i>Creator</i>{(a.accounts||[]).length?cap((a.accounts||[])[0]):"—"}</span>
+              <span><i>Campaign</i>{(a.campaigns||[]).length?(a.campaigns||[])[0]:"—"}</span>
+              <span><i>Ad set</i>{(a.adsets||[]).length?(a.adsets||[])[0]:"—"}</span>
+              <span><i>Ad</i>{(a.ads||[]).length?cap((a.ads||[])[0]):cap(word)}</span>
             </div>
           </div>
 
-          {/* Plain-English instruction */}
-          <div className="ddr-pdo">{doText}</div>
-
-          {/* Close the loop — mark it done so the page stops nagging and starts tracing the result */}
           {onDid && (
             <button type="button" className={"ddr-pdid "+a.type} onClick={(e)=>{e.stopPropagation(); onDid(a);}}>
-              <span className="ic">✓</span>
-              <span>I did this — {a.type==="kill" ? "I turned it off" : "I raised its budget"}. Track the result.</span>
+              {a.type==="kill" ? "Turned it off — track it" : "Raised the budget — track it"}
             </button>
           )}
         </div>
