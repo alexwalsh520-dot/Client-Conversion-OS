@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 
 type Phase = "ready" | "preview" | "uploading" | "done" | "invalid" | "error";
 
+const MAX_SECONDS = 240; // 4 minutes
+
 const COLORS = {
   bg: "#0f1115",
   card: "#181b22",
@@ -39,13 +41,50 @@ export default function RecordTestimonial({
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (!f) return;
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
-    setPhase("preview");
     // Allow re-selecting the same file later
     e.target.value = "";
+    if (!f) return;
+
+    const url = URL.createObjectURL(f);
+
+    const accept = () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFile(f);
+      setPreviewUrl(url);
+      setErrorMsg("");
+      setPhase("preview");
+    };
+    const rejectTooLong = () => {
+      URL.revokeObjectURL(url);
+      setFile(null);
+      setErrorMsg("That video is longer than 4 minutes. Please record again and keep it under 4 minutes.");
+      setPhase("error");
+    };
+
+    // Read the recorded clip's duration so we can enforce the 4-minute cap.
+    // iOS Safari reports duration as Infinity until you seek, so we nudge
+    // currentTime to force a metadata refresh. If we still can't read it, we
+    // let the clip through rather than block a legitimate submission.
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.muted = true;
+    const finish = (duration: number) => {
+      if (Number.isFinite(duration) && duration > MAX_SECONDS + 1) rejectTooLong();
+      else accept();
+    };
+    probe.onloadedmetadata = () => {
+      if (probe.duration === Infinity || Number.isNaN(probe.duration)) {
+        probe.ontimeupdate = () => {
+          probe.ontimeupdate = null;
+          finish(probe.duration);
+        };
+        probe.currentTime = 1e101;
+      } else {
+        finish(probe.duration);
+      }
+    };
+    probe.onerror = accept;
+    probe.src = url;
   }
 
   async function submit() {
@@ -129,6 +168,17 @@ export default function RecordTestimonial({
               <p style={{ color: COLORS.sub, margin: 0, fontSize: 15, lineHeight: 1.6 }}>
                 Record a short video telling us about your journey. Film it in one take in a quiet, well lit spot,
                 holding your phone steady. You can re-record as many times as you like before you submit.
+              </p>
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: COLORS.accent,
+                  lineHeight: 1.5,
+                }}
+              >
+                Please keep your video under 4 minutes. Videos longer than 4 minutes cannot be submitted.
               </p>
             </header>
 
