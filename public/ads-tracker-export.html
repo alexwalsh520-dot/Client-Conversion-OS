@@ -6191,11 +6191,13 @@ function playbookConfidence(a){
 // One action card. Collapsed = the move + the one reason + the dollar impact.
 // Tap it open for the full money chain, every supporting number, where the ad
 // lives in Meta, and exactly what to do next.
-function PlaybookCard({a, i, peak, rangeText, onDid}){
+function PlaybookCard({a, i, peak, rangeText, onDid, daily}){
   const [open, setOpen] = useState(false);
+  const [trendOpen, setTrendOpen] = useState(false);
   // Hover a creative → a big, high-res peek of the real ad follows the cursor.
   // Click it → open the full image in a new tab so Alex can actually see / save it.
   const [hov, setHov] = useState(null);
+  const hasTrend = Array.isArray(daily) && daily.some(d=>d.spend>0 || d.msgs>0 || d.collected>0);
   const low = (s)=> String(s||"").toLowerCase();
   const cap = (s)=> s ? s.charAt(0)+s.slice(1).toLowerCase() : s;
   const isKill = a.type==="kill";
@@ -6315,6 +6317,20 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
             </div>
           </div>
 
+          {/* 5 — the 14-day trend: drag across to read any day. Default ROAS;
+              switch the metric to see cost-per-DM, book rate, etc. over time. */}
+          {hasTrend && (
+            <div style={{marginTop:'12px'}}>
+              <button type="button"
+                onClick={(e)=>{e.stopPropagation(); setTrendOpen(o=>!o);}}
+                style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'none',border:'none',padding:'2px 0',cursor:'pointer',color:'var(--text-3)',fontSize:'11px',letterSpacing:'.02em'}}>
+                <span style={{fontSize:'9px',color:'var(--gold)'}}>{trendOpen?"▾":"▸"}</span>
+                14-day trend
+              </button>
+              {trendOpen && <CardTrend daily={daily}/>}
+            </div>
+          )}
+
           {onDid && (
             <button type="button" className={"ddr-pdid "+a.type} onClick={(e)=>{e.stopPropagation(); onDid(a);}}>
               {a.type==="kill" ? "Turned it off — track it" : "Raised the budget — track it"}
@@ -6336,7 +6352,148 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
   );
 }
 
-function ActionPlaybook({rows, rangeText, decByKey, onDid, windowDays}){
+// ── Per-card 14-day trend graph ─────────────────────────────────────────────
+// Every metric a buyer needs to eyeball a kill/scale call, day by day, so the
+// decision is never a black box. Pure render over the same per-day, per-ad data
+// the cards already trust (decisionDash.dailyRows). Default line is ROAS.
+const TREND_METRICS = [
+  {key:"roas",         label:"ROAS",               kind:"x"},
+  {key:"spend",        label:"Ad spend",           kind:"usd"},
+  {key:"collected",    label:"Collected revenue",  kind:"usd"},
+  {key:"msgs",         label:"DMs",                kind:"num"},
+  {key:"costPerMsg",   label:"Cost / DM",          kind:"usd"},
+  {key:"calls",        label:"Calls booked",       kind:"num"},
+  {key:"costPerCall",  label:"Cost / booked call", kind:"usd"},
+  {key:"taken",        label:"Calls taken",        kind:"num"},
+  {key:"costPerTaken", label:"Cost / call taken",  kind:"usd"},
+  {key:"clients",      label:"New clients",        kind:"num"},
+  {key:"costPerClient",label:"Cost / client",      kind:"usd"},
+  {key:"closeRate",    label:"Call close rate",    kind:"pct"},
+  {key:"msgToCall",    label:"DM → call rate",     kind:"pct"},
+];
+function trendValue(d, key){
+  switch(key){
+    case "roas":         return d.spend>0 ? d.collected/d.spend : null;
+    case "costPerMsg":   return d.msgs>0 ? d.spend/d.msgs : null;
+    case "costPerCall":  return d.calls>0 ? d.spend/d.calls : null;
+    case "costPerTaken": return d.taken>0 ? d.spend/d.taken : null;
+    case "costPerClient":return d.clients>0 ? d.spend/d.clients : null;
+    case "closeRate":    return d.taken>0 ? (d.clients/d.taken)*100 : null;
+    case "msgToCall":    return d.msgs>0 ? (d.calls/d.msgs)*100 : null;
+    default:             return Number(d[key]||0);
+  }
+}
+function fmtTrend(v, kind){
+  if(v==null || Number.isNaN(v)) return "—";
+  if(kind==="x")   return v.toFixed(1)+"×";
+  if(kind==="usd") return fmtUsd(v);
+  if(kind==="pct") return Math.round(v)+"%";
+  return fmtNum(Math.round(v));
+}
+// Catmull-Rom → cubic bezier for a clean curvy line through the points.
+function smoothPath(pts){
+  if(!pts.length) return "";
+  if(pts.length===1) return `M${pts[0].x},${pts[0].y}`;
+  let d=`M${pts[0].x},${pts[0].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    const c1x=p1.x+(p2.x-p0.x)/6, c1y=p1.y+(p2.y-p0.y)/6;
+    const c2x=p2.x-(p3.x-p1.x)/6, c2y=p2.y-(p3.y-p1.y)/6;
+    d+=` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+// dailyRows (window) → Map(keyword → one filled slot per axis day).
+function dailyTrendByKeyword(dailyRows, axisDates){
+  const m = new Map();
+  const idx = {}; axisDates.forEach((d,i)=>{ idx[d]=i; });
+  const blank = ()=> axisDates.map(d=>({date:d, spend:0, collected:0, msgs:0, calls:0, taken:0, clients:0}));
+  (dailyRows||[]).forEach(r=>{
+    const kw = String(r.keyword||"UNKNOWN").toUpperCase();
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(r.dateLabel||"") ? r.dateLabel : (r.date||null);
+    if(iso==null || !(iso in idx)) return;
+    if(!m.has(kw)) m.set(kw, blank());
+    const s = m.get(kw)[idx[iso]];
+    s.spend     += Number(r.adSpend||0);
+    s.collected += Number(r.collectedRevenue||0);
+    s.msgs      += Number(r.messages||0);
+    s.calls     += Number(r.bookedCalls||0);
+    s.taken     += Number(r.callsTaken||0);
+    s.clients   += Number(r.newClients||0);
+  });
+  return m;
+}
+
+function CardTrend({daily}){
+  const [metric, setMetric] = useState("roas");
+  const [hi, setHi] = useState(null);
+  const [w, setW] = useState(560);
+  const wrapRef = useRef(null);
+  useEffect(()=>{
+    const el = wrapRef.current; if(!el) return;
+    const set = ()=> setW(el.clientWidth || 560);
+    set();
+    if(typeof ResizeObserver==="undefined") return;
+    const ro = new ResizeObserver(set); ro.observe(el); return ()=>ro.disconnect();
+  }, []);
+  const meta = TREND_METRICS.find(x=>x.key===metric) || TREND_METRICS[0];
+  const days = Array.isArray(daily) ? daily : [];
+  const vals = days.map(d=>trendValue(d, metric));
+  const defined = vals.map((v,i)=> (v==null||Number.isNaN(v)) ? null : {i, v}).filter(Boolean);
+  const nums = defined.map(p=>p.v);
+  const have = nums.length>0;
+  let lo = have ? Math.min(...nums, 0) : 0;
+  let max = have ? Math.max(...nums, 0) : 1;
+  if(lo===max) max = lo + 1;
+  const H=148, padT=12, padB=18, padX=6, n=days.length||1;
+  const X = (i)=> padX + (n<=1?0:(i/(n-1))*(w-2*padX));
+  const Y = (v)=> padT + (1-((v-lo)/(max-lo)))*(H-padT-padB);
+  const pts = defined.map(p=>({x:X(p.i), y:Y(p.v)}));
+  const path = smoothPath(pts);
+  const area = pts.length>1 ? path+` L${pts[pts.length-1].x.toFixed(1)},${H-padB} L${pts[0].x.toFixed(1)},${H-padB} Z` : "";
+  const onMove = (e)=>{
+    const el=wrapRef.current; if(!el) return; const r=el.getBoundingClientRect();
+    const rx=e.clientX-r.left; let bi=0, bd=1e9;
+    for(let i=0;i<days.length;i++){ const dx=Math.abs(X(i)-rx); if(dx<bd){bd=dx; bi=i;} }
+    setHi(bi);
+  };
+  const hv = hi!=null ? vals[hi] : null;
+  const lastV = have ? nums[nums.length-1] : null;
+  return (
+    <div style={{marginTop:'10px'}} onClick={(e)=>e.stopPropagation()}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+        <select value={metric} onChange={e=>setMetric(e.target.value)}
+          style={{background:'var(--panel-2)',border:'1px solid var(--border-2)',color:'var(--text-2)',fontSize:'11px',borderRadius:'5px',padding:'3px 6px',outline:'none',cursor:'pointer'}}>
+          {TREND_METRICS.map(mm=><option key={mm.key} value={mm.key}>{mm.label}</option>)}
+        </select>
+        <span style={{fontFamily:"'JetBrains Mono',ui-monospace,monospace",fontSize:'11px',color:'var(--text-3)'}}>
+          {hi!=null && days[hi] ? dateLabelFromIso(days[hi].date)+" · " : "last "+n+"d · "}
+          <b style={{color:'var(--text)'}}>{fmtTrend(hi!=null?hv:lastV, meta.kind)}</b>
+        </span>
+      </div>
+      <div ref={wrapRef} style={{position:'relative',cursor:'crosshair'}} onMouseMove={onMove} onMouseLeave={()=>setHi(null)}>
+        <svg width={w} height={H} style={{display:'block'}}>
+          <defs><linearGradient id="cardtrendfill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.16"/>
+            <stop offset="100%" stopColor="var(--gold)" stopOpacity="0"/></linearGradient></defs>
+          {[0,0.5,1].map((t,gi)=>{ const y=padT+t*(H-padT-padB); return <line key={gi} x1={padX} y1={y} x2={w-padX} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.55"/>; })}
+          {area && <path d={area} fill="url(#cardtrendfill)"/>}
+          {path && <path d={path} fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+          {pts.map((p,pi)=><circle key={pi} cx={p.x} cy={p.y} r="2" fill="var(--gold)" opacity="0.55"/>)}
+          {hi!=null && <line x1={X(hi)} y1={padT} x2={X(hi)} y2={H-padB} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3"/>}
+          {hi!=null && hv!=null && !Number.isNaN(hv) && <circle cx={X(hi)} cy={Y(hv)} r="3.6" fill="var(--gold)" stroke="var(--panel)" strokeWidth="1.5"/>}
+        </svg>
+      </div>
+      {days.length>0 && (
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:'9px',color:'var(--text-4)',marginTop:'2px'}}>
+          <span>{dateLabelFromIso(days[0].date)}</span><span>{dateLabelFromIso(days[days.length-1].date)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionPlaybook({rows, rangeText, decByKey, onDid, windowDays, trendByKw}){
   const {scales, kills} = buildPlaybook(rows);
   const acted = decByKey || {};
   const isActed = (a)=> !!acted[String(a.keyword||"").toLowerCase()];
@@ -6388,13 +6545,13 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid, windowDays}){
       {aKills.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh kill">Turn off</div>
-          {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+          {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid} daily={trendByKw && trendByKw.get(a.keyword)}/>)}
         </div>
       )}
       {aScales.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh scale">Scale</div>
-          {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+          {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid} daily={trendByKw && trendByKw.get(a.keyword)}/>)}
         </div>
       )}
 
@@ -9433,6 +9590,17 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
     return list.sort((a,b)=>b.spend-a.spend);
   }, [decisionDash, decisionRange, range, rows, dRoasMap, dPreviewMap]);
 
+  // Per-day series (one slot per day across the decision window) per ad word, for
+  // the in-card 14-day trend graph. Built from the window's per-day rows.
+  const axisDates = useMemo(()=>{
+    const from = decisionRange && decisionRange.dateFrom, to = decisionRange && decisionRange.dateTo;
+    if(!from || !to) return [];
+    const out=[]; let d=from, guard=0;
+    while(d<=to && guard<400){ out.push(d); d=shiftIso(d,1); guard++; }
+    return out;
+  }, [decisionRange]);
+  const trendByKw = useMemo(()=> dailyTrendByKeyword(decisionDash && decisionDash.dailyRows, axisDates), [decisionDash, axisDates]);
+
   // ---- The decision feedback loop ----
   // Logged moves live in Supabase via /api/ads/decisions, scoped to the account
   // in view. One source of truth, lifted here so the action board (which hides
@@ -9574,7 +9742,7 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
       {pagerBar}
 
       {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
-      <ActionPlaybook rows={decisionRows} windowDays={DECISION_RULES.windowDays} rangeText={"last "+DECISION_RULES.windowDays+" days"} decByKey={decByKey} onDid={onDecide}/>
+      <ActionPlaybook rows={decisionRows} windowDays={DECISION_RULES.windowDays} rangeText={"last "+DECISION_RULES.windowDays+" days"} decByKey={decByKey} onDid={onDecide} trendByKw={trendByKw}/>
 
       {/* Make variations — winning creative → new ads (Higgsfield engine; scaffold) */}
       <AdVariations rows={rows}/>
