@@ -6037,15 +6037,37 @@ function withRoas(row, roasMap){
   return {...row, spend, tracedRev, traced, roas, roasReliable, rate, cpc, cpl, ctr};
 }
 
-// Verdict is pure rules over the real numbers — never AI, never invented.
-// ROAS leads: if we can see the money, the verdict is about PROFIT. A call that
-// costs 2x but returns 5x is a winner — cost-per-call alone is a vanity metric.
-// Only where revenue isn't traced yet do we fall back to booking rate.
-function adVerdict(row){
+// ── Decision rules — ONE source of truth ───────────────────────────────────
+// The engine (adVerdict, buildPlaybook) AND the on-screen Decision Rules panel
+// both read THIS object, so what the page tells the team can never drift from
+// what the code actually does (they used to contradict: the panel said "scale at
+// 4×, kill under 2× for 3 days", the code scaled at 2× and only killed under 1×).
+// Numbers are Alex's confirmed rules, anchored to the unit economics:
+//   • ~75.5% variable margin → 3:1 gross GP:CAC ≈ 4× cash ROAS; break-even ≈ 2×.
+//   • So 2× = the KPI / break-even line, 3×+ = the keep-and-grow winner floor.
+// Built to become user-editable next: swap this constant for a fetched settings
+// object and every threshold below follows — no code change needed to retune.
+const DECISION_RULES = {
+  protectFloor: 3.0,    // 3×+ ROAS = winner. NEVER turned off.
+  scaleAt: 3.0,         // 3×+ = scale candidate (raise the ad set's budget).
+  kpiLine: 2.0,         // 2× = break-even KPI line. Reliably under it = turn off.
+  spendFloor: 100,      // under ~$100 spend a ROAS multiple is one-lucky-sale noise — no verdict.
+  budgetStepLow: 10, budgetStepHigh: 30,        // raise ad-set budget 10–30% / day
+  costPerDmLow: 6.75, costPerDmHigh: 12,        // healthy cost-per-DM band ($ above = warning)
+  costPerCallLow: 50, costPerCallHigh: 100,     // healthy cost-per-booked-call band
+};
+
+// Verdict is pure rules over the real numbers — never AI, never invented. Reads
+// DECISION_RULES so it matches the panel exactly. ROAS leads: if we can see the
+// money, the verdict is about PROFIT (a call that costs 2× but returns 5× is a
+// winner — cost-per-call alone is a vanity metric). Only where revenue isn't
+// traced yet do we fall back to booking rate.
+function adVerdict(row, R){
+  R = R || DECISION_RULES;
   if(row.traced && row.roas != null){
     if(row.roasReliable){
-      if(row.roas >= 2) return {cls:"v-scale", label:"Scale it", basis:"roas"};
-      if(row.roas >= 1) return {cls:"v-ok", label:"Profitable", basis:"roas"};
+      if(row.roas >= R.protectFloor) return {cls:"v-scale", label:"Scale it", basis:"roas"};
+      if(row.roas >= R.kpiLine)      return {cls:"v-ok",    label:"Profitable", basis:"roas"};
       return {cls:"v-kill", label:"Losing money", basis:"roas"};
     }
     return {cls:"v-low", label:"Too early", basis:"roas-early"};
@@ -6065,12 +6087,16 @@ function adVerdict(row){
 // 5, so big money-pits got pushed off the list entirely — a scaling bias. Now
 // scaling and killing are SEPARATE, both first-class, and we quantify the
 // reallocation (the instant move: cut the bleeders, point that budget at winners).
-function buildPlaybook(rows){
+function buildPlaybook(rows, R){
+  R = R || DECISION_RULES;
   const scaleRoas = [], cutRoas = [], cutBlind = [];
   rows.forEach(r => {
     if(r.traced && r.roasReliable && r.roas != null){
-      if(r.roas >= 2) scaleRoas.push({...r, type:"scale"});
-      else if(r.roas < 1) cutRoas.push({...r, type:"kill"});
+      // 3×+ = winner → scale. Under the 2× KPI line → turn off. The band in
+      // between (2–3×) is profitable: keep running, neither scale nor kill.
+      // 3×+ can ONLY land in scale, so a winner is never offered up to be killed.
+      if(r.roas >= R.scaleAt) scaleRoas.push({...r, type:"scale"});
+      else if(r.roas < R.kpiLine) cutRoas.push({...r, type:"kill"});
     } else if(!r.traced && r.spend > 0 && r.leads >= 25 && r.rate < 2.5){
       // No traceable sale + lots of DMs but almost no bookings = likely waste.
       cutBlind.push({...r, type:"kill"});
@@ -6285,8 +6311,12 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
   const isActed = (a)=> !!acted[String(a.keyword||"").toLowerCase()];
   // Drop anything Alex has already acted on — the whole point of the feedback
   // loop is to stop nagging him to do what's done. The tracker below keeps it.
-  const aScales = scales.filter(a=>!isActed(a)).slice(0,4);
-  const aKills  = kills.filter(a=>!isActed(a)).slice(0,4);
+  // Show EVERY ad that qualifies — no cap. If the rules say 7 ads should be
+  // turned off, all 7 show; hiding the 5th+ "for simplicity" silently buried
+  // real money-losing decisions. The lists are already sorted worst-first
+  // (biggest bleed / best return), so the most urgent moves sit at the top.
+  const aScales = scales.filter(a=>!isActed(a));
+  const aKills  = kills.filter(a=>!isActed(a));
   const actedCount = scales.filter(isActed).length + kills.filter(isActed).length;
 
   // Reallocation hero recomputed over ONLY the moves still on the table.
@@ -6387,7 +6417,9 @@ function BookingTable({rows}){
     <th className={sortKey===k?"act":""} onClick={()=>toggleSort(k)}>{children}<span className="ar">{arrow(k)}</span></th>
   );
   const low = (s)=> String(s||"").toLowerCase();
-  const roasColor = (r)=> r.roas>=2?"var(--green)":(r.roas<1?"var(--red)":"var(--text)");
+  // Match the decision rules: green at the scale floor (3×+), red below the 2×
+  // break-even line (a "Losing money" verdict), neutral in the profitable band.
+  const roasColor = (r)=> r.roas>=DECISION_RULES.scaleAt?"var(--green)":(r.roas<DECISION_RULES.kpiLine?"var(--red)":"var(--text)");
 
   return (
     <div className="bk">
@@ -8371,25 +8403,29 @@ function DecisionRulesToggle({ open, onToggle }){
     </button>
   );
 }
-function DecisionRulesPanel({ open }){
+// Reads the SAME DECISION_RULES object the engine uses, so every threshold the
+// team reads here is exactly what drives the Scale / Turn-off cards. Change a
+// number in DECISION_RULES and this panel updates with it — they can't drift.
+function DecisionRulesPanel({ open, rules }){
   if(!open) return null;
+  const R = rules || DECISION_RULES;
+  const x = (n)=> (Number.isInteger(n) ? n : n.toFixed(n<10?1:0));
   return (
     <div className="ddr-rules">
       <div className="rg">
         <div className="rgh">Scale</div>
-        <div className="rl">ROAS 4× or higher — winner. Raise the ad set's budget 10–30%, every 1–3 days.</div>
-        <div className="rl muted">ROAS 2–4× — keep running, not a winner yet.</div>
+        <div className="rl">ROAS {x(R.scaleAt)}× or higher — winner. Raise the ad set's budget {R.budgetStepLow}–{R.budgetStepHigh}% per day.</div>
+        <div className="rl muted">ROAS {x(R.kpiLine)}–{x(R.scaleAt)}× — profitable, keep running (not a scale candidate yet).</div>
       </div>
       <div className="rg">
         <div className="rgh">Turn off</div>
-        <div className="rl">ROAS under 2× for 3 days straight.</div>
-        <div className="rl">Cost per booked call over $200 for 3 days.</div>
-        <div className="rl">Cost per DM over $24 for 3 days.</div>
-        <div className="rl muted">Stays on if it holds the 2× floor and only one number is mildly out.</div>
+        <div className="rl">ROAS under {x(R.kpiLine)}× (the break-even line) once it's spent at least ${R.spendFloor} in this window.</div>
+        <div className="rl muted">{x(R.protectFloor)}×+ ROAS is always protected — never turned off.</div>
+        <div className="rl muted">Under ${R.spendFloor} spent = not enough to judge yet (one lucky sale skews it) — no verdict.</div>
       </div>
       <div className="rg">
         <div className="rgh">Healthy range</div>
-        <div className="rl">Cost per DM $6.75–$12 · Cost per booked call $50–$100.</div>
+        <div className="rl">Cost per DM ${x(R.costPerDmLow)}–${x(R.costPerDmHigh)} · Cost per booked call ${R.costPerCallLow}–${R.costPerCallHigh}.</div>
       </div>
     </div>
   );
