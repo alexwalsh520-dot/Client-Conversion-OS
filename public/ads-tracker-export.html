@@ -1035,12 +1035,29 @@
   .ddr-var{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
   .ddr-var-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px}
   .ddr-var-list{display:flex;flex-direction:column;gap:8px}
-  .ddr-var-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-1)}
+  .ddr-var-item{display:flex;flex-direction:column}
+  .ddr-var-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;width:100%;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-1);cursor:pointer;transition:border-color .14s}
+  .ddr-var-row:hover{border-color:var(--border-2)}
+  .ddr-var-row.on{border-color:var(--text-4);border-radius:10px 10px 0 0}
   .ddr-var-row .nm{font-size:14px;font-weight:600;color:var(--text);text-transform:capitalize}
   .ddr-var-row .rs{font-size:14px;color:var(--text-3);font-variant-numeric:tabular-nums}
-  .ddr-var-btn{font-size:12.5px;font-weight:500;padding:6px 13px;border-radius:8px;border:1px solid var(--border-2);background:transparent;color:var(--text-4);cursor:not-allowed}
+  .ddr-var-go{font-size:12.5px;color:var(--text-4)}
+  .ddr-var-gen{border:1px solid var(--text-4);border-top:none;border-radius:0 0 10px 10px;padding:16px;background:var(--bg-1)}
+  .ddr-var-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .ddr-var-cell{display:flex;flex-direction:column;gap:5px}
+  .ddr-var-img{aspect-ratio:1;border:1px dashed var(--border-2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-4);font-size:12px;background:var(--panel)}
+  .ddr-var-tag{font-size:10px;color:var(--text-4);text-align:center}
+  .ddr-var-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--text-4)}
+  .ddr-var-bar>span:first-child{color:var(--text-2);font-weight:600}
+  .ddr-var-dl{margin-left:auto;font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:8px;border:1px solid var(--border-2);background:transparent;color:var(--text-4);cursor:not-allowed}
   .ddr-var-empty{font-size:13px;color:var(--text-4);padding:8px 0}
-  .ddr-var-note{font-size:11.5px;color:var(--text-4);margin-top:12px}
+  @media(max-width:640px){.ddr-var-grid{grid-template-columns:repeat(3,1fr)}}
+  .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
+  .ddr-rules .rg{display:flex;flex-direction:column;gap:5px}
+  .ddr-rules .rgh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
+  .ddr-rules .rl{font-size:13px;color:var(--text-2);line-height:1.5}
+  .ddr-rules .rl.muted{color:var(--text-4)}
+  .ddr-flowrow{margin:6px 0 2px}
   @media(max-width:700px){.ddr-pcard{grid-template-columns:46px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
   /* Interactive booking table: sticky header, sortable, filterable, expandable */
@@ -5968,7 +5985,7 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
         <div className="ddr-pword">{cap(word)}</div>
         <div className="ddr-psub">{a.traced
           ? <span>{fmtUsd(a.spend)} → {fmtUsd(a.tracedRev)}</span>
-          : <span>{fmtNum(a.leads)} leads · {fmtNum(a.booked)} booked</span>}</div>
+          : <span>{fmtUsd(a.spend)} → $0 tracked</span>}</div>
       </div>
       <div className="ddr-pimpact">
         <div className="big">{a.roas!=null ? a.roas.toFixed(1)+"×" : "—"}</div>
@@ -8152,6 +8169,40 @@ function DataFlowToggle({ open, onToggle }){
   );
 }
 
+// The exact rules the decision engine acts by — stated in one place so every
+// card's verdict is auditable against them.
+function DecisionRulesToggle({ open, onToggle }){
+  return (
+    <button className={"brain-btn"+(open?" on":"")} onClick={onToggle} aria-expanded={open}>
+      <span>Decision rules</span>
+      <svg className="bcaret" width="9" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M1 1l4 4 4-4"/></svg>
+    </button>
+  );
+}
+function DecisionRulesPanel({ open }){
+  if(!open) return null;
+  return (
+    <div className="ddr-rules">
+      <div className="rg">
+        <div className="rgh">Scale</div>
+        <div className="rl">ROAS 4× or higher — winner. Raise the ad set's budget 10–30%, every 1–3 days.</div>
+        <div className="rl muted">ROAS 2–4× — keep running, not a winner yet.</div>
+      </div>
+      <div className="rg">
+        <div className="rgh">Turn off</div>
+        <div className="rl">ROAS under 2× for 3 days straight.</div>
+        <div className="rl">Cost per booked call over $200 for 3 days.</div>
+        <div className="rl">Cost per DM over $24 for 3 days.</div>
+        <div className="rl muted">Stays on if it holds the 2× floor and only one number is mildly out.</div>
+      </div>
+      <div className="rg">
+        <div className="rgh">Healthy range</div>
+        <div className="rl">Cost per DM $6.75–$12 · Cost per booked call $50–$100.</div>
+      </div>
+    </div>
+  );
+}
+
 const FLOW_ZOOM_MIN = 0.45, FLOW_ZOOM_MAX = 2.6;
 const flowClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -8391,6 +8442,7 @@ function DataFlowMap({ open, sel, setSel }){
 // Surfaces the current winning ads as variation candidates; generation wires next.
 function AdVariations({rows}){
   const capw = (s)=>{ s=String(s||""); return s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : "—"; };
+  const [pick, setPick] = useState(null);
   const winners = (Array.isArray(rows)?rows:[])
     .filter(r=>r.traced && r.roas!=null && r.roas>=3)
     .sort((a,b)=>b.roas-a.roas).slice(0,3)
@@ -8401,15 +8453,33 @@ function AdVariations({rows}){
       {winners.length>0 ? (
         <div className="ddr-var-list">
           {winners.map((a,i)=>(
-            <div className="ddr-var-row" key={i}>
-              <span className="nm">{capw(a.name)}</span>
-              <span className="rs">{a.roas.toFixed(1)}×</span>
-              <button type="button" className="ddr-var-btn" disabled>Generate</button>
+            <div className="ddr-var-item" key={i}>
+              <button type="button" className={"ddr-var-row"+(pick===i?" on":"")} onClick={()=>setPick(pick===i?null:i)}>
+                <span className="nm">{capw(a.name)}</span>
+                <span className="rs">{a.roas.toFixed(1)}×</span>
+                <span className="ddr-var-go">{pick===i?"Close":"Generate"}</span>
+              </button>
+              {pick===i && (
+                <div className="ddr-var-gen">
+                  <div className="ddr-var-grid">
+                    {Array.from({length:10}).map((_,k)=>(
+                      <div className="ddr-var-cell" key={k}>
+                        <div className="ddr-var-img">{k+1}</div>
+                        <span className="ddr-var-tag">{k<8?"new visual":"new copy"}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="ddr-var-bar">
+                    <span>10 variations</span>
+                    <span>8 keep copy, change one visual · 2 change copy, keep visual</span>
+                    <button type="button" className="ddr-var-dl" disabled>Download all</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       ) : <div className="ddr-var-empty">No clear winner to vary yet.</div>}
-      <div className="ddr-var-note">Generation wires in next — winning ad + reference image becomes new variations, downloadable here.</div>
     </div>
   );
 }
@@ -8480,6 +8550,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowSel, setFlowSel] = useState(null);
   const [showOld, setShowOld] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   // Join each ad word to the server's authoritative matched cash, then attach
   // honest ROAS. This is the single source of truth the whole page leans on.
@@ -8608,9 +8679,11 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       <div className="ddr-head">
         <div className="ddr-head-row">
           <h2 className="ddr-title">Deep Dive</h2>
-          <DataFlowToggle open={flowOpen} onToggle={()=>setFlowOpen(o=>!o)}/>
+          <DecisionRulesToggle open={rulesOpen} onToggle={()=>setRulesOpen(o=>!o)}/>
         </div>
       </div>
+      <DecisionRulesPanel open={rulesOpen}/>
+      <div className="ddr-flowrow"><DataFlowToggle open={flowOpen} onToggle={()=>setFlowOpen(o=>!o)}/></div>
       <DataFlowMap open={flowOpen} sel={flowSel} setSel={setFlowSel}/>
 
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
