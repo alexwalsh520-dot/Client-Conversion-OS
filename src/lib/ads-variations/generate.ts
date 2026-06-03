@@ -110,7 +110,7 @@ export async function generateVariationsJob(
     );
   }
 
-  const prompts = buildPrompts({ mix: settings.mix, onImageText });
+  const prompts = buildPrompts({ mix: settings.mix, onImageText, sop: settings.sop });
   const jobId = `${adId}-${Date.now()}`;
   const createdAt = new Date().toISOString();
 

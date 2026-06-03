@@ -1055,6 +1055,29 @@
   .ddr-var-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:14px}
   .ddr-var-h{font-size:16px;font-weight:650;color:var(--text)}
   .ddr-var-sub{font-size:12.5px;color:var(--text-4);margin-top:3px;max-width:42ch}
+  .ddr-var-gear{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--border-2);border-radius:9px;background:var(--bg-1);color:var(--text-3);font-size:12.5px;font-weight:500;cursor:pointer;transition:border-color .14s,color .14s}
+  .ddr-var-gear:hover{border-color:var(--text-3);color:var(--text)}
+  .ddr-var-gear.on{border-color:var(--text-3);color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
+  .ddr-var-gear svg{opacity:.85}
+  .ddr-var-panel{margin-bottom:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-1);overflow:hidden}
+  .ddr-var-panel[aria-busy=true]{opacity:.7}
+  .ddr-var-sec{padding:16px 18px;border-bottom:1px solid var(--border)}
+  .ddr-var-sec:last-child{border-bottom:none}
+  .ddr-var-sec-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);font-weight:650;margin-bottom:12px}
+  .ddr-var-sec-x{text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-4)}
+  .ddr-var-toggle{display:flex;align-items:center;gap:13px;cursor:default}
+  .ddr-var-toggle-t{display:flex;flex-direction:column;gap:2px}
+  .ddr-var-toggle-t b{font-size:14px;font-weight:600;color:var(--text)}
+  .ddr-var-toggle-t small{font-size:12px;color:var(--text-4);max-width:54ch}
+  .ddr-sw{position:relative;width:40px;height:23px;border-radius:999px;border:1px solid var(--border-2);background:var(--panel);cursor:pointer;flex:0 0 auto;transition:background .16s,border-color .16s;padding:0}
+  .ddr-sw .ddr-sw-k{position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--text-3);transition:transform .16s,background .16s}
+  .ddr-sw.on{background:var(--green);border-color:var(--green)}
+  .ddr-sw.on .ddr-sw-k{transform:translateX(17px);background:#fff}
+  .ddr-sw:disabled{cursor:default;opacity:.6}
+  .ddr-var-sop{width:100%;box-sizing:border-box;resize:vertical;min-height:74px;border:1px solid var(--border-2);border-radius:9px;background:var(--panel);color:var(--text);font:inherit;font-size:13px;line-height:1.5;padding:10px 12px}
+  .ddr-var-sop:focus{outline:none;border-color:var(--text-3)}
+  .ddr-var-sop::placeholder{color:var(--text-4)}
+  .ddr-var-sop-f{margin-top:6px;font-size:11.5px;color:var(--text-4)}
   .ddr-var-set{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
   .ddr-var-set[aria-busy=true]{opacity:.55}
   .ddr-var-step{display:flex;flex-direction:column;gap:5px}
@@ -8523,6 +8546,8 @@ function AdVariations({rows}){
   const [pick, setPick] = useState(null);
   const [settings, setSettings] = useState(null);
   const [setBusy, setSetBusy] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);  // gear → settings/automation panel
+  const [sopDraft, setSopDraft] = useState("");        // editable SOP text (committed on blur)
   // adId -> { loading, error, jobId, createdAt, variations:[] }
   const [jobs, setJobs] = useState({});
   const [genId, setGenId] = useState(null);   // adId currently (re)generating
@@ -8537,9 +8562,19 @@ function AdVariations({rows}){
   // Load the live settings (the mix the engine uses) once.
   useEffect(()=>{
     let off=false;
-    fetch("/api/ads/variations/settings").then(r=>r.json()).then(d=>{ if(!off && d && d.settings) setSettings(d.settings); }).catch(()=>{});
+    fetch("/api/ads/variations/settings").then(r=>r.json()).then(d=>{ if(!off && d && d.settings){ setSettings(d.settings); setSopDraft(d.settings.sop||""); } }).catch(()=>{});
     return ()=>{ off=true; };
   }, []);
+
+  // Persist a partial settings change (merge happens server-side). Optimistic.
+  const patchSettings = (patch)=>{
+    setSettings(prev=>prev?{...prev, ...patch, mix:patch.mix||prev.mix}:prev);
+    setSetBusy(true);
+    return fetch("/api/ads/variations/settings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(patch)})
+      .then(r=>r.json()).then(d=>{ if(d&&d.settings){ setSettings(d.settings); if(typeof d.settings.sop==="string") setSopDraft(d.settings.sop); } }).catch(()=>{}).finally(()=>setSetBusy(false));
+  };
+  const saveEnabled = (next)=>patchSettings({enabled:!!next});
+  const saveSop = ()=>{ if(!settings || sopDraft===(settings.sop||"")) return; patchSettings({sop:sopDraft}); };
 
   // Pull each winner's most-recent batch so the "N ready" counts are real and
   // expanding is instant. Re-runs when the winner set changes.
@@ -8585,24 +8620,50 @@ function AdVariations({rows}){
       <div className="ddr-var-head">
         <div>
           <div className="ddr-var-h">Variations factory</div>
-          <div className="ddr-var-sub">Fresh variations of your winners, made by the engine — ready each morning.</div>
+          <div className="ddr-var-sub">{settings&&settings.enabled?"On — fresh variations of your winners are made automatically each morning.":"Make variations of your winners on demand — or turn on the morning automation."}</div>
         </div>
         {settings && (
-          <div className="ddr-var-set" aria-busy={setBusy}>
-            {[["background","Backgrounds"],["highlightWord","Highlighted word"],["copyTweak","Copy tweaks"]].map(([k,lbl])=>(
-              <div className="ddr-var-step" key={k}>
-                <span className="ddr-var-step-l">{lbl}</span>
-                <div className="ddr-var-step-c">
-                  <button type="button" onClick={()=>saveMix(k,-1)} disabled={setBusy||settings.mix[k]<=0}>−</button>
-                  <span className="ddr-var-step-n">{settings.mix[k]}</span>
-                  <button type="button" onClick={()=>saveMix(k,1)} disabled={setBusy}>+</button>
-                </div>
-              </div>
-            ))}
-            <div className="ddr-var-step ddr-var-step-tot"><span className="ddr-var-step-l">Per job</span><span className="ddr-var-step-n">{total}</span></div>
-          </div>
+          <button type="button" className={"ddr-var-gear"+(panelOpen?" on":"")} onClick={()=>setPanelOpen(o=>!o)} title="Settings & automation" aria-label="Settings & automation" aria-expanded={panelOpen}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+            <span>Settings</span>
+          </button>
         )}
       </div>
+      {settings && panelOpen && (
+        <div className="ddr-var-panel" aria-busy={setBusy}>
+          <div className="ddr-var-sec">
+            <div className="ddr-var-sec-h">Automation</div>
+            <label className="ddr-var-toggle">
+              <button type="button" role="switch" aria-checked={!!settings.enabled} className={"ddr-sw"+(settings.enabled?" on":"")} disabled={setBusy} onClick={()=>saveEnabled(!settings.enabled)}><span className="ddr-sw-k"/></button>
+              <span className="ddr-var-toggle-t">
+                <b>Make variations every morning</b>
+                <small>{settings.enabled?"On — your top winners get a fresh batch before you start your day.":"Off — nothing runs on its own. Use Regenerate below any winner to make a batch yourself."}</small>
+              </span>
+            </label>
+          </div>
+          <div className="ddr-var-sec">
+            <div className="ddr-var-sec-h">Batch <span className="ddr-var-sec-x">— each job makes {total} image{total===1?"":"s"}. Lower these for a quick test run.</span></div>
+            <div className="ddr-var-set">
+              {[["background","Backgrounds"],["highlightWord","Highlighted word"],["copyTweak","Copy tweaks"]].map(([k,lbl])=>(
+                <div className="ddr-var-step" key={k}>
+                  <span className="ddr-var-step-l">{lbl}</span>
+                  <div className="ddr-var-step-c">
+                    <button type="button" onClick={()=>saveMix(k,-1)} disabled={setBusy||settings.mix[k]<=0}>−</button>
+                    <span className="ddr-var-step-n">{settings.mix[k]}</span>
+                    <button type="button" onClick={()=>saveMix(k,1)} disabled={setBusy}>+</button>
+                  </div>
+                </div>
+              ))}
+              <div className="ddr-var-step ddr-var-step-tot"><span className="ddr-var-step-l">Batch size</span><span className="ddr-var-step-n">{total}</span></div>
+            </div>
+          </div>
+          <div className="ddr-var-sec">
+            <div className="ddr-var-sec-h">Your creative rules <span className="ddr-var-sec-x">— plain English. The engine follows this on every image.</span></div>
+            <textarea className="ddr-var-sop" rows={4} placeholder="e.g. Always keep the same person. Bold sans-serif headline. Bright, high-energy gym look. Never change the logo. Keep one strong benefit in the hook." value={sopDraft} onChange={e=>setSopDraft(e.target.value)} onBlur={saveSop} disabled={setBusy} maxLength={1200}/>
+            <div className="ddr-var-sop-f">{setBusy?"Saving…":(sopDraft!==(settings.sop||"")?"Click out of the box to save.":"Saved.")}</div>
+          </div>
+        </div>
+      )}
       {winners.length>0 ? (
         <div className="ddr-var-list">
           {winners.map((a,i)=>{

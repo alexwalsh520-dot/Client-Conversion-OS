@@ -20,22 +20,33 @@ export type VariationsSettings = {
   mix: VariationsMix;
   // Image-gen provider id. Pluggable — see generate.ts. Default "higgsfield".
   provider: string;
-  // Master switch for the auto-pregeneration cron. When false, the daily hook
-  // does nothing (manual "Regenerate" via the POST route still works).
+  // Master switch for the morning auto-pregeneration cron. When false, the daily
+  // hook does nothing (manual "Regenerate" via the POST route still works). This
+  // is the "Automation" toggle the owner flips from the gear panel.
   enabled: boolean;
+  // The owner's plain-English creative SOP — how the engine should vary ads.
+  // Woven into every generation prompt so the factory adapts to it live, without
+  // a code change. Empty = use the built-in defaults only.
+  sop: string;
 };
 
+// Auto-generation defaults OFF: the morning cron is wired but dormant until the
+// owner turns Automation on from the gear panel (so it never bills before they
+// opt in). Manual Regenerate works regardless.
 export const DEFAULT_SETTINGS: VariationsSettings = {
   variationsPerJob: 10,
   mix: { background: 6, highlightWord: 2, copyTweak: 2 },
   provider: "higgsfield",
-  enabled: true,
+  enabled: false,
+  sop: "",
 };
 
 const KINDS: VariationKind[] = ["background", "highlightWord", "copyTweak"];
 
 // Cap so a bad UI value (or a typo) can never trigger a huge, expensive job.
 const MAX_VARIATIONS_PER_JOB = 20;
+// Cap the stored SOP so a paste can't bloat the prompt / settings row.
+const MAX_SOP_CHARS = 1200;
 
 // Coerce arbitrary stored / submitted JSON into a valid, safe settings object.
 // Never throws: any malformed field falls back to the default. The returned
@@ -49,6 +60,8 @@ export function normalizeSettings(raw: unknown): VariationsSettings {
       : DEFAULT_SETTINGS.provider;
 
   const enabled = typeof obj.enabled === "boolean" ? obj.enabled : DEFAULT_SETTINGS.enabled;
+
+  const sop = typeof obj.sop === "string" ? obj.sop.trim().slice(0, MAX_SOP_CHARS) : DEFAULT_SETTINGS.sop;
 
   const rawMix = (obj.mix && typeof obj.mix === "object" ? obj.mix : {}) as Record<string, unknown>;
   const mix: VariationsMix = {
@@ -79,7 +92,7 @@ export function normalizeSettings(raw: unknown): VariationsSettings {
     variationsPerJob = mix.background + mix.highlightWord + mix.copyTweak;
   }
 
-  return { variationsPerJob, mix, provider, enabled };
+  return { variationsPerJob, mix, provider, enabled, sop };
 }
 
 function clampInt(value: unknown, fallback: number): number {

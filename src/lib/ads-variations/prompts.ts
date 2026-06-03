@@ -28,12 +28,18 @@ export type BuildPromptsInput = {
   // The literal text printed on the winning ad (from ad_creative_copy /
   // onImageText). May be empty if the ad has no readable overlay text.
   onImageText: string;
+  // The owner's creative SOP (plain English). Appended as a binding directive to
+  // every prompt so the factory follows their house style without a code change.
+  sop?: string;
 };
 
 export function buildPrompts(input: BuildPromptsInput): VariationPrompt[] {
   const kinds = expandMix(input.mix);
   const text = (input.onImageText || "").trim();
   const words = extractKeyWords(text);
+  const sop = (input.sop || "").trim();
+  const withSop = (prompt: string) =>
+    sop ? `${prompt} House creative rules (follow these): ${sop}` : prompt;
 
   let bgIndex = 0;
   let wordIndex = 0;
@@ -43,17 +49,17 @@ export function buildPrompts(input: BuildPromptsInput): VariationPrompt[] {
     if (kind === "background") {
       const bg = BACKGROUNDS[bgIndex % BACKGROUNDS.length];
       bgIndex++;
-      return { kind, prompt: backgroundPrompt(bg, text) };
+      return { kind, prompt: withSop(backgroundPrompt(bg, text)) };
     }
     if (kind === "highlightWord") {
       const word = words.length ? words[wordIndex % words.length] : "";
       wordIndex++;
-      return { kind, prompt: highlightWordPrompt(word, text) };
+      return { kind, prompt: withSop(highlightWordPrompt(word, text)) };
     }
     // copyTweak
     const angle = COPY_ANGLES[copyIndex % COPY_ANGLES.length];
     copyIndex++;
-    return { kind, prompt: copyTweakPrompt(angle, text) };
+    return { kind, prompt: withSop(copyTweakPrompt(angle, text)) };
   });
 }
 
