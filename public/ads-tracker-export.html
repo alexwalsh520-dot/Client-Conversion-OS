@@ -8683,8 +8683,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
         </div>
       </div>
       <DecisionRulesPanel open={rulesOpen}/>
-      <div className="ddr-flowrow"><DataFlowToggle open={flowOpen} onToggle={()=>setFlowOpen(o=>!o)}/></div>
-      <DataFlowMap open={flowOpen} sel={flowSel} setSel={setFlowSel}/>
+      {/* Data-flow map hidden from this page for now (component kept for later) */}
 
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
       <DataHealth dashboard={dashboard}/>
