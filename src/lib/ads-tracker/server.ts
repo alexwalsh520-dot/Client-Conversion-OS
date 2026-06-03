@@ -990,6 +990,22 @@ async function fetchFreshSalesRows(
   }
 }
 
+// Deterministic candidate order so matchSalesRow's .find()/[0] always pick the
+// SAME booking across identical loads. Supabase row order is NOT guaranteed, so
+// an unsorted candidate list let a sale's revenue flip between ads on reload
+// whenever a person had 2+ competing matches. Newest event first, with a full
+// tiebreak chain (mirrors manychatBySubscriber's sort).
+function sortMatchCandidates(list: KeywordEvent[]) {
+  list.sort(
+    (a, b) =>
+      String(b.event_at || "").localeCompare(String(a.event_at || "")) ||
+      String(b.keyword_normalized || "").localeCompare(String(a.keyword_normalized || "")) ||
+      String(b.appointment_id || "").localeCompare(String(a.appointment_id || "")) ||
+      String(b.subscriber_id || "").localeCompare(String(a.subscriber_id || "")) ||
+      String(b.contact_name || "").localeCompare(String(a.contact_name || ""))
+  );
+}
+
 function bookingsByContactName(bookings: KeywordEvent[]) {
   const byName = new Map<string, KeywordEvent[]>();
   for (const booking of bookings) {
@@ -999,6 +1015,7 @@ function bookingsByContactName(bookings: KeywordEvent[]) {
     list.push(booking);
     byName.set(name, list);
   }
+  for (const list of byName.values()) sortMatchCandidates(list);
   return byName;
 }
 
@@ -1043,6 +1060,7 @@ function buildSalesMatchIndex(
     list.push(booking);
     bySubscriber.set(booking.subscriber_id, list);
   }
+  for (const list of bySubscriber.values()) sortMatchCandidates(list);
   const manychatBySubscriber = new Map<string, KeywordEvent[]>();
   for (const event of manychatEvents) {
     if (!event.subscriber_id || !event.keyword_normalized) continue;
