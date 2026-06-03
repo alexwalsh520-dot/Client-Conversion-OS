@@ -1181,7 +1181,27 @@ function looksLikeVideoUrl(value: string) {
   return /\.(mp4|mov|m4v|webm|avi|mkv)(?:$|\?)/i.test(value);
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+async function downloadBlob(blob: Blob, filename: string) {
+  // Chromium (Chrome/Edge): open the native Save dialog so the user can choose
+  // the destination folder and rename the file. Falls back to a normal download
+  // into the default Downloads folder on browsers without the API.
+  const picker = (window as unknown as {
+    showSaveFilePicker?: (opts: { suggestedName?: string }) => Promise<{
+      createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }>;
+    }>;
+  }).showSaveFilePicker;
+  if (typeof picker === "function") {
+    try {
+      const handle = await picker({ suggestedName: filename });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return; // user cancelled
+      // Any other error (unsupported context, permission) → fall through.
+    }
+  }
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = href;
