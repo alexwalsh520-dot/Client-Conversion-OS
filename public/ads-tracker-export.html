@@ -1033,6 +1033,31 @@
   .ps-here{display:inline-block;margin-left:10px;font-size:10px;font-weight:600;color:var(--gold);letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
   .ps-foot{margin-top:18px;font-size:13px;color:var(--text-3);font-variant-numeric:tabular-nums}
   .ps-foot b{color:var(--text);font-weight:650}
+  /* Business leaderboard */
+  .lb{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
+  .lb-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .lb-crown{filter:saturate(1.1)}
+  .lb-sub{font-weight:400;color:var(--text-4);font-size:12.5px}
+  .lb-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:11px}
+  .lb-table{width:100%;border-collapse:collapse;font-size:13px;min-width:680px}
+  .lb-table thead th{position:sticky;top:0;background:var(--panel);text-align:right;font-weight:600;color:var(--text-3);font-size:11.5px;letter-spacing:.02em;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none;transition:color .14s}
+  .lb-table thead th:hover{color:var(--text)}
+  .lb-th.act{color:var(--gold)}
+  .lb-ar{color:var(--gold)}
+  .lb-corner{text-align:left !important;color:var(--text-4) !important;border-right:1px solid var(--border)}
+  .lb-corner.on{color:var(--gold) !important;background:color-mix(in srgb,var(--gold) 8%,var(--panel)) !important}
+  .lb-row{transition:background .12s}
+  .lb-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}
+  .lb-row:not(:last-child) td{border-bottom:1px solid var(--border)}
+  .lb-ad{display:flex;align-items:center;gap:10px;padding:10px 14px;text-align:left;border-right:1px solid var(--border);position:sticky;left:0;background:var(--panel-2)}
+  .lb-row:hover .lb-ad{background:color-mix(in srgb,var(--text) 4%,var(--panel-2))}
+  .lb-thumb{width:34px;height:34px;border-radius:7px;object-fit:cover;border:1px solid var(--border-2);cursor:zoom-in;flex:0 0 auto;background:var(--bg-1)}
+  .lb-thumb.noimg{display:inline-block}
+  .lb-name{font-weight:600;color:var(--text);text-transform:capitalize;white-space:nowrap}
+  .lb-cell{text-align:right;padding:10px 14px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lb-cell.win{color:var(--text);font-weight:650;background:color-mix(in srgb,var(--gold) 9%,transparent)}
+  .lb-wc{margin-right:5px}
+  .lb-foot{font-size:11px;color:var(--text-4);margin-top:10px;line-height:1.5}
   .ps-clients{margin-top:26px;padding-top:22px;border-top:1px solid var(--border)}
   .ps-cl-h{font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px}
   .ps-cl-tab{display:flex;flex-direction:column;overflow-x:auto}
@@ -9454,6 +9479,110 @@ function AdVariations({rows}){
   );
 }
 
+// Business-wide leaderboard — one row per ad word, a 👑 on each column's champion.
+// Sort by any column header; click the corner to line the champions up on the
+// diagonal. Winners are only chosen among ads with enough sample so a one-call
+// fluke can't top a column (honest math).
+const LB_COLS = [
+  {key:"roas",       label:"ROAS",        dir: 1, el:"elRoas",  fmt:v=> v==null?"—":(v.toFixed(1)+"×")},
+  {key:"callRate",   label:"DM → call", dir: 1, el:"elCall",  fmt:v=> v==null?"—":(Math.round(v*100)+"%")},
+  {key:"showRate",   label:"Show-up",     dir: 1, el:"elShow",  fmt:v=> v==null?"—":(Math.round(v*100)+"%")},
+  {key:"closeRate",  label:"Close",       dir: 1, el:"elClose", fmt:v=> v==null?"—":(Math.round(v*100)+"%")},
+  {key:"costBooked", label:"Cost / call", dir:-1, el:"elCB",    fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
+  {key:"costShown",  label:"Cost / show", dir:-1, el:"elCS",    fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
+  {key:"aov",        label:"AOV",         dir: 1, el:"elAov",   fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
+];
+function Leaderboard({rows}){
+  const capw=(s)=>{ s=String(s||""); return s? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase():"—"; };
+  const [sortKey,setSortKey]=useState("roas");
+  const [sortDir,setSortDir]=useState(-1); // -1 desc, 1 asc
+  const [diag,setDiag]=useState(false);
+  const [preview,setPreview]=useState(null);
+
+  const data = useMemo(()=> (Array.isArray(rows)?rows:[])
+    .filter(r=> (r.spend>0||r.leads>0||r.booked>0))
+    .map(r=>{
+      const callRate = r.leads>0 ? r.booked/r.leads : null;
+      const showRate = r.booked>0 ? r.taken/r.booked : null;
+      const closeRate = r.taken>0 ? r.clients/r.taken : null;
+      const costBooked = r.booked>0 ? r.spend/r.booked : null;
+      const costShown = r.taken>0 ? r.spend/r.taken : null;
+      const aov = r.clients>0 ? r.collected/r.clients : null;
+      const roas = (r.spend>0&&r.collected>0) ? r.collected/r.spend : null;
+      const p=(r.previews&&r.previews[0])||null;
+      return { key:r.keyword, name:capw(r.keyword), ref:p&&(p.thumb||p.full), spend:r.spend,
+        roas, callRate, showRate, closeRate, costBooked, costShown, aov,
+        elRoas:r.spend>=100&&r.collected>0, elCall:r.leads>=5, elShow:r.booked>=3, elClose:r.taken>=2,
+        elCB:r.spend>=100&&r.booked>0, elCS:r.spend>=100&&r.taken>0, elAov:r.clients>=1 };
+    }), [rows]);
+
+  // Champion per column (only among eligible rows so tiny samples can't win).
+  const champ = useMemo(()=>{ const m={}; LB_COLS.forEach(c=>{ let best=null;
+    data.forEach(d=>{ if(!d[c.el]||d[c.key]==null) return; if(best==null || (c.dir>0 ? d[c.key]>best[c.key] : d[c.key]<best[c.key])) best=d; });
+    m[c.key]=best?best.key:null; }); return m; }, [data]);
+
+  const ordered = useMemo(()=>{
+    if(diag){
+      const used=new Set(); const out=[];
+      LB_COLS.forEach(c=>{ const w=champ[c.key]; if(w && !used.has(w)){ const row=data.find(d=>d.key===w); if(row){ out.push(row); used.add(w); } } });
+      data.forEach(d=>{ if(!used.has(d.key)) out.push(d); });
+      return out;
+    }
+    const arr=[...data];
+    arr.sort((a,b)=>{ const av=a[sortKey], bv=b[sortKey];
+      if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1;
+      return (av-bv)*sortDir; });
+    return arr;
+  }, [data, sortKey, sortDir, diag, champ]);
+
+  const clickHead=(c)=>{ setDiag(false); if(sortKey===c.key) setSortDir(d=>-d); else { setSortKey(c.key); setSortDir(c.dir>0?-1:1); } };
+
+  if(!data.length) return null;
+  return (
+    <div className="lb">
+      <div className="lb-h"><span className="lb-crown">👑</span> Business leaderboard <span className="lb-sub">— every ad word, the champion of each metric</span></div>
+      <div className="lb-wrap">
+        <table className="lb-table">
+          <thead>
+            <tr>
+              <th className={"lb-corner"+(diag?" on":"")} onClick={()=>setDiag(d=>!d)} title="Line the champions up on the diagonal">{diag?"★ champions":"Ad"}</th>
+              {LB_COLS.map(c=>(
+                <th key={c.key} className={"lb-th"+(sortKey===c.key&&!diag?" act":"")} onClick={()=>clickHead(c)}>
+                  {c.label}<span className="lb-ar">{!diag&&sortKey===c.key?(sortDir<0?" ↓":" ↑"):""}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map(d=>(
+              <tr key={d.key} className="lb-row">
+                <td className="lb-ad">
+                  {d.ref ? <img className="lb-thumb" src={d.ref} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onClick={()=>setPreview(d.ref)}/> : <span className="lb-thumb noimg"/>}
+                  <span className="lb-name">{d.name}</span>
+                </td>
+                {LB_COLS.map(c=>(
+                  <td key={c.key} className={"lb-cell"+(champ[c.key]===d.key?" win":"")}>
+                    {champ[c.key]===d.key && <span className="lb-wc">👑</span>}{c.fmt(d[c.key])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="lb-foot">Champions need real sample (≥$100 spend / ≥5 DMs / ≥3 booked / ≥2 shown) so a fluke can't top a column. Tap the corner to line them up diagonally.</div>
+      {preview && (
+        <div className="ddr-lb-back" onClick={()=>setPreview(null)}>
+          <div className="ddr-lb" onClick={e=>e.stopPropagation()}>
+            <img className="ddr-lb-img" src={preview} alt="" referrerPolicy="no-referrer"/>
+            <div className="ddr-lb-bar"><button type="button" className="ddr-lb-btn" onClick={()=>downloadImage(preview,"ad.png")}>Download</button><button type="button" className="ddr-lb-btn ghost" onClick={()=>setPreview(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MoneyCockpit({model}){
   if(!model) return null;
   const m = model;
@@ -9752,6 +9881,9 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
 
       {/* The more you spend, the more you keep — scale-aware money model */}
       <MoneyCockpit model={dashboard && dashboard.moneyModel}/>
+
+      {/* Business leaderboard — champion of every metric, across all ad words */}
+      <Leaderboard rows={rows}/>
 
       {/* Everything that isn't a daily decision — tucked away, one click to open */}
       <button type="button" className="ddr-oldtoggle" onClick={()=>setShowOld(s=>!s)}>
