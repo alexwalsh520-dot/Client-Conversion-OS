@@ -535,10 +535,12 @@ function applyGroupStatus(group: Group, status: "active" | "finished") {
 }
 
 function clientFromOffer(row: SheetRow): string | null {
-  const offer = row.offer.toLowerCase();
-  if (offer.includes("tyson")) return "tyson";
-  if (offer.includes("keith")) return "keith";
-  return null;
+  // Single source of truth (creators.ts) so EVERY creator's sales scope to the
+  // right person — not just tyson/keith. The old hardcoded check tagged
+  // Lucy/Antwan sales as "unknown", locking them out of creator scoping,
+  // resolution, and the attribution workspace. Verified against all live sales:
+  // identical tyson/keith classification, only adds lucy/antwan detection.
+  return creatorKeyFromText(row.offer);
 }
 
 function isWin(row: SheetRow): boolean {

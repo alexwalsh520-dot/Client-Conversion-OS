@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
+import { isCreatorKey, type CreatorKey } from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,10 @@ function isBucket(value: unknown): value is Bucket {
   return typeof value === "string" && value in EVENT_TYPES;
 }
 
-function isClientKey(value: unknown): value is "tyson" | "keith" {
-  return value === "tyson" || value === "keith";
+function isClientKey(value: unknown): value is CreatorKey {
+  // All creators (creators.ts), not just tyson/keith — the team must be able to
+  // manually enter events for Lucy, Antwan, and anyone onboarded later.
+  return isCreatorKey(value);
 }
 
 function isIsoDate(value: unknown): value is string {
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) {
   const date = isIsoDate(body.date) ? body.date : todayEt();
 
   if (!isClientKey(clientKey)) {
-    return NextResponse.json({ error: "clientKey must be tyson or keith" }, { status: 400 });
+    return NextResponse.json({ error: "clientKey must be a known creator" }, { status: 400 });
   }
   if (!isBucket(bucket)) {
     return NextResponse.json({ error: "Invalid manual event bucket" }, { status: 400 });
