@@ -1055,6 +1055,7 @@
   .ddr-var-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:14px}
   .ddr-var-h{font-size:16px;font-weight:650;color:var(--text)}
   .ddr-var-sub{font-size:12.5px;color:var(--text-4);margin-top:3px;max-width:42ch}
+  .ddr-var-tools{display:inline-flex;align-items:center;gap:8px}
   .ddr-var-gear{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--border-2);border-radius:9px;background:var(--bg-1);color:var(--text-3);font-size:12.5px;font-weight:500;cursor:pointer;transition:border-color .14s,color .14s}
   .ddr-var-gear:hover{border-color:var(--text-3);color:var(--text)}
   .ddr-var-gear.on{border-color:var(--text-3);color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
@@ -1160,6 +1161,34 @@
   .ddr-gp-spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--border-2);border-top-color:var(--text-3);animation:ddrSpin .8s linear infinite}
   @keyframes ddrSpin{to{transform:rotate(360deg)}}
   @media(max-width:560px){.ddr-gp-results{grid-template-columns:repeat(3,1fr)}}
+  .ddr-gp-img.clickable,.ddr-var-img.clickable{cursor:zoom-in}
+  /* Lightbox */
+  .ddr-lb-back{position:fixed;inset:0;z-index:80;background:color-mix(in srgb,#000 80%,transparent);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:36px}
+  .ddr-lb{display:flex;flex-direction:column;gap:14px;align-items:center;max-width:92vw;max-height:92vh}
+  .ddr-lb-img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:12px;border:1px solid var(--border-2);box-shadow:0 24px 80px rgba(0,0,0,.6)}
+  .ddr-lb-bar{display:flex;gap:10px}
+  .ddr-lb-btn{font-size:13px;font-weight:600;padding:9px 18px;border-radius:9px;border:1px solid var(--border-2);background:var(--panel);color:var(--text);cursor:pointer;transition:border-color .14s,background .14s}
+  .ddr-lb-btn:hover{border-color:var(--text-3)}
+  .ddr-lb-btn.ghost{color:var(--text-4);font-weight:500}
+  .ddr-lb-btn.del{color:var(--red);border-color:color-mix(in srgb,var(--red) 30%,transparent)}
+  .ddr-lb-btn.del:hover{background:color-mix(in srgb,var(--red) 12%,transparent)}
+  /* History gallery */
+  .ddr-hist{width:100%;max-width:860px;max-height:86vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border-2);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden}
+  .ddr-hist-bar{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-4);flex-wrap:wrap}
+  .ddr-hist-hint{color:var(--text-4)}
+  .ddr-hist-act{font-size:12px;font-weight:600;padding:6px 13px;border-radius:8px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text);cursor:pointer}
+  .ddr-hist-act:hover{border-color:var(--text-3)}
+  .ddr-hist-act.ghost{color:var(--text-4);font-weight:500}
+  .ddr-hist-act.del{color:var(--red);border-color:color-mix(in srgb,var(--red) 30%,transparent)}
+  .ddr-hist-act:disabled{opacity:.6;cursor:default}
+  .ddr-hist-body{padding:18px;overflow-y:auto}
+  .ddr-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+  .ddr-hist-cell{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+  .ddr-hist-cell.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  .ddr-hist-img{display:block;width:100%;height:100%;padding:0;border:none;background:var(--bg-1);cursor:zoom-in}
+  .ddr-hist-img img{width:100%;height:100%;object-fit:cover;display:block}
+  .ddr-hist-ck{position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:6px;border:1px solid var(--border-2);background:color-mix(in srgb,#000 45%,transparent);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+  .ddr-hist-ck.on{background:var(--gold);border-color:var(--gold);color:#0b0b0d}
   .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
   .ddr-rules .rg{display:flex;flex-direction:column;gap:5px}
   .ddr-rules .rgh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
@@ -8595,11 +8624,42 @@ const VAR_GEN_MAX_REF_BYTES = 6*1024*1024;
 function readFileAsDataUrl(file){
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error||new Error("read failed")); r.readAsDataURL(file); });
 }
+// Force a real download (Supabase public URLs are cross-origin, so the <a download>
+// attribute alone won't work — fetch to a blob first, fall back to a new tab).
+async function downloadImage(url, filename){
+  if(!url) return;
+  try{
+    const res = await fetch(url, {mode:"cors"});
+    const blob = await res.blob();
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=u; a.download=filename||"variation.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u), 3000);
+  }catch(_){ try{ window.open(url, "_blank", "noopener"); }catch(__){} }
+}
+
+// Full-size image viewer with download (+ optional delete). Shared by the
+// generate popup, the winner grids, and the history gallery.
+function VarLightbox({item, onClose, onDelete}){
+  if(!item || !item.url) return null;
+  return (
+    <div className="ddr-lb-back" onClick={onClose}>
+      <div className="ddr-lb" onClick={e=>e.stopPropagation()}>
+        <img className="ddr-lb-img" src={item.url} alt="" referrerPolicy="no-referrer"/>
+        <div className="ddr-lb-bar">
+          <button type="button" className="ddr-lb-btn" onClick={()=>downloadImage(item.url, item.name)}>Download</button>
+          {onDelete && <button type="button" className="ddr-lb-btn del" onClick={()=>onDelete(item)}>Delete</button>}
+          <button type="button" className="ddr-lb-btn ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // The Generate popup — a Studio-2-style chat: the winning ad is the default
 // reference, you can add a second (upload now; R2 library next), pick presets,
 // type a prompt, choose how many, and watch each image stream in as it finishes.
-function GeneratePopup({winner, onClose, onDone}){
+function GeneratePopup({winner, onClose, onDone, onView}){
   const [prompt,setPrompt]=useState("");
   const [count,setCount]=useState(4);
   const [refs,setRefs]=useState([]);     // extra references: {dataUrl,name}
@@ -8685,13 +8745,78 @@ function GeneratePopup({winner, onClose, onDone}){
             <div className="ddr-gp-results">
               {slots.map((s,i)=>(
                 <div className="ddr-gp-cell" key={i}>
-                  <div className={"ddr-gp-img "+s.status}>
+                  <div className={"ddr-gp-img "+s.status+(s.status==="ready"&&s.url?" clickable":"")} onClick={()=>{ if(s.status==="ready"&&s.url&&onView) onView({url:s.url, name:(winner.name||"variation")+".png"}); }}>
                     {s.status==="ready" && s.url ? <img src={s.url} alt="" loading="lazy"/> : s.status==="failed" ? <span className="ddr-gp-fail" title={s.error||""}>failed</span> : <span className="ddr-gp-spin"/>}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// History gallery — every variation the factory has made, in one place, with
+// enlarge / download / delete and multi-select. Borrows Studio 2's "grab many
+// at once" export idea (sequential downloads keep it dependency-free here).
+function HistoryGallery({onClose, onView}){
+  const [items,setItems]=useState(null); // null = loading
+  const [err,setErr]=useState(null);
+  const [sel,setSel]=useState({});       // id -> true
+  const [busy,setBusy]=useState(false);
+  const load=useCallback(()=>{
+    setItems(null); setErr(null);
+    fetch("/api/ads/variations/library").then(r=>r.json())
+      .then(d=>{ if(d&&d.error){ setErr(d.error); setItems([]); } else setItems((d&&d.variations)||[]); })
+      .catch(e=>{ setErr(String(e&&e.message||e)); setItems([]); });
+  },[]);
+  useEffect(()=>{ load(); },[load]);
+  const selIds=Object.keys(sel).filter(k=>sel[k]);
+  const toggle=(id)=> setSel(p=>({...p,[id]:!p[id]}));
+  const selectAll=()=>{ const all={}; (items||[]).forEach(v=>all[v.id]=true); setSel(all); };
+  const clearSel=()=> setSel({});
+  const downloadSel=async ()=>{ const chosen=(items||[]).filter(v=>sel[v.id]); for(const v of chosen){ await downloadImage(v.image_url, (v.source_ad_id||"variation")+"-"+String(v.id).slice(0,6)+".png"); await new Promise(r=>setTimeout(r,250)); } };
+  const deleteSel=async ()=>{ if(!selIds.length||busy) return; setBusy(true); for(const id of selIds){ try{ await fetch("/api/ads/variations/library?id="+encodeURIComponent(id),{method:"DELETE"}); }catch(_){} } setBusy(false); clearSel(); load(); };
+  return (
+    <div className="ddr-gp-back" onClick={onClose}>
+      <div className="ddr-hist" onClick={e=>e.stopPropagation()}>
+        <div className="ddr-gp-head">
+          <div className="ddr-gp-title">Variations history <span>{items?(items.length+" saved"):""}</span></div>
+          <button type="button" className="ddr-gp-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="ddr-hist-bar">
+          {selIds.length>0 ? (
+            <React.Fragment>
+              <span>{selIds.length} selected</span>
+              <button type="button" className="ddr-hist-act" onClick={downloadSel}>Download</button>
+              <button type="button" className="ddr-hist-act del" onClick={deleteSel} disabled={busy}>{busy?"Deleting…":"Delete"}</button>
+              <button type="button" className="ddr-hist-act ghost" onClick={clearSel}>Clear</button>
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
+              <span className="ddr-hist-hint">Tap an image to enlarge or download. Select to grab or remove several at once.</span>
+              {items&&items.length>0 && <button type="button" className="ddr-hist-act ghost" onClick={selectAll}>Select all</button>}
+            </React.Fragment>
+          )}
+        </div>
+        <div className="ddr-hist-body">
+          {items===null ? <div className="ddr-var-empty">Loading…</div>
+            : err ? <div className="ddr-var-err">{err}</div>
+            : items.length===0 ? <div className="ddr-var-empty">No variations yet — generate some from a winner and they'll live here, saved for good.</div>
+            : (
+              <div className="ddr-hist-grid">
+                {items.map(v=>(
+                  <div className={"ddr-hist-cell"+(sel[v.id]?" sel":"")} key={v.id}>
+                    <button type="button" className="ddr-hist-img" onClick={()=>onView&&onView({url:v.image_url, name:(v.source_ad_id||"variation")+".png"})}>
+                      <img src={v.image_url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                    </button>
+                    <button type="button" className={"ddr-hist-ck"+(sel[v.id]?" on":"")} onClick={()=>toggle(v.id)} aria-label="Select">{sel[v.id]?"✓":""}</button>
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       </div>
     </div>
@@ -8710,6 +8835,8 @@ function AdVariations({rows}){
   const [genId, setGenId] = useState(null);   // adId currently (re)generating (legacy batch)
   const [genErr, setGenErr] = useState({});    // adId -> error string
   const [genOpen, setGenOpen] = useState(null); // winner object whose Generate popup is open
+  const [lightbox, setLightbox] = useState(null); // {url,name} full-image viewer
+  const [histOpen, setHistOpen] = useState(false); // history gallery open
 
   const winners = useMemo(()=>(Array.isArray(rows)?rows:[])
     .filter(r=>r.traced && r.roas!=null && r.roas>=3)
@@ -8781,10 +8908,16 @@ function AdVariations({rows}){
           <div className="ddr-var-sub">{settings&&settings.enabled?"On — fresh variations of your winners are made automatically each morning.":"Make variations of your winners on demand — or turn on the morning automation."}</div>
         </div>
         {settings && (
-          <button type="button" className={"ddr-var-gear"+(panelOpen?" on":"")} onClick={()=>setPanelOpen(o=>!o)} title="Settings & automation" aria-label="Settings & automation" aria-expanded={panelOpen}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-            <span>Settings</span>
-          </button>
+          <div className="ddr-var-tools">
+            <button type="button" className="ddr-var-gear" onClick={()=>setHistOpen(true)} title="Variations history" aria-label="Variations history">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              <span>History</span>
+            </button>
+            <button type="button" className={"ddr-var-gear"+(panelOpen?" on":"")} onClick={()=>setPanelOpen(o=>!o)} title="Settings & automation" aria-label="Settings & automation" aria-expanded={panelOpen}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+              <span>Settings</span>
+            </button>
+          </div>
         )}
       </div>
       {settings && panelOpen && (
@@ -8854,7 +8987,7 @@ function AdVariations({rows}){
                     <div className="ddr-var-grid">
                       {cells.map((v,k)=>(
                         <div className="ddr-var-cell" key={v?v.id:k}>
-                          <div className={"ddr-var-img"+(v&&v.image_url?" full":"")+(generating?" gen":"")}>
+                          <div className={"ddr-var-img"+(v&&v.image_url?" full clickable":"")+(generating?" gen":"")} onClick={()=>{ if(v&&v.image_url) setLightbox({url:v.image_url, name:capw(a.name)+".png"}); }}>
                             {v&&v.image_url ? <img src={v.image_url} alt="" loading="lazy"/> : (generating ? "" : k+1)}
                           </div>
                           <span className="ddr-var-tag">{v?varKindLabel(v.kind):(k<(settings?settings.mix.background:6)?"background":k<(settings?settings.mix.background+settings.mix.highlightWord:8)?"highlight word":"copy")}</span>
@@ -8880,8 +9013,11 @@ function AdVariations({rows}){
           winner={genOpen}
           onClose={()=>setGenOpen(null)}
           onDone={()=>{ if(genOpen) loadJob(genOpen.adId); }}
+          onView={setLightbox}
         />
       )}
+      {histOpen && <HistoryGallery onClose={()=>setHistOpen(false)} onView={setLightbox} />}
+      {lightbox && <VarLightbox item={lightbox} onClose={()=>setLightbox(null)} />}
     </div>
   );
 }
