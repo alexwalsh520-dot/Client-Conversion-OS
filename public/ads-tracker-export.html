@@ -6391,7 +6391,10 @@ function fmtTrend(v, kind){
   return fmtNum(Math.round(v));
 }
 // Catmull-Rom → cubic bezier for a clean curvy line through the points.
-function smoothPath(pts){
+// (Renamed from smoothPath — a different smoothPath already exists earlier in the
+// file; the duplicate top-level declaration made Babel fail to compile the whole
+// script, blanking the entire dashboard. Distinct name keeps both intact.)
+function smoothPathTrend(pts){
   if(!pts.length) return "";
   if(pts.length===1) return `M${pts[0].x},${pts[0].y}`;
   let d=`M${pts[0].x},${pts[0].y}`;
@@ -6449,7 +6452,7 @@ function CardTrend({daily}){
   const X = (i)=> padX + (n<=1?0:(i/(n-1))*(w-2*padX));
   const Y = (v)=> padT + (1-((v-lo)/(max-lo)))*(H-padT-padB);
   const pts = defined.map(p=>({x:X(p.i), y:Y(p.v)}));
-  const path = smoothPath(pts);
+  const path = smoothPathTrend(pts);
   const area = pts.length>1 ? path+` L${pts[pts.length-1].x.toFixed(1)},${H-padB} L${pts[0].x.toFixed(1)},${H-padB} Z` : "";
   const onMove = (e)=>{
     const el=wrapRef.current; if(!el) return; const r=el.getBoundingClientRect();
