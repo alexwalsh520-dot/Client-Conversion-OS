@@ -32,11 +32,22 @@ export type GeneratedImage = {
   costUsd: number;
 };
 
+// One or more reference images. gpt_image_2 accepts multiple --image inputs
+// (Studio 2 already feeds it the editor snapshot + an added reference); we pass
+// the winning ad first, then any extra references (e.g. a desired background).
+export type ReferenceImages = string | null | undefined | Array<string | null | undefined>;
+
+function toReferenceList(ref: ReferenceImages): string[] {
+  const arr = Array.isArray(ref) ? ref : [ref];
+  return arr.map((u) => (u || "").trim()).filter(Boolean);
+}
+
 export type ImageProvider = {
   id: string;
   // Throws a clear, actionable Error if its credential is missing — never a
-  // raw crash. Returns image bytes ready to upload to Storage.
-  generateImage(prompt: string, referenceImageUrl?: string | null): Promise<GeneratedImage>;
+  // raw crash. Returns image bytes ready to upload to Storage. Accepts one or
+  // more reference images (passed in order as multiple --image inputs).
+  generateImage(prompt: string, referenceImages?: ReferenceImages): Promise<GeneratedImage>;
 };
 
 // ---------------------------------------------------------------------------
@@ -74,20 +85,21 @@ const MAX_POLL_MS = 5 * 60_000; // give up after 5 minutes
 
 const higgsfieldProvider: ImageProvider = {
   id: "higgsfield",
-  async generateImage(prompt, referenceImageUrl) {
+  async generateImage(prompt, referenceImages) {
     const status = await getStoredHiggsfieldCredentialStatus();
     if (!status.connected) {
       throw new Error("Higgsfield needs a fresh login token before it can generate.");
     }
 
+    const refUrls = toReferenceList(referenceImages);
     const tempPaths: string[] = [];
     try {
       const mediaArgs: string[] = [];
-      if (referenceImageUrl) {
-        // gpt_image_2 image-to-image: pass the winning ad as a local file so the
-        // CLI uploads it as the reference. The CLI takes a file path, not a URL,
-        // so we download the reference and stage it in a temp file.
-        const refPath = await downloadToTempImage(referenceImageUrl, "reference");
+      // gpt_image_2 image-to-image: each reference is uploaded as a separate
+      // --image input (the CLI takes a file path, not a URL, so download+stage
+      // each). Order matters: winning ad first, then any extra references.
+      for (let i = 0; i < refUrls.length; i++) {
+        const refPath = await downloadToTempImage(refUrls[i], `reference-${i}`);
         tempPaths.push(refPath);
         mediaArgs.push("--image", refPath);
       }

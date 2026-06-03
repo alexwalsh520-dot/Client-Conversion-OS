@@ -1,7 +1,8 @@
+import crypto from "crypto";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getSettings, type VariationsSettings } from "./settings";
 import { buildPrompts } from "./prompts";
-import { getProvider } from "./provider";
+import { getProvider, type ImageProvider } from "./provider";
 
 // The Variations Factory engine.
 //
@@ -118,58 +119,30 @@ export async function generateVariationsJob(
 
   const variations: VariationRecord[] = [];
   const errors: string[] = [];
-  let succeeded = 0;
 
   // Sequential generation. Image models are slow and rate-limited; serial keeps
   // us well under provider concurrency caps and makes per-image failures clean.
   for (let i = 0; i < prompts.length; i++) {
     const { kind, prompt } = prompts[i];
     try {
-      const img = await provider.generateImage(prompt, referenceImageUrl);
-      if (!img.bytes?.byteLength || img.bytes.byteLength > MAX_BYTES) {
-        throw new Error("generated image empty or too large");
-      }
-
-      const ext = img.contentType.includes("jpeg") ? "jpg" : img.contentType.includes("webp") ? "webp" : "png";
-      const path = `${jobId}/${String(i).padStart(2, "0")}-${kind}.${ext}`;
-      const { error: upErr } = await db.storage.from(BUCKET).upload(path, img.bytes, {
-        contentType: img.contentType,
-        cacheControl: "31536000",
-        upsert: true,
+      const row = await renderVariation(db, {
+        adId,
+        kind,
+        prompt,
+        jobId,
+        index: i,
+        referenceImageUrl,
+        settings,
+        provider,
+        createdAt,
       });
-      if (upErr) throw new Error(`storage upload: ${upErr.message}`);
-
-      const { data: pub } = db.storage.from(BUCKET).getPublicUrl(path);
-      const imageUrl = pub.publicUrl;
-
-      const { data: inserted, error: insErr } = await db
-        .from("ad_variations")
-        .insert({
-          source_ad_id: adId,
-          job_id: jobId,
-          kind,
-          prompt,
-          image_url: imageUrl,
-          settings_snapshot: settings,
-          provider: provider.id,
-          created_at: createdAt,
-        })
-        .select("id, source_ad_id, job_id, kind, prompt, image_url, provider, created_at")
-        .single();
-      if (insErr) throw new Error(`db insert: ${insErr.message}`);
-
-      variations.push(inserted as VariationRecord);
-      succeeded++;
-
-      // Record image-gen spend against the AI budget. Fire-and-forget; we pass
-      // the estimated cost through computeCost's fallback path by logging it as
-      // output tokens would be wrong, so we log a dedicated estimate row.
-      logImageCost(provider.id, img.costUsd);
+      variations.push(row);
     } catch (err) {
       errors.push(`#${i} (${kind}): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
+  const succeeded = variations.length;
   return {
     jobId,
     sourceAdId: adId,
@@ -179,6 +152,119 @@ export async function generateVariationsJob(
     variations,
     errors,
   };
+}
+
+// The three kinds the ad_variations.kind CHECK constraint allows. Custom/freeform
+// interactive prompts are stored as "background" (a cosmetic tag only).
+const ALLOWED_KINDS = ["background", "highlightWord", "copyTweak"];
+function normalizeKind(kind: string | undefined | null): string {
+  return ALLOWED_KINDS.includes(String(kind)) ? String(kind) : "background";
+}
+
+type RenderVariationOptions = {
+  adId: string;
+  kind: string;
+  prompt: string; // full prompt already built
+  jobId: string; // shared across one batch/job
+  index?: number; // for filename ordering within a job
+  referenceImageUrl: string; // the winning ad (primary reference)
+  extraReferenceUrls?: string[]; // user-added references (e.g. a desired background)
+  settings: VariationsSettings;
+  provider: ImageProvider;
+  createdAt?: string;
+};
+
+// Generates ONE image (winning ad + any extra references → provider), stores it
+// in the bucket, records the row, and returns it. Shared by the batch job and
+// the interactive single-image endpoint so both paths produce identical rows.
+async function renderVariation(db: Db, o: RenderVariationOptions): Promise<VariationRecord> {
+  const refs = [o.referenceImageUrl, ...(o.extraReferenceUrls || [])];
+  const img = await o.provider.generateImage(o.prompt, refs);
+  if (!img.bytes?.byteLength || img.bytes.byteLength > MAX_BYTES) {
+    throw new Error("generated image empty or too large");
+  }
+
+  const ext = img.contentType.includes("jpeg") ? "jpg" : img.contentType.includes("webp") ? "webp" : "png";
+  const idx = typeof o.index === "number" ? o.index : 0;
+  const path = `${o.jobId}/${String(idx).padStart(2, "0")}-${o.kind}-${crypto.randomBytes(3).toString("hex")}.${ext}`;
+  const { error: upErr } = await db.storage.from(BUCKET).upload(path, img.bytes, {
+    contentType: img.contentType,
+    cacheControl: "31536000",
+    upsert: true,
+  });
+  if (upErr) throw new Error(`storage upload: ${upErr.message}`);
+
+  const { data: pub } = db.storage.from(BUCKET).getPublicUrl(path);
+
+  const { data: inserted, error: insErr } = await db
+    .from("ad_variations")
+    .insert({
+      source_ad_id: o.adId,
+      job_id: o.jobId,
+      kind: o.kind,
+      prompt: o.prompt,
+      image_url: pub.publicUrl,
+      settings_snapshot: o.settings,
+      provider: o.provider.id,
+      created_at: o.createdAt || new Date().toISOString(),
+    })
+    .select("id, source_ad_id, job_id, kind, prompt, image_url, provider, created_at")
+    .single();
+  if (insErr) throw new Error(`db insert: ${insErr.message}`);
+
+  logImageCost(o.provider.id, img.costUsd);
+  return inserted as VariationRecord;
+}
+
+// ── Interactive single-image generation (the Generate popup) ────────────────
+// The popup fires one of these per requested image so results can stream in
+// independently. Builds the prompt from a preset/custom instruction + the house
+// SOP, attaches the winning ad plus any user-chosen reference images.
+export type GenerateOneInput = {
+  adId: string;
+  // The full instruction for this image (preset text and/or the user's chat
+  // prompt). The house SOP is appended automatically.
+  prompt: string;
+  kind?: string; // background | highlightWord | copyTweak (else stored as background)
+  jobId?: string; // group several popup images under one job
+  index?: number;
+  extraReferenceUrls?: string[]; // user-added references beyond the winning ad
+  settings?: VariationsSettings;
+};
+
+export async function generateOneVariation(input: GenerateOneInput): Promise<VariationRecord> {
+  const adId = String(input.adId || "").trim();
+  if (!adId) throw new Error("Missing adId");
+  const prompt = String(input.prompt || "").trim();
+  if (!prompt) throw new Error("Missing prompt");
+
+  const db = getServiceSupabase();
+  const settings = input.settings ?? (await getSettings());
+  const provider = getProvider(settings.provider);
+
+  const { referenceImageUrl } = await loadSource(db, adId);
+  if (!referenceImageUrl) {
+    throw new Error(
+      `No stored creative image found for ad ${adId} — cannot generate variations without a reference.`
+    );
+  }
+  await ensureBucket(db);
+
+  // The house SOP rides along on every image, same as the batch path.
+  const sop = (settings.sop || "").trim();
+  const fullPrompt = sop ? `${prompt} House creative rules (follow these): ${sop}` : prompt;
+
+  return renderVariation(db, {
+    adId,
+    kind: normalizeKind(input.kind),
+    prompt: fullPrompt,
+    jobId: input.jobId || `${adId}-${Date.now()}`,
+    index: input.index,
+    referenceImageUrl,
+    extraReferenceUrls: input.extraReferenceUrls,
+    settings,
+    provider,
+  });
 }
 
 // Logs an estimated image-generation cost into ai_usage. The ai-usage helper is
