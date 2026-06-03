@@ -1062,6 +1062,27 @@
   .ddr-var-gear svg{opacity:.85}
   .ddr-var-panel{margin-bottom:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-1);overflow:hidden}
   .ddr-var-panel[aria-busy=true]{opacity:.7}
+  .ddr-var-tabs{display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .ddr-var-tab{font-size:12.5px;font-weight:550;padding:7px 14px;border-radius:8px;border:none;background:transparent;color:var(--text-4);cursor:pointer;transition:background .14s,color .14s}
+  .ddr-var-tab:hover{color:var(--text-2)}
+  .ddr-var-tab.on{background:var(--bg-1);color:var(--text)}
+  .ddr-var-cadence{display:flex;align-items:center;gap:14px;margin-top:16px;flex-wrap:wrap}
+  .ddr-var-seg{display:inline-flex;border:1px solid var(--border-2);border-radius:9px;overflow:hidden}
+  .ddr-var-seg-b{font-size:12.5px;padding:7px 13px;border:none;border-right:1px solid var(--border-2);background:var(--panel);color:var(--text-3);cursor:pointer;transition:background .14s,color .14s}
+  .ddr-var-seg-b:last-child{border-right:none}
+  .ddr-var-seg-b:hover:not(.on){color:var(--text)}
+  .ddr-var-seg-b.on{background:var(--gold);color:#0b0b0d;font-weight:600}
+  .ddr-var-presets{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+  .ddr-var-preset{display:grid;grid-template-columns:160px 1fr auto;gap:10px;align-items:start}
+  .ddr-var-preset-l{font-size:12.5px;font-weight:600;padding:8px 10px;border-radius:8px;border:1px solid var(--border-2);background:var(--panel);color:var(--text)}
+  .ddr-var-preset-p{font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;border:1px solid var(--border-2);background:var(--panel);color:var(--text-2);resize:vertical;font-family:inherit}
+  .ddr-var-preset-l:focus,.ddr-var-preset-p:focus{outline:none;border-color:var(--text-3)}
+  .ddr-var-preset-x{width:28px;height:28px;border-radius:7px;border:1px solid var(--border-2);background:var(--panel);color:var(--text-4);cursor:pointer;font-size:11px}
+  .ddr-var-preset-x:hover{color:var(--red);border-color:color-mix(in srgb,var(--red) 30%,transparent)}
+  .ddr-var-preset-add{font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px dashed var(--border-2);background:transparent;color:var(--text-3);cursor:pointer}
+  .ddr-var-preset-add:hover:not(:disabled){border-color:var(--text-3);color:var(--text)}
+  .ddr-var-preset-add:disabled{opacity:.5;cursor:default}
+  @media(max-width:560px){.ddr-var-preset{grid-template-columns:1fr auto}}
   .ddr-var-sec{padding:16px 18px;border-bottom:1px solid var(--border)}
   .ddr-var-sec:last-child{border-bottom:none}
   .ddr-var-sec-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);font-weight:650;margin-bottom:12px}
@@ -8711,7 +8732,8 @@ function MediaPicker({onPick, onClose}){
 // The Generate popup — a Studio-2-style chat: the winning ad is the default
 // reference, you can add a second from the media library or upload, pick presets,
 // type a prompt, choose how many, and watch each image stream in as it finishes.
-function GeneratePopup({winner, onClose, onDone, onView}){
+function GeneratePopup({winner, onClose, onDone, onView, presets}){
+  const PRESETS = (Array.isArray(presets)&&presets.length)?presets:VAR_GEN_PRESETS;
   const [prompt,setPrompt]=useState("");
   const [count,setCount]=useState(4);
   const [refs,setRefs]=useState([]);     // extra references: {url,name} (url = R2 public URL or data URL)
@@ -8771,8 +8793,8 @@ function GeneratePopup({winner, onClose, onDone, onView}){
             )}
           </div>
           <div className="ddr-gp-presets">
-            {VAR_GEN_PRESETS.map(p=>(
-              <button type="button" key={p.id} className="ddr-gp-preset" onClick={()=>applyPreset(p)} title={p.prompt}>{p.label}</button>
+            {PRESETS.map((p,i)=>(
+              <button type="button" key={p.id||i} className="ddr-gp-preset" onClick={()=>applyPreset(p)} title={p.prompt}>{p.label}</button>
             ))}
           </div>
           <div className="ddr-gp-chat">
@@ -8877,7 +8899,9 @@ function AdVariations({rows}){
   const [settings, setSettings] = useState(null);
   const [setBusy, setSetBusy] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);  // gear → settings/automation panel
+  const [panelTab, setPanelTab] = useState("automations"); // automations | presets | rules
   const [sopDraft, setSopDraft] = useState("");        // editable SOP text (committed on blur)
+  const [presetsDraft, setPresetsDraft] = useState([]); // editable preset library
   // adId -> { loading, error, jobId, createdAt, variations:[] }
   const [jobs, setJobs] = useState({});
   const [genId, setGenId] = useState(null);   // adId currently (re)generating (legacy batch)
@@ -8895,7 +8919,7 @@ function AdVariations({rows}){
   // Load the live settings (the mix the engine uses) once.
   useEffect(()=>{
     let off=false;
-    fetch("/api/ads/variations/settings").then(r=>r.json()).then(d=>{ if(!off && d && d.settings){ setSettings(d.settings); setSopDraft(d.settings.sop||""); } }).catch(()=>{});
+    fetch("/api/ads/variations/settings").then(r=>r.json()).then(d=>{ if(!off && d && d.settings){ setSettings(d.settings); setSopDraft(d.settings.sop||""); setPresetsDraft(Array.isArray(d.settings.presets)?d.settings.presets:[]); } }).catch(()=>{});
     return ()=>{ off=true; };
   }, []);
 
@@ -8904,10 +8928,15 @@ function AdVariations({rows}){
     setSettings(prev=>prev?{...prev, ...patch, mix:patch.mix||prev.mix}:prev);
     setSetBusy(true);
     return fetch("/api/ads/variations/settings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(patch)})
-      .then(r=>r.json()).then(d=>{ if(d&&d.settings){ setSettings(d.settings); if(typeof d.settings.sop==="string") setSopDraft(d.settings.sop); } }).catch(()=>{}).finally(()=>setSetBusy(false));
+      .then(r=>r.json()).then(d=>{ if(d&&d.settings){ setSettings(d.settings); if(typeof d.settings.sop==="string") setSopDraft(d.settings.sop); if(Array.isArray(d.settings.presets)) setPresetsDraft(d.settings.presets); } }).catch(()=>{}).finally(()=>setSetBusy(false));
   };
   const saveEnabled = (next)=>patchSettings({enabled:!!next});
   const saveSop = ()=>{ if(!settings || sopDraft===(settings.sop||"")) return; patchSettings({sop:sopDraft}); };
+  // Preset library editing (saves the whole array; commit on blur / add / delete).
+  const updatePreset = (i, field, val)=> setPresetsDraft(prev=>prev.map((p,k)=>k===i?{...p,[field]:val}:p));
+  const addPreset = ()=> setPresetsDraft(prev=> prev.length>=16?prev:[...prev,{id:"preset-"+prev.length, label:"New preset", prompt:""}]);
+  const savePresets = ()=>{ patchSettings({presets:presetsDraft.filter(p=>String(p.label||"").trim()&&String(p.prompt||"").trim())}); };
+  const removePreset = (i)=>{ const next=presetsDraft.filter((_,k)=>k!==i); setPresetsDraft(next); patchSettings({presets:next.filter(p=>String(p.label||"").trim()&&String(p.prompt||"").trim())}); };
 
   // Pull each winner's most-recent batch so the "N ready" counts are real and
   // expanding is instant. Re-runs when the winner set changes.
@@ -8970,37 +8999,72 @@ function AdVariations({rows}){
       </div>
       {settings && panelOpen && (
         <div className="ddr-var-panel" aria-busy={setBusy}>
-          <div className="ddr-var-sec">
-            <div className="ddr-var-sec-h">Automation</div>
-            <label className="ddr-var-toggle">
-              <button type="button" role="switch" aria-checked={!!settings.enabled} className={"ddr-sw"+(settings.enabled?" on":"")} disabled={setBusy} onClick={()=>saveEnabled(!settings.enabled)}><span className="ddr-sw-k"/></button>
-              <span className="ddr-var-toggle-t">
-                <b>Make variations every morning</b>
-                <small>{settings.enabled?"On — your top winners get a fresh batch before you start your day.":"Off — nothing runs on its own. Use Regenerate below any winner to make a batch yourself."}</small>
-              </span>
-            </label>
+          <div className="ddr-var-tabs">
+            {[["automations","Automation"],["presets","Presets"],["rules","House rules"]].map(([t,lbl])=>(
+              <button type="button" key={t} className={"ddr-var-tab"+(panelTab===t?" on":"")} onClick={()=>setPanelTab(t)}>{lbl}</button>
+            ))}
           </div>
-          <div className="ddr-var-sec">
-            <div className="ddr-var-sec-h">Batch <span className="ddr-var-sec-x">— each job makes {total} image{total===1?"":"s"}. Lower these for a quick test run.</span></div>
-            <div className="ddr-var-set">
-              {[["background","Backgrounds"],["highlightWord","Highlighted word"],["copyTweak","Copy tweaks"]].map(([k,lbl])=>(
-                <div className="ddr-var-step" key={k}>
-                  <span className="ddr-var-step-l">{lbl}</span>
-                  <div className="ddr-var-step-c">
-                    <button type="button" onClick={()=>saveMix(k,-1)} disabled={setBusy||settings.mix[k]<=0}>−</button>
-                    <span className="ddr-var-step-n">{settings.mix[k]}</span>
-                    <button type="button" onClick={()=>saveMix(k,1)} disabled={setBusy}>+</button>
+
+          {panelTab==="automations" && (
+            <div className="ddr-var-sec">
+              <label className="ddr-var-toggle">
+                <button type="button" role="switch" aria-checked={!!settings.enabled} className={"ddr-sw"+(settings.enabled?" on":"")} disabled={setBusy} onClick={()=>saveEnabled(!settings.enabled)}><span className="ddr-sw-k"/></button>
+                <span className="ddr-var-toggle-t">
+                  <b>Make variations automatically</b>
+                  <small>{settings.enabled?"On — your top winners get a fresh batch on the schedule below.":"Off — nothing runs on its own. Use Generate on any winner to make a batch yourself."}</small>
+                </span>
+              </label>
+              {settings.enabled && (
+                <div className="ddr-var-cadence">
+                  <span className="ddr-var-step-l">How often</span>
+                  <div className="ddr-var-seg">
+                    {[["daily","Daily"],["every3","Every 3 days"],["weekly","Weekly"]].map(([c,lbl])=>(
+                      <button type="button" key={c} className={"ddr-var-seg-b"+(settings.cadence===c?" on":"")} disabled={setBusy} onClick={()=>patchSettings({cadence:c})}>{lbl}</button>
+                    ))}
                   </div>
                 </div>
-              ))}
-              <div className="ddr-var-step ddr-var-step-tot"><span className="ddr-var-step-l">Batch size</span><span className="ddr-var-step-n">{total}</span></div>
+              )}
+              <div className="ddr-var-sec-h" style={{marginTop:18}}>Batch <span className="ddr-var-sec-x">— each run makes {total} image{total===1?"":"s"}. Lower these for a quick test run.</span></div>
+              <div className="ddr-var-set">
+                {[["background","Backgrounds"],["highlightWord","Highlighted word"],["copyTweak","Copy tweaks"]].map(([k,lbl])=>(
+                  <div className="ddr-var-step" key={k}>
+                    <span className="ddr-var-step-l">{lbl}</span>
+                    <div className="ddr-var-step-c">
+                      <button type="button" onClick={()=>saveMix(k,-1)} disabled={setBusy||settings.mix[k]<=0}>−</button>
+                      <span className="ddr-var-step-n">{settings.mix[k]}</span>
+                      <button type="button" onClick={()=>saveMix(k,1)} disabled={setBusy}>+</button>
+                    </div>
+                  </div>
+                ))}
+                <div className="ddr-var-step ddr-var-step-tot"><span className="ddr-var-step-l">Batch size</span><span className="ddr-var-step-n">{total}</span></div>
+              </div>
             </div>
-          </div>
-          <div className="ddr-var-sec">
-            <div className="ddr-var-sec-h">Your creative rules <span className="ddr-var-sec-x">— plain English. The engine follows this on every image.</span></div>
-            <textarea className="ddr-var-sop" rows={4} placeholder="e.g. Always keep the same person. Bold sans-serif headline. Bright, high-energy gym look. Never change the logo. Keep one strong benefit in the hook." value={sopDraft} onChange={e=>setSopDraft(e.target.value)} onBlur={saveSop} disabled={setBusy} maxLength={1200}/>
-            <div className="ddr-var-sop-f">{setBusy?"Saving…":(sopDraft!==(settings.sop||"")?"Click out of the box to save.":"Saved.")}</div>
-          </div>
+          )}
+
+          {panelTab==="presets" && (
+            <div className="ddr-var-sec">
+              <div className="ddr-var-sec-h">Presets <span className="ddr-var-sec-x">— the instruction buttons in Generate. Edit them, or add your own.</span></div>
+              <div className="ddr-var-presets">
+                {presetsDraft.map((p,i)=>(
+                  <div className="ddr-var-preset" key={i}>
+                    <input className="ddr-var-preset-l" value={p.label} placeholder="Button name" onChange={e=>updatePreset(i,"label",e.target.value)} onBlur={savePresets} disabled={setBusy} maxLength={60}/>
+                    <textarea className="ddr-var-preset-p" rows={2} value={p.prompt} placeholder="What this preset tells the engine to do…" onChange={e=>updatePreset(i,"prompt",e.target.value)} onBlur={savePresets} disabled={setBusy} maxLength={800}/>
+                    <button type="button" className="ddr-var-preset-x" onClick={()=>removePreset(i)} disabled={setBusy} aria-label="Delete preset">✕</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="ddr-var-preset-add" onClick={addPreset} disabled={setBusy||presetsDraft.length>=16}>+ Add preset</button>
+              <div className="ddr-var-sop-f">{setBusy?"Saving…":"Edits save when you click out of a field."}</div>
+            </div>
+          )}
+
+          {panelTab==="rules" && (
+            <div className="ddr-var-sec">
+              <div className="ddr-var-sec-h">House rules <span className="ddr-var-sec-x">— plain English. The engine follows this on every image, manual or automatic.</span></div>
+              <textarea className="ddr-var-sop" rows={5} placeholder="e.g. Always keep the same person. Bold sans-serif headline. Bright, high-energy gym look. Never change the logo. Keep one strong benefit in the hook." value={sopDraft} onChange={e=>setSopDraft(e.target.value)} onBlur={saveSop} disabled={setBusy} maxLength={1200}/>
+              <div className="ddr-var-sop-f">{setBusy?"Saving…":(sopDraft!==(settings.sop||"")?"Click out of the box to save.":"Saved.")}</div>
+            </div>
+          )}
         </div>
       )}
       {winners.length>0 ? (
@@ -9059,6 +9123,7 @@ function AdVariations({rows}){
       {genOpen && (
         <GeneratePopup
           winner={genOpen}
+          presets={settings&&Array.isArray(settings.presets)?settings.presets:null}
           onClose={()=>setGenOpen(null)}
           onDone={()=>{ if(genOpen) loadJob(genOpen.adId); }}
           onView={setLightbox}

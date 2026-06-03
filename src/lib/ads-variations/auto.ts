@@ -1,5 +1,5 @@
 import { getServiceSupabase } from "@/lib/supabase";
-import { getSettings } from "./settings";
+import { getSettings, cadenceWindowHours } from "./settings";
 import { generateVariationsJob, type GenerateJobResult } from "./generate";
 
 // Auto-pre-generation hook for the Variations Factory.
@@ -16,8 +16,7 @@ import { generateVariationsJob, type GenerateJobResult } from "./generate";
 // images (default 10). 3 ads x 10 images x ~$0.04 ≈ $1.20 per run worst case.
 const MAX_ADS_PER_RUN = 3;
 
-// An ad with a job newer than this is considered "already fresh" and skipped.
-const FRESH_WINDOW_HOURS = 20;
+// (Freshness window now comes from the configured cadence — see cadenceWindowHours.)
 
 // How far back to look for spend when ranking winners.
 const WINNER_LOOKBACK_DAYS = 14;
@@ -87,11 +86,13 @@ async function findWinnerAdIds(limit: number): Promise<string[]> {
 }
 
 // Returns the set of ad_ids from `adIds` that already have a job newer than the
-// freshness window — these are skipped so we don't regenerate every run.
-async function findRecentlyGenerated(adIds: string[]): Promise<Set<string>> {
+// freshness window — these are skipped so we don't regenerate every run. The
+// window is the configured cadence (daily / every 3 days / weekly), so a daily
+// cron tick only regenerates an ad once per cadence period.
+async function findRecentlyGenerated(adIds: string[], windowHours: number): Promise<Set<string>> {
   if (adIds.length === 0) return new Set();
   const db = getServiceSupabase();
-  const cutoff = new Date(Date.now() - FRESH_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const fresh = new Set<string>();
   const { data } = await db
     .from("ad_variations")
@@ -130,7 +131,8 @@ export async function pregenerateForWinners(
     };
   }
 
-  const recent = opts.force ? new Set<string>() : await findRecentlyGenerated(winners);
+  const windowHours = cadenceWindowHours(settings.cadence);
+  const recent = opts.force ? new Set<string>() : await findRecentlyGenerated(winners, windowHours);
 
   const generated: GenerateJobResult[] = [];
   const skipped: { adId: string; reason: string }[] = [];
