@@ -1012,6 +1012,12 @@
   .ps-chip{font-size:12.5px;font-weight:500;padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-3);cursor:pointer;transition:all .12s}
   .ps-chip:hover{border-color:var(--border-2);color:var(--text-2)}
   .ps-chip.on{border-color:var(--text-3);color:var(--text);background:var(--bg-1)}
+  .ddr-pager{display:flex;align-items:center;justify-content:center;gap:18px;margin:0 0 22px;padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
+  .ddr-pager-arrow{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-3);font-size:15px;line-height:1;cursor:pointer;transition:all .12s}
+  .ddr-pager-arrow:hover{border-color:var(--border-2);color:var(--text)}
+  .ddr-pager-mid{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:140px}
+  .ddr-pager-name{font-size:14px;font-weight:600;color:var(--text)}
+  .ddr-pager-count{font-size:11px;color:var(--text-4);font-variant-numeric:tabular-nums}
   .ps-tablewrap{overflow-x:auto}
   .ps-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
   .ps-table th{font-size:11px;font-weight:500;color:var(--text-4);text-align:right;padding:0 0 13px;border-bottom:1px solid var(--border);white-space:nowrap}
@@ -8610,7 +8616,7 @@ function MoneyCockpit({model}){
   );
 }
 
-function DeepDiveReport({campaigns, dashboard, range, loading}){
+function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
   // Brain-icon data-flow map — collapsed by default, lifted here so the toggle
   // can sit in the header while the full-width map expands just below it.
   const [flowOpen, setFlowOpen] = useState(false);
@@ -8753,6 +8759,19 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
 
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
       <DataHealth dashboard={dashboard}/>
+
+      {/* All-accounts pager: flip through each creator's full view one at a time
+          instead of merging everyone into one mush. Quiet, monochrome, sparse. */}
+      {pager && (
+        <div className="ddr-pager">
+          <button type="button" className="ddr-pager-arrow" onClick={pager.onPrev} aria-label="Previous creator">←</button>
+          <div className="ddr-pager-mid">
+            <span className="ddr-pager-name">{pager.name}</span>
+            <span className="ddr-pager-count">{pager.idx+1} of {pager.count}</span>
+          </div>
+          <button type="button" className="ddr-pager-arrow" onClick={pager.onNext} aria-label="Next creator">→</button>
+        </div>
+      )}
 
       {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
@@ -8922,6 +8941,11 @@ function clearSnapshots(){ try{ window.localStorage.removeItem(SNAP_NS); }catch(
 
 function App(){
   const [account, setAccount] = useState("all");
+  // When the dropdown is on "All accounts" we don't merge every creator into one
+  // mush — we page through each creator's full view one at a time. viewIdx is
+  // which creator in that pager we're on; it resets to 0 whenever the dropdown
+  // (account) changes. For a specific creator it's ignored.
+  const [viewIdx, setViewIdx] = useState(0);
   const [topView, setTopView] = useState("dashboard");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
@@ -8934,6 +8958,34 @@ function App(){
   const [toast, setToast] = useState(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+
+  // ----- "All accounts" pager -----
+  // The owner does NOT want a merged all-creators mash-up (it hides danger). On
+  // "all" we instead flip through each active creator's FULL view one at a time.
+  // The creator list comes from the whole-business moneyModel in the payload
+  // (which lists every creator regardless of which account was fetched), keeping
+  // only those that actually spent. Fallback to the known three before data lands.
+  const activeCreators = useMemo(()=>{
+    const clients = dashboard && dashboard.moneyModel && dashboard.moneyModel.clients;
+    if(Array.isArray(clients)){
+      const keys = clients.filter(c=>c && c.adSpend>0 && c.key).map(c=>c.key);
+      if(keys.length) return keys;
+    }
+    return ["tyson","keith","lucy"];
+  }, [dashboard]);
+  const creatorName = (key)=>{
+    const clients = dashboard && dashboard.moneyModel && dashboard.moneyModel.clients;
+    const hit = Array.isArray(clients) ? clients.find(c=>c && c.key===key) : null;
+    if(hit && hit.name) return hit.name;
+    return key ? key.charAt(0).toUpperCase()+key.slice(1) : key;
+  };
+  // The creator whose data we actually fetch/scope/cache. On a specific account
+  // it's just that account; on "all" it's whichever creator the pager points at.
+  const effectiveAccount = (account === "all" && activeCreators.length)
+    ? activeCreators[Math.min(viewIdx, activeCreators.length-1)]
+    : account;
+  // Reset the pager whenever the dropdown changes.
+  useEffect(()=>{ setViewIdx(0); }, [account]);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -8973,7 +9025,7 @@ function App(){
     // Locked snapshot: if we already have this exact range saved (and it's still
     // valid for today), show that same copy instantly — no refetch, no re-roll.
     if(!force){
-      const cached = readSnapshot(account, dateRange);
+      const cached = readSnapshot(effectiveAccount, dateRange);
       if(cached){
         setDashboard(cached);
         setLoadError(null);
@@ -8985,7 +9037,7 @@ function App(){
     if(!silent) setLoading(true);
     setLoadError(null);
     const params = new URLSearchParams({
-      account,
+      account: effectiveAccount,
       status:"all",
       level:"ad",
       dateFrom:dateRange.dateFrom,
@@ -8996,13 +9048,13 @@ function App(){
       const json = await res.json();
       if(!res.ok) throw new Error(json.error || "Ads Tracker API failed");
       setDashboard(json);
-      writeSnapshot(account, dateRange, json);
+      writeSnapshot(effectiveAccount, dateRange, json);
       setFromCache(false);
     }catch(err){
       console.error(err);
       // Live fetch failed — fall back to the last saved copy of this range
       // (even if stale) rather than wiping the screen to an error.
-      const stale = readSnapshot(account, dateRange, true);
+      const stale = readSnapshot(effectiveAccount, dateRange, true);
       if(stale){
         setDashboard(stale);
         setLoadError(null);
@@ -9032,7 +9084,7 @@ function App(){
 
   useEffect(()=>{
     loadDashboard();
-  }, [account, dateRange.dateFrom, dateRange.dateTo]);
+  }, [effectiveAccount, dateRange.dateFrom, dateRange.dateTo]);
 
   const apiCampaigns = useMemo(
     () => campaignsFromDashboard(dashboard, dateRange),
@@ -9043,16 +9095,16 @@ function App(){
     [apiCampaigns, newEntries, search]
   );
   const scopedCampaigns = useMemo(
-    () => scopeCampaigns(liveCampaigns, account, status),
-    [liveCampaigns, account, status]
+    () => scopeCampaigns(liveCampaigns, effectiveAccount, status),
+    [liveCampaigns, effectiveAccount, status]
   );
   const metricCampaigns = useMemo(
-    () => scopeCampaigns(liveCampaigns, account, status),
-    [liveCampaigns, account, status]
+    () => scopeCampaigns(liveCampaigns, effectiveAccount, status),
+    [liveCampaigns, effectiveAccount, status]
   );
   const resolveCampaigns = useMemo(
-    () => scopeCampaigns(liveCampaigns, account, "all"),
-    [liveCampaigns, account]
+    () => scopeCampaigns(liveCampaigns, effectiveAccount, "all"),
+    [liveCampaigns, effectiveAccount]
   );
   const liveRecent = useMemo(
     () => recentEntriesFromDashboard(dashboard),
@@ -9158,7 +9210,19 @@ function App(){
           </div>
 
           {topView==="report" ? (
-            <DeepDiveReport campaigns={scopedCampaigns} dashboard={dashboard} range={dateRange} loading={loading}/>
+            <DeepDiveReport
+              campaigns={scopedCampaigns}
+              dashboard={dashboard}
+              range={dateRange}
+              loading={loading}
+              pager={account==="all" && activeCreators.length>1 ? {
+                idx: Math.min(viewIdx, activeCreators.length-1),
+                count: activeCreators.length,
+                name: creatorName(effectiveAccount),
+                onPrev: ()=>setViewIdx(i=>{ const n=activeCreators.length; return (Math.min(i,n-1)-1+n)%n; }),
+                onNext: ()=>setViewIdx(i=>{ const n=activeCreators.length; return (Math.min(i,n-1)+1)%n; }),
+              } : null}
+            />
           ) : (
           <React.Fragment>
           {/* Campaign table */}
