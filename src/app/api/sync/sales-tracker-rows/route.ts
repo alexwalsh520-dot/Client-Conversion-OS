@@ -50,19 +50,29 @@ function keyPart(value: string | null | undefined) {
   return normalized || "blank";
 }
 
-function sheetRowKey(row: SheetRow, index: number) {
+// The cache row's identity. It MUST be built from immutable facts only, or the
+// upsert inserts a duplicate instead of updating when a sale gets edited after
+// its first sync. Two mutable parts used to live here and each spawned dupes:
+//   • keyPart(row.offer) — the creator, tagged AFTER the first sync (blank →
+//     "tyson-sonnek"), so the key changed and a second row was inserted.
+//   • `idx-<position>`   — the position fallback for no-call rows shifted every
+//     time a row was added above, so the same sale got a new key each sync.
+// Now: date + call number + name only. No call number → fall back to the
+// person's name (matches salesRowKey in server.ts), never position. The offer
+// is dropped from the key entirely; it still updates on the existing row.
+function sheetRowKey(row: SheetRow) {
   const callNumber = keyPart(row.callNumber);
-  const callKey = callNumber === "blank" ? `idx-${index + 1}` : callNumber;
-  return [row.date, callKey, keyPart(row.name), keyPart(row.offer)].join(":");
+  const stableId = callNumber === "blank" ? `name-${keyPart(row.name)}` : callNumber;
+  return [row.date, stableId, keyPart(row.name)].join(":");
 }
 
-function rowPayload(row: SheetRow, index: number) {
+function rowPayload(row: SheetRow) {
   const date = new Date(`${row.date}T00:00:00`);
   return {
     source: "google_sheets",
     sheet_id: process.env.GOOGLE_SHEETS_SPREADSHEET_ID || null,
     sheet_tab: Number.isNaN(date.getTime()) ? null : getMonthTab(date),
-    sheet_row_key: sheetRowKey(row, index),
+    sheet_row_key: sheetRowKey(row),
     date: row.date,
     call_number: row.callNumber || null,
     prospect_name: row.name || "",
@@ -130,9 +140,7 @@ async function handler(req: NextRequest) {
   }
 
   const salesRows = await fetchSheetData(dateFrom, dateTo);
-  const rows = salesRows
-    .filter((row) => row.date && row.name)
-    .map((row, index) => rowPayload(row, index));
+  const rows = salesRows.filter((row) => row.date && row.name).map((row) => rowPayload(row));
 
   const db = getServiceSupabase();
   let upserted = 0;

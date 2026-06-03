@@ -1,5 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
+import { dedupeSalesRows } from "@/lib/ads-tracker/dedupe-sales";
 import { saleGrossProfit } from "@/lib/economics";
 import { displayKeyword, keywordFromAdName, normalizeKeyword, normalizePersonName } from "./normalize";
 import { creatorKeyFromText, CREATORS, type CreatorKey } from "@/lib/creators";
@@ -945,6 +946,8 @@ async function fetchSalesRowsFromSupabase(
         "offer",
         "manychat_link",
         "manychat_subscriber_id",
+        "prospect_name_normalized",
+        "synced_at",
       ].join(",")
     )
     .gte("date", query.dateFrom)
@@ -963,10 +966,12 @@ async function fetchSalesRowsFromSupabase(
 
   if (!data || data.length === 0) return null;
 
-  return filterSalesRowsForClients(
-    (data as unknown as SalesTrackerDbRow[]).map(salesDbRowToSheetRow),
-    clientFilter
-  );
+  // Collapse sync-created duplicate rows before anything sums them. Read-side
+  // safety net: this is the cache-fallback path the whole tab drops to when the
+  // live sheet is unavailable, so it must never double-count. See dedupe-sales.
+  const deduped = dedupeSalesRows(data as unknown as SalesTrackerDbRow[]);
+
+  return filterSalesRowsForClients(deduped.map(salesDbRowToSheetRow), clientFilter);
 }
 
 async function fetchFreshSalesRows(

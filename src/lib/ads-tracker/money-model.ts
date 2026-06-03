@@ -12,6 +12,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { saleGrossProfit, MANAGER_MONTHLY_BASE } from "@/lib/economics";
 import { creatorKeyFromText, CREATORS, type CreatorKey } from "@/lib/creators";
+import { dedupeSalesRows } from "@/lib/ads-tracker/dedupe-sales";
 
 // Fixed monthly overhead tied to CAC (does NOT scale with sales volume):
 //   - sales manager base (WILL) ............ $4,000  (from economics.ts)
@@ -95,20 +96,32 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   const sb = db ?? getServiceSupabase();
   const from = isoDaysAgo(WINDOW_DAYS);
 
-  const sales = await fetchAll<{
+  const salesRaw = await fetchAll<{
     collected_revenue_cents: number | null;
+    contracted_revenue_cents: number | null;
     closer: string | null;
     setter: string | null;
     program_length: string | null;
     offer: string | null;
+    date: string | null;
+    prospect_name_normalized: string | null;
+    call_number: string | null;
+    synced_at: string | null;
   }>((lo, hi) =>
     sb
       .from("sales_tracker_rows")
-      .select("collected_revenue_cents,closer,setter,program_length,offer")
+      .select(
+        "collected_revenue_cents,contracted_revenue_cents,closer,setter,program_length,offer,date,prospect_name_normalized,call_number,synced_at"
+      )
       .gte("date", from)
       .gt("collected_revenue_cents", 0)
       .range(lo, hi)
   );
+  // Collapse sync-created duplicate rows before summing. The money model reads
+  // the cache DIRECTLY (unlike the main tab, which reads the live sheet), so
+  // without this every duplicated sale would inflate revenue/ROAS/net profit —
+  // ~2× for the current, actively-tagged month. See dedupe-sales.
+  const sales = dedupeSalesRows(salesRaw);
 
   const spendRows = await fetchAll<{ client_key: string | null; spend_cents: number | null }>(
     (lo, hi) =>
