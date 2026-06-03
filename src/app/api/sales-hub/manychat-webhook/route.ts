@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { normalizeClientKey, normalizeSetterKey, syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
 import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
+import { creatorKeyFromText } from "@/lib/creators";
 
 /**
  * Manychat Webhook — receives tag events from Manychat External Requests.
@@ -28,9 +29,13 @@ import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
  */
 
 function adsClientKeyFromDmClient(clientKey: ReturnType<typeof normalizeClientKey>) {
-  if (clientKey === "tyson_sonnek") return "tyson";
-  if (clientKey === "keith_holland") return "keith";
-  return clientKey;
+  // Map ManyChat's long-form client key (e.g. "lucy_hubbard") onto the canonical
+  // creator key the ads dashboard reads ("lucy"), using creators.ts as the single
+  // source of truth. Previously only tyson_sonnek/keith_holland were mapped, so
+  // lucy_hubbard events were written under a key the dashboard never queries
+  // (client_key IN tyson/keith/lucy/antwan) and were silently dropped. Falls back
+  // to the raw key if no creator matches, so unknown clients behave as before.
+  return creatorKeyFromText(clientKey) ?? clientKey;
 }
 
 function sourceEventId(input: {
