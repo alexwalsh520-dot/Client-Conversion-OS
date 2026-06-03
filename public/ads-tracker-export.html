@@ -5790,10 +5790,18 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
   // so the needs-review pile only shows calls a setter can actually act on.
   const actionableAlerts = scopedAlerts.filter(alert=>!alert.noAdKeyword);
   const noKeywordAlerts = scopedAlerts.filter(alert=>alert.noAdKeyword);
-  const clientCounts = {
-    all: actionableAlerts.length,
-    tyson: actionableAlerts.filter(alert=>alert.clientKey==="tyson").length,
-    keith: actionableAlerts.filter(alert=>alert.clientKey==="keith").length,
+  // Count per creator dynamically so Lucy, Antwan, and any future creator get a
+  // workspace tab automatically the moment they have an unresolved item — no
+  // more tyson/keith hardcoding that silently hid everyone else.
+  const clientCounts = { all: actionableAlerts.length };
+  for(const alert of actionableAlerts){
+    const k = alert.clientKey;
+    if(k) clientCounts[k] = (clientCounts[k] || 0) + 1;
+  }
+  const clientLabel = (key)=>{
+    const clients = dashboard && dashboard.moneyModel && dashboard.moneyModel.clients;
+    const hit = Array.isArray(clients) ? clients.find(c=>c && c.key===key) : null;
+    return (hit && hit.name) || (key ? key.charAt(0).toUpperCase()+key.slice(1) : key);
   };
   const typeCounts = {
     all: actionableAlerts.length,
@@ -5846,8 +5854,10 @@ function AttributionWorkspace({dashboard, campaigns, onResolve, onToast, onClose
             <div className="alerts-tabs">
               {[
                 ["all","All",clientCounts.all],
-                ["tyson","Tyson",clientCounts.tyson],
-                ["keith","Keith",clientCounts.keith],
+                ...Object.keys(clientCounts)
+                  .filter(k=>k!=="all")
+                  .sort()
+                  .map(k=>[k, clientLabel(k), clientCounts[k]]),
               ].map(([id,label,count])=>(
                 <button key={id} className={"alerts-tab "+(clientFilter===id?"active":"")} onClick={()=>setClientFilter(id)}>
                   {label}
