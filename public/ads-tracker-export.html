@@ -5831,13 +5831,21 @@ function adsByKeyword(adRoas){
       adId: r.adId || r.id || null,
       adName: r.adName || r.label || "",
       account: r.clientKey || "",
+      campaign: r.campaignName || "",
+      adset: r.adsetName || "",
       thumb,
       full,
       copy,
       spend: Number(r.adSpend||0),
     });
   });
-  m.forEach(list => list.sort((a,b)=>b.spend-a.spend));
+  // One keyword = one current ad within the window. Keep only the live, top-spending
+  // ad behind each word; a pre-window reuse of the same word is a different ad and
+  // must not bleed in. (Sort by spend desc, then take the single representative.)
+  m.forEach((list, kw) => {
+    list.sort((a,b)=>b.spend-a.spend);
+    m.set(kw, list.slice(0,1));
+  });
   return m;
 }
 
@@ -5988,7 +5996,7 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
 
   // The real ads behind this word — actual creative + the copy we read off it.
   const previews = Array.isArray(a.previews) ? a.previews : [];
-  const hero = previews.find(p=>p.thumb) || null;
+  const hero = previews.find(p=>p.thumb) || previews[0] || null;
 
   // Hover-to-enlarge + click-to-open helpers for any preview tile.
   const bigUrl = (p)=> (p && (p.full || p.thumb)) || null;
@@ -6080,10 +6088,10 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
               </div>
             )}
             <div className="pm-where">
-              <span><i>Creator</i>{(a.accounts||[]).length?cap((a.accounts||[])[0]):"—"}</span>
-              <span><i>Campaign</i>{(a.campaigns||[]).length?(a.campaigns||[])[0]:"—"}</span>
-              <span><i>Ad set</i>{(a.adsets||[]).length?(a.adsets||[])[0]:"—"}</span>
-              <span><i>Ad</i>{(a.ads||[]).length?cap((a.ads||[])[0]):cap(word)}</span>
+              <span><i>Creator</i>{hero&&hero.account?cap(hero.account):((a.accounts||[]).length?cap((a.accounts||[])[0]):"—")}</span>
+              <span><i>Campaign</i>{hero&&hero.campaign?hero.campaign:((a.campaigns||[]).length?(a.campaigns||[])[0]:"—")}</span>
+              <span><i>Ad set</i>{hero&&hero.adset?hero.adset:"—"}</span>
+              <span><i>Ad</i>{hero&&hero.adName?cap(hero.adName):cap(word)}</span>
             </div>
           </div>
 
