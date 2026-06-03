@@ -5,6 +5,7 @@ import {
   type AdsTrackerLevel,
   type AdsTrackerStatus,
 } from "@/lib/ads-tracker/server";
+import { computeMoneyModel } from "@/lib/ads-tracker/money-model";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,16 @@ export async function GET(req: NextRequest) {
       dateTo,
     });
 
-    return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
+    // Scale-aware money model (trailing 30 days, whole-business). Best-effort:
+    // a failure here must never break the dashboard's money numbers.
+    let moneyModel = null;
+    try {
+      moneyModel = await computeMoneyModel();
+    } catch (error) {
+      console.warn("[ads-tracker] money model skipped", error);
+    }
+
+    return NextResponse.json({ ...payload, moneyModel }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[ads-tracker] Dashboard load failed", error);
     return NextResponse.json(
