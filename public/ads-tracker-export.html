@@ -10288,7 +10288,31 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+// A render error must NEVER blank the whole dashboard silently. Catch it, show
+// the error + a reload button so a display bug is visible and reportable instead
+// of a white screen. (Compile-time errors are caught separately by the
+// @babel/parser guard in the test suite.)
+class AppErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error){ return { error }; }
+  componentDidCatch(error, info){ console.error("Ads dashboard render error:", error, info); }
+  render(){
+    if(this.state.error){
+      return (
+        <div style={{padding:"48px 32px",fontFamily:"system-ui,-apple-system,sans-serif",color:"#e5e5e7",background:"#0f0f12",minHeight:"100vh"}}>
+          <div style={{maxWidth:760,margin:"0 auto"}}>
+            <div style={{color:"#c9a96e",fontSize:18,fontWeight:700,marginBottom:8}}>The ads dashboard hit a display error.</div>
+            <div style={{color:"#a1a1aa",fontSize:14,marginBottom:20}}>Your data is safe — this is a rendering problem, not lost data. Screenshot the details below for the team, then reload.</div>
+            <pre style={{whiteSpace:"pre-wrap",wordBreak:"break-word",background:"#18181b",border:"1px solid #27272a",borderRadius:8,padding:16,fontSize:12,color:"#fca5a5",maxHeight:320,overflow:"auto"}}>{String((this.state.error && (this.state.error.stack || this.state.error.message)) || this.state.error)}</pre>
+            <button onClick={()=>location.reload()} style={{marginTop:20,padding:"10px 20px",background:"#c9a96e",color:"#0f0f12",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Reload</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<AppErrorBoundary><App/></AppErrorBoundary>);
 </script>
 </body>
 </html>
