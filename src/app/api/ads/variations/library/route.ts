@@ -30,8 +30,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
   }
 
-  const limitRaw = Number(req.nextUrl.searchParams.get("limit") || "200");
-  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 500) : 200;
+  // Keep this modest: the gallery renders full-res images, so a huge page is slow
+  // to fetch + paint. 120 newest is plenty for a browse-and-grab gallery.
+  const limitRaw = Number(req.nextUrl.searchParams.get("limit") || "120");
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 300) : 120;
 
   const db = getServiceSupabase();
   const { data, error } = await db

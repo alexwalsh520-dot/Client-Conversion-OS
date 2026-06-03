@@ -9,6 +9,9 @@ import { computeMoneyModel } from "@/lib/ads-tracker/money-model";
 import { isCreatorKey } from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
+// The dashboard query + money model can be heavy; give the function real headroom
+// so it never gets killed mid-compute (which surfaced as "live data unavailable").
+export const maxDuration = 60;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -51,22 +54,22 @@ export async function GET(req: NextRequest) {
   const levelParam = params.get("level");
 
   try {
-    const payload = await getAdsTrackerDashboard({
-      account: isAccount(accountParam) ? accountParam : "all",
-      status: isStatus(statusParam) ? statusParam : "active",
-      level: isLevel(levelParam) ? levelParam : "campaign",
-      dateFrom,
-      dateTo,
-    });
-
-    // Scale-aware money model (trailing 30 days, whole-business). Best-effort:
-    // a failure here must never break the dashboard's money numbers.
-    let moneyModel = null;
-    try {
-      moneyModel = await computeMoneyModel();
-    } catch (error) {
-      console.warn("[ads-tracker] money model skipped", error);
-    }
+    // Run the dashboard query and the (independent) money model IN PARALLEL so
+    // their times don't stack. The money model is best-effort — a failure there
+    // must never break the dashboard's money numbers, so it resolves to null.
+    const [payload, moneyModel] = await Promise.all([
+      getAdsTrackerDashboard({
+        account: isAccount(accountParam) ? accountParam : "all",
+        status: isStatus(statusParam) ? statusParam : "active",
+        level: isLevel(levelParam) ? levelParam : "campaign",
+        dateFrom,
+        dateTo,
+      }),
+      computeMoneyModel().catch((error) => {
+        console.warn("[ads-tracker] money model skipped", error);
+        return null;
+      }),
+    ]);
 
     return NextResponse.json({ ...payload, moneyModel }, { headers: NO_STORE_HEADERS });
   } catch (error) {

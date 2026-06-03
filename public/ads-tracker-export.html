@@ -8958,7 +8958,7 @@ function MediaPicker({onPick, onClose}){
   const [q,setQ]=useState("");
   const fileRef=useRef(null);
   useEffect(()=>{
-    fetch("/api/studio-2/media").then(r=>r.json())
+    fetch("/api/studio-2/media?limit=80").then(r=>r.json())
       .then(d=>{ if(d&&d.error){ setErr(d.error); setItems([]); } else setItems(((d&&d.media)||[]).filter(m=>m.kind!=="video")); })
       .catch(e=>{ setErr(String(e&&e.message||e)); setItems([]); });
   },[]);
@@ -8985,7 +8985,7 @@ function MediaPicker({onPick, onClose}){
               <div className="ddr-hist-grid">
                 {filtered.map(m=>(
                   <button type="button" className="ddr-hist-img ddr-mp-cell" key={m.id} onClick={()=>onPick({url:m.url, name:m.filename||"reference"})} title={m.filename||""}>
-                    <img src={m.thumbnailUrl||m.url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                    <img src={m.thumbnailUrl||m.url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
                   </button>
                 ))}
               </div>
@@ -9149,8 +9149,8 @@ function HistoryGallery({onClose, onView, pending}){
                 ))}
                 {(items||[]).map(v=>(
                   <div className={"ddr-hist-cell"+(sel[v.id]?" sel":"")} key={v.id}>
-                    <button type="button" className="ddr-hist-img" onClick={()=>onView&&onView({url:v.image_url, name:fname(v)})}>
-                      <img src={v.image_url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                    <button type="button" className="ddr-hist-img" onClick={()=>onView&&onView({url:v.image_url, name:fname(v), adId:v.source_ad_id})}>
+                      <img src={v.image_url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
                     </button>
                     <button type="button" className={"ddr-hist-ck"+(sel[v.id]?" on":"")} onClick={(e)=>{e.stopPropagation(); toggle(v.id);}} aria-label="Select">{sel[v.id]?"✓":""}</button>
                     <div className="ddr-hist-acts">

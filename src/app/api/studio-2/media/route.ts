@@ -17,12 +17,17 @@ export async function GET(req: NextRequest) {
   try {
     const folderId = req.nextUrl.searchParams.get("folderId");
     const looseOnly = req.nextUrl.searchParams.get("loose") === "1";
+    // Optional limit (default 300, unchanged for existing callers). Callers that
+    // only need a quick browse (e.g. a reference picker) can request fewer to
+    // load faster.
+    const limitRaw = Number(req.nextUrl.searchParams.get("limit") || "300");
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 300) : 300;
     const sb = getServiceSupabase();
     let query = sb
       .from("studio2_media")
       .select("id, folder_id, public_url, thumbnail_url, filename, kind, created_at")
       .order("created_at", { ascending: false })
-      .limit(300);
+      .limit(limit);
 
     if (folderId) query = query.eq("folder_id", folderId);
     if (looseOnly) query = query.is("folder_id", null);
@@ -36,7 +41,7 @@ export async function GET(req: NextRequest) {
         .from("studio2_media")
         .select("id, folder_id, public_url, filename, kind, created_at")
         .order("created_at", { ascending: false })
-        .limit(300);
+        .limit(limit);
       if (folderId) fallbackQuery = fallbackQuery.eq("folder_id", folderId);
       if (looseOnly) fallbackQuery = fallbackQuery.is("folder_id", null);
       const fallback = await fallbackQuery;
