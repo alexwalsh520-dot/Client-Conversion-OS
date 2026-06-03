@@ -567,7 +567,7 @@ function normalizeKeyPart(value: unknown): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function salesRowKey(row: SheetRow, clientKey: string | null): string {
+export function salesRowKey(row: SheetRow, clientKey: string | null): string {
   const stableRowId =
     normalizeKeyPart(row.callNumber) ||
     normalizePersonName(row.name) ||
@@ -586,7 +586,7 @@ function salesRowKey(row: SheetRow, clientKey: string | null): string {
 
 // Collapse any historical 6-part sale key (…:setter:outcome) onto the stable
 // 4-part key so resolutions saved before this fix still match their alert.
-function stableSaleKey(key: string): string {
+export function stableSaleKey(key: string): string {
   if (!key.startsWith("sale:")) return key;
   return key.split(":").slice(0, 4).join(":");
 }
@@ -1007,7 +1007,7 @@ async function fetchFreshSalesRows(
 // an unsorted candidate list let a sale's revenue flip between ads on reload
 // whenever a person had 2+ competing matches. Newest event first, with a full
 // tiebreak chain (mirrors manychatBySubscriber's sort).
-function sortMatchCandidates(list: KeywordEvent[]) {
+export function sortMatchCandidates(list: KeywordEvent[]) {
   list.sort(
     (a, b) =>
       String(b.event_at || "").localeCompare(String(a.event_at || "")) ||
@@ -3055,7 +3055,7 @@ function saleContactAliasKeyFromParts(client: string, name: string | null | unde
   return `salecontact:${client || "unknown"}:${normalizedName}`;
 }
 
-function saleContactAliasKeyForResolution(resolution: AttributionResolution): string | null {
+export function saleContactAliasKeyForResolution(resolution: AttributionResolution): string | null {
   if (!resolution.saleKey.startsWith("sale:")) return null;
   // Use the exact creator segment the sale key was built from, so it matches
   // the creator a live row resolves to via salesRowKey.
@@ -3071,7 +3071,7 @@ function saleContactAliasKeyForRow(row: SheetRow, clientKey: string | null): str
 // precision preserved), then the per-person alias as a fallback for rows whose
 // key rotated after resolution. When both exist, the higher-priority (manual
 // over auto) wins so a stray auto-write can't shadow a human's manual answer.
-function getSaleResolution(
+export function getSaleResolution(
   map: Map<string, AttributionResolution>,
   row: SheetRow,
   clientKey: string | null

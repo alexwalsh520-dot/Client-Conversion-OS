@@ -8,6 +8,7 @@
     "guard": "node scripts/ccos-guard.mjs",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "video:worker": "node scripts/super-doc-video-worker.mjs",
     "video:worker:dry": "node scripts/super-doc-video-worker.mjs --dry-run"
   },
