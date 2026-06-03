@@ -6052,6 +6052,9 @@ const DECISION_RULES = {
   scaleAt: 3.0,         // 3×+ = scale candidate (raise the ad set's budget).
   kpiLine: 2.0,         // 2× = break-even KPI line. Reliably under it = turn off.
   spendFloor: 100,      // under ~$100 spend a ROAS multiple is one-lucky-sale noise — no verdict.
+  windowDays: 14,       // Turn-off/scale cards judge a FIXED trailing window this long
+  //                       (≥ the sales cycle so revenue has matured), independent of the
+  //                       page's date picker — so a maturing winner is never mistaken for a loser.
   budgetStepLow: 10, budgetStepHigh: 30,        // raise ad-set budget 10–30% / day
   costPerDmLow: 6.75, costPerDmHigh: 12,        // healthy cost-per-DM band ($ above = warning)
   costPerCallLow: 50, costPerCallHigh: 100,     // healthy cost-per-booked-call band
@@ -6305,7 +6308,7 @@ function PlaybookCard({a, i, peak, rangeText, onDid}){
   );
 }
 
-function ActionPlaybook({rows, rangeText, decByKey, onDid}){
+function ActionPlaybook({rows, rangeText, decByKey, onDid, windowDays}){
   const {scales, kills} = buildPlaybook(rows);
   const acted = decByKey || {};
   const isActed = (a)=> !!acted[String(a.keyword||"").toLowerCase()];
@@ -6344,6 +6347,12 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
 
   return (
     <div className="ddr-play">
+      {windowDays && (
+        <div
+          style={{fontSize:'9px',letterSpacing:'.11em',textTransform:'uppercase',color:'var(--text-4)',marginBottom:'2px'}}
+          title={"These calls always use the last "+windowDays+" days (long enough for sales to land), not the date filter above."}
+        >{windowDays}-day window</div>
+      )}
       {nothing && (
         <div className="ddr-play-clean">Nothing to scale or cut right now.</div>
       )}
@@ -8686,18 +8695,54 @@ const VAR_GEN_MAX_REF_BYTES = 6*1024*1024;
 function readFileAsDataUrl(file){
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error||new Error("read failed")); r.readAsDataURL(file); });
 }
-// Force a real download (Supabase public URLs are cross-origin, so the <a download>
-// attribute alone won't work — fetch to a blob first, fall back to a new tab).
+function safeFileName(name, fallback){
+  let n = String(name || fallback || "variation.png").trim().replace(/[\/\\:*?"<>|]+/g, "-");
+  if(!/\.[a-z0-9]{2,4}$/i.test(n)) n += ".png";
+  return n;
+}
+// Save one image. In Chrome/Edge this opens the native Save dialog (pick folder +
+// rename) via the File System Access API; elsewhere it falls back to a normal
+// download into the default Downloads folder.
 async function downloadImage(url, filename){
   if(!url) return;
-  try{
-    const res = await fetch(url, {mode:"cors"});
-    const blob = await res.blob();
-    const u = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=u; a.download=filename||"variation.png";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(u), 3000);
-  }catch(_){ try{ window.open(url, "_blank", "noopener"); }catch(__){} }
+  let blob;
+  try{ const res = await fetch(url, {mode:"cors"}); blob = await res.blob(); }
+  catch(_){ try{ window.open(url, "_blank", "noopener"); }catch(__){} return; }
+  const name = safeFileName(filename, "variation.png");
+  if(window.showSaveFilePicker){
+    try{
+      const handle = await window.showSaveFilePicker({ suggestedName: name });
+      const w = await handle.createWritable(); await w.write(blob); await w.close();
+      return;
+    }catch(e){ if(e && e.name==="AbortError") return; /* unsupported/denied → fall through */ }
+  }
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=u; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 3000);
+}
+// Save many images. In Chrome/Edge this opens the native folder picker ONCE and
+// writes them all there; elsewhere it falls back to sequential downloads.
+async function downloadMany(items){
+  const list = (items||[]).filter(it=>it&&it.url);
+  if(!list.length) return;
+  if(window.showDirectoryPicker){
+    try{
+      const dir = await window.showDirectoryPicker();
+      const used = new Set();
+      for(const it of list){
+        try{
+          const res = await fetch(it.url, {mode:"cors"}); const blob = await res.blob();
+          let name = safeFileName(it.name, "variation.png");
+          let base = name, n = 1; while(used.has(name)){ const dot=base.lastIndexOf("."); name = base.slice(0,dot)+"-"+(n++)+base.slice(dot); }
+          used.add(name);
+          const fh = await dir.getFileHandle(name, {create:true}); const w = await fh.createWritable(); await w.write(blob); await w.close();
+        }catch(_){}
+      }
+      return;
+    }catch(e){ if(e && e.name==="AbortError") return; }
+  }
+  for(const it of list){ await downloadImage(it.url, it.name); await new Promise(r=>setTimeout(r,250)); }
 }
 
 // Full-size image viewer with download (+ optional delete). Shared by the
@@ -8867,7 +8912,7 @@ function GeneratePopup({winner, onClose, onDone, onView, presets}){
 // History gallery — every variation the factory has made, in one place, with
 // enlarge / download / delete and multi-select. Borrows Studio 2's "grab many
 // at once" export idea (sequential downloads keep it dependency-free here).
-function HistoryGallery({onClose, onView}){
+function HistoryGallery({onClose, onView, pending}){
   const [items,setItems]=useState(null); // null = loading
   const [err,setErr]=useState(null);
   const [sel,setSel]=useState({});       // id -> true
@@ -8879,11 +8924,18 @@ function HistoryGallery({onClose, onView}){
       .catch(e=>{ setErr(String(e&&e.message||e)); setItems([]); });
   },[]);
   useEffect(()=>{ load(); },[load]);
+  // Re-pull when an in-flight run finishes so freshly-made images land here.
+  const pendingCount = pending ? pending.length : 0;
+  const prevPending = useRef(pendingCount);
+  useEffect(()=>{ if(prevPending.current>0 && pendingCount<prevPending.current) load(); prevPending.current=pendingCount; }, [pendingCount, load]);
+
+  const fname=(v)=> safeFileName((v.source_ad_id||"variation")+"-"+String(v.id).slice(0,6), "variation.png");
   const selIds=Object.keys(sel).filter(k=>sel[k]);
   const toggle=(id)=> setSel(p=>({...p,[id]:!p[id]}));
   const selectAll=()=>{ const all={}; (items||[]).forEach(v=>all[v.id]=true); setSel(all); };
   const clearSel=()=> setSel({});
-  const downloadSel=async ()=>{ const chosen=(items||[]).filter(v=>sel[v.id]); for(const v of chosen){ await downloadImage(v.image_url, (v.source_ad_id||"variation")+"-"+String(v.id).slice(0,6)+".png"); await new Promise(r=>setTimeout(r,250)); } };
+  const downloadSel=()=> downloadMany((items||[]).filter(v=>sel[v.id]).map(v=>({url:v.image_url, name:fname(v)})));
+  const deleteOne=async (id)=>{ if(busy) return; setBusy(true); try{ await fetch("/api/ads/variations/library?id="+encodeURIComponent(id),{method:"DELETE"}); }catch(_){} setBusy(false); setSel(p=>{const n={...p}; delete n[id]; return n;}); load(); };
   const deleteSel=async ()=>{ if(!selIds.length||busy) return; setBusy(true); for(const id of selIds){ try{ await fetch("/api/ads/variations/library?id="+encodeURIComponent(id),{method:"DELETE"}); }catch(_){} } setBusy(false); clearSel(); load(); };
   return (
     <div className="ddr-gp-back" onClick={onClose}>
@@ -8902,7 +8954,7 @@ function HistoryGallery({onClose, onView}){
             </React.Fragment>
           ) : (
             <React.Fragment>
-              <span className="ddr-hist-hint">Tap an image to enlarge or download. Select to grab or remove several at once.</span>
+              <span className="ddr-hist-hint">Hover an image to download or delete it. Tap to enlarge. Use the checkbox to grab or remove several.</span>
               {items&&items.length>0 && <button type="button" className="ddr-hist-act ghost" onClick={selectAll}>Select all</button>}
             </React.Fragment>
           )}
@@ -8910,15 +8962,22 @@ function HistoryGallery({onClose, onView}){
         <div className="ddr-hist-body">
           {items===null ? <div className="ddr-var-empty">Loading…</div>
             : err ? <div className="ddr-var-err">{err}</div>
-            : items.length===0 ? <div className="ddr-var-empty">No variations yet — generate some from a winner and they'll live here, saved for good.</div>
+            : (items.length===0 && pendingCount===0) ? <div className="ddr-var-empty">No variations yet — generate some from a winner and they'll live here, saved for good.</div>
             : (
               <div className="ddr-hist-grid">
-                {items.map(v=>(
+                {Array.from({length:pendingCount}).map((_,k)=>(
+                  <div className="ddr-hist-cell pending" key={"p"+k}><div className="ddr-hist-pending"><span className="ddr-gp-spin"/></div></div>
+                ))}
+                {(items||[]).map(v=>(
                   <div className={"ddr-hist-cell"+(sel[v.id]?" sel":"")} key={v.id}>
-                    <button type="button" className="ddr-hist-img" onClick={()=>onView&&onView({url:v.image_url, name:(v.source_ad_id||"variation")+".png"})}>
+                    <button type="button" className="ddr-hist-img" onClick={()=>onView&&onView({url:v.image_url, name:fname(v)})}>
                       <img src={v.image_url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
                     </button>
-                    <button type="button" className={"ddr-hist-ck"+(sel[v.id]?" on":"")} onClick={()=>toggle(v.id)} aria-label="Select">{sel[v.id]?"✓":""}</button>
+                    <button type="button" className={"ddr-hist-ck"+(sel[v.id]?" on":"")} onClick={(e)=>{e.stopPropagation(); toggle(v.id);}} aria-label="Select">{sel[v.id]?"✓":""}</button>
+                    <div className="ddr-hist-acts">
+                      <button type="button" title="Download" onClick={(e)=>{e.stopPropagation(); downloadImage(v.image_url, fname(v));}}>↓</button>
+                      <button type="button" className="del" title="Delete" onClick={(e)=>{e.stopPropagation(); deleteOne(v.id);}} disabled={busy}>✕</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -8940,11 +8999,13 @@ function AdVariations({rows}){
   const [presetsDraft, setPresetsDraft] = useState([]); // editable preset library
   // adId -> { loading, error, jobId, createdAt, variations:[] }
   const [jobs, setJobs] = useState({});
-  const [genId, setGenId] = useState(null);   // adId currently (re)generating (legacy batch)
-  const [genErr, setGenErr] = useState({});    // adId -> error string
+  // adId -> { name, total, slots:[{status,url,error}], active, refine } — lifted out
+  // of the popup so closing it never loses an in-flight generation.
+  const [runs, setRuns] = useState({});
   const [genOpen, setGenOpen] = useState(null); // winner object whose Generate popup is open
-  const [lightbox, setLightbox] = useState(null); // {url,name} full-image viewer
+  const [lightbox, setLightbox] = useState(null); // {url,name,adId} full-image viewer
   const [histOpen, setHistOpen] = useState(false); // history gallery open
+  const [toast, setToast] = useState(null); // {id,msg,kind} global notification
 
   const winners = useMemo(()=>(Array.isArray(rows)?rows:[])
     .filter(r=>r.traced && r.roas!=null && r.roas>=3)
@@ -9255,7 +9316,7 @@ function MoneyCockpit({model}){
   );
 }
 
-function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
+function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, range, loading, pager}){
   // Brain-icon data-flow map — collapsed by default, lifted here so the toggle
   // can sit in the header while the full-width map expands just below it.
   const [flowOpen, setFlowOpen] = useState(false);
@@ -9275,6 +9336,21 @@ function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
       .map(r => { const wr = withRoas(r, roasMap); wr.previews = previewMap.get(wr.keyword) || []; return wr; });
     return list.sort((a,b)=>b.spend-a.spend);
   }, [campaigns, roasMap, previewMap]);
+
+  // Rows for the Turn-off/Scale cards: built from the FIXED trailing window
+  // (DECISION_RULES.windowDays), not the page's date range, so the decisions
+  // always run on matured numbers. Same honest ROAS pipeline as `rows`. Falls
+  // back to the page-range rows until the window's own payload arrives.
+  const dRoasMap = useMemo(()=>roasByKeyword(decisionDash && decisionDash.adRoas), [decisionDash]);
+  const dPreviewMap = useMemo(()=>adsByKeyword(decisionDash && decisionDash.adRoas), [decisionDash]);
+  const decisionRows = useMemo(()=>{
+    if(!decisionDash) return rows;
+    const src = campaignsFromDashboard(decisionDash, decisionRange || range);
+    const list = aggregateByAdWord(src)
+      .filter(r => r.spend>0 || r.leads>0 || r.booked>0)
+      .map(r => { const wr = withRoas(r, dRoasMap); wr.previews = dPreviewMap.get(wr.keyword) || []; return wr; });
+    return list.sort((a,b)=>b.spend-a.spend);
+  }, [decisionDash, decisionRange, range, rows, dRoasMap, dPreviewMap]);
 
   // ---- The decision feedback loop ----
   // Logged moves live in Supabase via /api/ads/decisions, scoped to the account
@@ -9417,7 +9493,7 @@ function DeepDiveReport({campaigns, dashboard, range, loading, pager}){
       {pagerBar}
 
       {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
-      <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
+      <ActionPlaybook rows={decisionRows} windowDays={DECISION_RULES.windowDays} rangeText={"last "+DECISION_RULES.windowDays+" days"} decByKey={decByKey} onDid={onDecide}/>
 
       {/* Make variations — winning creative → new ads (Higgsfield engine; scaffold) */}
       <AdVariations rows={rows}/>
@@ -9594,6 +9670,11 @@ function App(){
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState(()=>rangeForPreset("mtd", todayEt()));
   const [dashboard, setDashboard] = useState(null);
+  // Separate payload for the Turn-off/Scale cards: a FIXED trailing window
+  // (DECISION_RULES.windowDays) ending today, independent of the date picker, so
+  // the action calls are always "right now" with matured revenue — not whatever
+  // (often short) range the rest of the page is showing.
+  const [decisionDash, setDecisionDash] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -9732,6 +9813,28 @@ function App(){
     loadDashboard();
   }, [effectiveAccount, dateRange.dateFrom, dateRange.dateTo]);
 
+  // Fixed trailing-window fetch for the decision cards (Deep Dive only). Keyed on
+  // the account, NOT the date picker — so changing the displayed range never
+  // shifts what the Turn-off/Scale cards judge. Quiet: failures just leave the
+  // cards on the page-range data (handled in DeepDiveReport).
+  const decisionRange = useMemo(()=>{
+    const to = todayEt();
+    return { dateFrom: shiftIso(to, -(DECISION_RULES.windowDays-1)), dateTo: to };
+  }, []);
+  useEffect(()=>{
+    if(topView!=="report") return;
+    let off=false;
+    const params = new URLSearchParams({
+      account: effectiveAccount, status:"all", level:"ad",
+      dateFrom: decisionRange.dateFrom, dateTo: decisionRange.dateTo,
+    });
+    fetch("/api/ads-tracker?"+params.toString(), {cache:"no-store"})
+      .then(r=>r.json())
+      .then(j=>{ if(!off && j && !j.error) setDecisionDash(j); })
+      .catch(()=>{});
+    return ()=>{ off=true; };
+  }, [effectiveAccount, topView, decisionRange.dateFrom, decisionRange.dateTo]);
+
   const apiCampaigns = useMemo(
     () => campaignsFromDashboard(dashboard, dateRange),
     [dashboard, dateRange.dateFrom, dateRange.dateTo]
@@ -9859,6 +9962,8 @@ function App(){
             <DeepDiveReport
               campaigns={scopedCampaigns}
               dashboard={dashboard}
+              decisionDash={decisionDash}
+              decisionRange={decisionRange}
               range={dateRange}
               loading={loading}
               pager={account==="all" && activeCreators.length>1 ? {
