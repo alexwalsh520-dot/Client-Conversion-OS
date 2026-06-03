@@ -1215,6 +1215,24 @@
   .ddr-mp-search:focus{outline:none;border-color:var(--text-3)}
   .ddr-mp-cell{cursor:pointer;transition:border-color .14s}
   .ddr-mp-cell:hover{border-color:var(--gold)}
+  .ddr-gp-spin.sm{width:11px;height:11px;border-width:2px}
+  .ddr-var-gostat{display:inline-flex;align-items:center;gap:7px;color:var(--gold)}
+  .ddr-lb-btn.gold{color:var(--gold);border-color:var(--gold);background:color-mix(in srgb,var(--gold) 14%,transparent)}
+  .ddr-lb-btn.gold:hover{background:color-mix(in srgb,var(--gold) 24%,transparent)}
+  /* History per-cell hover actions + pending */
+  .ddr-hist-acts{position:absolute;left:7px;bottom:7px;display:flex;gap:6px;opacity:0;transition:opacity .14s}
+  .ddr-hist-cell:hover .ddr-hist-acts{opacity:1}
+  .ddr-hist-acts button{width:24px;height:24px;border-radius:6px;border:1px solid var(--border-2);background:color-mix(in srgb,#000 55%,transparent);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+  .ddr-hist-acts button:hover{background:#000}
+  .ddr-hist-acts button.del:hover{background:var(--red);border-color:var(--red)}
+  .ddr-hist-cell.pending{border-style:dashed}
+  .ddr-hist-pending{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-1);animation:ddrVarPulse 1.3s ease-in-out infinite}
+  /* Global toast (top-right, like Studio 2) */
+  .ddr-toast{position:fixed;top:18px;right:18px;z-index:90;display:flex;align-items:center;gap:10px;max-width:360px;padding:12px 14px;border-radius:11px;border:1px solid var(--border-2);background:var(--panel);box-shadow:0 16px 50px rgba(0,0,0,.5);font-size:13px;color:var(--text);cursor:pointer;animation:ddrToastIn .26s cubic-bezier(.2,.9,.3,1)}
+  @keyframes ddrToastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+  .ddr-toast-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:0 0 auto}
+  .ddr-toast.warn .ddr-toast-dot{background:var(--gold)}
+  .ddr-toast-cta{margin-left:auto;font-size:12px;font-weight:600;color:var(--gold)}
   .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
   .ddr-rules .rg{display:flex;flex-direction:column;gap:5px}
   .ddr-rules .rgh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
@@ -8747,13 +8765,14 @@ async function downloadMany(items){
 
 // Full-size image viewer with download (+ optional delete). Shared by the
 // generate popup, the winner grids, and the history gallery.
-function VarLightbox({item, onClose, onDelete}){
+function VarLightbox({item, onClose, onDelete, onRefine}){
   if(!item || !item.url) return null;
   return (
     <div className="ddr-lb-back" onClick={onClose}>
       <div className="ddr-lb" onClick={e=>e.stopPropagation()}>
         <img className="ddr-lb-img" src={item.url} alt="" referrerPolicy="no-referrer"/>
         <div className="ddr-lb-bar">
+          {onRefine && <button type="button" className="ddr-lb-btn gold" onClick={()=>onRefine(item)}>Tweak &amp; regenerate</button>}
           <button type="button" className="ddr-lb-btn" onClick={()=>downloadImage(item.url, item.name)}>Download</button>
           {onDelete && <button type="button" className="ddr-lb-btn del" onClick={()=>onDelete(item)}>Delete</button>}
           <button type="button" className="ddr-lb-btn ghost" onClick={onClose}>Close</button>
@@ -8813,37 +8832,30 @@ function MediaPicker({onPick, onClose}){
 // The Generate popup — a Studio-2-style chat: the winning ad is the default
 // reference, you can add a second from the media library or upload, pick presets,
 // type a prompt, choose how many, and watch each image stream in as it finishes.
-function GeneratePopup({winner, onClose, onDone, onView, presets}){
+function GeneratePopup({winner, onClose, onView, presets, run, onRun}){
   const PRESETS = (Array.isArray(presets)&&presets.length)?presets:VAR_GEN_PRESETS;
+  const refine = !!winner.baseImageUrl;
   const [prompt,setPrompt]=useState("");
-  const [count,setCount]=useState(4);
+  const [count,setCount]=useState(refine?2:4);
   const [refs,setRefs]=useState([]);     // extra references: {url,name} (url = R2 public URL or data URL)
-  const [slots,setSlots]=useState([]);   // {status:"creating"|"ready"|"failed", url, error}
-  const [running,setRunning]=useState(false);
   const [pickerOpen,setPickerOpen]=useState(false);
+  const slots = run ? run.slots : [];
+  const running = !!(run && run.active);
   const doneCount = slots.filter(s=>s.status!=="creating").length;
 
   const applyPreset=(p)=> setPrompt(prev=> prev.trim()? (prev.trim()+" "+p.prompt) : p.prompt);
   const addRef=(item)=>{ setRefs(prev=> prev.length>=3?prev:[...prev,item]); setPickerOpen(false); };
   const removeRef=(i)=> setRefs(prev=>prev.filter((_,k)=>k!==i));
 
-  const run=async ()=>{
+  const go=()=>{
     if(running) return;
-    const instruction = prompt.trim() || "Create a fresh variation of this winning ad. Keep the same person, layout, and on-image text; vary the background to a clean, on-brand alternative.";
-    const n=Math.max(1,Math.min(VAR_GEN_MAX,count));
-    const jobId = winner.adId+"-"+Date.now();
-    const extraReferenceUrls = refs.map(r=>r.url);
-    setRunning(true);
-    setSlots(Array.from({length:n}).map(()=>({status:"creating",url:null,error:null})));
-    const tasks = Array.from({length:n}).map((_,i)=>
-      fetch("/api/ads/variations/generate-one",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({adId:winner.adId,prompt:instruction,kind:"background",jobId,index:i,extraReferenceUrls})})
-        .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error((d&&d.error)||("Failed ("+r.status+")")); return d.variation; })
-        .then(v=> setSlots(prev=>prev.map((s,k)=>k===i?{status:"ready",url:v&&v.image_url,error:null}:s)))
-        .catch(e=> setSlots(prev=>prev.map((s,k)=>k===i?{status:"failed",url:null,error:String(e&&e.message||e)}:s)))
-    );
-    await Promise.allSettled(tasks);
-    setRunning(false);
-    if(onDone) onDone();
+    onRun(winner, {
+      prompt: prompt.trim(),
+      count: Math.max(1, Math.min(VAR_GEN_MAX, count)),
+      kind: "background",
+      extraReferenceUrls: refs.map(r=>r.url),
+      baseImageUrl: refine ? winner.baseImageUrl : null,
+    });
   };
 
   return (
@@ -8851,14 +8863,14 @@ function GeneratePopup({winner, onClose, onDone, onView, presets}){
     <div className="ddr-gp-back" onClick={onClose}>
       <div className="ddr-gp" onClick={e=>e.stopPropagation()}>
         <div className="ddr-gp-head">
-          <div className="ddr-gp-title">Generate variations <span>{winner.name}</span></div>
+          <div className="ddr-gp-title">{refine?"Tweak & regenerate":"Generate variations"} <span>{winner.name}</span></div>
           <button type="button" className="ddr-gp-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="ddr-gp-body">
           <div className="ddr-gp-refs">
             <div className="ddr-gp-ref">
               {winner.ref ? <img src={winner.ref} alt="" referrerPolicy="no-referrer"/> : <span className="ddr-gp-ref-ph">ad</span>}
-              <span className="ddr-gp-ref-tag">Winning ad</span>
+              <span className="ddr-gp-ref-tag">{refine?"Tweaking this":"Winning ad"}</span>
             </div>
             {refs.map((r,i)=>(
               <div className="ddr-gp-ref" key={i}>
@@ -8879,7 +8891,7 @@ function GeneratePopup({winner, onClose, onDone, onView, presets}){
             ))}
           </div>
           <div className="ddr-gp-chat">
-            <textarea rows={3} placeholder="Tell the engine what to change — e.g. swap the background to a sunrise beach, keep the person and the text exactly." value={prompt} onChange={e=>setPrompt(e.target.value)} />
+            <textarea rows={3} placeholder={refine?"What one thing should change? e.g. make the headline bigger, warm up the lighting, swap the background to a gym.":"Tell the engine what to change — e.g. swap the background to a sunrise beach, keep the person and the text exactly."} value={prompt} onChange={e=>setPrompt(e.target.value)} />
           </div>
           <div className="ddr-gp-foot">
             <div className="ddr-gp-count">
@@ -8888,13 +8900,13 @@ function GeneratePopup({winner, onClose, onDone, onView, presets}){
               <b>{count}</b>
               <button type="button" onClick={()=>setCount(c=>Math.min(VAR_GEN_MAX,c+1))} disabled={running||count>=VAR_GEN_MAX}>+</button>
             </div>
-            <button type="button" className="ddr-gp-go" onClick={run} disabled={running}>{running ? ("Generating… "+doneCount+"/"+slots.length) : ("Generate "+count)}</button>
+            <button type="button" className="ddr-gp-go" onClick={go} disabled={running}>{running ? ("Generating… "+doneCount+"/"+slots.length) : (refine?("Regenerate "+count):("Generate "+count))}</button>
           </div>
           {slots.length>0 && (
             <div className="ddr-gp-results">
               {slots.map((s,i)=>(
                 <div className="ddr-gp-cell" key={i}>
-                  <div className={"ddr-gp-img "+s.status+(s.status==="ready"&&s.url?" clickable":"")} onClick={()=>{ if(s.status==="ready"&&s.url&&onView) onView({url:s.url, name:(winner.name||"variation")+".png"}); }}>
+                  <div className={"ddr-gp-img "+s.status+(s.status==="ready"&&s.url?" clickable":"")} onClick={()=>{ if(s.status==="ready"&&s.url&&onView) onView({url:s.url, name:(winner.name||"variation")+".png", adId:winner.adId}); }}>
                     {s.status==="ready" && s.url ? <img src={s.url} alt="" loading="lazy"/> : s.status==="failed" ? <span className="ddr-gp-fail" title={s.error||""}>failed</span> : <span className="ddr-gp-spin"/>}
                   </div>
                 </div>
@@ -9058,16 +9070,36 @@ function AdVariations({rows}){
       .then(r=>r.json()).then(d=>{ if(d&&d.settings) setSettings(d.settings); }).catch(()=>{}).finally(()=>setSetBusy(false));
   };
 
-  const regen = (adId)=>{
-    if(!adId || genId) return;
-    setGenId(adId); setGenErr(prev=>({...prev, [adId]:null}));
-    fetch("/api/ads/variations/generate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({adId})})
-      .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error((d&&d.error)||("Generation failed ("+r.status+")")); return d; })
-      .then(d=>{ setJobs(prev=>({...prev, [adId]:{loading:false, error:null, jobId:d.jobId, createdAt:null, variations:d.variations||[]}}));
-                 if(d&&d.failed>0 && (!d.variations||!d.variations.length)) setGenErr(prev=>({...prev,[adId]:(d.errors&&d.errors[0])||"Generation failed."})); })
-      .catch(e=>setGenErr(prev=>({...prev,[adId]:String(e&&e.message||e)})))
-      .finally(()=>setGenId(null));
-  };
+  // Fire one generation run for a winner. Lives here (not in the popup) so the
+  // run keeps going and stays visible after the popup is closed. Streams each
+  // image into runs[adId].slots; on completion refreshes the grid + toasts.
+  const startRun = useCallback((winner, opts)=>{
+    const adId = winner.adId; if(!adId) return;
+    const instruction = (opts.prompt||"").trim() || "Create a fresh variation of this winning ad. Keep the same person, layout, and on-image text; vary the background to a clean, on-brand alternative.";
+    const n = Math.max(1, Math.min(10, opts.count||4));
+    const jobId = adId+"-"+Date.now();
+    const extraReferenceUrls = opts.extraReferenceUrls||[];
+    const baseImageUrl = opts.baseImageUrl||null;
+    setRuns(prev=>({...prev, [adId]:{name:winner.name, total:n, refine:!!baseImageUrl, active:true, slots:Array.from({length:n}).map(()=>({status:"creating",url:null,error:null}))}}));
+    const setSlot = (i, patch)=> setRuns(prev=>{ const run=prev[adId]; if(!run) return prev; return {...prev,[adId]:{...run, slots:run.slots.map((s,k)=>k===i?{...s,...patch}:s)}}; });
+    const tasks = Array.from({length:n}).map((_,i)=>
+      fetch("/api/ads/variations/generate-one",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({adId,prompt:instruction,kind:opts.kind||"background",jobId,index:i,extraReferenceUrls,baseImageUrl})})
+        .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error((d&&d.error)||("Failed ("+r.status+")")); return d.variation; })
+        .then(v=>{ setSlot(i,{status:"ready",url:v&&v.image_url,error:null}); return v&&v.image_url?1:0; })
+        .catch(e=>{ setSlot(i,{status:"failed",url:null,error:String(e&&e.message||e)}); return 0; })
+    );
+    Promise.all(tasks).then(arr=>{
+      const ok = arr.reduce((a,b)=>a+b,0);
+      setRuns(prev=> prev[adId]? {...prev,[adId]:{...prev[adId],active:false}} : prev);
+      loadJob(adId);
+      setToast({ id:Date.now(), kind: ok>0?"ok":"warn", msg: ok>0 ? (ok+" variation"+(ok===1?"":"s")+" ready · "+capw(winner.name||"winner")) : "Generation finished with errors" });
+    });
+  }, [loadJob]);
+
+  // Auto-dismiss the toast.
+  useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(null), 6000); return ()=>clearTimeout(t); }, [toast]);
+  // Pending placeholders for the history gallery while runs are in flight.
+  const pendingCells = useMemo(()=> Object.values(runs).filter(r=>r&&r.active).flatMap(r=> r.slots.filter(s=>s.status==="creating")), [runs]);
 
   const total = settings ? settings.variationsPerJob : 10;
   const mixLine = settings
@@ -9169,16 +9201,18 @@ function AdVariations({rows}){
           {winners.map((a,i)=>{
             const job = jobs[a.adId] || {};
             const vars = job.variations || [];
-            const generating = genId===a.adId;
-            const ready = generating ? null : (job.loading ? null : vars.length);
-            const cells = generating ? Array.from({length:total}).map(()=>null) : vars;
+            const run = runs[a.adId];
+            const generating = !!(run && run.active);
+            const runDone = run ? run.slots.filter(s=>s.status!=="creating").length : 0;
+            const ready = job.loading ? null : vars.length;
+            const cells = generating ? run.slots : vars;
             return (
             <div className="ddr-var-item" key={a.adId}>
               <button type="button" className={"ddr-var-row"+(pick===i?" on":"")} onClick={()=>setPick(pick===i?null:i)}>
                 <span className="nm">{capw(a.name)}</span>
                 <span className="rs">{a.roas.toFixed(1)}×</span>
                 <span className="ddr-var-go">
-                  {generating ? "generating…" : job.loading ? "loading…" : ready>0 ? ready+" ready" : "none yet"}
+                  {generating ? <span className="ddr-var-gostat"><span className="ddr-gp-spin sm"/>generating {runDone}/{run.total}</span> : job.loading ? "loading…" : ready>0 ? ready+" ready" : "none yet"}
                   <span className="ddr-var-cv">{pick===i?"−":"+"}</span>
                 </span>
               </button>
@@ -9191,20 +9225,24 @@ function AdVariations({rows}){
                     </div>
                   )}
                   {(!generating && !job.loading && vars.length===0) ? (
-                    <div className="ddr-var-empty">No variations made yet — hit Regenerate to build the first batch.</div>
+                    <div className="ddr-var-empty">No variations made yet — hit Generate variations to build the first batch.</div>
                   ) : (
                     <div className="ddr-var-grid">
-                      {cells.map((v,k)=>(
-                        <div className="ddr-var-cell" key={v?v.id:k}>
-                          <div className={"ddr-var-img"+(v&&v.image_url?" full clickable":"")+(generating?" gen":"")} onClick={()=>{ if(v&&v.image_url) setLightbox({url:v.image_url, name:capw(a.name)+".png"}); }}>
-                            {v&&v.image_url ? <img src={v.image_url} alt="" loading="lazy"/> : (generating ? "" : k+1)}
+                      {cells.map((v,k)=>{
+                        const url = v && v.image_url; // var rows have image_url; run slots use .url
+                        const slotUrl = v && v.url;
+                        const showUrl = url || (generating && slotUrl);
+                        const failed = generating && v && v.status==="failed";
+                        return (
+                        <div className="ddr-var-cell" key={v&&v.id?v.id:k}>
+                          <div className={"ddr-var-img"+(showUrl?" full clickable":"")+(generating&&!showUrl&&!failed?" gen":"")} onClick={()=>{ if(showUrl) setLightbox({url:showUrl, name:capw(a.name)+".png", adId:a.adId}); }}>
+                            {showUrl ? <img src={showUrl} alt="" loading="lazy"/> : failed ? <span className="ddr-gp-fail">failed</span> : (generating ? <span className="ddr-gp-spin"/> : k+1)}
                           </div>
-                          <span className="ddr-var-tag">{v?varKindLabel(v.kind):(k<(settings?settings.mix.background:6)?"background":k<(settings?settings.mix.background+settings.mix.highlightWord:8)?"highlight word":"copy")}</span>
+                          <span className="ddr-var-tag">{generating?"":(v?varKindLabel(v.kind):"")}</span>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   )}
-                  {genErr[a.adId] && <div className="ddr-var-err">{genErr[a.adId]}</div>}
                   <div className="ddr-var-bar">
                     <span>{mixLine}</span>
                     <button type="button" className="ddr-var-dl on" onClick={()=>setGenOpen({name:capw(a.name), adId:a.adId, ref:a.ref})}>
@@ -9221,13 +9259,27 @@ function AdVariations({rows}){
         <GeneratePopup
           winner={genOpen}
           presets={settings&&Array.isArray(settings.presets)?settings.presets:null}
+          run={runs[genOpen.adId]}
+          onRun={startRun}
           onClose={()=>setGenOpen(null)}
-          onDone={()=>{ if(genOpen) loadJob(genOpen.adId); }}
           onView={setLightbox}
         />
       )}
-      {histOpen && <HistoryGallery onClose={()=>setHistOpen(false)} onView={setLightbox} />}
-      {lightbox && <VarLightbox item={lightbox} onClose={()=>setLightbox(null)} />}
+      {histOpen && <HistoryGallery onClose={()=>setHistOpen(false)} onView={setLightbox} pending={pendingCells} />}
+      {lightbox && (
+        <VarLightbox
+          item={lightbox}
+          onClose={()=>setLightbox(null)}
+          onRefine={lightbox.adId ? (it)=>{ setLightbox(null); setPick(null); setGenOpen({name:capw(it.name||"this ad"), adId:it.adId, ref:it.url, baseImageUrl:it.url, refine:true}); } : null}
+        />
+      )}
+      {toast && (
+        <div className={"ddr-toast "+(toast.kind||"ok")} onClick={()=>{ setToast(null); setHistOpen(true); }} role="status">
+          <span className="ddr-toast-dot"/>
+          <span>{toast.msg}</span>
+          <span className="ddr-toast-cta">View</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -9236,23 +9288,37 @@ function MoneyCockpit({model}){
   if(!model) return null;
   const m = model;
   const margin = m.variableMargin, fixed = m.fixedCosts;
-  const curRev = m.collected, curRoas = m.cashRoas, curNet = m.netProfit;
-  if(!(curRev>0) || !(curRoas>0)) return null;
+  const curRev = m.collected, curRoas = m.cashRoas, curNet = m.netProfit, curSpend = m.adSpend;
+  const monthLabel = m.monthLabel || "last month";
+  const fb = m.fixedBreakdown || null;
+  if(!(curRev>0) || !(curRoas>0) || !(curSpend>0)) return null;
   // "Even if ROAS slips as you scale" scenarios — today's, then a few lower.
   const lower = [3.5,3,2.5,2].filter(r=> r < curRoas-0.05);
   const roasOpts = [Math.round(curRoas*10)/10, ...lower].slice(0,4);
   const [roas, setRoas] = useState(roasOpts[0]);
   const targetX = 3/margin;
-  const tiers = [0.4,1,2,4,6].map(mult=>{
+  // Rungs are multiples of last month's AD SPEND, not revenue — the lever Alex
+  // actually pulls. The first step up is a near-term, ATTAINABLE +75% of last
+  // month's spend (not a 2× leap), then a couple of bigger aspirational rungs so
+  // the long-run upside is still visible. "Now" uses last month's real numbers;
+  // the rest scale spend and let ROAS slip to the chosen rate.
+  const spendMults = [
+    { m:1,    tag:null },
+    { m:1.75, tag:"next step" },
+    { m:3,    tag:null },
+    { m:5,    tag:null },
+  ];
+  const tiers = spendMults.map(({m:mult, tag})=>{
     const isNow = mult===1;
     const r = isNow ? curRoas : roas;
-    const rev = curRev*mult;
-    const spend = rev/r;
+    const spend = curSpend*mult;
+    const rev = isNow ? curRev : spend*r;
     const net = isNow ? curNet : (rev*margin - spend - fixed);
-    return { mult, isNow, rev, spend, fixedPct: fixed/rev,
+    return { mult, tag, isNow, rev, spend, fixedPct: fixed/rev,
       killFloor: (spend+fixed)/(spend*margin), nMargin: rev>0?net/rev:0, net };
   });
-  const topNet = tiers[tiers.length-1].net;
+  const top = tiers[tiers.length-1];
+  const topNet = top.net;
   return (
     <div className="ps">
       <div className="ps-top">
@@ -9275,7 +9341,7 @@ function MoneyCockpit({model}){
           <tbody>
             {tiers.map(t=>(
               <tr key={t.mult} className={t.isNow?"now":""}>
-                <td className="rev">{fmtUsd(t.rev)}{t.isNow && <span className="ps-here">you are here</span>}</td>
+                <td className="rev">{fmtUsd(t.rev)}{t.isNow && <span className="ps-here">you are here · {monthLabel}</span>}{t.tag && <span className="ps-here">{t.tag}</span>}</td>
                 <td>{fmtUsd(t.spend)}</td>
                 <td className="mut">{fmtPct(t.fixedPct*100,0)}</td>
                 <td className="mut">{t.killFloor.toFixed(1)}×</td>
@@ -9287,7 +9353,12 @@ function MoneyCockpit({model}){
           </tbody>
         </table>
       </div>
-      <div className="ps-foot">{fmtUsd(curRev)}/mo → {fmtUsd(curRev*6)}/mo turns {fmtUsd(curNet)} into <b>{fmtUsd(topNet)}</b>{roas<curRoas-0.05?" — even at "+roas.toFixed(1)+"× ROAS":""}.</div>
+      <div className="ps-foot">{fmtUsd(curSpend)}/mo in spend → {fmtUsd(top.spend)}/mo turns {fmtUsd(curNet)} profit into <b>{fmtUsd(topNet)}</b>{roas<curRoas-0.05?" — even at "+roas.toFixed(1)+"× ROAS":""}.</div>
+      {fb && (
+        <div style={{fontSize:'10.5px',color:'var(--text-4)',marginTop:'7px',lineHeight:1.4}}>
+          Fixed costs {fmtUsd(fixed)}/mo = {fmtUsd(fb.manager)} sales manager base + {fmtUsd(fb.software)} software stack (Skool, GoHighLevel, Sendblue, ManyChat). These don't grow with sales — so every extra profitable dollar of spend dilutes them, which is why the net margin climbs as you scale.
+        </div>
+      )}
 
       {Array.isArray(m.clients) && m.clients.filter(c=>c.adSpend>0).length>0 && (
         <div className="ps-clients">

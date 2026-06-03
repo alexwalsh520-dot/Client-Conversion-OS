@@ -21,14 +21,22 @@ import { dedupeSalesRows } from "@/lib/ads-tracker/dedupe-sales";
 export const SOFTWARE_MONTHLY_COST = 5500;
 export const FIXED_MONTHLY_COSTS = MANAGER_MONTHLY_BASE + SOFTWARE_MONTHLY_COST; // $9,500
 
-const WINDOW_DAYS = 30;
-
 type Db = ReturnType<typeof getServiceSupabase>;
 
-function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
+// "Where you are now" anchors to the most recent COMPLETE calendar month — the
+// last month with a full set of data — NOT a rolling 30 days. A rolling window
+// mixes a few maturing days of the current month into the picture; the team
+// thinks in whole months ("how did May do"), so the model does too. On June 3rd
+// this is all of May (2026-05-01 … 2026-05-31).
+function lastCompleteMonthRange(): { from: string; to: string; label: string; days: number } {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const mo = now.getUTCMonth(); // 0–11, current month
+  const start = new Date(Date.UTC(y, mo - 1, 1)); // first day of previous month
+  const end = new Date(Date.UTC(y, mo, 0)); // day 0 of this month = last day of prev month
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const label = start.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  return { from: iso(start), to: iso(end), label, days: end.getUTCDate() };
 }
 
 // Supabase caps a select at 1000 rows; page through so totals are exact.
@@ -59,17 +67,10 @@ export interface MoneyModelClient {
   carryingWeight: boolean;
 }
 
-export interface MoneyModelProjectionPoint {
-  label: string;
-  adSpend: number;
-  revenue: number;
-  netProfit: number;
-  netMargin: number;
-  isCurrent: boolean;
-}
-
 export interface MoneyModel {
-  windowDays: number;
+  windowDays: number; // days in the anchored month (e.g. 31 for May)
+  monthLabel: string; // e.g. "May" — the complete month "where you are now" reflects
+  fixedBreakdown: { manager: number; software: number }; // what the $9,500 fixed cost is made of
   collected: number;
   variableCosts: number;
   contribution: number;
@@ -86,7 +87,6 @@ export interface MoneyModel {
   // The persuasion numbers:
   netProfitPerExtraDollar: number; // each extra $1 ad spend → $X net, at today's efficiency
   roasFloorIfYouDouble: number; // you can 2x spend, let ROAS fall to THIS, and still out-earn now
-  projection: MoneyModelProjectionPoint[];
   clients: MoneyModelClient[];
   unattributedCollected: number; // sales whose creator couldn't be matched
 }
@@ -94,7 +94,7 @@ export interface MoneyModel {
 // Computes the trailing-30-day scale-aware money model from live data.
 export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   const sb = db ?? getServiceSupabase();
-  const from = isoDaysAgo(WINDOW_DAYS);
+  const { from, to, label: monthLabel, days: monthDays } = lastCompleteMonthRange();
 
   const salesRaw = await fetchAll<{
     collected_revenue_cents: number | null;
@@ -114,6 +114,7 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
         "collected_revenue_cents,contracted_revenue_cents,closer,setter,program_length,offer,date,prospect_name_normalized,call_number,synced_at"
       )
       .gte("date", from)
+      .lte("date", to)
       .gt("collected_revenue_cents", 0)
       .range(lo, hi)
   );
@@ -129,6 +130,7 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
         .from("ads_meta_insights_daily")
         .select("client_key,spend_cents")
         .gte("date", from)
+        .lte("date", to)
         .gt("spend_cents", 0)
         .range(lo, hi)
   );
@@ -188,27 +190,6 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   // Double the spend; how far can ROAS fall and still beat today's net?
   const roasFloorIfYouDouble = (cashRoas * variableMargin + 1) / (2 * variableMargin);
 
-  const multiples: Array<{ label: string; m: number }> = [
-    { label: "½×", m: 0.5 },
-    { label: "now", m: 1 },
-    { label: "2×", m: 2 },
-    { label: "3×", m: 3 },
-    { label: "5×", m: 5 },
-  ];
-  const projection: MoneyModelProjectionPoint[] = multiples.map(({ label, m }) => {
-    const sp = adSpend * m;
-    const rev = sp * cashRoas;
-    const net = sp * (cashRoas * variableMargin - 1) - fixedCosts;
-    return {
-      label,
-      adSpend: sp,
-      revenue: rev,
-      netProfit: net,
-      netMargin: rev > 0 ? net / rev : 0,
-      isCurrent: m === 1,
-    };
-  });
-
   // ---- per-client (fixed split by share of ad spend) ----
   const clientKeys = new Set<string>([...byClient.keys(), ...spendByClient.keys()]);
   const clients: MoneyModelClient[] = [...clientKeys]
@@ -234,7 +215,9 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
     .sort((a, b) => b.netProfit - a.netProfit);
 
   return {
-    windowDays: WINDOW_DAYS,
+    windowDays: monthDays,
+    monthLabel,
+    fixedBreakdown: { manager: MANAGER_MONTHLY_BASE, software: SOFTWARE_MONTHLY_COST },
     collected,
     variableCosts,
     contribution,
@@ -249,7 +232,6 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
     breakevenRoas,
     netProfitPerExtraDollar,
     roasFloorIfYouDouble,
-    projection,
     clients,
     unattributedCollected,
   };
