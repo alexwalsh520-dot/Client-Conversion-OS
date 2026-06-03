@@ -9540,7 +9540,7 @@ function Leaderboard({rows}){
   if(!data.length) return null;
   return (
     <div className="lb">
-      <div className="lb-h"><span className="lb-crown">👑</span> Business leaderboard <span className="lb-sub">— every ad word, the champion of each metric</span></div>
+      <div className="lb-h"><svg className="lb-crown" viewBox="0 0 24 24" width="16" height="16" fill="var(--gold)" aria-hidden="true"><path d="M5 16L3 7l5.5 4L12 4l3.5 7L21 7l-2 9H5z M5 18h14v2H5z"/></svg> Business leaderboard <span className="lb-sub">— every ad word, the champion of each metric</span></div>
       <div className="lb-wrap">
         <table className="lb-table">
           <thead>
@@ -9562,7 +9562,7 @@ function Leaderboard({rows}){
                 </td>
                 {LB_COLS.map(c=>(
                   <td key={c.key} className={"lb-cell"+(champ[c.key]===d.key?" win":"")}>
-                    {champ[c.key]===d.key && <span className="lb-wc">👑</span>}{c.fmt(d[c.key])}
+                    {champ[c.key]===d.key && <svg className="lb-wc" viewBox="0 0 24 24" width="12" height="12" fill="var(--gold)" aria-hidden="true" style={{verticalAlign:"middle"}}><path d="M5 16L3 7l5.5 4L12 4l3.5 7L21 7l-2 9H5z M5 18h14v2H5z"/></svg>}{c.fmt(d[c.key])}
                   </td>
                 ))}
               </tr>
