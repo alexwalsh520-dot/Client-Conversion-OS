@@ -1060,7 +1060,8 @@
   .ddr-var-row.on{border-color:var(--text-4);border-radius:10px 10px 0 0}
   .ddr-var-row .nm{font-size:14px;font-weight:600;color:var(--text);text-transform:capitalize}
   .ddr-var-row .rs{font-size:14px;color:var(--text-3);font-variant-numeric:tabular-nums}
-  .ddr-var-go{font-size:12.5px;color:var(--text-4)}
+  .ddr-var-go{font-size:12.5px;color:var(--text-4);display:inline-flex;align-items:center;gap:8px}
+  .ddr-var-cv{font-size:15px;color:var(--text-4)}
   .ddr-var-gen{border:1px solid var(--text-4);border-top:none;border-radius:0 0 10px 10px;padding:16px;background:var(--bg-1)}
   .ddr-var-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
   .ddr-var-cell{display:flex;flex-direction:column;gap:5px}
@@ -8497,7 +8498,7 @@ function AdVariations({rows}){
     .map(r=>({name:r.keyword, roas:r.roas}));
   return (
     <div className="ddr-var">
-      <div className="ddr-var-h">Make variations</div>
+      <div className="ddr-var-h">Variations factory</div>
       {winners.length>0 ? (
         <div className="ddr-var-list">
           {winners.map((a,i)=>(
@@ -8505,7 +8506,7 @@ function AdVariations({rows}){
               <button type="button" className={"ddr-var-row"+(pick===i?" on":"")} onClick={()=>setPick(pick===i?null:i)}>
                 <span className="nm">{capw(a.name)}</span>
                 <span className="rs">{a.roas.toFixed(1)}×</span>
-                <span className="ddr-var-go">{pick===i?"Close":"Generate"}</span>
+                <span className="ddr-var-go">10 ready <span className="ddr-var-cv">{pick===i?"−":"+"}</span></span>
               </button>
               {pick===i && (
                 <div className="ddr-var-gen">
@@ -8513,21 +8514,20 @@ function AdVariations({rows}){
                     {Array.from({length:10}).map((_,k)=>(
                       <div className="ddr-var-cell" key={k}>
                         <div className="ddr-var-img">{k+1}</div>
-                        <span className="ddr-var-tag">{k<8?"new visual":"new copy"}</span>
+                        <span className="ddr-var-tag">{k<6?"background":k<8?"highlight word":"copy"}</span>
                       </div>
                     ))}
                   </div>
                   <div className="ddr-var-bar">
-                    <span>10 variations</span>
-                    <span>8 keep copy, change one visual · 2 change copy, keep visual</span>
-                    <button type="button" className="ddr-var-dl" disabled>Download all</button>
+                    <span>6 new background · 2 new highlighted word · 2 copy tweak</span>
+                    <button type="button" className="ddr-var-dl" disabled>Regenerate</button>
                   </div>
                 </div>
               )}
             </div>
           ))}
         </div>
-      ) : <div className="ddr-var-empty">No clear winner to vary yet.</div>}
+      ) : <div className="ddr-var-empty">No winner ready to vary yet.</div>}
     </div>
   );
 }
