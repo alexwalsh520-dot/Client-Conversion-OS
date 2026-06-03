@@ -55,6 +55,19 @@ export function createR2ObjectKey(filename: string, contentType: string) {
   return `studio-2/${kind}s/${date}/${Date.now()}-${random}.${ext}`;
 }
 
+// Video testimonials are stored in the SAME R2 bucket as Studio 2, but under a
+// dedicated `testimonials/` prefix so they never share a path with Studio 2
+// media (studio-2/...). Keys are high-entropy + unguessable: the bucket is
+// public-read, so obscurity of the key is what keeps a video from being
+// enumerated. The object is only ever surfaced through the admin-authed proxy.
+export function createTestimonialR2Key(clientId: number | string, filename: string, contentType: string) {
+  const ext = getSafeExtension(filename, contentType);
+  const date = new Date().toISOString().slice(0, 10);
+  const random = crypto.randomBytes(24).toString("hex");
+  const safeClient = String(clientId).replace(/[^a-z0-9]/gi, "") || "unknown";
+  return `testimonials/${safeClient}/${date}/${Date.now()}-${random}.${ext}`;
+}
+
 export function getR2PublicUrl(key: string) {
   const config = getR2Config();
   return `${config.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
@@ -105,6 +118,47 @@ export function createPresignedPutUrl({ key, contentType, expiresSeconds = 900 }
       "Content-Type": normalizedContentType,
     },
   };
+}
+
+// Short-lived presigned GET URL. Lets us serve objects without relying on the
+// bucket's public base URL — used for testimonial playback/download so we can
+// move testimonials to a private bucket later without changing callers.
+export function createPresignedGetUrl({ key, expiresSeconds = 900 }: { key: string; expiresSeconds?: number }) {
+  const config = getR2Config();
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const host = `${config.accountId}.r2.cloudflarestorage.com`;
+  const credentialScope = `${dateStamp}/${R2_REGION}/${R2_SERVICE}/aws4_request`;
+  const canonicalUri = `/${config.bucketName}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const signedHeaders = "host";
+  const query: Record<string, string> = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+    "X-Amz-Credential": `${config.accessKeyId}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+  };
+  const canonicalQuery = canonicalizeQuery(query);
+  const canonicalHeaders = `host:${host}\n`;
+  const canonicalRequest = [
+    "GET",
+    canonicalUri,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const signingKey = getSigningKey(config.secretAccessKey, dateStamp);
+  const signature = hmacHex(signingKey, stringToSign);
+  return `https://${host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
 
 export async function deleteR2Object(key: string) {

@@ -42,6 +42,10 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // admin sub-route is gated server-side at the page level, so we keep
     // this as exact-match — startsWith would defeat the admin gate.
     pathname === "/testimonials" ||
+    // /testimonials/record/<token> is the public client video-testimonial
+    // recording page. Clients open it via an unguessable token link from their
+    // coach; no CCOS login required.
+    pathname.startsWith("/testimonials/record/") ||
     // /check-in is the public bi-weekly check-in form. Coaches share the
     // URL via Everfit DMs; clients pick themselves from the typeahead
     // and submit. Exact-match (no /check-in/* subroutes today).

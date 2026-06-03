@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign, RotateCcw, Link as LinkIcon } from "lucide-react";
 import CheckInLinkBox from "@/components/check-in/CheckInLinkBox";
 import type { Client, CoachMilestone } from "@/lib/types";
 import type { MilestoneActivity } from "@/lib/data";
@@ -163,6 +164,50 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
     });
   }, [milestones, commMonth, commYear]);
 
+  // ----- Video testimonials completed per coach (rolling last 30 days) -----
+  // Used to confirm coach commission on video testimonials. Counts each
+  // coach's milestones whose videoTestimonialCompletionDate (stored "MM/DD"
+  // or "MM/DD/YYYY") falls within the last 30 calendar days from today.
+  const videoLast30 = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 30 * 86400000);
+
+    // Parse an "MM/DD" or "MM/DD/YYYY" completion date into a Date.
+    // When the year is omitted, infer it so the date lands on or before
+    // today (handles the Dec→Jan rollover for the rolling window).
+    const parseDate = (dateStr: string | null | undefined): Date | null => {
+      if (!dateStr) return null;
+      const parts = dateStr.split("/");
+      if (parts.length < 2) return null;
+      const m = parseInt(parts[0], 10);
+      const d = parseInt(parts[1], 10);
+      if (Number.isNaN(m) || Number.isNaN(d)) return null;
+      if (parts.length >= 3) {
+        const y = parseInt(parts[2], 10);
+        const fullYear = y < 100 ? 2000 + y : y;
+        return new Date(fullYear, m - 1, d);
+      }
+      // No year given: try current year, fall back to last year if future.
+      let candidate = new Date(now.getFullYear(), m - 1, d);
+      if (candidate.getTime() > now.getTime()) {
+        candidate = new Date(now.getFullYear() - 1, m - 1, d);
+      }
+      return candidate;
+    };
+
+    const allCoaches = [...new Set(milestones.map((m) => m.coachName).filter(Boolean))].sort();
+    const rows = allCoaches.map((coach) => {
+      const completed = milestones.filter((m) => {
+        if (m.coachName !== coach || !m.videoTestimonialCompleted) return false;
+        const dt = parseDate(m.videoTestimonialCompletionDate);
+        return dt !== null && dt >= cutoff && dt <= now;
+      });
+      return { coach, count: completed.length, clients: completed.map((m) => m.clientName) };
+    });
+    const total = rows.reduce((sum, r) => sum + r.count, 0);
+    return { rows, total };
+  }, [milestones]);
+
   // ----- Milestone Button Component -----
   const MilestoneButton = ({ label, status, due, overdue, milestoneId, field, completionDate, dueDate, client }: {
     label: string;
@@ -249,6 +294,11 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
 
         {overdue && status === "pending" && <AlertTriangle size={11} style={{ color: "var(--danger)" }} />}
         {due && status === "pending" && !overdue && <Clock size={11} style={{ color: "var(--warning)" }} />}
+
+        {/* Copy a client-specific recording link for the video testimonial */}
+        {field === "videoTestimonialCompleted" && client.id != null && (
+          <CopyTestimonialLink clientId={client.id} />
+        )}
       </div>
     );
   };
@@ -371,6 +421,43 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
           </div>
         </div>
       ))}
+
+      {/* ===== Video Testimonials — last 30 days per coach (commission) ===== */}
+      <div style={{ marginTop: 32 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 className="section-title" style={{ margin: 0 }}>
+            <LinkIcon size={16} />
+            Video Testimonials · Last 30 days
+          </h2>
+          <Link
+            href="/testimonials/videos"
+            style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            {videoLast30.total} total · View all
+          </Link>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          {videoLast30.rows.map(({ coach, count, clients: completedClients }) => (
+            <div key={coach} className="glass-static" style={{ padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: count > 0 ? 8 : 0 }}>
+                <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>{coach}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 700, fontSize: 20, color: count > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+                    {count}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>videos</span>
+                </div>
+              </div>
+              {count > 0 && (
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  {completedClients.join(", ")}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* ===== Monthly Commission Summary ===== */}
       <div style={{ marginTop: 32 }}>
@@ -557,6 +644,63 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
       {/* ======================== MONTHLY CLIENT FLOW ======================== */}
       <MonthlyClientFlow clients={clients} />
     </div>
+  );
+}
+
+// ============ Copy Testimonial Link ============
+//
+// Small inline action shown on the Video milestone. Requests a stable,
+// client-specific recording link from /api/testimonials/video/request and
+// copies it to the clipboard so the coach can send it to the client.
+// Additive only — does not touch the existing milestone toggle behavior.
+
+function CopyTestimonialLink({ clientId }: { clientId: number }) {
+  const [state, setState] = useState<"idle" | "loading" | "copied" | "error">("idle");
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (state === "loading") return;
+    setState("loading");
+    try {
+      const res = await fetch("/api/testimonials/video/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || "Request failed");
+      await navigator.clipboard.writeText(data.url);
+      setState("copied");
+      setTimeout(() => setState("idle"), 2000);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 2500);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy a recording link to send to this client"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        marginLeft: 4,
+        padding: "3px 8px",
+        borderRadius: 6,
+        border: "1px solid var(--border-primary)",
+        background: "var(--bg-glass)",
+        color: state === "copied" ? "var(--success)" : state === "error" ? "var(--danger)" : "var(--text-secondary)",
+        fontSize: 10,
+        fontWeight: 600,
+        cursor: state === "loading" ? "default" : "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <LinkIcon size={11} />
+      {state === "loading" ? "..." : state === "copied" ? "Copied" : state === "error" ? "Failed" : "Copy link"}
+    </button>
   );
 }
 

@@ -106,6 +106,8 @@ export default function Sidebar() {
   // Public testimonials page renders as a marketing landing page (no CCOS shell).
   // The /testimonials/leads admin sub-route still gets the sidebar.
   if (pathname === "/testimonials") return null;
+  // Public client video-testimonial recording page — coach-shared token URL, no CCOS chrome.
+  if (pathname.startsWith("/testimonials/record/")) return null;
   // Public client check-in form — coach-shared URL, no CCOS chrome.
   if (pathname === "/check-in") return null;
   // Public partner onboarding portal — partner-shared token URL, no CCOS chrome.
