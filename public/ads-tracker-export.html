@@ -1027,6 +1027,19 @@
   .ps-here{display:inline-block;margin-left:10px;font-size:10px;font-weight:600;color:var(--gold);letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
   .ps-foot{margin-top:18px;font-size:13px;color:var(--text-3);font-variant-numeric:tabular-nums}
   .ps-foot b{color:var(--text);font-weight:650}
+  .ps-clients{margin-top:26px;padding-top:22px;border-top:1px solid var(--border)}
+  .ps-cl-h{font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px}
+  .ps-cl-tab{display:flex;flex-direction:column;overflow-x:auto}
+  .ps-cl-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1.1fr .9fr;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);font-size:13.5px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ps-cl-row:last-child{border-bottom:none}
+  .ps-cl-row.head{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);padding:0 0 12px;border-bottom:1px solid var(--border)}
+  .ps-cl-row .nm{font-weight:600;color:var(--text)}
+  .ps-cl-row .net{font-weight:600;color:var(--text)}
+  .ps-cl-row .mut{color:var(--text-4)}
+  .ps-cl-row .vd{font-size:11px;text-align:right}
+  .ps-cl-row .vd.worthit{color:var(--gold)}
+  .ps-cl-row .vd.under{color:var(--text-4)}
+  .ps-cl-note{margin-top:12px;font-size:11px;color:var(--text-4);line-height:1.5}
   @media(max-width:640px){.ps{padding:18px}.ps-table th:not(:first-child),.ps-table td:not(:first-child){padding-left:14px}}
   .ddr-oldtoggle{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:16px 0 4px;padding:13px 16px;border:1px dashed var(--border-2);border-radius:12px;background:transparent;color:var(--text-3);font-size:13px;font-weight:600;cursor:pointer;transition:all .14s}
   .ddr-oldtoggle:hover{border-color:var(--text-4);color:var(--text-2);background:var(--bg-1)}
@@ -8569,6 +8582,30 @@ function MoneyCockpit({model}){
         </table>
       </div>
       <div className="ps-foot">{fmtUsd(curRev)}/mo → {fmtUsd(curRev*6)}/mo turns {fmtUsd(curNet)} into <b>{fmtUsd(topNet)}</b>{roas<curRoas-0.05?" — even at "+roas.toFixed(1)+"× ROAS":""}.</div>
+
+      {Array.isArray(m.clients) && m.clients.filter(c=>c.adSpend>0).length>0 && (
+        <div className="ps-clients">
+          <div className="ps-cl-h">Per client — worth keeping?</div>
+          <div className="ps-cl-tab">
+            <div className="ps-cl-row head"><span>Client</span><span>Spend/mo</span><span>Revenue/mo</span><span>Net/mo</span><span>At $500/day</span><span></span></div>
+            {m.clients.filter(c=>c.adSpend>0).map(c=>{
+              const net15 = (c.cashRoas!=null) ? 15000*(c.cashRoas*margin-1) - (c.fixedShare||0) : null;
+              const verdict = c.netProfit>=20000 ? "worth it" : c.netProfit>=0 ? "building" : "under";
+              return (
+                <div className="ps-cl-row" key={c.key}>
+                  <span className="nm">{c.name}</span>
+                  <span>{fmtUsd(c.adSpend)}</span>
+                  <span>{fmtUsd(c.collected)}</span>
+                  <span className="net">{fmtUsd(c.netProfit)}</span>
+                  <span className="mut">{net15!=null?"→ "+fmtUsd(net15):"—"}</span>
+                  <span className={"vd "+verdict.replace(/\s/g,"")}>{verdict}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ps-cl-note">Worth-it line: $20–30k net/mo per client. "At $500/day" = projected net if you scaled that client to $15k/mo spend at today's efficiency.</div>
+        </div>
+      )}
     </div>
   );
 }
