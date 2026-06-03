@@ -2,9 +2,12 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import { saleGrossProfit } from "@/lib/economics";
 import { displayKeyword, keywordFromAdName, normalizeKeyword, normalizePersonName } from "./normalize";
-import { creatorKeyFromText, type CreatorKey } from "@/lib/creators";
+import { creatorKeyFromText, CREATORS, type CreatorKey } from "@/lib/creators";
 
-export type AdsTrackerAccount = "all" | "tyson" | "keith";
+// Every creator the dashboard knows about — the single source for "all accounts".
+const ALL_CREATOR_KEYS: string[] = CREATORS.map((c) => c.key);
+
+export type AdsTrackerAccount = "all" | CreatorKey;
 export type AdsTrackerStatus = "active" | "finished" | "all";
 export type AdsTrackerLevel = "campaign" | "ad";
 
@@ -3546,11 +3549,11 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
   const db = getServiceSupabase();
 
   const clientFilter =
-    query.account === "all" ? ["tyson", "keith"] : [query.account];
+    query.account === "all" ? ALL_CREATOR_KEYS : [query.account];
   const eventQueryFrom = `${shiftDate(query.dateFrom, -120)}T00:00:00.000Z`;
   const eventQueryTo = `${shiftDate(query.dateTo, 1)}T23:59:59.999Z`;
   const attributionDateFrom = shiftDate(query.dateFrom, -120);
-  const alertClientFilter = ["tyson", "keith"];
+  const alertClientFilter = ALL_CREATOR_KEYS;
   const alertDateFrom = attributionAlertsStartDate();
   const alertDateTo = todayEt();
   const alertAttributionDateFrom = shiftDate(alertDateFrom, -120);

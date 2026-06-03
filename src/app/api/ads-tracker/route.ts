@@ -6,6 +6,7 @@ import {
   type AdsTrackerStatus,
 } from "@/lib/ads-tracker/server";
 import { computeMoneyModel } from "@/lib/ads-tracker/money-model";
+import { isCreatorKey } from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ function shiftDate(date: string, days: number) {
 }
 
 function isAccount(value: string | null): value is AdsTrackerAccount {
-  return value === "all" || value === "tyson" || value === "keith";
+  return value === "all" || isCreatorKey(value);
 }
 
 function isStatus(value: string | null): value is AdsTrackerStatus {
