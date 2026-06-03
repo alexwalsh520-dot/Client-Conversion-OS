@@ -13,7 +13,7 @@ import { getProvider } from "./provider";
 // Cost-capped: one call generates exactly one job (~10 images by default).
 
 const BUCKET = "ad-variations";
-const MAX_BYTES = 8 * 1024 * 1024; // gpt-image-1 PNGs are larger than previews
+const MAX_BYTES = 8 * 1024 * 1024; // Higgsfield 2k images are larger than previews
 
 type Db = ReturnType<typeof getServiceSupabase>;
 

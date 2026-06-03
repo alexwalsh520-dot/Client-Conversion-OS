@@ -18,7 +18,7 @@ export type VariationsMix = {
 export type VariationsSettings = {
   variationsPerJob: number;
   mix: VariationsMix;
-  // Image-gen provider id. Pluggable — see generate.ts. Default "openai".
+  // Image-gen provider id. Pluggable — see generate.ts. Default "higgsfield".
   provider: string;
   // Master switch for the auto-pregeneration cron. When false, the daily hook
   // does nothing (manual "Regenerate" via the POST route still works).
@@ -28,7 +28,7 @@ export type VariationsSettings = {
 export const DEFAULT_SETTINGS: VariationsSettings = {
   variationsPerJob: 10,
   mix: { background: 6, highlightWord: 2, copyTweak: 2 },
-  provider: "openai",
+  provider: "higgsfield",
   enabled: true,
 };
 
