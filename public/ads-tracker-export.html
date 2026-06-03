@@ -1032,6 +1032,15 @@
   .ddr-oldtoggle:hover{border-color:var(--text-4);color:var(--text-2);background:var(--bg-1)}
   .ddr-oldtoggle .car{color:var(--gold);font-size:11px}
   .ddr-oldtoggle .sub2{font-weight:400;color:var(--text-4)}
+  .ddr-var{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
+  .ddr-var-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px}
+  .ddr-var-list{display:flex;flex-direction:column;gap:8px}
+  .ddr-var-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-1)}
+  .ddr-var-row .nm{font-size:14px;font-weight:600;color:var(--text);text-transform:capitalize}
+  .ddr-var-row .rs{font-size:14px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .ddr-var-btn{font-size:12.5px;font-weight:500;padding:6px 13px;border-radius:8px;border:1px solid var(--border-2);background:transparent;color:var(--text-4);cursor:not-allowed}
+  .ddr-var-empty{font-size:13px;color:var(--text-4);padding:8px 0}
+  .ddr-var-note{font-size:11.5px;color:var(--text-4);margin-top:12px}
   @media(max-width:700px){.ddr-pcard{grid-template-columns:46px 1fr;gap:12px}.ddr-pimpact{grid-column:2;text-align:left}}
 
   /* Interactive booking table: sticky header, sortable, filterable, expandable */
@@ -6100,16 +6109,16 @@ function ActionPlaybook({rows, rangeText, decByKey, onDid}){
         <div className="ddr-play-clean">Nothing to scale or cut right now.</div>
       )}
 
-      {aScales.length>0 && (
-        <div className="ddr-pgroup">
-          <div className="ddr-pgh scale">Scale</div>
-          {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
-        </div>
-      )}
       {aKills.length>0 && (
         <div className="ddr-pgroup">
           <div className="ddr-pgh kill">Turn off</div>
           {aKills.map((a,i)=><PlaybookCard a={a} i={i} peak={killPeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
+        </div>
+      )}
+      {aScales.length>0 && (
+        <div className="ddr-pgroup">
+          <div className="ddr-pgh scale">Scale</div>
+          {aScales.map((a,i)=><PlaybookCard a={a} i={i} peak={scalePeak} key={a.keyword} rangeText={rangeText} onDid={onDid}/>)}
         </div>
       )}
 
@@ -8378,6 +8387,33 @@ function DataFlowMap({ open, sel, setSel }){
 // The daily, visual proof that scaling ad spend grows NET profit — built to
 // dissolve the ROAS-protection limiting belief. All numbers come from the
 // server money model (whole-business, trailing 30 days, canonical economics).
+// Make variations — scaffold for the automated creative engine (Higgsfield).
+// Surfaces the current winning ads as variation candidates; generation wires next.
+function AdVariations({rows}){
+  const capw = (s)=>{ s=String(s||""); return s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : "—"; };
+  const winners = (Array.isArray(rows)?rows:[])
+    .filter(r=>r.traced && r.roas!=null && r.roas>=3)
+    .sort((a,b)=>b.roas-a.roas).slice(0,3)
+    .map(r=>({name:r.keyword, roas:r.roas}));
+  return (
+    <div className="ddr-var">
+      <div className="ddr-var-h">Make variations</div>
+      {winners.length>0 ? (
+        <div className="ddr-var-list">
+          {winners.map((a,i)=>(
+            <div className="ddr-var-row" key={i}>
+              <span className="nm">{capw(a.name)}</span>
+              <span className="rs">{a.roas.toFixed(1)}×</span>
+              <button type="button" className="ddr-var-btn" disabled>Generate</button>
+            </div>
+          ))}
+        </div>
+      ) : <div className="ddr-var-empty">No clear winner to vary yet.</div>}
+      <div className="ddr-var-note">Generation wires in next — winning ad + reference image becomes new variations, downloadable here.</div>
+    </div>
+  );
+}
+
 function MoneyCockpit({model}){
   if(!model) return null;
   const m = model;
@@ -8403,7 +8439,6 @@ function MoneyCockpit({model}){
     <div className="ps">
       <div className="ps-top">
         <h3 className="ps-h">The more you spend, the more you keep.</h3>
-        <p className="ps-sub">Your business at every size. Net profit climbs fast as you scale — fixed costs stop mattering. Even if ROAS slips, bigger means far more money.</p>
       </div>
       <div className="ps-ctl">
         <span className="ps-ctl-l">As you grow, even if ROAS slips to</span>
@@ -8581,11 +8616,14 @@ function DeepDiveReport({campaigns, dashboard, range, loading}){
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}
       <DataHealth dashboard={dashboard}/>
 
-      {/* Spend more = more profit — the scale-aware money proof (whole-business, 30d) */}
-      <MoneyCockpit model={dashboard && dashboard.moneyModel}/>
-
-      {/* Do This Next — the simple, ROAS-first action board (acted moves hidden) */}
+      {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
       <ActionPlaybook rows={rows} rangeText={"in "+rangeLabel(range)} decByKey={decByKey} onDid={onDecide}/>
+
+      {/* Make variations — winning creative → new ads (Higgsfield engine; scaffold) */}
+      <AdVariations rows={rows}/>
+
+      {/* The more you spend, the more you keep — scale-aware money model */}
+      <MoneyCockpit model={dashboard && dashboard.moneyModel}/>
 
       {/* Everything that isn't a daily decision — tucked away, one click to open */}
       <button type="button" className="ddr-oldtoggle" onClick={()=>setShowOld(s=>!s)}>
