@@ -229,6 +229,8 @@ export type GenerateOneInput = {
   jobId?: string; // group several popup images under one job
   index?: number;
   extraReferenceUrls?: string[]; // user-added references beyond the winning ad
+  // Refine mode: edit THIS image (a prior variation) instead of the winning ad.
+  baseImageUrl?: string;
   settings?: VariationsSettings;
 };
 
@@ -242,11 +244,19 @@ export async function generateOneVariation(input: GenerateOneInput): Promise<Var
   const settings = input.settings ?? (await getSettings());
   const provider = getProvider(settings.provider);
 
-  const { referenceImageUrl } = await loadSource(db, adId);
+  // Refine mode: when a baseImageUrl is given, that image (e.g. a previously
+  // generated variation the owner wants to tweak) is the primary reference to
+  // edit — we do NOT reload the original winning ad. Otherwise the winning ad's
+  // stored creative is the base.
+  let referenceImageUrl = String(input.baseImageUrl || "").trim();
   if (!referenceImageUrl) {
-    throw new Error(
-      `No stored creative image found for ad ${adId} — cannot generate variations without a reference.`
-    );
+    const src = await loadSource(db, adId);
+    referenceImageUrl = src.referenceImageUrl || "";
+    if (!referenceImageUrl) {
+      throw new Error(
+        `No stored creative image found for ad ${adId} — cannot generate variations without a reference.`
+      );
+    }
   }
   await ensureBucket(db);
 

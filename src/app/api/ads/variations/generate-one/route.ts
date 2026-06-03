@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     jobId?: unknown;
     index?: unknown;
     extraReferenceUrls?: unknown;
+    baseImageUrl?: unknown;
   };
   try {
     body = await req.json();
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
       jobId: typeof body.jobId === "string" && body.jobId ? body.jobId : undefined,
       index: typeof body.index === "number" ? body.index : undefined,
       extraReferenceUrls,
+      baseImageUrl: typeof body.baseImageUrl === "string" && body.baseImageUrl ? body.baseImageUrl : undefined,
     });
     return NextResponse.json({ variation });
   } catch (err) {
