@@ -9484,6 +9484,7 @@ function AdVariations({rows}){
 // diagonal. Winners are only chosen among ads with enough sample so a one-call
 // fluke can't top a column (honest math).
 const LB_COLS = [
+  {key:"collected",  label:"Cash",        dir: 1, el:"elCash",  fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
   {key:"roas",       label:"ROAS",        dir: 1, el:"elRoas",  fmt:v=> v==null?"—":(v.toFixed(1)+"×")},
   {key:"callRate",   label:"DM → call", dir: 1, el:"elCall",  fmt:v=> v==null?"—":(Math.round(v*100)+"%")},
   {key:"showRate",   label:"Show-up",     dir: 1, el:"elShow",  fmt:v=> v==null?"—":(Math.round(v*100)+"%")},
@@ -9510,9 +9511,9 @@ function Leaderboard({rows}){
       const aov = r.clients>0 ? r.collected/r.clients : null;
       const roas = (r.spend>0&&r.collected>0) ? r.collected/r.spend : null;
       const p=(r.previews&&r.previews[0])||null;
-      return { key:r.keyword, name:capw(r.keyword), ref:p&&(p.thumb||p.full), spend:r.spend,
+      return { key:r.keyword, name:capw(r.keyword), ref:p&&(p.thumb||p.full), spend:r.spend, collected:r.collected,
         roas, callRate, showRate, closeRate, costBooked, costShown, aov,
-        elRoas:r.spend>=100&&r.collected>0, elCall:r.leads>=5, elShow:r.booked>=3, elClose:r.taken>=2,
+        elRoas:r.spend>=100&&r.collected>0, elCash:r.collected>0, elCall:r.leads>=5, elShow:r.booked>=3, elClose:r.taken>=2,
         elCB:r.spend>=100&&r.booked>0, elCS:r.spend>=100&&r.taken>0, elAov:r.clients>=1 };
     }), [rows]);
 
@@ -9521,26 +9522,29 @@ function Leaderboard({rows}){
     data.forEach(d=>{ if(!d[c.el]||d[c.key]==null) return; if(best==null || (c.dir>0 ? d[c.key]>best[c.key] : d[c.key]<best[c.key])) best=d; });
     m[c.key]=best?best.key:null; }); return m; }, [data]);
 
+  // Only ad words that are the champion of at least one metric belong here —
+  // drop ad words that don't top any column.
+  const champKeys = useMemo(()=> new Set(Object.values(champ).filter(Boolean)), [champ]);
   const ordered = useMemo(()=>{
+    const ranked = data.filter(d=> champKeys.has(d.key));
     if(diag){
       const used=new Set(); const out=[];
-      LB_COLS.forEach(c=>{ const w=champ[c.key]; if(w && !used.has(w)){ const row=data.find(d=>d.key===w); if(row){ out.push(row); used.add(w); } } });
-      data.forEach(d=>{ if(!used.has(d.key)) out.push(d); });
+      LB_COLS.forEach(c=>{ const w=champ[c.key]; if(w && !used.has(w)){ const row=ranked.find(d=>d.key===w); if(row){ out.push(row); used.add(w); } } });
       return out;
     }
-    const arr=[...data];
+    const arr=[...ranked];
     arr.sort((a,b)=>{ const av=a[sortKey], bv=b[sortKey];
       if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1;
       return (av-bv)*sortDir; });
     return arr;
-  }, [data, sortKey, sortDir, diag, champ]);
+  }, [data, sortKey, sortDir, diag, champ, champKeys]);
 
   const clickHead=(c)=>{ setDiag(false); if(sortKey===c.key) setSortDir(d=>-d); else { setSortKey(c.key); setSortDir(c.dir>0?-1:1); } };
 
   if(!data.length) return null;
   return (
     <div className="lb">
-      <div className="lb-h"><svg className="lb-crown" viewBox="0 0 24 24" width="16" height="16" fill="var(--gold)" aria-hidden="true"><path d="M5 16L3 7l5.5 4L12 4l3.5 7L21 7l-2 9H5z M5 18h14v2H5z"/></svg> Business leaderboard <span className="lb-sub">— every ad word, the champion of each metric</span></div>
+      <div className="lb-h"><svg className="lb-crown" viewBox="0 0 24 24" width="16" height="16" fill="var(--gold)" aria-hidden="true"><path d="M5 16L3 7l5.5 4L12 4l3.5 7L21 7l-2 9H5z M5 18h14v2H5z"/></svg> Business leaderboard <span className="lb-sub">— each metric's champion ad word</span></div>
       <div className="lb-wrap">
         <table className="lb-table">
           <thead>
