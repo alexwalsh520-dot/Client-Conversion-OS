@@ -9474,8 +9474,11 @@ function App(){
     return key ? key.charAt(0).toUpperCase()+key.slice(1) : key;
   };
   // The creator whose data we actually fetch/scope/cache. On a specific account
-  // it's just that account; on "all" it's whichever creator the pager points at.
-  const effectiveAccount = (account === "all" && activeCreators.length)
+  // it's just that account. On "all" the per-creator pager ONLY applies in the
+  // Deep Dive ("report") view — the Dashboard must show the true merged
+  // all-accounts view (the pager arrows don't exist on the Dashboard, so paging
+  // there would strand you on one creator and hide the rest).
+  const effectiveAccount = (account === "all" && topView === "report" && activeCreators.length)
     ? activeCreators[Math.min(viewIdx, activeCreators.length-1)]
     : account;
   // Reset the pager whenever the dropdown changes.
