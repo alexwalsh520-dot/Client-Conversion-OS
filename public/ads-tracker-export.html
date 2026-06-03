@@ -1189,6 +1189,11 @@
   .ddr-hist-img img{width:100%;height:100%;object-fit:cover;display:block}
   .ddr-hist-ck{position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:6px;border:1px solid var(--border-2);background:color-mix(in srgb,#000 45%,transparent);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
   .ddr-hist-ck.on{background:var(--gold);border-color:var(--gold);color:#0b0b0d}
+  .ddr-mp-back{z-index:75}
+  .ddr-mp-search{flex:1;min-width:120px;max-width:240px;font-size:12.5px;padding:6px 11px;border-radius:8px;border:1px solid var(--border-2);background:var(--bg-1);color:var(--text)}
+  .ddr-mp-search:focus{outline:none;border-color:var(--text-3)}
+  .ddr-mp-cell{cursor:pointer;transition:border-color .14s}
+  .ddr-mp-cell:hover{border-color:var(--gold)}
   .ddr-rules{margin:10px 0 4px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:14px}
   .ddr-rules .rg{display:flex;flex-direction:column;gap:5px}
   .ddr-rules .rgh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
@@ -8656,26 +8661,67 @@ function VarLightbox({item, onClose, onDelete}){
   );
 }
 
+// Reference picker for the "+": pick an image from the Studio 2 R2 media library
+// (same /api/studio-2/media the editor uses) OR upload one. Returns {url,name}
+// where url is a public R2 URL or a data URL — the engine fetches either.
+function MediaPicker({onPick, onClose}){
+  const [items,setItems]=useState(null); // null = loading
+  const [err,setErr]=useState(null);
+  const [q,setQ]=useState("");
+  const fileRef=useRef(null);
+  useEffect(()=>{
+    fetch("/api/studio-2/media").then(r=>r.json())
+      .then(d=>{ if(d&&d.error){ setErr(d.error); setItems([]); } else setItems(((d&&d.media)||[]).filter(m=>m.kind!=="video")); })
+      .catch(e=>{ setErr(String(e&&e.message||e)); setItems([]); });
+  },[]);
+  const upload=async (e)=>{ const f=(e.target.files||[])[0]; if(e.target) e.target.value=""; if(!f) return; if(f.size>VAR_GEN_MAX_REF_BYTES){ alert("Image is too large (max 6MB)."); return; } try{ const dataUrl=await readFileAsDataUrl(f); onPick({url:dataUrl, name:f.name||"upload"}); }catch(_){} };
+  const filtered=(items||[]).filter(m=> !q.trim() || String(m.filename||"").toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <div className="ddr-gp-back ddr-mp-back" onClick={(e)=>{ e.stopPropagation(); onClose(); }}>
+      <div className="ddr-hist" onClick={e=>e.stopPropagation()}>
+        <div className="ddr-gp-head">
+          <div className="ddr-gp-title">Add a reference</div>
+          <button type="button" className="ddr-gp-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="ddr-hist-bar">
+          <button type="button" className="ddr-hist-act" onClick={()=>fileRef.current&&fileRef.current.click()}>Upload</button>
+          <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={upload}/>
+          <input className="ddr-mp-search" placeholder="Search your media…" value={q} onChange={e=>setQ(e.target.value)}/>
+          <span className="ddr-hist-hint">or pick from your Studio media library</span>
+        </div>
+        <div className="ddr-hist-body">
+          {items===null ? <div className="ddr-var-empty">Loading…</div>
+            : err ? <div className="ddr-var-err">{err}</div>
+            : filtered.length===0 ? <div className="ddr-var-empty">{items.length===0?"No images in your media library yet — use Upload.":"Nothing matches that search."}</div>
+            : (
+              <div className="ddr-hist-grid">
+                {filtered.map(m=>(
+                  <button type="button" className="ddr-hist-img ddr-mp-cell" key={m.id} onClick={()=>onPick({url:m.url, name:m.filename||"reference"})} title={m.filename||""}>
+                    <img src={m.thumbnailUrl||m.url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // The Generate popup — a Studio-2-style chat: the winning ad is the default
-// reference, you can add a second (upload now; R2 library next), pick presets,
+// reference, you can add a second from the media library or upload, pick presets,
 // type a prompt, choose how many, and watch each image stream in as it finishes.
 function GeneratePopup({winner, onClose, onDone, onView}){
   const [prompt,setPrompt]=useState("");
   const [count,setCount]=useState(4);
-  const [refs,setRefs]=useState([]);     // extra references: {dataUrl,name}
+  const [refs,setRefs]=useState([]);     // extra references: {url,name} (url = R2 public URL or data URL)
   const [slots,setSlots]=useState([]);   // {status:"creating"|"ready"|"failed", url, error}
   const [running,setRunning]=useState(false);
-  const fileRef=useRef(null);
+  const [pickerOpen,setPickerOpen]=useState(false);
   const doneCount = slots.filter(s=>s.status!=="creating").length;
 
   const applyPreset=(p)=> setPrompt(prev=> prev.trim()? (prev.trim()+" "+p.prompt) : p.prompt);
-  const pickFiles=async (e)=>{
-    const files=[...(e.target.files||[])]; if(e.target) e.target.value="";
-    for(const f of files){
-      if(f.size>VAR_GEN_MAX_REF_BYTES) continue;
-      try{ const dataUrl=await readFileAsDataUrl(f); setRefs(prev=> prev.length>=3?prev:[...prev,{dataUrl,name:f.name||"reference"}]); }catch(_){}
-    }
-  };
+  const addRef=(item)=>{ setRefs(prev=> prev.length>=3?prev:[...prev,item]); setPickerOpen(false); };
   const removeRef=(i)=> setRefs(prev=>prev.filter((_,k)=>k!==i));
 
   const run=async ()=>{
@@ -8683,7 +8729,7 @@ function GeneratePopup({winner, onClose, onDone, onView}){
     const instruction = prompt.trim() || "Create a fresh variation of this winning ad. Keep the same person, layout, and on-image text; vary the background to a clean, on-brand alternative.";
     const n=Math.max(1,Math.min(VAR_GEN_MAX,count));
     const jobId = winner.adId+"-"+Date.now();
-    const extraReferenceUrls = refs.map(r=>r.dataUrl);
+    const extraReferenceUrls = refs.map(r=>r.url);
     setRunning(true);
     setSlots(Array.from({length:n}).map(()=>({status:"creating",url:null,error:null})));
     const tasks = Array.from({length:n}).map((_,i)=>
@@ -8698,6 +8744,7 @@ function GeneratePopup({winner, onClose, onDone, onView}){
   };
 
   return (
+    <React.Fragment>
     <div className="ddr-gp-back" onClick={onClose}>
       <div className="ddr-gp" onClick={e=>e.stopPropagation()}>
         <div className="ddr-gp-head">
@@ -8712,17 +8759,16 @@ function GeneratePopup({winner, onClose, onDone, onView}){
             </div>
             {refs.map((r,i)=>(
               <div className="ddr-gp-ref" key={i}>
-                <img src={r.dataUrl} alt=""/>
+                <img src={r.url} alt="" referrerPolicy="no-referrer"/>
                 <button type="button" className="ddr-gp-ref-rm" onClick={()=>removeRef(i)} aria-label="Remove reference">✕</button>
                 <span className="ddr-gp-ref-tag">Reference</span>
               </div>
             ))}
             {refs.length<3 && (
-              <button type="button" className="ddr-gp-ref-add" onClick={()=>fileRef.current&&fileRef.current.click()} title="Add a reference image">
+              <button type="button" className="ddr-gp-ref-add" onClick={()=>setPickerOpen(true)} title="Add a reference image">
                 <span className="ddr-gp-ref-plus">+</span><span>Add reference</span>
               </button>
             )}
-            <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickFiles}/>
           </div>
           <div className="ddr-gp-presets">
             {VAR_GEN_PRESETS.map(p=>(
@@ -8755,6 +8801,8 @@ function GeneratePopup({winner, onClose, onDone, onView}){
         </div>
       </div>
     </div>
+    {pickerOpen && <MediaPicker onPick={addRef} onClose={()=>setPickerOpen(false)} />}
+    </React.Fragment>
   );
 }
 
