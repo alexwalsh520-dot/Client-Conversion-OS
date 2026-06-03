@@ -924,49 +924,59 @@ async function fetchSalesRowsFromSupabase(
   query: AdsTrackerQuery,
   clientFilter: string[]
 ): Promise<SheetRow[] | null> {
-  const { data, error } = await db
-    .from("sales_tracker_rows")
-    .select(
-      [
-        "call_number",
-        "date",
-        "prospect_name",
-        "call_taken",
-        "call_taken_status",
-        "call_length",
-        "recorded",
-        "outcome",
-        "closer",
-        "objection",
-        "program_length",
-        "contracted_revenue_cents",
-        "collected_revenue_cents",
-        "payment_method",
-        "setter",
-        "call_notes",
-        "recording_link",
-        "offer",
-        "manychat_link",
-        "manychat_subscriber_id",
-        "prospect_name_normalized",
-        "synced_at",
-      ].join(",")
-    )
-    .gte("date", query.dateFrom)
-    .lte("date", query.dateTo)
-    // Stable, total ordering so the same range always attributes identically —
-    // payroll depends on these numbers, they must not shift between loads.
-    .order("date", { ascending: true })
-    .order("call_number", { ascending: true })
-    .order("prospect_name", { ascending: true })
-    .order("collected_revenue_cents", { ascending: false });
+  const columns = [
+    "call_number",
+    "date",
+    "prospect_name",
+    "call_taken",
+    "call_taken_status",
+    "call_length",
+    "recorded",
+    "outcome",
+    "closer",
+    "objection",
+    "program_length",
+    "contracted_revenue_cents",
+    "collected_revenue_cents",
+    "payment_method",
+    "setter",
+    "call_notes",
+    "recording_link",
+    "offer",
+    "manychat_link",
+    "manychat_subscriber_id",
+    "prospect_name_normalized",
+    "synced_at",
+  ].join(",");
 
-  if (error) {
-    console.warn("[ads-tracker] Supabase sales rows unavailable; falling back to sheet", error);
-    return null;
+  // Page through ALL matching rows. A single Supabase select silently caps at
+  // 1000 rows — on a busy range that would truncate sales totals (and payroll)
+  // whenever the tab is on this cache-fallback path, then "recover" next load.
+  const data: unknown[] = [];
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data: page, error } = await db
+      .from("sales_tracker_rows")
+      .select(columns)
+      .gte("date", query.dateFrom)
+      .lte("date", query.dateTo)
+      // Stable, total ordering so the same range always attributes identically —
+      // payroll depends on these numbers, they must not shift between loads.
+      .order("date", { ascending: true })
+      .order("call_number", { ascending: true })
+      .order("prospect_name", { ascending: true })
+      .order("collected_revenue_cents", { ascending: false })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.warn("[ads-tracker] Supabase sales rows unavailable; falling back to sheet", error);
+      return null;
+    }
+    const rows = page || [];
+    data.push(...rows);
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
   }
 
-  if (!data || data.length === 0) return null;
+  if (data.length === 0) return null;
 
   // Collapse sync-created duplicate rows before anything sums them. Read-side
   // safety net: this is the cache-fallback path the whole tab drops to when the
@@ -2447,26 +2457,36 @@ async function fetchPaidKeywordSet(
   db: ReturnType<typeof getServiceSupabase>,
   clientFilter: string[]
 ): Promise<Set<string>> {
-  const { data, error } = await db
-    .from("ads_meta_insights_daily")
-    .select("client_key,keyword_normalized,spend_cents")
-    .order("client_key", { ascending: true })
-    .order("keyword_normalized", { ascending: true })
-    .order("spend_cents", { ascending: false })
-    .gt("spend_cents", 0)
-    .not("keyword_normalized", "is", null)
-    .limit(50000);
+  // Page through every paid keyword. The old .limit(50000) was a silent cliff:
+  // once the table crossed 50k rows, which client:keyword pairs survived depended
+  // on the sort, so a legit paid keyword could fall off and its sales would
+  // silently move from attributed → unattributed. Kept all-time on purpose: this
+  // guardrail answers "does this creator ever run paid ads on this keyword?", so
+  // a keyword with spend outside the current window must still count as paid.
   const paid = new Set<string>();
-  if (error) {
-    console.warn("[ads-tracker] paid keyword set query failed", error.message);
-    return paid;
-  }
-  for (const row of (data || []) as { client_key: string | null; keyword_normalized: string | null }[]) {
-    const clientKey = String(row.client_key || "").trim();
-    if (!clientFilter.includes(clientKey)) continue;
-    const kw = normalizeKeyword(row.keyword_normalized);
-    if (!kw) continue;
-    paid.add(`${clientKey}:${kw}`);
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await db
+      .from("ads_meta_insights_daily")
+      .select("client_key,keyword_normalized,spend_cents")
+      .order("client_key", { ascending: true })
+      .order("keyword_normalized", { ascending: true })
+      .order("spend_cents", { ascending: false })
+      .gt("spend_cents", 0)
+      .not("keyword_normalized", "is", null)
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+    if (error) {
+      console.warn("[ads-tracker] paid keyword set query failed", error.message);
+      return paid;
+    }
+    const rows = (data || []) as { client_key: string | null; keyword_normalized: string | null }[];
+    for (const row of rows) {
+      const clientKey = String(row.client_key || "").trim();
+      if (!clientFilter.includes(clientKey)) continue;
+      const kw = normalizeKeyword(row.keyword_normalized);
+      if (!kw) continue;
+      paid.add(`${clientKey}:${kw}`);
+    }
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
   }
   return paid;
 }
