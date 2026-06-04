@@ -1040,6 +1040,14 @@
   .ps-here{display:inline-block;margin-left:10px;font-size:10px;font-weight:600;color:var(--gold);letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
   .ps-foot{margin-top:18px;font-size:13px;color:var(--text-3);font-variant-numeric:tabular-nums}
   .ps-foot b{color:var(--text);font-weight:650}
+  /* Data-trust coverage banner */
+  .ddr-trust{display:flex;align-items:center;gap:10px;margin:0 0 16px;padding:10px 14px;border:1px solid var(--border);border-radius:11px;background:var(--panel-2)}
+  .ddr-trust-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .ddr-trust.ok .ddr-trust-dot{background:var(--green)}
+  .ddr-trust.warn .ddr-trust-dot{background:var(--gold)}
+  .ddr-trust.bad .ddr-trust-dot{background:var(--red)}
+  .ddr-trust-pct{font-weight:700;color:var(--text);font-size:15px;font-variant-numeric:tabular-nums}
+  .ddr-trust-txt{font-size:12px;color:var(--text-4);line-height:1.45}
   /* Business leaderboard */
   .lb{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
   .lb-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
@@ -9500,6 +9508,36 @@ const LB_COLS = [
   {key:"costShown",  label:"Cost / show", dir:-1, el:"elCS",    fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
   {key:"aov",        label:"AOV",         dir: 1, el:"elAov",   fmt:v=> v==null?"—":("$"+Math.round(v).toLocaleString())},
 ];
+// Data-trust guardrail — how much of this creator's collected cash (30d) is
+// traced to a specific ad (subscriber-id-first attribution). The rest is organic
+// / no keyword captured. Reads /api/ads/attribution-coverage (read-only).
+function DataTrust({account}){
+  const [cov,setCov]=useState(null);
+  useEffect(()=>{ let off=false;
+    fetch("/api/ads/attribution-coverage").then(r=>r.json()).then(d=>{ if(!off && d && Array.isArray(d.creators)) setCov(d.creators); }).catch(()=>{});
+    return ()=>{ off=true; };
+  },[]);
+  if(!cov || !cov.length) return null;
+  let pct=null, label="", cash=0, tied=0;
+  if(account && account!=="all"){
+    const c=cov.find(x=>x.key===account); if(!c) return null;
+    pct=c.coveragePct; label=c.name; cash=c.cash; tied=c.tiedCash;
+  } else {
+    cash=cov.reduce((a,c)=>a+(c.cash||0),0); tied=cov.reduce((a,c)=>a+(c.tiedCash||0),0);
+    pct=cash>0?Math.round(100*tied/cash):null; label="all creators";
+  }
+  if(pct==null) return null;
+  const tone = pct>=70?"ok":pct>=50?"warn":"bad";
+  const usd=(n)=>"$"+Math.round(n).toLocaleString();
+  return (
+    <div className={"ddr-trust "+tone} title="Sale tied to an ad via ManyChat subscriber id (exact) first, then name. Untied = organic or no keyword captured.">
+      <span className="ddr-trust-dot"/>
+      <span className="ddr-trust-pct">{pct}%</span>
+      <span className="ddr-trust-txt">of {label}'s collected cash (30d) traces to a specific ad — {usd(tied)} of {usd(cash)}. The rest is organic / no keyword captured.</span>
+    </div>
+  );
+}
+
 function Leaderboard({rows}){
   const capw=(s)=>{ s=String(s||""); return s? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase():"—"; };
   const [sortKey,setSortKey]=useState("roas");
@@ -9885,6 +9923,8 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
       {pagerBar}
 
       {/* Daily decisions: turn off losing ads first, then scale winning ad sets */}
+      <DataTrust account={scope}/>
+
       <ActionPlaybook rows={decisionRows} windowDays={DECISION_RULES.windowDays} rangeText={"last "+DECISION_RULES.windowDays+" days"} decByKey={decByKey} onDid={onDecide} trendByKw={trendByKw}/>
 
       {/* Make variations — winning creative → new ads (Higgsfield engine; scaffold) */}
