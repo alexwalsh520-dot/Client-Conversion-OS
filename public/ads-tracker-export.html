@@ -10060,7 +10060,7 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
 // includes today only stays valid for the current calendar day, so a new day (or
 // a manual "Sync now") refreshes it. Bump SNAP_VERSION when the math changes so
 // old saved copies are discarded instead of shown under new rules.
-const SNAP_VERSION = "1";
+const SNAP_VERSION = "2";
 const SNAP_NS = "ccos-ads-snapshot:v" + SNAP_VERSION;
 const SNAP_MAX = 24; // keep the most-recently-used ranges, evict the rest
 function snapKey(account, range){ return account + "|" + range.dateFrom + "|" + range.dateTo; }
@@ -10071,6 +10071,15 @@ function snapReadAll(){
 function readSnapshot(account, range, allowStale){
   const e = snapReadAll()[snapKey(account, range)];
   if(!e || !e.payload) return null;
+  // PAYROLL-GRADE GUARD: never show a cached payload whose OWN window/account
+  // doesn't exactly match what's on screen. The server echoes the range it
+  // actually computed inside payload.query — if that doesn't match the selected
+  // range+account, the snapshot is poisoned (e.g. a 30-day payload landing under
+  // a custom range) and we must discard it, never render it. This is the safety
+  // net for the "revenue jumps when the end date is today" class of bug: the
+  // numbers shown can ONLY ever be the numbers for the exact range requested.
+  const q = e.payload.query;
+  if(q && (q.dateFrom !== range.dateFrom || q.dateTo !== range.dateTo || (account!=null && q.account !== account))) return null;
   const today = todayEt();
   const includesToday = range.dateTo >= today;
   if(!allowStale && includesToday && e.day !== today) return null;
