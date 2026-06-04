@@ -1,0 +1,473 @@
+import { getServiceSupabase } from "@/lib/supabase";
+
+export type SalesHubClient = "tyson" | "keith" | "lucy" | "all";
+
+type ClientId = Exclude<SalesHubClient, "all">;
+
+interface ClientDef {
+  id: ClientId;
+  key: string;
+  label: string;
+}
+
+interface AssignmentEventRow {
+  client: string;
+  subscriber_id: string;
+  subscriber_name: string | null;
+  setter_name: string | null;
+  tag_name: string;
+  event_at: string;
+  raw_payload?: unknown;
+}
+
+interface MessageRow {
+  client: string;
+  subscriber_id: string;
+  conversation_id: string;
+  message_id: string;
+  direction: string | null;
+  channel: string | null;
+  message_type: string | null;
+  body: string | null;
+  sent_at: string | null;
+  raw_payload?: unknown;
+}
+
+interface LeadAssignment {
+  client: ClientDef;
+  subscriberId: string;
+  setterKey: string | null;
+  setterLabel: string | null;
+  leadName: string | null;
+  assignedAt: string;
+  newLeadAt: string | null;
+}
+
+interface ResponseSample {
+  client: ClientId;
+  clientLabel: string;
+  setterKey: string | null;
+  setterLabel: string;
+  leadName: string | null;
+  subscriberId: string;
+  conversationId: string;
+  inboundAt: string;
+  outboundAt: string;
+  activeMinutes: number;
+}
+
+export interface ResponseTimeGroup {
+  id: string;
+  label: string;
+  averageMinutes: number | null;
+  sampleCount: number;
+  fastestMinutes: number | null;
+  slowestMinutes: number | null;
+}
+
+export interface ResponseTimeMetrics {
+  summary: ResponseTimeGroup & {
+    latestMessageAt: string | null;
+    leadAssignments: number;
+    matchedLeads: number;
+    unmatchedInboundMessages: number;
+    openInboundMessages: number;
+    staleMessageFeed: boolean;
+  };
+  clients: ResponseTimeGroup[];
+  setters: ResponseTimeGroup[];
+  slowestGaps: Array<{
+    client: ClientId;
+    clientLabel: string;
+    setterLabel: string;
+    leadName: string | null;
+    inboundAt: string;
+    outboundAt: string;
+    activeMinutes: number;
+  }>;
+  setup: {
+    businessHours: string;
+    sourceOfTruth: {
+      leads: string;
+      messages: string;
+      attribution: string;
+    };
+    needs: string[];
+  };
+}
+
+const CLIENTS: ClientDef[] = [
+  { id: "tyson", key: "tyson_sonnek", label: "Tyson" },
+  { id: "keith", key: "keith_holland", label: "Keith" },
+  { id: "lucy", key: "lucy_hubbard", label: "Lucy Hubbard" },
+];
+
+const SETTER_LABELS: Record<string, string> = {
+  amara: "Amara",
+  kelechi: "Kelechi",
+  kelchi: "Kelechi",
+  gideon: "Gideon",
+  debbie: "Debbie",
+  debby: "Debbie",
+  chidiebere: "Debbie",
+};
+
+const ET_TIMEZONE = "America/New_York";
+const BUSINESS_START_MINUTE = 11 * 60;
+const BUSINESS_END_MINUTE = 23 * 60;
+
+function getVisibleClients(client: SalesHubClient): ClientDef[] {
+  if (client === "all") return CLIENTS;
+  return CLIENTS.filter((item) => item.id === client);
+}
+
+function startOfUtcDay(date: string) {
+  return `${date}T00:00:00.000Z`;
+}
+
+function endOfUtcDay(date: string) {
+  return `${date}T23:59:59.999Z`;
+}
+
+function addDays(dateStr: string, days: number) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeSetterName(value: string | null | undefined) {
+  const key = value?.trim().toLowerCase() || null;
+  if (!key) return { key: null, label: null };
+  return { key, label: SETTER_LABELS[key] || value?.trim() || key };
+}
+
+function getEtParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = Number(values.hour || 0);
+  const minute = Number(values.minute || 0);
+
+  return {
+    dateStr: `${values.year}-${values.month}-${values.day}`,
+    minutesOfDay: hour * 60 + minute,
+  };
+}
+
+function toEtDateStr(iso: string) {
+  return getEtParts(new Date(iso)).dateStr;
+}
+
+function isDateInRangeEt(iso: string, dateFrom: string, dateTo: string) {
+  const etDate = toEtDateStr(iso);
+  return etDate >= dateFrom && etDate <= dateTo;
+}
+
+function computeTrackedWindowMinutes(startIso: string, endIso: string) {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return 0;
+  if (end.getTime() <= start.getTime()) return 0;
+
+  const startEt = getEtParts(start);
+  const endEt = getEtParts(end);
+  let cursor = startEt.dateStr;
+  let total = 0;
+
+  while (cursor <= endEt.dateStr) {
+    const startMinute = cursor === startEt.dateStr ? startEt.minutesOfDay : 0;
+    const endMinute = cursor === endEt.dateStr ? endEt.minutesOfDay : 24 * 60;
+    total += Math.max(
+      0,
+      Math.min(endMinute, BUSINESS_END_MINUTE) -
+        Math.max(startMinute, BUSINESS_START_MINUTE),
+    );
+    cursor = addDays(cursor, 1);
+  }
+
+  return total;
+}
+
+function rawPayloadRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function isAutomatedOutbound(message: MessageRow) {
+  const raw = rawPayloadRecord(message.raw_payload);
+  const source = typeof raw.source === "string" ? raw.source.toLowerCase() : "";
+  const messageType = message.message_type?.toLowerCase() || "";
+
+  return source.includes("ai-followup") || messageType.includes("followup");
+}
+
+function buildAssignments(events: AssignmentEventRow[], clientDefs: ClientDef[]) {
+  const clientByKey = new Map(clientDefs.map((client) => [client.key, client]));
+  const bySubscriber = new Map<string, LeadAssignment[]>();
+
+  const sorted = [...events].sort((a, b) => a.event_at.localeCompare(b.event_at));
+
+  for (const event of sorted) {
+    const client = clientByKey.get(event.client);
+    if (!client) continue;
+    const setter = normalizeSetterName(event.setter_name);
+    const key = `${event.client}:${event.subscriber_id}`;
+    const list = bySubscriber.get(key) || [];
+    const previous = list.at(-1);
+
+    const assignment: LeadAssignment = {
+      client,
+      subscriberId: event.subscriber_id,
+      setterKey: setter.key || previous?.setterKey || null,
+      setterLabel: setter.label || previous?.setterLabel || null,
+      leadName: event.subscriber_name?.trim() || previous?.leadName || null,
+      assignedAt: event.event_at,
+      newLeadAt:
+        event.tag_name?.toLowerCase() === "new_lead"
+          ? event.event_at
+          : previous?.newLeadAt || null,
+    };
+
+    list.push(assignment);
+    bySubscriber.set(key, list);
+  }
+
+  return bySubscriber;
+}
+
+function findAssignment(
+  assignments: Map<string, LeadAssignment[]>,
+  clientKey: string,
+  subscriberId: string,
+  at: string,
+) {
+  const list = assignments.get(`${clientKey}:${subscriberId}`) || [];
+  let match: LeadAssignment | null = null;
+
+  for (const item of list) {
+    if (item.assignedAt <= at) match = item;
+    else break;
+  }
+
+  return match;
+}
+
+function summarizeSamples(id: string, label: string, samples: ResponseSample[]): ResponseTimeGroup {
+  if (samples.length === 0) {
+    return {
+      id,
+      label,
+      averageMinutes: null,
+      sampleCount: 0,
+      fastestMinutes: null,
+      slowestMinutes: null,
+    };
+  }
+
+  const values = samples.map((sample) => sample.activeMinutes);
+  return {
+    id,
+    label,
+    averageMinutes: values.reduce((sum, value) => sum + value, 0) / values.length,
+    sampleCount: samples.length,
+    fastestMinutes: Math.min(...values),
+    slowestMinutes: Math.max(...values),
+  };
+}
+
+export async function getResponseTimeMetrics(params: {
+  client: SalesHubClient;
+  dateFrom: string;
+  dateTo: string;
+}): Promise<ResponseTimeMetrics> {
+  const { client, dateFrom, dateTo } = params;
+  const sb = getServiceSupabase();
+  const visibleClients = getVisibleClients(client);
+  const clientKeys = visibleClients.map((item) => item.key);
+  const messageEndDate = addDays(dateTo, 3);
+  const assignmentStartDate = addDays(dateFrom, -120);
+
+  const [assignmentRes, messageRes, latestMessageRes] = await Promise.all([
+    sb
+      .from("manychat_tag_events")
+      .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
+      .in("client", clientKeys)
+      .gte("event_at", startOfUtcDay(assignmentStartDate))
+      .lte("event_at", endOfUtcDay(messageEndDate))
+      .order("event_at", { ascending: true }),
+    sb
+      .from("dm_conversation_messages")
+      .select("client, subscriber_id, conversation_id, message_id, direction, channel, message_type, body, sent_at, raw_payload")
+      .in("client", clientKeys)
+      .gte("sent_at", startOfUtcDay(dateFrom))
+      .lte("sent_at", endOfUtcDay(messageEndDate))
+      .order("sent_at", { ascending: true }),
+    sb
+      .from("dm_conversation_messages")
+      .select("sent_at")
+      .in("client", clientKeys)
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (assignmentRes.error) {
+    throw new Error(`Failed to load lead assignments: ${assignmentRes.error.message}`);
+  }
+  if (messageRes.error) {
+    throw new Error(`Failed to load DM messages: ${messageRes.error.message}`);
+  }
+  if (latestMessageRes.error) {
+    throw new Error(`Failed to load latest DM message: ${latestMessageRes.error.message}`);
+  }
+
+  const assignments = buildAssignments((assignmentRes.data || []) as AssignmentEventRow[], visibleClients);
+  const groupedMessages = new Map<string, MessageRow[]>();
+  const samples: ResponseSample[] = [];
+  const matchedLeadIds = new Set<string>();
+  let unmatchedInboundMessages = 0;
+  let openInboundMessages = 0;
+
+  for (const message of ((messageRes.data || []) as MessageRow[])) {
+    if (!message.conversation_id || !message.sent_at) continue;
+    const key = `${message.client}:${message.conversation_id}`;
+    const list = groupedMessages.get(key) || [];
+    list.push(message);
+    groupedMessages.set(key, list);
+  }
+
+  for (const messages of groupedMessages.values()) {
+    const ordered = [...messages].sort((a, b) => (a.sent_at || "").localeCompare(b.sent_at || ""));
+    let pending:
+      | {
+          message: MessageRow;
+          assignment: LeadAssignment;
+        }
+      | null = null;
+
+    for (const message of ordered) {
+      if (!message.sent_at) continue;
+
+      if (message.direction === "inbound") {
+        if (!isDateInRangeEt(message.sent_at, dateFrom, dateTo)) continue;
+
+        const assignment = findAssignment(
+          assignments,
+          message.client,
+          message.subscriber_id,
+          message.sent_at,
+        );
+
+        if (!assignment?.newLeadAt) {
+          unmatchedInboundMessages += 1;
+          continue;
+        }
+
+        matchedLeadIds.add(`${message.client}:${message.subscriber_id}`);
+        if (!pending) pending = { message, assignment };
+        continue;
+      }
+
+      if (message.direction === "outbound" && pending && !isAutomatedOutbound(message)) {
+        samples.push({
+          client: pending.assignment.client.id,
+          clientLabel: pending.assignment.client.label,
+          setterKey: pending.assignment.setterKey,
+          setterLabel: pending.assignment.setterLabel || "Unassigned",
+          leadName: pending.assignment.leadName,
+          subscriberId: pending.assignment.subscriberId,
+          conversationId: pending.message.conversation_id,
+          inboundAt: pending.message.sent_at || "",
+          outboundAt: message.sent_at,
+          activeMinutes: computeTrackedWindowMinutes(pending.message.sent_at || "", message.sent_at),
+        });
+        pending = null;
+      }
+    }
+
+    if (pending) openInboundMessages += 1;
+  }
+
+  const clients = visibleClients.map((item) =>
+    summarizeSamples(
+      item.id,
+      item.label,
+      samples.filter((sample) => sample.client === item.id),
+    ),
+  );
+
+  const setterKeys = [...new Set(samples.map((sample) => sample.setterKey || "unassigned"))];
+  const setters = setterKeys
+    .map((setterKey) =>
+      summarizeSamples(
+        setterKey,
+        setterKey === "unassigned" ? "Unassigned" : SETTER_LABELS[setterKey] || setterKey,
+        samples.filter((sample) => (sample.setterKey || "unassigned") === setterKey),
+      ),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const latestMessageAt = latestMessageRes.data?.sent_at || null;
+  const latestTime = latestMessageAt ? new Date(latestMessageAt).getTime() : 0;
+  const staleMessageFeed =
+    !latestTime || Date.now() - latestTime > 24 * 60 * 60 * 1000;
+
+  const needs = [
+    "Connect Tyson's Instagram professional account to the CCOS Meta app.",
+    "Turn on Meta message webhooks so new Tyson DMs land in CCOS live.",
+    "Confirm Tyson's ManyChat keyword flows send subscriber_id, instagram_handle, setter_name, client, tag_name, and event_at.",
+  ];
+
+  if (samples.length === 0) {
+    needs.unshift("No matched response-time samples were found for this date range yet.");
+  }
+  if (staleMessageFeed) {
+    needs.unshift("The live DM feed is stale or not connected yet.");
+  }
+
+  return {
+    summary: {
+      ...summarizeSamples("team", "Team", samples),
+      latestMessageAt,
+      leadAssignments: (assignmentRes.data || []).length,
+      matchedLeads: matchedLeadIds.size,
+      unmatchedInboundMessages,
+      openInboundMessages,
+      staleMessageFeed,
+    },
+    clients,
+    setters,
+    slowestGaps: [...samples]
+      .sort((a, b) => b.activeMinutes - a.activeMinutes)
+      .slice(0, 5)
+      .map((sample) => ({
+        client: sample.client,
+        clientLabel: sample.clientLabel,
+        setterLabel: sample.setterLabel,
+        leadName: sample.leadName,
+        inboundAt: sample.inboundAt,
+        outboundAt: sample.outboundAt,
+        activeMinutes: sample.activeMinutes,
+      })),
+    setup: {
+      businessHours: "11am-11pm ET",
+      sourceOfTruth: {
+        leads: "ManyChat tag events",
+        messages: "Meta/Instagram DM message feed stored in dm_conversation_messages",
+        attribution: "Assigned setter from ManyChat at the time the prospect message was received",
+      },
+      needs,
+    },
+  };
+}
+

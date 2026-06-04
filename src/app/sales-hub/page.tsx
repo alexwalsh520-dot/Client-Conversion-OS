@@ -5,6 +5,7 @@ import {
   BarChart3,
   Users,
   Phone,
+  Clock3,
   ChevronDown,
   Loader2,
   Sparkles,
@@ -14,6 +15,7 @@ import FilterBar, { getEffectiveDates } from "./components/FilterBar";
 import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
+import ResponseTimes from "./components/ResponseTimes";
 import AlexTesting from "./components/AlexTesting";
 
 /* ------------------------------------------------------------------ */
@@ -24,6 +26,7 @@ const SECTIONS = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "closers", label: "Closers", icon: Phone },
   { id: "setters", label: "Setters", icon: Users },
+  { id: "response-times", label: "Response Times", icon: Clock3 },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -322,7 +325,7 @@ export default function SalesHubPage() {
         <div>
           <h1 className="page-title">Sales Hub</h1>
           <p className="page-subtitle">
-            Client comparisons, closer performance, and setter performance
+            Client comparisons, closer performance, setter performance, and response times
           </p>
         </div>
         <GoldShimmerButton active={alexOpen} onClick={() => setAlexOpen((o) => !o)} />
@@ -477,6 +480,16 @@ export default function SalesHubPage() {
         defaultOpen
       >
         <SetterPerformance filters={filters} />
+      </CollapsibleSection>
+
+      {/* Section 4: Response Times */}
+      <CollapsibleSection
+        id="response-times"
+        title="Response Times"
+        icon={<Clock3 size={18} />}
+        defaultOpen
+      >
+        <ResponseTimes filters={filters} />
       </CollapsibleSection>
 
     </div>
