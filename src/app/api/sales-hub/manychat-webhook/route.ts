@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { normalizeClientKey, normalizeSetterKey, syncManychatEventToGhl } from "@/lib/ghl-dm-sync";
 import { displayKeyword, normalizeKeyword } from "@/lib/ads-tracker/normalize";
 import { creatorKeyFromText } from "@/lib/creators";
+import { upsertManychatLeadIdentity } from "@/lib/instagram-connections";
 
 /**
  * Manychat Webhook — receives tag events from Manychat External Requests.
@@ -211,6 +212,18 @@ export async function POST(req: NextRequest) {
       setterName: setterKey,
       eventAt: normalizedEventAt,
     });
+
+    try {
+      await upsertManychatLeadIdentity({
+        client: clientKey,
+        manychatSubscriberId: subscriber_id,
+        instagramHandle: instagram_handle,
+        leadName: [first_name, last_name].filter(Boolean).join(" ") || null,
+        eventAt: normalizedEventAt,
+      });
+    } catch (identityError) {
+      console.warn("[manychat-webhook] Instagram identity link skipped", identityError);
+    }
 
     return NextResponse.json({ status: "ok", sync });
   } catch (err) {

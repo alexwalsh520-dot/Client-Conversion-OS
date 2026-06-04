@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { analyzeDmStages, getDmAnalysisVersion } from "@/lib/dm-stage-ai";
 import { getServiceSupabase } from "@/lib/supabase";
 import { cancelPendingAndAttributeReply } from "@/lib/followup/scheduler";
+import {
+  getInstagramConnectionByAccountId,
+  markInstagramConnectionWebhookSeen,
+  upsertInstagramLeadIdentity,
+} from "@/lib/instagram-connections";
 
 const INSTAGRAM_CHANNEL = "Instagram DM";
 const DEFAULT_CLIENT_KEY = "matthew_conder";
@@ -11,7 +16,7 @@ type MessageDirection = "inbound" | "outbound" | "unknown";
 
 interface InstagramWebhookConfig {
   clientKey: string;
-  setterName: string;
+  setterName: string | null;
   verifyToken: string | null;
   appSecret: string | null;
   accountId: string | null;
@@ -28,6 +33,7 @@ interface ParsedInstagramMessage {
   body: string | null;
   messageType: string | null;
   sentAt: string | null;
+  instagramHandle: string | null;
   rawPayload: Record<string, unknown>;
 }
 
@@ -295,6 +301,18 @@ function buildParsedMessage(params: {
     `instagram:${conversationId}:${sentAt}:${fallbackIndex}`;
   const content = summarizeMessageContent(message);
   const subscriberId = otherParticipantId || `unknown:${conversationId}`;
+  const senderRecord = asRecord(event.sender) || asRecord(event.from);
+  const recipientRecord = asRecord(event.recipient) || asRecord(event.to);
+  const otherParticipantRecord =
+    direction === "outbound"
+      ? recipientRecord || senderRecord
+      : direction === "inbound"
+        ? senderRecord || recipientRecord
+        : senderRecord || recipientRecord;
+  const instagramHandle =
+    asString(otherParticipantRecord?.username) ||
+    asString(otherParticipantRecord?.user_name) ||
+    asString(otherParticipantRecord?.handle);
 
   return {
     client: config.clientKey,
@@ -306,6 +324,7 @@ function buildParsedMessage(params: {
     body: content.body,
     messageType: content.messageType,
     sentAt,
+    instagramHandle,
     rawPayload: event,
   } satisfies ParsedInstagramMessage;
 }
@@ -471,8 +490,36 @@ async function reclassifyConversation(
 }
 
 export async function processInstagramWebhookPayload(payload: Record<string, unknown>) {
-  const config = getInstagramWebhookConfig();
-  const messages = extractParsedMessagesFromPayload(payload, config);
+  const fallbackConfig = getInstagramWebhookConfig();
+  const entries = asRecordArray(payload.entry);
+  const messages: ParsedInstagramMessage[] = [];
+  const seenConnectedAccounts = new Set<string>();
+
+  if (entries.length === 0) {
+    messages.push(...extractParsedMessagesFromPayload(payload, fallbackConfig));
+  }
+
+  for (const entry of entries) {
+    const entryAccountId = asString(entry.id);
+    const connection = await getInstagramConnectionByAccountId(entryAccountId);
+    const config: InstagramWebhookConfig = connection
+      ? {
+          ...fallbackConfig,
+          clientKey: connection.client_key,
+          setterName: null,
+          accountId: connection.instagram_user_id || entryAccountId,
+          accountUsername: connection.instagram_username,
+        }
+      : fallbackConfig;
+
+    if (connection?.instagram_user_id) {
+      seenConnectedAccounts.add(connection.instagram_user_id);
+    }
+
+    messages.push(
+      ...extractParsedMessagesFromPayload({ ...payload, entry: [entry] }, config),
+    );
+  }
 
   if (messages.length === 0) {
     return {
@@ -520,6 +567,23 @@ export async function processInstagramWebhookPayload(payload: Record<string, unk
 
   for (const [conversationId, metadata] of conversationMap.entries()) {
     await reclassifyConversation(conversationId, metadata);
+  }
+
+  for (const message of messages) {
+    try {
+      await upsertInstagramLeadIdentity({
+        client: message.client,
+        instagramUserId: message.subscriberId,
+        instagramHandle: message.instagramHandle,
+        sentAt: message.sentAt,
+      });
+    } catch (err) {
+      console.error("[instagram-webhook] lead identity link skipped:", err);
+    }
+  }
+
+  for (const accountId of seenConnectedAccounts) {
+    await markInstagramConnectionWebhookSeen(accountId);
   }
 
   // AI Follow-Up: when an inbound message arrives, cancel all pending

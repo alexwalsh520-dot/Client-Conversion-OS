@@ -33,6 +33,13 @@ interface MessageRow {
   raw_payload?: unknown;
 }
 
+interface LeadLinkRow {
+  client: string;
+  manychat_subscriber_id: string | null;
+  instagram_user_id: string | null;
+  instagram_handle: string | null;
+}
+
 interface LeadAssignment {
   client: ClientDef;
   subscriberId: string;
@@ -69,6 +76,7 @@ export interface ResponseTimeMetrics {
   summary: ResponseTimeGroup & {
     latestMessageAt: string | null;
     leadAssignments: number;
+    leadIdentityLinks: number;
     matchedLeads: number;
     unmatchedInboundMessages: number;
     openInboundMessages: number;
@@ -91,6 +99,7 @@ export interface ResponseTimeMetrics {
       leads: string;
       messages: string;
       attribution: string;
+      identity: string;
     };
     needs: string[];
   };
@@ -262,6 +271,31 @@ function findAssignment(
   return match;
 }
 
+function buildLeadLinkMap(rows: LeadLinkRow[]) {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.client || !row.instagram_user_id || !row.manychat_subscriber_id) continue;
+    map.set(`${row.client}:${row.instagram_user_id}`, row.manychat_subscriber_id);
+  }
+  return map;
+}
+
+function findAssignmentForMessage(
+  assignments: Map<string, LeadAssignment[]>,
+  leadLinkByInstagramId: Map<string, string>,
+  clientKey: string,
+  subscriberId: string,
+  at: string,
+) {
+  const direct = findAssignment(assignments, clientKey, subscriberId, at);
+  if (direct) return direct;
+
+  const manychatSubscriberId = leadLinkByInstagramId.get(`${clientKey}:${subscriberId}`);
+  if (!manychatSubscriberId) return null;
+
+  return findAssignment(assignments, clientKey, manychatSubscriberId, at);
+}
+
 function summarizeSamples(id: string, label: string, samples: ResponseSample[]): ResponseTimeGroup {
   if (samples.length === 0) {
     return {
@@ -331,7 +365,22 @@ export async function getResponseTimeMetrics(params: {
     throw new Error(`Failed to load latest DM message: ${latestMessageRes.error.message}`);
   }
 
+  let leadLinks: LeadLinkRow[] = [];
+  let leadLinksReady = true;
+  try {
+    const linkRes = await sb
+      .from("instagram_lead_links")
+      .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
+      .in("client", clientKeys);
+
+    if (linkRes.error) throw linkRes.error;
+    leadLinks = (linkRes.data || []) as LeadLinkRow[];
+  } catch {
+    leadLinksReady = false;
+  }
+
   const assignments = buildAssignments((assignmentRes.data || []) as AssignmentEventRow[], visibleClients);
+  const leadLinkByInstagramId = buildLeadLinkMap(leadLinks);
   const groupedMessages = new Map<string, MessageRow[]>();
   const samples: ResponseSample[] = [];
   const matchedLeadIds = new Set<string>();
@@ -361,8 +410,9 @@ export async function getResponseTimeMetrics(params: {
       if (message.direction === "inbound") {
         if (!isDateInRangeEt(message.sent_at, dateFrom, dateTo)) continue;
 
-        const assignment = findAssignment(
+        const assignment = findAssignmentForMessage(
           assignments,
+          leadLinkByInstagramId,
           message.client,
           message.subscriber_id,
           message.sent_at,
@@ -428,6 +478,11 @@ export async function getResponseTimeMetrics(params: {
     "Confirm Tyson's ManyChat keyword flows send subscriber_id, instagram_handle, setter_name, client, tag_name, and event_at.",
   ];
 
+  if (!leadLinksReady) {
+    needs.unshift("Run the Instagram connection database setup so ManyChat leads can be matched to Instagram DM people.");
+  } else if (leadLinks.length === 0) {
+    needs.unshift("No ManyChat-to-Instagram identity links exist yet. These start filling in after ManyChat and Instagram both send events.");
+  }
   if (samples.length === 0) {
     needs.unshift("No matched response-time samples were found for this date range yet.");
   }
@@ -440,6 +495,7 @@ export async function getResponseTimeMetrics(params: {
       ...summarizeSamples("team", "Team", samples),
       latestMessageAt,
       leadAssignments: (assignmentRes.data || []).length,
+      leadIdentityLinks: leadLinks.length,
       matchedLeads: matchedLeadIds.size,
       unmatchedInboundMessages,
       openInboundMessages,
@@ -465,9 +521,9 @@ export async function getResponseTimeMetrics(params: {
         leads: "ManyChat tag events",
         messages: "Meta/Instagram DM message feed stored in dm_conversation_messages",
         attribution: "Assigned setter from ManyChat at the time the prospect message was received",
+        identity: "instagram_lead_links connects ManyChat contact IDs to Instagram DM user IDs",
       },
       needs,
     },
   };
 }
-

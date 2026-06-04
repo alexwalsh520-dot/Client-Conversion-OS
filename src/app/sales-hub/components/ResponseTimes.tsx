@@ -12,6 +12,7 @@ import {
 import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters } from "../types";
+import InstagramConnectionSetup from "./InstagramConnectionSetup";
 
 interface ResponseTimeGroup {
   id: string;
@@ -26,6 +27,7 @@ interface ResponseTimeMetrics {
   summary: ResponseTimeGroup & {
     latestMessageAt: string | null;
     leadAssignments: number;
+    leadIdentityLinks: number;
     matchedLeads: number;
     unmatchedInboundMessages: number;
     openInboundMessages: number;
@@ -48,6 +50,7 @@ interface ResponseTimeMetrics {
       leads: string;
       messages: string;
       attribution: string;
+      identity: string;
     };
     needs: string[];
   };
@@ -164,6 +167,7 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
         </div>
 
         <StatusPanel data={data} />
+        <InstagramConnectionSetup />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 20 }}>
@@ -233,6 +237,7 @@ function StatusPanel({ data }: { data: ResponseTimeMetrics }) {
         <StatusItem label="Business Hours" value={data.setup.businessHours} />
         <StatusItem label="Latest DM Seen" value={formatDateTime(data.summary.latestMessageAt)} />
         <StatusItem label="Lead Assignments" value={fmtNumber(data.summary.leadAssignments)} />
+        <StatusItem label="ID Links" value={fmtNumber(data.summary.leadIdentityLinks)} />
         <StatusItem label="Open Inbounds" value={fmtNumber(data.summary.openInboundMessages)} />
       </div>
 
@@ -356,4 +361,3 @@ function TableTitle({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
