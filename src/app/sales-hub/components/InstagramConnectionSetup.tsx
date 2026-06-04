@@ -33,6 +33,8 @@ interface InstagramStatus {
   env: {
     appIdConfigured: boolean;
     appSecretConfigured: boolean;
+    appIdEnvName: string | null;
+    appSecretEnvName: string | null;
     tokenEncryptionReady: boolean;
     webhookVerifyTokenReady: boolean;
     oauthMode: string;
@@ -308,7 +310,8 @@ export default function InstagramConnectionSetup() {
       </div>
 
       <div style={{ color: "var(--text-muted)", fontSize: 11, lineHeight: 1.45, marginTop: 10 }}>
-        Mode: {status.env.oauthMode} / {status.env.graphVersion}. Scopes: {status.env.scopes.join(", ")}.
+        Mode: {status.env.oauthMode} / {status.env.graphVersion}. App env: {status.env.appIdEnvName || "missing"} /{" "}
+        {status.env.appSecretEnvName || "missing"}. Scopes: {status.env.scopes.join(", ")}.
       </div>
     </div>
   );

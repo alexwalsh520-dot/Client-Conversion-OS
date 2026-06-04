@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
     env: {
       appIdConfigured: Boolean(config.appId),
       appSecretConfigured: Boolean(config.appSecret),
+      appIdEnvName: config.appIdEnvName,
+      appSecretEnvName: config.appSecretEnvName,
       tokenEncryptionReady: config.tokenEncryptionReady,
       webhookVerifyTokenReady: config.webhookVerifyTokenReady,
       oauthMode: config.oauthMode,

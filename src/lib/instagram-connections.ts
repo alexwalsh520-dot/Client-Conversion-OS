@@ -39,6 +39,8 @@ interface OAuthStatePayload {
 export interface MetaOAuthConfig {
   appId: string | null;
   appSecret: string | null;
+  appIdEnvName: string | null;
+  appSecretEnvName: string | null;
   graphVersion: string;
   oauthMode: "facebook" | "instagram";
   scopes: string[];
@@ -121,6 +123,14 @@ function encryptionKey() {
   return null;
 }
 
+function firstConfiguredEnv(names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return { name, value };
+  }
+  return { name: null, value: null };
+}
+
 function encryptToken(token: string) {
   const key = encryptionKey();
   if (!key) return null;
@@ -182,10 +192,28 @@ export function getMetaOAuthConfig(req: Request): MetaOAuthConfig {
     process.env.META_INSTAGRAM_OAUTH_SCOPES,
     oauthMode === "instagram" ? instagramScopes : facebookScopes,
   );
+  const appId = firstConfiguredEnv([
+    "META_APP_ID",
+    "META_APP_ID_TYSON",
+    "TYSON_META_APP_ID",
+    "CLAUDE_META_APP_ID",
+    "META_CLAUDE_APP_ID",
+    "NEXT_PUBLIC_META_APP_ID",
+    "NEXT_PUBLIC_META_APP_ID_TYSON",
+  ]);
+  const appSecret = firstConfiguredEnv([
+    "META_APP_SECRET",
+    "META_APP_SECRET_TYSON",
+    "TYSON_META_APP_SECRET",
+    "CLAUDE_META_APP_SECRET",
+    "META_CLAUDE_APP_SECRET",
+  ]);
 
   return {
-    appId: process.env.META_APP_ID?.trim() || process.env.NEXT_PUBLIC_META_APP_ID?.trim() || null,
-    appSecret: process.env.META_APP_SECRET?.trim() || null,
+    appId: appId.value,
+    appSecret: appSecret.value,
+    appIdEnvName: appId.name,
+    appSecretEnvName: appSecret.name,
     graphVersion,
     oauthMode,
     scopes,
@@ -228,7 +256,7 @@ export function readConnectState(state: string | null) {
 }
 
 export function buildAuthorizeUrl(config: MetaOAuthConfig, state: string) {
-  if (!config.appId) throw new Error("META_APP_ID is not configured");
+  if (!config.appId) throw new Error("Meta app ID env var is not configured");
 
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.appId);
@@ -262,7 +290,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function exchangeCodeForToken(config: MetaOAuthConfig, code: string) {
   if (!config.appId || !config.appSecret) {
-    throw new Error("META_APP_ID and META_APP_SECRET are required before Instagram can connect");
+    throw new Error("Meta app ID and Meta app secret are required before Instagram can connect");
   }
 
   if (config.oauthMode === "instagram") {
