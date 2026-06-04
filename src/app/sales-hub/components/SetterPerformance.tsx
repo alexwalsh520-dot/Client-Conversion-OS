@@ -29,6 +29,17 @@ interface SetterRow {
   subsSold: number;
 }
 
+interface OfferRow {
+  client: string;
+  newLeads: number;
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  noShows: number;
+  cashCollected: number;
+  subsSold: number;
+}
+
 interface SheetRow {
   setter: string;
   callTaken: boolean;
@@ -78,7 +89,7 @@ function getRelevantSetters(client: string): { name: string; client: string }[] 
 
 function rowMatchesClient(row: SheetRow, client: string): boolean {
   const offer = (row.offer || "").toLowerCase();
-  if (client === "tyson") return offer.includes("tyson");
+  if (client === "tyson") return offer.includes("tyson") || offer.includes("sonnek") || offer.includes("sonic");
   if (client === "keith") return offer.includes("keith");
   if (client === "lucy") return offer.includes("lucy") || offer.includes("hubbard");
   return true;
@@ -99,6 +110,31 @@ function rateColor(value: number, good: number, okay: number): string {
   if (value >= good) return "var(--success)";
   if (value >= okay) return "var(--warning)";
   return "var(--danger)";
+}
+
+function buildPerformanceRow(client: string, newLeads: number, rows: SheetRow[]) {
+  const callsBooked = rows.length;
+  const callsTaken = rows.filter((r) => r.callTakenStatus === "yes" || r.callTaken).length;
+  const wins = rows.filter((r) => r.outcome === "WIN").length;
+  const noShows = rows.filter((r) => {
+    const outcome = (r.outcome || "").toUpperCase();
+    return r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS";
+  }).length;
+  const cashCollected = rows.reduce((s, r) => s + (r.cashCollected || 0), 0);
+  const subsSold = rows.filter((r) =>
+    r.outcome === "WIN" && r.programLength === "3"
+  ).length;
+
+  return {
+    client,
+    newLeads,
+    callsBooked,
+    callsTaken,
+    wins,
+    noShows,
+    cashCollected,
+    subsSold,
+  };
 }
 
 /* ── Fetch helper ─────────────────────────────────────────────────── */
@@ -196,29 +232,22 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         rowMatchesClient(r, client) &&
         keys.some((k) => (r.setter || "").toUpperCase().includes(k))
       );
-      const callsBooked = setterSheetRows.length;
-      const callsTaken = setterSheetRows.filter((r) => r.callTakenStatus === "yes" || r.callTaken).length;
-      const wins = setterSheetRows.filter((r) => r.outcome === "WIN").length;
-      const noShows = setterSheetRows.filter((r) => {
-        const outcome = (r.outcome || "").toUpperCase();
-        return r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS";
-      }).length;
-      const cashCollected = setterSheetRows.reduce((s, r) => s + (r.cashCollected || 0), 0);
-      const subsSold = setterSheetRows.filter((r) =>
-        r.outcome === "WIN" && r.programLength === "3"
-      ).length;
+      const performance = buildPerformanceRow(client, mc.newLeads, setterSheetRows);
 
       return {
         name,
-        client,
-        newLeads: mc.newLeads,
-        callsBooked,
-        callsTaken,
-        wins,
-        noShows,
-        cashCollected,
-        subsSold,
+        ...performance,
       };
+    });
+  }, [filters.client, metricsMap, sheetRows]);
+
+  const offerRows = useMemo((): OfferRow[] => {
+    const visibleClients = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
+
+    return visibleClients.map((client) => {
+      const rows = sheetRows.filter((row) => rowMatchesClient(row, client));
+      const newLeads = metricsMap[client]?.dashboard?.newLeads || 0;
+      return buildPerformanceRow(client, newLeads, rows);
     });
   }, [filters.client, metricsMap, sheetRows]);
 
@@ -233,7 +262,10 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       ) : setterRows.length === 0 ? (
         <EmptyCard message="No setter data available for this period." />
       ) : (
-        <SetterTable rows={setterRows} />
+        <>
+          <OfferTable rows={offerRows} />
+          <SetterTable rows={setterRows} />
+        </>
       )}
     </div>
   );
@@ -327,12 +359,64 @@ function SummaryCard({
 
 function SetterTable({ rows }: { rows: SetterRow[] }) {
   return (
-    <div className="glass-static" style={{ overflow: "auto" }}>
+    <PerformanceTable
+      title="Setter Breakdown"
+      firstColumnLabel="Setter"
+      rows={rows.map((row) => ({
+        ...row,
+        label: row.name,
+        key: `${row.client}-${row.name}`,
+      }))}
+      showOffer
+    />
+  );
+}
+
+function OfferTable({ rows }: { rows: OfferRow[] }) {
+  return (
+    <PerformanceTable
+      title="Offer Breakdown"
+      firstColumnLabel="Offer"
+      rows={rows.map((row) => ({
+        ...row,
+        label: CLIENT_BADGE_LABELS[row.client] ?? row.client,
+        key: row.client,
+      }))}
+    />
+  );
+}
+
+function PerformanceTable({
+  title,
+  firstColumnLabel,
+  rows,
+  showOffer = false,
+}: {
+  title: string;
+  firstColumnLabel: string;
+  rows: Array<(SetterRow | OfferRow) & { label: string; key: string }>;
+  showOffer?: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: "1px",
+          color: "var(--text-muted)",
+          fontWeight: 600,
+          marginBottom: 10,
+        }}
+      >
+        {title}
+      </div>
+      <div className="glass-static" style={{ overflow: "auto" }}>
       <table className="data-table">
         <thead>
           <tr>
-            <th>Setter</th>
-            <th>Offer</th>
+            <th>{firstColumnLabel}</th>
+            {showOffer && <th>Offer</th>}
             <th>New Leads</th>
             <th>Booked</th>
             <th>Booking Rate</th>
@@ -354,15 +438,15 @@ function SetterTable({ rows }: { rows: SetterRow[] }) {
             const cc = clientColor(s.client);
 
             return (
-              <tr key={`${s.client}-${s.name}`}>
+              <tr key={s.key}>
                 <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                  {s.name}
+                  {s.label}
                 </td>
-                <td>
+                {showOffer && <td>
                   <span style={{ color: cc, fontWeight: 600 }}>
                     {CLIENT_BADGE_LABELS[s.client] ?? s.client}
                   </span>
-                </td>
+                </td>}
                 <td>{fmtNumber(s.newLeads)}</td>
                 <td>{fmtNumber(s.callsBooked)}</td>
                 <td>
@@ -398,6 +482,7 @@ function SetterTable({ rows }: { rows: SetterRow[] }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
