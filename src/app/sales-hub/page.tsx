@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Loader2,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
 import FilterBar, { getEffectiveDates } from "./components/FilterBar";
@@ -16,7 +15,6 @@ import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
 import AlexTesting from "./components/AlexTesting";
-import FollowupHub from "./components/FollowupHub";
 
 /* ------------------------------------------------------------------ */
 /*  Section nav items                                                  */
@@ -26,7 +24,6 @@ const SECTIONS = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "closers", label: "Closers", icon: Phone },
   { id: "setters", label: "Setters", icon: Users },
-  { id: "followups", label: "AI Follow-ups", icon: Zap },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -325,7 +322,7 @@ export default function SalesHubPage() {
         <div>
           <h1 className="page-title">Sales Hub</h1>
           <p className="page-subtitle">
-            Client comparisons, closer performance, setter performance, and AI follow-ups
+            Client comparisons, closer performance, and setter performance
           </p>
         </div>
         <GoldShimmerButton active={alexOpen} onClick={() => setAlexOpen((o) => !o)} />
@@ -482,14 +479,6 @@ export default function SalesHubPage() {
         <SetterPerformance filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 4: AI Follow-ups */}
-      <CollapsibleSection
-        id="followups"
-        title="AI Follow-ups"
-        icon={<Zap size={18} />}
-      >
-        <FollowupHub selectedClient={filters.client} />
-      </CollapsibleSection>
     </div>
   );
 }
