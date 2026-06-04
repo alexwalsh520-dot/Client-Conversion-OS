@@ -675,18 +675,15 @@ body {
 }
 
 .setter-quality-card {
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 .setter-quality-scroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 .setter-quality-table {
   width: 100%;
-  min-width: 500px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
@@ -700,25 +697,25 @@ body {
 }
 
 .setter-quality-table th {
-  padding: 12px 18px;
+  padding: 12px 10px;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   line-height: 1.2;
   text-align: right;
   text-transform: uppercase;
 }
 
 .setter-quality-table td {
-  padding: 16px 18px;
+  padding: 16px 10px;
   color: var(--text-secondary);
   text-align: right;
 }
 
 .setter-quality-table th:first-child,
 .setter-quality-table td:first-child {
-  width: 32%;
+  width: 30%;
   color: var(--text-primary);
   font-weight: 600;
   text-align: left;
@@ -728,12 +725,12 @@ body {
 .setter-quality-table th:nth-child(3),
 .setter-quality-table td:nth-child(2),
 .setter-quality-table td:nth-child(3) {
-  width: 14%;
+  width: 15%;
 }
 
 .setter-quality-table th:nth-child(4),
 .setter-quality-table td:nth-child(4) {
-  width: 18%;
+  width: 20%;
 }
 
 .setter-quality-table th:nth-child(5),
