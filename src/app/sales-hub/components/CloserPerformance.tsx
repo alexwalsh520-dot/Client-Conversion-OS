@@ -395,9 +395,9 @@ export default function CloserPerformance({
           Setter Quality by Closer
         </h3>
         <div
+          className="setter-quality-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
             gap: 16,
           }}
         >

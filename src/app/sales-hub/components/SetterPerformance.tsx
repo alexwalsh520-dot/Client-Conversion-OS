@@ -1,18 +1,15 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Loader2,
-  Users,
-  MessageCircle,
-  Link2,
-  CreditCard,
   PhoneCall,
+  TrendingUp,
+  Users,
 } from "lucide-react";
-import { fmtNumber, fmtPercent } from "@/lib/formatters";
+import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
-import type { Filters, ManychatMetrics, ManychatDashboard } from "../types";
-import DMFunnels from "./DMFunnels";
+import type { Filters, LeadSourceMetric, ManychatDashboard, ManychatMetrics } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -23,45 +20,47 @@ interface SetterPerformanceProps {
 interface SetterRow {
   name: string;
   client: string;
-  // Manychat metrics
   newLeads: number;
-  leadsEngaged: number;
-  callLinksSent: number;
-  subLinksSent: number;
-  // Sales tracker metrics
   callsBooked: number;
   callsTaken: number;
   wins: number;
   noShows: number;
   cashCollected: number;
-  revenue: number;
   subsSold: number;
 }
 
 interface SheetRow {
   setter: string;
   callTaken: boolean;
+  callTakenStatus?: "yes" | "no" | "pending";
   outcome: string;
   cashCollected: number;
-  revenue: number;
   offer: string;
-  method: string;
   programLength: string;
+}
+
+interface SourceTotals {
+  newLeads: number;
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  noShows: number;
+  cashCollected: number;
 }
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
 const CLIENT_SETTERS: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi", "Debbie"],
+  tyson: ["Amara", "Kelechi"],
   keith: ["Gideon"],
-  lucy: [],
+  lucy: ["Debbie"],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
   Amara: ["AMARA"],
   Kelechi: ["KELCHI", "KELECHI"],
   Gideon: ["GIDEON"],
-  Debbie: ["DEBBIE"],
+  Debbie: ["DEBBIE", "DEBBY", "CHIDIEBERE"],
 };
 
 const CLIENT_BADGE_LABELS: Record<string, string> = {
@@ -70,9 +69,13 @@ const CLIENT_BADGE_LABELS: Record<string, string> = {
   lucy: "Lucy Hubbard",
 };
 
-function getSetterClient(name: string, client: string): string {
-  return name === "Kelechi" || name === "Debbie" ? "tyson" : client;
-}
+const LEAD_SOURCE_LABELS: Record<LeadSourceMetric["id"], string> = {
+  direct_cta_ad: "Direct CTA ad",
+  lead_magnet_ad: "Lead magnet ad",
+  direct_coaching_organic_cta: "Direct coaching organic CTA",
+  organic_lead_magnet: "Organic lead magnet",
+  unmapped: "Unmapped",
+};
 
 function getRelevantSetters(client: string): { name: string; client: string }[] {
   if (client === "all") {
@@ -83,6 +86,40 @@ function getRelevantSetters(client: string): { name: string; client: string }[] 
     ];
   }
   return (CLIENT_SETTERS[client] || []).map((n) => ({ name: n, client }));
+}
+
+function rowMatchesClient(row: SheetRow, client: string): boolean {
+  const offer = (row.offer || "").toLowerCase();
+  if (client === "tyson") return offer.includes("tyson");
+  if (client === "keith") return offer.includes("keith");
+  if (client === "lucy") return offer.includes("lucy") || offer.includes("hubbard");
+  return true;
+}
+
+function clientColor(client: string): string {
+  if (client === "keith") return "var(--keith)";
+  if (client === "lucy") return "var(--accent)";
+  return "var(--tyson)";
+}
+
+function formatRate(numerator: number, denominator: number): string {
+  if (denominator <= 0) return "—";
+  return fmtPercent((numerator / denominator) * 100);
+}
+
+function sourceShowDenominator(row: SourceTotals | LeadSourceMetric): number {
+  return row.callsTaken + row.noShows;
+}
+
+function emptyTotals(): SourceTotals {
+  return {
+    newLeads: 0,
+    callsBooked: 0,
+    callsTaken: 0,
+    wins: 0,
+    noShows: 0,
+    cashCollected: 0,
+  };
 }
 
 /* ── Fetch helper ─────────────────────────────────────────────────── */
@@ -103,12 +140,10 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   const [metricsMap, setMetricsMap] = useState<Record<string, ManychatMetrics>>({});
   const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
 
-  /* ── Fetch data ─────────────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      // Fetch Manychat metrics and sheet data in parallel
       const sheetPromise = fetchJSON<{ rows: SheetRow[] }>(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`
       ).catch(() => ({ rows: [] }));
@@ -135,9 +170,9 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       const [manychatData, sheetData] = await Promise.all([manychatPromise, sheetPromise]);
       setMetricsMap(manychatData);
       setSheetRows(sheetData.rows || []);
-      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
       setLoading(false);
     }
   }, [filters.client, dateFrom, dateTo]);
@@ -146,32 +181,66 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     void Promise.resolve().then(fetchData);
   }, [fetchData]);
 
-  /* ── Aggregated DM dashboard across all visible clients ─────────── */
-  const aggregatedDashboard = useMemo((): ManychatDashboard | null => {
-    const keys = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
-    const dashboards = keys
-      .map((k) => metricsMap[k]?.dashboard)
-      .filter((d): d is ManychatDashboard => Boolean(d));
-    if (dashboards.length === 0) return null;
-    return dashboards.reduce(
-      (sum, d) => ({
-        newLeads: sum.newLeads + d.newLeads,
-        leadsEngaged: sum.leadsEngaged + d.leadsEngaged,
-        callLinksSent: sum.callLinksSent + d.callLinksSent,
-        subLinksSent: sum.subLinksSent + d.subLinksSent,
-      }),
-      { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 },
-    );
+  const sourceRows = useMemo((): LeadSourceMetric[] => {
+    const visibleClients = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
+    const bySource = new Map<LeadSourceMetric["id"], LeadSourceMetric>();
+
+    for (const client of visibleClients) {
+      for (const row of metricsMap[client]?.leadSources || []) {
+        const existing = bySource.get(row.id) || {
+          id: row.id,
+          label: LEAD_SOURCE_LABELS[row.id] || row.label,
+          newLeads: 0,
+          callsBooked: 0,
+          callsTaken: 0,
+          wins: 0,
+          noShows: 0,
+          cashCollected: 0,
+        };
+
+        existing.newLeads += row.newLeads;
+        existing.callsBooked += row.callsBooked;
+        existing.callsTaken += row.callsTaken;
+        existing.wins += row.wins;
+        existing.noShows += row.noShows;
+        existing.cashCollected += row.cashCollected;
+        bySource.set(row.id, existing);
+      }
+    }
+
+    return (Object.keys(LEAD_SOURCE_LABELS) as LeadSourceMetric["id"][])
+      .map((id) => bySource.get(id) || {
+        id,
+        label: LEAD_SOURCE_LABELS[id],
+        newLeads: 0,
+        callsBooked: 0,
+        callsTaken: 0,
+        wins: 0,
+        noShows: 0,
+        cashCollected: 0,
+      })
+      .filter((row) => row.id !== "unmapped" || row.newLeads > 0 || row.callsBooked > 0);
   }, [filters.client, metricsMap]);
 
-  /* ── Build setter rows from metrics ─────────────────────────────── */
+  const sourceTotals = useMemo(() => {
+    return sourceRows.reduce((sum, row) => {
+      sum.newLeads += row.newLeads;
+      sum.callsBooked += row.callsBooked;
+      sum.callsTaken += row.callsTaken;
+      sum.wins += row.wins;
+      sum.noShows += row.noShows;
+      sum.cashCollected += row.cashCollected;
+      return sum;
+    }, emptyTotals());
+  }, [sourceRows]);
+
   const setterRows = useMemo((): SetterRow[] => {
     const relevant = getRelevantSetters(filters.client);
 
     return relevant.map(({ name, client }) => {
-      // Manychat metrics
       const metrics = metricsMap[client];
       let mc: ManychatDashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+
       if (metrics?.setters) {
         mc = metrics.setters[name] ||
           metrics.setters[name.toLowerCase()] ||
@@ -180,129 +249,52 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
           )?.[1] || mc;
       }
 
-      // Sales tracker metrics
       const keys = SETTER_SHEET_KEYS[name] || [name.toUpperCase()];
       const setterSheetRows = sheetRows.filter((r) =>
+        rowMatchesClient(r, client) &&
         keys.some((k) => (r.setter || "").toUpperCase().includes(k))
       );
       const callsBooked = setterSheetRows.length;
-      const callsTaken = setterSheetRows.filter((r) => r.callTaken).length;
+      const callsTaken = setterSheetRows.filter((r) => r.callTakenStatus === "yes" || r.callTaken).length;
       const wins = setterSheetRows.filter((r) => r.outcome === "WIN").length;
-      const noShows = setterSheetRows.filter((r) => ["NS/RS", "NS"].includes(r.outcome)).length;
+      const noShows = setterSheetRows.filter((r) => {
+        const outcome = (r.outcome || "").toUpperCase();
+        return r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS";
+      }).length;
       const cashCollected = setterSheetRows.reduce((s, r) => s + (r.cashCollected || 0), 0);
-      const revenue = setterSheetRows.reduce((s, r) => s + (r.revenue || 0), 0);
-      // Subscriptions: wins from this setter that are subscription-length programs (3 months)
-      // or any win that isn't a one-time PIF — this is the best proxy from the data
       const subsSold = setterSheetRows.filter((r) =>
         r.outcome === "WIN" && r.programLength === "3"
       ).length;
 
       return {
-        name, client,
+        name,
+        client,
         newLeads: mc.newLeads,
-        leadsEngaged: mc.leadsEngaged,
-        callLinksSent: mc.callLinksSent,
-        subLinksSent: mc.subLinksSent,
-        callsBooked, callsTaken, wins, noShows, cashCollected, revenue, subsSold,
+        callsBooked,
+        callsTaken,
+        wins,
+        noShows,
+        cashCollected,
+        subsSold,
       };
     });
   }, [filters.client, metricsMap, sheetRows]);
 
-  /* ── Render ─────────────────────────────────────────────────────── */
   return (
     <div>
-      {/* ── DM Metrics (aggregated) ─────────────────────────────── */}
-      <div className="section" style={{ marginBottom: 20 }}>
-        <h2 className="section-title">
-          <MessageCircle size={16} />
-          DM Metrics
-        </h2>
-        <div className="metric-grid metric-grid-4">
-          {renderDmKpi(
-            <Users size={12} style={{ color: "var(--accent)" }} />,
-            "New Leads",
-            aggregatedDashboard ? fmtNumber(aggregatedDashboard.newLeads) : "—",
-            loading,
-            error,
-          )}
-          {renderDmKpi(
-            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
-            "Leads Engaged",
-            aggregatedDashboard ? fmtNumber(aggregatedDashboard.leadsEngaged) : "—",
-            loading,
-            error,
-          )}
-          {renderDmKpi(
-            <Link2 size={12} style={{ color: "var(--accent)" }} />,
-            "Call Links Sent",
-            aggregatedDashboard ? fmtNumber(aggregatedDashboard.callLinksSent) : "—",
-            loading,
-            error,
-          )}
-          {renderDmKpi(
-            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
-            "Sub Links Sent",
-            aggregatedDashboard ? fmtNumber(aggregatedDashboard.subLinksSent) : "—",
-            loading,
-            error,
-          )}
-        </div>
-        <div className="metric-grid metric-grid-3" style={{ marginTop: 12 }}>
-          {renderDmKpi(
-            <MessageCircle size={12} style={{ color: "var(--accent)" }} />,
-            "Engagement Rate",
-            aggregatedDashboard && aggregatedDashboard.newLeads > 0
-              ? `${((aggregatedDashboard.leadsEngaged / aggregatedDashboard.newLeads) * 100).toFixed(1)}%`
-              : "—",
-            loading,
-            error,
-          )}
-          {renderDmKpi(
-            <PhoneCall size={12} style={{ color: "var(--accent)" }} />,
-            "Booking Rate",
-            aggregatedDashboard && aggregatedDashboard.newLeads > 0
-              ? `${((aggregatedDashboard.callLinksSent / aggregatedDashboard.newLeads) * 100).toFixed(1)}%`
-              : "—",
-            loading,
-            error,
-          )}
-          {renderDmKpi(
-            <CreditCard size={12} style={{ color: "var(--accent)" }} />,
-            "Subscription Rate",
-            aggregatedDashboard && aggregatedDashboard.leadsEngaged > 0
-              ? `${((aggregatedDashboard.subLinksSent / aggregatedDashboard.leadsEngaged) * 100).toFixed(1)}%`
-              : "—",
-            loading,
-            error,
-          )}
-        </div>
-        <DMFunnels
-          selectedClient={filters.client}
-          metricsMap={metricsMap}
-          loading={loading}
-          error={error}
-        />
-      </div>
+      <LeadSourcePerformance
+        rows={sourceRows}
+        totals={sourceTotals}
+        loading={loading}
+        error={error}
+      />
 
-      {/* ── Per-setter breakdown ─────────────────────────────────── */}
       {loading ? (
-        <div className="glass-static" style={{
-          padding: 40, display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
-        </div>
+        <LoadingCard />
       ) : error ? (
-        <div className="glass-static" style={{
-          padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13,
-        }}>
-          Failed to load setter data: {error}
-        </div>
+        <ErrorCard message={`Failed to load setter data: ${error}`} />
       ) : setterRows.length === 0 ? (
-        <div className="glass-static" style={{
-          padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13,
-        }}>
-          No setter data available for this period.
-        </div>
+        <EmptyCard message="No setter data available for this period." />
       ) : (
         <SetterGrid rows={setterRows} />
       )}
@@ -310,51 +302,140 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   );
 }
 
-function renderDmKpi(
-  icon: ReactNode,
-  label: string,
-  value: string | number,
-  loading: boolean,
-  error: string,
-) {
+function LeadSourcePerformance({
+  rows,
+  totals,
+  loading,
+  error,
+}: {
+  rows: LeadSourceMetric[];
+  totals: SourceTotals;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading) {
+    return (
+      <div className="section" style={{ marginBottom: 20 }}>
+        <h2 className="section-title">
+          <TrendingUp size={16} />
+          Lead Source Performance
+        </h2>
+        <LoadingCard />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="section" style={{ marginBottom: 20 }}>
+        <h2 className="section-title">
+          <TrendingUp size={16} />
+          Lead Source Performance
+        </h2>
+        <ErrorCard message={`Failed to load lead source data: ${error}`} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="section" style={{ marginBottom: 20 }}>
+      <h2 className="section-title">
+        <TrendingUp size={16} />
+        Lead Source Performance
+      </h2>
+
+      <div className="metric-grid metric-grid-3" style={{ marginBottom: 12 }}>
+        <SummaryCard
+          icon={<Users size={12} style={{ color: "var(--accent)" }} />}
+          label="New Leads"
+          value={fmtNumber(totals.newLeads)}
+        />
+        <SummaryCard
+          icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />}
+          label="Calls Booked"
+          value={fmtNumber(totals.callsBooked)}
+        />
+        <SummaryCard
+          icon={<TrendingUp size={12} style={{ color: "var(--success)" }} />}
+          label="Booking Rate"
+          value={formatRate(totals.callsBooked, totals.newLeads)}
+          color="var(--success)"
+        />
+      </div>
+
+      <div className="glass-static" style={{ overflow: "auto" }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>New Leads</th>
+              <th>Booked</th>
+              <th>Booking Rate</th>
+              <th>Taken</th>
+              <th>Wins</th>
+              <th>Show Rate</th>
+              <th>Close Rate</th>
+              <th>AOV</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td style={{ fontWeight: 600, color: row.id === "unmapped" ? "var(--warning)" : "var(--text-primary)" }}>
+                  {row.label}
+                </td>
+                <td>{fmtNumber(row.newLeads)}</td>
+                <td>{fmtNumber(row.callsBooked)}</td>
+                <td>{formatRate(row.callsBooked, row.newLeads)}</td>
+                <td>{fmtNumber(row.callsTaken)}</td>
+                <td style={{ color: row.wins > 0 ? "var(--success)" : "var(--text-primary)" }}>
+                  {fmtNumber(row.wins)}
+                </td>
+                <td>{formatRate(row.callsTaken, sourceShowDenominator(row))}</td>
+                <td>{formatRate(row.wins, row.callsTaken)}</td>
+                <td>{row.wins > 0 ? fmtDollars(row.cashCollected / row.wins) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  color?: string;
+}) {
   return (
     <div className="glass-static metric-card">
       <div className="metric-card-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {icon}
         {label}
       </div>
-      {loading ? (
-        <div style={{ paddingTop: 4 }}>
-          <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
-        </div>
-      ) : error ? (
-        <div style={{ fontSize: 12, color: "var(--danger)" }}>Error</div>
-      ) : (
-        <div className="metric-card-value">{value}</div>
-      )}
+      <div className="metric-card-value" style={color ? { color } : undefined}>
+        {value}
+      </div>
     </div>
   );
 }
 
 function SetterGrid({ rows }: { rows: SetterRow[] }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
       {rows.map((s) => {
-        const engagementRate = s.newLeads > 0 ? (s.leadsEngaged / s.newLeads) * 100 : 0;
-        const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
-        const showRate = s.callsBooked > 0 ? (s.callsTaken / s.callsBooked) * 100 : 0;
-        const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
-        const client = getSetterClient(s.name, s.client);
-        const cc =
-          client === "keith"
-            ? "var(--keith)"
-            : client === "lucy"
-              ? "var(--accent)"
-              : "var(--tyson)";
+        const showDenominator = s.callsTaken + s.noShows;
+        const cc = clientColor(s.client);
 
         return (
-          <div key={`${client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
-            {/* Header */}
+          <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               marginBottom: 14,
@@ -369,117 +450,80 @@ function SetterGrid({ rows }: { rows: SetterRow[] }) {
                 fontSize: 11, color: cc, textTransform: "uppercase",
                 fontWeight: 500, letterSpacing: "0.5px",
               }}>
-                {CLIENT_BADGE_LABELS[client] ?? client}
+                {CLIENT_BADGE_LABELS[s.client] ?? s.client}
               </span>
             </div>
 
-            {/* DM Metrics Row */}
             <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-              gap: "8px", marginBottom: 12,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(86px, 1fr))",
+              gap: "12px 10px",
             }}>
-              {[
-                { label: "New Leads", value: fmtNumber(s.newLeads) },
-                { label: "Engaged", value: fmtNumber(s.leadsEngaged) },
-                { label: "Call Links", value: fmtNumber(s.callLinksSent) },
-                { label: "Sub Links", value: fmtNumber(s.subLinksSent) },
-              ].map((m) => (
-                <div key={m.label}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
-                    {m.value}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                    {m.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Sales Metrics Row */}
-            <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-              gap: "8px", marginBottom: 12,
-              padding: "10px 0", borderTop: "1px solid var(--border-subtle)",
-            }}>
-              {[
-                { label: "Calls Booked", value: fmtNumber(s.callsBooked) },
-                { label: "Calls Taken", value: fmtNumber(s.callsTaken) },
-                { label: "Wins", value: fmtNumber(s.wins) },
-                { label: "No Shows", value: fmtNumber(s.noShows), danger: s.noShows > 3 },
-              ].map((m) => (
-                <div key={m.label}>
-                  <div style={{
-                    fontSize: 18, fontWeight: 700,
-                    color: m.danger ? "var(--danger)" : "var(--text-primary)",
-                  }}>
-                    {m.value}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                    {m.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Revenue Row */}
-            <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
-              gap: "8px", marginBottom: 12,
-            }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>
-                  ${s.cashCollected.toLocaleString()}
-                </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                  Cash Collected
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
-                  ${s.revenue.toLocaleString()}
-                </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                  Revenue
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>
-                  {fmtNumber(s.subsSold)}
-                </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                  Subs Sold
-                </div>
-              </div>
-            </div>
-
-            {/* Rates Row */}
-            <div style={{
-              display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-              gap: "8px", padding: "10px 0 0",
-              borderTop: "1px solid var(--border-subtle)",
-            }}>
-              {[
-                { label: "Engagement", value: engagementRate, target: 50 },
-                { label: "Booking Rate", value: bookingRate, target: 15 },
-                { label: "Show Rate", value: showRate, target: 65 },
-                { label: "Close Rate", value: closeRate, target: 40 },
-              ].map((m) => (
-                <div key={m.label}>
-                  <div style={{
-                    fontSize: 16, fontWeight: 700,
-                    color: m.value >= m.target ? "var(--success)" : m.value >= m.target * 0.7 ? "var(--warning)" : "var(--danger)",
-                  }}>
-                    {m.value > 0 ? fmtPercent(m.value) : "—"}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-                    {m.label}
-                  </div>
-                </div>
-              ))}
+              <SetterMetric label="New Leads" value={fmtNumber(s.newLeads)} />
+              <SetterMetric label="Calls Booked" value={fmtNumber(s.callsBooked)} />
+              <SetterMetric label="Calls Taken" value={fmtNumber(s.callsTaken)} />
+              <SetterMetric label="Wins" value={fmtNumber(s.wins)} color={s.wins > 0 ? "var(--success)" : undefined} />
+              <SetterMetric label="No Shows" value={fmtNumber(s.noShows)} color={s.noShows > 0 ? "var(--danger)" : undefined} />
+              <SetterMetric label="Cash Collected" value={fmtDollars(s.cashCollected)} color="var(--success)" />
+              <SetterMetric label="Subs Sold" value={fmtNumber(s.subsSold)} color="var(--accent)" />
+              <SetterMetric label="Booking Rate" value={formatRate(s.callsBooked, s.newLeads)} />
+              <SetterMetric label="Show Rate" value={formatRate(s.callsTaken, showDenominator)} />
+              <SetterMetric label="Close Rate" value={formatRate(s.wins, s.callsTaken)} />
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function SetterMetric({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: color || "var(--text-primary)" }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function LoadingCard() {
+  return (
+    <div className="glass-static" style={{
+      padding: 40, display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <Loader2 size={20} className="spin" style={{ color: "var(--text-muted)" }} />
+    </div>
+  );
+}
+
+function ErrorCard({ message }: { message: string }) {
+  return (
+    <div className="glass-static" style={{
+      padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 13,
+    }}>
+      {message}
+    </div>
+  );
+}
+
+function EmptyCard({ message }: { message: string }) {
+  return (
+    <div className="glass-static" style={{
+      padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13,
+    }}>
+      {message}
     </div>
   );
 }

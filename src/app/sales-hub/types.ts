@@ -36,6 +36,22 @@ export interface ManychatDashboard {
   subLinksSent: number;
 }
 
+export interface LeadSourceMetric {
+  id:
+    | "direct_cta_ad"
+    | "lead_magnet_ad"
+    | "direct_coaching_organic_cta"
+    | "organic_lead_magnet"
+    | "unmapped";
+  label: string;
+  newLeads: number;
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  noShows: number;
+  cashCollected: number;
+}
+
 export interface ManychatFunnelStage {
   id: string;
   label: string;
@@ -45,6 +61,7 @@ export interface ManychatFunnelStage {
 
 export interface ManychatMetrics {
   dashboard: ManychatDashboard;
+  leadSources: LeadSourceMetric[];
   funnel: ManychatFunnelStage[];
   setters: Record<string, ManychatDashboard>;
   tagsDetected: boolean;

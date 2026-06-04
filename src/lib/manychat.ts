@@ -27,6 +27,7 @@ export interface ManychatMetrics {
     callLinksSent: number;
     subLinksSent: number;
   };
+  leadSources: LeadSourceMetric[];
   funnel: {
     id: string;
     label: string;
@@ -46,10 +47,31 @@ export interface ManychatMetrics {
 }
 
 const CLIENT_SETTERS: Record<Client, string[]> = {
-  tyson_sonnek: ["amara", "kelechi", "debbie"],
+  tyson_sonnek: ["amara", "kelechi"],
   keith_holland: ["gideon"],
-  lucy_hubbard: [],
+  lucy_hubbard: ["debbie"],
 };
+
+const LEAD_SOURCE_DEFS = [
+  { id: "direct_cta_ad", label: "Direct CTA ad" },
+  { id: "lead_magnet_ad", label: "Lead magnet ad" },
+  { id: "direct_coaching_organic_cta", label: "Direct coaching organic CTA" },
+  { id: "organic_lead_magnet", label: "Organic lead magnet" },
+  { id: "unmapped", label: "Unmapped" },
+] as const;
+
+type LeadSourceId = (typeof LEAD_SOURCE_DEFS)[number]["id"];
+
+export interface LeadSourceMetric {
+  id: LeadSourceId;
+  label: string;
+  newLeads: number;
+  callsBooked: number;
+  callsTaken: number;
+  wins: number;
+  noShows: number;
+  cashCollected: number;
+}
 
 const FUNNEL_STAGE_DEFS = [
   { id: "new_lead", label: "New lead" },
@@ -68,6 +90,10 @@ interface CohortLead {
   setterName: string | null;
   newLeadAt: string;
   subscriberName: string | null;
+  keywordRaw: string | null;
+  keywordNormalized: string | null;
+  rawPayload: unknown;
+  sourceId: LeadSourceId;
 }
 
 interface ManychatTagEventRow {
@@ -76,6 +102,9 @@ interface ManychatTagEventRow {
   setter_name: string | null;
   event_at: string;
   subscriber_name?: string | null;
+  keyword_raw?: string | null;
+  keyword_normalized?: string | null;
+  raw_payload?: unknown;
 }
 
 interface StageStateRow {
@@ -97,6 +126,13 @@ interface AppointmentRow {
   status: string | null;
 }
 
+interface MetaInsightRow {
+  keyword_normalized: string | null;
+  campaign_name: string | null;
+  ad_name: string | null;
+  spend_cents: number | null;
+}
+
 function toIsoStart(date: string) {
   return `${date}T00:00:00Z`;
 }
@@ -116,6 +152,10 @@ function buildCohort(events: ManychatTagEventRow[]): Map<string, CohortLead> {
         setterName: normalizeSetterName(event.setter_name),
         newLeadAt: event.event_at,
         subscriberName: event.subscriber_name?.trim() || null,
+        keywordRaw: event.keyword_raw?.trim() || null,
+        keywordNormalized: event.keyword_normalized?.trim().toLowerCase() || null,
+        rawPayload: event.raw_payload || null,
+        sourceId: "unmapped",
       });
     } else if (!existing.subscriberName && event.subscriber_name?.trim()) {
       cohort.set(event.subscriber_id, {
@@ -126,6 +166,109 @@ function buildCohort(events: ManychatTagEventRow[]): Map<string, CohortLead> {
   }
 
   return cohort;
+}
+
+function emptyLeadSources(): Record<LeadSourceId, LeadSourceMetric> {
+  return LEAD_SOURCE_DEFS.reduce(
+    (acc, source) => {
+      acc[source.id] = {
+        id: source.id,
+        label: source.label,
+        newLeads: 0,
+        callsBooked: 0,
+        callsTaken: 0,
+        wins: 0,
+        noShows: 0,
+        cashCollected: 0,
+      };
+      return acc;
+    },
+    {} as Record<LeadSourceId, LeadSourceMetric>,
+  );
+}
+
+function leadSourcesList(sources: Record<LeadSourceId, LeadSourceMetric>): LeadSourceMetric[] {
+  return LEAD_SOURCE_DEFS
+    .map((source) => sources[source.id])
+    .filter((source) => source.id !== "unmapped" || source.newLeads > 0 || source.callsBooked > 0);
+}
+
+function adsClientKey(client: Client): string {
+  if (client === "tyson_sonnek") return "tyson";
+  if (client === "keith_holland") return "keith";
+  return "lucy";
+}
+
+function textFromPayload(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const seen = new Set<unknown>();
+  const parts: string[] = [];
+  const queue: unknown[] = [value];
+
+  while (queue.length > 0 && parts.length < 80) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    for (const [key, nested] of Object.entries(current)) {
+      if (typeof nested === "string" && nested.trim()) {
+        parts.push(`${key} ${nested}`);
+      } else if (nested && typeof nested === "object") {
+        queue.push(nested);
+      }
+    }
+  }
+
+  return parts.join(" ").toLowerCase();
+}
+
+function classifyOrganicText(text: string): LeadSourceId | null {
+  if (!text) return null;
+  const isOrganic = /\b(organic|story|stories|bio|comment|dm|ig|instagram)\b/i.test(text);
+  if (!isOrganic) return null;
+  if (/\b(lead\s*magnet|magnet|challenge|free|skool|guide|pdf|meal\s*plan|summer\s*shred)\b/i.test(text)) {
+    return "organic_lead_magnet";
+  }
+  if (/\b(cta|coaching|apply|application|call|book|consult|audit)\b/i.test(text)) {
+    return "direct_coaching_organic_cta";
+  }
+  return "direct_coaching_organic_cta";
+}
+
+function classifyPaidText(text: string): LeadSourceId {
+  if (/\b(lead\s*magnet|magnet|challenge|free|skool|guide|pdf|meal\s*plan|summer\s*shred)\b/i.test(text)) {
+    return "lead_magnet_ad";
+  }
+  return "direct_cta_ad";
+}
+
+function classifyLeadSource(
+  lead: CohortLead,
+  metaHintsByKeyword: Map<string, MetaInsightRow[]>,
+): LeadSourceId {
+  const keyword = lead.keywordNormalized;
+  const payloadText = textFromPayload(lead.rawPayload);
+  const keywordText = `${lead.keywordRaw || ""} ${lead.keywordNormalized || ""}`.toLowerCase();
+  const combinedText = `${keywordText} ${payloadText}`;
+
+  const organicSource = classifyOrganicText(combinedText);
+  if (organicSource) return organicSource;
+
+  const metaHints = keyword ? metaHintsByKeyword.get(keyword) || [] : [];
+  const paidHintText = metaHints
+    .map((row) => `${row.campaign_name || ""} ${row.ad_name || ""}`)
+    .join(" ")
+    .toLowerCase();
+
+  if (paidHintText) return classifyPaidText(paidHintText);
+  if (/\b(ad|paid|direct\s*cta|cta)\b/i.test(combinedText)) return classifyPaidText(combinedText);
+
+  return "unmapped";
 }
 
 function normalizePersonName(value: string | null | undefined): string {
@@ -163,6 +306,7 @@ export async function getMetrics(
   const setters = CLIENT_SETTERS[client];
 
   const dashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+  const leadSources = emptyLeadSources();
   const funnel = FUNNEL_STAGE_DEFS.map((stage) => ({
     id: stage.id,
     label: stage.label,
@@ -177,7 +321,7 @@ export async function getMetrics(
   try {
     const { data: newLeadEvents, error: newLeadError } = await sb
       .from("manychat_tag_events")
-      .select("subscriber_id, subscriber_name, setter_name, event_at")
+      .select("subscriber_id, subscriber_name, setter_name, event_at, keyword_raw, keyword_normalized, raw_payload")
       .eq("client", client)
       .eq("tag_name", "new_lead")
       .gte("event_at", `${dateFrom}T00:00:00Z`)
@@ -185,11 +329,11 @@ export async function getMetrics(
 
     if (newLeadError) {
       console.error("manychat_tag_events cohort query error:", newLeadError);
-      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
     }
 
     if (!newLeadEvents || newLeadEvents.length === 0) {
-      return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: true };
     }
 
     const cohort = buildCohort(newLeadEvents as ManychatTagEventRow[]);
@@ -200,6 +344,40 @@ export async function getMetrics(
 
     dashboard.newLeads = cohortIds.length;
     funnel[0].count = cohortIds.length;
+
+    const keywords = [...new Set(
+      [...cohort.values()]
+        .map((lead) => lead.keywordNormalized)
+        .filter((keyword): keyword is string => Boolean(keyword))
+    )];
+    const metaHintsByKeyword = new Map<string, MetaInsightRow[]>();
+
+    if (keywords.length > 0) {
+      const { data: metaRows, error: metaError } = await sb
+        .from("ads_meta_insights_daily")
+        .select("keyword_normalized, campaign_name, ad_name, spend_cents")
+        .eq("client_key", adsClientKey(client))
+        .in("keyword_normalized", keywords)
+        .gte("date", addDays(dateFrom, -14))
+        .lte("date", dateTo);
+
+      if (metaError) {
+        console.error("ads_meta_insights_daily source query error:", metaError);
+      } else {
+        for (const row of (metaRows || []) as MetaInsightRow[]) {
+          const keyword = row.keyword_normalized?.trim().toLowerCase();
+          if (!keyword || (row.spend_cents || 0) <= 0) continue;
+          const list = metaHintsByKeyword.get(keyword) || [];
+          list.push(row);
+          metaHintsByKeyword.set(keyword, list);
+        }
+      }
+    }
+
+    for (const lead of cohort.values()) {
+      lead.sourceId = classifyLeadSource(lead, metaHintsByKeyword);
+      leadSources[lead.sourceId].newLeads += 1;
+    }
 
     for (const lead of cohort.values()) {
       const setter = lead.setterName;
@@ -216,7 +394,7 @@ export async function getMetrics(
 
     if (eventError) {
       console.error("manychat_tag_events progression query error:", eventError);
-      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
     }
 
     const eventsBySubscriber = new Map<string, ManychatTagEventRow[]>();
@@ -266,7 +444,7 @@ export async function getMetrics(
 
     if (stageError) {
       console.error("dm_conversation_stage_state query error:", stageError);
-      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
     }
 
     const stageStateMap = new Map<string, StageStateRow>();
@@ -289,7 +467,7 @@ export async function getMetrics(
 
     if (linkError) {
       console.error("manychat_contact_links query error:", linkError);
-      return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
     }
 
     const linkMap = new Map<string, ContactLinkRow>();
@@ -300,23 +478,43 @@ export async function getMetrics(
     }
 
     const bookedSubscribers = new Set<string>();
+    const bookedSubscribersBySource = new Map<LeadSourceId, Set<string>>();
+    for (const source of LEAD_SOURCE_DEFS) {
+      bookedSubscribersBySource.set(source.id, new Set<string>());
+    }
     let salesTrackerBookedCount = 0;
 
     try {
       const salesRows = (await fetchSheetData(dateFrom, addDays(dateTo, 30)))
         .filter((row) => row.programLength !== "Subscription");
-      salesTrackerBookedCount = salesRows.filter((row) => matchesClientOffer(client, row.offer)).length;
-      const bookedNames = new Set(
-        salesRows
-          .filter((row) => matchesClientOffer(client, row.offer))
-          .map((row) => normalizePersonName(row.name))
-          .filter(Boolean)
-      );
-
+      const clientSalesRows = salesRows.filter((row) => matchesClientOffer(client, row.offer));
+      salesTrackerBookedCount = clientSalesRows.length;
+      const leadsByName = new Map<string, CohortLead[]>();
       for (const lead of cohort.values()) {
         if (!lead.subscriberName) continue;
-        if (bookedNames.has(normalizePersonName(lead.subscriberName))) {
-          bookedSubscribers.add(lead.subscriberId);
+        const key = normalizePersonName(lead.subscriberName);
+        if (!key) continue;
+        const list = leadsByName.get(key) || [];
+        list.push(lead);
+        leadsByName.set(key, list);
+      }
+
+      for (const row of clientSalesRows) {
+        const lead = row.manychatSubscriberId
+          ? cohort.get(row.manychatSubscriberId)
+          : (leadsByName.get(normalizePersonName(row.name)) || [])[0];
+
+        if (!lead) continue;
+
+        bookedSubscribers.add(lead.subscriberId);
+        bookedSubscribersBySource.get(lead.sourceId)?.add(lead.subscriberId);
+
+        const source = leadSources[lead.sourceId];
+        if (row.callTakenStatus === "yes") source.callsTaken += 1;
+        if (row.callTakenStatus === "no") source.noShows += 1;
+        if (row.callTakenStatus === "yes" && row.outcome === "WIN") {
+          source.wins += 1;
+          source.cashCollected += row.cashCollected || 0;
         }
       }
     } catch (sheetError) {
@@ -332,7 +530,7 @@ export async function getMetrics(
 
       if (appointmentError) {
         console.error("ghl_appointments query error:", appointmentError);
-        return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+        return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
       }
 
       const appointmentsByContact = new Map<string, AppointmentRow[]>();
@@ -354,8 +552,15 @@ export async function getMetrics(
           const status = row.status?.toLowerCase() || "";
           return createdAt >= newLeadTime && status !== "cancelled";
         });
-        if (hasBooked) bookedSubscribers.add(lead.subscriberId);
+        if (hasBooked) {
+          bookedSubscribers.add(lead.subscriberId);
+          bookedSubscribersBySource.get(lead.sourceId)?.add(lead.subscriberId);
+        }
       }
+    }
+
+    for (const source of LEAD_SOURCE_DEFS) {
+      leadSources[source.id].callsBooked = bookedSubscribersBySource.get(source.id)?.size || 0;
     }
 
     const funnelStageCounts = {
@@ -407,10 +612,10 @@ export async function getMetrics(
       if (stage.id === "booked") stage.count = funnelStageCounts.booked;
     }
 
-    return { dashboard, funnel, setters: setterMetrics, tagsDetected: true };
+    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: true };
   } catch (err) {
     console.error("manychat_tag_events error:", err);
-    return { dashboard, funnel, setters: setterMetrics, tagsDetected: false };
+    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
   }
 }
 

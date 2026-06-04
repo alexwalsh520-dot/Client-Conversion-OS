@@ -236,6 +236,7 @@ function normalizeSetterName(val: string | undefined): string {
     KELECHI: "Kelechi",
     GIDEON: "Gideon",
     DEBBIE: "Debbie",
+    DEBBY: "Debbie",
     NAOMI: "Naomi",
     OTHER: "Other",
   };
