@@ -55,6 +55,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ uploadUrl: signed.uploadUrl, headers: signed.headers });
   } catch (err) {
     console.error("[testimonials/video/upload-url] error:", err);
+    // Diagnostic: log WHICH R2 env vars are present (booleans only, never the
+    // secret values) so a misconfigured production env is easy to pinpoint.
+    if (err instanceof Error && err.message.includes("R2 env vars not configured")) {
+      console.error("[testimonials/video/upload-url] R2 env presence:", {
+        R2_ACCOUNT_ID: Boolean(process.env.R2_ACCOUNT_ID?.trim()),
+        R2_ACCESS_KEY_ID: Boolean(process.env.R2_ACCESS_KEY_ID?.trim()),
+        R2_SECRET_ACCESS_KEY: Boolean(process.env.R2_SECRET_ACCESS_KEY?.trim()),
+        R2_BUCKET_NAME: Boolean(process.env.R2_BUCKET_NAME?.trim()),
+        R2_PUBLIC_BASE_URL: Boolean(process.env.R2_PUBLIC_BASE_URL?.trim()),
+      });
+    }
     return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
   }
 }
