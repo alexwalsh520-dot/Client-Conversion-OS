@@ -674,6 +674,84 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.setter-quality-card {
+  overflow: hidden;
+}
+
+.setter-quality-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.setter-quality-table {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.setter-quality-table th,
+.setter-quality-table td {
+  border-bottom: 1px solid var(--border-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.setter-quality-table th {
+  padding: 12px 18px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.setter-quality-table td {
+  padding: 16px 18px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.setter-quality-table th:first-child,
+.setter-quality-table td:first-child {
+  width: 32%;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: left;
+}
+
+.setter-quality-table th:nth-child(2),
+.setter-quality-table th:nth-child(3),
+.setter-quality-table td:nth-child(2),
+.setter-quality-table td:nth-child(3) {
+  width: 14%;
+}
+
+.setter-quality-table th:nth-child(4),
+.setter-quality-table td:nth-child(4) {
+  width: 18%;
+}
+
+.setter-quality-table th:nth-child(5),
+.setter-quality-table td:nth-child(5) {
+  width: 20%;
+}
+
+.setter-quality-table tr:last-child td {
+  border-bottom: none;
+}
+
+.setter-quality-empty {
+  color: var(--text-muted) !important;
+  font-weight: 500 !important;
+  padding: 24px 18px !important;
+  text-align: center !important;
+}
+
 @media (max-width: 1100px) {
   .metric-grid-6 { grid-template-columns: repeat(3, 1fr); }
   .setter-quality-grid { grid-template-columns: 1fr; }

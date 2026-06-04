@@ -406,8 +406,7 @@ export default function CloserPerformance({
             return (
               <div
                 key={closer.name}
-                className="glass-static"
-                style={{ overflowX: "auto", overflowY: "hidden" }}
+                className="glass-static setter-quality-card"
               >
                 <div
                   style={{
@@ -420,51 +419,38 @@ export default function CloserPerformance({
                 >
                   {closer.name}
                 </div>
-                <table
-                  className="data-table"
-                  style={{ width: "100%", minWidth: 0, tableLayout: "fixed" }}
-                >
-                  <colgroup>
-                    <col style={{ width: "28%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "22%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th style={{ padding: "10px 12px" }}>Setter</th>
-                      <th style={{ padding: "10px 8px" }}>Booked</th>
-                      <th style={{ padding: "10px 8px" }}>Taken</th>
-                      <th style={{ padding: "10px 8px" }}>Upcoming</th>
-                      <th style={{ padding: "10px 8px" }}>Show Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length === 0 ? (
+                <div className="setter-quality-scroll">
+                  <table className="setter-quality-table">
+                    <thead>
                       <tr>
-                        <td
-                          colSpan={5}
-                          style={{ textAlign: "center", color: "var(--text-muted)" }}
-                        >
-                          No data
-                        </td>
+                        <th>Setter</th>
+                        <th>Booked</th>
+                        <th>Taken</th>
+                        <th>Upcoming</th>
+                        <th>Show Rate</th>
                       </tr>
-                    ) : (
-                      rows.map((sq) => (
-                        <tr key={sq.setter}>
-                          <td style={{ padding: "12px", fontWeight: 500, color: "var(--text-primary)" }}>
-                            {sq.setter}
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="setter-quality-empty">
+                            No data
                           </td>
-                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.booked)}</td>
-                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.taken)}</td>
-                          <td style={{ padding: "12px 8px" }}>{fmtNumber(sq.upcoming)}</td>
-                          <td style={{ padding: "12px 8px" }}>{fmtPercent(sq.showRate)}</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        rows.map((sq) => (
+                          <tr key={sq.setter}>
+                            <td>{sq.setter}</td>
+                            <td>{fmtNumber(sq.booked)}</td>
+                            <td>{fmtNumber(sq.taken)}</td>
+                            <td>{fmtNumber(sq.upcoming)}</td>
+                            <td>{fmtPercent(sq.showRate)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             );
           })}
