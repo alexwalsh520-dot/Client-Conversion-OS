@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
-import type { Filters, LeadSourceMetric, ManychatDashboard, ManychatMetrics } from "../types";
+import type { Filters, ManychatDashboard, ManychatMetrics } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -39,13 +39,9 @@ interface SheetRow {
   programLength: string;
 }
 
-interface SourceTotals {
+interface SetterSummary {
   newLeads: number;
   callsBooked: number;
-  callsTaken: number;
-  wins: number;
-  noShows: number;
-  cashCollected: number;
 }
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
@@ -67,14 +63,6 @@ const CLIENT_BADGE_LABELS: Record<string, string> = {
   tyson: "Tyson",
   keith: "Keith",
   lucy: "Lucy Hubbard",
-};
-
-const LEAD_SOURCE_LABELS: Record<LeadSourceMetric["id"], string> = {
-  direct_cta_ad: "Direct CTA ad",
-  lead_magnet_ad: "Lead magnet ad",
-  direct_coaching_organic_cta: "Direct coaching organic CTA",
-  organic_lead_magnet: "Organic lead magnet",
-  unmapped: "Unmapped",
 };
 
 function getRelevantSetters(client: string): { name: string; client: string }[] {
@@ -107,19 +95,10 @@ function formatRate(numerator: number, denominator: number): string {
   return fmtPercent((numerator / denominator) * 100);
 }
 
-function sourceShowDenominator(row: SourceTotals | LeadSourceMetric): number {
-  return row.callsTaken + row.noShows;
-}
-
-function emptyTotals(): SourceTotals {
-  return {
-    newLeads: 0,
-    callsBooked: 0,
-    callsTaken: 0,
-    wins: 0,
-    noShows: 0,
-    cashCollected: 0,
-  };
+function rateColor(value: number, good: number, okay: number): string {
+  if (value >= good) return "var(--success)";
+  if (value >= okay) return "var(--warning)";
+  return "var(--danger)";
 }
 
 /* ── Fetch helper ─────────────────────────────────────────────────── */
@@ -181,58 +160,21 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     void Promise.resolve().then(fetchData);
   }, [fetchData]);
 
-  const sourceRows = useMemo((): LeadSourceMetric[] => {
+  const summary = useMemo((): SetterSummary => {
     const visibleClients = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
-    const bySource = new Map<LeadSourceMetric["id"], LeadSourceMetric>();
+    const newLeads = visibleClients.reduce(
+      (sum, client) => sum + (metricsMap[client]?.dashboard?.newLeads || 0),
+      0,
+    );
+    const visibleRows = filters.client === "all"
+      ? sheetRows
+      : sheetRows.filter((row) => rowMatchesClient(row, filters.client));
 
-    for (const client of visibleClients) {
-      for (const row of metricsMap[client]?.leadSources || []) {
-        const existing = bySource.get(row.id) || {
-          id: row.id,
-          label: LEAD_SOURCE_LABELS[row.id] || row.label,
-          newLeads: 0,
-          callsBooked: 0,
-          callsTaken: 0,
-          wins: 0,
-          noShows: 0,
-          cashCollected: 0,
-        };
-
-        existing.newLeads += row.newLeads;
-        existing.callsBooked += row.callsBooked;
-        existing.callsTaken += row.callsTaken;
-        existing.wins += row.wins;
-        existing.noShows += row.noShows;
-        existing.cashCollected += row.cashCollected;
-        bySource.set(row.id, existing);
-      }
-    }
-
-    return (Object.keys(LEAD_SOURCE_LABELS) as LeadSourceMetric["id"][])
-      .map((id) => bySource.get(id) || {
-        id,
-        label: LEAD_SOURCE_LABELS[id],
-        newLeads: 0,
-        callsBooked: 0,
-        callsTaken: 0,
-        wins: 0,
-        noShows: 0,
-        cashCollected: 0,
-      })
-      .filter((row) => row.id !== "unmapped" || row.newLeads > 0 || row.callsBooked > 0);
-  }, [filters.client, metricsMap]);
-
-  const sourceTotals = useMemo(() => {
-    return sourceRows.reduce((sum, row) => {
-      sum.newLeads += row.newLeads;
-      sum.callsBooked += row.callsBooked;
-      sum.callsTaken += row.callsTaken;
-      sum.wins += row.wins;
-      sum.noShows += row.noShows;
-      sum.cashCollected += row.cashCollected;
-      return sum;
-    }, emptyTotals());
-  }, [sourceRows]);
+    return {
+      newLeads,
+      callsBooked: visibleRows.length,
+    };
+  }, [filters.client, metricsMap, sheetRows]);
 
   const setterRows = useMemo((): SetterRow[] => {
     const relevant = getRelevantSetters(filters.client);
@@ -282,12 +224,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
   return (
     <div>
-      <LeadSourcePerformance
-        rows={sourceRows}
-        totals={sourceTotals}
-        loading={loading}
-        error={error}
-      />
+      <SetterPerformanceSummary summary={summary} loading={loading} error={error} />
 
       {loading ? (
         <LoadingCard />
@@ -296,20 +233,18 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       ) : setterRows.length === 0 ? (
         <EmptyCard message="No setter data available for this period." />
       ) : (
-        <SetterGrid rows={setterRows} />
+        <SetterTable rows={setterRows} />
       )}
     </div>
   );
 }
 
-function LeadSourcePerformance({
-  rows,
-  totals,
+function SetterPerformanceSummary({
+  summary,
   loading,
   error,
 }: {
-  rows: LeadSourceMetric[];
-  totals: SourceTotals;
+  summary: SetterSummary;
   loading: boolean;
   error: string;
 }) {
@@ -318,7 +253,7 @@ function LeadSourcePerformance({
       <div className="section" style={{ marginBottom: 20 }}>
         <h2 className="section-title">
           <TrendingUp size={16} />
-          Lead Source Performance
+          Setter Performance
         </h2>
         <LoadingCard />
       </div>
@@ -330,9 +265,9 @@ function LeadSourcePerformance({
       <div className="section" style={{ marginBottom: 20 }}>
         <h2 className="section-title">
           <TrendingUp size={16} />
-          Lead Source Performance
+          Setter Performance
         </h2>
-        <ErrorCard message={`Failed to load lead source data: ${error}`} />
+        <ErrorCard message={`Failed to load setter performance: ${error}`} />
       </div>
     );
   }
@@ -341,63 +276,26 @@ function LeadSourcePerformance({
     <div className="section" style={{ marginBottom: 20 }}>
       <h2 className="section-title">
         <TrendingUp size={16} />
-        Lead Source Performance
+        Setter Performance
       </h2>
 
       <div className="metric-grid metric-grid-3" style={{ marginBottom: 12 }}>
         <SummaryCard
           icon={<Users size={12} style={{ color: "var(--accent)" }} />}
           label="New Leads"
-          value={fmtNumber(totals.newLeads)}
+          value={fmtNumber(summary.newLeads)}
         />
         <SummaryCard
           icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />}
           label="Calls Booked"
-          value={fmtNumber(totals.callsBooked)}
+          value={fmtNumber(summary.callsBooked)}
         />
         <SummaryCard
           icon={<TrendingUp size={12} style={{ color: "var(--success)" }} />}
           label="Booking Rate"
-          value={formatRate(totals.callsBooked, totals.newLeads)}
+          value={formatRate(summary.callsBooked, summary.newLeads)}
           color="var(--success)"
         />
-      </div>
-
-      <div className="glass-static" style={{ overflow: "auto" }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Source</th>
-              <th>New Leads</th>
-              <th>Booked</th>
-              <th>Booking Rate</th>
-              <th>Taken</th>
-              <th>Wins</th>
-              <th>Show Rate</th>
-              <th>Close Rate</th>
-              <th>AOV</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td style={{ fontWeight: 600, color: row.id === "unmapped" ? "var(--warning)" : "var(--text-primary)" }}>
-                  {row.label}
-                </td>
-                <td>{fmtNumber(row.newLeads)}</td>
-                <td>{fmtNumber(row.callsBooked)}</td>
-                <td>{formatRate(row.callsBooked, row.newLeads)}</td>
-                <td>{fmtNumber(row.callsTaken)}</td>
-                <td style={{ color: row.wins > 0 ? "var(--success)" : "var(--text-primary)" }}>
-                  {fmtNumber(row.wins)}
-                </td>
-                <td>{formatRate(row.callsTaken, sourceShowDenominator(row))}</td>
-                <td>{formatRate(row.wins, row.callsTaken)}</td>
-                <td>{row.wins > 0 ? fmtDollars(row.cashCollected / row.wins) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -427,73 +325,79 @@ function SummaryCard({
   );
 }
 
-function SetterGrid({ rows }: { rows: SetterRow[] }) {
+function SetterTable({ rows }: { rows: SetterRow[] }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
-      {rows.map((s) => {
-        const showDenominator = s.callsTaken + s.noShows;
-        const cc = clientColor(s.client);
+    <div className="glass-static" style={{ overflow: "auto" }}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Setter</th>
+            <th>Offer</th>
+            <th>New Leads</th>
+            <th>Booked</th>
+            <th>Booking Rate</th>
+            <th>Taken</th>
+            <th>Wins</th>
+            <th>No Shows</th>
+            <th>Cash</th>
+            <th>Subs</th>
+            <th>Show Rate</th>
+            <th>Close Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => {
+            const showDenominator = s.callsTaken + s.noShows;
+            const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
+            const showRate = showDenominator > 0 ? (s.callsTaken / showDenominator) * 100 : 0;
+            const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
+            const cc = clientColor(s.client);
 
-        return (
-          <div key={`${s.client}-${s.name}`} className="glass-static" style={{ padding: "20px 22px" }}>
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              marginBottom: 14,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: cc }} />
-                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
+            return (
+              <tr key={`${s.client}-${s.name}`}>
+                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                   {s.name}
-                </span>
-              </div>
-              <span style={{
-                fontSize: 11, color: cc, textTransform: "uppercase",
-                fontWeight: 500, letterSpacing: "0.5px",
-              }}>
-                {CLIENT_BADGE_LABELS[s.client] ?? s.client}
-              </span>
-            </div>
-
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(86px, 1fr))",
-              gap: "12px 10px",
-            }}>
-              <SetterMetric label="New Leads" value={fmtNumber(s.newLeads)} />
-              <SetterMetric label="Calls Booked" value={fmtNumber(s.callsBooked)} />
-              <SetterMetric label="Calls Taken" value={fmtNumber(s.callsTaken)} />
-              <SetterMetric label="Wins" value={fmtNumber(s.wins)} color={s.wins > 0 ? "var(--success)" : undefined} />
-              <SetterMetric label="No Shows" value={fmtNumber(s.noShows)} color={s.noShows > 0 ? "var(--danger)" : undefined} />
-              <SetterMetric label="Cash Collected" value={fmtDollars(s.cashCollected)} color="var(--success)" />
-              <SetterMetric label="Subs Sold" value={fmtNumber(s.subsSold)} color="var(--accent)" />
-              <SetterMetric label="Booking Rate" value={formatRate(s.callsBooked, s.newLeads)} />
-              <SetterMetric label="Show Rate" value={formatRate(s.callsTaken, showDenominator)} />
-              <SetterMetric label="Close Rate" value={formatRate(s.wins, s.callsTaken)} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SetterMetric({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: color || "var(--text-primary)" }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 1 }}>
-        {label}
-      </div>
+                </td>
+                <td>
+                  <span style={{ color: cc, fontWeight: 600 }}>
+                    {CLIENT_BADGE_LABELS[s.client] ?? s.client}
+                  </span>
+                </td>
+                <td>{fmtNumber(s.newLeads)}</td>
+                <td>{fmtNumber(s.callsBooked)}</td>
+                <td>
+                  <span style={{ color: s.newLeads > 0 ? rateColor(bookingRate, 15, 8) : "var(--text-secondary)", fontWeight: 600 }}>
+                    {formatRate(s.callsBooked, s.newLeads)}
+                  </span>
+                </td>
+                <td>{fmtNumber(s.callsTaken)}</td>
+                <td style={{ color: s.wins > 0 ? "var(--success)" : "var(--text-secondary)" }}>
+                  {fmtNumber(s.wins)}
+                </td>
+                <td style={{ color: s.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
+                  {fmtNumber(s.noShows)}
+                </td>
+                <td style={{ color: "var(--success)", fontWeight: 600 }}>
+                  {fmtDollars(s.cashCollected)}
+                </td>
+                <td style={{ color: s.subsSold > 0 ? "var(--accent)" : "var(--text-secondary)" }}>
+                  {fmtNumber(s.subsSold)}
+                </td>
+                <td>
+                  <span style={{ color: showDenominator > 0 ? rateColor(showRate, 65, 45) : "var(--text-secondary)", fontWeight: 600 }}>
+                    {formatRate(s.callsTaken, showDenominator)}
+                  </span>
+                </td>
+                <td>
+                  <span style={{ color: s.callsTaken > 0 ? rateColor(closeRate, 40, 25) : "var(--text-secondary)", fontWeight: 600 }}>
+                    {formatRate(s.wins, s.callsTaken)}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
