@@ -58,13 +58,14 @@ export async function POST(req: NextRequest) {
     // Diagnostic: log WHICH R2 env vars are present (booleans only, never the
     // secret values) so a misconfigured production env is easy to pinpoint.
     if (err instanceof Error && err.message.includes("R2 env vars not configured")) {
-      console.error("[testimonials/video/upload-url] R2 env presence:", {
-        R2_ACCOUNT_ID: Boolean(process.env.R2_ACCOUNT_ID?.trim()),
-        R2_ACCESS_KEY_ID: Boolean(process.env.R2_ACCESS_KEY_ID?.trim()),
-        R2_SECRET_ACCESS_KEY: Boolean(process.env.R2_SECRET_ACCESS_KEY?.trim()),
-        R2_BUCKET_NAME: Boolean(process.env.R2_BUCKET_NAME?.trim()),
-        R2_PUBLIC_BASE_URL: Boolean(process.env.R2_PUBLIC_BASE_URL?.trim()),
-      });
+      // Compact, log-view-friendly presence code (1 = present, 0 = missing/empty)
+      // so it survives the runtime-log message truncation. Letters:
+      // A=R2_ACCOUNT_ID K=R2_ACCESS_KEY_ID S=R2_SECRET_ACCESS_KEY
+      // B=R2_BUCKET_NAME U=R2_PUBLIC_BASE_URL
+      const n = (v?: string) => (v?.trim() ? 1 : 0);
+      console.error(
+        `R2CFG A${n(process.env.R2_ACCOUNT_ID)}K${n(process.env.R2_ACCESS_KEY_ID)}S${n(process.env.R2_SECRET_ACCESS_KEY)}B${n(process.env.R2_BUCKET_NAME)}U${n(process.env.R2_PUBLIC_BASE_URL)}`
+      );
     }
     return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
   }
