@@ -27,21 +27,43 @@ function JarvisBrain({ size = 168 }: { size?: number }) {
       pts.push({ x: Math.cos(t) * r, y, z: Math.sin(t) * r });
     }
 
+    // Mouse reactivity: the brain leans + vibrates toward the cursor anywhere on the page.
+    let targetX = 0;
+    let targetY = 0;
+    let curX = 0;
+    let curY = 0;
+    let energy = 0;
+    const onMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const ccx = rect.left + rect.width / 2;
+      const ccy = rect.top + rect.height / 2;
+      targetX = Math.max(-1, Math.min(1, ((e.clientX - ccx) / Math.max(window.innerWidth, 1)) * 2));
+      targetY = Math.max(-1, Math.min(1, ((e.clientY - ccy) / Math.max(window.innerHeight, 1)) * 2));
+      energy = Math.min(1, energy + 0.22);
+    };
+    window.addEventListener("mousemove", onMove);
+
     let raf = 0;
     const start = performance.now();
     const render = (now: number) => {
       const tsec = (now - start) / 1000;
+      curX += (targetX - curX) * 0.07;
+      curY += (targetY - curY) * 0.07;
+      energy *= 0.93;
       ctx.clearRect(0, 0, size, size);
       const cx = size / 2;
       const cy = size / 2;
       const baseR = size * 0.4;
       const pulse = 1 + Math.sin(tsec * 1.35) * 0.04; // breathing
-      const ay = tsec * 0.32;
-      const ax = Math.sin(tsec * 0.17) * 0.28;
+      const ay = tsec * 0.32 + curX * 0.5; // tilt toward cursor
+      const ax = Math.sin(tsec * 0.17) * 0.28 - curY * 0.5;
       const cosY = Math.cos(ay);
       const sinY = Math.sin(ay);
       const cosX = Math.cos(ax);
       const sinX = Math.sin(ax);
+      const shiftX = curX * size * 0.07; // drag toward cursor
+      const shiftY = curY * size * 0.07;
+      const vib = energy * 1.7; // subtle vibration that decays when the mouse stops
 
       const proj = pts
         .map((p) => {
@@ -55,8 +77,8 @@ function JarvisBrain({ size = 168 }: { size?: number }) {
 
       for (const p of proj) {
         const depth = (p.z + 1) / 2; // 0 back .. 1 front
-        const px = cx + p.x * baseR * pulse;
-        const py = cy + p.y * baseR * pulse;
+        const px = cx + p.x * baseR * pulse + shiftX + Math.sin(tsec * 38 + p.sy * 10) * vib;
+        const py = cy + p.y * baseR * pulse + shiftY + Math.cos(tsec * 38 + p.sx * 10) * vib;
         const sz = 0.6 + depth * 1.9;
         const wave = 0.5 + 0.5 * Math.sin(tsec * 2 + p.sy * 6 + p.sx * 3);
         const alpha = (0.1 + depth * 0.78) * (0.55 + 0.45 * wave);
@@ -74,7 +96,10 @@ function JarvisBrain({ size = 168 }: { size?: number }) {
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMove);
+    };
   }, [size]);
 
   return (
@@ -186,13 +211,20 @@ type Meeting = {
   summary?: string;
   notes?: string;
 };
+type FeedEntry = {
+  at?: string;
+  bucket?: string;
+  title: string;
+  detail?: string;
+  tags?: string[];
+  where?: string;
+};
 
 export default function CmoPage() {
-  const [tab, setTab] = useState<"skills" | "meetings">("skills");
+  const [tab, setTab] = useState<"skills" | "meetings" | "feed">("feed");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [skillsUpdated, setSkillsUpdated] = useState<string | null>(null);
-  const [meetingsUpdated, setMeetingsUpdated] = useState<string | null>(null);
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [account, setAccount] = useState("all");
@@ -205,7 +237,6 @@ export default function CmoPage() {
       .then((d) => {
         if (off) return;
         setSkills(Array.isArray(d?.skills) ? d.skills : []);
-        setSkillsUpdated(d?.updated || null);
       })
       .catch(() => {});
     fetch("/meetings-data.json", { cache: "no-store" })
@@ -213,7 +244,13 @@ export default function CmoPage() {
       .then((d) => {
         if (off) return;
         setMeetings(Array.isArray(d?.meetings) ? d.meetings : []);
-        setMeetingsUpdated(d?.updated || null);
+      })
+      .catch(() => {});
+    fetch("/memory-log.json", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (off) return;
+        setFeed(Array.isArray(d?.entries) ? d.entries : []);
       })
       .catch(() => {});
     return () => {
@@ -224,7 +261,6 @@ export default function CmoPage() {
   const activeSkill = openSkill ? skills.find((s) => s.id === openSkill) : null;
   const activeMeeting = openMeeting ? meetings.find((m) => m.id === openMeeting) : null;
   const inDetail = (tab === "skills" && activeSkill) || (tab === "meetings" && activeMeeting);
-  const updated = tab === "skills" ? skillsUpdated : meetingsUpdated;
 
   return (
     <div className="cmo-page">
@@ -275,6 +311,16 @@ export default function CmoPage() {
       {!inDetail && (
         <div className="cmo-tabs">
           <button
+            className={tab === "feed" ? "on" : ""}
+            onClick={() => {
+              setTab("feed");
+              setOpenSkill(null);
+              setOpenMeeting(null);
+            }}
+          >
+            Learning feed
+          </button>
+          <button
             className={tab === "skills" ? "on" : ""}
             onClick={() => {
               setTab("skills");
@@ -292,7 +338,6 @@ export default function CmoPage() {
           >
             Meetings context
           </button>
-          {updated && <span className="cmo-updated">Updated {updated}</span>}
         </div>
       )}
 
@@ -307,6 +352,37 @@ export default function CmoPage() {
         >
           ← All {tab === "skills" ? "skills" : "meetings"}
         </button>
+      )}
+
+      {/* LEARNING FEED — the live window into what the brain has captured */}
+      {tab === "feed" && (
+        <div className="cmo-feed">
+          <p className="cmo-feed-intro">
+            A live record of what your CMO has learned and written to memory, newest first. Every rule,
+            correction, person, offer, and meeting it captured shows up here, so you can always see the brain learning.
+          </p>
+          {feed.map((e, i) => (
+            <div key={i} className="cmo-feed-row">
+              <div className="cmo-feed-time">{e.at}</div>
+              <div className="cmo-feed-body">
+                <div className="cmo-feed-head">
+                  {e.bucket && <span className="cmo-feed-bucket">{e.bucket}</span>}
+                  <span className="cmo-feed-title">{e.title}</span>
+                </div>
+                {e.detail && <div className="cmo-feed-detail">{e.detail}</div>}
+                <div className="cmo-feed-meta">
+                  {Array.isArray(e.tags) &&
+                    e.tags.map((t, j) => (
+                      <span key={j} className="cmo-chip">
+                        {t}
+                      </span>
+                    ))}
+                  {e.where && <span className="cmo-feed-where">→ {e.where}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* SKILLS */}
@@ -491,6 +567,18 @@ function CmoStyles() {
   .cmo-md pre{margin:0 0 12px;padding:13px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12.5px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5}
   .cmo-md pre code{background:none;border:none;padding:0}
   .cmo-md hr{border:none;border-top:1px solid var(--border);margin:18px 0}
+  .cmo-feed{display:flex;flex-direction:column;gap:0}
+  .cmo-feed-intro{font-size:13px;color:var(--text-muted);max-width:660px;line-height:1.55;margin:0 0 20px}
+  .cmo-feed-row{display:flex;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}
+  .cmo-feed-row:first-of-type{padding-top:0}
+  .cmo-feed-time{flex:0 0 92px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;padding-top:3px;font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
+  .cmo-feed-body{flex:1;min-width:0}
+  .cmo-feed-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:5px}
+  .cmo-feed-bucket{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);background:color-mix(in srgb,var(--gold) 13%,transparent);border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .cmo-feed-title{font-size:14px;font-weight:700;color:var(--text-primary)}
+  .cmo-feed-detail{font-size:12.5px;color:var(--text-secondary);line-height:1.5;margin-bottom:8px}
+  .cmo-feed-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .cmo-feed-where{font-size:11px;color:var(--text-muted);font-style:italic}
   .cmo-empty{text-align:center;padding:64px 24px;border:1px dashed var(--border);border-radius:16px;background:var(--bg-secondary)}
   .cmo-empty-emoji{font-size:42px;margin-bottom:14px}
   .cmo-empty-title{font-size:17px;font-weight:750;color:var(--text-primary);margin-bottom:8px}

@@ -29,7 +29,6 @@ import {
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/cmo", label: "CMO", icon: Bot },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
@@ -41,6 +40,7 @@ const navItems = [
 ];
 
 const marketingNavItems = [
+  { href: "/cmo", label: "CMO", icon: Bot },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
