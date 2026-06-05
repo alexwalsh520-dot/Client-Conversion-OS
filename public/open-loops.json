@@ -1,0 +1,76 @@
+{
+  "updated": "2026-06-05",
+  "note": "Open Loops register — the CMO's live ledger of what's in flight, paused, waiting on Alex, or an untested hypothesis, so nothing important falls into the abyss across pivots and context compaction. status: in-progress | waiting-on-alex | hypothesis | paused | backlog. priority: now | soon | later.",
+  "loops": [
+    {
+      "id": "lucy-ads-launch",
+      "title": "Launch Lucy's ads (v4 compliant copy ready)",
+      "detail": "15 ads written, v4 is Meta-compliant (no 'you are [body state]' hooks). Order -> keyword mapping locked (1 whole .. 15 journey). Next: get them live. Faith angles (7,8,9) only with Lucy's explicit OK. Images: show her DOING the thing, no body before/afters. THIS IS THE ACTIVE PRIORITY.",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["Lucy", "ads", "launch"],
+      "opened": "2026-06-05",
+      "where": "this chat + ad-copywriter skill"
+    },
+    {
+      "id": "lucy-angles-hypotheses",
+      "title": "Lucy's 5 ad angles are HYPOTHESES, not proven",
+      "detail": "Food / Running / Faith / Weights / Story come from Will's sales experience + a few closed females, not statistical significance. Judge on real cost-per-lead and cost-per-call over 7 days once live. Don't treat as fact until the numbers say so.",
+      "status": "hypothesis",
+      "priority": "now",
+      "tags": ["Lucy", "ads", "ICP", "7-day"],
+      "opened": "2026-06-05",
+      "where": "team meeting card"
+    },
+    {
+      "id": "lucy-manychat-attribution",
+      "title": "Turn on ManyChat attribution certainty for Lucy once connected",
+      "detail": "Lucy token stored (expires 2026-08-01). Once her ManyChat keyword capture is wired, her ad->sale attribution becomes certain (subscriber-id-first). Until then her ROAS is less trustworthy.",
+      "status": "waiting-on-alex",
+      "priority": "soon",
+      "tags": ["Lucy", "attribution"],
+      "opened": "2026-06-05",
+      "where": "task #12"
+    },
+    {
+      "id": "cmo-self-upgrade",
+      "title": "CMO self-upgrade — Phases 2-4 (PAUSED for Lucy pivot)",
+      "detail": "Phase 1 DONE (memory consolidated 27KB->11.6KB + doctrine: stay-in-lane, $1M north star, date/freshness discipline). PAUSED mid-Phase-2 (wire the brain to the live marketing data = a date-aware 'Pulse' reading copy + show/close/booking/spend/revenue per ad/adset/audience, reusing the canonical data layer, NOT reinventing attribution). Phase 3 = Scorecard (grade my kill/scale calls vs real before/after numbers on the 7-day clock). Phase 4 = this Open Loops register (UI shipped; keep feeding it). RESUME Phase 2 after the Lucy work.",
+      "status": "paused",
+      "priority": "soon",
+      "tags": ["CMO", "roadmap", "pulse", "scorecard"],
+      "opened": "2026-06-05",
+      "where": "this chat"
+    },
+    {
+      "id": "brain-graph-aesthetic",
+      "title": "Make the brain graph look premium (borrow the old neuron view)",
+      "detail": "Alex wants the Brain tab to borrow the pulsing-pathways / left-to-right node aesthetic from the old Deep Dive neuron view (the beautiful one). Keep minimal dots; add the line pulsing + overall aesthetic. Current graph is functional but he doesn't love the look yet.",
+      "status": "backlog",
+      "priority": "later",
+      "tags": ["CMO", "design", "brain"],
+      "opened": "2026-06-05",
+      "where": "this chat"
+    },
+    {
+      "id": "ads-tracker-auth",
+      "title": "Lock /api/ads-tracker behind auth (security)",
+      "detail": "The ads-tracker API returns revenue data to an unauthenticated curl. Should sit behind the session check like other routes. Real exposure of business numbers.",
+      "status": "backlog",
+      "priority": "soon",
+      "tags": ["security", "api"],
+      "opened": "2026-06-05",
+      "where": "this chat finding"
+    },
+    {
+      "id": "attribution-completeness-loop",
+      "title": "Attribution completeness loop (organic keyword control + daily setter Slack)",
+      "detail": "Build the organic-keyword registry (ad-vs-organic precedence + 30-day cooldown) and route everything software can't auto-catch to the Attribution Workspace with daily TARGETED Slack pings to the specific setter who owns each untagged sale/call. 100% = everything automatable is tracked truthfully; the rest caught by the manual loop. Alex: 'do not let me forget it.'",
+      "status": "backlog",
+      "priority": "later",
+      "tags": ["attribution", "organic", "roadmap"],
+      "opened": "2026-06-04",
+      "where": "memory note"
+    }
+  ]
+}

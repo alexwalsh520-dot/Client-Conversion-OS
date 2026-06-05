@@ -208,6 +208,16 @@ function mdToHtml(md: string): string {
 type Skill = { id: string; name: string; tagline?: string; selfImproving?: boolean; path?: string; description?: string; markdown?: string };
 type Meeting = { id: string; date?: string; title: string; creator?: string; tags?: string[]; summary?: string; notes?: string; archive?: string };
 type FeedEntry = { at?: string; bucket?: string; title: string; detail?: string; tags?: string[]; where?: string };
+type LoopStatus = "in-progress" | "waiting-on-alex" | "hypothesis" | "paused" | "backlog";
+type Loop = { id: string; title: string; detail?: string; status: LoopStatus; priority?: "now" | "soon" | "later"; tags?: string[]; opened?: string; where?: string };
+const LOOP_META: Record<LoopStatus, { label: string; color: string }> = {
+  "in-progress": { label: "In progress", color: "#5b8def" },
+  "waiting-on-alex": { label: "Waiting on you", color: "#c9a96e" },
+  "hypothesis": { label: "Hypothesis", color: "#a78bfa" },
+  "paused": { label: "Paused", color: "#7c9cff" },
+  "backlog": { label: "Backlog", color: "#8b8f98" },
+};
+const LOOP_ORDER: LoopStatus[] = ["in-progress", "waiting-on-alex", "hypothesis", "paused", "backlog"];
 
 // Deuteran-safe palette: spread across blue / purple / teal / cyan / gold / amber / rose.
 // No green-vs-red pairs (the dot is decorative anyway — the text label carries the meaning).
@@ -482,13 +492,14 @@ const TRANSCRIPTS = [
   { name: "Zakk coaching call", sub: "2026-06-04", path: "~/.claude/.../transcripts/2026-06-04-zakk-coaching-call.md", meetingId: "2026-06-04-zakk-coaching" },
 ];
 
-type Tab = "brain" | "feed" | "skills" | "meetings" | "files";
+type Tab = "brain" | "loops" | "feed" | "skills" | "meetings" | "files";
 
 export default function CmoPage() {
   const [tab, setTab] = useState<Tab>("brain");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
+  const [loops, setLoops] = useState<Loop[]>([]);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [openFeed, setOpenFeed] = useState<number | null>(null);
@@ -501,6 +512,7 @@ export default function CmoPage() {
     grab("/skills-data.json", "skills", (v) => setSkills(Array.isArray(v) ? (v as Skill[]) : []));
     grab("/meetings-data.json", "meetings", (v) => setMeetings(Array.isArray(v) ? (v as Meeting[]) : []));
     grab("/memory-log.json", "entries", (v) => setFeed(Array.isArray(v) ? (v as FeedEntry[]) : []));
+    grab("/open-loops.json", "loops", (v) => setLoops(Array.isArray(v) ? (v as Loop[]) : []));
     return () => { off = true; };
   }, []);
 
@@ -530,9 +542,9 @@ export default function CmoPage() {
           </div>
         </div>
         <nav className="cmo-nav">
-          {(["brain", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
+          {(["brain", "loops", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
             <button key={tk} className={tab === tk && !inDetail ? "on" : ""} onClick={() => { setTab(tk); setOpenSkill(null); setOpenMeeting(null); }}>
-              {tk === "brain" ? "Brain" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+              {tk === "brain" ? "Brain" : tk === "loops" ? "Open loops" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
             </button>
           ))}
         </nav>
@@ -543,6 +555,34 @@ export default function CmoPage() {
       {/* BRAIN — Obsidian-style knowledge graph */}
       {tab === "brain" && !inDetail && (
         <BrainGraph skills={skills} meetings={meetings} feed={feed} onOpen={openNode} />
+      )}
+
+      {/* OPEN LOOPS — what's in flight / waiting / unsure, so nothing falls into the abyss */}
+      {tab === "loops" && !inDetail && (
+        <section className="cmo-loops">
+          <div className="cmo-loops-intro">Everything in flight, waiting on you, or still a hypothesis. The active priority is at the top.</div>
+          {LOOP_ORDER.filter((st) => loops.some((l) => l.status === st)).map((st) => (
+            <div key={st} className="cmo-loop-group">
+              <div className="cmo-loop-grouphead"><span className="cmo-loop-gdot" style={{ background: LOOP_META[st].color }} />{LOOP_META[st].label}</div>
+              {loops.filter((l) => l.status === st).map((l) => (
+                <div key={l.id} className="cmo-loop" style={{ "--lc": LOOP_META[st].color } as React.CSSProperties}>
+                  <div className="cmo-loop-top">
+                    <span className="cmo-loop-title">{l.title}</span>
+                    {l.priority && <span className={"cmo-loop-pri pri-" + l.priority}>{l.priority}</span>}
+                  </div>
+                  {l.detail && <p className="cmo-loop-detail">{l.detail}</p>}
+                  {(l.tags || l.where) && (
+                    <div className="cmo-loop-meta">
+                      {(l.tags || []).map((t, i) => <span key={i} className="cmo-tag">{t}</span>)}
+                      {l.where && <span className="cmo-where">{l.where}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+          {loops.length === 0 && <div className="cmo-empty">No open loops. Clean slate.</div>}
+        </section>
       )}
 
       {/* FEED */}
@@ -727,6 +767,22 @@ function CmoStyles() {
   .cmo-ins-stats span{font-size:12.5px;color:var(--text-muted)}
   .cmo-ins-stats b{font-size:15px;font-weight:800;margin-right:6px}
   @media(max-width:720px){.cmo-graph-body{grid-template-columns:1fr}.cmo-graph-info{height:auto;border-left:none;border-top:1px solid var(--border)}}
+
+  /* open loops */
+  .cmo-loops{display:flex;flex-direction:column;gap:22px}
+  .cmo-loops-intro{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:-6px}
+  .cmo-loop-group{display:flex;flex-direction:column;gap:10px}
+  .cmo-loop-grouphead{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-primary)}
+  .cmo-loop-gdot{width:8px;height:8px;border-radius:50%;box-shadow:0 0 7px currentColor}
+  .cmo-loop{border:1px solid var(--border);border-left:3px solid var(--lc);border-radius:11px;background:var(--bg-card);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+  .cmo-loop-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .cmo-loop-title{font-size:14.5px;font-weight:700;color:var(--text-primary)}
+  .cmo-loop-pri{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .cmo-loop-pri.pri-now{color:#e0915b;background:color-mix(in srgb,#e0915b 14%,transparent);border:1px solid color-mix(in srgb,#e0915b 36%,transparent)}
+  .cmo-loop-pri.pri-soon{color:var(--text-secondary);background:var(--bg-secondary);border:1px solid var(--border)}
+  .cmo-loop-pri.pri-later{color:var(--text-muted);background:var(--bg-secondary);border:1px solid var(--border)}
+  .cmo-loop-detail{margin:0;font-size:12.5px;color:var(--text-secondary);line-height:1.6}
+  .cmo-loop-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 
   /* feed */
   .cmo-term{border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--bg-card)}
