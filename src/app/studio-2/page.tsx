@@ -26,7 +26,9 @@ import {
   GripVertical,
   Home,
   ImagePlus,
+  Images,
   Layers,
+  LayoutGrid,
   Library,
   Maximize2,
   Minimize2,
@@ -264,8 +266,36 @@ interface VideoSegment {
   enabled: boolean;
 }
 
+interface PairArrangement {
+  textBlocks: TextBlock[];
+  imageTransform: ImageTransform;
+}
+
+type ArrangementMemory = Record<string, PairArrangement>;
+
+type BoardDragPayload =
+  | { kind: "copy"; copyId: string; sourceCreativeId?: string }
+  | { kind: "image"; url: string; mediaKind: MediaKind };
+
+interface BoardCopySet {
+  copyId: string;
+  label: string;
+  blocks: TextBlock[];
+  count: number;
+}
+
+interface BoardImage {
+  url: string;
+  kind: MediaKind;
+  thumb: string;
+}
+
 interface Creative {
   id: string;
+  // Stable identity of the COPY (text set) on this creative, independent of the
+  // image. Lets copy move between images on the Board while each image remembers
+  // its own layout for that copy.
+  copyId?: string;
   photoUrl: string;
   mediaKind?: MediaKind;
   videoTrim?: VideoTrim;
@@ -287,6 +317,7 @@ interface DraftState {
   photoCopies?: Record<string, number>;
   mediaAssets?: StudioMediaAsset[];
   creatives: Creative[];
+  arrangements?: ArrangementMemory;
   currentIndex: number;
   copyText: string;
   projectName: string;
@@ -2168,6 +2199,51 @@ function getTextStyle(block: TextBlock): TextStyle {
   };
 }
 
+// ---- Board (image x copy pairing) helpers ----
+function pairKey(copyId: string, url: string) {
+  return `${copyId}__${url}`;
+}
+
+function getCopyLabel(blocks: TextBlock[]) {
+  for (const block of blocks) {
+    const text = getBlockText(block).trim();
+    if (text) {
+      const firstLine = text.split("\n").find((line) => line.trim()) ?? text;
+      return firstLine.trim().slice(0, 64);
+    }
+  }
+  return "Empty copy";
+}
+
+// Deep copy with FRESH ids — for placing a copy onto a new image / duplicating.
+function cloneBlocksFresh(blocks: TextBlock[]): TextBlock[] {
+  return blocks.map((block) => ({
+    ...block,
+    id: uid(),
+    colorSpans: block.colorSpans?.map((span) => ({ ...span })),
+  }));
+}
+
+// Deep copy KEEPING ids — for snapshotting a layout into memory.
+function cloneBlocksKeepIds(blocks: TextBlock[]): TextBlock[] {
+  return blocks.map((block) => ({
+    ...block,
+    colorSpans: block.colorSpans?.map((span) => ({ ...span })),
+  }));
+}
+
+function ensureCreativeCopyId(creative: Creative): Creative {
+  return creative.copyId ? creative : { ...creative, copyId: uid() };
+}
+
+function snapshotArrangement(memory: ArrangementMemory, creative: Creative) {
+  if (!creative.copyId) return;
+  memory[pairKey(creative.copyId, creative.photoUrl)] = {
+    textBlocks: cloneBlocksKeepIds(creative.textBlocks),
+    imageTransform: { ...creative.imageTransform },
+  };
+}
+
 function parseCopyIntoAds(raw: string): string[][][] {
   if (!raw.trim()) return [];
   const separatorRe = /^[\-=~]{3,}\s*$/;
@@ -2511,6 +2587,14 @@ export default function Studio2Page() {
   const [copiedStyle, setCopiedStyle] = useState<TextStyle | null>(null);
   const [colorPalette, setColorPalette] = useState<string[]>(DEFAULT_COLOR_PALETTE);
   const [textStylePresets, setTextStylePresets] = useState<TextStylePreset[]>([]);
+  // Board: pairing workspace state.
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [arrangements, setArrangements] = useState<ArrangementMemory>({});
+  const [boardSelection, setBoardSelection] = useState<string[]>([]);
+  const [boardMarquee, setBoardMarquee] = useState<MarqueeRect | null>(null);
+  const boardDragRef = useRef<BoardDragPayload | null>(null);
+  const boardMarqueeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const boardGridRef = useRef<HTMLDivElement | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportMode, setExportMode] = useState<ExportMode>("current");
@@ -2994,6 +3078,7 @@ export default function Studio2Page() {
       photoCopies,
       mediaAssets,
       creatives,
+      arrangements,
       currentIndex,
       copyText,
       projectName,
@@ -3002,7 +3087,7 @@ export default function Studio2Page() {
       view,
       ...overrides,
     }),
-    [activeProjectFolderId, colorPreset, copyText, creatives, currentIndex, fontPreset, mediaAssets, photoCopies, photos, projectId, projectName, view]
+    [activeProjectFolderId, arrangements, colorPreset, copyText, creatives, currentIndex, fontPreset, mediaAssets, photoCopies, photos, projectId, projectName, view]
   );
 
   const fetchStudioHome = useCallback(async () => {
@@ -3148,6 +3233,7 @@ export default function Studio2Page() {
         setPhotoCopies(draft.photoCopies || {});
         setMediaAssets(draft.mediaAssets || []);
         setCreatives((draft.creatives || []).map(normalizeCreative));
+        setArrangements(draft.arrangements || {});
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || DEFAULT_COPY);
         setProjectName(draft.projectName || DEFAULT_PROJECT_NAME);
@@ -3612,6 +3698,216 @@ export default function Studio2Page() {
   const removeTextStylePreset = useCallback((id: string) => {
     setTextStylePresets((prev) => prev.filter((preset) => preset.id !== id));
   }, []);
+
+  // ---- Board (pairing workspace) ----
+  const boardCopySets = useMemo(() => {
+    const map = new Map<string, { copyId: string; label: string; blocks: TextBlock[]; count: number }>();
+    creatives.forEach((creative) => {
+      if (!creative.copyId) return;
+      const existing = map.get(creative.copyId);
+      if (existing) existing.count += 1;
+      else map.set(creative.copyId, { copyId: creative.copyId, label: getCopyLabel(creative.textBlocks), blocks: creative.textBlocks, count: 1 });
+    });
+    return Array.from(map.values());
+  }, [creatives]);
+
+  const boardImages = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ url: string; kind: MediaKind; thumb: string }> = [];
+    const add = (url: string, kind: MediaKind, thumb: string) => {
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      out.push({ url, kind, thumb });
+    };
+    (mediaAssets ?? []).forEach((asset) => add(asset.url, asset.kind, getMediaPreviewUrl(asset) || asset.url));
+    photos.forEach((photo) => {
+      const asset = getAssetForUrl(photo);
+      add(photo, asset?.kind ?? "image", asset ? getMediaPreviewUrl(asset) || photo : photo);
+    });
+    creatives.forEach((creative) => add(creative.photoUrl, creative.mediaKind ?? "image", creativeThumbs[creative.id] || creative.photoUrl));
+    return out;
+  }, [mediaAssets, photos, creatives, getAssetForUrl, creativeThumbs]);
+
+  const buildCopyBlocksMap = useCallback((list: Creative[]) => {
+    const map = new Map<string, TextBlock[]>();
+    for (const creative of list) {
+      if (creative.copyId && !map.has(creative.copyId)) map.set(creative.copyId, creative.textBlocks);
+    }
+    return map;
+  }, []);
+
+  const openBoard = useCallback(() => {
+    const normalized = creatives.map(ensureCreativeCopyId);
+    const mem: ArrangementMemory = { ...arrangements };
+    normalized.forEach((creative) => snapshotArrangement(mem, creative));
+    setArrangements(mem);
+    setCreatives(normalized);
+    setBoardSelection([]);
+    setBoardMarquee(null);
+    setBoardOpen(true);
+  }, [arrangements, creatives]);
+
+  // Move a copy onto a creative's image. If dragged from another card, the two swap.
+  const reassignCopy = useCallback(
+    (targetId: string, copyId: string, sourceId?: string) => {
+      const list = creatives;
+      const target = list.find((creative) => creative.id === targetId);
+      if (!target) return;
+      const targetOldCopy = target.copyId;
+      if (!sourceId && targetOldCopy === copyId) return;
+      pushUndo();
+      const mem: ArrangementMemory = { ...arrangements };
+      snapshotArrangement(mem, target);
+      const source = sourceId ? list.find((creative) => creative.id === sourceId) : undefined;
+      if (source) snapshotArrangement(mem, source);
+      const blocksMap = buildCopyBlocksMap(list);
+      const apply = (creative: Creative, cid: string): Creative => {
+        const remembered = mem[pairKey(cid, creative.photoUrl)];
+        const base = blocksMap.get(cid) ?? [];
+        return {
+          ...creative,
+          copyId: cid,
+          textBlocks: remembered ? cloneBlocksKeepIds(remembered.textBlocks) : cloneBlocksFresh(base),
+          imageTransform: remembered ? { ...remembered.imageTransform } : creative.imageTransform,
+        };
+      };
+      const next = list.map((creative) => {
+        if (creative.id === targetId) return apply(creative, copyId);
+        if (sourceId && creative.id === sourceId && targetOldCopy) return apply(creative, targetOldCopy);
+        return creative;
+      });
+      setArrangements(mem);
+      setCreatives(next);
+    },
+    [arrangements, buildCopyBlocksMap, creatives, pushUndo]
+  );
+
+  // Swap the image under a creative's copy, remembering the old image's layout.
+  const reassignImage = useCallback(
+    (targetId: string, url: string, mediaKind: MediaKind) => {
+      const list = creatives;
+      const target = list.find((creative) => creative.id === targetId);
+      if (!target || target.photoUrl === url) return;
+      pushUndo();
+      const mem: ArrangementMemory = { ...arrangements };
+      snapshotArrangement(mem, target);
+      const remembered = target.copyId ? mem[pairKey(target.copyId, url)] : undefined;
+      const next = list.map((creative) =>
+        creative.id === targetId
+          ? {
+              ...creative,
+              photoUrl: url,
+              mediaKind,
+              textBlocks: remembered ? cloneBlocksKeepIds(remembered.textBlocks) : creative.textBlocks,
+              imageTransform: remembered ? { ...remembered.imageTransform } : creative.imageTransform,
+              ...(mediaKind === "video"
+                ? {
+                    videoTrim: creative.videoTrim ?? { start: 0, end: null },
+                    videoTimeline: creative.videoTimeline ?? createDefaultVideoTimeline(),
+                    videoMuted: creative.videoMuted ?? true,
+                    videoVolume: creative.videoVolume ?? 1,
+                  }
+                : {}),
+            }
+          : creative
+      );
+      setArrangements(mem);
+      setCreatives(next);
+    },
+    [arrangements, creatives, pushUndo]
+  );
+
+  const duplicateBoardCreatives = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      pushUndo();
+      setCreatives((list) => {
+        const result: Creative[] = [];
+        for (const creative of list) {
+          result.push(creative);
+          if (ids.includes(creative.id)) {
+            result.push({
+              ...creative,
+              id: uid(),
+              copyId: uid(),
+              textBlocks: cloneBlocksFresh(creative.textBlocks),
+              imageTransform: { ...creative.imageTransform },
+              status: "draft",
+              approved: false,
+            });
+          }
+        }
+        return result;
+      });
+    },
+    [pushUndo]
+  );
+
+  const deleteBoardCreatives = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      pushUndo();
+      setCreatives((list) => {
+        const next = list.filter((creative) => !ids.includes(creative.id));
+        return next.length ? next : list;
+      });
+      setBoardSelection([]);
+      setCurrentIndex(0);
+    },
+    [pushUndo]
+  );
+
+  const openCreativeFromBoard = useCallback(
+    (id: string) => {
+      const index = creatives.findIndex((creative) => creative.id === id);
+      if (index < 0) return;
+      setCurrentIndex(index);
+      setSelectedLayer(null);
+      setSelectedTextBlockIds([]);
+      setEditingBlockId(null);
+      setBoardOpen(false);
+    },
+    [creatives]
+  );
+
+  const toggleBoardSelect = useCallback((id: string, additive: boolean) => {
+    setBoardSelection((prev) => {
+      if (additive) return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      return prev.length === 1 && prev[0] === id ? [] : [id];
+    });
+  }, []);
+
+  const handleBoardMarqueeDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return; // only on empty grid background
+    boardMarqueeStartRef.current = { x: event.clientX, y: event.clientY };
+    if (!event.shiftKey) setBoardSelection([]);
+    setBoardMarquee({ x: event.clientX, y: event.clientY, w: 0, h: 0 });
+  }, []);
+
+  const handleBoardMarqueeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const start = boardMarqueeStartRef.current;
+    if (!start) return;
+    setBoardMarquee(normalizeMarqueeRect(start.x, start.y, event.clientX, event.clientY));
+  }, []);
+
+  const handleBoardMarqueeUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const start = boardMarqueeStartRef.current;
+      boardMarqueeStartRef.current = null;
+      if (!start) return;
+      const rect = normalizeMarqueeRect(start.x, start.y, event.clientX, event.clientY);
+      setBoardMarquee(null);
+      if (rect.w < 6 && rect.h < 6) return;
+      const hits: string[] = [];
+      boardGridRef.current?.querySelectorAll<HTMLElement>("[data-creative-id]").forEach((node) => {
+        const r = node.getBoundingClientRect();
+        const overlap = r.left < rect.x + rect.w && r.left + r.width > rect.x && r.top < rect.y + rect.h && r.top + r.height > rect.y;
+        if (overlap) hits.push(node.dataset.creativeId!);
+      });
+      setBoardSelection((prev) => (event.shiftKey ? Array.from(new Set([...prev, ...hits])) : hits));
+    },
+    []
+  );
 
   const updateImage = useCallback(
     (updates: Partial<ImageTransform>) => {
@@ -4690,10 +4986,14 @@ export default function Studio2Page() {
     if (!expandedMedia.length) return;
     const groups = parseCopyIntoAds(copyText);
     const usableGroups = groups.length ? groups : parseCopyIntoAds(DEFAULT_COPY);
+    // Stable copy identity per group so the same copy on different images is one
+    // entry in the Board's Copy bin.
+    const groupCopyIds = usableGroups.map(() => uid());
     const nextCreatives = expandedMedia.map((media, index): Creative => {
       const sections = usableGroups[index % usableGroups.length];
       return {
         id: uid(),
+        copyId: groupCopyIds[index % usableGroups.length],
         photoUrl: media.url,
         mediaKind: media.kind,
         videoTrim: media.kind === "video" ? { start: 0, end: null } : undefined,
@@ -7033,6 +7333,7 @@ export default function Studio2Page() {
         setPhotoCopies(draft.photoCopies || {});
         setMediaAssets(draft.mediaAssets || []);
         setCreatives(nextCreatives);
+        setArrangements(draft.arrangements || {});
         setCurrentIndex(draft.currentIndex || 0);
         setCopyText(draft.copyText || project.copyText || DEFAULT_COPY);
         setProjectName(draft.projectName || project.name || EMPTY_PROJECT_NAME);
@@ -11481,6 +11782,15 @@ export default function Studio2Page() {
         </button>
         {editorSidebarMode !== "generate" && (
           <button
+            style={buttonStyle(false)}
+            onClick={openBoard}
+            title="Open the pairing board — drag copy between images"
+          >
+            <LayoutGrid size={14} /> Board
+          </button>
+        )}
+        {editorSidebarMode !== "generate" && (
+          <button
             aria-pressed={!!currentCreative?.approved}
             style={approveButtonStyle(!!currentCreative?.approved)}
             onClick={toggleCurrentApproved}
@@ -11492,6 +11802,30 @@ export default function Studio2Page() {
           <Download size={14} /> Export
         </button>
       </div>
+
+      {boardOpen && (
+        <BoardOverlay
+          creatives={creatives}
+          copySets={boardCopySets}
+          images={boardImages}
+          creativeThumbs={creativeThumbs}
+          selection={boardSelection}
+          marquee={boardMarquee}
+          gridRef={boardGridRef}
+          dragRef={boardDragRef}
+          onClose={() => setBoardOpen(false)}
+          onReassignCopy={reassignCopy}
+          onReassignImage={reassignImage}
+          onDuplicate={duplicateBoardCreatives}
+          onDelete={deleteBoardCreatives}
+          onOpenCreative={openCreativeFromBoard}
+          onToggleSelect={toggleBoardSelect}
+          onMarqueeDown={handleBoardMarqueeDown}
+          onMarqueeMove={handleBoardMarqueeMove}
+          onMarqueeUp={handleBoardMarqueeUp}
+          onClearSelection={() => setBoardSelection([])}
+        />
+      )}
 
       {generateToast && editorSidebarMode !== "generate" && (
         <button
@@ -13929,6 +14263,425 @@ function Control({ label, children }: { label: string; children: React.ReactNode
     <div style={{ marginBottom: 12 }}>
       <div style={{ ...labelStyle, marginBottom: 6 }}>{label}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{children}</div>
+    </div>
+  );
+}
+
+function BoardOverlay({
+  creatives,
+  copySets,
+  images,
+  creativeThumbs,
+  selection,
+  marquee,
+  gridRef,
+  dragRef,
+  onClose,
+  onReassignCopy,
+  onReassignImage,
+  onDuplicate,
+  onDelete,
+  onOpenCreative,
+  onToggleSelect,
+  onMarqueeDown,
+  onMarqueeMove,
+  onMarqueeUp,
+  onClearSelection,
+}: {
+  creatives: Creative[];
+  copySets: BoardCopySet[];
+  images: BoardImage[];
+  creativeThumbs: Record<string, string>;
+  selection: string[];
+  marquee: MarqueeRect | null;
+  gridRef: React.RefObject<HTMLDivElement | null>;
+  dragRef: React.MutableRefObject<BoardDragPayload | null>;
+  onClose: () => void;
+  onReassignCopy: (targetId: string, copyId: string, sourceId?: string) => void;
+  onReassignImage: (targetId: string, url: string, kind: MediaKind) => void;
+  onDuplicate: (ids: string[]) => void;
+  onDelete: (ids: string[]) => void;
+  onOpenCreative: (id: string) => void;
+  onToggleSelect: (id: string, additive: boolean) => void;
+  onMarqueeDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onMarqueeMove: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onMarqueeUp: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onClearSelection: () => void;
+}) {
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const selectionSet = useMemo(() => new Set(selection), [selection]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const startDrag = (event: React.DragEvent, payload: BoardDragPayload) => {
+    dragRef.current = payload;
+    event.dataTransfer.effectAllowed = "move";
+    try {
+      event.dataTransfer.setData("text/plain", payload.kind);
+    } catch {
+      // Some browsers are picky; the ref carries the real payload.
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent, targetId: string) => {
+    event.preventDefault();
+    setDropTargetId(null);
+    const payload = dragRef.current;
+    dragRef.current = null;
+    if (!payload) return;
+    const target = creatives.find((creative) => creative.id === targetId);
+    if (!target) return;
+    if (payload.kind === "copy") {
+      onReassignCopy(targetId, payload.copyId, payload.sourceCreativeId);
+    } else {
+      onReassignImage(targetId, payload.url, payload.mediaKind);
+    }
+  };
+
+  const thumbFor = (creative: Creative) =>
+    creativeThumbs[creative.id] || ((creative.mediaKind || "image") === "image" ? creative.photoUrl : "");
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 90,
+        background: "rgba(6,6,8,0.86)",
+        backdropFilter: "blur(6px)",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "Inter, system-ui, sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 18px",
+          borderBottom: `1px solid ${ADS_BRAND.border2}`,
+          background: ADS_BRAND.panel,
+        }}
+      >
+        <LayoutGrid size={18} color={ADS_BRAND.gold} />
+        <div style={{ marginRight: "auto" }}>
+          <div style={{ fontSize: 15, fontWeight: 900, color: ADS_BRAND.text }}>Pairing Board</div>
+          <div style={{ fontSize: 11, color: ADS_BRAND.text3 }}>
+            Drag copy or images between cards. Each image remembers its own layout.
+          </div>
+        </div>
+        {selection.length > 0 && (
+          <>
+            <span style={{ fontSize: 11, fontWeight: 800, color: ADS_BRAND.text3 }}>{selection.length} selected</span>
+            <button style={{ ...buttonStyle(false), height: 32 }} onClick={() => onDuplicate(selection)}>
+              <CopyPlus size={13} /> Duplicate
+            </button>
+            <button
+              style={{ ...buttonStyle(false), height: 32, color: "#ff8b8b" }}
+              onClick={() => onDelete(selection)}
+            >
+              <Trash2 size={13} /> Delete
+            </button>
+            <button style={{ ...buttonStyle(false), height: 32 }} onClick={onClearSelection}>
+              Clear
+            </button>
+          </>
+        )}
+        <button style={{ ...buttonStyle(false), height: 32 }} onClick={onClose}>
+          <X size={14} /> Close
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {/* Bins */}
+        <div
+          style={{
+            width: 230,
+            flexShrink: 0,
+            borderRight: `1px solid ${ADS_BRAND.border2}`,
+            background: ADS_BRAND.panel,
+            overflowY: "auto",
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 18,
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <Type size={13} color={ADS_BRAND.text2} />
+              <span style={{ ...labelStyle }}>Copy</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {copySets.map((copy) => (
+                <div
+                  key={copy.copyId}
+                  draggable
+                  onDragStart={(event) => startDrag(event, { kind: "copy", copyId: copy.copyId })}
+                  title="Drag onto a card to place this copy on that image"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "8px 9px",
+                    borderRadius: 9,
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    background: ADS_BRAND.panel3,
+                    cursor: "grab",
+                  }}
+                >
+                  <GripVertical size={13} color={ADS_BRAND.text4} style={{ flexShrink: 0 }} />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: ADS_BRAND.text2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {copy.label}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: ADS_BRAND.text4, flexShrink: 0 }}>
+                    ×{copy.count}
+                  </span>
+                </div>
+              ))}
+              {!copySets.length && <span style={{ fontSize: 11, color: ADS_BRAND.text4 }}>No copy yet.</span>}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <Images size={13} color={ADS_BRAND.text2} />
+              <span style={{ ...labelStyle }}>Images</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+              {images.map((image) => (
+                <div
+                  key={image.url}
+                  draggable
+                  onDragStart={(event) => startDrag(event, { kind: "image", url: image.url, mediaKind: image.kind })}
+                  title="Drag onto a card to swap that image"
+                  style={{
+                    position: "relative",
+                    aspectRatio: "9 / 16",
+                    borderRadius: 7,
+                    overflow: "hidden",
+                    border: `1px solid ${ADS_BRAND.border2}`,
+                    background: ADS_BRAND.panel3,
+                    cursor: "grab",
+                  }}
+                >
+                  {image.thumb ? (
+                    <img src={image.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} draggable={false} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Video size={14} color={ADS_BRAND.text4} />
+                    </div>
+                  )}
+                  {image.kind === "video" && (
+                    <span style={{ position: "absolute", bottom: 3, right: 3 }}>
+                      <Video size={11} color="#fff" />
+                    </span>
+                  )}
+                </div>
+              ))}
+              {!images.length && <span style={{ fontSize: 11, color: ADS_BRAND.text4 }}>No images yet.</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div
+          ref={gridRef}
+          onPointerDown={onMarqueeDown}
+          onPointerMove={onMarqueeMove}
+          onPointerUp={onMarqueeUp}
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: 18,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))",
+            gridAutoRows: "max-content",
+            gap: 16,
+            alignContent: "start",
+            position: "relative",
+          }}
+        >
+          {creatives.map((creative) => {
+            const selected = selectionSet.has(creative.id);
+            const isDropTarget = dropTargetId === creative.id;
+            const thumb = thumbFor(creative);
+            const label = getCopyLabel(creative.textBlocks);
+            return (
+              <div
+                key={creative.id}
+                data-creative-id={creative.id}
+                onClick={(event) => onToggleSelect(creative.id, event.shiftKey || event.metaKey || event.ctrlKey)}
+                onDoubleClick={() => onOpenCreative(creative.id)}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  if (dropTargetId !== creative.id) setDropTargetId(creative.id);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTargetId((id) => (id === creative.id ? null : id));
+                }}
+                onDrop={(event) => handleDrop(event, creative.id)}
+                style={{
+                  borderRadius: 12,
+                  border: `2px solid ${selected ? ADS_BRAND.gold : isDropTarget ? ADS_BRAND.goldBorder : ADS_BRAND.border2}`,
+                  background: ADS_BRAND.panel2,
+                  boxShadow: isDropTarget ? `0 0 0 3px ${ADS_BRAND.goldSoft}` : "none",
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <div style={{ position: "relative", aspectRatio: "9 / 16", background: "#000" }}>
+                  {thumb ? (
+                    <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} draggable={false} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Video size={18} color={ADS_BRAND.text4} />
+                    </div>
+                  )}
+                  {/* image drag handle */}
+                  <div
+                    draggable
+                    onClick={(event) => event.stopPropagation()}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      startDrag(event, { kind: "image", url: creative.photoUrl, mediaKind: creative.mediaKind ?? "image" });
+                    }}
+                    title="Drag this image onto another card"
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      left: 6,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "3px 6px",
+                      borderRadius: 7,
+                      background: "rgba(0,0,0,0.55)",
+                      color: "#fff",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      cursor: "grab",
+                    }}
+                  >
+                    <Images size={11} /> Image
+                  </div>
+                  {creative.approved && (
+                    <span style={{ position: "absolute", top: 6, right: 6 }}>
+                      <CheckCircle2 size={16} color={ADS_BRAND.gold} fill={ADS_BRAND.gold} />
+                    </span>
+                  )}
+                </div>
+                {/* copy chip (draggable) + actions */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 8px" }}>
+                  <div
+                    draggable
+                    onClick={(event) => event.stopPropagation()}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      if (creative.copyId) startDrag(event, { kind: "copy", copyId: creative.copyId, sourceCreativeId: creative.id });
+                    }}
+                    title="Drag this copy onto another card (they swap)"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      flex: 1,
+                      minWidth: 0,
+                      padding: "5px 7px",
+                      borderRadius: 8,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      background: ADS_BRAND.panel3,
+                      cursor: "grab",
+                    }}
+                  >
+                    <GripVertical size={12} color={ADS_BRAND.text4} style={{ flexShrink: 0 }} />
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: ADS_BRAND.text2,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    title="Edit in canvas"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenCreative(creative.id);
+                    }}
+                    style={{ ...buttonStyle(false), width: 28, height: 28, padding: 0, flexShrink: 0 }}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Duplicate"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDuplicate([creative.id]);
+                    }}
+                    style={{ ...buttonStyle(false), width: 28, height: 28, padding: 0, flexShrink: 0 }}
+                  >
+                    <CopyPlus size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {marquee && (
+            <div
+              style={{
+                position: "fixed",
+                left: marquee.x,
+                top: marquee.y,
+                width: marquee.w,
+                height: marquee.h,
+                border: `1.5px solid ${ADS_BRAND.gold}`,
+                background: ADS_BRAND.goldSoft,
+                borderRadius: 4,
+                pointerEvents: "none",
+                zIndex: 95,
+              }}
+            />
+          )}
+
+          {!creatives.length && (
+            <div style={{ gridColumn: "1 / -1", color: ADS_BRAND.text3, fontSize: 13, padding: 24 }}>
+              No ads yet — generate some first, then come back to mix and match.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
