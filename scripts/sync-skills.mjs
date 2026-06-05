@@ -29,6 +29,8 @@ const SKILLS = [
     displayPath: "~/.codex/skills/ccos-ad-launcher/SKILL.md", file: join(HOME, ".codex/skills/ccos-ad-launcher/SKILL.md"), selfImproving: false },
   { id: "ad-copywriter", emoji: "✍️", accent: "#d98a5b", tagline: "Write ads that rip, the CCOS way",
     displayPath: "~/.claude/skills/ad-copywriter/SKILL.md", file: join(HOME, ".claude/skills/ad-copywriter/SKILL.md"), selfImproving: false },
+  { id: "womens-ad-voice", emoji: "💬", accent: "#d97aa0", tagline: "Women's ads are different — the voice + competitor teardowns",
+    displayPath: "~/.claude/skills/womens-ad-voice/SKILL.md", file: join(HOME, ".claude/skills/womens-ad-voice/SKILL.md"), selfImproving: true },
 ];
 
 function parse(raw) {
@@ -70,7 +72,7 @@ for (const s of SKILLS) {
 
 // Friendlier display names than the raw frontmatter slug.
 function prettyName(id) {
-  return ({ "cmo": "CMO", "ad-decisions": "Kill / Scale Decision", "ccos-ad-launcher": "CCOS Ad Launcher", "ad-copywriter": "Ad Copywriter" })[id] || titleCase(id);
+  return ({ "cmo": "CMO", "ad-decisions": "Kill / Scale Decision", "ccos-ad-launcher": "CCOS Ad Launcher", "ad-copywriter": "Ad Copywriter", "womens-ad-voice": "Women's Ad Voice" })[id] || titleCase(id);
 }
 
 writeFileSync(OUT, JSON.stringify(out, null, 2) + "\n");
