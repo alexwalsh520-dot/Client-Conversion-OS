@@ -1572,16 +1572,9 @@ function drawMarkerHighlight(
   // Top edge right -> left
   for (let i = segments - 1; i >= 0; i--) ctx.lineTo(topPts[i].x, topPts[i].y);
   ctx.closePath();
-  // Vertical gradient: denser in the middle, fading at the top/bottom edges so
-  // it reads like a translucent marker swipe rather than a flat fill.
-  const a = Math.min(1, opacity) * (0.9 + rand() * 0.1);
-  const grad = ctx.createLinearGradient(0, midY - half, 0, midY + half);
-  grad.addColorStop(0, `rgba(${rgb}, ${a * 0.5})`);
-  grad.addColorStop(0.2, `rgba(${rgb}, ${a * 0.9})`);
-  grad.addColorStop(0.5, `rgba(${rgb}, ${a})`);
-  grad.addColorStop(0.8, `rgba(${rgb}, ${a * 0.9})`);
-  grad.addColorStop(1, `rgba(${rgb}, ${a * 0.5})`);
-  ctx.fillStyle = grad;
+  // Solid, opaque ink — the swipe aesthetic comes from the thin band + organic
+  // varied ends, not from translucency.
+  ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity)})`;
   ctx.fill();
   ctx.restore();
 }
