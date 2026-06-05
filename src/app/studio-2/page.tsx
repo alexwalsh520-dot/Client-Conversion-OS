@@ -1512,41 +1512,64 @@ function drawMarkerHighlight(
   const rand = seededRandom(seed);
   const rgb = hexToRgb(color);
   const cap = h * 0.5;
-  // Marker overshoots the text slightly on each end.
-  const overL = cap * (0.55 + rand() * 0.7);
-  const overR = cap * (0.55 + rand() * 0.7);
-  const left = x - overL;
-  const right = x + w + overR;
-  const midY = y + h / 2;
-  // Vertically the ink hugs the text — pull in from the padded box a touch.
-  const half = (h / 2) * (0.86 + rand() * 0.06);
-  const wob = h * 0.07; // edge waviness
-  const segments = Math.max(3, Math.round((right - left) / (h * 0.85)));
 
-  const topY = (t: number) => midY - half + (rand() - 0.5) * wob * (t > 0 && t < 1 ? 1 : 0.3);
-  const botY = (t: number) => midY + half + (rand() - 0.5) * wob * (t > 0 && t < 1 ? 1 : 0.3);
+  // Per-line character so no two highlights read the same.
+  const half = (h / 2) * (0.82 + rand() * 0.14); // ink height varies line to line
+  const slant = (rand() - 0.5) * h * 0.09; // the whole swipe tilts a hair
+  const wob = h * (0.045 + rand() * 0.06); // edge waviness amount
+
+  // Each END gets its own shape: overshoot, how far/round the tip bulges,
+  // a vertical tip offset (asymmetry), and how much the corners taper.
+  const makeCap = () => ({
+    over: cap * (0.4 + rand() * 1.0),
+    bulge: 0.18 + rand() * 0.62,
+    tip: (rand() - 0.5) * h * 0.26,
+    topPull: 0.22 + rand() * 0.5,
+    botPull: 0.22 + rand() * 0.5,
+  });
+  const capL = makeCap();
+  const capR = makeCap();
+
+  const left = x - capL.over;
+  const right = x + w + capR.over;
+  const midY = y + h / 2;
+  const baseAt = (t: number) => midY - slant + slant * 2 * t; // left baseline -> right baseline
+  const segments = Math.max(3, Math.round((right - left) / (h * (0.62 + rand() * 0.4))));
+
+  // Precompute the wavy top/bottom edges once so the caps reuse the exact
+  // same corner points (otherwise re-rolling rand would tear the path).
+  const topPts: Array<{ x: number; y: number }> = [];
+  const botPts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const px = left + (right - left) * t;
+    const edge = i === 0 || i === segments ? wob * 0.2 : wob; // calmer right at the caps
+    topPts.push({ x: px, y: baseAt(t) - half + (rand() - 0.5) * edge });
+    botPts.push({ x: px, y: baseAt(t) + half + (rand() - 0.5) * edge });
+  }
+
+  const tl = topPts[0];
+  const bl = botPts[0];
+  const tr = topPts[segments];
+  const br = botPts[segments];
+  const leftTipX = left - capL.bulge * cap;
+  const leftTipY = baseAt(0) + capL.tip;
+  const rightTipX = right + capR.bulge * cap;
+  const rightTipY = baseAt(1) + capR.tip;
 
   ctx.save();
   ctx.beginPath();
-  // Left rounded cap
-  ctx.moveTo(left + cap * 0.4, topY(0));
-  ctx.quadraticCurveTo(left - cap * 0.15, midY - half * 0.4, left - cap * 0.1, midY);
-  ctx.quadraticCurveTo(left - cap * 0.15, midY + half * 0.4, left + cap * 0.4, botY(0));
-  // Bottom edge (left -> right), wavy
-  for (let i = 1; i <= segments; i++) {
-    const t = i / segments;
-    const px = left + (right - left) * t;
-    ctx.lineTo(px, botY(t));
-  }
-  // Right rounded cap
-  ctx.quadraticCurveTo(right + cap * 0.15, midY + half * 0.4, right + cap * 0.1, midY);
-  ctx.quadraticCurveTo(right + cap * 0.15, midY - half * 0.4, right - cap * 0.4, topY(1));
-  // Top edge (right -> left), wavy
-  for (let i = segments - 1; i >= 0; i--) {
-    const t = i / segments;
-    const px = left + (right - left) * t;
-    ctx.lineTo(px, topY(t));
-  }
+  ctx.moveTo(tl.x, tl.y);
+  // Left cap: top corner -> tip -> bottom corner
+  ctx.quadraticCurveTo(leftTipX, tl.y + (leftTipY - tl.y) * capL.topPull, leftTipX, leftTipY);
+  ctx.quadraticCurveTo(leftTipX, bl.y + (leftTipY - bl.y) * capL.botPull, bl.x, bl.y);
+  // Bottom edge left -> right
+  for (let i = 1; i <= segments; i++) ctx.lineTo(botPts[i].x, botPts[i].y);
+  // Right cap: bottom corner -> tip -> top corner
+  ctx.quadraticCurveTo(rightTipX, br.y + (rightTipY - br.y) * capR.botPull, rightTipX, rightTipY);
+  ctx.quadraticCurveTo(rightTipX, tr.y + (rightTipY - tr.y) * capR.topPull, tr.x, tr.y);
+  // Top edge right -> left
+  for (let i = segments - 1; i >= 0; i--) ctx.lineTo(topPts[i].x, topPts[i].y);
   ctx.closePath();
   ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity)})`;
   ctx.fill();
