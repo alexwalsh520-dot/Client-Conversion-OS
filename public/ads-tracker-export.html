@@ -1048,6 +1048,65 @@
   .ddr-trust.bad .ddr-trust-dot{background:var(--red)}
   .ddr-trust-pct{font-weight:700;color:var(--text);font-size:15px;font-variant-numeric:tabular-nums}
   .ddr-trust-txt{font-size:12px;color:var(--text-4);line-height:1.45}
+  /* Skills page */
+  .ddr-skills-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);font-size:13px;font-weight:550;cursor:pointer;transition:border-color .12s ease,transform .08s ease}
+  .ddr-skills-btn:hover{border-color:var(--gold-dim);transform:translateY(-1px)}
+  .ddr-skills-btn .sk-spark{font-size:14px}
+  .skills-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .skills-back{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);font-size:13px;font-weight:550;cursor:pointer;transition:border-color .12s ease,transform .08s ease}
+  .skills-back:hover{border-color:var(--gold-dim);transform:translateX(-2px)}
+  .skills-updated{font-size:11.5px;color:var(--text-4)}
+  .skills-head{margin-bottom:20px}
+  .skills-sub{font-size:13px;color:var(--text-4);margin-top:6px;max-width:640px;line-height:1.5}
+  .skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+  .skill-card{position:relative;text-align:left;display:flex;flex-direction:column;gap:9px;padding:20px 20px 16px;border:1px solid var(--border);border-radius:16px;background:var(--panel);cursor:pointer;overflow:hidden;transition:border-color .14s ease,transform .1s ease,box-shadow .14s ease}
+  .skill-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,#c9a96e)}
+  .skill-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--accent,#c9a96e) 50%,var(--border));box-shadow:0 12px 30px -18px rgba(0,0,0,.5)}
+  .skill-card-top{display:flex;align-items:center;justify-content:space-between}
+  .skill-emoji{font-size:26px;line-height:1}
+  .skill-emoji.big{font-size:40px}
+  .skill-badge{font-size:10px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--accent,#c9a96e);background:color-mix(in srgb,var(--accent,#c9a96e) 14%,transparent);border:1px solid color-mix(in srgb,var(--accent,#c9a96e) 30%,transparent);padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .skill-name{font-size:18px;font-weight:700;color:var(--text)}
+  .skill-tagline{font-size:13px;color:var(--accent,#c9a96e);font-weight:550}
+  .skill-purpose{font-size:12.5px;color:var(--text-4);line-height:1.5}
+  .skill-purpose.lg{font-size:14px;color:var(--text-3);margin:14px 0 4px}
+  .skill-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .skill-chip{font-size:11px;color:var(--text-3);background:var(--panel-2);border:1px solid var(--border);border-radius:999px;padding:4px 10px;line-height:1.3}
+  .skill-card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:10px;border-top:1px solid var(--border)}
+  .skill-open{font-size:12px;font-weight:650;color:var(--accent,#c9a96e)}
+  .skill-sections{font-size:11px;color:var(--text-4)}
+  .skill-detail{max-width:780px}
+  .skill-detail-head{display:flex;align-items:center;gap:16px;margin-bottom:6px}
+  .skill-detail-name{font-size:24px;font-weight:750;color:var(--text);display:flex;align-items:center;gap:12px}
+  .skill-when{margin:16px 0}
+  .skill-when-label{font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-4);margin-bottom:8px}
+  .skill-path{font-size:11.5px;color:var(--text-4);font-family:ui-monospace,Menlo,monospace;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:6px 0 22px;display:inline-block}
+  .skill-section{border-top:1px solid var(--border);padding-top:18px;margin-top:18px}
+  .skill-section-title{font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px}
+  .skill-prose{font-size:13.5px;color:var(--text-3);line-height:1.6;margin:0}
+  .skill-bullets{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .skill-bullets li{position:relative;padding-left:20px;font-size:13px;color:var(--text-3);line-height:1.5}
+  .skill-bullets li::before{content:"";position:absolute;left:4px;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent,#c9a96e)}
+  .skill-numbered{margin:0;padding:0;list-style:none;counter-reset:sk;display:flex;flex-direction:column;gap:11px}
+  .skill-numbered li{position:relative;padding-left:38px;font-size:13px;color:var(--text-3);line-height:1.5;counter-increment:sk}
+  .skill-numbered li::before{content:counter(sk);position:absolute;left:0;top:-1px;width:24px;height:24px;border-radius:7px;background:color-mix(in srgb,var(--accent,#c9a96e) 14%,transparent);color:var(--accent,#c9a96e);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .skill-numbered li strong{color:var(--text);font-weight:650}
+  .skill-kv{display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:11px;overflow:hidden}
+  .skill-kv-row{display:flex;justify-content:space-between;gap:16px;padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px}
+  .skill-kv-row:last-child{border-bottom:none}
+  .skill-kv-k{color:var(--text-4);font-weight:550;flex:0 0 auto}
+  .skill-kv-v{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+  .skill-codes{display:flex;flex-direction:column;gap:12px}
+  .skill-code-block{border:1px solid var(--border);border-radius:11px;overflow:hidden}
+  .skill-code-label{font-size:11px;font-weight:650;color:var(--text-4);padding:8px 12px;background:var(--panel-2);border-bottom:1px solid var(--border)}
+  .skill-code-block pre{margin:0;padding:13px 14px;font-size:12.5px;color:var(--text-3);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;line-height:1.5;background:var(--panel)}
+  .skill-timeline{display:flex;flex-direction:column;gap:0}
+  .skill-tl-item{position:relative;display:flex;gap:14px;padding-bottom:18px}
+  .skill-tl-item:not(:last-child)::after{content:"";position:absolute;left:5px;top:14px;bottom:0;width:2px;background:var(--border)}
+  .skill-tl-dot{flex:0 0 auto;width:12px;height:12px;border-radius:50%;background:var(--accent,#c9a96e);margin-top:3px;z-index:1;border:2px solid var(--panel)}
+  .skill-tl-date{font-size:11px;color:var(--text-4);font-weight:600}
+  .skill-tl-title{font-size:13.5px;color:var(--text);font-weight:650;margin:2px 0 4px}
+  .skill-tl-text{font-size:12.5px;color:var(--text-4);line-height:1.5}
   /* Business leaderboard */
   .lb{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
   .lb-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
@@ -9735,7 +9794,116 @@ function MoneyCockpit({model}){
   );
 }
 
+// ------- Skills viewer (the playbooks running behind the decisions)
+function SkillSection({sec}){
+  return (
+    <div className="skill-section">
+      <div className="skill-section-title">{sec.title}</div>
+      {sec.type==="prose" && <p className="skill-prose">{sec.body}</p>}
+      {sec.type==="bullets" && (
+        <ul className="skill-bullets">{(sec.items||[]).map((it,i)=><li key={i}>{it}</li>)}</ul>
+      )}
+      {sec.type==="numbered" && (
+        <ol className="skill-numbered">{(sec.items||[]).map((it,i)=>(
+          <li key={i}><strong>{it.name}</strong>{it.text?<span> — {it.text}</span>:null}</li>
+        ))}</ol>
+      )}
+      {sec.type==="kv" && (
+        <div className="skill-kv">{(sec.items||[]).map((it,i)=>(
+          <div key={i} className="skill-kv-row"><span className="skill-kv-k">{it.k}</span><span className="skill-kv-v">{it.v}</span></div>
+        ))}</div>
+      )}
+      {sec.type==="code" && (
+        <div className="skill-codes">{(sec.items||[]).map((it,i)=>(
+          <div key={i} className="skill-code-block"><div className="skill-code-label">{it.label}</div><pre>{it.code}</pre></div>
+        ))}</div>
+      )}
+      {sec.type==="timeline" && (
+        <div className="skill-timeline">{(sec.items||[]).map((it,i)=>(
+          <div key={i} className="skill-tl-item"><div className="skill-tl-dot"/><div className="skill-tl-body">
+            <div className="skill-tl-date">{it.date}</div>
+            <div className="skill-tl-title">{it.title}</div>
+            <div className="skill-tl-text">{it.text}</div>
+          </div></div>
+        ))}</div>
+      )}
+    </div>
+  );
+}
+function SkillDetail({skill}){
+  return (
+    <div className="skill-detail" style={{"--accent":skill.accent}}>
+      <div className="skill-detail-head">
+        <span className="skill-emoji big">{skill.emoji}</span>
+        <div>
+          <div className="skill-detail-name">{skill.name}{skill.selfImproving && <span className="skill-badge">self-improving</span>}</div>
+          <div className="skill-tagline">{skill.tagline}</div>
+        </div>
+      </div>
+      <div className="skill-purpose lg">{skill.purpose}</div>
+      <div className="skill-when">
+        <div className="skill-when-label">When it runs</div>
+        <div className="skill-chips">{(skill.whenItRuns||[]).map((w,i)=><span key={i} className="skill-chip">{w}</span>)}</div>
+      </div>
+      <div className="skill-path">{skill.path}</div>
+      {(skill.sections||[]).map((sec,i)=><SkillSection key={i} sec={sec}/>)}
+    </div>
+  );
+}
+function SkillsPage({onBack}){
+  const [data,setData]=useState(null);
+  const [err,setErr]=useState(false);
+  const [openId,setOpenId]=useState(null);
+  useEffect(()=>{ let off=false;
+    fetch("/skills-data.json",{cache:"no-store"}).then(r=>r.json())
+      .then(d=>{ if(!off) setData(d); }).catch(()=>{ if(!off) setErr(true); });
+    return ()=>{ off=true; };
+  },[]);
+  const skills = (data && data.skills) || [];
+  const active = openId ? skills.find(s=>s.id===openId) : null;
+  return (
+    <div className="ddr skills-page">
+      <div className="skills-top">
+        <button className="skills-back" onClick={active?()=>setOpenId(null):onBack}>
+          <span>←</span> {active ? "All skills" : "Back to Deep Dive"}
+        </button>
+        {data && data.updated && <span className="skills-updated">Updated {data.updated}</span>}
+      </div>
+      {!active && (
+        <div className="skills-head">
+          <h2 className="ddr-title">Skills</h2>
+          <p className="skills-sub">The playbooks running behind your decisions. Tap one to see exactly what it does. These update automatically whenever a skill is improved.</p>
+        </div>
+      )}
+      {err && !data && <div className="skill-purpose">Couldn't load skills right now.</div>}
+      {!active ? (
+        <div className="skills-grid">
+          {skills.map(s=>(
+            <button key={s.id} className="skill-card" style={{"--accent":s.accent}} onClick={()=>setOpenId(s.id)}>
+              <div className="skill-card-top">
+                <span className="skill-emoji">{s.emoji}</span>
+                {s.selfImproving && <span className="skill-badge">self-improving</span>}
+              </div>
+              <div className="skill-name">{s.name}</div>
+              <div className="skill-tagline">{s.tagline}</div>
+              <div className="skill-purpose">{s.purpose}</div>
+              <div className="skill-chips">{(s.whenItRuns||[]).slice(0,2).map((w,i)=><span key={i} className="skill-chip">{w}</span>)}</div>
+              <div className="skill-card-foot">
+                <span className="skill-open">Open →</span>
+                <span className="skill-sections">{(s.sections||[]).length} sections</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <SkillDetail skill={active}/>
+      )}
+    </div>
+  );
+}
+
 function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, range, loading, pager}){
+  const [skillsOpen, setSkillsOpen] = useState(false);
   // Brain-icon data-flow map — collapsed by default, lifted here so the toggle
   // can sit in the header while the full-width map expands just below it.
   const [flowOpen, setFlowOpen] = useState(false);
@@ -9904,12 +10072,19 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
   const profitReturn = sum && sum.grossProfitRoi != null ? Number(sum.grossProfitRoi) : null;
   const profitClass = profitReturn==null ? "mid" : (profitReturn>=9 ? "good" : profitReturn>=3 ? "mid" : "bad");
 
+  if(skillsOpen) return <SkillsPage onBack={()=>setSkillsOpen(false)}/>;
+
   return (
     <div className="ddr">
       <div className="ddr-head">
         <div className="ddr-head-row">
           <h2 className="ddr-title">Deep Dive</h2>
-          <DecisionRulesToggle open={rulesOpen} onToggle={()=>setRulesOpen(o=>!o)}/>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button className="ddr-skills-btn" onClick={()=>setSkillsOpen(true)} title="The skills running behind your decisions">
+              <span className="sk-spark">✦</span> Skills
+            </button>
+            <DecisionRulesToggle open={rulesOpen} onToggle={()=>setRulesOpen(o=>!o)}/>
+          </div>
         </div>
       </div>
       <DecisionRulesPanel open={rulesOpen}/>

@@ -1,0 +1,199 @@
+{
+  "updated": "2026-06-05",
+  "note": "Mirror of Alex's local skills. SYNC RULE: whenever a SKILL.md changes, this file must be updated + redeployed so the in-app Skills view stays truthful.",
+  "skills": [
+    {
+      "id": "cmo",
+      "name": "CMO",
+      "tagline": "Think like the person whose neck is on the line",
+      "emoji": "🎯",
+      "accent": "#c9a96e",
+      "path": "~/.claude/skills/cmo/SKILL.md",
+      "selfImproving": true,
+      "purpose": "The identity + anti-corner-cutting discipline to occupy for ANY money / ads / attribution / decision work. Not a workflow — the mentality. Self-improving: it learns from every correction.",
+      "whenItRuns": [
+        "Any analysis, number, advice, or decision about the business",
+        "Auto-loads alongside the decision-making skill",
+        "By default whenever real money is at stake"
+      ],
+      "sections": [
+        {
+          "type": "prose",
+          "title": "The identity",
+          "body": "You are Alex's CMO. ~20 people's families eat based on these decisions. A wrong call, a wrong number, or a fabricated “winner” is somebody not making rent. Genuinely in his corner — produce an answer you'd stake those families on. The bigger and less reversible the move, the more proof you owe before you speak. Lead with the action, the proof, and the exact buttons. No jargon. One thing at a time."
+        },
+        {
+          "type": "numbered",
+          "title": "Operating principles (each earned from a real correction)",
+          "items": [
+            {"name": "VERIFY, DON'T ASSUME", "text": "When the task says “check,” open the primary artifact. A proxy that looks like the thing is not the thing. Asked if two ads are identical? Open the images / OCR the copy / hash the files — don't infer from a matching name."},
+            {"name": "PRESSURE-TEST YOUR OWN OUTPUT", "text": "Any number that's surprisingly good, weird, or extreme (a $5 cost/call, a 6,816× ROI, revenue that jumps $58k by adding one day) is a STOP SIGN. Find the artifact yourself before it reaches Alex."},
+            {"name": "SEPARATE SIGNAL FROM ARTIFACT", "text": "Watch tiny-denominator ratios, keyword reuse across campaigns/time, mixed windows, grouping by name not id, stale caches. Rank only on trustworthy signals; say what's trustworthy vs not."},
+            {"name": "DON'T ASK WHAT YOU KNOW", "text": "If Alex already explained the answer, act — don't ask permission to do the obviously correct thing."},
+            {"name": "RECONCILE TO SOURCE OF TRUTH", "text": "Tie numbers back to the sales tracker / Meta, ideally to the dollar, before trusting or acting. Name the small reconciling differences."},
+            {"name": "NO HEDGING, NO FALSE CERTAINTY", "text": "State the call and the confidence. Surface blind spots and assumptions in one line each — never bury them, never inflate certainty, never hide behind “the tool said so.”"},
+            {"name": "THE GAP IS PART OF THE DECISION", "text": "Before any kill/scale, ask whether the data you can't see (untied cash, low coverage %, an untracked sale) could flip the call. Go check the biggest such risk first."}
+          ]
+        },
+        {
+          "type": "prose",
+          "title": "Self-improvement loop",
+          "body": "Every time Alex corrects, pushes back, or gets frustrated: (1) fix the immediate thing; (2) extract the generalizable mentality behind it — it applies elsewhere, not just here; (3) append it to the correction log. His frustration is a signal about a thinking flaw that WILL recur if not encoded."
+        },
+        {
+          "type": "timeline",
+          "title": "Correction log (what this skill learned from)",
+          "items": [
+            {"date": "2026-06-05", "title": "“BE THOROUGH — you didn't check if the ads are the same.”", "text": "Claimed two ads were the same creative from a matching name instead of opening them. OCR + MD5 revealed “EDGE” was TWO different creatives. → Verify, don't assume."},
+            {"date": "2026-06-05", "title": "“$5 cost per call?? huh??”", "text": "Presented a $5/call, 14.6× “winner” that was a keyword-reuse artifact; the real pooled creative was a 0.9× LOSER. → Pressure-test, separate signal from artifact."},
+            {"date": "2026-06-05", "title": "“Should not have been a question.”", "text": "Asked permission to pull real ROI after he'd explained why it was required. → Don't ask what you know."},
+            {"date": "2026-06-05", "title": "RED ALERT: $73,548 vs real $15,349.", "text": "Reconciled DB to the sales tracker to the dollar, proving the data was sound and the bug was display-only. → Reconcile to source of truth."},
+            {"date": "2026-06-04", "title": "“Act as my CMO — 20 families.”", "text": "Gave a clean Keith call but waved off 70% coverage; a CMO checks whether the unseen 30% could flip a kill first. → The gap is part of the decision."}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ad-decisions",
+      "name": "Kill / Scale Decision",
+      "tagline": "Weekly: exactly what to kill and what to scale",
+      "emoji": "⚖️",
+      "accent": "#5b8def",
+      "path": "~/.claude/skills/ad-decisions/SKILL.md",
+      "selfImproving": false,
+      "purpose": "A definitive, proof-backed kill/scale call for one creator's live Meta ads, ending in exact Ads Manager actions. Money + ~20 people's pay depend on it — accuracy and zero hedging.",
+      "whenItRuns": [
+        "“What should I kill / scale for <creator>”",
+        "Weekly ad review",
+        "Any per-creator turn-off / scale-budget decision"
+      ],
+      "sections": [
+        {
+          "type": "bullets",
+          "title": "Sources of truth (live Supabase)",
+          "items": [
+            "Spend / status → ads_meta_insights_daily (synced from Meta = Ads Manager)",
+            "Booked calls → ghl_appointments",
+            "Cash / closes → sales_tracker_rows (the Google sheet Alex maintains)",
+            "Sale → ad link → ads_keyword_events: manychat_subscriber_id EXACT first, then normalized-name. Always report coverage %."
+          ]
+        },
+        {
+          "type": "numbered",
+          "title": "HARD RULES (the mistakes that already burned us)",
+          "items": [
+            {"name": "Group by adset_id, NEVER adset_name", "text": "The same name spans many campaigns — merged an 8.2× winner with a 1.7× loser once."},
+            {"name": "Active-only", "text": "ACTIVE ad + ACTIVE campaign, spent in the last ~4 days. Ignore paused."},
+            {"name": "Same window both sides", "text": "30-day spend vs 30-day cash. Never mix windows."},
+            {"name": "Daily run-rate = last-7-day pace", "text": "Never a 30-day calendar average (it under-reports mid-window launches)."},
+            {"name": "Go to per-ad (keyword) level", "text": "The ad-set average hides that the duds are starved and the funded ads are weak."},
+            {"name": "Pull the weekly trend before a kill", "text": "Fatigue (rising cost/call) vs slow-starter vs structurally weak — name the cause."},
+            {"name": "Campaign context always", "text": "If it's the only active ad set, say “killing this ad set kills the campaign.”"},
+            {"name": "Verbatim names + adset_id", "text": "Never abbreviate a campaign / ad-set name."},
+            {"name": "Reconcile cash to named sales", "text": "List the actual closes so Alex can verify against his sheet."},
+            {"name": "No hedging", "text": "State the call + confidence. Caveats are one line, never “gut check it.”"}
+          ]
+        },
+        {
+          "type": "kv",
+          "title": "Zakk's thresholds",
+          "items": [
+            {"k": "Master gate", "v": "Cash ROI ≥ 2× (cash ÷ spend, 30d). Target 2–3×+."},
+            {"k": "CAC target", "v": "20% × ticket price"},
+            {"k": "Cost / booked call", "v": "CAC × close-rate (leading indicator)"},
+            {"k": "Decide on", "v": "a 7–14 day window, weekly"},
+            {"k": "Scale", "v": "+$50 → 100 → 200 → 300, ~weekly, until it breaks then step back"},
+            {"k": "KILL if", "v": "cost/call or CAC ~2–3× target, OR ROI < 2×, OR leads don't show/close"}
+          ]
+        },
+        {
+          "type": "numbered",
+          "title": "Procedure",
+          "items": [
+            {"name": "Hierarchy + run-rate", "text": "Active campaigns/ad sets, adset_id, 30d spend, true daily pace, active ad sets per campaign."},
+            {"name": "Coverage", "text": "Creator's 30d cash vs % tied to a keyword."},
+            {"name": "Per-ad-set + per-ad funnel", "text": "Spend, booked, cost/call, closes, CAC, cash, ROI (30/30)."},
+            {"name": "Weekly trend + proof", "text": "Cost/call by week + the named closes, for any kill candidate."},
+            {"name": "Apply thresholds + write the verdict", "text": "One-line verdict, table, proof, confidence, exact Ads Manager moves."}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ccos-ad-launcher",
+      "name": "CCOS Ad Launcher",
+      "tagline": "Chat-first Meta ad launching, safely",
+      "emoji": "🚀",
+      "accent": "#3fb27f",
+      "path": "~/.codex/skills/ccos-ad-launcher/SKILL.md",
+      "selfImproving": false,
+      "purpose": "Turns the chat into Alex's Meta ad launcher: account safety, keyword uniqueness, image renaming, seed-ad verification, creative duplication, DM keyword swaps, and a final audit. Default posture: reduce cognitive load, ask only for what can't be inferred, protect the accounts.",
+      "whenItRuns": [
+        "Launching Meta ads for Keith or Tyson",
+        "Duplicating / scaling a campaign from a folder of creatives",
+        "Renaming creatives to keywords + swapping DM keywords"
+      ],
+      "sections": [
+        {
+          "type": "bullets",
+          "title": "Operating mode",
+          "items": [
+            "Treat the chat as the launcher cockpit",
+            "Read-only checks before any write",
+            "Fewest possible questions — keep Alex moving",
+            "Never publish unless Alex explicitly asks and the run is clean",
+            "Never touch a client/account not named in the request"
+          ]
+        },
+        {
+          "type": "kv",
+          "title": "Account rules",
+          "items": [
+            {"k": "Keith account", "v": "act_861990450801193"},
+            {"k": "Tyson account", "v": "act_176726311"},
+            {"k": "Writes", "v": "Always lock to ONE target account"},
+            {"k": "Keyword reuse check", "v": "Scan BOTH Keith + Tyson, last 30 days"}
+          ]
+        },
+        {
+          "type": "numbered",
+          "title": "Standard build flow",
+          "items": [
+            {"name": "Confirm account + campaign", "text": ""},
+            {"name": "Find/count images in the asset folder", "text": ""},
+            {"name": "Check / generate unique keywords", "text": ""},
+            {"name": "Rename local images to KEYWORD.ext", "text": ""},
+            {"name": "Wait for Alex to publish the seed ad", "text": "if not already visible"},
+            {"name": "Read campaign, ad set, seed ad, creative + message template from Meta", "text": ""},
+            {"name": "Verify no unexpected campaigns/accounts are touched", "text": ""},
+            {"name": "Build/update ads", "text": "duplicate a configured ad, swap image, name = keyword, update DM greeting keyword, preserve all targeting/budget/schedule/placements/status"},
+            {"name": "Verify final state from Meta", "text": ""},
+            {"name": "Report count, names, image match, keyword/message match, + anything the API can't read", "text": ""}
+          ]
+        },
+        {
+          "type": "code",
+          "title": "DM greeting patterns",
+          "items": [
+            {"label": "Summer Shred lead magnet", "code": "Yo, you're tryna join my Free Summer Shredding Challenge, yea?\n\nSend \"KEYWORD\" and I'll send you the link 👇"},
+            {"label": "Direct CTA", "code": "Yo, you’re here about 1 of the 5 coaching spots, yea?\n\nTap “KEYWORD” below and I’ll see if you’re a fit👇"}
+          ]
+        },
+        {
+          "type": "bullets",
+          "title": "Safety guardrails",
+          "items": [
+            "Do NOT change targeting, budget, schedule, placements, destination, or settings during a duplicate/build",
+            "Do NOT turn on Advantage+ options",
+            "Prefer duplicating an existing configured ad over creating a fresh object (inherits Alex's safe setup)",
+            "Avoid Meta rate limits: narrow reads, one upload per image, pace writes, verify once at the end",
+            "Stop immediately on rate-limit errors (code 17 / subcode 2446079) and wait before retrying",
+            "Use temp env files and delete them after use",
+            "If a dirty draft layer exists, don't publish a mixed pile — inspect, discard stale drafts only if Alex confirms",
+            "If final verification fails: stop and report the exact mismatch"
+          ]
+        }
+      ]
+    }
+  ]
+}
