@@ -1107,6 +1107,22 @@
   .skill-tl-date{font-size:11px;color:var(--text-4);font-weight:600}
   .skill-tl-title{font-size:13.5px;color:var(--text);font-weight:650;margin:2px 0 4px}
   .skill-tl-text{font-size:12.5px;color:var(--text-4);line-height:1.5}
+  .skill-md{font-size:13.5px;color:var(--text-3);line-height:1.62}
+  .skill-md h1{font-size:20px;font-weight:750;color:var(--text);margin:4px 0 12px}
+  .skill-md h2{font-size:15.5px;font-weight:700;color:var(--text);margin:24px 0 10px;padding-top:16px;border-top:1px solid var(--border)}
+  .skill-md h3{font-size:13.5px;font-weight:700;color:var(--text);margin:16px 0 8px}
+  .skill-md p{margin:0 0 11px}
+  .skill-md strong{color:var(--text);font-weight:650}
+  .skill-md em{color:var(--text-3);font-style:italic}
+  .skill-md ul,.skill-md ol{margin:0 0 12px;padding-left:0;list-style:none;counter-reset:skmd;display:flex;flex-direction:column;gap:8px}
+  .skill-md li{position:relative;padding-left:24px}
+  .skill-md ul>li::before{content:"";position:absolute;left:5px;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent,#c9a96e)}
+  .skill-md ol>li{counter-increment:skmd}
+  .skill-md ol>li::before{content:counter(skmd);position:absolute;left:0;top:0;width:18px;height:18px;border-radius:6px;background:color-mix(in srgb,var(--accent,#c9a96e) 16%,transparent);color:var(--accent,#c9a96e);font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .skill-md code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text)}
+  .skill-md pre{margin:0 0 12px;padding:13px 14px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--text-3);white-space:pre-wrap;line-height:1.5}
+  .skill-md pre code{background:none;border:none;padding:0}
+  .skill-md hr{border:none;border-top:1px solid var(--border);margin:18px 0}
   /* Business leaderboard */
   .lb{margin:18px 0;padding:20px 22px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
   .lb-h{font-size:16px;font-weight:650;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
@@ -9795,40 +9811,32 @@ function MoneyCockpit({model}){
 }
 
 // ------- Skills viewer (the playbooks running behind the decisions)
-function SkillSection({sec}){
-  return (
-    <div className="skill-section">
-      <div className="skill-section-title">{sec.title}</div>
-      {sec.type==="prose" && <p className="skill-prose">{sec.body}</p>}
-      {sec.type==="bullets" && (
-        <ul className="skill-bullets">{(sec.items||[]).map((it,i)=><li key={i}>{it}</li>)}</ul>
-      )}
-      {sec.type==="numbered" && (
-        <ol className="skill-numbered">{(sec.items||[]).map((it,i)=>(
-          <li key={i}><strong>{it.name}</strong>{it.text?<span> — {it.text}</span>:null}</li>
-        ))}</ol>
-      )}
-      {sec.type==="kv" && (
-        <div className="skill-kv">{(sec.items||[]).map((it,i)=>(
-          <div key={i} className="skill-kv-row"><span className="skill-kv-k">{it.k}</span><span className="skill-kv-v">{it.v}</span></div>
-        ))}</div>
-      )}
-      {sec.type==="code" && (
-        <div className="skill-codes">{(sec.items||[]).map((it,i)=>(
-          <div key={i} className="skill-code-block"><div className="skill-code-label">{it.label}</div><pre>{it.code}</pre></div>
-        ))}</div>
-      )}
-      {sec.type==="timeline" && (
-        <div className="skill-timeline">{(sec.items||[]).map((it,i)=>(
-          <div key={i} className="skill-tl-item"><div className="skill-tl-dot"/><div className="skill-tl-body">
-            <div className="skill-tl-date">{it.date}</div>
-            <div className="skill-tl-title">{it.title}</div>
-            <div className="skill-tl-text">{it.text}</div>
-          </div></div>
-        ))}</div>
-      )}
-    </div>
-  );
+// Minimal, safe markdown -> HTML so the detail view renders the REAL SKILL.md
+// text (generated from the file by scripts/sync-skills.mjs — never hand-copied).
+function mdToHtml(md){
+  const esc = (s)=> s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const inline = (s)=> esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  const lines = String(md||"").split("\n");
+  let html="", i=0, list=null;
+  const closeList=()=>{ if(list){ html+="</"+list+">"; list=null; } };
+  while(i<lines.length){
+    let ln = lines[i];
+    if(/^```/.test(ln)){ closeList(); i++; let code=""; while(i<lines.length && !/^```/.test(lines[i])){ code+=lines[i]+"\n"; i++; } i++; html+='<pre>'+esc(code.replace(/\n$/,""))+'</pre>'; continue; }
+    if(/^\s*$/.test(ln)){ closeList(); i++; continue; }
+    if(/^---+\s*$/.test(ln)){ closeList(); html+='<hr/>'; i++; continue; }
+    let h = ln.match(/^(#{1,4})\s+(.*)$/);
+    if(h){ closeList(); const lvl=h[1].length; html+='<h'+lvl+'>'+inline(h[2])+'</h'+lvl+'>'; i++; continue; }
+    let ol = ln.match(/^\s*\d+\.\s+(.*)$/);
+    if(ol){ if(list!=='ol'){ closeList(); list='ol'; html+='<ol>'; } html+='<li>'+inline(ol[1])+'</li>'; i++; continue; }
+    let ul = ln.match(/^\s*[-*]\s+(.*)$/);
+    if(ul){ if(list!=='ul'){ closeList(); list='ul'; html+='<ul>'; } html+='<li>'+inline(ul[1])+'</li>'; i++; continue; }
+    closeList(); html+='<p>'+inline(ln)+'</p>'; i++;
+  }
+  closeList();
+  return html;
 }
 function SkillDetail({skill}){
   return (
@@ -9840,13 +9848,9 @@ function SkillDetail({skill}){
           <div className="skill-tagline">{skill.tagline}</div>
         </div>
       </div>
-      <div className="skill-purpose lg">{skill.purpose}</div>
-      <div className="skill-when">
-        <div className="skill-when-label">When it runs</div>
-        <div className="skill-chips">{(skill.whenItRuns||[]).map((w,i)=><span key={i} className="skill-chip">{w}</span>)}</div>
-      </div>
+      {skill.description && <div className="skill-purpose lg">{skill.description}</div>}
       <div className="skill-path">{skill.path}</div>
-      {(skill.sections||[]).map((sec,i)=><SkillSection key={i} sec={sec}/>)}
+      <div className="skill-md" dangerouslySetInnerHTML={{__html: mdToHtml(skill.markdown)}}/>
     </div>
   );
 }
@@ -9872,7 +9876,7 @@ function SkillsPage({onBack}){
       {!active && (
         <div className="skills-head">
           <h2 className="ddr-title">Skills</h2>
-          <p className="skills-sub">The playbooks running behind your decisions. Tap one to see exactly what it does. These update automatically whenever a skill is improved.</p>
+          <p className="skills-sub">The playbooks running behind your decisions. Tap one to read the actual skill file — this page is generated straight from those files, so it can't drift from what's really running.</p>
         </div>
       )}
       {err && !data && <div className="skill-purpose">Couldn't load skills right now.</div>}
@@ -9886,11 +9890,10 @@ function SkillsPage({onBack}){
               </div>
               <div className="skill-name">{s.name}</div>
               <div className="skill-tagline">{s.tagline}</div>
-              <div className="skill-purpose">{s.purpose}</div>
-              <div className="skill-chips">{(s.whenItRuns||[]).slice(0,2).map((w,i)=><span key={i} className="skill-chip">{w}</span>)}</div>
+              <div className="skill-purpose">{s.description}</div>
               <div className="skill-card-foot">
                 <span className="skill-open">Open →</span>
-                <span className="skill-sections">{(s.sections||[]).length} sections</span>
+                <span className="skill-sections">read the file →</span>
               </div>
             </button>
           ))}
