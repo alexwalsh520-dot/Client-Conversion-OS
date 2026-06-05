@@ -45,7 +45,8 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
       my = e.clientY - rect.top;
       const dx = e.clientX - (rect.left + rect.width / 2);
       const dy = e.clientY - (rect.top + rect.height / 2);
-      target = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 260);
+      // reacts ANYWHERE on the page (base level), stronger as the cursor nears
+      target = 0.45 + 0.55 * Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 800);
     };
     const onLeave = () => (target = 0);
     window.addEventListener("mousemove", onMove);
@@ -65,11 +66,15 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
       const ax = Math.sin(t * 0.05) * 0.18;
       const cY = Math.cos(ay), sY = Math.sin(ay), cX = Math.cos(ax), sX = Math.sin(ax);
 
-      // soft aura that leans toward the cursor (no hard central dot)
-      const auraX = cx + (mx > -9000 ? (mx - cx) : 0) * 0.18 * infl;
-      const auraY = cy + (my > -9000 ? (my - cy) : 0) * 0.18 * infl;
-      const grad = ctx.createRadialGradient(auraX, auraY, 0, cx, cy, R * 1.45);
-      grad.addColorStop(0, `rgba(201,169,110,${0.06 + 0.14 * infl})`);
+      // direction toward the cursor (clamped) — drives a visible whole-sphere lean ANYWHERE
+      const dirX = mx > -9000 ? Math.max(-1, Math.min(1, (mx - cx) / (size * 1.1))) : 0;
+      const dirY = my > -9000 ? Math.max(-1, Math.min(1, (my - cy) / (size * 1.1))) : 0;
+      const shiftX = dirX * size * 0.2 * infl;
+      const shiftY = dirY * size * 0.2 * infl;
+
+      // soft aura that leans + brightens toward the cursor (no hard central dot)
+      const grad = ctx.createRadialGradient(cx + dirX * R * 0.55, cy + dirY * R * 0.55, 0, cx, cy, R * 1.5);
+      grad.addColorStop(0, `rgba(201,169,110,${0.08 + 0.18 * infl})`);
       grad.addColorStop(1, "rgba(201,169,110,0)");
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -77,22 +82,22 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
       ctx.fill();
 
       const proj = pts.map((p) => {
-        // constant organic wobble around the point
-        const ox = 0.05 * Math.sin(t * 0.7 * p.s + p.a);
-        const oy = 0.05 * Math.sin(t * 0.6 * p.s + p.b);
-        const oz = 0.05 * Math.cos(t * 0.65 * p.s + p.a);
+        // constant organic wobble around the point (more alive)
+        const ox = 0.09 * Math.sin(t * 0.9 * p.s + p.a);
+        const oy = 0.09 * Math.sin(t * 0.8 * p.s + p.b);
+        const oz = 0.09 * Math.cos(t * 0.85 * p.s + p.a);
         const x0 = p.x + ox, y0 = p.y + oy, z0 = p.z + oz;
         const x = x0 * cY - z0 * sY;
         const z = x0 * sY + z0 * cY;
         const y2 = y0 * cX - z * sX;
         const z2 = y0 * sX + z * cX;
-        let px = cx + x * R;
-        let py = cy + y2 * R;
+        let px = cx + x * R + shiftX;
+        let py = cy + y2 * R + shiftY;
         const depth = (z2 + 1) / 2;
         if (infl > 0.01 && mx > -9000) {
           const dx = mx - px, dy = my - py;
-          const near = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / (size * 0.75));
-          const pull = infl * near * near * 0.22;
+          const near = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / (size * 0.85));
+          const pull = infl * near * near * 0.3;
           px += dx * pull;
           py += dy * pull;
         }
@@ -257,7 +262,7 @@ export default function CmoPage() {
               return (
                 <div key={i} className={"cmo-row" + (open ? " open" : "")} onClick={() => setOpenFeed(open ? null : i)}>
                   <div className="cmo-row-main">
-                    <span className="cmo-row-bucket" style={{ color: c }}>
+                    <span className="cmo-row-bucket">
                       <span className="cmo-bdot" style={{ background: c }} />
                       {e.bucket}
                     </span>
@@ -387,7 +392,7 @@ function CmoStyles() {
   .cmo{max-width:1080px;margin:0 auto;padding:30px 30px 100px}
   .cmo-top{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
   .cmo-brand{display:flex;align-items:center;gap:18px}
-  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--gold) 7%,transparent),transparent 65%);box-shadow:inset 0 0 30px -10px rgba(201,169,110,.25),0 0 50px -22px rgba(201,169,110,.4)}
+  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid color-mix(in srgb,var(--gold) 24%,var(--border));background:radial-gradient(circle at 50% 42%,#1b1812,#0b0a09 74%);box-shadow:inset 0 0 26px -8px rgba(201,169,110,.32),0 0 46px -18px rgba(201,169,110,.5)}
   .cmo h1{font-size:26px;font-weight:800;letter-spacing:-.4px;color:var(--text-primary);margin:0 0 6px}
   .cmo-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
   .cmo-dot{width:6px;height:6px;border-radius:50%;background:var(--green,#3fb27f);box-shadow:0 0 8px var(--green,#3fb27f)}
@@ -410,7 +415,7 @@ function CmoStyles() {
   .cmo-row:last-child{border-bottom:none}
   .cmo-row:hover{background:color-mix(in srgb,var(--text-primary) 3%,transparent)}
   .cmo-row-main{display:flex;align-items:center;gap:14px;padding:13px 16px}
-  .cmo-row-bucket{flex:0 0 152px;display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+  .cmo-row-bucket{flex:0 0 150px;display:inline-flex;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted)}
   .cmo-bdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
   .cmo-row-title{flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cmo-row.open .cmo-row-title{white-space:normal}
@@ -453,13 +458,16 @@ function CmoStyles() {
   .cmo-detail-path{font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);background:var(--bg-secondary);border:1px solid var(--border);border-radius:7px;padding:7px 11px;margin:10px 0 18px;display:inline-block}
   .cmo-md{font-size:13.5px;color:var(--text-secondary);line-height:1.64}
   .cmo-md h1{font-size:19px;font-weight:800;color:var(--text-primary);margin:2px 0 12px}
-  .cmo-md h2{font-size:14px;font-weight:750;color:var(--gold);margin:22px 0 9px;padding-bottom:6px;border-bottom:1px solid color-mix(in srgb,var(--gold) 22%,var(--border));text-transform:none;letter-spacing:.01em}
-  .cmo-md h3{font-size:13px;font-weight:750;color:var(--text-primary);margin:14px 0 7px}
+  .cmo-md h2{font-size:17px;font-weight:800;color:var(--text-primary);margin:30px 0 13px;padding-top:18px;border-top:1px solid var(--border);line-height:1.3}
+  .cmo-md h3{font-size:13.5px;font-weight:750;color:var(--gold);margin:16px 0 8px}
   .cmo-md p{margin:0 0 11px}
   .cmo-md strong{color:var(--text-primary);font-weight:700}
-  .cmo-md ul,.cmo-md ol{margin:0 0 12px;padding-left:18px;display:flex;flex-direction:column;gap:7px}
-  .cmo-md li{padding-left:3px}
-  .cmo-md li::marker{color:var(--gold)}
+  .cmo-md ul{list-style:none;padding-left:0;margin:0 0 13px;display:flex;flex-direction:column;gap:7px}
+  .cmo-md ul>li{position:relative;padding-left:18px}
+  .cmo-md ul>li::before{content:"";position:absolute;left:3px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--gold)}
+  .cmo-md ol{list-style:none;padding-left:0;margin:0 0 13px;counter-reset:cmoO;display:flex;flex-direction:column;gap:9px}
+  .cmo-md ol>li{position:relative;padding-left:31px;counter-increment:cmoO}
+  .cmo-md ol>li::before{content:counter(cmoO);position:absolute;left:0;top:0;width:21px;height:21px;border-radius:6px;background:color-mix(in srgb,var(--gold) 15%,transparent);color:var(--gold);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
   .cmo-md code{font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12px;background:color-mix(in srgb,var(--gold) 11%,transparent);border:1px solid color-mix(in srgb,var(--gold) 24%,transparent);border-radius:5px;padding:1px 5px;color:var(--text-primary)}
   .cmo-md pre{margin:0 0 12px;padding:13px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:9px;font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5}
   .cmo-md pre code{background:none;border:none;padding:0}
