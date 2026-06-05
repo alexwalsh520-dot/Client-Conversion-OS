@@ -24,10 +24,12 @@ import {
   FileText,
   Star,
   Handshake,
+  Bot,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
+  { href: "/cmo", label: "CMO", icon: Bot },
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
