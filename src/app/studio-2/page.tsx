@@ -82,6 +82,8 @@ const TEXT_STYLE_PRESETS_KEY = "ccos-studio2-text-style-presets";
 const DEFAULT_COLOR_PALETTE = [
   "#FFFFFF",
   "#000000",
+  "#AEC8E8",
+  "#5E6B3B",
   "#4E944F",
   "#22C55E",
   "#FACC15",
@@ -1496,9 +1498,10 @@ function hashString(str: string) {
   return h >>> 0;
 }
 
-// Draws a hand-drawn highlighter / marker stroke behind a line of text:
-// a slightly wobbly capsule with overshooting, tapered ends — like a real
-// marker swiped across the line. Deterministic per `seed`.
+// Draws a loose, opaque highlighter swipe behind a line of text — a chunky,
+// puffy "cloud" of marker ink with lumpy scalloped edges and long, soft,
+// rounded ends that overshoot the text by a varied amount. Deterministic per
+// `seed` so the texture is stable across redraws.
 function drawMarkerHighlight(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1513,67 +1516,70 @@ function drawMarkerHighlight(
   const rgb = hexToRgb(color);
   const cap = h * 0.5;
 
-  // Per-line character so no two highlights read the same.
-  // Thinner band that hugs the text — an aesthetic swipe, not a heavy block.
-  const half = (h / 2) * (0.6 + rand() * 0.12); // ink height varies line to line
-  const slant = (rand() - 0.5) * h * 0.09; // the whole swipe tilts a hair
-  const wob = h * (0.04 + rand() * 0.05); // edge waviness amount
-
-  // Each END gets its own shape: overshoot, how far/round the tip bulges,
-  // a vertical tip offset (asymmetry), and how much the corners taper.
-  const makeCap = () => ({
-    over: cap * (0.4 + rand() * 1.0),
-    bulge: 0.18 + rand() * 0.62,
-    tip: (rand() - 0.5) * h * 0.26,
-    topPull: 0.22 + rand() * 0.5,
-    botPull: 0.22 + rand() * 0.5,
-  });
-  const capL = makeCap();
-  const capR = makeCap();
-
-  const left = x - capL.over;
-  const right = x + w + capR.over;
+  // Chunky band, taller than the text, varied per line.
+  const half = (h / 2) * (0.9 + rand() * 0.18);
+  const slant = (rand() - 0.5) * h * 0.06; // the whole swipe tilts a hair
+  // Long, lazy, varied tails — different on each end so nothing looks stamped.
+  const overL = cap * (1.1 + rand() * 1.6);
+  const overR = cap * (1.1 + rand() * 1.6);
+  const left = x - overL;
+  const right = x + w + overR;
   const midY = y + h / 2;
-  const baseAt = (t: number) => midY - slant + slant * 2 * t; // left baseline -> right baseline
-  const segments = Math.max(3, Math.round((right - left) / (h * (0.62 + rand() * 0.4))));
+  const baseAt = (t: number) => midY - slant + slant * 2 * t;
 
-  // Precompute the wavy top/bottom edges once so the caps reuse the exact
-  // same corner points (otherwise re-rolling rand would tear the path).
-  const topPts: Array<{ x: number; y: number }> = [];
-  const botPts: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const px = left + (right - left) * t;
-    const edge = i === 0 || i === segments ? wob * 0.2 : wob; // calmer right at the caps
-    topPts.push({ x: px, y: baseAt(t) - half + (rand() - 0.5) * edge });
-    botPts.push({ x: px, y: baseAt(t) + half + (rand() - 0.5) * edge });
+  // Few, large lobes -> soft cloud bumps rather than fine ripples.
+  const span = right - left;
+  const lobes = Math.max(2, Math.round(span / (h * (1.05 + rand() * 0.5))));
+
+  // Anchor points along the top and bottom edges.
+  const topA: Array<{ x: number; y: number }> = [];
+  const botA: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= lobes; i++) {
+    const t = i / lobes;
+    const px = left + span * t;
+    const jitter = (rand() - 0.5) * h * 0.06;
+    topA.push({ x: px, y: baseAt(t) - half + jitter });
+    botA.push({ x: px, y: baseAt(t) + half + jitter });
+  }
+  // Outward bulge for each gap -> the puffy lobes.
+  const topBump: number[] = [];
+  const botBump: number[] = [];
+  for (let i = 0; i < lobes; i++) {
+    topBump.push(h * (0.08 + rand() * 0.16));
+    botBump.push(h * (0.08 + rand() * 0.16));
   }
 
-  const tl = topPts[0];
-  const bl = botPts[0];
-  const tr = topPts[segments];
-  const br = botPts[segments];
-  const leftTipX = left - capL.bulge * cap;
-  const leftTipY = baseAt(0) + capL.tip;
-  const rightTipX = right + capR.bulge * cap;
-  const rightTipY = baseAt(1) + capR.tip;
+  // Big rounded end lobes that reach past the tails.
+  const lTipX = left - cap * (0.45 + rand() * 0.55);
+  const lTipY = (topA[0].y + botA[0].y) / 2 + (rand() - 0.5) * h * 0.12;
+  const rTipX = right + cap * (0.45 + rand() * 0.55);
+  const rTipY = (topA[lobes].y + botA[lobes].y) / 2 + (rand() - 0.5) * h * 0.12;
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(tl.x, tl.y);
-  // Left cap: top corner -> tip -> bottom corner
-  ctx.quadraticCurveTo(leftTipX, tl.y + (leftTipY - tl.y) * capL.topPull, leftTipX, leftTipY);
-  ctx.quadraticCurveTo(leftTipX, bl.y + (leftTipY - bl.y) * capL.botPull, bl.x, bl.y);
-  // Bottom edge left -> right
-  for (let i = 1; i <= segments; i++) ctx.lineTo(botPts[i].x, botPts[i].y);
-  // Right cap: bottom corner -> tip -> top corner
-  ctx.quadraticCurveTo(rightTipX, br.y + (rightTipY - br.y) * capR.botPull, rightTipX, rightTipY);
-  ctx.quadraticCurveTo(rightTipX, tr.y + (rightTipY - tr.y) * capR.topPull, tr.x, tr.y);
-  // Top edge right -> left
-  for (let i = segments - 1; i >= 0; i--) ctx.lineTo(topPts[i].x, topPts[i].y);
+  ctx.moveTo(topA[0].x, topA[0].y);
+  // Top edge L -> R, each gap bulging upward (a lobe).
+  for (let i = 0; i < lobes; i++) {
+    const a = topA[i];
+    const b = topA[i + 1];
+    const mx = (a.x + b.x) / 2;
+    ctx.quadraticCurveTo(mx, Math.min(a.y, b.y) - topBump[i], b.x, b.y);
+  }
+  // Right end lobe.
+  ctx.quadraticCurveTo(rTipX, topA[lobes].y + (rTipY - topA[lobes].y) * 0.45, rTipX, rTipY);
+  ctx.quadraticCurveTo(rTipX, botA[lobes].y + (rTipY - botA[lobes].y) * 0.45, botA[lobes].x, botA[lobes].y);
+  // Bottom edge R -> L, each gap bulging downward.
+  for (let i = lobes - 1; i >= 0; i--) {
+    const a = botA[i + 1];
+    const b = botA[i];
+    const mx = (a.x + b.x) / 2;
+    ctx.quadraticCurveTo(mx, Math.max(a.y, b.y) + botBump[i], b.x, b.y);
+  }
+  // Left end lobe.
+  ctx.quadraticCurveTo(lTipX, botA[0].y + (lTipY - botA[0].y) * 0.45, lTipX, lTipY);
+  ctx.quadraticCurveTo(lTipX, topA[0].y + (lTipY - topA[0].y) * 0.45, topA[0].x, topA[0].y);
   ctx.closePath();
-  // Solid, opaque ink — the swipe aesthetic comes from the thin band + organic
-  // varied ends, not from translucency.
+  // Solid, opaque ink in the picked color.
   ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity)})`;
   ctx.fill();
   ctx.restore();
@@ -12070,15 +12076,29 @@ export default function Studio2Page() {
                   Style a text block (color + highlight), then tap “Save current style” to reuse it on any ad.
                 </p>
               )}
-              {(selectedBlock || selectedTextBlocks.length > 0) && (
-                <button
-                  type="button"
-                  onClick={saveTextStylePreset}
-                  style={{ ...buttonStyle(false), width: "100%", justifyContent: "center", height: 32, marginTop: 10, gap: 6 }}
-                >
-                  <Plus size={13} /> Save current style
-                </button>
-              )}
+              {(() => {
+                const canSave = !!(selectedBlock || selectedTextBlocks.length > 0);
+                return (
+                  <button
+                    type="button"
+                    onClick={saveTextStylePreset}
+                    disabled={!canSave}
+                    title={canSave ? "Save this text + highlight as a reusable preset" : "Select a text block first"}
+                    style={{
+                      ...buttonStyle(false),
+                      width: "100%",
+                      justifyContent: "center",
+                      height: 32,
+                      marginTop: 10,
+                      gap: 6,
+                      opacity: canSave ? 1 : 0.45,
+                      cursor: canSave ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    <Plus size={13} /> Save current style
+                  </button>
+                );
+              })()}
             </div>
           )}
 
