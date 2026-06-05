@@ -8,7 +8,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
  * rotates slowly, and a soft premium glow intensifies + leans toward
  * the cursor. Color is preserved (no blown-out central dot).
  * ============================================================ */
-function JarvisBrain({ size = 150 }: { size?: number }) {
+type BP = { vx: number; vy: number; vz: number; a: number; b: number; s: number };
+function JarvisBrain({ size = 196 }: { size?: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -20,32 +21,46 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
-    const N = 520;
+    const N = 600;
     const golden = Math.PI * (3 - Math.sqrt(5));
-    const pts = Array.from({ length: N }, (_, i) => {
-      const y = 1 - (i / (N - 1)) * 2;
-      const r = Math.sqrt(Math.max(0, 1 - y * y));
-      const t = golden * i;
-      return {
-        x: Math.cos(t) * r,
-        y,
-        z: Math.sin(t) * r,
-        a: Math.random() * 6.28,
-        b: Math.random() * 6.28,
-        s: 0.4 + Math.random() * 0.7,
-      };
-    });
+    // fixed viewing angle (no rotation — it just lives)
+    const tY = 0.18, tX = -0.42;
+    const cYf = Math.cos(tY), sYf = Math.sin(tY), cXf = Math.cos(tX), sXf = Math.sin(tX);
+    const pts: BP[] = [];
+    for (let i = 0; i < N; i++) {
+      const yy = 1 - (i / (N - 1)) * 2;
+      const rr = Math.sqrt(Math.max(0, 1 - yy * yy));
+      const th = golden * i;
+      let x = Math.cos(th) * rr, y = yy, z = Math.sin(th) * rr;
+      // brain form: central fissure -> two hemispheres, wide + flatter, folded surface
+      x += Math.sign(x) * 0.15 * (1 - Math.abs(x));
+      x *= 1.16; y *= 0.8; z *= 1.04;
+      const bump = 1 + 0.1 * Math.sin(x * 6 + z * 3) * Math.cos(y * 5 + x * 2);
+      x *= bump; y *= bump; z *= bump;
+      // bake the fixed view rotation in
+      const x2 = x * cYf - z * sYf, z2 = x * sYf + z * cYf;
+      const y3 = y * cXf - z2 * sXf, z3 = y * sXf + z2 * cXf;
+      pts.push({ vx: x2, vy: y3, vz: z3, a: Math.random() * 6.28, b: Math.random() * 6.28, s: 0.4 + Math.random() * 0.8 });
+    }
+    // synapse web: 2 nearest neighbours per point (computed once)
+    const edges: [number, number][] = [];
+    for (let i = 0; i < N; i++) {
+      let n1 = -1, d1 = 1e9, n2 = -1, d2 = 1e9;
+      for (let j = 0; j < N; j++) {
+        if (j === i) continue;
+        const dx = pts[i].vx - pts[j].vx, dy = pts[i].vy - pts[j].vy, dz = pts[i].vz - pts[j].vz;
+        const dd = dx * dx + dy * dy + dz * dz;
+        if (dd < d1) { d2 = d1; n2 = n1; d1 = dd; n1 = j; } else if (dd < d2) { d2 = dd; n2 = j; }
+      }
+      if (n1 > i) edges.push([i, n1]);
+      if (n2 > i) edges.push([i, n2]);
+    }
 
-    let mx = -9999;
-    let my = -9999;
-    let target = 0;
+    let mx = -9999, my = -9999, target = 0;
     const onMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mx = e.clientX - rect.left;
-      my = e.clientY - rect.top;
-      const dx = e.clientX - (rect.left + rect.width / 2);
-      const dy = e.clientY - (rect.top + rect.height / 2);
-      // reacts ANYWHERE on the page (base level), stronger as the cursor nears
+      const r = canvas.getBoundingClientRect();
+      mx = e.clientX - r.left; my = e.clientY - r.top;
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
       target = 0.45 + 0.55 * Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 800);
     };
     const onLeave = () => (target = 0);
@@ -55,78 +70,61 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
     let raf = 0;
     const start = performance.now();
     let infl = 0;
+    const sx = new Float32Array(N), sy = new Float32Array(N), sd = new Float32Array(N);
     const render = (now: number) => {
       const t = (now - start) / 1000;
-      infl += (target - infl) * 0.04; // ease very slowly
+      infl += (target - infl) * 0.04;
       ctx.clearRect(0, 0, size, size);
-      const cx = size / 2;
-      const cy = size / 2;
-      const R = size * 0.4;
-      const ay = t * 0.09;
-      const ax = Math.sin(t * 0.05) * 0.18;
-      const cY = Math.cos(ay), sY = Math.sin(ay), cX = Math.cos(ax), sX = Math.sin(ax);
-
-      // direction toward the cursor (clamped) — drives a visible whole-sphere lean ANYWHERE
+      const cx = size / 2, cy = size / 2, R = size * 0.36;
+      const breathe = 1 + Math.sin(t * 0.5) * 0.03;
       const dirX = mx > -9000 ? Math.max(-1, Math.min(1, (mx - cx) / (size * 1.1))) : 0;
       const dirY = my > -9000 ? Math.max(-1, Math.min(1, (my - cy) / (size * 1.1))) : 0;
-      const shiftX = dirX * size * 0.2 * infl;
-      const shiftY = dirY * size * 0.2 * infl;
+      const shiftX = dirX * size * 0.16 * infl, shiftY = dirY * size * 0.16 * infl;
 
-      // soft aura that leans + brightens toward the cursor (no hard central dot)
-      const grad = ctx.createRadialGradient(cx + dirX * R * 0.55, cy + dirY * R * 0.55, 0, cx, cy, R * 1.5);
-      grad.addColorStop(0, `rgba(201,169,110,${0.08 + 0.18 * infl})`);
+      const grad = ctx.createRadialGradient(cx + dirX * R * 0.5, cy + dirY * R * 0.5, 0, cx, cy, R * 1.7);
+      grad.addColorStop(0, `rgba(201,169,110,${0.07 + 0.16 * infl})`);
       grad.addColorStop(1, "rgba(201,169,110,0)");
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.5, 0, Math.PI * 2);
+      ctx.arc(cx, cy, R * 1.7, 0, Math.PI * 2);
       ctx.fill();
 
-      const proj = pts.map((p) => {
-        // constant organic wobble around the point (more alive)
-        const ox = 0.09 * Math.sin(t * 0.9 * p.s + p.a);
-        const oy = 0.09 * Math.sin(t * 0.8 * p.s + p.b);
-        const oz = 0.09 * Math.cos(t * 0.85 * p.s + p.a);
-        const x0 = p.x + ox, y0 = p.y + oy, z0 = p.z + oz;
-        const x = x0 * cY - z0 * sY;
-        const z = x0 * sY + z0 * cY;
-        const y2 = y0 * cX - z * sX;
-        const z2 = y0 * sX + z * cX;
-        let px = cx + x * R + shiftX;
-        let py = cy + y2 * R + shiftY;
-        const depth = (z2 + 1) / 2;
+      for (let i = 0; i < N; i++) {
+        const p = pts[i];
+        // lots of constant slow drift (alive), in view space
+        const ox = 0.07 * Math.sin(t * 0.7 * p.s + p.a) + 0.04 * Math.sin(t * 1.25 + p.b);
+        const oy = 0.07 * Math.sin(t * 0.62 * p.s + p.b) + 0.04 * Math.cos(t * 1.1 + p.a);
+        const oz = 0.07 * Math.cos(t * 0.66 * p.s + p.a) + 0.04 * Math.sin(t * 1.35 + p.b);
+        let px = cx + (p.vx + ox) * R * breathe + shiftX;
+        let py = cy + (p.vy + oy) * R * breathe + shiftY;
+        const depth = (p.vz + oz + 1) / 2;
         if (infl > 0.01 && mx > -9000) {
           const dx = mx - px, dy = my - py;
           const near = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / (size * 0.85));
-          const pull = infl * near * near * 0.3;
-          px += dx * pull;
-          py += dy * pull;
+          const pull = infl * near * near * 0.26;
+          px += dx * pull; py += dy * pull;
         }
-        return { px, py, depth };
-      });
-
-      if (infl > 0.14) {
-        const near = proj.map((p) => ({ p, d: Math.hypot(p.px - mx, p.py - my) })).filter((o) => o.d < size * 0.45).sort((a, b) => a.d - b.d).slice(0, 22);
-        ctx.lineWidth = 0.6;
-        for (let i = 0; i < near.length; i++)
-          for (let j = i + 1; j < near.length; j++) {
-            const a = near[i].p, b = near[j].p;
-            const dd = Math.hypot(a.px - b.px, a.py - b.py);
-            if (dd < size * 0.2) {
-              ctx.strokeStyle = `rgba(201,169,110,${infl * (1 - dd / (size * 0.2)) * 0.3})`;
-              ctx.beginPath();
-              ctx.moveTo(a.px, a.py);
-              ctx.lineTo(b.px, b.py);
-              ctx.stroke();
-            }
-          }
+        sx[i] = px; sy[i] = py; sd[i] = depth;
       }
 
-      for (const p of proj) {
-        const sz = 0.5 + p.depth * 1.25;
-        const a = 0.18 + p.depth * 0.62;
+      // flickering synapses (constant neural firing)
+      ctx.lineWidth = 0.5;
+      for (let k = 0; k < edges.length; k++) {
+        const i = edges[k][0], j = edges[k][1];
+        const fl = 0.5 + 0.5 * Math.sin(t * 1.5 + k * 0.7);
+        const al = (0.04 + 0.11 * fl) * (0.35 + 0.65 * ((sd[i] + sd[j]) / 2));
+        ctx.strokeStyle = `rgba(201,169,110,${al})`;
         ctx.beginPath();
-        ctx.arc(p.px, p.py, sz, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${Math.round(208 + p.depth * 28)},${Math.round(180 + p.depth * 40)},${Math.round(132 + p.depth * 90)},${a})`;
+        ctx.moveTo(sx[i], sy[i]);
+        ctx.lineTo(sx[j], sy[j]);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < N; i++) {
+        const d = sd[i], r = 0.5 + d * 1.4, a = 0.2 + d * 0.6;
+        ctx.beginPath();
+        ctx.arc(sx[i], sy[i], r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${Math.round(210 + d * 26)},${Math.round(182 + d * 38)},${Math.round(134 + d * 86)},${a})`;
         ctx.fill();
       }
       raf = requestAnimationFrame(render);
@@ -140,7 +138,7 @@ function JarvisBrain({ size = 150 }: { size?: number }) {
   }, [size]);
 
   return (
-    <div className="cmo-brain-window" style={{ width: size + 16, height: size + 16 }}>
+    <div className="cmo-brain-window" style={{ width: size + 18, height: size + 18 }}>
       <canvas ref={ref} style={{ width: size, height: size, display: "block" }} />
     </div>
   );
@@ -230,7 +228,7 @@ export default function CmoPage() {
 
       <header className="cmo-top">
         <div className="cmo-brand">
-          <JarvisBrain size={150} />
+          <JarvisBrain size={200} />
           <div>
             <h1>CMO</h1>
             <div className="cmo-status"><span className="cmo-dot" /> active · self-improving · learning live</div>
