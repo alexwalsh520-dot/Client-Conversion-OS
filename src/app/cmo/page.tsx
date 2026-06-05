@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-/* ------------------------------------------------------------------ *
- * Jarvis particle brain — a living, breathing sphere of glowing dots. *
- * ------------------------------------------------------------------ */
-function JarvisBrain({ size = 168 }: { size?: number }) {
+/* ============================================================ *
+ * Jarvis brain — slow, organic, and it GATHERS toward the cursor:
+ * particles pull together + connect near the mouse, and drift loose
+ * and flowy far from it. No per-dot shadowBlur (that caused the lag);
+ * additive blending gives the glow cheaply.
+ * ============================================================ */
+function JarvisBrain({ size = 132 }: { size?: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -17,99 +20,126 @@ function JarvisBrain({ size = 168 }: { size?: number }) {
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
-    const N = 760;
-    const pts: { x: number; y: number; z: number }[] = [];
+    const N = 460;
     const golden = Math.PI * (3 - Math.sqrt(5));
-    for (let i = 0; i < N; i++) {
+    const pts = Array.from({ length: N }, (_, i) => {
       const y = 1 - (i / (N - 1)) * 2;
       const r = Math.sqrt(Math.max(0, 1 - y * y));
       const t = golden * i;
-      pts.push({ x: Math.cos(t) * r, y, z: Math.sin(t) * r });
-    }
+      return { x: Math.cos(t) * r, y, z: Math.sin(t) * r, ph: Math.random() * Math.PI * 2 };
+    });
 
-    // Mouse reactivity: the brain leans + vibrates toward the cursor anywhere on the page.
-    let targetX = 0;
-    let targetY = 0;
-    let curX = 0;
-    let curY = 0;
-    let energy = 0;
+    let mx = -9999;
+    let my = -9999;
+    let influence = 0; // 0 far from brain .. 1 mouse over brain
     const onMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const ccx = rect.left + rect.width / 2;
-      const ccy = rect.top + rect.height / 2;
-      targetX = Math.max(-1, Math.min(1, ((e.clientX - ccx) / Math.max(window.innerWidth, 1)) * 2));
-      targetY = Math.max(-1, Math.min(1, ((e.clientY - ccy) / Math.max(window.innerHeight, 1)) * 2));
-      energy = Math.min(1, energy + 0.22);
+      mx = e.clientX - rect.left;
+      my = e.clientY - rect.top;
+      const dx = e.clientX - (rect.left + rect.width / 2);
+      const dy = e.clientY - (rect.top + rect.height / 2);
+      const d = Math.sqrt(dx * dx + dy * dy);
+      influence = Math.max(0, 1 - d / 300); // gentle falloff around the brain
+    };
+    const onLeave = () => {
+      influence = 0;
     };
     window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseout", onLeave);
 
     let raf = 0;
     const start = performance.now();
+    let infl = 0;
     const render = (now: number) => {
-      const tsec = (now - start) / 1000;
-      curX += (targetX - curX) * 0.07;
-      curY += (targetY - curY) * 0.07;
-      energy *= 0.93;
+      const t = (now - start) / 1000;
+      infl += (influence - infl) * 0.05; // ease influence very slowly
       ctx.clearRect(0, 0, size, size);
       const cx = size / 2;
       const cy = size / 2;
       const baseR = size * 0.4;
-      const pulse = 1 + Math.sin(tsec * 1.35) * 0.04; // breathing
-      const ay = tsec * 0.32 + curX * 0.5; // tilt toward cursor
-      const ax = Math.sin(tsec * 0.17) * 0.28 - curY * 0.5;
+      const breathe = 1 + Math.sin(t * 0.5) * 0.025; // very slow breathing
+      const ay = t * 0.08; // slow rotation
+      const ax = Math.sin(t * 0.05) * 0.2;
       const cosY = Math.cos(ay);
       const sinY = Math.sin(ay);
       const cosX = Math.cos(ax);
       const sinX = Math.sin(ax);
-      const shiftX = curX * size * 0.07; // drag toward cursor
-      const shiftY = curY * size * 0.07;
-      const vib = energy * 1.7; // subtle vibration that decays when the mouse stops
 
-      const proj = pts
-        .map((p) => {
-          const x = p.x * cosY - p.z * sinY;
-          const z = p.x * sinY + p.z * cosY;
-          const y2 = p.y * cosX - z * sinX;
-          const z2 = p.y * sinX + z * cosX;
-          return { x, y: y2, z: z2, sy: p.y, sx: p.x };
-        })
-        .sort((a, b) => a.z - b.z);
+      const proj = pts.map((p) => {
+        // slow organic drift so the dots aren't perfectly uniform
+        const drift = 0.06 * Math.sin(t * 0.5 + p.ph);
+        const rr = 1 + drift;
+        const x0 = p.x * rr;
+        const y0 = p.y * rr;
+        const z0 = p.z * rr;
+        const x = x0 * cosY - z0 * sinY;
+        const z = x0 * sinY + z0 * cosY;
+        const y2 = y0 * cosX - z * sinX;
+        const z2 = y0 * sinX + z * cosX;
+        let px = cx + x * baseR * breathe;
+        let py = cy + y2 * baseR * breathe;
+        const depth = (z2 + 1) / 2;
+        // gather toward the cursor (strong near it, nothing far away)
+        if (infl > 0.01 && mx > -9000) {
+          const dx = mx - px;
+          const dy = my - py;
+          const dd = Math.sqrt(dx * dx + dy * dy);
+          const near = Math.max(0, 1 - dd / (size * 0.7));
+          const pull = infl * near * near * 0.32;
+          px += dx * pull;
+          py += dy * pull;
+        }
+        return { px, py, depth };
+      });
 
+      // faint connection lines only near the cursor (cheap, capped)
+      if (infl > 0.12) {
+        const near = proj
+          .map((p, i) => ({ p, d: Math.hypot(p.px - mx, p.py - my), i }))
+          .filter((o) => o.d < size * 0.5)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 26);
+        ctx.lineWidth = 0.6;
+        for (let i = 0; i < near.length; i++) {
+          for (let j = i + 1; j < near.length; j++) {
+            const a = near[i].p;
+            const b = near[j].p;
+            const dd = Math.hypot(a.px - b.px, a.py - b.py);
+            if (dd < size * 0.22) {
+              ctx.strokeStyle = `rgba(201,169,110,${infl * (1 - dd / (size * 0.22)) * 0.28})`;
+              ctx.beginPath();
+              ctx.moveTo(a.px, a.py);
+              ctx.lineTo(b.px, b.py);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      ctx.globalCompositeOperation = "lighter";
       for (const p of proj) {
-        const depth = (p.z + 1) / 2; // 0 back .. 1 front
-        const px = cx + p.x * baseR * pulse + shiftX + Math.sin(tsec * 38 + p.sy * 10) * vib;
-        const py = cy + p.y * baseR * pulse + shiftY + Math.cos(tsec * 38 + p.sx * 10) * vib;
-        const sz = 0.6 + depth * 1.9;
-        const wave = 0.5 + 0.5 * Math.sin(tsec * 2 + p.sy * 6 + p.sx * 3);
-        const alpha = (0.1 + depth * 0.78) * (0.55 + 0.45 * wave);
-        const rr = Math.round(201 + depth * 40);
-        const gg = Math.round(169 + depth * 55);
-        const bb = Math.round(110 + depth * 125);
+        const sz = 0.5 + p.depth * 1.2;
+        const a = 0.12 + p.depth * 0.6;
         ctx.beginPath();
-        ctx.arc(px, py, sz, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${alpha})`;
-        ctx.shadowColor = `rgba(201,169,110,${alpha * 0.85})`;
-        ctx.shadowBlur = sz * 2.4;
+        ctx.arc(p.px, p.py, sz, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${Math.round(206 + p.depth * 30)},${Math.round(176 + p.depth * 45)},${Math.round(120 + p.depth * 110)},${a})`;
         ctx.fill();
       }
-      ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = "source-over";
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseout", onLeave);
     };
   }, [size]);
 
-  return (
-    <div className="cmo-brain-wrap">
-      <canvas ref={ref} style={{ width: size, height: size, display: "block" }} />
-    </div>
-  );
+  return <canvas ref={ref} style={{ width: size, height: size, display: "block" }} />;
 }
 
-/* --------- tiny, safe markdown -> html (renders the real skill files) --------- */
+/* tiny markdown -> html (renders the real skill/meeting files) */
 function mdToHtml(md: string): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const inline = (s: string) =>
@@ -121,7 +151,7 @@ function mdToHtml(md: string): string {
   let html = "";
   let i = 0;
   let list: string | null = null;
-  const closeList = () => {
+  const close = () => {
     if (list) {
       html += "</" + list + ">";
       list = null;
@@ -130,7 +160,7 @@ function mdToHtml(md: string): string {
   while (i < lines.length) {
     const ln = lines[i];
     if (/^```/.test(ln)) {
-      closeList();
+      close();
       i++;
       let code = "";
       while (i < lines.length && !/^```/.test(lines[i])) {
@@ -142,28 +172,27 @@ function mdToHtml(md: string): string {
       continue;
     }
     if (/^\s*$/.test(ln)) {
-      closeList();
+      close();
       i++;
       continue;
     }
     if (/^---+\s*$/.test(ln)) {
-      closeList();
+      close();
       html += "<hr/>";
       i++;
       continue;
     }
     const h = ln.match(/^(#{1,4})\s+(.*)$/);
     if (h) {
-      closeList();
-      const lvl = h[1].length;
-      html += "<h" + lvl + ">" + inline(h[2]) + "</h" + lvl + ">";
+      close();
+      html += "<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">";
       i++;
       continue;
     }
     const ol = ln.match(/^\s*\d+\.\s+(.*)$/);
     if (ol) {
       if (list !== "ol") {
-        closeList();
+        close();
         list = "ol";
         html += "<ol>";
       }
@@ -174,7 +203,7 @@ function mdToHtml(md: string): string {
     const ul = ln.match(/^\s*[-*]\s+(.*)$/);
     if (ul) {
       if (list !== "ul") {
-        closeList();
+        close();
         list = "ul";
         html += "<ul>";
       }
@@ -182,166 +211,94 @@ function mdToHtml(md: string): string {
       i++;
       continue;
     }
-    closeList();
+    close();
     html += "<p>" + inline(ln) + "</p>";
     i++;
   }
-  closeList();
+  close();
   return html;
 }
 
-type Skill = {
-  id: string;
-  name: string;
-  emoji?: string;
-  accent?: string;
-  tagline?: string;
-  selfImproving?: boolean;
-  path?: string;
-  description?: string;
-  markdown?: string;
-};
-type Meeting = {
-  id: string;
-  date?: string;
-  title: string;
-  creator?: string;
-  accent?: string;
-  tags?: string[];
-  summary?: string;
-  notes?: string;
-};
-type FeedEntry = {
-  at?: string;
-  bucket?: string;
-  title: string;
-  detail?: string;
-  tags?: string[];
-  where?: string;
-};
+type Skill = { id: string; name: string; tagline?: string; selfImproving?: boolean; path?: string; description?: string; markdown?: string };
+type Meeting = { id: string; date?: string; title: string; creator?: string; tags?: string[]; summary?: string; notes?: string; archive?: string };
+type FeedEntry = { at?: string; bucket?: string; title: string; detail?: string; tags?: string[]; where?: string };
+
+const TRANSCRIPTS = [
+  { name: "2026-06-05 · Team strategy (3h)", path: "~/.claude/.../memory/transcripts/2026-06-05-team-strategy-deep.md", meetingId: "2026-06-05-team-strategy" },
+  { name: "2026-06-04 · Zakk coaching call", path: "~/.claude/.../memory/transcripts/2026-06-04-zakk-coaching-call.md", meetingId: "2026-06-04-zakk-coaching" },
+];
+
+type Tab = "feed" | "skills" | "meetings" | "files";
 
 export default function CmoPage() {
-  const [tab, setTab] = useState<"skills" | "meetings" | "feed">("feed");
+  const [tab, setTab] = useState<Tab>("feed");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
-  const [account, setAccount] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [openFeed, setOpenFeed] = useState<number | null>(null);
 
   useEffect(() => {
     let off = false;
-    fetch("/skills-data.json", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (off) return;
-        setSkills(Array.isArray(d?.skills) ? d.skills : []);
-      })
-      .catch(() => {});
-    fetch("/meetings-data.json", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (off) return;
-        setMeetings(Array.isArray(d?.meetings) ? d.meetings : []);
-      })
-      .catch(() => {});
-    fetch("/memory-log.json", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (off) return;
-        setFeed(Array.isArray(d?.entries) ? d.entries : []);
-      })
-      .catch(() => {});
+    const grab = (url: string, key: string, set: (v: unknown) => void) =>
+      fetch(url, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d) => {
+          if (!off) set(d?.[key]);
+        })
+        .catch(() => {});
+    grab("/skills-data.json", "skills", (v) => setSkills(Array.isArray(v) ? (v as Skill[]) : []));
+    grab("/meetings-data.json", "meetings", (v) => setMeetings(Array.isArray(v) ? (v as Meeting[]) : []));
+    grab("/memory-log.json", "entries", (v) => setFeed(Array.isArray(v) ? (v as FeedEntry[]) : []));
     return () => {
       off = true;
     };
   }, []);
 
-  const activeSkill = openSkill ? skills.find((s) => s.id === openSkill) : null;
-  const activeMeeting = openMeeting ? meetings.find((m) => m.id === openMeeting) : null;
-  const inDetail = (tab === "skills" && activeSkill) || (tab === "meetings" && activeMeeting);
+  const activeSkill = useMemo(() => skills.find((s) => s.id === openSkill) || null, [skills, openSkill]);
+  const activeMeeting = useMemo(() => meetings.find((m) => m.id === openMeeting) || null, [meetings, openMeeting]);
+  const inDetail = activeSkill || activeMeeting;
+
+  const openMeetingFromFiles = (id: string) => {
+    setOpenMeeting(id);
+    setTab("meetings");
+  };
 
   return (
-    <div className="cmo-page">
+    <div className="cmo">
       <CmoStyles />
 
-      {/* Header: the brain + title, with the standard top filters on the right */}
-      <div className="cmo-head">
-        <div className="cmo-head-left">
-          <JarvisBrain size={150} />
+      {/* Console header */}
+      <header className="cmo-top">
+        <div className="cmo-brand">
+          <div className="cmo-brain-frame">
+            <JarvisBrain size={120} />
+          </div>
           <div>
-            <h1 className="cmo-title">CMO</h1>
-            <p className="cmo-sub">
-              Your AI CMO&apos;s brain. The skills it runs and the context from your meetings, always current.
-            </p>
+            <h1>CMO</h1>
+            <div className="cmo-status">
+              <span className="cmo-dot" /> active · self-improving · learning live
+            </div>
           </div>
         </div>
-        <div className="cmo-filters">
-          <label className="cmo-filter">
-            <span>Account</span>
-            <select value={account} onChange={(e) => setAccount(e.target.value)}>
-              <option value="all">All accounts</option>
-              <option value="tyson">Tyson</option>
-              <option value="keith">Keith</option>
-              <option value="lucy">Lucy</option>
-              <option value="antoine">Antoine</option>
-            </select>
-          </label>
-          <div className="cmo-seg">
-            {["active", "finished", "all"].map((s) => (
-              <button key={s} className={status === s ? "on" : ""} onClick={() => setStatus(s)}>
-                {s === "active" ? "Active" : s === "finished" ? "Finished" : "All"}
-              </button>
-            ))}
-          </div>
-          <label className="cmo-filter">
-            <span>Range</span>
-            <select defaultValue="month">
-              <option value="month">This month</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="all">All time</option>
-            </select>
-          </label>
-        </div>
-      </div>
+        <nav className="cmo-nav">
+          {(["feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
+            <button
+              key={tk}
+              className={tab === tk && !inDetail ? "on" : ""}
+              onClick={() => {
+                setTab(tk);
+                setOpenSkill(null);
+                setOpenMeeting(null);
+              }}
+            >
+              {tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+            </button>
+          ))}
+        </nav>
+      </header>
 
-      {/* Tabs */}
-      {!inDetail && (
-        <div className="cmo-tabs">
-          <button
-            className={tab === "feed" ? "on" : ""}
-            onClick={() => {
-              setTab("feed");
-              setOpenSkill(null);
-              setOpenMeeting(null);
-            }}
-          >
-            Learning feed
-          </button>
-          <button
-            className={tab === "skills" ? "on" : ""}
-            onClick={() => {
-              setTab("skills");
-              setOpenMeeting(null);
-            }}
-          >
-            Skills
-          </button>
-          <button
-            className={tab === "meetings" ? "on" : ""}
-            onClick={() => {
-              setTab("meetings");
-              setOpenSkill(null);
-            }}
-          >
-            Meetings context
-          </button>
-        </div>
-      )}
-
-      {/* Back bar inside a detail */}
       {inDetail && (
         <button
           className="cmo-back"
@@ -350,65 +307,66 @@ export default function CmoPage() {
             setOpenMeeting(null);
           }}
         >
-          ← All {tab === "skills" ? "skills" : "meetings"}
+          ← back
         </button>
       )}
 
-      {/* LEARNING FEED — the live window into what the brain has captured */}
-      {tab === "feed" && (
-        <div className="cmo-feed">
-          <p className="cmo-feed-intro">
-            A live record of what your CMO has learned and written to memory, newest first. Every rule,
-            correction, person, offer, and meeting it captured shows up here, so you can always see the brain learning.
-          </p>
-          {feed.map((e, i) => (
-            <div key={i} className="cmo-feed-row">
-              <div className="cmo-feed-time">{e.at}</div>
-              <div className="cmo-feed-body">
-                <div className="cmo-feed-head">
-                  {e.bucket && <span className="cmo-feed-bucket">{e.bucket}</span>}
-                  <span className="cmo-feed-title">{e.title}</span>
+      {/* LEARNING FEED — a clean terminal-style window */}
+      {tab === "feed" && !inDetail && (
+        <section className="cmo-term">
+          <div className="cmo-term-bar">
+            <span className="cmo-term-dots">
+              <i /> <i /> <i />
+            </span>
+            <span className="cmo-term-name">memory.log</span>
+            <span className="cmo-term-count">{feed.length} entries</span>
+          </div>
+          <div className="cmo-term-body">
+            {feed.map((e, i) => {
+              const open = openFeed === i;
+              return (
+                <div key={i} className={"cmo-row" + (open ? " open" : "")} onClick={() => setOpenFeed(open ? null : i)}>
+                  <div className="cmo-row-main">
+                    <span className="cmo-row-time">{(e.at || "").slice(5)}</span>
+                    <span className="cmo-row-bucket">{e.bucket}</span>
+                    <span className="cmo-row-title">{e.title}</span>
+                    <span className="cmo-row-caret">{open ? "−" : "+"}</span>
+                  </div>
+                  {open && (
+                    <div className="cmo-row-detail">
+                      {e.detail && <p>{e.detail}</p>}
+                      <div className="cmo-row-meta">
+                        {(e.tags || []).map((t, j) => (
+                          <span key={j} className="cmo-tag">
+                            {t}
+                          </span>
+                        ))}
+                        {e.where && <span className="cmo-where">stored in {e.where}</span>}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {e.detail && <div className="cmo-feed-detail">{e.detail}</div>}
-                <div className="cmo-feed-meta">
-                  {Array.isArray(e.tags) &&
-                    e.tags.map((t, j) => (
-                      <span key={j} className="cmo-chip">
-                        {t}
-                      </span>
-                    ))}
-                  {e.where && <span className="cmo-feed-where">→ {e.where}</span>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* SKILLS */}
       {tab === "skills" &&
         (activeSkill ? (
-          <SkillDetail skill={activeSkill} />
+          <Detail title={activeSkill.name} sub={activeSkill.tagline} badge={activeSkill.selfImproving ? "self-improving" : undefined} path={activeSkill.path} desc={activeSkill.description} md={activeSkill.markdown} />
         ) : (
           <div className="cmo-grid">
             {skills.map((s) => (
-              <button
-                key={s.id}
-                className="cmo-card"
-                style={{ "--accent": s.accent || "#c9a96e" } as React.CSSProperties}
-                onClick={() => setOpenSkill(s.id)}
-              >
-                <div className="cmo-card-top">
-                  <span className="cmo-emoji">{s.emoji}</span>
+              <button key={s.id} className="cmo-card" onClick={() => setOpenSkill(s.id)}>
+                <div className="cmo-card-row">
+                  <span className="cmo-card-name">{s.name}</span>
                   {s.selfImproving && <span className="cmo-badge">self-improving</span>}
                 </div>
-                <div className="cmo-card-name">{s.name}</div>
                 <div className="cmo-card-tag">{s.tagline}</div>
                 <div className="cmo-card-desc">{s.description}</div>
-                <div className="cmo-card-foot">
-                  <span className="cmo-open">Open →</span>
-                  <span className="cmo-foot-x">read the file →</span>
-                </div>
+                <div className="cmo-card-path">{s.path}</div>
               </button>
             ))}
           </div>
@@ -417,172 +375,198 @@ export default function CmoPage() {
       {/* MEETINGS */}
       {tab === "meetings" &&
         (activeMeeting ? (
-          <MeetingDetail meeting={activeMeeting} />
+          <Detail
+            title={activeMeeting.title}
+            sub={[activeMeeting.date, activeMeeting.creator].filter(Boolean).join(" · ")}
+            tags={activeMeeting.tags}
+            desc={activeMeeting.summary}
+            md={activeMeeting.notes}
+            path={activeMeeting.archive}
+          />
         ) : meetings.length ? (
           <div className="cmo-grid">
             {meetings.map((m) => (
-              <button
-                key={m.id}
-                className="cmo-card"
-                style={{ "--accent": m.accent || "#8b7cf6" } as React.CSSProperties}
-                onClick={() => setOpenMeeting(m.id)}
-              >
-                <div className="cmo-card-top">
-                  <span className="cmo-emoji">🎙️</span>
-                  {m.date && <span className="cmo-badge">{m.date}</span>}
+              <button key={m.id} className="cmo-card" onClick={() => setOpenMeeting(m.id)}>
+                <div className="cmo-card-row">
+                  <span className="cmo-card-name">{m.title}</span>
+                  {m.date && <span className="cmo-badge muted">{m.date}</span>}
                 </div>
-                <div className="cmo-card-name">{m.title}</div>
-                {m.creator && <div className="cmo-card-tag">{m.creator}</div>}
-                {m.summary && <div className="cmo-card-desc">{m.summary}</div>}
-                {Array.isArray(m.tags) && m.tags.length > 0 && (
-                  <div className="cmo-chips">
-                    {m.tags.slice(0, 3).map((t, i) => (
-                      <span key={i} className="cmo-chip">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="cmo-card-foot">
-                  <span className="cmo-open">Open →</span>
-                  <span className="cmo-foot-x">read notes →</span>
+                <div className="cmo-card-tag">{m.creator}</div>
+                <div className="cmo-card-desc">{m.summary}</div>
+                <div className="cmo-card-taglist">
+                  {(m.tags || []).slice(0, 4).map((t, i) => (
+                    <span key={i} className="cmo-tag">
+                      {t}
+                    </span>
+                  ))}
                 </div>
               </button>
             ))}
           </div>
         ) : (
-          <div className="cmo-empty">
-            <div className="cmo-empty-emoji">🎙️</div>
-            <div className="cmo-empty-title">No meeting context yet</div>
-            <div className="cmo-empty-sub">
-              Paste your Fathom transcripts and they&apos;ll live here as context for ads, offers, and messaging.
-            </div>
-          </div>
+          <div className="cmo-empty">No meeting context yet. Paste a Fathom transcript and it shows up here.</div>
         ))}
+
+      {/* FILES — the source of truth, navigable */}
+      {tab === "files" && (
+        <div className="cmo-files">
+          <FileGroup title="Skills" hint="always-on playbooks">
+            {skills.map((s) => (
+              <FileRow key={s.id} name={s.name} path={s.path} onClick={() => { setOpenSkill(s.id); setTab("skills"); }} />
+            ))}
+          </FileGroup>
+          <FileGroup title="Meetings" hint="distilled context">
+            {meetings.map((m) => (
+              <FileRow key={m.id} name={m.title} path={"meetings-data.json"} onClick={() => openMeetingFromFiles(m.id)} />
+            ))}
+          </FileGroup>
+          <FileGroup title="Transcripts" hint="raw deep archive (private, on your machine)">
+            {TRANSCRIPTS.map((tr) => (
+              <FileRow key={tr.path} name={tr.name} path={tr.path} onClick={() => openMeetingFromFiles(tr.meetingId)} note="open distilled →" />
+            ))}
+          </FileGroup>
+          <FileGroup title="Data" hint="what the page reads">
+            <FileRow name="Learning feed" path="public/memory-log.json" onClick={() => setTab("feed")} />
+            <FileRow name="Skills index" path="public/skills-data.json" onClick={() => setTab("skills")} />
+            <FileRow name="Meetings index" path="public/meetings-data.json" onClick={() => setTab("meetings")} />
+          </FileGroup>
+        </div>
+      )}
     </div>
   );
 }
 
-function SkillDetail({ skill }: { skill: Skill }) {
+function Detail({ title, sub, badge, tags, path, desc, md }: { title: string; sub?: string; badge?: string; tags?: string[]; path?: string; desc?: string; md?: string }) {
   return (
-    <div className="cmo-detail" style={{ "--accent": skill.accent || "#c9a96e" } as React.CSSProperties}>
+    <div className="cmo-detail">
       <div className="cmo-detail-head">
-        <span className="cmo-emoji big">{skill.emoji}</span>
-        <div>
-          <div className="cmo-detail-name">
-            {skill.name}
-            {skill.selfImproving && <span className="cmo-badge">self-improving</span>}
-          </div>
-          <div className="cmo-card-tag">{skill.tagline}</div>
-        </div>
+        <h2>{title}</h2>
+        {badge && <span className="cmo-badge">{badge}</span>}
       </div>
-      {skill.description && <div className="cmo-purpose">{skill.description}</div>}
-      {skill.path && <div className="cmo-path">{skill.path}</div>}
-      <div className="cmo-md" dangerouslySetInnerHTML={{ __html: mdToHtml(skill.markdown || "") }} />
-    </div>
-  );
-}
-
-function MeetingDetail({ meeting }: { meeting: Meeting }) {
-  return (
-    <div className="cmo-detail" style={{ "--accent": meeting.accent || "#8b7cf6" } as React.CSSProperties}>
-      <div className="cmo-detail-head">
-        <span className="cmo-emoji big">🎙️</span>
-        <div>
-          <div className="cmo-detail-name">{meeting.title}</div>
-          <div className="cmo-card-tag">{[meeting.date, meeting.creator].filter(Boolean).join(" · ")}</div>
-        </div>
-      </div>
-      {Array.isArray(meeting.tags) && meeting.tags.length > 0 && (
-        <div className="cmo-chips" style={{ margin: "12px 0 4px" }}>
-          {meeting.tags.map((t, i) => (
-            <span key={i} className="cmo-chip">
+      {sub && <div className="cmo-detail-sub">{sub}</div>}
+      {tags && tags.length > 0 && (
+        <div className="cmo-card-taglist" style={{ marginTop: 10 }}>
+          {tags.map((t, i) => (
+            <span key={i} className="cmo-tag">
               {t}
             </span>
           ))}
         </div>
       )}
-      {meeting.summary && <div className="cmo-purpose">{meeting.summary}</div>}
-      <div className="cmo-md" dangerouslySetInnerHTML={{ __html: mdToHtml(meeting.notes || "") }} />
+      {desc && <p className="cmo-detail-desc">{desc}</p>}
+      {path && <div className="cmo-detail-path">{path}</div>}
+      {md && <div className="cmo-md" dangerouslySetInnerHTML={{ __html: mdToHtml(md) }} />}
     </div>
+  );
+}
+
+function FileGroup({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="cmo-fgroup">
+      <div className="cmo-fgroup-head">
+        <span className="cmo-fgroup-title">{title}</span>
+        {hint && <span className="cmo-fgroup-hint">{hint}</span>}
+      </div>
+      <div className="cmo-fgroup-body">{children}</div>
+    </div>
+  );
+}
+function FileRow({ name, path, onClick, note }: { name: string; path?: string; onClick?: () => void; note?: string }) {
+  return (
+    <button className="cmo-frow" onClick={onClick}>
+      <span className="cmo-frow-name">{name}</span>
+      <span className="cmo-frow-path">{path}</span>
+      <span className="cmo-frow-note">{note || "open →"}</span>
+    </button>
   );
 }
 
 function CmoStyles() {
   return (
     <style>{`
-  .cmo-page{max-width:1160px;margin:0 auto;padding:28px 28px 80px}
-  .cmo-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:24px}
-  .cmo-head-left{display:flex;align-items:center;gap:18px}
-  .cmo-brain-wrap{position:relative;flex:0 0 auto;border-radius:50%;background:radial-gradient(circle at 50% 45%, rgba(201,169,110,.10), rgba(201,169,110,0) 62%)}
-  .cmo-brain-wrap::after{content:"";position:absolute;inset:-6px;border-radius:50%;box-shadow:0 0 60px -12px rgba(201,169,110,.35);pointer-events:none}
-  .cmo-title{font-size:30px;font-weight:800;letter-spacing:-.5px;color:var(--text-primary);margin:0 0 4px}
-  .cmo-sub{font-size:13px;color:var(--text-muted);max-width:460px;line-height:1.5;margin:0}
-  .cmo-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .cmo-filter{display:inline-flex;flex-direction:column;gap:3px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)}
-  .cmo-filter select{font-size:13px;font-weight:600;color:var(--text-primary);background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit}
-  .cmo-seg{display:inline-flex;gap:3px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:9px;align-self:flex-end}
-  .cmo-seg button{padding:6px 11px;border:none;background:transparent;color:var(--text-muted);font-size:12px;font-weight:650;border-radius:7px;cursor:pointer;font-family:inherit}
-  .cmo-seg button.on{background:var(--bg-card);color:var(--text-primary)}
-  .cmo-tabs{display:flex;align-items:center;gap:4px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:11px;margin-bottom:22px;width:fit-content}
-  .cmo-tabs button{padding:8px 18px;border:none;background:transparent;color:var(--text-muted);font-size:13px;font-weight:650;border-radius:8px;cursor:pointer;font-family:inherit}
-  .cmo-tabs button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:0 1px 3px rgba(0,0,0,.18)}
-  .cmo-updated{font-size:11.5px;color:var(--text-muted);margin-left:8px}
-  .cmo-back{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--border);border-radius:9px;background:var(--bg-card);color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:18px;font-family:inherit;transition:transform .08s ease,border-color .12s ease}
-  .cmo-back:hover{transform:translateX(-2px);border-color:var(--gold)}
-  .cmo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
-  .cmo-card{position:relative;text-align:left;display:flex;flex-direction:column;gap:9px;padding:20px 20px 16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);cursor:pointer;overflow:hidden;font-family:inherit;transition:transform .1s ease,border-color .14s ease,box-shadow .14s ease}
-  .cmo-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,#c9a96e)}
-  .cmo-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--accent,#c9a96e) 50%,var(--border));box-shadow:0 14px 32px -20px rgba(0,0,0,.6)}
-  .cmo-card-top{display:flex;align-items:center;justify-content:space-between}
-  .cmo-emoji{font-size:26px;line-height:1}
-  .cmo-emoji.big{font-size:40px}
-  .cmo-badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent,#c9a96e);background:color-mix(in srgb,var(--accent,#c9a96e) 14%,transparent);border:1px solid color-mix(in srgb,var(--accent,#c9a96e) 30%,transparent);padding:3px 8px;border-radius:999px;white-space:nowrap}
-  .cmo-card-name{font-size:18px;font-weight:750;color:var(--text-primary)}
-  .cmo-card-tag{font-size:13px;color:var(--accent,#c9a96e);font-weight:600}
-  .cmo-card-desc{font-size:12.5px;color:var(--text-muted);line-height:1.5}
-  .cmo-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-  .cmo-chip{font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:999px;padding:4px 10px;line-height:1.3}
-  .cmo-card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:10px;border-top:1px solid var(--border)}
-  .cmo-open{font-size:12px;font-weight:700;color:var(--accent,#c9a96e)}
-  .cmo-foot-x{font-size:11px;color:var(--text-muted)}
-  .cmo-detail{max-width:780px}
-  .cmo-detail-head{display:flex;align-items:center;gap:16px;margin-bottom:6px}
-  .cmo-detail-name{font-size:24px;font-weight:800;color:var(--text-primary);display:flex;align-items:center;gap:12px}
-  .cmo-purpose{font-size:14px;color:var(--text-secondary);margin:14px 0 4px;line-height:1.55}
-  .cmo-path{font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:10px 0 20px;display:inline-block}
+  .cmo{max-width:1080px;margin:0 auto;padding:30px 30px 100px;font-feature-settings:"ss01";}
+  .cmo-top{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
+  .cmo-brand{display:flex;align-items:center;gap:16px}
+  .cmo-brain-frame{flex:0 0 auto;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(201,169,110,.08),transparent 60%)}
+  .cmo h1{font-size:26px;font-weight:800;letter-spacing:-.4px;color:var(--text-primary);margin:0 0 6px}
+  .cmo-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);letter-spacing:.02em}
+  .cmo-dot{width:6px;height:6px;border-radius:50%;background:var(--green,#3fb27f);box-shadow:0 0 8px var(--green,#3fb27f)}
+  .cmo-nav{display:inline-flex;gap:2px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px}
+  .cmo-nav button{padding:7px 14px;border:none;background:transparent;color:var(--text-muted);font-size:12.5px;font-weight:600;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .12s}
+  .cmo-nav button:hover{color:var(--text-secondary)}
+  .cmo-nav button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .cmo-back{background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:16px;padding:0;font-family:inherit}
+  .cmo-back:hover{color:var(--text-primary)}
+
+  /* terminal feed */
+  .cmo-term{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg-card)}
+  .cmo-term-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
+  .cmo-term-dots{display:inline-flex;gap:6px}
+  .cmo-term-dots i{width:9px;height:9px;border-radius:50%;background:var(--border-hover)}
+  .cmo-term-name{font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12px;color:var(--text-secondary)}
+  .cmo-term-count{margin-left:auto;font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
+  .cmo-term-body{max-height:none}
+  .cmo-row{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+  .cmo-row:last-child{border-bottom:none}
+  .cmo-row:hover{background:var(--hover-bg-subtle,rgba(127,127,127,.04))}
+  .cmo-row-main{display:flex;align-items:center;gap:14px;padding:12px 16px}
+  .cmo-row-time{flex:0 0 78px;font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .cmo-row-bucket{flex:0 0 132px;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--gold)}
+  .cmo-row-title{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmo-row.open .cmo-row-title{white-space:normal}
+  .cmo-row-caret{flex:0 0 auto;font-family:var(--font-mono,ui-monospace,Menlo,monospace);color:var(--text-muted);font-size:14px}
+  .cmo-row-detail{padding:0 16px 16px 108px}
+  .cmo-row-detail p{margin:0 0 10px;font-size:12.5px;color:var(--text-secondary);line-height:1.55}
+  .cmo-row-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .cmo-where{font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
+  .cmo-tag{font-size:10.5px;color:var(--text-secondary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:2px 7px}
+
+  /* minimal cards */
+  .cmo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+  .cmo-card{text-align:left;display:flex;flex-direction:column;gap:7px;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);cursor:pointer;font-family:inherit;transition:border-color .14s,transform .1s,background .14s}
+  .cmo-card:hover{border-color:var(--border-hover);transform:translateY(-2px)}
+  .cmo-card-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .cmo-card-name{font-size:15px;font-weight:700;color:var(--text-primary)}
+  .cmo-badge{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 36%,transparent);padding:2px 7px;border-radius:999px;white-space:nowrap}
+  .cmo-badge.muted{color:var(--text-muted);border-color:var(--border)}
+  .cmo-card-tag{font-size:12px;color:var(--text-secondary)}
+  .cmo-card-desc{font-size:12px;color:var(--text-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .cmo-card-path{font-size:10.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);margin-top:4px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmo-card-taglist{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+
+  /* detail */
+  .cmo-detail{max-width:760px}
+  .cmo-detail-head{display:flex;align-items:center;gap:12px}
+  .cmo-detail-head h2{font-size:22px;font-weight:800;color:var(--text-primary);margin:0}
+  .cmo-detail-sub{font-size:13px;color:var(--text-secondary);margin-top:6px}
+  .cmo-detail-desc{font-size:13.5px;color:var(--text-secondary);line-height:1.55;margin:14px 0 4px}
+  .cmo-detail-path{font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);background:var(--bg-secondary);border:1px solid var(--border);border-radius:7px;padding:7px 11px;margin:10px 0 18px;display:inline-block}
   .cmo-md{font-size:13.5px;color:var(--text-secondary);line-height:1.62}
-  .cmo-md h1{font-size:20px;font-weight:800;color:var(--text-primary);margin:4px 0 12px}
-  .cmo-md h2{font-size:15.5px;font-weight:750;color:var(--text-primary);margin:24px 0 10px;padding-top:16px;border-top:1px solid var(--border)}
-  .cmo-md h3{font-size:13.5px;font-weight:750;color:var(--text-primary);margin:16px 0 8px}
-  .cmo-md p{margin:0 0 11px}
+  .cmo-md h1{font-size:19px;font-weight:800;color:var(--text-primary);margin:2px 0 12px}
+  .cmo-md h2{font-size:15px;font-weight:750;color:var(--text-primary);margin:22px 0 9px;padding-top:14px;border-top:1px solid var(--border)}
+  .cmo-md h3{font-size:13px;font-weight:750;color:var(--text-primary);margin:14px 0 7px}
+  .cmo-md p{margin:0 0 10px}
   .cmo-md strong{color:var(--text-primary);font-weight:700}
-  .cmo-md em{color:var(--text-secondary);font-style:italic}
-  .cmo-md ul,.cmo-md ol{margin:0 0 12px;padding-left:0;list-style:none;counter-reset:m;display:flex;flex-direction:column;gap:8px}
-  .cmo-md li{position:relative;padding-left:24px}
-  .cmo-md ul>li::before{content:"";position:absolute;left:5px;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent,#c9a96e)}
-  .cmo-md ol>li{counter-increment:m}
-  .cmo-md ol>li::before{content:counter(m);position:absolute;left:0;top:0;width:18px;height:18px;border-radius:6px;background:color-mix(in srgb,var(--accent,#c9a96e) 16%,transparent);color:var(--accent,#c9a96e);font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .cmo-md ul,.cmo-md ol{margin:0 0 11px;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+  .cmo-md li{padding-left:2px}
   .cmo-md code{font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text-primary)}
-  .cmo-md pre{margin:0 0 12px;padding:13px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12.5px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5}
+  .cmo-md pre{margin:0 0 11px;padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:9px;font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5}
   .cmo-md pre code{background:none;border:none;padding:0}
-  .cmo-md hr{border:none;border-top:1px solid var(--border);margin:18px 0}
-  .cmo-feed{display:flex;flex-direction:column;gap:0}
-  .cmo-feed-intro{font-size:13px;color:var(--text-muted);max-width:660px;line-height:1.55;margin:0 0 20px}
-  .cmo-feed-row{display:flex;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}
-  .cmo-feed-row:first-of-type{padding-top:0}
-  .cmo-feed-time{flex:0 0 92px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;padding-top:3px;font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
-  .cmo-feed-body{flex:1;min-width:0}
-  .cmo-feed-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:5px}
-  .cmo-feed-bucket{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);background:color-mix(in srgb,var(--gold) 13%,transparent);border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);padding:3px 8px;border-radius:999px;white-space:nowrap}
-  .cmo-feed-title{font-size:14px;font-weight:700;color:var(--text-primary)}
-  .cmo-feed-detail{font-size:12.5px;color:var(--text-secondary);line-height:1.5;margin-bottom:8px}
-  .cmo-feed-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-  .cmo-feed-where{font-size:11px;color:var(--text-muted);font-style:italic}
-  .cmo-empty{text-align:center;padding:64px 24px;border:1px dashed var(--border);border-radius:16px;background:var(--bg-secondary)}
-  .cmo-empty-emoji{font-size:42px;margin-bottom:14px}
-  .cmo-empty-title{font-size:17px;font-weight:750;color:var(--text-primary);margin-bottom:8px}
-  .cmo-empty-sub{font-size:13px;color:var(--text-muted);line-height:1.55;max-width:460px;margin:0 auto}
+  .cmo-md hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+  /* files */
+  .cmo-files{display:flex;flex-direction:column;gap:18px;max-width:820px}
+  .cmo-fgroup{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--bg-card)}
+  .cmo-fgroup-head{display:flex;align-items:baseline;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
+  .cmo-fgroup-title{font-size:12.5px;font-weight:750;color:var(--text-primary);letter-spacing:.02em}
+  .cmo-fgroup-hint{font-size:11px;color:var(--text-muted)}
+  .cmo-frow{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:11px 16px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;font-family:inherit;transition:background .1s}
+  .cmo-frow:last-child{border-bottom:none}
+  .cmo-frow:hover{background:var(--hover-bg-subtle,rgba(127,127,127,.04))}
+  .cmo-frow-name{flex:0 0 auto;font-size:13px;font-weight:600;color:var(--text-primary)}
+  .cmo-frow-path{flex:1;min-width:0;font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmo-frow-note{flex:0 0 auto;font-size:11px;color:var(--gold);font-weight:600}
+  .cmo-empty{text-align:center;padding:56px 24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-muted);font-size:13px}
     `}</style>
   );
 }
