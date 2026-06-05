@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /* ============================================================ *
  * Jarvis brain — a window into a living thing. All particles drift
@@ -226,15 +226,266 @@ const BUCKET_COLOR: Record<string, string> = {
 };
 const colorFor = (b?: string) => (b && BUCKET_COLOR[b]) || "#c9a96e";
 
+/* ============================================================
+ * BrainGraph — the CMO's knowledge as an Obsidian-style force
+ * graph. Skills, meetings, and learnings become nodes; the tags
+ * and "stored in" links they share pull related ideas into
+ * clusters. A live force sim (repulsion + link springs + centre
+ * gravity) lays it out. Drag a node to explore, scroll to zoom,
+ * click to open it. Pure canvas, no deps, theme-aware.
+ * ============================================================ */
+type GNode = { id: string; type: "skill" | "meeting" | "feed" | "tag"; label: string; refId?: string | number; bucket?: string; r: number; ph: number; x: number; y: number; vx: number; vy: number };
+// Premium neural palette — restrained: one warm + one violet + one cool, neutral tags.
+const NODE_RGB: Record<GNode["type"], [number, number, number]> = {
+  skill: [216, 182, 115],   // warm gold
+  meeting: [155, 140, 255], // violet
+  feed: [86, 198, 216],     // cyan (all learnings one colour, no rainbow)
+  tag: [120, 126, 138],     // slate
+};
+function BrainGraph({ skills, meetings, feed, onOpen }: { skills: Skill[]; meetings: Meeting[]; feed: FeedEntry[]; onOpen: (kind: "skill" | "meeting" | "feed", id: string | number) => void }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [sel, setSel] = useState<GNode | null>(null); // node shown in the inspector
+
+  const graph = useMemo(() => {
+    const nodes: GNode[] = [];
+    const byId = new Map<string, GNode>();
+    const edges: [string, string][] = [];
+    let k = 0;
+    const add = (n: GNode) => { nodes.push(n); byId.set(n.id, n); return n; };
+    const tag = (t: string) => {
+      const id = "tag:" + t.toLowerCase().trim();
+      if (!byId.has(id)) add({ id, type: "tag", label: t, r: 3.6, ph: (k++ % 17) * 0.37, x: 0, y: 0, vx: 0, vy: 0 });
+      return id;
+    };
+    skills.forEach((s) => add({ id: "skill:" + s.id, type: "skill", refId: s.id, label: s.name, r: 10, ph: (k++ % 17) * 0.37, x: 0, y: 0, vx: 0, vy: 0 }));
+    meetings.forEach((m) => {
+      const id = "meeting:" + m.id;
+      add({ id, type: "meeting", refId: m.id, label: m.title, r: 7.5, ph: (k++ % 17) * 0.37, x: 0, y: 0, vx: 0, vy: 0 });
+      (m.tags || []).forEach((t) => edges.push([id, tag(t)]));
+    });
+    feed.forEach((e, i) => {
+      const id = "feed:" + i;
+      add({ id, type: "feed", refId: i, label: e.title, bucket: e.bucket, r: 5, ph: (k++ % 17) * 0.37, x: 0, y: 0, vx: 0, vy: 0 });
+      (e.tags || []).forEach((t) => edges.push([id, tag(t)]));
+      if (e.where) {
+        const w = e.where.toLowerCase();
+        const sk = skills.find((s) => w.includes(s.id) || w.includes(s.name.toLowerCase()));
+        if (sk) edges.push([id, "skill:" + sk.id]);
+      }
+    });
+    const adj = new Map<string, Set<string>>();
+    nodes.forEach((n) => adj.set(n.id, new Set()));
+    edges.forEach(([a, b]) => { adj.get(a)?.add(b); adj.get(b)?.add(a); });
+    return { nodes, edges, byId, adj };
+  }, [skills, meetings, feed]);
+
+  useEffect(() => {
+    const canvas = ref.current, wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { nodes, edges, byId, adj } = graph;
+    if (!nodes.length) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const H = 520;
+    let W = wrap.clientWidth || 800;
+    const resize = () => { W = wrap.clientWidth || 800; canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.width = W + "px"; canvas.style.height = H + "px"; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+    resize();
+    nodes.forEach((n, i) => { const a = (i / nodes.length) * Math.PI * 2; const rad = 50 + (i % 9) * 20; n.x = W / 2 + Math.cos(a) * rad; n.y = H / 2 + Math.sin(a) * rad; });
+
+    let scale = 1, ox = 0, oy = 0;
+    let hover: GNode | null = null, drag: GNode | null = null;
+    let panning = false, lastX = 0, lastY = 0, moved = false, lastHoverId: string | null = null;
+    let themeDark = readThemeDark(), frame = 0;
+    const start = performance.now();
+
+    const rect = () => canvas.getBoundingClientRect();
+    const toWorld = (px: number, py: number) => ({ x: (px - ox) / scale, y: (py - oy) / scale });
+    const pick = (px: number, py: number) => {
+      const w = toWorld(px, py); let best: GNode | null = null, bd = 1e9;
+      for (const n of nodes) { const dx = n.x - w.x, dy = n.y - w.y, d = dx * dx + dy * dy, hit = (n.r + 8) * (n.r + 8); if (d < hit && d < bd) { bd = d; best = n; } }
+      return best;
+    };
+    const syncSel = () => { const id = hover ? hover.id : null; if (id !== lastHoverId) { lastHoverId = id; if (hover) setSel(hover); } };
+    const onDown = (e: MouseEvent) => { const r = rect(); const x = e.clientX - r.left, y = e.clientY - r.top; const n = pick(x, y); moved = false; if (n) { drag = n; setSel(n); lastHoverId = n.id; } else { panning = true; lastX = x; lastY = y; } };
+    const onMove = (e: MouseEvent) => {
+      const r = rect(); const x = e.clientX - r.left, y = e.clientY - r.top;
+      if (drag) { const w = toWorld(x, y); drag.x = w.x; drag.y = w.y; drag.vx = 0; drag.vy = 0; moved = true; }
+      else if (panning) { ox += x - lastX; oy += y - lastY; lastX = x; lastY = y; moved = true; }
+      else { hover = pick(x, y); canvas.style.cursor = hover ? "pointer" : "grab"; syncSel(); }
+    };
+    const onUp = () => { if (drag && !moved && drag.type !== "tag" && drag.refId !== undefined) onOpen(drag.type as "skill" | "meeting" | "feed", drag.refId); drag = null; panning = false; };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); const r = rect(); const x = e.clientX - r.left, y = e.clientY - r.top; const ns = Math.max(0.4, Math.min(2.6, scale * Math.exp(-e.deltaY * 0.0015))); ox = x - (x - ox) * (ns / scale); oy = y - (y - oy) * (ns / scale); scale = ns; };
+    const onLeave = () => { hover = null; };
+    canvas.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("mouseleave", onLeave);
+    const ro = new ResizeObserver(resize); ro.observe(wrap);
+
+    const linkLen = (a: GNode, b: GNode) => (a.type === "tag" || b.type === "tag" ? 48 : 78);
+    let raf = 0;
+    const step = (now: number) => {
+      const t = (now - start) / 1000;
+      if ((frame++ % 30) === 0) themeDark = readThemeDark();
+      const cx = W / 2, cy = H / 2;
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i]; if (a === drag) continue;
+        a.vx += (cx - a.x) * 0.0009; a.vy += (cy - a.y) * 0.0009;
+        for (let j = 0; j < nodes.length; j++) {
+          if (i === j) continue; const b = nodes[j];
+          let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+          if (d2 < 0.02) { dx = (i - j) * 0.5 + 0.1; dy = 0.3; d2 = dx * dx + dy * dy; }
+          const d = Math.sqrt(d2), rep = 560 / d2;
+          a.vx += (dx / d) * rep; a.vy += (dy / d) * rep;
+        }
+      }
+      for (const [ai, bi] of edges) {
+        const a = byId.get(ai)!, b = byId.get(bi)!;
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const f = (d - linkLen(a, b)) * 0.016, fx = (dx / d) * f, fy = (dy / d) * f;
+        if (a !== drag) { a.vx += fx; a.vy += fy; }
+        if (b !== drag) { b.vx -= fx; b.vy -= fy; }
+      }
+      for (const n of nodes) { if (n === drag) continue; n.vx *= 0.85; n.vy *= 0.85; const sp = Math.hypot(n.vx, n.vy); if (sp > 6) { n.vx *= 6 / sp; n.vy *= 6 / sp; } n.x += n.vx; n.y += n.vy; }
+
+      // ---- premium render ----
+      ctx.clearRect(0, 0, W, H);
+      // soft nebula behind everything (screen space)
+      const neb = ctx.createRadialGradient(W / 2, H * 0.46, 0, W / 2, H * 0.46, Math.max(W, H) * 0.62);
+      if (themeDark) { neb.addColorStop(0, "rgba(46,44,68,0.40)"); neb.addColorStop(0.5, "rgba(20,22,34,0.18)"); neb.addColorStop(1, "rgba(0,0,0,0)"); }
+      else { neb.addColorStop(0, "rgba(120,128,168,0.07)"); neb.addColorStop(1, "rgba(0,0,0,0)"); }
+      ctx.fillStyle = neb; ctx.fillRect(0, 0, W, H);
+
+      ctx.save(); ctx.translate(ox, oy); ctx.scale(scale, scale);
+      const hl = hover, nbr = hl ? adj.get(hl.id) : null;
+      const textRGB = themeDark ? "236,234,228" : "40,40,46";
+
+      // edges — synapse threads, glow brighter along the hovered node's connections
+      for (const [ai, bi] of edges) {
+        const a = byId.get(ai)!, b = byId.get(bi)!;
+        const on = !!hl && (ai === hl.id || bi === hl.id);
+        const [er, eg, eb] = NODE_RGB[(a.type === "tag" ? b.type : a.type)];
+        if (on) {
+          ctx.strokeStyle = `rgba(${er},${eg},${eb},0.5)`; ctx.lineWidth = 1.6;
+        } else {
+          ctx.strokeStyle = `rgba(${er},${eg},${eb},${hl ? 0.04 : (themeDark ? 0.13 : 0.16)})`; ctx.lineWidth = 0.7;
+        }
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+
+      // nodes — glowing neurons (halo + core + pulse)
+      for (const n of nodes) {
+        const active = !hl || n === hl || !!(nbr && nbr.has(n.id));
+        const [r, g, b] = NODE_RGB[n.type];
+        const pulse = 0.7 + 0.3 * Math.sin(t * 1.1 + n.ph);
+        const focus = n === hl ? 1.35 : 1;
+        const aMul = active ? 1 : 0.16;
+        // halo
+        const hr = n.r * (n.type === "tag" ? 2.4 : 3.2) * focus;
+        const halo = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, hr);
+        halo.addColorStop(0, `rgba(${r},${g},${b},${(n === hl ? 0.5 : 0.3) * pulse * aMul})`);
+        halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(n.x, n.y, hr, 0, Math.PI * 2); ctx.fill();
+        // core
+        ctx.globalAlpha = aMul;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r * focus, 0, Math.PI * 2);
+        ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fill();
+        // bright inner highlight
+        ctx.beginPath(); ctx.arc(n.x - n.r * 0.28, n.y - n.r * 0.28, n.r * 0.42 * focus, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${themeDark ? 0.55 : 0.4})`; ctx.fill();
+        if (n === hl) { ctx.lineWidth = 1.4; ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`; ctx.beginPath(); ctx.arc(n.x, n.y, n.r * focus + 3, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+        // labels: skills always; the hovered node + its neighbours
+        const showLabel = active && (n.type === "skill" || n === hl || !!(nbr && nbr.has(n.id)));
+        if (showLabel) {
+          const fs = n.type === "skill" ? 12 : 10.5;
+          ctx.font = `${n.type === "skill" || n === hl ? 700 : 500} ${fs}px ui-sans-serif,system-ui,sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "top";
+          const label = n.label.length > 24 ? n.label.slice(0, 23) + "…" : n.label;
+          ctx.fillStyle = `rgba(${textRGB},${n === hl ? 0.98 : 0.8})`;
+          ctx.fillText(label, n.x, n.y + n.r * focus + 4);
+        }
+      }
+      ctx.restore();
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { cancelAnimationFrame(raf); canvas.removeEventListener("mousedown", onDown); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); canvas.removeEventListener("wheel", onWheel); canvas.removeEventListener("mouseleave", onLeave); ro.disconnect(); };
+  }, [graph, onOpen]);
+
+  // resolve the inspector contents from the selected node
+  const counts = useMemo(() => ({
+    skills: graph.nodes.filter((n) => n.type === "skill").length,
+    meetings: graph.nodes.filter((n) => n.type === "meeting").length,
+    learnings: graph.nodes.filter((n) => n.type === "feed").length,
+    tags: graph.nodes.filter((n) => n.type === "tag").length,
+  }), [graph]);
+
+  const info = useMemo(() => {
+    if (!sel) return null;
+    if (sel.type === "skill") { const s = skills.find((x) => x.id === sel.refId); return s ? { kind: "Skill", color: NODE_RGB.skill, title: s.name, sub: s.tagline, body: s.description, foot: s.path, open: () => onOpen("skill", s.id) } : null; }
+    if (sel.type === "meeting") { const m = meetings.find((x) => x.id === sel.refId); return m ? { kind: "Meeting", color: NODE_RGB.meeting, title: m.title, sub: [m.date, m.creator].filter(Boolean).join(" · "), body: m.summary, tags: m.tags, open: () => onOpen("meeting", m.id) } : null; }
+    if (sel.type === "feed") { const e = feed[sel.refId as number]; return e ? { kind: e.bucket || "Learning", color: NODE_RGB.feed, title: e.title, body: e.detail, tags: e.tags, foot: e.where ? "stored in " + e.where : undefined, open: () => onOpen("feed", sel.refId as number) } : null; }
+    const conn = graph.adj.get(sel.id)?.size || 0;
+    return { kind: "Tag", color: NODE_RGB.tag, title: "#" + sel.label, body: `Connects ${conn} ${conn === 1 ? "node" : "nodes"} across skills, meetings and learnings.` };
+  }, [sel, skills, meetings, feed, graph, onOpen]);
+
+  const rgb = (c: [number, number, number], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+  return (
+    <div className="cmo-graph">
+      <div className="cmo-graph-head">
+        <div className="cmo-graph-legend">
+          <span><i style={{ background: rgb(NODE_RGB.skill) }} /> Skills</span>
+          <span><i style={{ background: rgb(NODE_RGB.meeting) }} /> Meetings</span>
+          <span><i style={{ background: rgb(NODE_RGB.feed) }} /> Learnings</span>
+          <span><i style={{ background: rgb(NODE_RGB.tag) }} /> Tags</span>
+        </div>
+        <div className="cmo-graph-hint">drag · scroll to zoom · hover to inspect · click to open</div>
+      </div>
+      <div className="cmo-graph-body">
+        <div className="cmo-graph-canvas" ref={wrapRef}><canvas ref={ref} /></div>
+        <aside className="cmo-graph-info">
+          {info ? (
+            <div className="cmo-ins">
+              <span className="cmo-ins-kind" style={{ color: rgb(info.color), borderColor: rgb(info.color, 0.4), background: rgb(info.color, 0.12) }}>{info.kind}</span>
+              <h3 className="cmo-ins-title">{info.title}</h3>
+              {info.sub && <div className="cmo-ins-sub">{info.sub}</div>}
+              {info.body && <p className="cmo-ins-body">{info.body}</p>}
+              {info.tags && info.tags.length > 0 && <div className="cmo-ins-tags">{info.tags.slice(0, 8).map((t, i) => <span key={i}>{t}</span>)}</div>}
+              {info.foot && <div className="cmo-ins-foot">{info.foot}</div>}
+              {info.open && <button className="cmo-ins-open" onClick={info.open}>Open →</button>}
+            </div>
+          ) : (
+            <div className="cmo-ins cmo-ins-empty">
+              <div className="cmo-ins-title">The CMO brain</div>
+              <p className="cmo-ins-body">Every skill, meeting, and learning, wired by the tags they share. Hover any node to inspect it here.</p>
+              <div className="cmo-ins-stats">
+                <span><b style={{ color: rgb(NODE_RGB.skill) }}>{counts.skills}</b> skills</span>
+                <span><b style={{ color: rgb(NODE_RGB.meeting) }}>{counts.meetings}</b> meetings</span>
+                <span><b style={{ color: rgb(NODE_RGB.feed) }}>{counts.learnings}</b> learnings</span>
+                <span><b style={{ color: rgb(NODE_RGB.tag) }}>{counts.tags}</b> tags</span>
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 const TRANSCRIPTS = [
   { name: "Team strategy (3h)", sub: "2026-06-05", path: "~/.claude/.../transcripts/2026-06-05-team-strategy-deep.md", meetingId: "2026-06-05-team-strategy" },
   { name: "Zakk coaching call", sub: "2026-06-04", path: "~/.claude/.../transcripts/2026-06-04-zakk-coaching-call.md", meetingId: "2026-06-04-zakk-coaching" },
 ];
 
-type Tab = "feed" | "skills" | "meetings" | "files";
+type Tab = "brain" | "feed" | "skills" | "meetings" | "files";
 
 export default function CmoPage() {
-  const [tab, setTab] = useState<Tab>("feed");
+  const [tab, setTab] = useState<Tab>("brain");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
@@ -256,6 +507,13 @@ export default function CmoPage() {
   const activeSkill = useMemo(() => skills.find((s) => s.id === openSkill) || null, [skills, openSkill]);
   const activeMeeting = useMemo(() => meetings.find((m) => m.id === openMeeting) || null, [meetings, openMeeting]);
   const inDetail = activeSkill || activeMeeting;
+
+  // open a graph node → jump to the right tab + detail
+  const openNode = useCallback((kind: "skill" | "meeting" | "feed", id: string | number) => {
+    if (kind === "skill") { setTab("skills"); setOpenSkill(id as string); }
+    else if (kind === "meeting") { setTab("meetings"); setOpenMeeting(id as string); }
+    else { setTab("feed"); setOpenFeed(id as number); }
+  }, []);
   const fileMeeting = fileSel?.kind === "meeting" ? meetings.find((m) => m.id === fileSel.id) : fileSel?.kind === "transcript" ? meetings.find((m) => m.id === fileSel.id) : null;
   const fileSkill = fileSel?.kind === "skill" ? skills.find((s) => s.id === fileSel.id) : null;
 
@@ -272,15 +530,20 @@ export default function CmoPage() {
           </div>
         </div>
         <nav className="cmo-nav">
-          {(["feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
+          {(["brain", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
             <button key={tk} className={tab === tk && !inDetail ? "on" : ""} onClick={() => { setTab(tk); setOpenSkill(null); setOpenMeeting(null); }}>
-              {tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+              {tk === "brain" ? "Brain" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
             </button>
           ))}
         </nav>
       </header>
 
       {inDetail && <button className="cmo-back" onClick={() => { setOpenSkill(null); setOpenMeeting(null); }}>← back</button>}
+
+      {/* BRAIN — Obsidian-style knowledge graph */}
+      {tab === "brain" && !inDetail && (
+        <BrainGraph skills={skills} meetings={meetings} feed={feed} onOpen={openNode} />
+      )}
 
       {/* FEED */}
       {tab === "feed" && !inDetail && (
@@ -437,6 +700,33 @@ function CmoStyles() {
   .cmo-nav button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.15)}
   .cmo-back{background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:16px;padding:0;font-family:inherit}
   .cmo-back:hover{color:var(--text-primary)}
+
+  /* brain graph */
+  .cmo-graph{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-card)}
+  .cmo-graph-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border);background:var(--bg-secondary);flex-wrap:wrap}
+  .cmo-graph-legend{display:flex;gap:15px;flex-wrap:wrap}
+  .cmo-graph-legend span{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--text-secondary)}
+  .cmo-graph-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 6px currentColor}
+  .cmo-graph-hint{font-size:11px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
+  .cmo-graph-body{display:grid;grid-template-columns:1fr 300px}
+  .cmo-graph-canvas{height:520px;cursor:grab;min-width:0}
+  .cmo-graph-canvas canvas{display:block}
+  .cmo-graph-info{height:520px;overflow:auto;border-left:1px solid var(--border);background:linear-gradient(180deg,color-mix(in srgb,var(--text-primary) 3%,var(--bg-card)),var(--bg-card));padding:20px 18px}
+  .cmo-ins{display:flex;flex-direction:column;gap:11px}
+  .cmo-ins-kind{align-self:flex-start;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1px solid}
+  .cmo-ins-title{font-size:16px;font-weight:800;color:var(--text-primary);margin:0;line-height:1.3}
+  .cmo-ins-sub{font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);margin-top:-4px}
+  .cmo-ins-body{font-size:12.5px;color:var(--text-secondary);line-height:1.6;margin:0}
+  .cmo-ins-tags{display:flex;flex-wrap:wrap;gap:5px}
+  .cmo-ins-tags span{font-size:10px;color:var(--text-secondary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:2px 7px}
+  .cmo-ins-foot{font-size:10.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace);word-break:break-word}
+  .cmo-ins-open{align-self:flex-start;margin-top:4px;font-size:12px;font-weight:700;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border-hover,var(--border));border-radius:8px;padding:7px 13px;cursor:pointer;font-family:inherit;transition:transform .1s,border-color .14s}
+  .cmo-ins-open:hover{transform:translateY(-1px);border-color:var(--gold)}
+  .cmo-ins-empty{gap:14px}
+  .cmo-ins-stats{display:flex;flex-direction:column;gap:7px;margin-top:4px;padding-top:14px;border-top:1px solid var(--border)}
+  .cmo-ins-stats span{font-size:12.5px;color:var(--text-muted)}
+  .cmo-ins-stats b{font-size:15px;font-weight:800;margin-right:6px}
+  @media(max-width:720px){.cmo-graph-body{grid-template-columns:1fr}.cmo-graph-info{height:auto;border-left:none;border-top:1px solid var(--border)}}
 
   /* feed */
   .cmo-term{border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--bg-card)}
