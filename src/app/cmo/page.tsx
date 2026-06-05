@@ -8,6 +8,26 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
  * rotates slowly, and a soft premium glow intensifies + leans toward
  * the cursor. Color is preserved (no blown-out central dot).
  * ============================================================ */
+// Detect whether the app is currently in dark mode by reading the live --bg-card
+// CSS variable's luminance. Lets the canvas pick dot colours that stay visible
+// in BOTH themes (so the brain window is never a hard black block on a light page).
+function readThemeDark(): boolean {
+  try {
+    let v = getComputedStyle(document.documentElement).getPropertyValue("--bg-card").trim();
+    if (!v) v = getComputedStyle(document.body).backgroundColor;
+    let r = 12, g = 12, b = 14;
+    if (v.startsWith("#")) {
+      const h = v.slice(1);
+      const f = h.length === 3 ? h.split("").map((x) => x + x).join("") : h;
+      r = parseInt(f.slice(0, 2), 16); g = parseInt(f.slice(2, 4), 16); b = parseInt(f.slice(4, 6), 16);
+    } else {
+      const m = v.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+    }
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+  } catch { return true; }
+}
+
 type BP = { vx: number; vy: number; vz: number; a: number; b: number; s: number };
 function JarvisBrain({ size = 196 }: { size?: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
@@ -70,20 +90,26 @@ function JarvisBrain({ size = 196 }: { size?: number }) {
     let raf = 0;
     const start = performance.now();
     let infl = 0;
+    let frame = 0;
+    let themeDark = readThemeDark();
     const sx = new Float32Array(N), sy = new Float32Array(N), sd = new Float32Array(N);
     const render = (now: number) => {
       const t = (now - start) / 1000;
       infl += (target - infl) * 0.04;
+      if ((frame++ % 30) === 0) themeDark = readThemeDark(); // follow live light/dark toggle
       ctx.clearRect(0, 0, size, size);
       const cx = size / 2, cy = size / 2, R = size * 0.36;
       const breathe = 1 + Math.sin(t * 0.5) * 0.025;
       // the brain BODY stays locked in the centre. The mouse only adds internal
       // energy (the points move more) + brightens the aura — it never translates.
       const energy = 0.78 + 0.7 * infl;
+      const auraRGB = themeDark ? "201,169,110" : "176,140,74";
+      const lineRGB = themeDark ? "201,169,110" : "150,108,46";
+      const lineMul = themeDark ? 1 : 1.7;
 
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.7);
-      grad.addColorStop(0, `rgba(201,169,110,${0.06 + 0.16 * infl})`);
-      grad.addColorStop(1, "rgba(201,169,110,0)");
+      grad.addColorStop(0, `rgba(${auraRGB},${(themeDark ? 0.06 : 0.05) + (themeDark ? 0.16 : 0.13) * infl})`);
+      grad.addColorStop(1, `rgba(${auraRGB},0)`);
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(cx, cy, R * 1.7, 0, Math.PI * 2);
@@ -106,8 +132,8 @@ function JarvisBrain({ size = 196 }: { size?: number }) {
       for (let k = 0; k < edges.length; k++) {
         const i = edges[k][0], j = edges[k][1];
         const fl = 0.5 + 0.5 * Math.sin(t * (1.5 + infl * 1.4) + k * 0.7);
-        const al = (0.04 + 0.11 * fl) * (0.35 + 0.65 * ((sd[i] + sd[j]) / 2));
-        ctx.strokeStyle = `rgba(201,169,110,${al})`;
+        const al = (0.04 + 0.11 * fl) * (0.35 + 0.65 * ((sd[i] + sd[j]) / 2)) * lineMul;
+        ctx.strokeStyle = `rgba(${lineRGB},${al})`;
         ctx.beginPath();
         ctx.moveTo(sx[i], sy[i]);
         ctx.lineTo(sx[j], sy[j]);
@@ -115,10 +141,17 @@ function JarvisBrain({ size = 196 }: { size?: number }) {
       }
 
       for (let i = 0; i < N; i++) {
-        const d = sd[i], r = 0.5 + d * 1.4, a = 0.2 + d * 0.6;
+        const d = sd[i], r = 0.5 + d * 1.4;
+        let cr: number, cg: number, cb: number, a: number;
+        if (themeDark) {
+          cr = Math.round(210 + d * 26); cg = Math.round(182 + d * 38); cb = Math.round(134 + d * 86); a = 0.2 + d * 0.6;
+        } else {
+          // bronze, darker toward the front so points pop on a light card
+          cr = Math.round(150 - d * 44); cg = Math.round(110 - d * 36); cb = Math.round(54 - d * 14); a = 0.34 + d * 0.5;
+        }
         ctx.beginPath();
         ctx.arc(sx[i], sy[i], r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${Math.round(210 + d * 26)},${Math.round(182 + d * 38)},${Math.round(134 + d * 86)},${a})`;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
         ctx.fill();
       }
       raf = requestAnimationFrame(render);
@@ -394,7 +427,7 @@ function CmoStyles() {
   .cmo{max-width:1080px;margin:0 auto;padding:30px 30px 100px}
   .cmo-top{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
   .cmo-brand{display:flex;align-items:center;gap:18px}
-  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid color-mix(in srgb,var(--gold) 24%,var(--border));background:radial-gradient(circle at 50% 42%,#1b1812,#0b0a09 74%);box-shadow:inset 0 0 26px -8px rgba(201,169,110,.32),0 0 46px -18px rgba(201,169,110,.5)}
+  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid color-mix(in srgb,var(--gold) 26%,var(--border));background:radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--gold) 10%,var(--bg-card)),var(--bg-card) 74%);box-shadow:inset 0 0 22px -10px color-mix(in srgb,var(--gold) 55%,transparent),0 0 26px -18px color-mix(in srgb,var(--gold) 60%,transparent)}
   .cmo h1{font-size:26px;font-weight:800;letter-spacing:-.4px;color:var(--text-primary);margin:0 0 6px}
   .cmo-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
   .cmo-dot{width:6px;height:6px;border-radius:50%;background:var(--green,#3fb27f);box-shadow:0 0 8px var(--green,#3fb27f)}
