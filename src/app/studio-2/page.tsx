@@ -23,10 +23,13 @@ import {
   FilePlus2,
   Folder,
   FolderPlus,
+  GripVertical,
   Home,
   ImagePlus,
   Layers,
   Library,
+  Maximize2,
+  Minimize2,
   Link2,
   LoaderCircle,
   Menu,
@@ -73,6 +76,21 @@ const GENERATE_SPLIT_KEY = "ccos-studio2-generate-gallery-percent";
 const GENERATE_PRESETS_KEY = "ccos-studio2-generate-presets";
 const GENERATE_HIDDEN_PRESETS_KEY = "ccos-studio2-hidden-generate-presets";
 const COPY_LAB_PRESETS_KEY = "ccos-studio2-copy-lab-presets";
+// Saved colors + text-style presets are global so they're reusable across every ad/project.
+const COLOR_PALETTE_KEY = "ccos-studio2-color-palette";
+const TEXT_STYLE_PRESETS_KEY = "ccos-studio2-text-style-presets";
+const DEFAULT_COLOR_PALETTE = [
+  "#FFFFFF",
+  "#000000",
+  "#4E944F",
+  "#22C55E",
+  "#FACC15",
+  "#EF4444",
+  "#3B82F6",
+  "#C9A96E",
+];
+const MAX_PALETTE_COLORS = 24;
+const MAX_TEXT_STYLE_PRESETS = 16;
 const AI_GENERATED_FOLDER_NAME = "AI Generated";
 const MAX_GENERATE_BATCH_COUNT = 30;
 const GENERATE_RUN_TIMEOUT_MS = 8 * 60 * 1000;
@@ -193,6 +211,15 @@ interface TextColorSpan {
   color: string;
 }
 
+interface TextStylePreset {
+  id: string;
+  textColor: string;
+  bgColor: string;
+  bgOpacity: number;
+  bgStyle: "solid" | "marker";
+  borderRadius: number;
+}
+
 interface TextBlock {
   id: string;
   lines: string[];
@@ -204,6 +231,7 @@ interface TextBlock {
   textColor: string;
   bgColor: string;
   bgOpacity: number;
+  bgStyle?: "solid" | "marker";
   borderRadius: number;
   paddingH: number;
   paddingV: number;
@@ -1448,6 +1476,83 @@ function roundRect(
   ctx.closePath();
 }
 
+// Deterministic pseudo-random so the marker texture stays stable across redraws
+// (Math.random would re-jitter the strokes on every frame).
+function seededRandom(seed: number) {
+  let t = (seed >>> 0) + 0x6d2b79f5;
+  return () => {
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(str: string) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Draws a hand-drawn highlighter / marker stroke behind a line of text:
+// a slightly wobbly capsule with overshooting, tapered ends — like a real
+// marker swiped across the line. Deterministic per `seed`.
+function drawMarkerHighlight(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  opacity: number,
+  seed: number
+) {
+  const rand = seededRandom(seed);
+  const rgb = hexToRgb(color);
+  const cap = h * 0.5;
+  // Marker overshoots the text slightly on each end.
+  const overL = cap * (0.55 + rand() * 0.7);
+  const overR = cap * (0.55 + rand() * 0.7);
+  const left = x - overL;
+  const right = x + w + overR;
+  const midY = y + h / 2;
+  // Vertically the ink hugs the text — pull in from the padded box a touch.
+  const half = (h / 2) * (0.86 + rand() * 0.06);
+  const wob = h * 0.07; // edge waviness
+  const segments = Math.max(3, Math.round((right - left) / (h * 0.85)));
+
+  const topY = (t: number) => midY - half + (rand() - 0.5) * wob * (t > 0 && t < 1 ? 1 : 0.3);
+  const botY = (t: number) => midY + half + (rand() - 0.5) * wob * (t > 0 && t < 1 ? 1 : 0.3);
+
+  ctx.save();
+  ctx.beginPath();
+  // Left rounded cap
+  ctx.moveTo(left + cap * 0.4, topY(0));
+  ctx.quadraticCurveTo(left - cap * 0.15, midY - half * 0.4, left - cap * 0.1, midY);
+  ctx.quadraticCurveTo(left - cap * 0.15, midY + half * 0.4, left + cap * 0.4, botY(0));
+  // Bottom edge (left -> right), wavy
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const px = left + (right - left) * t;
+    ctx.lineTo(px, botY(t));
+  }
+  // Right rounded cap
+  ctx.quadraticCurveTo(right + cap * 0.15, midY + half * 0.4, right + cap * 0.1, midY);
+  ctx.quadraticCurveTo(right + cap * 0.15, midY - half * 0.4, right - cap * 0.4, topY(1));
+  // Top edge (right -> left), wavy
+  for (let i = segments - 1; i >= 0; i--) {
+    const t = i / segments;
+    const px = left + (right - left) * t;
+    ctx.lineTo(px, topY(t));
+  }
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity)})`;
+  ctx.fill();
+  ctx.restore();
+}
+
 function setBlockFont(ctx: CanvasRenderingContext2D, block: TextBlock) {
   ctx.font = `${block.fontWeight} ${block.fontSize}px ${block.fontFamily}`;
   ctx.textBaseline = "middle";
@@ -1666,9 +1771,22 @@ function drawCreativeTextBlocks(
 
     for (const line of metrics.lines) {
       if (block.bgOpacity > 0) {
-        ctx.fillStyle = `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`;
-        roundRect(ctx, line.x, line.bgY, line.bgW, line.bgH, block.borderRadius);
-        ctx.fill();
+        if ((block.bgStyle ?? "solid") === "marker") {
+          drawMarkerHighlight(
+            ctx,
+            line.x,
+            line.bgY,
+            line.bgW,
+            line.bgH,
+            block.bgColor,
+            block.bgOpacity,
+            hashString(block.id) ^ (line.start * 2654435761)
+          );
+        } else {
+          ctx.fillStyle = `rgba(${hexToRgb(block.bgColor)}, ${block.bgOpacity})`;
+          roundRect(ctx, line.x, line.bgY, line.bgW, line.bgH, block.borderRadius);
+          ctx.fill();
+        }
       }
     }
 
@@ -2007,6 +2125,7 @@ function getTextStyle(block: TextBlock): TextStyle {
     textColor: block.textColor,
     bgColor: block.bgColor,
     bgOpacity: block.bgOpacity,
+    bgStyle: block.bgStyle ?? "solid",
     borderRadius: block.borderRadius,
     paddingH: block.paddingH,
     paddingV: block.paddingV,
@@ -2358,6 +2477,8 @@ export default function Studio2Page() {
   const [editingText, setEditingText] = useState("");
   const [editingOriginalLines, setEditingOriginalLines] = useState<string[] | null>(null);
   const [copiedStyle, setCopiedStyle] = useState<TextStyle | null>(null);
+  const [colorPalette, setColorPalette] = useState<string[]>(DEFAULT_COLOR_PALETTE);
+  const [textStylePresets, setTextStylePresets] = useState<TextStylePreset[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportMode, setExportMode] = useState<ExportMode>("current");
@@ -2398,6 +2519,14 @@ export default function Studio2Page() {
   const [shareLinkStatus, setShareLinkStatus] = useState("");
   const [uploadingQueuedMedia, setUploadingQueuedMedia] = useState(false);
   const [setupMediaKindFilter, setSetupMediaKindFilter] = useState<SetupMediaKindFilter>("all");
+  // Explicit order of every selected media url (images + videos interleaved by
+  // pick order, not images-then-videos). Drives the ad sequence + the number
+  // badges in the picker. Reorder via drag updates this list.
+  const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
+  const [setupMediaExpanded, setSetupMediaExpanded] = useState(false);
+  const [setupMediaZoom, setSetupMediaZoom] = useState(150);
+  const [dragOverUrl, setDragOverUrl] = useState<string | null>(null);
+  const dragUrlRef = useRef<string | null>(null);
   const [includeAiGeneratedMedia, setIncludeAiGeneratedMedia] = useState(false);
   const [textBackgroundMenuOpen, setTextBackgroundMenuOpen] = useState(false);
   const [setupFontMenuOpen, setSetupFontMenuOpen] = useState(false);
@@ -2598,20 +2727,40 @@ export default function Studio2Page() {
     [getAssetForUrl]
   );
   const selectedMediaForAds = useMemo(() => {
-    const media = [
-      ...photos.map((url) => ({ url, kind: "image" as MediaKind })),
-      ...mediaAssets.filter((asset) => asset.kind === "video").map((asset) => ({
-        url: asset.url,
-        kind: "video" as MediaKind,
-      })),
-    ];
-    const seen = new Set<string>();
-    return media.filter((item) => {
-      if (seen.has(item.url)) return false;
-      seen.add(item.url);
-      return true;
+    // Canonical set of selected media, keyed by url with its kind. Images live
+    // in `photos`, videos in `mediaAssets`. Default insertion = images then
+    // videos (matches legacy behavior for anything not yet hand-ordered).
+    const kindByUrl = new Map<string, MediaKind>();
+    photos.forEach((url) => {
+      if (!kindByUrl.has(url)) kindByUrl.set(url, "image");
     });
-  }, [mediaAssets, photos]);
+    mediaAssets.forEach((asset) => {
+      if (asset.kind === "video" && !kindByUrl.has(asset.url)) kindByUrl.set(asset.url, "video");
+    });
+    const result: { url: string; kind: MediaKind }[] = [];
+    const used = new Set<string>();
+    // selectionOrder wins (this is the user's pick/drag order)...
+    selectionOrder.forEach((url) => {
+      const kind = kindByUrl.get(url);
+      if (kind && !used.has(url)) {
+        result.push({ url, kind });
+        used.add(url);
+      }
+    });
+    // ...then anything selected but not yet tracked falls in after, in default order.
+    kindByUrl.forEach((kind, url) => {
+      if (!used.has(url)) {
+        result.push({ url, kind });
+        used.add(url);
+      }
+    });
+    return result;
+  }, [mediaAssets, photos, selectionOrder]);
+  const selectedOrderMap = useMemo(() => {
+    const map = new Map<string, number>();
+    selectedMediaForAds.forEach((media, index) => map.set(media.url, index + 1));
+    return map;
+  }, [selectedMediaForAds]);
   const plannedAdCount = useMemo(
     () => selectedMediaForAds.reduce((total, media) => total + getPhotoCopies(photoCopies, media.url), 0),
     [photoCopies, selectedMediaForAds]
@@ -2642,13 +2791,25 @@ export default function Studio2Page() {
     });
     const videoAssets = mediaAssets.filter((asset) => asset.kind === "video");
     const seen = new Set<string>();
-    return [...imageAssets, ...videoAssets, ...setupLibraryMedia].filter((asset) => {
+    const deduped = [...imageAssets, ...videoAssets, ...setupLibraryMedia].filter((asset) => {
       if (setupMediaKindFilter !== "all" && asset.kind !== setupMediaKindFilter) return false;
       if (seen.has(asset.url)) return false;
       seen.add(asset.url);
       return true;
     });
-  }, [mediaAssets, photos, setupLibraryMedia, setupMediaKindFilter]);
+    // Float selected media to the front in its ad-sequence order so the number
+    // badges read 1, 2, 3... in a clean run and drag-reorder is unambiguous.
+    // Array.sort is stable, so unselected media keeps its existing order.
+    return deduped
+      .map((asset, index) => ({ asset, index }))
+      .sort((a, b) => {
+        const ao = selectedOrderMap.get(a.asset.url) ?? Infinity;
+        const bo = selectedOrderMap.get(b.asset.url) ?? Infinity;
+        if (ao !== bo) return ao - bo;
+        return a.index - b.index;
+      })
+      .map((entry) => entry.asset);
+  }, [mediaAssets, photos, setupLibraryMedia, setupMediaKindFilter, selectedOrderMap]);
 
   const hasActiveDraft =
     photos.length > 0 ||
@@ -3342,6 +3503,84 @@ export default function Studio2Page() {
     [pushUndo, selectedBlock, updateCurrentCreative]
   );
 
+  const addPaletteColor = useCallback((color: string) => {
+    const hex = normalizeHex(color, "").toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(hex)) return;
+    setColorPalette((prev) => [hex, ...prev.filter((c) => c.toUpperCase() !== hex)].slice(0, MAX_PALETTE_COLORS));
+  }, []);
+
+  const removePaletteColor = useCallback((color: string) => {
+    const hex = color.toUpperCase();
+    setColorPalette((prev) => prev.filter((c) => c.toUpperCase() !== hex));
+  }, []);
+
+  // Select every text block on the current ad — so a saved style can be applied to all at once.
+  const selectAllTextBlocks = useCallback(() => {
+    const ids = currentCreative?.textBlocks.map((block) => block.id) ?? [];
+    if (!ids.length) return;
+    setEditingBlockId(null);
+    setSelectedTextBlockIds(ids);
+    setSelectedLayer(ids.length === 1 ? { type: "text", id: ids[0] } : null);
+  }, [currentCreative?.textBlocks]);
+
+  // Apply a saved style to the selected block(s), or to every block if nothing is selected.
+  const applyTextStylePreset = useCallback(
+    (preset: TextStylePreset) => {
+      if (!currentCreative) return;
+      const targetIds = selectedTextBlocks.length
+        ? new Set(selectedTextBlocks.map((block) => block.id))
+        : selectedBlock
+          ? new Set([selectedBlock.id])
+          : new Set(currentCreative.textBlocks.map((block) => block.id));
+      if (!targetIds.size) return;
+      pushUndo();
+      updateCurrentCreative((creative) => ({
+        ...creative,
+        textBlocks: creative.textBlocks.map((block) =>
+          targetIds.has(block.id)
+            ? {
+                ...block,
+                textColor: preset.textColor,
+                bgColor: preset.bgColor,
+                bgOpacity: preset.bgOpacity,
+                bgStyle: preset.bgStyle,
+                borderRadius: preset.borderRadius,
+              }
+            : block
+        ),
+      }));
+    },
+    [currentCreative, pushUndo, selectedBlock, selectedTextBlocks, updateCurrentCreative]
+  );
+
+  const saveTextStylePreset = useCallback(() => {
+    const source = selectedBlock ?? selectedTextBlocks[0];
+    if (!source) return;
+    const preset: TextStylePreset = {
+      id: `style-${hashString(`${source.textColor}|${source.bgColor}|${source.bgStyle}|${source.bgOpacity}`)}-${(source.textColor + source.bgColor).replace(/[^0-9A-F]/gi, "").slice(0, 6)}`,
+      textColor: normalizeHex(source.textColor, "#FFFFFF").toUpperCase(),
+      bgColor: normalizeHex(source.bgColor, "#000000").toUpperCase(),
+      bgOpacity: source.bgOpacity > 0 ? source.bgOpacity : 1,
+      bgStyle: source.bgStyle ?? "solid",
+      borderRadius: source.borderRadius,
+    };
+    setTextStylePresets((prev) => {
+      const exists = prev.some(
+        (p) =>
+          p.textColor === preset.textColor &&
+          p.bgColor === preset.bgColor &&
+          p.bgStyle === preset.bgStyle &&
+          Math.abs(p.bgOpacity - preset.bgOpacity) < 0.01
+      );
+      if (exists) return prev;
+      return [preset, ...prev].slice(0, MAX_TEXT_STYLE_PRESETS);
+    });
+  }, [selectedBlock, selectedTextBlocks]);
+
+  const removeTextStylePreset = useCallback((id: string) => {
+    setTextStylePresets((prev) => prev.filter((preset) => preset.id !== id));
+  }, []);
+
   const updateImage = useCallback(
     (updates: Partial<ImageTransform>) => {
       updateCurrentCreative((creative) => ({
@@ -3618,6 +3857,7 @@ export default function Studio2Page() {
   const removeSetupPhoto = useCallback((photo: string, index: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
     setMediaAssets((prev) => prev.filter((asset) => asset.url !== photo));
+    setSelectionOrder((prev) => prev.filter((url) => url !== photo));
     setPhotoCopies((prev) => {
       const next = { ...prev };
       delete next[photo];
@@ -3632,6 +3872,7 @@ export default function Studio2Page() {
         : mediaAssets.some((item) => item.url === asset.url);
 
     if (isSelected) {
+      setSelectionOrder((prev) => prev.filter((url) => url !== asset.url));
       if (asset.kind === "image") {
         const photoIndex = photos.findIndex((photo) => photo === asset.url);
         if (photoIndex >= 0) removeSetupPhoto(asset.url, photoIndex);
@@ -3654,8 +3895,233 @@ export default function Studio2Page() {
         ? prev
         : [...prev, { ...asset, id: asset.id || uid() }]
     );
+    // Append to the pick order so the new item lands at the end of the sequence.
+    setSelectionOrder((prev) => (prev.includes(asset.url) ? prev : [...prev, asset.url]));
     setPhotoCopies((prev) => (prev[asset.url] ? prev : { ...prev, [asset.url]: 1 }));
   }, [mediaAssets, photos, removeSetupPhoto]);
+
+  // Drag-to-reorder: materialize the full selected sequence, then move `fromUrl`
+  // to `toUrl`'s slot. Writing the whole order back to selectionOrder keeps it
+  // canonical regardless of how items were originally added.
+  const moveSelectedMedia = useCallback((fromUrl: string, toUrl: string) => {
+    if (fromUrl === toUrl) return;
+    setSelectionOrder(() => {
+      const order = selectedMediaForAds.map((media) => media.url);
+      const from = order.indexOf(fromUrl);
+      const to = order.indexOf(toUrl);
+      if (from < 0 || to < 0 || from === to) return order;
+      const next = [...order];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, [selectedMediaForAds]);
+
+  // Single source of truth for a media tile, shared by the inline picker and the
+  // full-screen picker. `tileKey` disambiguates the two grids (same asset can
+  // render in both). Selected tiles get a draggable handle + an order badge.
+  const renderSetupMediaTile = useCallback(
+    (asset: StudioMediaAsset, tileKey: string) => {
+      const copyCount = getPhotoCopies(photoCopies, asset.url);
+      const isSelected = asset.kind === "image"
+        ? photos.includes(asset.url)
+        : mediaAssets.some((item) => item.url === asset.url);
+      const orderNumber = selectedOrderMap.get(asset.url);
+      const isDropTarget = dragOverUrl === asset.url && dragUrlRef.current !== asset.url;
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          key={tileKey}
+          draggable={isSelected}
+          onClick={() => toggleSetupMediaAsset(asset)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              toggleSetupMediaAsset(asset);
+            }
+          }}
+          onDragStart={(event) => {
+            if (!isSelected) return;
+            dragUrlRef.current = asset.url;
+            event.dataTransfer.effectAllowed = "move";
+            try {
+              event.dataTransfer.setData("text/plain", asset.url);
+            } catch {
+              /* some browsers disallow setData mid-drag; ref still carries it */
+            }
+          }}
+          onDragOver={(event) => {
+            if (!isSelected || !dragUrlRef.current || dragUrlRef.current === asset.url) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            if (dragOverUrl !== asset.url) setDragOverUrl(asset.url);
+          }}
+          onDragLeave={() => {
+            if (dragOverUrl === asset.url) setDragOverUrl(null);
+          }}
+          onDrop={(event) => {
+            if (!isSelected || !dragUrlRef.current) return;
+            event.preventDefault();
+            event.stopPropagation();
+            moveSelectedMedia(dragUrlRef.current, asset.url);
+            dragUrlRef.current = null;
+            setDragOverUrl(null);
+          }}
+          onDragEnd={() => {
+            dragUrlRef.current = null;
+            setDragOverUrl(null);
+          }}
+          style={{
+            position: "relative",
+            width: "100%",
+            aspectRatio: "9 / 16",
+            borderRadius: 8,
+            overflow: "hidden",
+            background: ADS_BRAND.bgDeep,
+            border: `2px solid ${isDropTarget ? "#fff" : isSelected ? ADS_BRAND.gold : "transparent"}`,
+            boxShadow: isDropTarget ? `0 0 0 2px ${ADS_BRAND.gold}` : "none",
+            cursor: isSelected ? "grab" : "pointer",
+            padding: 0,
+          }}
+        >
+          <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          {asset.kind === "video" && (
+            <span
+              style={{
+                position: "absolute",
+                left: 5,
+                top: 5,
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: "rgba(0,0,0,0.68)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Video size={10} />
+            </span>
+          )}
+          {isSelected && (
+            <span
+              aria-hidden
+              style={{
+                position: "absolute",
+                right: 5,
+                top: 5,
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                background: "rgba(0,0,0,0.6)",
+                color: "rgba(255,255,255,0.85)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backdropFilter: "blur(6px)",
+              }}
+            >
+              <GripVertical size={12} />
+            </span>
+          )}
+          {isSelected && orderNumber !== undefined && (
+            <span
+              style={{
+                position: "absolute",
+                right: 6,
+                bottom: 6,
+                minWidth: 22,
+                height: 22,
+                padding: "0 5px",
+                borderRadius: 999,
+                background: ADS_BRAND.gold,
+                color: ADS_BRAND.inkOnGold,
+                fontSize: 12,
+                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 1px 5px rgba(0,0,0,0.45)",
+              }}
+            >
+              {orderNumber}
+            </span>
+          )}
+          {isSelected && (
+            <div
+              style={{
+                position: "absolute",
+                left: 6,
+                bottom: 6,
+                height: 22,
+                display: "inline-flex",
+                alignItems: "center",
+                borderRadius: 999,
+                background: "rgba(0,0,0,0.62)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                color: "#fff",
+                backdropFilter: "blur(8px)",
+              }}
+            >
+              <button
+                type="button"
+                aria-label="Use fewer copies"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updatePhotoCopyCount(asset.url, -1);
+                }}
+                onDragStart={(event) => event.preventDefault()}
+                style={{
+                  width: 20,
+                  height: 22,
+                  border: "none",
+                  background: "transparent",
+                  color: "rgba(255,255,255,0.88)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                <Minus size={10} />
+              </button>
+              <span style={{ textAlign: "center", fontSize: 10, fontWeight: 800, minWidth: 18 }}>
+                {copyCount}x
+              </span>
+              <button
+                type="button"
+                aria-label="Use more copies"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updatePhotoCopyCount(asset.url, 1);
+                }}
+                onDragStart={(event) => event.preventDefault()}
+                style={{
+                  width: 20,
+                  height: 22,
+                  border: "none",
+                  background: "transparent",
+                  color: ADS_BRAND.gold,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                <Plus size={10} />
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    },
+    [dragOverUrl, mediaAssets, moveSelectedMedia, photoCopies, photos, selectedOrderMap, toggleSetupMediaAsset, updatePhotoCopyCount]
+  );
 
   const handleSetupDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -4782,6 +5248,12 @@ export default function Studio2Page() {
         return;
       }
 
+      if (!typing && meta && event.key.toLowerCase() === "a" && currentCreative?.textBlocks.length) {
+        event.preventDefault();
+        selectAllTextBlocks();
+        return;
+      }
+
       if (!typing && !meta && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         event.preventDefault();
         const delta = event.key === "ArrowLeft" ? -1 : 1;
@@ -4828,7 +5300,7 @@ export default function Studio2Page() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [addTextBlock, creatives.length, currentCreative?.mediaKind, deleteSelectedBlock, deleteSelectedTextBlocks, duplicateSelectedBlock, redo, selectedLayer, selectedTextBlocks.length, toggleVideoPlayback, undo, view]);
+  }, [addTextBlock, creatives.length, currentCreative?.mediaKind, currentCreative?.textBlocks.length, deleteSelectedBlock, deleteSelectedTextBlocks, duplicateSelectedBlock, redo, selectAllTextBlocks, selectedLayer, selectedTextBlocks.length, toggleVideoPlayback, undo, view]);
 
   const renderCreativeToCanvas = useCallback(
     async (creative: Creative, pixelRatio = 2) => {
@@ -6207,6 +6679,64 @@ export default function Studio2Page() {
       // Local preference only.
     }
   }, [customGeneratePresets]);
+
+  // Saved color palette (shared across every ad/project).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(COLOR_PALETTE_KEY);
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (Array.isArray(parsed) && parsed.length) {
+        const colors = parsed
+          .filter((c) => typeof c === "string")
+          .map((c) => normalizeHex(c, "").toUpperCase())
+          .filter((c) => /^#[0-9A-F]{6}$/.test(c));
+        if (colors.length) setColorPalette(Array.from(new Set(colors)).slice(0, MAX_PALETTE_COLORS));
+      }
+    } catch {
+      // Local preference only.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COLOR_PALETTE_KEY, JSON.stringify(colorPalette));
+    } catch {
+      // Local preference only.
+    }
+  }, [colorPalette]);
+
+  // Saved text-style presets (text color + highlight color + marker/solid).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(TEXT_STYLE_PRESETS_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      if (Array.isArray(parsed)) {
+        setTextStylePresets(
+          parsed
+            .filter((item) => item && typeof item.id === "string" && typeof item.textColor === "string")
+            .map((item): TextStylePreset => ({
+              id: String(item.id),
+              textColor: normalizeHex(item.textColor, "#FFFFFF").toUpperCase(),
+              bgColor: normalizeHex(item.bgColor ?? "#000000", "#000000").toUpperCase(),
+              bgOpacity: typeof item.bgOpacity === "number" ? clamp(item.bgOpacity, 0, 1) : 1,
+              bgStyle: item.bgStyle === "marker" ? "marker" : "solid",
+              borderRadius: typeof item.borderRadius === "number" ? item.borderRadius : 16,
+            }))
+            .slice(0, MAX_TEXT_STYLE_PRESETS)
+        );
+      }
+    } catch {
+      // Local preference only.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TEXT_STYLE_PRESETS_KEY, JSON.stringify(textStylePresets));
+    } catch {
+      // Local preference only.
+    }
+  }, [textStylePresets]);
 
   useEffect(() => {
     try {
@@ -10164,6 +10694,26 @@ export default function Studio2Page() {
                       </button>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    aria-label="Expand media to full screen"
+                    title="Expand to full screen"
+                    onClick={() => setSetupMediaExpanded(true)}
+                    style={{
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 7,
+                      background: ADS_BRAND.panel3,
+                      color: ADS_BRAND.text2,
+                      height: 26,
+                      width: 30,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Maximize2 size={13} />
+                  </button>
                 </div>
               </div>
               <div
@@ -10185,125 +10735,9 @@ export default function Studio2Page() {
                       justifyContent: "start",
                     }}
                   >
-                    {setupMediaAssets.map((asset, index) => {
-                      const copyCount = getPhotoCopies(photoCopies, asset.url);
-                      const isSelected = asset.kind === "image"
-                        ? photos.includes(asset.url)
-                        : mediaAssets.some((item) => item.url === asset.url);
-                      return (
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          key={`${asset.id}-${index}`}
-                          onClick={() => toggleSetupMediaAsset(asset)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              toggleSetupMediaAsset(asset);
-                            }
-                          }}
-                          style={{
-                            position: "relative",
-                            width: "100%",
-                            aspectRatio: "9 / 16",
-                            borderRadius: 8,
-                            overflow: "hidden",
-                            background: ADS_BRAND.bgDeep,
-                            border: `2px solid ${isSelected ? ADS_BRAND.gold : "transparent"}`,
-                            cursor: "pointer",
-                            padding: 0,
-                          }}
-                        >
-                          <MediaAssetPreview asset={asset} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {asset.kind === "video" && (
-                            <span
-                              style={{
-                                position: "absolute",
-                                left: 5,
-                                top: 5,
-                                width: 18,
-                                height: 18,
-                                borderRadius: "50%",
-                                background: "rgba(0,0,0,0.68)",
-                                color: "#fff",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Video size={10} />
-                            </span>
-                          )}
-                          {isSelected && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                left: 6,
-                                right: 6,
-                                bottom: 6,
-                                height: 20,
-                                display: "grid",
-                                gridTemplateColumns: "18px 1fr 18px",
-                                alignItems: "center",
-                                borderRadius: 999,
-                                background: "rgba(0,0,0,0.62)",
-                                border: "1px solid rgba(255,255,255,0.14)",
-                                color: "#fff",
-                                backdropFilter: "blur(8px)",
-                              }}
-                            >
-                              <button
-                                type="button"
-                                aria-label="Use fewer copies"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  updatePhotoCopyCount(asset.url, -1);
-                                }}
-                                style={{
-                                  width: 18,
-                                  height: 19,
-                                  border: "none",
-                                  background: "transparent",
-                                  color: "rgba(255,255,255,0.88)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <Minus size={10} />
-                              </button>
-                              <span style={{ textAlign: "center", fontSize: 10, fontWeight: 800 }}>
-                                {copyCount}x
-                              </span>
-                              <button
-                                type="button"
-                                aria-label="Use more copies"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  updatePhotoCopyCount(asset.url, 1);
-                                }}
-                                style={{
-                                  width: 18,
-                                  height: 19,
-                                  border: "none",
-                                  background: "transparent",
-                                  color: ADS_BRAND.gold,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <Plus size={10} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {setupMediaAssets.map((asset, index) =>
+                      renderSetupMediaTile(asset, `inline-${asset.id}-${index}`)
+                    )}
                   </div>
                 ) : (
                   <div style={{
@@ -10325,6 +10759,11 @@ export default function Studio2Page() {
             <div style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 12 }}>
               {setupMediaAssets.length} media file{setupMediaAssets.length === 1 ? "" : "s"} - {selectedMediaCount} selected - {plannedAdCount} ad{plannedAdCount === 1 ? "" : "s"} planned
             </div>
+            {selectedMediaCount > 1 && (
+              <div style={{ marginTop: 4, color: ADS_BRAND.text3, fontSize: 11.5 }}>
+                The number on each picked item is its order in the batch. Drag any selected item onto another to reorder.
+              </div>
+            )}
           </div>
 
           <div className="glass-static" style={{ padding: 22 }}>
@@ -10611,6 +11050,195 @@ export default function Studio2Page() {
             Generate {plannedAdCount || ""} Ad{plannedAdCount === 1 ? "" : "s"}
           </button>
         </div>
+
+        {setupMediaExpanded && (
+          <div
+            role="dialog"
+            aria-modal
+            onClick={() => setSetupMediaExpanded(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1000,
+              background: "rgba(0,0,0,0.78)",
+              backdropFilter: "blur(4px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "2vh 2vw",
+            }}
+          >
+            <style>{`
+              .studio2-zoom-range {
+                -webkit-appearance: none; appearance: none;
+                height: 5px; width: 150px; border-radius: 999px; outline: none; cursor: pointer;
+                background: ${ADS_BRAND.border};
+              }
+              .studio2-zoom-range::-webkit-slider-thumb {
+                -webkit-appearance: none; appearance: none;
+                width: 15px; height: 15px; border-radius: 999px;
+                background: #fff; border: 3px solid ${ADS_BRAND.gold}; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+              }
+              .studio2-zoom-range::-moz-range-thumb {
+                width: 15px; height: 15px; border-radius: 999px;
+                background: #fff; border: 3px solid ${ADS_BRAND.gold};
+              }
+            `}</style>
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: "96vw",
+                height: "92vh",
+                display: "flex",
+                flexDirection: "column",
+                background: ADS_BRAND.panel,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                borderRadius: 14,
+                overflow: "hidden",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 14,
+                  padding: "14px 18px",
+                  borderBottom: `1px solid ${ADS_BRAND.border2}`,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: ADS_BRAND.text, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <ImagePlus size={16} /> Select &amp; order media
+                  </div>
+                  <div style={{ fontSize: 12, color: ADS_BRAND.text3 }}>
+                    {selectedMediaCount} selected - {plannedAdCount} ad{plannedAdCount === 1 ? "" : "s"} planned - drag a numbered item onto another to reorder
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      gap: 2,
+                      padding: 3,
+                      borderRadius: 8,
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      background: ADS_BRAND.panel3,
+                    }}
+                  >
+                    {([
+                      ["all", "All"],
+                      ["image", "Images"],
+                      ["video", "Videos"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSetupMediaKindFilter(value)}
+                        style={{
+                          border: "none",
+                          borderRadius: 6,
+                          background: setupMediaKindFilter === value ? ADS_BRAND.active : "transparent",
+                          color: setupMediaKindFilter === value ? ADS_BRAND.text : ADS_BRAND.text3,
+                          height: 28,
+                          padding: "0 10px",
+                          fontFamily: "inherit",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: ADS_BRAND.text3 }}>
+                    <button
+                      type="button"
+                      aria-label="Smaller"
+                      onClick={() => setSetupMediaZoom((value) => clamp(value - 20, 90, 360))}
+                      style={{ border: "none", background: "transparent", color: ADS_BRAND.text2, cursor: "pointer", display: "inline-flex", padding: 2 }}
+                    >
+                      <ZoomOut size={16} />
+                    </button>
+                    <input
+                      type="range"
+                      className="studio2-zoom-range"
+                      min={90}
+                      max={360}
+                      step={10}
+                      value={setupMediaZoom}
+                      onChange={(event) => setSetupMediaZoom(Number(event.target.value))}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Bigger"
+                      onClick={() => setSetupMediaZoom((value) => clamp(value + 20, 90, 360))}
+                      style={{ border: "none", background: "transparent", color: ADS_BRAND.text2, cursor: "pointer", display: "inline-flex", padding: 2 }}
+                    >
+                      <ZoomIn size={16} />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSetupMediaExpanded(false)}
+                    style={{
+                      border: `1px solid ${ADS_BRAND.border2}`,
+                      borderRadius: 8,
+                      background: ADS_BRAND.panel3,
+                      color: ADS_BRAND.text2,
+                      height: 32,
+                      padding: "0 12px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      fontFamily: "inherit",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Minimize2 size={14} /> Close
+                  </button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", padding: 18, background: ADS_BRAND.bg }}>
+                {setupMediaAssets.length > 0 ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(auto-fill, minmax(${setupMediaZoom}px, 1fr))`,
+                      gap: 12,
+                      justifyContent: "start",
+                    }}
+                  >
+                    {setupMediaAssets.map((asset, index) =>
+                      renderSetupMediaTile(asset, `full-${asset.id}-${index}`)
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "column",
+                      gap: 8,
+                      color: ADS_BRAND.text3,
+                      fontSize: 14,
+                    }}
+                  >
+                    <Palette size={32} strokeWidth={1.7} />
+                    No media uploaded yet
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -11345,6 +11973,89 @@ export default function Studio2Page() {
             </button>
           </div>
 
+          {currentCreative && currentCreative.textBlocks.length > 0 && (
+            <div style={panelStyle}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={labelStyle}>Saved Styles</span>
+                <button
+                  type="button"
+                  onClick={selectAllTextBlocks}
+                  style={{ ...buttonStyle(false), padding: "5px 9px", gap: 5 }}
+                  title="Select every text block on this ad"
+                >
+                  <SwatchBook size={13} /> Select all
+                </button>
+              </div>
+              {textStylePresets.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {textStylePresets.map((preset) => (
+                    <div key={preset.id} style={{ position: "relative" }}>
+                      <button
+                        type="button"
+                        onClick={() => applyTextStylePreset(preset)}
+                        title="Apply to selected text (or all text if nothing is selected)"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          minWidth: 46,
+                          height: 34,
+                          padding: "0 12px",
+                          borderRadius: preset.bgStyle === "marker" ? 17 : 9,
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          background: preset.bgOpacity > 0 ? preset.bgColor : ADS_BRAND.panel3,
+                          color: preset.textColor,
+                          fontSize: 15,
+                          fontWeight: 900,
+                          cursor: "pointer",
+                          fontFamily: "Inter, system-ui, sans-serif",
+                        }}
+                      >
+                        Aa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeTextStylePreset(preset.id)}
+                        title="Delete style"
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 16,
+                          height: 16,
+                          borderRadius: 999,
+                          border: `1px solid ${ADS_BRAND.border2}`,
+                          background: ADS_BRAND.panel,
+                          color: ADS_BRAND.text2,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        <X size={9} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: 11, color: ADS_BRAND.text3, lineHeight: 1.5 }}>
+                  Style a text block (color + highlight), then tap “Save current style” to reuse it on any ad.
+                </p>
+              )}
+              {(selectedBlock || selectedTextBlocks.length > 0) && (
+                <button
+                  type="button"
+                  onClick={saveTextStylePreset}
+                  style={{ ...buttonStyle(false), width: "100%", justifyContent: "center", height: 32, marginTop: 10, gap: 6 }}
+                >
+                  <Plus size={13} /> Save current style
+                </button>
+              )}
+            </div>
+          )}
+
           {multiSelectedTextBlocks && (
             <div style={panelStyle}>
               <span style={{ ...labelStyle, display: "block", marginBottom: 10 }}>Multi Select</span>
@@ -11360,22 +12071,28 @@ export default function Studio2Page() {
                 </button>
               </Control>
               <Control label="Text">
-                <HexColorControl
+                <ColorPicker
                   value={selectedTextBlocks[0]?.textColor || "#ffffff"}
                   onStart={pushUndo}
                   onChange={(value) => updateSelectedTextBlocks({ textColor: normalizeHex(value, selectedTextBlocks[0]?.textColor || "#ffffff").toUpperCase() })}
-                  ariaLabel="Text hex color"
+                  ariaLabel="Text color"
+                  palette={colorPalette}
+                  onAddToPalette={addPaletteColor}
+                  onRemoveFromPalette={removePaletteColor}
                 />
               </Control>
               <Control label="Highlight">
-                <HexColorControl
+                <ColorPicker
                   value={selectedTextBlocks[0]?.bgColor || "#000000"}
                   onStart={pushUndo}
                   onChange={(value) => updateSelectedTextBlocks({
                     bgColor: normalizeHex(value, selectedTextBlocks[0]?.bgColor || "#000000").toUpperCase(),
                     bgOpacity: selectedTextBlocks[0]?.bgOpacity && selectedTextBlocks[0].bgOpacity > 0 ? selectedTextBlocks[0].bgOpacity : 1,
                   })}
-                  ariaLabel="Highlight hex color"
+                  ariaLabel="Highlight color"
+                  palette={colorPalette}
+                  onAddToPalette={addPaletteColor}
+                  onRemoveFromPalette={removePaletteColor}
                 />
                 <button
                   type="button"
@@ -11388,6 +12105,23 @@ export default function Studio2Page() {
                 >
                   {selectedTextBlocks.some((block) => block.bgOpacity > 0) ? "Off" : "On"}
                 </button>
+              </Control>
+              <Control label="Style">
+                <div style={{ display: "inline-flex", gap: 3, padding: 3, borderRadius: 8, border: `1px solid ${ADS_BRAND.border2}`, background: ADS_BRAND.panel3 }}>
+                  {(["solid", "marker"] as const).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      style={segmentedButtonStyle(selectedTextBlocks.every((block) => (block.bgStyle ?? "solid") === style))}
+                      onClick={() => {
+                        pushUndo();
+                        updateSelectedTextBlocks({ bgStyle: style });
+                      }}
+                    >
+                      {style === "solid" ? "Solid" : "Marker"}
+                    </button>
+                  ))}
+                </div>
               </Control>
             </div>
           )}
@@ -11421,6 +12155,11 @@ export default function Studio2Page() {
                 rows={4}
                 style={{ ...inputStyle, resize: "vertical", lineHeight: 1.4, marginBottom: 10 }}
               />
+              {!selectedTextRange && (
+                <p style={{ margin: "-4px 0 10px", fontSize: 11, color: ADS_BRAND.text3, lineHeight: 1.5 }}>
+                  Tip: highlight a word above to recolor just that word.
+                </p>
+              )}
               {selectedTextRange && (
                 <div
                   className="studio2-selection-tools"
@@ -11450,11 +12189,14 @@ export default function Studio2Page() {
                   >
                     {selectedTextSnippet}
                   </span>
-                  <HexColorControl
+                  <ColorPicker
                     value={selectedTextColor}
                     onStart={pushUndo}
                     onChange={applySelectedTextColor}
-                    ariaLabel="Selected text hex color"
+                    ariaLabel="Selected word color"
+                    palette={colorPalette}
+                    onAddToPalette={addPaletteColor}
+                    onRemoveFromPalette={removePaletteColor}
                   />
                   <button
                     type="button"
@@ -11507,22 +12249,28 @@ export default function Studio2Page() {
                 </div>
               )}
               <Control label="Text color">
-                <HexColorControl
+                <ColorPicker
                   value={selectedBlock.textColor}
                   onStart={pushUndo}
                   onChange={(value) => updateSelectedBlock({ textColor: normalizeHex(value, selectedBlock.textColor).toUpperCase() })}
-                  ariaLabel="Text hex color"
+                  ariaLabel="Text color"
+                  palette={colorPalette}
+                  onAddToPalette={addPaletteColor}
+                  onRemoveFromPalette={removePaletteColor}
                 />
               </Control>
               <Control label="Highlight">
-                <HexColorControl
+                <ColorPicker
                   value={selectedBlock.bgColor}
                   onStart={pushUndo}
                   onChange={(value) => updateSelectedBlock({
                     bgColor: normalizeHex(value, selectedBlock.bgColor).toUpperCase(),
                     bgOpacity: selectedBlock.bgOpacity > 0 ? selectedBlock.bgOpacity : 1,
                   })}
-                  ariaLabel="Highlight hex color"
+                  ariaLabel="Highlight color"
+                  palette={colorPalette}
+                  onAddToPalette={addPaletteColor}
+                  onRemoveFromPalette={removePaletteColor}
                 />
                 <button
                   type="button"
@@ -11534,6 +12282,23 @@ export default function Studio2Page() {
                 >
                   {selectedBlock.bgOpacity > 0 ? "Off" : "On"}
                 </button>
+              </Control>
+              <Control label="Highlight style">
+                <div style={{ display: "inline-flex", gap: 3, padding: 3, borderRadius: 8, border: `1px solid ${ADS_BRAND.border2}`, background: ADS_BRAND.panel3 }}>
+                  {(["solid", "marker"] as const).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      style={segmentedButtonStyle((selectedBlock.bgStyle ?? "solid") === style)}
+                      onClick={() => {
+                        pushUndo();
+                        updateSelectedBlock({ bgStyle: style });
+                      }}
+                    >
+                      {style === "solid" ? "Solid" : "Marker"}
+                    </button>
+                  ))}
+                </div>
               </Control>
               <Control label="Align">
                 <div style={{
@@ -13188,6 +13953,251 @@ function HexColorControl({
         }}
         aria-label={ariaLabel}
       />
+    </>
+  );
+}
+
+// Clickable color control: swatch opens a real picker + saved-color palette.
+// The palette is shared across every ad/project so colors stay reusable.
+function ColorPicker({
+  value,
+  onStart,
+  onChange,
+  ariaLabel,
+  palette,
+  onAddToPalette,
+  onRemoveFromPalette,
+}: {
+  value: string;
+  onStart: () => void;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  palette: string[];
+  onAddToPalette: (value: string) => void;
+  onRemoveFromPalette: (value: string) => void;
+}) {
+  const normalizedValue = normalizeHex(value);
+  const [draft, setDraft] = useState(normalizedValue.toUpperCase());
+  const [open, setOpen] = useState(false);
+  const [removeMode, setRemoveMode] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const swatchRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDraft(normalizeHex(value).toUpperCase());
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (swatchRef.current?.contains(event.target as Node)) return;
+      if (popRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+      setRemoveMode(false);
+    };
+    const dismiss = () => {
+      setOpen(false);
+      setRemoveMode(false);
+    };
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [open]);
+
+  const commit = (rawValue: string) => {
+    const next = normalizeHex(rawValue, normalizedValue).toUpperCase();
+    setDraft(next);
+    onChange(next);
+  };
+
+  const togglePopover = () => {
+    if (!open) {
+      const rect = swatchRef.current?.getBoundingClientRect();
+      if (rect) {
+        const width = 236;
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+        setAnchor({ top: rect.bottom + 6, left });
+      }
+      onStart();
+    }
+    setOpen((value) => !value);
+    setRemoveMode(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={swatchRef}
+        type="button"
+        onClick={togglePopover}
+        aria-label={ariaLabel}
+        title="Pick color"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          border: `1px solid ${ADS_BRAND.border2}`,
+          background: normalizedValue,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
+          flexShrink: 0,
+          cursor: "pointer",
+          padding: 0,
+        }}
+      />
+      <input
+        value={draft}
+        onFocus={onStart}
+        onChange={(event) => {
+          const next = event.target.value.toUpperCase();
+          setDraft(next);
+          if (/^#?[0-9A-F]{6}$/.test(next) || /^#?[0-9A-F]{3}$/.test(next)) {
+            onChange(normalizeHex(next, normalizedValue).toUpperCase());
+          }
+        }}
+        onBlur={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit(event.currentTarget.value);
+            event.currentTarget.blur();
+          }
+        }}
+        spellCheck={false}
+        style={{
+          ...inputStyle,
+          height: 32,
+          width: 78,
+          fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+          textTransform: "uppercase",
+        }}
+        aria-label={`${ariaLabel} hex`}
+      />
+      {open && anchor && (
+        <div
+          ref={popRef}
+          style={{
+            position: "fixed",
+            top: anchor.top,
+            left: anchor.left,
+            width: 236,
+            zIndex: 1000,
+            background: ADS_BRAND.panel2,
+            border: `1px solid ${ADS_BRAND.border2}`,
+            borderRadius: 12,
+            padding: 12,
+            boxShadow: "0 18px 40px rgba(0,0,0,0.5)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="color"
+              value={normalizedValue}
+              onChange={(event) => commit(event.target.value)}
+              aria-label={`${ariaLabel} picker`}
+              style={{
+                width: 46,
+                height: 36,
+                padding: 0,
+                border: `1px solid ${ADS_BRAND.border2}`,
+                borderRadius: 8,
+                background: "transparent",
+                cursor: "pointer",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => onAddToPalette(draft)}
+              style={{ ...buttonStyle(false), flex: 1, height: 36, justifyContent: "center", gap: 6 }}
+            >
+              <Plus size={13} /> Save color
+            </button>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={labelStyle}>Saved colors</span>
+            {palette.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRemoveMode((value) => !value)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: removeMode ? "#ff8b8b" : ADS_BRAND.text3,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                {removeMode ? "Done" : "Edit"}
+              </button>
+            )}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6 }}>
+            {palette.map((color) => {
+              const isCurrent = color.toUpperCase() === normalizedValue.toUpperCase();
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  title={removeMode ? "Remove color" : color}
+                  onClick={() => {
+                    if (removeMode) {
+                      onRemoveFromPalette(color);
+                      return;
+                    }
+                    commit(color);
+                    setOpen(false);
+                  }}
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    aspectRatio: "1 / 1",
+                    borderRadius: 6,
+                    background: color,
+                    border: isCurrent ? `2px solid ${ADS_BRAND.gold}` : `1px solid ${ADS_BRAND.border2}`,
+                    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  {removeMode && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        background: "rgba(0,0,0,0.4)",
+                        borderRadius: 5,
+                        fontSize: 13,
+                        fontWeight: 900,
+                      }}
+                    >
+                      ×
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {!palette.length && (
+              <span style={{ gridColumn: "1 / -1", fontSize: 11, color: ADS_BRAND.text3 }}>
+                No saved colors yet — pick one and tap “Save color”.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
