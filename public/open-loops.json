@@ -4,13 +4,13 @@
   "loops": [
     {
       "id": "lucy-ads-launch",
-      "title": "Lucy's ads LAUNCHED (15 PAUSED) — awaiting ManyChat + activation",
-      "detail": "2026-06-06: all 15 direct-CTA ads built via Graph API into campaign 120243547279710009 (act_616852470282141), one $200/day Warm ad set, all PAUSED. Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. REMAINING for Alex: (1) add ManyChat keyword automation for the 14 new keywords (same as COMEBACK); (2) review + flip live in Ads Manager (bump to ~$300/day per team plan if wanted). THEN I run the 7-day kill/scale read per keyword. Launch script + token reusable (keychain lucy-meta-token).",
-      "status": "waiting-on-alex",
+      "title": "Lucy's 15 ads SCHEDULED — go live Sat ~5am PDT / 8am EST",
+      "detail": "2026-06-06: all 15 direct-CTA ads built + SCHEDULED by Alex; turn on Sat ~5am PDT (8am EST), $200/day total ABO in one ad set (campaign 120243547279710009, act_616852470282141). Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. CMO ACTION: watch for results once live, then run the 7-day kill/scale read per keyword (judge cost/lead + cost/call). Token + launch script reusable (keychain lucy-meta-token).",
+      "status": "in-progress",
       "priority": "now",
-      "tags": ["Lucy", "ads", "launch", "manychat", "7-day"],
+      "tags": ["Lucy", "ads", "launch", "7-day", "scheduled"],
       "opened": "2026-06-05",
-      "where": "Meta Ads Manager + this chat"
+      "where": "Meta Ads Manager"
     },
     {
       "id": "lucy-angles-hypotheses",
@@ -39,16 +39,6 @@
       "status": "paused",
       "priority": "soon",
       "tags": ["CMO", "roadmap", "pulse", "scorecard"],
-      "opened": "2026-06-05",
-      "where": "this chat"
-    },
-    {
-      "id": "brain-graph-aesthetic",
-      "title": "Make the brain graph look premium (borrow the old neuron view)",
-      "detail": "Alex wants the Brain tab to borrow the pulsing-pathways / left-to-right node aesthetic from the old Deep Dive neuron view (the beautiful one). Keep minimal dots; add the line pulsing + overall aesthetic. Current graph is functional but he doesn't love the look yet.",
-      "status": "backlog",
-      "priority": "later",
-      "tags": ["CMO", "design", "brain"],
       "opened": "2026-06-05",
       "where": "this chat"
     },
