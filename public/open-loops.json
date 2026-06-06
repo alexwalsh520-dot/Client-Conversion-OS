@@ -33,6 +33,16 @@
       "where": "this chat"
     },
     {
+      "id": "cmo-selfupdate-reliability",
+      "title": "Make the CMO self-update BULLETPROOF (so any session reliably builds the same, smarter employee)",
+      "detail": "Alex 2026-06-06 asked, honestly, whether the front-end (brain/impact/feed/skills/meetings/files) reliably updates forever across any cloud session. HONEST ANSWER: partly. RELIABLE: every tab reads a JSON file (clean architecture, won't rot); skills-data.json auto-regens from the real SKILL.md files via a PostToolUse hook. NOT AUTOMATIC (model-dependent each session): open-loops/memory-log/cmo-ledger/meetings-data update ONLY when I explicitly write them — it relies on the continuous-capture discipline in the CMO skill + me following it + me committing & pushing; and a fresh session only acts as 'the same employee' if it LOADS the cmo skill (triggered by its description + the MEMORY.md boot pointer — likely, not guaranteed). So it's held together by good instructions + one hook, not a closed guaranteed loop. TO MAKE IT BULLETPROOF: (1) SEMANTIC RETRIEVAL over my own files (skills+memory+transcripts; pgvector like Cortex) so the right context auto-surfaces as it grows — biggest intelligence upgrade, Alex flagged it 'extremely important'. (2) Harden capture into HOOKS not just instructions — a session-end hook that forces the loop+ledger update and commits, so it can't be forgotten. (3) Strengthen the boot trigger so any CMO-context session deterministically loads the skill. (4) Verify the working-copy/deploy path is singular (saw sync print a second 'Codex - CCOS' copy path; confirm updates always reach the live site, no drift).",
+      "status": "backlog",
+      "priority": "soon",
+      "tags": ["CMO", "reliability", "semantic-retrieval", "hooks", "self-improving", "infra"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
       "id": "creative-producer-media-library",
       "title": "Make me a real creative producer: media-library awareness + Higgsfield story-ad pipeline",
       "detail": "Alex 2026-06-06 (sooner-than-later). Goal: I can produce perfect, real-looking story ads end-to-end. Pieces: (1) a SYSTEM to actually KNOW what's in our media library (R2 / stored assets) — auto-describe each image (SEO-ish captions/tags per creator, e.g. Lucy) so I can semantically look up the right real background visual on demand. (2) Workflow: Alex tells me the ad concept -> I write the copy (ad-copywriter skill) -> I look up the actual background image from the library -> feed it to Higgsfield (gpt_image_2 image-to-image) as the REFERENCE background -> PLUS a fixed TEMPLATE reference image that encodes the exact Studio top-copy style, so output matches our real studio look. (3) Result = on-brand, real-looking creative without a designer. Ties into the existing Variations Factory engine (src/lib/ads-variations + R2 media picker) — extend it with library indexing + the template-reference + concept->copy->bg-lookup->generate chain. Makes me dialed as the creative-producer half of the CMO.",
