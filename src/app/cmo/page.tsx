@@ -103,12 +103,12 @@ function JarvisBrain({ size = 196 }: { size?: number }) {
       // the brain BODY stays locked in the centre. The mouse only adds internal
       // energy (the points move more) + brightens the aura — it never translates.
       const energy = 0.78 + 0.7 * infl;
-      const auraRGB = themeDark ? "201,169,110" : "176,140,74";
-      const lineRGB = themeDark ? "201,169,110" : "150,108,46";
-      const lineMul = themeDark ? 1 : 1.7;
+      const auraRGB = themeDark ? "150,156,176" : "118,126,148";
+      const lineRGB = themeDark ? "150,156,176" : "118,126,148";
+      const lineMul = themeDark ? 1 : 1.5;
 
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.7);
-      grad.addColorStop(0, `rgba(${auraRGB},${(themeDark ? 0.06 : 0.05) + (themeDark ? 0.16 : 0.13) * infl})`);
+      grad.addColorStop(0, `rgba(${auraRGB},${(themeDark ? 0.05 : 0.04) + (themeDark ? 0.1 : 0.08) * infl})`);
       grad.addColorStop(1, `rgba(${auraRGB},0)`);
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -144,10 +144,11 @@ function JarvisBrain({ size = 196 }: { size?: number }) {
         const d = sd[i], r = 0.5 + d * 1.4;
         let cr: number, cg: number, cb: number, a: number;
         if (themeDark) {
-          cr = Math.round(210 + d * 26); cg = Math.round(182 + d * 38); cb = Math.round(134 + d * 86); a = 0.2 + d * 0.6;
+          // soft cool white — refined, not yellow/orange
+          cr = Math.round(208 + d * 26); cg = Math.round(210 + d * 24); cb = Math.round(218 + d * 20); a = 0.2 + d * 0.55;
         } else {
-          // bronze, darker toward the front so points pop on a light card
-          cr = Math.round(150 - d * 44); cg = Math.round(110 - d * 36); cb = Math.round(54 - d * 14); a = 0.34 + d * 0.5;
+          // refined graphite, darker toward the front so points pop on a light card
+          cr = Math.round(96 - d * 32); cg = Math.round(102 - d * 32); cb = Math.round(118 - d * 30); a = 0.32 + d * 0.5;
         }
         ctx.beginPath();
         ctx.arc(sx[i], sy[i], r, 0, Math.PI * 2);
@@ -779,7 +780,7 @@ function CmoStyles() {
   .cmo{max-width:1080px;margin:0 auto;padding:30px 30px 100px}
   .cmo-top{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
   .cmo-brand{display:flex;align-items:center;gap:18px}
-  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid color-mix(in srgb,var(--gold) 26%,var(--border));background:radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--gold) 10%,var(--bg-card)),var(--bg-card) 74%);box-shadow:inset 0 0 22px -10px color-mix(in srgb,var(--gold) 55%,transparent),0 0 26px -18px color-mix(in srgb,var(--gold) 60%,transparent)}
+  .cmo-brain-window{flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--border);background:radial-gradient(circle at 50% 40%,color-mix(in srgb,var(--text-primary) 4%,var(--bg-card)),var(--bg-card) 78%);box-shadow:inset 0 0 20px -12px rgba(0,0,0,.18)}
   .cmo h1{font-size:26px;font-weight:800;letter-spacing:-.4px;color:var(--text-primary);margin:0 0 6px}
   .cmo-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
   .cmo-dot{width:6px;height:6px;border-radius:50%;background:var(--green,#3fb27f);box-shadow:0 0 8px var(--green,#3fb27f)}
@@ -910,7 +911,7 @@ function CmoStyles() {
   .cmo-files{display:grid;grid-template-columns:300px 1fr;gap:22px;align-items:start}
   .cmo-files-list{display:flex;flex-direction:column;gap:16px;position:sticky;top:20px}
   .cmo-fgroup{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--bg-card)}
-  .cmo-fgroup-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:12px 15px;background:color-mix(in srgb,var(--text-primary) 7%,var(--bg-secondary));border-bottom:2px solid var(--border-hover,var(--border))}
+  .cmo-fgroup-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:11px 15px;background:var(--bg-secondary);border-bottom:1px solid var(--border)}
   .cmo-fgroup-title{font-size:13.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:var(--text-primary)}
   .cmo-fgroup-hint{font-size:10px;color:var(--text-muted)}
   .cmo-frow{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:9px 15px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;font-family:inherit;transition:background .1s}

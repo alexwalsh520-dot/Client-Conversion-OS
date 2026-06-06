@@ -24,8 +24,9 @@ import {
   FileText,
   Star,
   Handshake,
-  Bot,
   Utensils,
+  UserRound,
+  EyeOff,
 } from "lucide-react";
 
 const navItems = [
@@ -42,7 +43,7 @@ const navItems = [
 ];
 
 const marketingNavItems = [
-  { href: "/cmo", label: "CMO", icon: Bot },
+  { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
@@ -62,6 +63,24 @@ export default function Sidebar() {
     return localStorage.getItem("force-desktop-view") === "true";
   });
   const [marketingOpen, setMarketingOpen] = useState(true);
+  // per-user hidden tabs (two-finger click any tab → Hide; reveal/unhide from the bottom)
+  const [hidden, setHidden] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(localStorage.getItem("sidebar-hidden-tabs") || "[]"); } catch { return []; }
+  });
+  const [showHidden, setShowHidden] = useState(false);
+  const [menu, setMenu] = useState<{ href: string; label: string; x: number; y: number; hidden: boolean } | null>(null);
+  const persistHidden = (next: string[]) => { setHidden(next); localStorage.setItem("sidebar-hidden-tabs", JSON.stringify(next)); };
+  const toggleHide = (href: string) => { persistHidden(hidden.includes(href) ? hidden.filter((h) => h !== href) : [...hidden, href]); setMenu(null); };
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("click", close); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [menu]);
+
   const isAdmin = session?.user?.role === "admin";
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
@@ -77,8 +96,10 @@ export default function Sidebar() {
     isAdmin ||
     allowedTabs?.includes(item.href) ||
     (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"));
-  const visibleNavItems = navItems.filter(canViewItem);
-  const visibleMarketingItems = marketingNavItems.filter(canViewItem);
+  const isHidden = (href: string) => hidden.includes(href);
+  const visibleNavItems = navItems.filter(canViewItem).filter((i) => !isHidden(i.href));
+  const visibleMarketingItems = marketingNavItems.filter(canViewItem).filter((i) => !isHidden(i.href));
+  const hiddenItems = [...navItems, ...marketingNavItems].filter((i) => canViewItem(i) && isHidden(i.href));
   const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));
 
   // Apply/remove force-desktop class on html element
@@ -135,6 +156,7 @@ export default function Sidebar() {
         href={item.href}
         className={`sidebar-link ${nested ? "sidebar-link-nested" : ""} ${active ? "sidebar-link-active" : ""}`}
         onClick={() => setMobileOpen(false)}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ href: item.href, label: item.label, x: e.clientX, y: e.clientY, hidden: isHidden(item.href) }); }}
       >
         <span className="sidebar-link-icon">
           <Icon size={18} />
@@ -219,6 +241,23 @@ export default function Sidebar() {
 
         {/* Bottom section */}
         <div className="sidebar-bottom">
+          {/* Hidden tabs (revealable) */}
+          {hiddenItems.length > 0 && (
+            <div className="sidebar-section">
+              <button type="button" className="sidebar-section-label sidebar-section-toggle" onClick={() => setShowHidden((s) => !s)} title="Hidden tabs">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <EyeOff size={14} />{!collapsed && <span>Hidden ({hiddenItems.length})</span>}
+                </span>
+                {!collapsed && <ChevronDown size={13} className={`sidebar-section-chevron ${showHidden ? "sidebar-section-chevron-open" : ""}`} />}
+              </button>
+              {showHidden && (
+                <div className="sidebar-section-links" style={{ opacity: 0.6 }}>
+                  {hiddenItems.map((item) => renderLink(item, true))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Settings */}
           {renderLink({ href: "/settings", label: "Settings", icon: Settings })}
 
@@ -273,6 +312,23 @@ export default function Sidebar() {
         </div>
       </aside>
 
+      {/* right-click / two-finger-tap context menu for hide/unhide */}
+      {menu && (
+        <div
+          style={{ position: "fixed", left: Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 180), top: menu.y, zIndex: 2000, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 9, boxShadow: "0 8px 28px rgba(0,0,0,.28)", padding: 4, minWidth: 156 }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() => toggleHide(menu.href)}
+            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 11px", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 13, fontWeight: 500, cursor: "pointer", borderRadius: 6, fontFamily: "inherit", textAlign: "left" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <EyeOff size={14} /> {menu.hidden ? `Unhide “${menu.label}”` : `Hide “${menu.label}”`}
+          </button>
+        </div>
+      )}
     </>
   );
 }
