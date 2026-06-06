@@ -104,6 +104,7 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {
     if (tab === "/") return pathname === "/";
+    if (pathname === "/time-to-eat" && tab === "/sales-hub") return true;
     return pathname === tab || pathname.startsWith(tab + "/");
   });
 

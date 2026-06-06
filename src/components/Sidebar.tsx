@@ -25,6 +25,7 @@ import {
   Star,
   Handshake,
   Bot,
+  Utensils,
 } from "lucide-react";
 
 const navItems = [
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
+  { href: "/time-to-eat", label: "Time to Eat", icon: Utensils },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
@@ -71,7 +73,10 @@ export default function Sidebar() {
   };
 
   const canViewItem = (item: { href: string }) =>
-    !hasPermissions || isAdmin || allowedTabs?.includes(item.href);
+    !hasPermissions ||
+    isAdmin ||
+    allowedTabs?.includes(item.href) ||
+    (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"));
   const visibleNavItems = navItems.filter(canViewItem);
   const visibleMarketingItems = marketingNavItems.filter(canViewItem);
   const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));

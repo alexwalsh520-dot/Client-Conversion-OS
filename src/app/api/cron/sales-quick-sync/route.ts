@@ -80,7 +80,8 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now();
-  const res = await fetch(`${getBaseUrl(req)}/api/sync/sales-tracker-rows`, {
+  const baseUrl = getBaseUrl(req);
+  const res = await fetch(`${baseUrl}/api/sync/sales-tracker-rows`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -90,12 +91,44 @@ export async function GET(req: NextRequest) {
     body: JSON.stringify({ dateFrom, dateTo }),
   });
   const body = await res.json().catch(async () => ({ raw: await res.text().catch(() => "") }));
+  let timeToEat: unknown = null;
+  let timeToEatOk = true;
+
+  try {
+    const timeToEatRes = await fetch(`${baseUrl}/api/sales-hub/time-to-eat?client=all&sync=1`, {
+      headers: {
+        Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        "x-cron-secret": process.env.CRON_SECRET ?? "",
+      },
+    });
+    const timeToEatBody = await timeToEatRes
+      .json()
+      .catch(async () => ({ raw: await timeToEatRes.text().catch(() => "") }));
+    const timeToEatStatus =
+      timeToEatBody && typeof timeToEatBody === "object" && "status" in timeToEatBody
+        ? (timeToEatBody as { status?: string }).status
+        : null;
+
+    timeToEatOk = timeToEatRes.ok && timeToEatStatus !== "error";
+    timeToEat = {
+      ok: timeToEatOk,
+      status: timeToEatRes.status,
+      result: timeToEatBody,
+    };
+  } catch (error) {
+    timeToEatOk = false;
+    timeToEat = {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to refresh Time to Eat memory",
+    };
+  }
 
   return NextResponse.json({
-    ok: res.ok,
+    ok: res.ok && timeToEatOk,
     dateFrom,
     dateTo,
     elapsed_ms: Date.now() - startedAt,
     result: body,
+    timeToEat,
   });
 }

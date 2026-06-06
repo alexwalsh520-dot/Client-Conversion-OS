@@ -20,6 +20,7 @@ const ALL_TABS = [
   "/outreach-run",
   "/super-doc-editor",
   "/sales-hub",
+  "/time-to-eat",
   "/media-buyer",
   "/intelligence",
   "/log",

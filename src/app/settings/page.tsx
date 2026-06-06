@@ -54,6 +54,7 @@ const TAB_LABELS: Record<string, string> = {
   "/outreach-run": "Super Doc Run",
   "/super-doc-editor": "Super Doc Template",
   "/sales-hub": "Sales Hub",
+  "/time-to-eat": "Time to Eat",
   "/media-buyer": "Media Buyer",
   "/intelligence": "Intelligence",
   "/log": "Change Log",
