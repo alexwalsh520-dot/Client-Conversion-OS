@@ -4,13 +4,13 @@
   "loops": [
     {
       "id": "lucy-ads-launch",
-      "title": "Launch Lucy's ads (v4 compliant copy ready)",
-      "detail": "15 ads written, v4 is Meta-compliant (no 'you are [body state]' hooks). Order -> keyword mapping locked (1 whole .. 15 journey). Next: get them live. Faith angles (7,8,9) only with Lucy's explicit OK. Images: show her DOING the thing, no body before/afters. THIS IS THE ACTIVE PRIORITY.",
-      "status": "in-progress",
+      "title": "Lucy's ads LAUNCHED (15 PAUSED) — awaiting ManyChat + activation",
+      "detail": "2026-06-06: all 15 direct-CTA ads built via Graph API into campaign 120243547279710009 (act_616852470282141), one $200/day Warm ad set, all PAUSED. Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. REMAINING for Alex: (1) add ManyChat keyword automation for the 14 new keywords (same as COMEBACK); (2) review + flip live in Ads Manager (bump to ~$300/day per team plan if wanted). THEN I run the 7-day kill/scale read per keyword. Launch script + token reusable (keychain lucy-meta-token).",
+      "status": "waiting-on-alex",
       "priority": "now",
-      "tags": ["Lucy", "ads", "launch"],
+      "tags": ["Lucy", "ads", "launch", "manychat", "7-day"],
       "opened": "2026-06-05",
-      "where": "this chat + ad-copywriter skill"
+      "where": "Meta Ads Manager + this chat"
     },
     {
       "id": "lucy-angles-hypotheses",
