@@ -44,6 +44,16 @@
       "where": "this chat"
     },
     {
+      "id": "attribution-accuracy-audit",
+      "title": "Attribution self-audit: 82% of revenue traced — hunt the dark $8.4k (priority: the $5,200 bucket)",
+      "detail": "2026-06-06 audit (sales since 2026-05-22, the attribution-live floor): 51 real sales, $46,849 collected. TRACED to an ad = 28 sales / $38,399 (82.0% of revenue). DARK = $8,450 split two ways: (A) PRIORITY = 6 sales / $5,200 that HAVE a manychat_subscriber_id but NO ad keyword event (closers BROZ, WILL) — each is either genuinely organic OR a real ad sale we're failing to credit (would understate a creator's ROAS). Resolve one-by-one via each subscriber's ManyChat history. (B) lower value = 17 sales / $3,250 with no subscriber_id at all (mixed/off-team closers, mostly organic/other-funnel). Parity with the ads tracker confirmed (same subscriber-first join = same %). Standing duty (Principle #10): keep re-running this, drive traced% up, route the rest to the Attribution Workspace + targeted setter Slack (the attribution-completeness loop). Trust = speed.",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["attribution", "accuracy", "audit", "trust"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
       "id": "ads-tracker-auth",
       "title": "Lock /api/ads-tracker behind auth (security)",
       "detail": "The ads-tracker API returns revenue data to an unauthenticated curl. Should sit behind the session check like other routes. Real exposure of business numbers.",

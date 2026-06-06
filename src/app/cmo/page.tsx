@@ -249,14 +249,16 @@ type GFam = "skill" | "meeting" | "feed" | "loop" | "tag";
 type GType = "skill" | "section" | "meeting" | "topic" | "feed" | "loop" | "tag";
 type GNode = { id: string; type: GType; fam: GFam; label: string; refId?: string | number; parent?: string; r: number; ph: number; x: number; y: number; vx: number; vy: number };
 // Premium palette — colour by FAMILY so communities read cleanly (deuteran-safe: gold/violet/cyan/coral/slate, no green-red pair).
-// One cohesive palette — shades of the brand gold, stepped by brightness so types
-// stay distinguishable without the rainbow. Brightest = skill hubs; dimmest = tags.
+// One gold hue, separated by BRIGHTNESS only (colorblind-safe — lightness is the one
+// channel that survives color blindness; subtle hue steps don't). Wide luminance spread
+// so the levels are unmistakable. Loops also get a bright ring in the renderer so the
+// action items pop without depending on color at all.
 const NODE_RGB: Record<GFam, [number, number, number]> = {
-  skill: [224, 190, 122],   // brightest gold (the hubs)
-  meeting: [201, 167, 107], // gold
-  feed: [180, 150, 100],    // soft amber-tan
-  loop: [208, 158, 96],     // warm bronze (a touch more saturated so live loops still pop)
-  tag: [128, 116, 96],      // muted bronze (connective tissue, recedes)
+  skill: [242, 212, 152],   // brightest cream-gold (the hubs)
+  loop: [224, 170, 104],    // bright warm gold (live action items — also ringed below)
+  meeting: [180, 150, 102], // mid gold
+  feed: [146, 124, 90],     // dim amber
+  tag: [104, 94, 76],       // darkest bronze (connective tissue, recedes)
 };
 const headings = (md?: string) =>
   (md || "").split("\n").filter((l) => /^##\s+/.test(l)).map((l) => l.replace(/^##\s+/, "").replace(/[*`]/g, "").replace(/\s*\(.*$/, "").trim()).filter(Boolean);
@@ -450,6 +452,8 @@ function BrainGraph({ skills, meetings, feed, loops, onOpen }: { skills: Skill[]
         // hairline ring (darker family colour) for crisp definition
         ctx.lineWidth = 1; ctx.strokeStyle = `rgba(${(r * 0.45) | 0},${(g * 0.45) | 0},${(b * 0.45) | 0},${themeDark ? 0.55 : 0.42})`;
         ctx.beginPath(); ctx.arc(n.x, n.y, rr - 0.5, 0, Math.PI * 2); ctx.stroke();
+        // loops (action items) get a bright ring — a lightness/shape cue, not a colour cue (colorblind-safe)
+        if (n.fam === "loop") { ctx.lineWidth = 1.4; ctx.strokeStyle = `rgba(248,232,196,${(themeDark ? 0.92 : 0.7) * aMul})`; ctx.beginPath(); ctx.arc(n.x, n.y, rr + 2.2, 0, Math.PI * 2); ctx.stroke(); }
         if (n === hl) { ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(${r},${g},${b},0.85)`; ctx.beginPath(); ctx.arc(n.x, n.y, rr + 3, 0, Math.PI * 2); ctx.stroke(); }
         ctx.globalAlpha = 1;
         // labels: hubs always; the hovered node + its direct neighbours
