@@ -34,6 +34,15 @@ interface OAuthStatePayload {
   by: string | null;
   exp: number;
   nonce: string;
+  flow?: "sales_hub" | "public_setup";
+  setupToken?: string | null;
+}
+
+interface InstagramSetupTokenPayload {
+  client: InstagramClientSlug;
+  purpose: "instagram_setup";
+  exp: number;
+  nonce: string;
 }
 
 export interface MetaOAuthConfig {
@@ -231,12 +240,16 @@ export function getMetaOAuthConfig(req: Request): MetaOAuthConfig {
 export function buildConnectState(input: {
   client: InstagramClientSlug;
   connectedBy: string | null;
+  flow?: "sales_hub" | "public_setup";
+  setupToken?: string | null;
 }) {
   const payload: OAuthStatePayload = {
     client: input.client,
     by: input.connectedBy,
     exp: Date.now() + 15 * 60 * 1000,
     nonce: crypto.randomBytes(12).toString("hex"),
+    flow: input.flow || "sales_hub",
+    setupToken: input.setupToken || null,
   };
   const encoded = base64url(JSON.stringify(payload));
   return `${encoded}.${signState(encoded)}`;
@@ -252,6 +265,35 @@ export function readConnectState(state: string | null) {
   const payload = JSON.parse(fromBase64url(encoded)) as OAuthStatePayload;
   if (!getInstagramClient(payload.client)) throw new Error("Invalid Instagram client in state");
   if (!payload.exp || payload.exp < Date.now()) throw new Error("Instagram connect state expired");
+  return payload;
+}
+
+export function buildInstagramSetupToken(input: {
+  client: InstagramClientSlug;
+  daysValid?: number;
+}) {
+  const payload: InstagramSetupTokenPayload = {
+    client: input.client,
+    purpose: "instagram_setup",
+    exp: Date.now() + (input.daysValid || 30) * 24 * 60 * 60 * 1000,
+    nonce: crypto.randomBytes(12).toString("hex"),
+  };
+  const encoded = base64url(JSON.stringify(payload));
+  return `${encoded}.${signState(encoded)}`;
+}
+
+export function readInstagramSetupToken(clientSlug: string, token: string | null) {
+  if (!token) throw new Error("Missing setup token");
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature || signature !== signState(encoded)) {
+    throw new Error("Invalid setup token");
+  }
+
+  const payload = JSON.parse(fromBase64url(encoded)) as InstagramSetupTokenPayload;
+  if (payload.purpose !== "instagram_setup") throw new Error("Invalid setup link");
+  if (payload.client !== clientSlug) throw new Error("Setup link does not match this client");
+  if (!getInstagramClient(payload.client)) throw new Error("Unknown client");
+  if (!payload.exp || payload.exp < Date.now()) throw new Error("Setup link expired");
   return payload;
 }
 

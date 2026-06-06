@@ -53,6 +53,9 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /welcome/<token> is the public partner-onboarding portal. Partners
     // open it via an unguessable token link; no CCOS login required.
     pathname.startsWith("/welcome/") ||
+    // /connect/instagram/<client> is a public client setup link. It uses a
+    // signed token in the URL and never exposes the Sales Hub.
+    pathname.startsWith("/connect/instagram/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

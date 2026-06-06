@@ -15,6 +15,7 @@ interface InstagramClientStatus {
   slug: "tyson" | "keith" | "lucy";
   clientKey: string;
   label: string;
+  setupUrl: string;
   connected: boolean;
   instagramUserId: string | null;
   instagramUsername: string | null;
@@ -284,27 +285,57 @@ export default function InstagramConnectionSetup() {
             <div style={{ color: client.tokenStored ? "var(--success)" : "var(--warning)", fontSize: 12 }}>
               {client.tokenStored ? "Stored" : "Missing"}
             </div>
-            <button
-              onClick={() => connect(client)}
-              disabled={!envReady || connecting === client.slug}
+            <div
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                border: "1px solid var(--border-primary)",
-                borderRadius: 6,
-                background: envReady ? "var(--accent-soft)" : "var(--hover-bg-subtle)",
-                color: envReady ? "var(--accent)" : "var(--text-muted)",
-                padding: "7px 10px",
-                cursor: envReady ? "pointer" : "not-allowed",
-                fontSize: 12,
-                fontWeight: 650,
-                whiteSpace: "nowrap",
+                justifyContent: "flex-end",
               }}
             >
-              {connecting === client.slug ? <Loader2 size={12} className="spin" /> : <ExternalLink size={12} />}
-              {client.connected ? "Reconnect" : "Connect"}
-            </button>
+              <button
+                onClick={() => copyValue(`setup-${client.slug}`, client.setupUrl)}
+                disabled={!envReady}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid var(--border-primary)",
+                  borderRadius: 6,
+                  background: "var(--hover-bg-subtle)",
+                  color: copied === `setup-${client.slug}` ? "var(--success)" : "var(--text-secondary)",
+                  padding: "7px 10px",
+                  cursor: envReady ? "pointer" : "not-allowed",
+                  fontSize: 12,
+                  fontWeight: 650,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <Copy size={12} />
+                {copied === `setup-${client.slug}` ? "Copied" : "Setup link"}
+              </button>
+              <button
+                onClick={() => connect(client)}
+                disabled={!envReady || connecting === client.slug}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid var(--border-primary)",
+                  borderRadius: 6,
+                  background: envReady ? "var(--accent-soft)" : "var(--hover-bg-subtle)",
+                  color: envReady ? "var(--accent)" : "var(--text-muted)",
+                  padding: "7px 10px",
+                  cursor: envReady ? "pointer" : "not-allowed",
+                  fontSize: 12,
+                  fontWeight: 650,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {connecting === client.slug ? <Loader2 size={12} className="spin" /> : <ExternalLink size={12} />}
+                {client.connected ? "Reconnect" : "Connect"}
+              </button>
+            </div>
           </div>
         ))}
       </div>

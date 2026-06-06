@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
+  buildInstagramSetupToken,
   getInstagramClients,
   getMetaOAuthConfig,
   listInstagramConnections,
@@ -24,13 +25,19 @@ export async function GET(req: NextRequest) {
     tableError = err instanceof Error ? err.message : "Instagram connections table is not ready";
   }
 
+  const url = new URL(req.url);
+  const origin = `${url.protocol}//${url.host}`;
   const rowByClient = new Map(rows.map((row) => [row.client_key, row]));
   const clients = getInstagramClients().map((client) => {
     const row = rowByClient.get(client.clientKey);
+    const setupUrl = new URL(`/connect/instagram/${client.slug}`, origin);
+    setupUrl.searchParams.set("token", buildInstagramSetupToken({ client: client.slug }));
+
     return {
       slug: client.slug,
       clientKey: client.clientKey,
       label: client.label,
+      setupUrl: setupUrl.toString(),
       connected: Boolean(row?.instagram_user_id),
       instagramUserId: row?.instagram_user_id || null,
       instagramUsername: row?.instagram_username || null,
@@ -43,9 +50,6 @@ export async function GET(req: NextRequest) {
       updatedAt: row?.updated_at || null,
     };
   });
-
-  const url = new URL(req.url);
-  const origin = `${url.protocol}//${url.host}`;
 
   return NextResponse.json({
     tableReady,

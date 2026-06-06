@@ -114,6 +114,8 @@ export default function Sidebar() {
   if (pathname === "/check-in") return null;
   // Public partner onboarding portal — partner-shared token URL, no CCOS chrome.
   if (pathname.startsWith("/welcome/")) return null;
+  // Public Instagram connection setup — client-shared token URL, no CCOS chrome.
+  if (pathname.startsWith("/connect/instagram/")) return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },
