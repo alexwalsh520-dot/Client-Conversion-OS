@@ -541,19 +541,10 @@ const TRANSCRIPTS = [
   { name: "Zakk coaching call", sub: "2026-06-04", path: "~/.claude/.../transcripts/2026-06-04-zakk-coaching-call.md", meetingId: "2026-06-04-zakk-coaching" },
 ];
 
-type Tab = "pulse" | "brain" | "loops" | "feed" | "skills" | "meetings" | "files";
-type PulseAd = { creator: string; adId: string; ad: string; keyword: string; status: string; campaign: string; adset: string; copy: string | null; spend: number; impressions: number; clicks: number; ctr: number; leads: number; costPerLead: number | null; bookedCalls: number; costPerCall: number | null };
-type Pulse = { asOfDate: string; windowDays: number; creators: string[]; adCount: number; ads: PulseAd[]; note: string };
+type Tab = "brain" | "loops" | "feed" | "skills" | "meetings" | "files";
 
 export default function CmoPage() {
-  const [tab, setTab] = useState<Tab>("pulse");
-  const [pulse, setPulse] = useState<Pulse | null>(null);
-  const [pulseErr, setPulseErr] = useState(false);
-  useEffect(() => {
-    let off = false;
-    fetch("/api/cmo/pulse?days=14", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (!off) { if (d?.ads) setPulse(d as Pulse); else setPulseErr(true); } }).catch(() => { if (!off) setPulseErr(true); });
-    return () => { off = true; };
-  }, []);
+  const [tab, setTab] = useState<Tab>("brain");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
@@ -601,51 +592,15 @@ export default function CmoPage() {
           </div>
         </div>
         <nav className="cmo-nav">
-          {(["pulse", "brain", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
+          {(["brain", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
             <button key={tk} className={tab === tk && !inDetail ? "on" : ""} onClick={() => { setTab(tk); setOpenSkill(null); setOpenMeeting(null); }}>
-              {tk === "pulse" ? "Pulse" : tk === "brain" ? "Brain" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+              {tk === "brain" ? "Brain" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
             </button>
           ))}
         </nav>
       </header>
 
       {inDetail && <button className="cmo-back" onClick={() => { setOpenSkill(null); setOpenMeeting(null); }}>← back</button>}
-
-      {/* PULSE — live marketing numbers, fresh + date-stamped */}
-      {tab === "pulse" && !inDetail && (
-        <section className="cmo-pulse">
-          {!pulse && !pulseErr && <div className="cmo-empty">Pulling the live numbers…</div>}
-          {pulseErr && <div className="cmo-empty">Couldn&apos;t load the live pulse right now.</div>}
-          {pulse && (
-            <>
-              <div className="cmo-pulse-head">
-                <div><b>Live marketing pulse</b> · as of {pulse.asOfDate} · last {pulse.windowDays} days · {pulse.creators.join(" + ")}</div>
-                <div className="cmo-pulse-note">{pulse.note}</div>
-              </div>
-              {pulse.creators.map((cr) => {
-                const rows = pulse.ads.filter((a) => a.creator === cr);
-                if (!rows.length) return null;
-                const spend = rows.reduce((s, a) => s + a.spend, 0), leads = rows.reduce((s, a) => s + a.leads, 0), calls = rows.reduce((s, a) => s + a.bookedCalls, 0);
-                return (
-                  <div key={cr} className="cmo-pulse-creator">
-                    <div className="cmo-pulse-crhead">{cr} · ${Math.round(spend)} spend · {leads} leads · {calls} calls{calls ? ` · $${Math.round(spend / calls)}/call` : ""}</div>
-                    <div className="cmo-pulse-table">
-                      <div className="cmo-pulse-tr cmo-pulse-th"><span>Ad</span><span>Spend</span><span>Leads</span><span>$/lead</span><span>Calls</span><span>$/call</span><span>CTR</span></div>
-                      {rows.map((a) => (
-                        <div key={a.adId} className={"cmo-pulse-tr" + (a.status !== "ACTIVE" ? " off" : "")}>
-                          <span className="cmo-pulse-ad"><i className={"cmo-pulse-dot" + (a.status === "ACTIVE" ? " on" : "")} />{a.keyword || a.ad}</span>
-                          <span>${Math.round(a.spend)}</span><span>{a.leads}</span><span>{a.costPerLead != null ? "$" + a.costPerLead : "—"}</span>
-                          <span>{a.bookedCalls}</span><span className="cmo-pulse-cc">{a.costPerCall != null ? "$" + a.costPerCall : "—"}</span><span>{a.ctr}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </section>
-      )}
 
       {/* BRAIN — Obsidian-style knowledge graph */}
       {tab === "brain" && !inDetail && (
@@ -835,23 +790,6 @@ function CmoStyles() {
   .cmo-nav button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.15)}
   .cmo-back{background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:16px;padding:0;font-family:inherit}
   .cmo-back:hover{color:var(--text-primary)}
-
-  /* pulse */
-  .cmo-pulse{display:flex;flex-direction:column;gap:18px}
-  .cmo-pulse-head b{color:var(--text-primary)}
-  .cmo-pulse-head>div:first-child{font-size:13px;color:var(--text-secondary)}
-  .cmo-pulse-note{font-size:11px;color:var(--text-muted);margin-top:5px;line-height:1.5;max-width:760px}
-  .cmo-pulse-creator{border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--bg-card)}
-  .cmo-pulse-crhead{padding:11px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text-primary);text-transform:capitalize}
-  .cmo-pulse-table{display:flex;flex-direction:column}
-  .cmo-pulse-tr{display:grid;grid-template-columns:1.7fr .7fr .6fr .7fr .6fr .7fr .6fr;gap:8px;padding:9px 16px;font-size:12.5px;color:var(--text-secondary);border-bottom:1px solid var(--border);align-items:center}
-  .cmo-pulse-tr:last-child{border-bottom:none}
-  .cmo-pulse-th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:700}
-  .cmo-pulse-tr.off{opacity:.5}
-  .cmo-pulse-ad{display:flex;align-items:center;gap:8px;color:var(--text-primary);font-weight:600;font-family:var(--font-mono,ui-monospace,Menlo,monospace);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .cmo-pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex:0 0 auto}
-  .cmo-pulse-dot.on{background:var(--green,#3fb27f);box-shadow:0 0 6px var(--green,#3fb27f)}
-  .cmo-pulse-cc{font-weight:700;color:var(--text-primary)}
 
   /* brain graph */
   .cmo-graph{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-card)}
