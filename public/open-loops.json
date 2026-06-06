@@ -3,6 +3,36 @@
   "note": "Open Loops register — the CMO's live ledger of what's in flight, paused, waiting on Alex, or an untested hypothesis, so nothing important falls into the abyss across pivots and context compaction. status: in-progress | waiting-on-alex | hypothesis | paused | backlog. priority: now | soon | later.",
   "loops": [
     {
+      "id": "tomorrow-tyson-scale-756",
+      "title": "TOMORROW PRIORITY #1: scale Tyson to $756/day new ad spend (Zakk's strategy) — and KEEP ALEX FOCUSED on it",
+      "detail": "2026-06-07: get Tyson's overall daily budget UP to $756/day in new ad spend by implementing Zakk's scaling strategy (cash ROI >=2x floor / 2-3x+ target, scale +$50->100->200 until it breaks; winners by true ROAS = fit 5.8x, focus 5.3x, healthy 4.2x per the Ads-tab computed read — confirm live via getAdsTrackerDashboard, NOT raw table). CMO BEHAVIOR (Principle #9, Alex's explicit ask): use the keep-him-focused skill HARD. If Alex veers off, bring him right back to (a) what we're doing, (b) why it matters, (c) the exact next single step — one step at a time. Do NOT repeat the Lucy mistake (got distracted, deadline slipped, Matt called it out). This is step one; finish it before touching anything else.",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["Tyson", "scale", "Zakk", "focus-guard", "tomorrow"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
+      "id": "tomorrow-antwan-launch",
+      "title": "TOMORROW PRIORITY #2 (right after Tyson): Antwan launch — dialed, aggressive, $60k/mo target",
+      "detail": "2026-06-07, immediately after the Tyson scale is DONE (sequence, don't interleave): launch Antwan (Antoine). FULL SPEC per Alex: (1) Start spending AT LEAST $500/day with Antwan from day one. (2) Be ready to PIVOT within a COUPLE OF DAYS, not the usual 7 — if DM KPIs are bad we move fast. (3) Have backup ads LITERALLY launch-ready in Ads Manager — fully built, all the way ready, turned OFF, so we can flip them ON the instant we need to test more. Build that reserve NOW as part of the launch. (4) Goal = aggressive QUICK WINS; shooting hard for $60k/month with Antwan. (5) Sales team must be EXTREMELY locked in. (6) ATTRIBUTION MUST BE PERFECT for Antwan from the start (his keyword capture / ManyChat / subscriber-id wiring all correct before spend, so we never have a dark-revenue problem like we untangled for Tyson). Antwan's Meta account = act_275999723846625 (never-expiring System User token). Note: Antwan onboarding, Keith offboarding.",
+      "status": "waiting-on-alex",
+      "priority": "now",
+      "tags": ["Antwan", "launch", "60k", "fast-pivot", "reserve-ads", "attribution", "tomorrow"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
+      "id": "cmo-ledger-tab",
+      "title": "Build the CMO 'Ledger' tab — auto record of work done + monetary ROI + decision results + runtime",
+      "detail": "2026-06-06 Alex (/frontend-design): new minimalist tab in the CMO page (alongside brain/feed/skills/meetings/files) = the equivalent of an employee writing down what they actually did, to CONSTANTLY MEASURE the real monetary ROI/value the CMO brings. Folds in: (a) what I did each session, (b) the measurable value/result, (c) decisions I made + their graded outcome after the window (Phase 3 Scorecard lives here), (d) logged hours / runtime. PREMISE: a new hire is only as good as they measure their results; if it's not measured, you don't care about it. Builds the psychological feedback loop that I'm actually helping + justifying continued use. Browser-rendered from public/cmo-ledger.json (zero model tokens), minimalist, premium dark/gold. I append entries as I work.",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["CMO", "ledger", "ROI", "scorecard", "value", "tab"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
       "id": "lucy-ads-launch",
       "title": "Lucy's 15 ads SCHEDULED — go live Sat ~5am PDT / 8am EST",
       "detail": "2026-06-06: all 15 direct-CTA ads built + SCHEDULED by Alex; turn on Sat ~5am PDT (8am EST), $200/day total ABO in one ad set (campaign 120243547279710009, act_616852470282141). Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. CMO ACTION: watch for results once live, then run the 7-day kill/scale read per keyword (judge cost/lead + cost/call). Token + launch script reusable (keychain lucy-meta-token).",

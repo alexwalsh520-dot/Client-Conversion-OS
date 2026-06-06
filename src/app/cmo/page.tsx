@@ -211,6 +211,7 @@ type Meeting = { id: string; date?: string; title: string; creator?: string; tag
 type FeedEntry = { at?: string; bucket?: string; title: string; detail?: string; tags?: string[]; where?: string };
 type LoopStatus = "in-progress" | "waiting-on-alex" | "hypothesis" | "paused" | "backlog";
 type Loop = { id: string; title: string; detail?: string; status: LoopStatus; priority?: "now" | "soon" | "later"; tags?: string[]; opened?: string; where?: string };
+type LedgerEntry = { id: string; at?: string; kind?: string; title: string; value?: string; detail?: string; status?: string; result?: string };
 const LOOP_META: Record<LoopStatus, { label: string; color: string }> = {
   "in-progress": { label: "In progress", color: "#5b8def" },
   "waiting-on-alex": { label: "Waiting on you", color: "#c9a96e" },
@@ -547,7 +548,7 @@ const TRANSCRIPTS = [
   { name: "Zakk coaching call", sub: "2026-06-04", path: "~/.claude/.../transcripts/2026-06-04-zakk-coaching-call.md", meetingId: "2026-06-04-zakk-coaching" },
 ];
 
-type Tab = "brain" | "loops" | "feed" | "skills" | "meetings" | "files";
+type Tab = "brain" | "loops" | "ledger" | "feed" | "skills" | "meetings" | "files";
 
 export default function CmoPage() {
   const [tab, setTab] = useState<Tab>("brain");
@@ -555,6 +556,8 @@ export default function CmoPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [loops, setLoops] = useState<Loop[]>([]);
+  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [openLedger, setOpenLedger] = useState<string | null>(null);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [openFeed, setOpenFeed] = useState<number | null>(null);
@@ -568,12 +571,23 @@ export default function CmoPage() {
     grab("/meetings-data.json", "meetings", (v) => setMeetings(Array.isArray(v) ? (v as Meeting[]) : []));
     grab("/memory-log.json", "entries", (v) => setFeed(Array.isArray(v) ? (v as FeedEntry[]) : []));
     grab("/open-loops.json", "loops", (v) => setLoops(Array.isArray(v) ? (v as Loop[]) : []));
+    grab("/cmo-ledger.json", "entries", (v) => setLedger(Array.isArray(v) ? (v as LedgerEntry[]) : []));
     return () => { off = true; };
   }, []);
 
   const activeSkill = useMemo(() => skills.find((s) => s.id === openSkill) || null, [skills, openSkill]);
   const activeMeeting = useMemo(() => meetings.find((m) => m.id === openMeeting) || null, [meetings, openMeeting]);
   const inDetail = activeSkill || activeMeeting;
+  const ledgerStats = useMemo(() => {
+    const decisions = ledger.filter((e) => e.kind === "decision");
+    const graded = decisions.filter((e) => e.result && e.result.trim());
+    return [
+      { n: String(ledger.length), label: "logged" },
+      { n: String(ledger.filter((e) => e.value).length), label: "value wins" },
+      { n: String(decisions.length), label: "decisions" },
+      { n: decisions.length ? `${graded.length}/${decisions.length}` : "0", label: "graded" },
+    ];
+  }, [ledger]);
 
   // open a graph node → jump to the right tab + detail
   const openNode = useCallback((kind: "skill" | "meeting" | "feed" | "loop", id: string | number) => {
@@ -598,9 +612,9 @@ export default function CmoPage() {
           </div>
         </div>
         <nav className="cmo-nav">
-          {(["brain", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
+          {(["brain", "ledger", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
             <button key={tk} className={tab === tk && !inDetail ? "on" : ""} onClick={() => { setTab(tk); setOpenSkill(null); setOpenMeeting(null); }}>
-              {tk === "brain" ? "Brain" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+              {tk === "brain" ? "Brain" : tk === "ledger" ? "Ledger" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
             </button>
           ))}
         </nav>
@@ -638,6 +652,46 @@ export default function CmoPage() {
             </div>
           ))}
           {loops.length === 0 && <div className="cmo-empty">No open loops. Clean slate.</div>}
+        </section>
+      )}
+
+      {/* LEDGER — proof of work: what I did, what it was worth, decisions + their graded results */}
+      {tab === "ledger" && !inDetail && (
+        <section className="cmo-ledger">
+          <div className="cmo-ledger-head">
+            <div className="cmo-ledger-blurb">What I&apos;ve actually done and what it was worth. A new hire is only as good as they can measure their results &mdash; so here are mine. Decisions get a graded result once their window closes.</div>
+            <div className="cmo-ledger-stats">
+              {ledgerStats.map((s) => (
+                <div key={s.label} className="cmo-ledger-stat">
+                  <span className="cmo-ledger-statn">{s.n}</span>
+                  <span className="cmo-ledger-statl">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="cmo-ledger-list">
+            {ledger.map((e) => {
+              const open = openLedger === e.id;
+              return (
+                <div key={e.id} className={"cmo-ledger-row" + (open ? " open" : "")} onClick={() => setOpenLedger(open ? null : e.id)}>
+                  <div className="cmo-ledger-rowmain">
+                    <span className={"cmo-ledger-kind k-" + (e.kind || "work")}>{e.kind || "work"}</span>
+                    <span className="cmo-ledger-title">{e.title}</span>
+                    {e.value && <span className="cmo-ledger-val">{e.value}</span>}
+                    <span className="cmo-ledger-at">{(e.at || "").slice(5)}</span>
+                  </div>
+                  {open && (
+                    <div className="cmo-ledger-detail">
+                      {e.detail && <p>{e.detail}</p>}
+                      {e.result && e.result.trim() && <p className="cmo-ledger-result"><span>result</span>{e.result}</p>}
+                      {e.status && <span className={"cmo-ledger-status s-" + e.status}>{e.status}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {ledger.length === 0 && <div className="cmo-empty">No work logged yet.</div>}
+          </div>
         </section>
       )}
 
@@ -931,6 +985,30 @@ function CmoStyles() {
   .cmo-files-empty{color:var(--text-muted);font-size:13px;padding:40px 0;text-align:center}
   .cmo-tnote{font-size:11.5px;color:var(--text-muted);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:16px}
   .cmo-empty{text-align:center;padding:56px 24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-muted);font-size:13px}
+  .cmo-ledger{max-width:880px;margin:0 auto}
+  .cmo-ledger-head{margin-bottom:22px}
+  .cmo-ledger-blurb{color:var(--text-muted);font-size:13px;line-height:1.55;max-width:600px;margin-bottom:18px}
+  .cmo-ledger-stats{display:flex;gap:10px;flex-wrap:wrap}
+  .cmo-ledger-stat{flex:1;min-width:118px;border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--bg-secondary);display:flex;flex-direction:column;gap:5px}
+  .cmo-ledger-statn{font-size:23px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+  .cmo-ledger-statl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted)}
+  .cmo-ledger-list{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .cmo-ledger-row{border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+  .cmo-ledger-row:last-child{border-bottom:none}
+  .cmo-ledger-row:hover,.cmo-ledger-row.open{background:var(--bg-secondary)}
+  .cmo-ledger-rowmain{display:flex;align-items:center;gap:12px;padding:13px 16px}
+  .cmo-ledger-kind{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding:3px 0;border-radius:5px;border:1px solid var(--border);color:var(--text-muted);flex-shrink:0;width:64px;text-align:center}
+  .cmo-ledger-kind.k-decision{color:#d6b06a;border-color:rgba(201,169,110,.45)}
+  .cmo-ledger-title{flex:1;font-size:13.5px;color:var(--text-primary);line-height:1.4}
+  .cmo-ledger-val{font-size:12px;font-weight:700;color:#c9a96e;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;letter-spacing:.01em}
+  .cmo-ledger-at{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;width:36px;text-align:right}
+  .cmo-ledger-detail{padding:0 16px 15px 92px;color:var(--text-secondary);font-size:12.5px;line-height:1.6}
+  .cmo-ledger-detail p{margin:0 0 9px}
+  .cmo-ledger-result{color:var(--text-primary)}
+  .cmo-ledger-result span{color:var(--text-muted);text-transform:uppercase;font-size:9.5px;letter-spacing:.08em;margin-right:8px}
+  .cmo-ledger-status{display:inline-block;font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;padding:3px 9px;border-radius:5px;border:1px solid var(--border);color:var(--text-muted)}
+  .cmo-ledger-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.35)}
+  .cmo-ledger-status.s-pending{color:#d6b06a;border-color:rgba(201,169,110,.35)}
   @media(max-width:760px){.cmo-files{grid-template-columns:1fr}.cmo-files-list{position:static}}
     `}</style>
   );

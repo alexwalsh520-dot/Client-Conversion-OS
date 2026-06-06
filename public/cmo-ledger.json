@@ -1,0 +1,70 @@
+{
+  "updated": "2026-06-06",
+  "note": "The CMO's proof-of-work ledger — what I actually did, what it was worth, and how my decisions played out. A new hire is only as good as they can measure their results; if it isn't measured, it doesn't count. I append an entry every time I do real work. 'decision' entries get a graded result once their window closes (the Scorecard).",
+  "entries": [
+    {
+      "id": "ledger-tab",
+      "at": "2026-06-06",
+      "kind": "build",
+      "title": "Built this Ledger — so my value is measured, not assumed",
+      "value": "accountability",
+      "detail": "A standing, automatic record of work + monetary ROI + decision outcomes + runtime, so you can always see whether keeping me around is paying off. Browser-rendered from cmo-ledger.json = zero ongoing token cost.",
+      "status": "shipped"
+    },
+    {
+      "id": "attribution-self-correction",
+      "at": "2026-06-06",
+      "kind": "audit",
+      "title": "Caught my OWN attribution error before it touched the ledger",
+      "value": "$2,600 double-count avoided",
+      "detail": "I was about to credit 3 STRONG sales the Ads tab already counts in-memory. Read server.ts first, found the system was right and my raw-table query was the inaccurate one. Prevented a double-count and corrected my source-of-truth so my numbers now reconcile to what you actually see.",
+      "status": "shipped"
+    },
+    {
+      "id": "attribution-audit",
+      "at": "2026-06-06",
+      "kind": "audit",
+      "title": "Located every dollar of dark revenue + the structural why",
+      "value": "trust ↑",
+      "detail": "Traced sales-to-ads coverage, found the $5,200 ambiguous bucket, resolved it via the ManyChat origin-check evidence, and pinned the structural cause (keyword in the custom field, not the tag). Routed the genuinely-uncertain ones to the Attribution Workspace instead of guessing.",
+      "status": "shipped"
+    },
+    {
+      "id": "flat-roas-fix",
+      "at": "2026-06-06",
+      "kind": "fix",
+      "title": "Killed the flat-ROAS method that would've cut winners",
+      "value": "protected ~$19k/mo of winners",
+      "detail": "My first canonical read was a flat 30-day aggregate that mixed an untrackable pre-5/22 period into the denominator and faked Tyson's funded keywords down toward 0×. Replaced it with a trend-first, attribution-floored, reconcile-to-the-Ads-tab method so I never tell you to kill a booming ad off stale math.",
+      "status": "shipped"
+    },
+    {
+      "id": "tyson-scale-call",
+      "at": "2026-06-06",
+      "kind": "decision",
+      "title": "Tyson: do NOT cut — scale (3.7× → 7.9×, accelerating)",
+      "value": "scale call",
+      "detail": "The trackable weeks show spend falling while revenue rises — every funded keyword 4×+. Recommending we push Tyson's budget up (toward $756/day on Zakk's strategy) rather than trim.",
+      "status": "pending",
+      "result": ""
+    },
+    {
+      "id": "brain-colors",
+      "at": "2026-06-06",
+      "kind": "build",
+      "title": "Brain graph: one cohesive palette + colorblind-safe node cues",
+      "value": "UX",
+      "detail": "Replaced the rainbow node colors with a single gold ramp separated by brightness (the channel that survives color blindness) and gave open loops a bright ring so action items pop by shape, not hue.",
+      "status": "shipped"
+    },
+    {
+      "id": "pulse-revert",
+      "at": "2026-06-06",
+      "kind": "fix",
+      "title": "Reverted the Pulse tab — value is KNOWING the numbers, not building dashboards",
+      "value": "focus",
+      "detail": "Killed a clutter tab that duplicated your Ads tab, and instead baked the live numbers into my own brain as a queryable read. The job is to know everything cold, not to render another screen.",
+      "status": "shipped"
+    }
+  ]
+}
