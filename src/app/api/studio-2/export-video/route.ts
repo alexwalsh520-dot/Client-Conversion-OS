@@ -186,7 +186,11 @@ function buildFfmpegArgs({
   }
 
   filters.push(`[vcat]${buildVideoTransformFilter(imageTransform)}[base]`);
-  filters.push("[base][1:v]overlay=0:0:format=auto[outv]");
+  // Normalize to constant 30fps AFTER compositing. Source IG/phone clips are very often
+  // variable-frame-rate (VFR); piping VFR straight through libx264 with no fps normalization
+  // is what made exports play choppy/stuttery on some clips. fps=30 resamples to a clean CFR
+  // timeline (audio is mapped separately so A/V stay in sync).
+  filters.push("[base][1:v]overlay=0:0:format=auto,fps=30[outv]");
 
   const args = [
     "-y",
@@ -218,6 +222,9 @@ function buildFfmpegArgs({
     "20",
     "-pix_fmt",
     "yuv420p",
+    // Force a constant 30fps output container so VFR sources can't stutter on playback.
+    "-r",
+    "30",
     "-movflags",
     "+faststart",
     outputPath
