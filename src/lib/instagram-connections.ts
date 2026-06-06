@@ -188,9 +188,9 @@ export function normalizeInstagramHandle(value: string | null | undefined) {
 export function getMetaOAuthConfig(req: Request): MetaOAuthConfig {
   const graphVersion = process.env.META_GRAPH_VERSION?.trim() || "v24.0";
   const oauthMode =
-    process.env.META_INSTAGRAM_OAUTH_MODE?.trim().toLowerCase() === "instagram"
-      ? "instagram"
-      : "facebook";
+    process.env.META_INSTAGRAM_OAUTH_MODE?.trim().toLowerCase() === "facebook"
+      ? "facebook"
+      : "instagram";
   const redirectUri =
     process.env.META_INSTAGRAM_REDIRECT_URI?.trim() ||
     `${getOriginFromRequest(req)}/api/integrations/instagram/callback`;
