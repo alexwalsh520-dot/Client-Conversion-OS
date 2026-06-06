@@ -33,6 +33,26 @@
       "where": "this chat"
     },
     {
+      "id": "creative-producer-media-library",
+      "title": "Make me a real creative producer: media-library awareness + Higgsfield story-ad pipeline",
+      "detail": "Alex 2026-06-06 (sooner-than-later). Goal: I can produce perfect, real-looking story ads end-to-end. Pieces: (1) a SYSTEM to actually KNOW what's in our media library (R2 / stored assets) — auto-describe each image (SEO-ish captions/tags per creator, e.g. Lucy) so I can semantically look up the right real background visual on demand. (2) Workflow: Alex tells me the ad concept -> I write the copy (ad-copywriter skill) -> I look up the actual background image from the library -> feed it to Higgsfield (gpt_image_2 image-to-image) as the REFERENCE background -> PLUS a fixed TEMPLATE reference image that encodes the exact Studio top-copy style, so output matches our real studio look. (3) Result = on-brand, real-looking creative without a designer. Ties into the existing Variations Factory engine (src/lib/ads-variations + R2 media picker) — extend it with library indexing + the template-reference + concept->copy->bg-lookup->generate chain. Makes me dialed as the creative-producer half of the CMO.",
+      "status": "backlog",
+      "priority": "soon",
+      "tags": ["creative", "Higgsfield", "media-library", "story-ads", "producer", "Variations-Factory"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
+      "id": "cmo-sidebar-restructure",
+      "title": "CMO becomes a left-sidebar app: entering CMO swaps the CCOS sidebar for the CMO nav (Brain/Ledger/Feed/Skills/Meetings/Files) + a Back button",
+      "detail": "Alex 2026-06-06. Today the CMO uses a top-nav; he wants it to live in the LEFT SIDEBAR like the rest of CCOS. When you enter the CMO, the left sidebar SWAPS to CMO mode: at the very top a single BACK button to return to the normal CCOS sidebar (all tabs); below it the CMO tabs (Brain, Ledger, Learning feed, Skills, Meetings, Files); profile + settings + the hidden-tabs folder STAY at the bottom (shared). So it's a contextual sidebar takeover, not a separate page chrome. Touches Sidebar.tsx (route-aware: on /cmo render the CMO nav set) + cmo/page.tsx (drop its top-nav, read tab from the sidebar). Architectural — do it as its own focused build, verify nav doesn't break. Pairs with the Ledger as the showcase surface.",
+      "status": "backlog",
+      "priority": "soon",
+      "tags": ["CMO", "sidebar", "UX", "navigation", "Sidebar.tsx"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
       "id": "lucy-ads-launch",
       "title": "Lucy's 15 ads SCHEDULED — go live Sat ~5am PDT / 8am EST",
       "detail": "2026-06-06: all 15 direct-CTA ads built + SCHEDULED by Alex; turn on Sat ~5am PDT (8am EST), $200/day total ABO in one ad set (campaign 120243547279710009, act_616852470282141). Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. CMO ACTION: watch for results once live, then run the 7-day kill/scale read per keyword (judge cost/lead + cost/call). Token + launch script reusable (keychain lucy-meta-token).",

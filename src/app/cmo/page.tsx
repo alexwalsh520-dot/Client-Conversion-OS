@@ -578,16 +578,36 @@ export default function CmoPage() {
   const activeSkill = useMemo(() => skills.find((s) => s.id === openSkill) || null, [skills, openSkill]);
   const activeMeeting = useMemo(() => meetings.find((m) => m.id === openMeeting) || null, [meetings, openMeeting]);
   const inDetail = activeSkill || activeMeeting;
+  const decisionEntries = useMemo(() => ledger.filter((e) => e.kind === "decision"), [ledger]);
+  const workEntries = useMemo(() => ledger.filter((e) => e.kind !== "decision"), [ledger]);
   const ledgerStats = useMemo(() => {
-    const decisions = ledger.filter((e) => e.kind === "decision");
-    const graded = decisions.filter((e) => e.result && e.result.trim());
+    const graded = decisionEntries.filter((e) => e.result && e.result.trim());
     return [
-      { n: String(ledger.length), label: "logged" },
       { n: String(ledger.filter((e) => e.value).length), label: "value wins" },
-      { n: String(decisions.length), label: "decisions" },
-      { n: decisions.length ? `${graded.length}/${decisions.length}` : "0", label: "graded" },
+      { n: String(decisionEntries.length), label: "decisions made" },
+      { n: decisionEntries.length ? `${graded.length}/${decisionEntries.length}` : "0", label: "graded" },
+      { n: String(ledger.length), label: "actions logged" },
     ];
-  }, [ledger]);
+  }, [ledger, decisionEntries]);
+  const ledgerRow = (e: LedgerEntry) => {
+    const open = openLedger === e.id;
+    return (
+      <div key={e.id} className={"cmo-ledger-row" + (open ? " open" : "")} onClick={() => setOpenLedger(open ? null : e.id)}>
+        <div className="cmo-ledger-rowmain">
+          <span className="cmo-ledger-val">{e.value || "—"}</span>
+          <span className="cmo-ledger-title">{e.title}</span>
+          {e.status && <span className={"cmo-ledger-status s-" + e.status}>{e.status === "pending" ? "awaiting grade" : e.status}</span>}
+          <span className="cmo-ledger-at">{(e.at || "").slice(5)}</span>
+        </div>
+        {open && (
+          <div className="cmo-ledger-detail">
+            {e.detail && <p>{e.detail}</p>}
+            {e.result && e.result.trim() && <p className="cmo-ledger-result"><span>result</span>{e.result}</p>}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // open a graph node → jump to the right tab + detail
   const openNode = useCallback((kind: "skill" | "meeting" | "feed" | "loop", id: string | number) => {
@@ -658,40 +678,34 @@ export default function CmoPage() {
       {/* LEDGER — proof of work: what I did, what it was worth, decisions + their graded results */}
       {tab === "ledger" && !inDetail && (
         <section className="cmo-ledger">
-          <div className="cmo-ledger-head">
-            <div className="cmo-ledger-blurb">What I&apos;ve actually done and what it was worth. A new hire is only as good as they can measure their results &mdash; so here are mine. Decisions get a graded result once their window closes.</div>
+          <div className="cmo-ledger-hero">
+            <span className="cmo-ledger-eyebrow">The case for the role</span>
+            <h2 className="cmo-ledger-headline">What I&apos;ve produced &mdash; measured, not claimed.</h2>
             <div className="cmo-ledger-stats">
-              {ledgerStats.map((s) => (
-                <div key={s.label} className="cmo-ledger-stat">
+              {ledgerStats.map((s, i) => (
+                <div key={s.label} className={"cmo-ledger-stat" + (i === 0 ? " primary" : "")}>
                   <span className="cmo-ledger-statn">{s.n}</span>
                   <span className="cmo-ledger-statl">{s.label}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="cmo-ledger-list">
-            {ledger.map((e) => {
-              const open = openLedger === e.id;
-              return (
-                <div key={e.id} className={"cmo-ledger-row" + (open ? " open" : "")} onClick={() => setOpenLedger(open ? null : e.id)}>
-                  <div className="cmo-ledger-rowmain">
-                    <span className={"cmo-ledger-kind k-" + (e.kind || "work")}>{e.kind || "work"}</span>
-                    <span className="cmo-ledger-title">{e.title}</span>
-                    {e.value && <span className="cmo-ledger-val">{e.value}</span>}
-                    <span className="cmo-ledger-at">{(e.at || "").slice(5)}</span>
-                  </div>
-                  {open && (
-                    <div className="cmo-ledger-detail">
-                      {e.detail && <p>{e.detail}</p>}
-                      {e.result && e.result.trim() && <p className="cmo-ledger-result"><span>result</span>{e.result}</p>}
-                      {e.status && <span className={"cmo-ledger-status s-" + e.status}>{e.status}</span>}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {ledger.length === 0 && <div className="cmo-empty">No work logged yet.</div>}
-          </div>
+
+          {decisionEntries.length > 0 && (
+            <div className="cmo-ledger-block">
+              <div className="cmo-ledger-blockhead">Decisions <span>the calls I made &mdash; and how they played out</span></div>
+              <div className="cmo-ledger-rows">{decisionEntries.map(ledgerRow)}</div>
+            </div>
+          )}
+
+          {workEntries.length > 0 && (
+            <div className="cmo-ledger-block">
+              <div className="cmo-ledger-blockhead">Work shipped <span>the evidence</span></div>
+              <div className="cmo-ledger-rows">{workEntries.map(ledgerRow)}</div>
+            </div>
+          )}
+
+          {ledger.length === 0 && <div className="cmo-empty">No work logged yet.</div>}
         </section>
       )}
 
@@ -986,29 +1000,33 @@ function CmoStyles() {
   .cmo-tnote{font-size:11.5px;color:var(--text-muted);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:16px}
   .cmo-empty{text-align:center;padding:56px 24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-muted);font-size:13px}
   .cmo-ledger{max-width:880px;margin:0 auto}
-  .cmo-ledger-head{margin-bottom:22px}
-  .cmo-ledger-blurb{color:var(--text-muted);font-size:13px;line-height:1.55;max-width:600px;margin-bottom:18px}
+  .cmo-ledger-hero{border:1px solid var(--border);border-radius:14px;padding:24px 24px 20px;background:linear-gradient(180deg,var(--bg-secondary),transparent);margin-bottom:22px}
+  .cmo-ledger-eyebrow{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:#c9a96e;font-weight:600}
+  .cmo-ledger-headline{font-size:21px;font-weight:700;color:var(--text-primary);letter-spacing:-.015em;margin:9px 0 20px;line-height:1.2}
   .cmo-ledger-stats{display:flex;gap:10px;flex-wrap:wrap}
-  .cmo-ledger-stat{flex:1;min-width:118px;border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--bg-secondary);display:flex;flex-direction:column;gap:5px}
-  .cmo-ledger-statn{font-size:23px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+  .cmo-ledger-stat{flex:1;min-width:114px;border:1px solid var(--border);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:5px}
+  .cmo-ledger-stat.primary{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.06)}
+  .cmo-ledger-stat.primary .cmo-ledger-statn{color:#d6b06a}
+  .cmo-ledger-statn{font-size:24px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
   .cmo-ledger-statl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted)}
-  .cmo-ledger-list{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .cmo-ledger-block{margin-bottom:18px}
+  .cmo-ledger-blockhead{font-size:11.5px;font-weight:600;color:var(--text-primary);text-transform:uppercase;letter-spacing:.08em;margin:0 2px 10px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .cmo-ledger-blockhead span{font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)}
+  .cmo-ledger-rows{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
   .cmo-ledger-row{border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
   .cmo-ledger-row:last-child{border-bottom:none}
   .cmo-ledger-row:hover,.cmo-ledger-row.open{background:var(--bg-secondary)}
-  .cmo-ledger-rowmain{display:flex;align-items:center;gap:12px;padding:13px 16px}
-  .cmo-ledger-kind{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding:3px 0;border-radius:5px;border:1px solid var(--border);color:var(--text-muted);flex-shrink:0;width:64px;text-align:center}
-  .cmo-ledger-kind.k-decision{color:#d6b06a;border-color:rgba(201,169,110,.45)}
+  .cmo-ledger-rowmain{display:flex;align-items:center;gap:13px;padding:13px 16px}
+  .cmo-ledger-val{font-size:12px;font-weight:700;color:#c9a96e;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;width:132px;letter-spacing:.01em}
   .cmo-ledger-title{flex:1;font-size:13.5px;color:var(--text-primary);line-height:1.4}
-  .cmo-ledger-val{font-size:12px;font-weight:700;color:#c9a96e;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;letter-spacing:.01em}
+  .cmo-ledger-status{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:5px;border:1px solid var(--border);color:var(--text-muted);flex-shrink:0;white-space:nowrap}
+  .cmo-ledger-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.32)}
+  .cmo-ledger-status.s-pending{color:#d6b06a;border-color:rgba(201,169,110,.32)}
   .cmo-ledger-at{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;width:36px;text-align:right}
-  .cmo-ledger-detail{padding:0 16px 15px 92px;color:var(--text-secondary);font-size:12.5px;line-height:1.6}
+  .cmo-ledger-detail{padding:0 16px 15px 145px;color:var(--text-secondary);font-size:12.5px;line-height:1.6}
   .cmo-ledger-detail p{margin:0 0 9px}
   .cmo-ledger-result{color:var(--text-primary)}
   .cmo-ledger-result span{color:var(--text-muted);text-transform:uppercase;font-size:9.5px;letter-spacing:.08em;margin-right:8px}
-  .cmo-ledger-status{display:inline-block;font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;padding:3px 9px;border-radius:5px;border:1px solid var(--border);color:var(--text-muted)}
-  .cmo-ledger-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.35)}
-  .cmo-ledger-status.s-pending{color:#d6b06a;border-color:rgba(201,169,110,.35)}
   @media(max-width:760px){.cmo-files{grid-template-columns:1fr}.cmo-files-list{position:static}}
     `}</style>
   );
