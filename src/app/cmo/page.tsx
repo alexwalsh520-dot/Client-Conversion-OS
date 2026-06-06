@@ -249,12 +249,14 @@ type GFam = "skill" | "meeting" | "feed" | "loop" | "tag";
 type GType = "skill" | "section" | "meeting" | "topic" | "feed" | "loop" | "tag";
 type GNode = { id: string; type: GType; fam: GFam; label: string; refId?: string | number; parent?: string; r: number; ph: number; x: number; y: number; vx: number; vy: number };
 // Premium palette — colour by FAMILY so communities read cleanly (deuteran-safe: gold/violet/cyan/coral/slate, no green-red pair).
+// One cohesive palette — shades of the brand gold, stepped by brightness so types
+// stay distinguishable without the rainbow. Brightest = skill hubs; dimmest = tags.
 const NODE_RGB: Record<GFam, [number, number, number]> = {
-  skill: [216, 182, 115],   // warm gold
-  meeting: [155, 140, 255], // violet
-  feed: [86, 198, 216],     // cyan
-  loop: [224, 122, 110],    // coral (open loops)
-  tag: [120, 126, 138],     // slate (connective tissue)
+  skill: [224, 190, 122],   // brightest gold (the hubs)
+  meeting: [201, 167, 107], // gold
+  feed: [180, 150, 100],    // soft amber-tan
+  loop: [208, 158, 96],     // warm bronze (a touch more saturated so live loops still pop)
+  tag: [128, 116, 96],      // muted bronze (connective tissue, recedes)
 };
 const headings = (md?: string) =>
   (md || "").split("\n").filter((l) => /^##\s+/.test(l)).map((l) => l.replace(/^##\s+/, "").replace(/[*`]/g, "").replace(/\s*\(.*$/, "").trim()).filter(Boolean);
