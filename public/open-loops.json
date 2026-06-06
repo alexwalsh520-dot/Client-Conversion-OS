@@ -33,6 +33,16 @@
       "where": "this chat"
     },
     {
+      "id": "organic-keyword-engine-wiring",
+      "title": "Organic keywords: WINDOW SHIPPED (Settings) — NEXT (careful): wire the engine to auto-classify them so setters never hand-attribute organic",
+      "detail": "2026-06-06 SHIPPED: organic_keywords table (seeded locked->Tyson, coach->Lucy) + /api/organic-keywords + a Settings window (OrganicKeywordsPanel) where Alex adds/removes organic words per creator. Testable persistence now. REMAINING (money-pipeline, do with verification — NOT rushed): wire src/lib/ads-tracker/server.ts attribution so a lead/sale whose keyword matches a registered organic word for that creator AND has no live paid ad on that word (precedence; the spend guardrail already enforces ad-wins) auto-resolves to 'organic' instead of landing in the manual Attribution Workspace. Add the 30-day cooldown (a word counts organic again only after 30d with no ad spend) per project_organic_keyword_control.md. This removes setter work on organic revenue. Alex's framing: 90% auto by software + 10% by setters (via ManyChat link in the workspace) = 100%; organic-keyword auto-classify shrinks the manual 10%. Verify against live before trusting (don't repeat the rushed-money-code mistakes).",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["organic", "attribution", "engine", "setters", "server.ts"],
+      "opened": "2026-06-06",
+      "where": "this chat"
+    },
+    {
       "id": "cmo-selfupdate-reliability",
       "title": "Make the CMO self-update BULLETPROOF (so any session reliably builds the same, smarter employee)",
       "detail": "Alex 2026-06-06 asked, honestly, whether the front-end (brain/impact/feed/skills/meetings/files) reliably updates forever across any cloud session. HONEST ANSWER: partly. RELIABLE: every tab reads a JSON file (clean architecture, won't rot); skills-data.json auto-regens from the real SKILL.md files via a PostToolUse hook. NOT AUTOMATIC (model-dependent each session): open-loops/memory-log/cmo-ledger/meetings-data update ONLY when I explicitly write them — it relies on the continuous-capture discipline in the CMO skill + me following it + me committing & pushing; and a fresh session only acts as 'the same employee' if it LOADS the cmo skill (triggered by its description + the MEMORY.md boot pointer — likely, not guaranteed). So it's held together by good instructions + one hook, not a closed guaranteed loop. TO MAKE IT BULLETPROOF: (1) SEMANTIC RETRIEVAL over my own files (skills+memory+transcripts; pgvector like Cortex) so the right context auto-surfaces as it grows — biggest intelligence upgrade, Alex flagged it 'extremely important'. (2) Harden capture into HOOKS not just instructions — a session-end hook that forces the loop+ledger update and commits, so it can't be forgotten. (3) Strengthen the boot trigger so any CMO-context session deterministically loads the skill. (4) Verify the working-copy/deploy path is singular (saw sync print a second 'Codex - CCOS' copy path; confirm updates always reach the live site, no drift).",
