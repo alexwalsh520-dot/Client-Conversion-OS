@@ -34,11 +34,11 @@
     },
     {
       "id": "cmo-self-upgrade",
-      "title": "CMO self-upgrade — Phases 2-4 (PAUSED for Lucy pivot)",
-      "detail": "Phase 1 DONE (memory consolidated 27KB->11.6KB + doctrine: stay-in-lane, $1M north star, date/freshness discipline). PAUSED mid-Phase-2 (wire the brain to the live marketing data = a date-aware 'Pulse' reading copy + show/close/booking/spend/revenue per ad/adset/audience, reusing the canonical data layer, NOT reinventing attribution). Phase 3 = Scorecard (grade my kill/scale calls vs real before/after numbers on the 7-day clock). Phase 4 = this Open Loops register (UI shipped; keep feeding it). RESUME Phase 2 after the Lucy work.",
-      "status": "paused",
-      "priority": "soon",
-      "tags": ["CMO", "roadmap", "pulse", "scorecard"],
+      "title": "BUILD NEXT: Phase 2 (live-data Pulse) + Phase 3 (Scorecard) — Alex approved both",
+      "detail": "Phase 1 DONE. Phase 4 (Open Loops file) DONE. NEXT, Alex-approved (do in a fresh session with full context, not under low headroom): PHASE 2 = 'Pulse': wire the CMO to the LIVE marketing numbers so I reason from fresh data, not memory. Build a deterministic read (reuse the canonical data layer / Supabase project bostjayrguulwaltnbgt + ad_creative_copy + sales_tracker_rows + ads_keyword_events — do NOT reinvent attribution) returning per ad/adset/audience: on-image copy + spend + revenue + ROAS + show% + close% + booked-call rate + cost/call, over a fresh trailing window, date-stamped 'as of <today>'. Surface as a lean date-aware view in the CMO tab (browser-rendered = zero model tokens) AND queryable by me on demand. Active creators only: Tyson, Lucy (Keith OFF). PHASE 3 = 'Scorecard': grade each logged kill/scale decision vs the real before/after numbers after its 7-day window; show my hit rate ('here's what I said, here's what happened'). Both make me accurate + accountable — the actual gap between real CMO and facade. Weekly decision runs IN-CHAT Sundays (Alex's OAuth, no cron).",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": ["CMO", "roadmap", "pulse", "scorecard", "phase-2", "phase-3"],
       "opened": "2026-06-05",
       "where": "this chat"
     },
