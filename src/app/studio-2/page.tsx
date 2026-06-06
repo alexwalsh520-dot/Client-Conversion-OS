@@ -5749,7 +5749,6 @@ export default function Studio2Page() {
       const fps = 24;
       const frameDurationUs = Math.round(1_000_000 / fps);
       const bitrate = 4_800_000;
-      const sourcePlaybackRate = 8;
       const configCandidates: VideoEncoderConfig[] = [
         { codec: "avc1.640028", width: CANVAS_W, height: CANVAS_H, bitrate, framerate: fps, latencyMode: "quality" },
         { codec: "avc1.4D4028", width: CANVAS_W, height: CANVAS_H, bitrate, framerate: fps, latencyMode: "quality" },
@@ -5778,7 +5777,6 @@ export default function Studio2Page() {
       video.playsInline = true;
       video.preload = "auto";
       video.muted = true;
-      video.playbackRate = sourcePlaybackRate;
       video.src = resolvedSrc;
       video.load();
 
@@ -5829,37 +5827,22 @@ export default function Studio2Page() {
         const totalOutputSeconds = segments.reduce((sum, segment) => sum + Math.max(0, (segment.end ?? segment.start) - segment.start), 0);
         let exportedSeconds = 0;
 
+        // SMOOTH EXPORT: deterministically seek to each output frame's exact time and encode it.
+        // The old path played the source at 8x and sampled via requestVideoFrameCallback — at 8x
+        // the browser drops most frames, so the encoder duplicated the last decoded frame to fill
+        // the gaps and then jumped, which is what made exports choppy/stuttery. Seeking per frame
+        // gives exactly one correct, evenly-spaced frame per output frame = clean constant fps.
         for (const segment of segments) {
           const segmentEnd = segment.end ?? duration;
           const segmentLength = Math.max(0, segmentEnd - segment.start);
-          let segmentEncodedSeconds = 0;
-          await seekVideoElement(video, segment.start);
-          await encodeFrame();
-          await video.play().catch(() => undefined);
-
-          while (segmentEncodedSeconds < segmentLength - 0.001) {
-            await new Promise<void>((resolve) => {
-              const requestFrame = (video as HTMLVideoElement & {
-                requestVideoFrameCallback?: (callback: () => void) => number;
-              }).requestVideoFrameCallback;
-              if (requestFrame) requestFrame.call(video, () => resolve());
-              else window.requestAnimationFrame(() => resolve());
-            });
-
-            const sourceProgress = clamp(video.currentTime - segment.start, 0, segmentLength);
-            const targetProgress = Math.min(segmentLength, Math.max(sourceProgress, segmentEncodedSeconds + 1 / fps));
-            while (segmentEncodedSeconds < targetProgress - 0.001) {
-              await encodeFrame();
-              segmentEncodedSeconds += 1 / fps;
-            }
-            setExportStatus(`Fast exporting ${label} · ${formatVideoTime(exportedSeconds + segmentEncodedSeconds)} / ${formatVideoTime(totalOutputSeconds)}`);
-            if (video.currentTime >= segmentEnd - 0.02) break;
-          }
-
-          video.pause();
-          while (segmentEncodedSeconds < segmentLength - 0.001) {
+          const frameCount = Math.max(1, Math.round(segmentLength * fps));
+          for (let i = 0; i < frameCount; i++) {
+            const t = Math.min(segmentEnd - 1 / (fps * 2), segment.start + i / fps);
+            await seekVideoElement(video, t);
             await encodeFrame();
-            segmentEncodedSeconds += 1 / fps;
+            if (i % 6 === 0) {
+              setExportStatus(`Fast exporting ${label} · ${formatVideoTime(exportedSeconds + i / fps)} / ${formatVideoTime(totalOutputSeconds)}`);
+            }
           }
           exportedSeconds += segmentLength;
         }
