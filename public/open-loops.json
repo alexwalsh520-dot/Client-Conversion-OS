@@ -43,16 +43,6 @@
       "where": "this chat"
     },
     {
-      "id": "cmo-sidebar-restructure",
-      "title": "CMO becomes a left-sidebar app: entering CMO swaps the CCOS sidebar for the CMO nav (Brain/Ledger/Feed/Skills/Meetings/Files) + a Back button",
-      "detail": "Alex 2026-06-06. Today the CMO uses a top-nav; he wants it to live in the LEFT SIDEBAR like the rest of CCOS. When you enter the CMO, the left sidebar SWAPS to CMO mode: at the very top a single BACK button to return to the normal CCOS sidebar (all tabs); below it the CMO tabs (Brain, Ledger, Learning feed, Skills, Meetings, Files); profile + settings + the hidden-tabs folder STAY at the bottom (shared). So it's a contextual sidebar takeover, not a separate page chrome. Touches Sidebar.tsx (route-aware: on /cmo render the CMO nav set) + cmo/page.tsx (drop its top-nav, read tab from the sidebar). Architectural — do it as its own focused build, verify nav doesn't break. Pairs with the Ledger as the showcase surface.",
-      "status": "backlog",
-      "priority": "soon",
-      "tags": ["CMO", "sidebar", "UX", "navigation", "Sidebar.tsx"],
-      "opened": "2026-06-06",
-      "where": "this chat"
-    },
-    {
       "id": "lucy-ads-launch",
       "title": "Lucy's 15 ads SCHEDULED — go live Sat ~5am PDT / 8am EST",
       "detail": "2026-06-06: all 15 direct-CTA ads built + SCHEDULED by Alex; turn on Sat ~5am PDT (8am EST), $200/day total ABO in one ad set (campaign 120243547279710009, act_616852470282141). Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. CMO ACTION: watch for results once live, then run the 7-day kill/scale read per keyword (judge cost/lead + cost/call). Token + launch script reusable (keychain lucy-meta-token).",

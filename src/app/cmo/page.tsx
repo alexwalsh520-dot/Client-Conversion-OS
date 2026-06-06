@@ -591,18 +591,28 @@ export default function CmoPage() {
   }, [ledger, decisionEntries]);
   const ledgerRow = (e: LedgerEntry) => {
     const open = openLedger === e.id;
+    const dec = e.kind === "decision";
     return (
-      <div key={e.id} className={"cmo-ledger-row" + (open ? " open" : "")} onClick={() => setOpenLedger(open ? null : e.id)}>
-        <div className="cmo-ledger-rowmain">
-          <span className="cmo-ledger-val">{e.value || "—"}</span>
-          <span className="cmo-ledger-title">{e.title}</span>
-          {e.status && <span className={"cmo-ledger-status s-" + e.status}>{e.status === "pending" ? "awaiting grade" : e.status}</span>}
-          <span className="cmo-ledger-at">{(e.at || "").slice(5)}</span>
+      <div key={e.id} className={"cmo-imp-row" + (open ? " open" : "") + (dec ? " dec" : "")} onClick={() => setOpenLedger(open ? null : e.id)}>
+        <div className="cmo-imp-rowhead">
+          <div className="cmo-imp-rowtext">
+            <div className="cmo-imp-titleline">
+              <span className="cmo-imp-title">{e.title}</span>
+              {e.value && <span className="cmo-imp-val">{e.value}</span>}
+            </div>
+            <div className="cmo-imp-meta">
+              <span className="cmo-imp-kind">{e.kind || "work"}</span>
+              <span className="cmo-imp-sep">·</span>
+              <span>{e.at}</span>
+              {e.status && <span className={"cmo-imp-status s-" + e.status}>{e.status === "pending" ? "awaiting grade" : e.status}</span>}
+            </div>
+          </div>
+          <span className="cmo-imp-chev">{open ? "−" : "+"}</span>
         </div>
         {open && (
-          <div className="cmo-ledger-detail">
+          <div className="cmo-imp-detail">
             {e.detail && <p>{e.detail}</p>}
-            {e.result && e.result.trim() && <p className="cmo-ledger-result"><span>result</span>{e.result}</p>}
+            {e.result && e.result.trim() && <p className="cmo-imp-result"><span>result</span>{e.result}</p>}
           </div>
         )}
       </div>
@@ -634,7 +644,7 @@ export default function CmoPage() {
         <nav className="cmo-nav">
           {(["brain", "ledger", "feed", "skills", "meetings", "files"] as Tab[]).map((tk) => (
             <button key={tk} className={tab === tk && !inDetail ? "on" : ""} onClick={() => { setTab(tk); setOpenSkill(null); setOpenMeeting(null); }}>
-              {tk === "brain" ? "Brain" : tk === "ledger" ? "Ledger" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
+              {tk === "brain" ? "Brain" : tk === "ledger" ? "Impact" : tk === "feed" ? "Learning feed" : tk === "files" ? "Files" : tk === "skills" ? "Skills" : "Meetings"}
             </button>
           ))}
         </nav>
@@ -677,31 +687,33 @@ export default function CmoPage() {
 
       {/* LEDGER — proof of work: what I did, what it was worth, decisions + their graded results */}
       {tab === "ledger" && !inDetail && (
-        <section className="cmo-ledger">
-          <div className="cmo-ledger-hero">
-            <span className="cmo-ledger-eyebrow">The case for the role</span>
-            <h2 className="cmo-ledger-headline">What I&apos;ve produced &mdash; measured, not claimed.</h2>
-            <div className="cmo-ledger-stats">
+        <section className="cmo-imp">
+          <div className="cmo-imp-hero">
+            <div className="cmo-imp-herolead">
+              <span className="cmo-imp-eyebrow">Impact · proof of value</span>
+              <h2 className="cmo-imp-headline">What I&apos;ve produced &mdash; measured, not claimed.</h2>
+            </div>
+            <div className="cmo-imp-metrics">
               {ledgerStats.map((s, i) => (
-                <div key={s.label} className={"cmo-ledger-stat" + (i === 0 ? " primary" : "")}>
-                  <span className="cmo-ledger-statn">{s.n}</span>
-                  <span className="cmo-ledger-statl">{s.label}</span>
+                <div key={s.label} className={"cmo-imp-metric" + (i === 0 ? " lead" : "")}>
+                  <span className="cmo-imp-metricn">{s.n}</span>
+                  <span className="cmo-imp-metricl">{s.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {decisionEntries.length > 0 && (
-            <div className="cmo-ledger-block">
-              <div className="cmo-ledger-blockhead">Decisions <span>the calls I made &mdash; and how they played out</span></div>
-              <div className="cmo-ledger-rows">{decisionEntries.map(ledgerRow)}</div>
+            <div className="cmo-imp-section">
+              <div className="cmo-imp-sechead"><span className="cmo-imp-secdot dec" />Decisions<em>the calls I made &mdash; and how they played out</em></div>
+              <div className="cmo-imp-rows">{decisionEntries.map(ledgerRow)}</div>
             </div>
           )}
 
           {workEntries.length > 0 && (
-            <div className="cmo-ledger-block">
-              <div className="cmo-ledger-blockhead">Work shipped <span>the evidence</span></div>
-              <div className="cmo-ledger-rows">{workEntries.map(ledgerRow)}</div>
+            <div className="cmo-imp-section">
+              <div className="cmo-imp-sechead"><span className="cmo-imp-secdot" />Work shipped<em>the evidence</em></div>
+              <div className="cmo-imp-rows">{workEntries.map(ledgerRow)}</div>
             </div>
           )}
 
@@ -858,7 +870,7 @@ function CmoStyles() {
   .cmo h1{font-size:26px;font-weight:800;letter-spacing:-.4px;color:var(--text-primary);margin:0 0 6px}
   .cmo-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono,ui-monospace,Menlo,monospace)}
   .cmo-dot{width:6px;height:6px;border-radius:50%;background:var(--green,#3fb27f);box-shadow:0 0 8px var(--green,#3fb27f)}
-  .cmo-nav{display:inline-flex;gap:2px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px}
+  .cmo-nav{display:inline-flex;gap:2px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;margin-left:auto}
   .cmo-nav button{padding:7px 14px;border:none;background:transparent;color:var(--text-muted);font-size:12.5px;font-weight:600;border-radius:7px;cursor:pointer;font-family:inherit}
   .cmo-nav button:hover{color:var(--text-secondary)}
   .cmo-nav button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.15)}
@@ -999,34 +1011,44 @@ function CmoStyles() {
   .cmo-files-empty{color:var(--text-muted);font-size:13px;padding:40px 0;text-align:center}
   .cmo-tnote{font-size:11.5px;color:var(--text-muted);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:16px}
   .cmo-empty{text-align:center;padding:56px 24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-muted);font-size:13px}
-  .cmo-ledger{max-width:880px;margin:0 auto}
-  .cmo-ledger-hero{border:1px solid var(--border);border-radius:14px;padding:24px 24px 20px;background:linear-gradient(180deg,var(--bg-secondary),transparent);margin-bottom:22px}
-  .cmo-ledger-eyebrow{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:#c9a96e;font-weight:600}
-  .cmo-ledger-headline{font-size:21px;font-weight:700;color:var(--text-primary);letter-spacing:-.015em;margin:9px 0 20px;line-height:1.2}
-  .cmo-ledger-stats{display:flex;gap:10px;flex-wrap:wrap}
-  .cmo-ledger-stat{flex:1;min-width:114px;border:1px solid var(--border);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:5px}
-  .cmo-ledger-stat.primary{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.06)}
-  .cmo-ledger-stat.primary .cmo-ledger-statn{color:#d6b06a}
-  .cmo-ledger-statn{font-size:24px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
-  .cmo-ledger-statl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted)}
-  .cmo-ledger-block{margin-bottom:18px}
-  .cmo-ledger-blockhead{font-size:11.5px;font-weight:600;color:var(--text-primary);text-transform:uppercase;letter-spacing:.08em;margin:0 2px 10px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-  .cmo-ledger-blockhead span{font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)}
-  .cmo-ledger-rows{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
-  .cmo-ledger-row{border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
-  .cmo-ledger-row:last-child{border-bottom:none}
-  .cmo-ledger-row:hover,.cmo-ledger-row.open{background:var(--bg-secondary)}
-  .cmo-ledger-rowmain{display:flex;align-items:center;gap:13px;padding:13px 16px}
-  .cmo-ledger-val{font-size:12px;font-weight:700;color:#c9a96e;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;width:132px;letter-spacing:.01em}
-  .cmo-ledger-title{flex:1;font-size:13.5px;color:var(--text-primary);line-height:1.4}
-  .cmo-ledger-status{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:5px;border:1px solid var(--border);color:var(--text-muted);flex-shrink:0;white-space:nowrap}
-  .cmo-ledger-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.32)}
-  .cmo-ledger-status.s-pending{color:#d6b06a;border-color:rgba(201,169,110,.32)}
-  .cmo-ledger-at{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;width:36px;text-align:right}
-  .cmo-ledger-detail{padding:0 16px 15px 145px;color:var(--text-secondary);font-size:12.5px;line-height:1.6}
-  .cmo-ledger-detail p{margin:0 0 9px}
-  .cmo-ledger-result{color:var(--text-primary)}
-  .cmo-ledger-result span{color:var(--text-muted);text-transform:uppercase;font-size:9.5px;letter-spacing:.08em;margin-right:8px}
+  .cmo-imp{max-width:840px;margin:0 auto}
+  .cmo-imp-hero{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:28px;flex-wrap:wrap;border:1px solid var(--border);border-radius:16px;padding:26px 26px 24px;overflow:hidden;margin-bottom:26px;background:radial-gradient(130% 150% at 0% 0%, rgba(201,169,110,.12), transparent 55%), var(--bg-secondary)}
+  .cmo-imp-herolead{flex:1;min-width:240px}
+  .cmo-imp-eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.18em;color:#d8b673;font-weight:700}
+  .cmo-imp-headline{font-size:23px;font-weight:760;color:var(--text-primary);letter-spacing:-.025em;line-height:1.18;margin:11px 0 0;max-width:420px}
+  .cmo-imp-metrics{display:flex;gap:18px;align-items:flex-end}
+  .cmo-imp-metric{display:flex;flex-direction:column;gap:4px;text-align:right}
+  .cmo-imp-metric.lead{padding-right:18px;margin-right:0;border-right:1px solid var(--border)}
+  .cmo-imp-metricn{font-size:22px;font-weight:750;color:var(--text-secondary);font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1}
+  .cmo-imp-metric.lead .cmo-imp-metricn{font-size:38px;color:#d8b673;text-shadow:0 0 24px rgba(201,169,110,.35)}
+  .cmo-imp-metricl{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);white-space:nowrap}
+  .cmo-imp-section{margin-bottom:24px}
+  .cmo-imp-sechead{display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:700;color:var(--text-primary);text-transform:uppercase;letter-spacing:.09em;margin:0 2px 13px}
+  .cmo-imp-sechead em{font-style:normal;font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--text-muted)}
+  .cmo-imp-secdot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex-shrink:0}
+  .cmo-imp-secdot.dec{background:#d8b673;box-shadow:0 0 9px rgba(201,169,110,.6)}
+  .cmo-imp-rows{display:flex;flex-direction:column;gap:8px}
+  .cmo-imp-row{border:1px solid var(--border);border-radius:12px;background:var(--bg-secondary);cursor:pointer;transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
+  .cmo-imp-row:hover{transform:translateY(-1px);border-color:rgba(201,169,110,.4);box-shadow:0 6px 20px -12px rgba(0,0,0,.5)}
+  .cmo-imp-row.dec{border-left:2.5px solid rgba(201,169,110,.6)}
+  .cmo-imp-row.open{border-color:rgba(201,169,110,.4)}
+  .cmo-imp-rowhead{display:flex;align-items:flex-start;gap:14px;padding:15px 16px}
+  .cmo-imp-rowtext{flex:1;min-width:0}
+  .cmo-imp-titleline{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+  .cmo-imp-title{font-size:14px;font-weight:650;color:var(--text-primary);line-height:1.35;letter-spacing:-.01em}
+  .cmo-imp-val{flex-shrink:0;font-size:11px;font-weight:700;color:#e3c281;background:rgba(201,169,110,.13);border:1px solid rgba(201,169,110,.3);padding:4px 10px;border-radius:7px;white-space:nowrap;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+  .cmo-imp-meta{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--text-muted)}
+  .cmo-imp-kind{text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:10px;color:var(--text-secondary)}
+  .cmo-imp-sep{opacity:.5}
+  .cmo-imp-status{margin-left:4px;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid var(--border)}
+  .cmo-imp-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.3)}
+  .cmo-imp-status.s-pending{color:#e3c281;border-color:rgba(201,169,110,.35);background:rgba(201,169,110,.06)}
+  .cmo-imp-chev{flex-shrink:0;font-size:17px;color:var(--text-muted);line-height:1;width:14px;text-align:center;font-weight:300}
+  .cmo-imp-detail{margin:0 16px;padding:13px 0 16px;border-top:1px solid var(--border);color:var(--text-secondary);font-size:12.5px;line-height:1.62}
+  .cmo-imp-detail p{margin:0 0 9px}
+  .cmo-imp-detail p:last-child{margin-bottom:0}
+  .cmo-imp-result{color:var(--text-primary)}
+  .cmo-imp-result span{display:inline-block;color:#d8b673;text-transform:uppercase;font-size:9px;letter-spacing:.1em;margin-right:9px;font-weight:700}
   @media(max-width:760px){.cmo-files{grid-template-columns:1fr}.cmo-files-list{position:static}}
     `}</style>
   );
