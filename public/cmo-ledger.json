@@ -3,6 +3,15 @@
   "note": "The CMO's proof-of-value record — what I actually did, what it was worth, and how my decisions played out. A new hire is only as good as they can measure their results; if it isn't measured, it doesn't count. I append an entry every time I do real work. 'decision' entries get a graded result once their window closes (the scorecard).",
   "entries": [
     {
+      "id": "tyson-leadmagnet-launch",
+      "at": "2026-06-06",
+      "kind": "build",
+      "title": "Launched Tyson's Summer Shred lead magnet end-to-end (14 ads, live)",
+      "value": "$300/day live",
+      "detail": "Via the media-buyer skill: 15 unique keywords vetted, files renamed, seed built from the proven WIN structure, 14 ads cloned (12 image + 2 video) into the existing $300/day ad set, every greeting rewritten to Alex's 'Yo… Send <KW>' template with per-ad keyword, all verified 14/14, then campaign+ad set+ads turned ACTIVE. Clean run, zero rate-limiting. SPOT dropped (Meta-rejected). Graded by the 7-day read ~6/13.",
+      "status": "shipped"
+    },
+    {
       "id": "tyson-scale-call",
       "at": "2026-06-06",
       "kind": "decision",
