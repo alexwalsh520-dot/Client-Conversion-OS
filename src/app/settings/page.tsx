@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import AiUsageMeter from "@/components/AiUsageMeter";
+import OrganicKeywordsPanel from "@/components/OrganicKeywordsPanel";
 import {
   Settings,
   Users,
@@ -307,6 +308,9 @@ export default function SettingsPage() {
           User management and integrations
         </p>
       </div>
+
+      {/* Organic keywords */}
+      <OrganicKeywordsPanel />
 
       {/* Appearance */}
       <div
