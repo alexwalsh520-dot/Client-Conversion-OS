@@ -1,7 +1,18 @@
 {
-  "updated": "2026-06-05",
+  "updated": "2026-06-06",
   "note": "Fathom meeting transcripts + distilled context Alex pastes in. Each entry: date, title, attendees, tags, summary, and notes (markdown). Used as context for ads, offers, messaging. Speaker diarization is unreliable — store team CONCLUSIONS, not who-said-which-quote.",
   "meetings": [
+    {
+      "id": "2026-06-06-tyson-1k-day",
+      "date": "2026-06-06",
+      "title": "Tyson $1k/day push — lead magnet relaunch + Direct CTA double (Matt + Will)",
+      "creator": "Alex · Matt · Will · ~35m",
+      "accent": "#4fae8a",
+      "tags": ["Tyson", "lead-magnet", "Direct-CTA", "scaling", "1k-day", "setters", "attribution"],
+      "summary": "Push Tyson to $1,000/day for 7 days: relaunch Summer Shred lead magnet ($300/day, normal system, zero Zakk) + double the Direct CTA (~7 ads varying the FIT winner into distinct visual lanes, $50/ad, one-ad-per-ad-set). Breakeven ~4x; bottleneck is lead flow not closing; Keith offboarding frees Gideon + Kels.",
+      "notes": "## The decision — Tyson to $1,000/day for 7 days\n1. **Lead magnet (Summer Shred) $300/day — Alex's NORMAL system, ZERO Zakk:** ONE ad set, ~25 ads, warm audience (refreshed), STORY PLACEMENT ONLY, IG-text-on-image style ONLY, NO AI creative (AI only to mimic the text style). Grab winners from recent + prior lead-magnet campaigns, fill with variations. Matt: relaunch has worked every time (5-7x, only need 4x) — don't change the process; avoid effort-bias shortcuts AND over-engineering.\n2. **Direct CTA double via ~7 ads @ $50/day, one ad per ad set (Zakk).** Same winning copy/offer = the FIT '5 servicemen' winner, diversified into distinct VISUAL lanes (carousel, B-roll, AI high-CTR graphic, different placements). Zakk methods welcome HERE — it's max spend on one proven winner.\n\n## The math / why $1k\n- Breakeven ~**4x** = ~$4k/day avg for the month. June running ~$4,324/day. May ~4-5x.\n- Real driver: feed freed-up setters — Keith offboarding frees **Gideon** (+ Kels) for lead-magnet leads (~50/day each) and **doubles Amara's** volume. Reverse-math ~= $1k/day.\n- **Bottleneck has ALWAYS been LEAD FLOW, not closing** (Will's analytics: every slowdown = leads, not close rate). Fill the funnel.\n\n## Will's read (sales side)\n- Confident now: 3 strong closers (Will/Broz/Austin) + 2 new (one ex-Navy, Will-trained), who'll do outbound dialing by standard.\n- Risk: higher spend magnifies team mistakes (the 2-day cash drop spooked Alex). Both outcomes win: 4x+ -> scale; miss -> learn what breaks (~$7k 'tuition').\n- Follow-up dialing system for scheduled/talked leads on slow days/weekends.\n\n## Cadence + strategy\n- **Decide at 5-7 days, NOT daily.** Analyze each ad's performance AND why expected winners under-delivered (budget starvation / attention).\n- **'Catch the drift' (Will):** proactively RELAUNCH old winners ~2 weeks in BEFORE current ads fatigue; keep both running so one ramps as the other trickles = smoother lead flow (vs the every-3-week relaunch-after-crash cycle).\n\n## ManyChat / attribution\n- New **Summer Shred** lead-magnet automation to be (re)made (archived; ~5 versions). **Route 50% to Gideon** (Matt).\n- **CMO flag (mine):** every ManyChat flow that fires a webhook must pass {{custom_field.keyword}} (esp. lead_engaged) or keywords leak at $1k/day exactly when clean data matters for the 7-day call. Lucy's flows = 0% leak; replicate.\n\n## Shipped from this call\n- Lead magnet LIVE 2026-06-06: 14 ads, $300/day, greetings correct. Direct CTA double still pending.",
+      "archive": "captured live in this CMO chat 2026-06-06 (Fathom: fathom.video/share/yYPZoN-rtBLg2KLH2ZivZoSt661xaR_L)"
+    },
     {
       "id": "2026-06-05-team-strategy",
       "date": "2026-06-05",
