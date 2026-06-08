@@ -424,10 +424,16 @@
   .tbl-campaign-select:hover{border-color:var(--text-4)}
   .tbl-campaign-select:focus{outline:none;border-color:var(--gold)}
   .ad-count-chip{font-size:9.5px;color:var(--text-4);background:var(--panel-2);border:1px solid var(--border);border-radius:99px;padding:1px 7px;margin-left:4px;letter-spacing:0.02em}
-  /* Ad-set drill-down rows (Campaign -> Ad set -> Ad) */
-  .adset-row{background:color-mix(in srgb, var(--panel-2) 55%, transparent)}
-  .adset-row:hover{background:var(--panel-2)}
-  .adset-row td{border-top:1px solid var(--border)}
+  /* Ads-Manager-style checkbox selection + flat Ad-set / Ad rows */
+  .camp-check{margin-right:7px;accent-color:var(--gold);cursor:pointer;width:13px;height:13px;flex-shrink:0}
+  .tbl-sel-chip{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text-2);background:var(--panel-2);border:1px solid var(--border-2);border-radius:99px;padding:3px 6px 3px 11px}
+  .tbl-sel-clear{font-size:13px;line-height:1;color:var(--text-3);width:16px;height:16px;border-radius:99px;cursor:pointer}
+  .tbl-sel-clear:hover{color:var(--text);background:var(--bg)}
+  .flat-row:hover{background:var(--panel-2)}
+  .flat-cell{display:inline-flex;align-items:center;gap:8px;max-width:100%;overflow:hidden}
+  .flat-camp{color:var(--text-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  .flat-sep{color:var(--text-4)}
+  .flat-name{color:var(--text);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* Setter-logged columns — styled same as data columns (no indicator) */
 
   /* Modals */
@@ -2701,10 +2707,15 @@ const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'adset' | 'ad'
-  const [selectedCampaign, setSelectedCampaign] = useState("all"); // isolate one campaign, or "all"
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState(()=>new Set()); // Ads-Manager-style checkbox selection
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
   const [expandedDays, setExpandedDays] = useState({});
-  const [expandedAdsets, setExpandedAdsets] = useState({}); // ad-set drill-down (adset -> ads)
+  const [expandedAdsets, setExpandedAdsets] = useState({}); // retained for legacy branch; flat views are primary
+  const toggleCampaignSelect = (id) => setSelectedCampaignIds(prev => {
+    const next = new Set(prev);
+    if(next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [sort, setSort] = useState({key:"date", dir:"desc"});
   const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
   const [resizingKey, setResizingKey] = useState(null);
@@ -2783,10 +2794,15 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   });
   const visibleCampaigns = totalCampaigns
     .filter(c => !c.attributionOnly)
-    .filter(c => selectedCampaign === "all" || c.id === selectedCampaign)
     .sort((a,b) => compareBySort({...aggregate(a.rows), latestIso:a.latestIso}, {...aggregate(b.rows), latestIso:b.latestIso}));
-  // Campaign options for the isolation dropdown (account/status-scoped, before the single-campaign filter)
-  const campaignOptions = totalCampaigns.filter(c => !c.attributionOnly);
+  // Ads-Manager model: checked campaigns scope the flat Ad-set / Ad views (none checked = all).
+  const flatScope = selectedCampaignIds.size ? visibleCampaigns.filter(c => selectedCampaignIds.has(c.id)) : visibleCampaigns;
+  const flatAdSets = flatScope
+    .flatMap(c => aggregateAdSetRowsForCampaign(c).map(as => ({...as, campaignId:c.id, campaignName:c.name, campaignShort:c.short, dot:c.dot})))
+    .sort((a,b)=>(b.collected-a.collected)||(b.spend-a.spend));
+  const flatAds = flatScope
+    .flatMap(c => aggregateAdRowsForCampaign(c).map(ad => ({...ad, campaignId:c.id, campaignName:c.name, campaignShort:c.short, dot:c.dot})))
+    .sort((a,b)=>(b.collected-a.collected)||(b.spend-a.spend));
   const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
@@ -2838,18 +2854,12 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           </button>
         </div>
         <div className="tbl-toolbar-meta">
-          <select
-            className="tbl-campaign-select"
-            value={selectedCampaign}
-            onChange={(e)=>{
-              const v = e.target.value;
-              setSelectedCampaign(v);
-              if(v!=="all") setExpanded(s=>({...s,[v]:true}));
-            }}
-          >
-            <option value="all">All campaigns ({campaignOptions.length})</option>
-            {campaignOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          {selectedCampaignIds.size > 0 ? (
+            <span className="tbl-sel-chip">
+              {selectedCampaignIds.size} campaign{selectedCampaignIds.size>1?"s":""} selected
+              <button className="tbl-sel-clear" onClick={()=>setSelectedCampaignIds(new Set())}>×</button>
+            </span>
+          ) : (view!=="campaign" ? <span>all campaigns · check one to isolate</span> : null)}
         </div>
       </div>
       <div className="tbl-scroll" style={{cursor: resizingKey?"col-resize":"auto"}}>
@@ -2886,7 +2896,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                 </td>
               </tr>
             )}
-            {visibleCampaigns.map(c => {
+            {view==="campaign" && visibleCampaigns.map(c => {
               const agg = aggregate(c.rows);
               const isOpen = expanded[c.id];
               const orderedRows = [...c.rows].sort((a,b)=>compareBySort(a,b));
@@ -2897,6 +2907,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                   <tr className="campaign-row" onClick={()=>setExpanded(s=>({...s,[c.id]:!s[c.id]}))} style={{cursor:'pointer'}}>
                     <td>
                       <div className="campaign-cell">
+                        <input type="checkbox" className="camp-check" checked={selectedCampaignIds.has(c.id)} onClick={(e)=>e.stopPropagation()} onChange={()=>toggleCampaignSelect(c.id)} />
                         <span className="chevron">{isOpen?"▾":"▸"}</span>
                         <span className={"camp-dot "+c.dot}></span>
                         <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{shortName}</span>
@@ -3079,6 +3090,40 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                 </React.Fragment>
               );
             })}
+            {view==="adset" && (flatAdSets.length ? flatAdSets.map(as => {
+              const m = deriveRow({date:as.adsetName, spend:as.spend, imp:as.imp, clicks:as.clicks, msgs:as.msgs, calls:as.calls, clients:as.clients, taken:as.taken, collected:as.collected});
+              return (
+                <tr key={as.campaignId+":adset:"+(as.adsetId||as.adsetName)} className="flat-row">
+                  <td>
+                    <span className="flat-cell">
+                      <span className={"camp-dot "+as.dot}></span>
+                      <span className="flat-camp">{as.campaignName}</span>
+                      <span className="flat-sep">·</span>
+                      <span className="flat-name">{as.adsetName}</span>
+                      <span className="ad-count-chip">{as.ads.length} ads</span>
+                    </span>
+                  </td>
+                  {cols.slice(1).map(col=>{ const cls=(col.cls?col.cls(m):"")+(col.calc?" calc":""); let v; try{v=col.fmt(m);}catch(e){v="—";} return <td key={col.k} className={cls}>{v}</td>; })}
+                </tr>
+              );
+            }) : <tr><td colSpan={cols.length} style={{padding:"16px 20px",color:"var(--text-3)",textAlign:"left"}}>No ad-set data for this range.</td></tr>)}
+            {view==="ad" && (flatAds.length ? flatAds.map(ad => {
+              const m = deriveRow({date:ad.adName, spend:ad.spend, imp:ad.imp, clicks:ad.clicks, msgs:ad.msgs, calls:ad.calls, clients:ad.clients, taken:ad.taken, collected:ad.collected});
+              return (
+                <tr key={ad.campaignId+":ad:"+ad.adId} className="flat-row">
+                  <td>
+                    <span className="flat-cell">
+                      <span className={"camp-dot "+ad.dot}></span>
+                      <span className="flat-camp">{ad.campaignName}</span>
+                      <span className="flat-sep">·</span>
+                      <span className="ad-id mono">{ad.adId}</span>
+                      <span className="flat-name">{ad.adName}</span>
+                    </span>
+                  </td>
+                  {cols.slice(1).map(col=>{ const cls=(col.cls?col.cls(m):"")+(col.calc?" calc":""); let v; try{v=col.fmt(m);}catch(e){v="—";} return <td key={col.k} className={cls}>{v}</td>; })}
+                </tr>
+              );
+            }) : <tr><td colSpan={cols.length} style={{padding:"16px 20px",color:"var(--text-3)",textAlign:"left"}}>No ad data for this range.</td></tr>)}
             <tr className="total-row">
               <td>Total</td>
               {cols.slice(1).map(col=>{
