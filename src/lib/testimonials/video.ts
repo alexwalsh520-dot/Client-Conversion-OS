@@ -3,8 +3,13 @@
 import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// The live site runs on the client-conversion-os Vercel project (same place as
+// Studio 2 media + the R2 credentials). Recording links MUST point here so the
+// public upload-url API runs on the deployment that has R2 configured. The old
+// dashboard-drab-two-78 fallback pointed at a separate project with no R2 vars,
+// which made every uploaded testimonial fail with "Failed to create upload URL".
 export const APP_BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://dashboard-drab-two-78.vercel.app";
+  process.env.NEXT_PUBLIC_APP_URL || "https://client-conversion-os.vercel.app";
 
 // Shown verbatim on the public recording page so the client knows what to say.
 // Order matters. Keep free of em-dashes (house style).
