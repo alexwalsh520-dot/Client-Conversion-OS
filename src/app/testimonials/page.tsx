@@ -14,6 +14,28 @@ import { Sparkles } from "lucide-react";
 import SenjaEmbed from "@/components/testimonials/SenjaEmbed";
 import PublicLeadForm from "@/components/testimonials/PublicLeadForm";
 import AdminBadge from "@/components/testimonials/AdminBadge";
+import PublicVideoGallery, { type GalleryItem } from "@/components/testimonials/PublicVideoGallery";
+import { getServiceSupabase } from "@/lib/supabase";
+
+// Re-generate periodically so newly featured videos appear without a deploy,
+// while keeping this public/indexable page cacheable.
+export const revalidate = 300;
+
+async function getFeaturedVideos(): Promise<GalleryItem[]> {
+  try {
+    const db = getServiceSupabase();
+    const { data } = await db
+      .from("video_testimonials")
+      .select("id, client_name")
+      .eq("featured", true)
+      .eq("status", "submitted")
+      .order("featured_at", { ascending: false });
+    return (data || []).map((r) => ({ id: r.id as number, clientName: (r.client_name as string) || "Client" }));
+  } catch {
+    // Never let a DB hiccup break the public page; just show no video gallery.
+    return [];
+  }
+}
 
 export const metadata: Metadata = {
   title: "CCOS Testimonials",
@@ -27,7 +49,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function TestimonialsPublicPage() {
+export default async function TestimonialsPublicPage() {
+  const featuredVideos = await getFeaturedVideos();
+
   return (
     <div
       style={{
@@ -76,7 +100,10 @@ export default function TestimonialsPublicPage() {
           </p>
         </header>
 
-        {/* Senja widget */}
+        {/* Native client video gallery (admin-featured testimonials) */}
+        <PublicVideoGallery items={featuredVideos} />
+
+        {/* Senja widget (written reviews) */}
         <section style={{ marginBottom: 56 }}>
           <SenjaEmbed />
         </section>

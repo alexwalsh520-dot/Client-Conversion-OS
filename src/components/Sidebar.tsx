@@ -23,6 +23,7 @@ import {
   BookOpen,
   FileText,
   Star,
+  Clapperboard,
   Handshake,
   Utensils,
   UserRound,
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
+  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard, adminOnly: true },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
 ];
@@ -91,11 +93,15 @@ export default function Sidebar() {
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-  const canViewItem = (item: { href: string }) =>
-    !hasPermissions ||
-    isAdmin ||
-    allowedTabs?.includes(item.href) ||
-    (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"));
+  const canViewItem = (item: { href: string; adminOnly?: boolean }) => {
+    if (item.adminOnly) return isAdmin;
+    return (
+      !hasPermissions ||
+      isAdmin ||
+      allowedTabs?.includes(item.href) ||
+      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"))
+    );
+  };
   const isHidden = (href: string) => hidden.includes(href);
   const visibleNavItems = navItems.filter(canViewItem).filter((i) => !isHidden(i.href));
   const visibleMarketingItems = marketingNavItems.filter(canViewItem).filter((i) => !isHidden(i.href));

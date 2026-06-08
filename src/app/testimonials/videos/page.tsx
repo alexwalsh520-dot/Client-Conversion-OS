@@ -12,6 +12,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { ShieldOff, Star } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase";
+import VideoManager, { type VideoRow } from "@/components/testimonials/VideoManager";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ type Row = {
   status: string;
   submitted_at: string | null;
   file_size: number | null;
+  featured: boolean;
   created_at: string;
 };
 
@@ -38,13 +40,22 @@ export default async function VideoTestimonialsPage() {
   const db = getServiceSupabase();
   const { data } = await db
     .from("video_testimonials")
-    .select("id, client_name, coach_name, status, submitted_at, file_size, created_at")
+    .select("id, client_name, coach_name, status, submitted_at, file_size, featured, created_at")
     .order("submitted_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   const rows = (data || []) as Row[];
   const submitted = rows.filter((r) => r.status === "submitted");
   const pending = rows.filter((r) => r.status !== "submitted");
+
+  const submittedForManager: VideoRow[] = submitted.map((r) => ({
+    id: r.id,
+    client_name: r.client_name,
+    coach_name: r.coach_name,
+    submitted_at: r.submitted_at,
+    file_size: r.file_size,
+    featured: !!r.featured,
+  }));
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
@@ -54,21 +65,12 @@ export default async function VideoTestimonialsPage() {
           Video Testimonials
         </h1>
       </div>
-      <p style={{ color: "var(--text-secondary)", fontSize: 13, margin: "0 0 24px" }}>
-        {submitted.length} submitted · {pending.length} awaiting recording
+      <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "0 0 20px", maxWidth: 640 }}>
+        {pending.length} awaiting recording. Feature a video to show it in the gallery on the public
+        testimonials page (alongside the written Senja reviews). Delete removes the video permanently.
       </p>
 
-      {submitted.length === 0 ? (
-        <div className="glass-static" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
-          No testimonials submitted yet.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-          {submitted.map((r) => (
-            <VideoCard key={r.id} row={r} />
-          ))}
-        </div>
-      )}
+      <VideoManager initial={submittedForManager} />
 
       {pending.length > 0 && (
         <div style={{ marginTop: 32 }}>
@@ -97,45 +99,6 @@ export default async function VideoTestimonialsPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function VideoCard({ row }: { row: Row }) {
-  const src = `/api/testimonials/video/stream/${row.id}`;
-  return (
-    <div className="glass-static" style={{ padding: 14 }}>
-      <video
-        src={src}
-        controls
-        playsInline
-        preload="metadata"
-        style={{ width: "100%", borderRadius: 10, background: "#000", aspectRatio: "9 / 16", objectFit: "contain" }}
-      />
-      <div style={{ marginTop: 10 }}>
-        <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>{row.client_name}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-          {row.coach_name || "Unassigned"}
-          {row.submitted_at && ` · ${new Date(row.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
-          {row.file_size ? ` · ${(row.file_size / (1024 * 1024)).toFixed(1)} MB` : ""}
-        </div>
-      </div>
-      <a
-        href={`${src}?download=1`}
-        style={{
-          display: "inline-block",
-          marginTop: 10,
-          padding: "7px 14px",
-          fontSize: 13,
-          fontWeight: 600,
-          borderRadius: 8,
-          textDecoration: "none",
-          color: "var(--bg-primary)",
-          background: "var(--accent)",
-        }}
-      >
-        Download
-      </a>
     </div>
   );
 }
