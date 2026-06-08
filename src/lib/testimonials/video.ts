@@ -48,26 +48,43 @@ export async function completeVideoMilestone(
     const now = new Date();
     const today = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
 
+    // Match the canonical milestone lookup used by /api/coaching's
+    // "upsert_milestone": rows are keyed by client_name FIRST, then client_id.
+    // The vast majority of coach_milestones rows (created by the Sheets sync /
+    // the Milestones tab) have a NULL client_id, so a client_id-only lookup
+    // misses the row the tab actually displays and the completion never lands.
+    // Use limit(1) (not maybeSingle) because duplicate name rows can exist.
     let milestoneId: number | null = null;
-    const existing = await db
+
+    const byName = await db
       .from("coach_milestones")
       .select("id")
-      .eq("client_id", args.clientId)
-      .maybeSingle();
-
-    if (existing.data?.id) {
-      milestoneId = existing.data.id as number;
+      .eq("client_name", args.clientName)
+      .order("id", { ascending: true })
+      .limit(1);
+    if (byName.data && byName.data.length > 0) {
+      milestoneId = byName.data[0].id as number;
     } else {
-      const created = await db
+      const byId = await db
         .from("coach_milestones")
-        .insert({
-          client_id: args.clientId,
-          client_name: args.clientName,
-          coach_name: args.coachName,
-        })
         .select("id")
-        .single();
-      milestoneId = (created.data?.id as number) ?? null;
+        .eq("client_id", args.clientId)
+        .order("id", { ascending: true })
+        .limit(1);
+      if (byId.data && byId.data.length > 0) {
+        milestoneId = byId.data[0].id as number;
+      } else {
+        const created = await db
+          .from("coach_milestones")
+          .insert({
+            client_id: args.clientId,
+            client_name: args.clientName,
+            coach_name: args.coachName,
+          })
+          .select("id")
+          .single();
+        milestoneId = (created.data?.id as number) ?? null;
+      }
     }
 
     if (!milestoneId) return;
@@ -75,6 +92,9 @@ export async function completeVideoMilestone(
     await db
       .from("coach_milestones")
       .update({
+        // Backfill client_id on name-only rows so future lookups can match
+        // either key (mirrors how the Milestones tab matches name OR id).
+        client_id: args.clientId,
         video_testimonial_completed: true,
         video_testimonial_completion_date: today,
         video_testimonial_prompted_date: today,
