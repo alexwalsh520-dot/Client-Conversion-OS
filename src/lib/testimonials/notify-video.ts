@@ -1,12 +1,13 @@
 // Slack notification when a client submits a video testimonial.
-// Posts to the #testimonials channel (SLACK_CHANNEL_TESTIMONIALS) with the
-// owning coach and a button to watch the testimonial in CCOS.
+// Posts to the #testimonials channel (SLACK_CHANNEL_TESTIMONIALS) via the CCOS
+// Coaching Bot (SLACK_BOT_TOKEN_COACHING) — the same bot coaches already use —
+// rather than the sales team's default bot. The Coaching Bot must be a member
+// of the channel or Slack rejects the post with "not_in_channel".
 //
 // Fire-and-forget from the submit route: a failure only means no Slack ping;
 // the submission is already saved.
 
-import { postRichMessage } from "@/lib/slack";
-
+const SLACK_POST_MESSAGE = "https://slack.com/api/chat.postMessage";
 const TESTIMONIALS_CHANNEL = process.env.SLACK_CHANNEL_TESTIMONIALS || "";
 
 export async function notifyVideoTestimonialCompleted(args: {
@@ -14,6 +15,11 @@ export async function notifyVideoTestimonialCompleted(args: {
   coachName: string | null;
   watchUrl: string;
 }): Promise<void> {
+  const token = process.env.SLACK_BOT_TOKEN_COACHING;
+  if (!token) {
+    console.warn("[testimonials/notify-video] SLACK_BOT_TOKEN_COACHING not set; skipping");
+    return;
+  }
   if (!TESTIMONIALS_CHANNEL) {
     console.warn("[testimonials/notify-video] SLACK_CHANNEL_TESTIMONIALS not set; skipping");
     return;
@@ -46,8 +52,26 @@ export async function notifyVideoTestimonialCompleted(args: {
     },
   ];
 
-  const ok = await postRichMessage(TESTIMONIALS_CHANNEL, blocks);
-  if (!ok) {
-    console.warn("[testimonials/notify-video] postRichMessage failed");
+  try {
+    const res = await fetch(SLACK_POST_MESSAGE, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        channel: TESTIMONIALS_CHANNEL,
+        text: "New video testimonial submitted", // fallback for notifications/a11y
+        blocks,
+        username: "CCOS Coaching Bot",
+        icon_emoji: ":clapper:",
+      }),
+    });
+    const data = (await res.json()) as { ok: boolean; error?: string };
+    if (!data.ok) {
+      console.warn(`[testimonials/notify-video] Slack post failed: ${data.error}`);
+    }
+  } catch (err) {
+    console.warn("[testimonials/notify-video] Slack post error:", err);
   }
 }
