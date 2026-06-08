@@ -2373,6 +2373,8 @@ function campaignsFromDashboard(dashboard, range){
       ...row,
       adId,
       adName,
+      adsetId: apiRow.adsetId ?? apiRow.adset_id ?? null,
+      adsetName: apiRow.adsetName ?? apiRow.adset_name ?? null,
       keyword,
       previewImageUrl,
       previewThumbnailUrl,
