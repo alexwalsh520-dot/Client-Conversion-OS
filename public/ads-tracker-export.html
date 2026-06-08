@@ -419,8 +419,15 @@
   .tvt-btn.active{background:var(--panel-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-2)}
   .tvt-count{font-size:9.5px;color:var(--text-4);background:var(--panel-2);border:1px solid var(--border);border-radius:99px;padding:1px 6px;letter-spacing:0}
   .tvt-btn.active .tvt-count{color:var(--gold);border-color:var(--border-2)}
-  .tbl-toolbar-meta{font-size:11px;color:var(--text-4);letter-spacing:0.01em}
+  .tbl-toolbar-meta{font-size:11px;color:var(--text-4);letter-spacing:0.01em;display:inline-flex;align-items:center;gap:8px}
+  .tbl-campaign-select{font-size:11.5px;color:var(--text-2);background:var(--bg);border:1px solid var(--border-2);border-radius:6px;padding:5px 9px;max-width:280px;cursor:pointer;letter-spacing:.01em}
+  .tbl-campaign-select:hover{border-color:var(--text-4)}
+  .tbl-campaign-select:focus{outline:none;border-color:var(--gold)}
   .ad-count-chip{font-size:9.5px;color:var(--text-4);background:var(--panel-2);border:1px solid var(--border);border-radius:99px;padding:1px 7px;margin-left:4px;letter-spacing:0.02em}
+  /* Ad-set drill-down rows (Campaign -> Ad set -> Ad) */
+  .adset-row{background:color-mix(in srgb, var(--panel-2) 55%, transparent)}
+  .adset-row:hover{background:var(--panel-2)}
+  .adset-row td{border-top:1px solid var(--border)}
   /* Setter-logged columns — styled same as data columns (no indicator) */
 
   /* Modals */
@@ -2050,6 +2057,8 @@ function buildAdRows(campaignId, dayRow, adRoster){
     return dayRow.adRows.map(ad => ({
       adId: ad.adId,
       adName: ad.adName,
+      adsetId: ad.adsetId ?? ad.adset_id ?? null,
+      adsetName: ad.adsetName ?? ad.adset_name ?? null,
       previewImageUrl: ad.previewImageUrl || ad.previewThumbnailUrl || null,
       previewThumbnailUrl: ad.previewThumbnailUrl || null,
       spend: ad.spend || 0,
@@ -2655,6 +2664,28 @@ function Segmented({options, value, onChange}){
   );
 }
 
+// Group a campaign's aggregated ads into AD SETS (real adsetId from Meta — never invented).
+function aggregateAdSetRowsForCampaign(campaign){
+  const ads = aggregateAdRowsForCampaign(campaign);
+  const byAdset = new Map();
+  ads.forEach(ad => {
+    const id = ad.adsetId || ad.adsetName || "(no ad set)";
+    const cur = byAdset.get(id) || {
+      adsetId: ad.adsetId || null,
+      adsetName: ad.adsetName || ad.adsetId || "Unnamed ad set",
+      spend:0, imp:0, clicks:0, msgs:0, calls:0, taken:0,
+      clients:0, mainClients:0, subClients:0, collected:0, ads:[],
+    };
+    cur.spend += ad.spend||0; cur.imp += ad.imp||0; cur.clicks += ad.clicks||0;
+    cur.msgs += ad.msgs||0; cur.calls += ad.calls||0; cur.taken += ad.taken||0;
+    cur.clients += ad.clients||0; cur.mainClients += ad.mainClients||0;
+    cur.subClients += ad.subClients||0; cur.collected += ad.collected||0;
+    cur.ads.push(ad);
+    byAdset.set(id, cur);
+  });
+  return Array.from(byAdset.values()).sort((a,b)=> (b.collected-a.collected) || (b.spend-a.spend));
+}
+
 // ------- Campaign table
 const DEFAULT_COL_WIDTHS = {
   date: 150, spend: 110, imp: 120, cpm: 90, clicks: 110, ctr: 90, cpc: 90,
@@ -2667,9 +2698,11 @@ const CALC_KEYS = new Set(["cpm","ctr","cpc","cpMsg","cpCall","cpTaken","cpClien
 const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
-  const [view, setView] = useState("campaign"); // 'campaign' | 'ad'
+  const [view, setView] = useState("campaign"); // 'campaign' | 'adset' | 'ad'
+  const [selectedCampaign, setSelectedCampaign] = useState("all"); // isolate one campaign, or "all"
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
   const [expandedDays, setExpandedDays] = useState({});
+  const [expandedAdsets, setExpandedAdsets] = useState({}); // ad-set drill-down (adset -> ads)
   const [sort, setSort] = useState({key:"date", dir:"desc"});
   const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
   const [resizingKey, setResizingKey] = useState(null);
@@ -2748,7 +2781,10 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   });
   const visibleCampaigns = totalCampaigns
     .filter(c => !c.attributionOnly)
+    .filter(c => selectedCampaign === "all" || c.id === selectedCampaign)
     .sort((a,b) => compareBySort({...aggregate(a.rows), latestIso:a.latestIso}, {...aggregate(b.rows), latestIso:b.latestIso}));
+  // Campaign options for the isolation dropdown (account/status-scoped, before the single-campaign filter)
+  const campaignOptions = totalCampaigns.filter(c => !c.attributionOnly);
   const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
@@ -2791,12 +2827,28 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           <button className={"tvt-btn "+(view==="campaign"?"active":"")} onClick={()=>setView("campaign")}>
             Campaign level
           </button>
-          <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setTableView("ad")}>
+          <button className={"tvt-btn "+(view==="adset"?"active":"")} onClick={()=>setView("adset")}>
+            Ad set level
+          </button>
+          <button className={"tvt-btn "+(view==="ad"?"active":"")} onClick={()=>setView("ad")}>
             Ad level
             <span className="tvt-count">{tableCampaigns.reduce((sum,c)=>sum+(c.ads?.length||0),0)}</span>
           </button>
         </div>
-        <div className="tbl-toolbar-meta"></div>
+        <div className="tbl-toolbar-meta">
+          <select
+            className="tbl-campaign-select"
+            value={selectedCampaign}
+            onChange={(e)=>{
+              const v = e.target.value;
+              setSelectedCampaign(v);
+              if(v!=="all") setExpanded(s=>({...s,[v]:true}));
+            }}
+          >
+            <option value="all">All campaigns ({campaignOptions.length})</option>
+            {campaignOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
       </div>
       <div className="tbl-scroll" style={{cursor: resizingKey?"col-resize":"auto"}}>
         <table className="ads" style={{minWidth: totalMin}}>
@@ -2813,7 +2865,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                   onClick={()=>toggleSort(c.k)}
                 >
                   <span className="th-inner">
-                    {i===0 && view==="ad" ? "Campaign / Date / Ad" : c.label}
+                    {i===0 ? (view==="ad" ? "Campaign / Date / Ad" : view==="adset" ? "Campaign / Ad set / Ad" : c.label) : c.label}
                     <span className="sort-arrow">{sort.key===c.k ? (sort.dir==="desc" ? "↓" : "↑") : "↕"}</span>
                   </span>
                   <span
@@ -2895,7 +2947,71 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                       );
                     });
                   })()}
-                  {isOpen && view!=="ad" && orderedRows.map(r0=>{
+                  {isOpen && view==="adset" && (()=>{
+                    const adsetRows = aggregateAdSetRowsForCampaign(c);
+                    if(adsetRows.length===0){
+                      return (
+                        <tr className="ad-row">
+                          <td colSpan={cols.length}>
+                            <span style={{paddingLeft:30,color:'var(--text-4)',fontSize:11}}>No ad-set data returned by Meta for this date range.</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return adsetRows.map(as => {
+                      const asKey = c.id+":adset:"+(as.adsetId||as.adsetName);
+                      const asOpen = Boolean(expandedAdsets[asKey]);
+                      const asMetrics = deriveRow({
+                        date: as.adsetName,
+                        spend: as.spend, imp: as.imp, clicks: as.clicks,
+                        msgs: as.msgs, calls: as.calls, clients: as.clients,
+                        taken: as.taken, collected: as.collected,
+                      });
+                      return (
+                        <React.Fragment key={asKey}>
+                          <tr className="adset-row" style={{cursor:'pointer'}} onClick={(e)=>{e.stopPropagation(); setExpandedAdsets(s=>({...s,[asKey]:!s[asKey]}));}}>
+                            <td>
+                              <span style={{paddingLeft:30,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
+                                <span className="day-chevron">{asOpen?"▾":"▸"}</span>
+                                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{as.adsetName}</span>
+                                <span className="ad-count-chip">{as.ads.length} ads</span>
+                              </span>
+                            </td>
+                            {cols.slice(1).map(col=>{
+                              const cls = (col.cls? col.cls(asMetrics):"")+(col.calc?" calc":"");
+                              let val; try { val = col.fmt(asMetrics); } catch(e){ val = "—"; }
+                              return <td key={col.k} className={cls} style={{fontSize:12}}>{val}</td>;
+                            })}
+                          </tr>
+                          {asOpen && as.ads.map(ad => {
+                            const adMetrics = deriveRow({
+                              date: ad.adName,
+                              spend: ad.spend, imp: ad.imp, clicks: ad.clicks,
+                              msgs: ad.msgs, calls: ad.calls, clients: ad.clients,
+                              taken: ad.taken, collected: ad.collected,
+                            });
+                            return (
+                              <tr key={asKey+":"+ad.adId} className="ad-row">
+                                <td>
+                                  <span style={{paddingLeft:56,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
+                                    <span className="ad-id mono">{ad.adId}</span>
+                                    <span style={{color:'var(--text-3)'}}>·</span>
+                                    <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                                  </span>
+                                </td>
+                                {cols.slice(1).map(col=>{
+                                  const cls = (col.cls? col.cls(adMetrics):"")+(col.calc?" calc":"");
+                                  let val; try { val = col.fmt(adMetrics); } catch(e){ val = "—"; }
+                                  return <td key={col.k} className={cls} style={{fontSize:11.5}}>{val}</td>;
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                  {isOpen && view==="campaign" && orderedRows.map(r0=>{
                     const r = deriveRow(r0);
                     const isAdView = view === "ad";
                     const dayKey = `${c.id}:${r0.iso || r0.date}`;
