@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import {
   discoverInstagramAccount,
   exchangeCodeForToken,
+  exchangeForLongLivedInstagramToken,
   getInstagramClient,
   getMetaOAuthConfig,
   readConnectState,
@@ -77,11 +78,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const config = getMetaOAuthConfig(req);
-    const token = await exchangeCodeForToken(config, code);
+    const shortLived = await exchangeCodeForToken(config, code);
+    if (!shortLived.access_token) throw new Error("Meta did not return an access token");
+
+    const token =
+      config.oauthMode === "instagram"
+        ? await exchangeForLongLivedInstagramToken(config, shortLived.access_token)
+        : shortLived;
     if (!token.access_token) throw new Error("Meta did not return an access token");
 
     const account = await discoverInstagramAccount(config, token.access_token);
-    const subscription = await subscribePageToInstagramWebhooks(config, account);
+    const subscription = await subscribePageToInstagramWebhooks(config, account, token.access_token);
 
     await saveInstagramConnection({
       client,
