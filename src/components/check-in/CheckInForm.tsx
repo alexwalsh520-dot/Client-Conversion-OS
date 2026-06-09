@@ -48,15 +48,12 @@ export default function CheckInForm() {
   const [searching, setSearching] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  // Track whether each slider has been touched. We initialize values to
-  // 5 for sane defaults, but require an explicit interaction to ensure
-  // the client made a deliberate choice (not just submitted the defaults).
-  const [touched, setTouched] = useState<{ q1: boolean; q2: boolean; q3: boolean; q4: boolean }>({
-    q1: false,
-    q2: false,
-    q3: false,
-    q4: false,
-  });
+  // Sliders default to 5 (the middle of every scale) and that value is
+  // displayed immediately. We used to require an explicit "touched"
+  // interaction on every slider before enabling submit, but real
+  // clients on mobile were tapping submit happy with the defaults,
+  // hitting a silently-disabled button, and bouncing — so we dropped
+  // the gate. Server-side validation still enforces 0-10 / 1-10 ranges.
   const [answers, setAnswers] = useState<Answers>(INITIAL_ANSWERS);
   const [website, setWebsite] = useState(""); // honeypot
 
@@ -115,11 +112,11 @@ export default function CheckInForm() {
 
   const setQ = (key: "q1" | "q2" | "q3" | "q4", value: number) => {
     setAnswers((a) => ({ ...a, [key]: value }));
-    setTouched((t) => ({ ...t, [key]: true }));
   };
 
-  const allRequiredAnswered =
-    !!selected && touched.q1 && touched.q2 && touched.q3 && touched.q4;
+  // Submit gates only on having picked a client. Slider defaults (5) are
+  // valid server-side, so any submission has a complete payload.
+  const allRequiredAnswered = !!selected;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,10 +125,6 @@ export default function CheckInForm() {
 
     if (!selected) {
       setError("Please select your name from the dropdown.");
-      return;
-    }
-    if (!touched.q1 || !touched.q2 || !touched.q3 || !touched.q4) {
-      setError("Please answer all four sliders before submitting.");
       return;
     }
 
@@ -368,7 +361,7 @@ export default function CheckInForm() {
         min={0}
         max={10}
         value={answers.q1}
-        touched={touched.q1}
+        touched={true}
         onChange={(v) => setQ("q1", v)}
       />
 
@@ -380,7 +373,7 @@ export default function CheckInForm() {
         min={1}
         max={10}
         value={answers.q2}
-        touched={touched.q2}
+        touched={true}
         onChange={(v) => setQ("q2", v)}
       />
 
@@ -392,7 +385,7 @@ export default function CheckInForm() {
         min={1}
         max={10}
         value={answers.q3}
-        touched={touched.q3}
+        touched={true}
         onChange={(v) => setQ("q3", v)}
       />
 
@@ -404,7 +397,7 @@ export default function CheckInForm() {
         min={1}
         max={10}
         value={answers.q4}
-        touched={touched.q4}
+        touched={true}
         onChange={(v) => setQ("q4", v)}
       />
 
