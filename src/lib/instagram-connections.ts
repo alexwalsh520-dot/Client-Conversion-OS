@@ -344,11 +344,16 @@ export async function exchangeCodeForToken(config: MetaOAuthConfig, code: string
       code,
     });
 
-    return fetchJson<TokenResponse>("https://api.instagram.com/oauth/access_token", {
+    const raw = await fetchJson<Record<string, unknown>>("https://api.instagram.com/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
     });
+    // Instagram Login returns either a flat object or { data: [ { access_token, ... } ] }.
+    const node = Array.isArray((raw as { data?: unknown[] }).data)
+      ? ((raw as { data: unknown[] }).data[0] as Record<string, unknown>)
+      : raw;
+    return node as TokenResponse;
   }
 
   const url = new URL(`${metaBase(config.graphVersion)}/oauth/access_token`);
@@ -357,6 +362,28 @@ export async function exchangeCodeForToken(config: MetaOAuthConfig, code: string
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("code", code);
   return fetchJson<TokenResponse>(url.toString());
+}
+
+export async function exchangeForLongLivedInstagramToken(
+  config: MetaOAuthConfig,
+  shortLivedToken: string,
+): Promise<TokenResponse> {
+  // Short-lived Instagram tokens last ~1 hour. Trade up for a ~60-day token so the
+  // connection (webhook subscription + later conversation pulls/refresh) survives.
+  // If the exchange fails we keep the short-lived token so the connect still succeeds.
+  if (!config.appSecret) return { access_token: shortLivedToken };
+
+  const url = new URL("https://graph.instagram.com/access_token");
+  url.searchParams.set("grant_type", "ig_exchange_token");
+  url.searchParams.set("client_secret", config.appSecret);
+  url.searchParams.set("access_token", shortLivedToken);
+
+  try {
+    const data = await fetchJson<TokenResponse>(url.toString());
+    return data.access_token ? data : { access_token: shortLivedToken };
+  } catch {
+    return { access_token: shortLivedToken };
+  }
 }
 
 export async function discoverInstagramAccount(config: MetaOAuthConfig, accessToken: string) {
@@ -399,7 +426,31 @@ export async function discoverInstagramAccount(config: MetaOAuthConfig, accessTo
   } satisfies InstagramAccountCandidate;
 }
 
-export async function subscribePageToInstagramWebhooks(config: MetaOAuthConfig, page: InstagramAccountCandidate) {
+export async function subscribePageToInstagramWebhooks(
+  config: MetaOAuthConfig,
+  page: InstagramAccountCandidate,
+  userAccessToken?: string | null,
+) {
+  // Instagram-login mode has no Facebook Page — subscribe the IG professional
+  // account directly so inbound DM webhooks start flowing to /api/webhooks/instagram.
+  if (config.oauthMode === "instagram") {
+    if (!userAccessToken) {
+      return { status: "subscription_failed", error: "Missing access token for Instagram webhook subscription" as string | null };
+    }
+    const igUrl = new URL(`${instagramApiBase(config.graphVersion)}/me/subscribed_apps`);
+    igUrl.searchParams.set("subscribed_fields", "messages");
+    igUrl.searchParams.set("access_token", userAccessToken);
+    try {
+      await fetchJson<Record<string, unknown>>(igUrl.toString(), { method: "POST" });
+      return { status: "subscribed", error: null as string | null };
+    } catch (err) {
+      return {
+        status: "subscription_failed",
+        error: err instanceof Error ? err.message : "Subscription failed",
+      };
+    }
+  }
+
   if (!page.facebookPageId || !page.pageAccessToken) {
     return { status: "not_needed", error: null as string | null };
   }
