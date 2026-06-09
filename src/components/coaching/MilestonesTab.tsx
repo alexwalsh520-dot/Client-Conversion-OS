@@ -642,7 +642,8 @@ export default function MilestonesTab({ clients, milestones, onToggle, recentAct
       <CheckInLinkBox />
 
       {/* ======================== MONTHLY CLIENT FLOW ======================== */}
-      <MonthlyClientFlow clients={clients} />
+      <ClientFlowWindow clients={clients} windowDays={30} />
+      <ClientFlowWindow clients={clients} windowDays={7} />
     </div>
   );
 }
@@ -717,28 +718,35 @@ function CopyTestimonialLink({ clientId }: { clientId: number }) {
 // the current calendar month, so the numbers don't suddenly drop to
 // zero on the 1st of each month.
 
-function MonthlyClientFlow({ clients }: { clients: Client[] }) {
+// Renders a single "Last N days · Roster flow" strip: new clients,
+// clients out, and net change for a rolling window ending today.
+// Parameterized by windowDays so the parent can stack a 30-day strip
+// next to a 7-day strip without duplicating the filter logic.
+function ClientFlowWindow({ clients, windowDays }: { clients: Client[]; windowDays: number }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
   const DAY_MS = 86400000;
+  // "Last N days" = inclusive window. Day 0 (today) counts as new,
+  // Day -1 (yesterday) counts as out, so the upper bound is N-1.
+  const upperBound = windowDays - 1;
 
-  // Clients out: end_date is 1 to 29 days in the past.
+  // Clients out: end_date is 1 to (N-1) days in the past.
   const clientsOut = clients.filter((c) => {
     if (!c.endDate) return false;
     const end = new Date(c.endDate).getTime();
     if (Number.isNaN(end)) return false;
     const daysAgo = Math.floor((todayMs - end) / DAY_MS);
-    return daysAgo >= 1 && daysAgo <= 29;
+    return daysAgo >= 1 && daysAgo <= upperBound;
   });
 
-  // New clients: start_date is 0 to 29 days in the past.
+  // New clients: start_date is 0 to (N-1) days in the past.
   const newClients = clients.filter((c) => {
     if (!c.startDate) return false;
     const start = new Date(c.startDate).getTime();
     if (Number.isNaN(start)) return false;
     const daysAgo = Math.floor((todayMs - start) / DAY_MS);
-    return daysAgo >= 0 && daysAgo <= 29;
+    return daysAgo >= 0 && daysAgo <= upperBound;
   });
 
   const netChange = newClients.length - clientsOut.length;
@@ -760,17 +768,17 @@ function MonthlyClientFlow({ clients }: { clients: Client[] }) {
           margin: "0 0 12px",
         }}
       >
-        Last 30 days · Roster flow
+        Last {windowDays} days · Roster flow
       </h3>
       <div className="metric-grid metric-grid-3">
         <div className="glass-static metric-card">
-          <div className="metric-card-label">New clients (Day 0-29)</div>
+          <div className="metric-card-label">New clients (Day 0 to -{upperBound})</div>
           <div className="metric-card-value" style={{ color: "var(--success)" }}>
             {newClients.length}
           </div>
         </div>
         <div className="glass-static metric-card">
-          <div className="metric-card-label">Clients out (Day -1 to -29)</div>
+          <div className="metric-card-label">Clients out (Day -1 to -{upperBound})</div>
           <div className="metric-card-value" style={{ color: "var(--danger)" }}>
             {clientsOut.length}
           </div>
