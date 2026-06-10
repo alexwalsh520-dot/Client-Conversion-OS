@@ -70,6 +70,7 @@ export interface ResponseTimeGroup {
   sampleCount: number;
   fastestSeconds: number | null;
   slowestSeconds: number | null;
+  missedCount: number;
 }
 
 export interface ResponseTimeMetrics {
@@ -84,6 +85,17 @@ export interface ResponseTimeMetrics {
   };
   clients: ResponseTimeGroup[];
   setters: ResponseTimeGroup[];
+  missThresholdSeconds: number;
+  conversations: Array<{
+    client: ClientId;
+    clientLabel: string;
+    setterLabel: string;
+    leadName: string | null;
+    inboundAt: string;
+    outboundAt: string;
+    activeSeconds: number;
+    missed: boolean;
+  }>;
   slowestGaps: Array<{
     client: ClientId;
     clientLabel: string;
@@ -123,6 +135,9 @@ const SETTER_LABELS: Record<string, string> = {
 const ET_TIMEZONE = "America/New_York";
 const BUSINESS_START_SECOND = 11 * 3600;
 const BUSINESS_END_SECOND = 23 * 3600;
+
+// A reply counts as a "miss" if it took longer than this many business-hours seconds.
+const MISS_THRESHOLD_SECONDS = 5 * 60;
 
 function getVisibleClients(client: SalesHubClient): ClientDef[] {
   if (client === "all") return CLIENTS;
@@ -306,6 +321,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
       sampleCount: 0,
       fastestSeconds: null,
       slowestSeconds: null,
+      missedCount: 0,
     };
   }
 
@@ -317,6 +333,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
     sampleCount: samples.length,
     fastestSeconds: Math.min(...values),
     slowestSeconds: Math.max(...values),
+    missedCount: values.filter((value) => value > MISS_THRESHOLD_SECONDS).length,
   };
 }
 
@@ -527,6 +544,19 @@ export async function getResponseTimeMetrics(params: {
     },
     clients,
     setters,
+    missThresholdSeconds: MISS_THRESHOLD_SECONDS,
+    conversations: [...samples]
+      .sort((a, b) => (a.inboundAt < b.inboundAt ? 1 : -1))
+      .map((sample) => ({
+        client: sample.client,
+        clientLabel: sample.clientLabel,
+        setterLabel: sample.setterLabel,
+        leadName: sample.leadName,
+        inboundAt: sample.inboundAt,
+        outboundAt: sample.outboundAt,
+        activeSeconds: sample.activeSeconds,
+        missed: sample.activeSeconds > MISS_THRESHOLD_SECONDS,
+      })),
     slowestGaps: [...samples]
       .sort((a, b) => b.activeSeconds - a.activeSeconds)
       .slice(0, 5)

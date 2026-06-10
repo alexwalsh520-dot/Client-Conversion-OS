@@ -6,12 +6,17 @@ import {
 } from "@/lib/sales-hub/response-times";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { searchParams } = req.nextUrl;
+
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const secretOk = Boolean(cronSecret) && searchParams.get("secret") === cronSecret;
+  if (!secretOk) {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
-  const { searchParams } = req.nextUrl;
   const client = (searchParams.get("client") || "all") as SalesHubClient;
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");

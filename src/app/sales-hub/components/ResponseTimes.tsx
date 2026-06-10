@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  Clock3,
-  Loader2,
-  MessageSquareReply,
-  Users,
-} from "lucide-react";
+import { AlertTriangle, Clock3, Loader2 } from "lucide-react";
 import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters } from "../types";
@@ -18,39 +13,26 @@ interface ResponseTimeGroup {
   sampleCount: number;
   fastestSeconds: number | null;
   slowestSeconds: number | null;
+  missedCount: number;
+}
+
+interface Conversation {
+  client: "tyson" | "antwan";
+  clientLabel: string;
+  setterLabel: string;
+  leadName: string | null;
+  inboundAt: string;
+  outboundAt: string;
+  activeSeconds: number;
+  missed: boolean;
 }
 
 interface ResponseTimeMetrics {
-  summary: ResponseTimeGroup & {
-    latestMessageAt: string | null;
-    leadAssignments: number;
-    leadIdentityLinks: number;
-    matchedLeads: number;
-    unmatchedInboundMessages: number;
-    openInboundMessages: number;
-    staleMessageFeed: boolean;
-  };
+  summary: ResponseTimeGroup;
   clients: ResponseTimeGroup[];
   setters: ResponseTimeGroup[];
-  slowestGaps: Array<{
-    client: "tyson" | "antwan";
-    clientLabel: string;
-    setterLabel: string;
-    leadName: string | null;
-    inboundAt: string;
-    outboundAt: string;
-    activeSeconds: number;
-  }>;
-  setup: {
-    businessHours: string;
-    sourceOfTruth: {
-      leads: string;
-      messages: string;
-      attribution: string;
-      identity: string;
-    };
-    needs: string[];
-  };
+  missThresholdSeconds: number;
+  conversations: Conversation[];
 }
 
 interface ResponseTimesProps {
@@ -93,6 +75,15 @@ function responseColor(seconds: number | null) {
   if (seconds <= 15 * 60) return "var(--success)";
   if (seconds <= 45 * 60) return "var(--warning)";
   return "var(--danger)";
+}
+
+function missRate(missed: number, total: number) {
+  if (!total) return "—";
+  return `${Math.round((missed / total) * 100)}%`;
+}
+
+function thresholdLabel(seconds: number) {
+  return `${Math.round(seconds / 60)} min`;
 }
 
 export default function ResponseTimes({ filters }: ResponseTimesProps) {
@@ -138,6 +129,8 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
 
   if (!data) return null;
 
+  const threshold = thresholdLabel(data.missThresholdSeconds);
+
   return (
     <div>
       <div className="section" style={{ marginBottom: 20 }}>
@@ -154,14 +147,15 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
             color={responseColor(data.summary.averageSeconds)}
           />
           <MetricCard
-            icon={<MessageSquareReply size={12} style={{ color: "var(--accent)" }} />}
-            label="Samples"
-            value={fmtNumber(data.summary.sampleCount)}
+            icon={<AlertTriangle size={12} style={{ color: "var(--danger)" }} />}
+            label={`Missed (>${threshold})`}
+            value={fmtNumber(data.summary.missedCount)}
+            color={data.summary.missedCount > 0 ? "var(--danger)" : undefined}
           />
           <MetricCard
-            icon={<Users size={12} style={{ color: "var(--accent)" }} />}
-            label="Matched Leads"
-            value={fmtNumber(data.summary.matchedLeads)}
+            icon={<AlertTriangle size={12} style={{ color: "var(--warning)" }} />}
+            label="Miss Rate"
+            value={missRate(data.summary.missedCount, data.summary.sampleCount)}
           />
         </div>
       </div>
@@ -171,7 +165,18 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
         <GroupTable title="By Setter" rows={data.setters} />
       </div>
 
-      <SlowestGapsTable rows={data.slowestGaps} />
+      <div className="section" style={{ marginBottom: 20 }}>
+        <h2 className="section-title">
+          <AlertTriangle size={16} />
+          Missed Response Time (over {threshold})
+        </h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+          <MissedTable title="By Offer" rows={data.clients} />
+          <MissedTable title="By Setter" rows={data.setters} />
+        </div>
+      </div>
+
+      <ConversationsTable rows={data.conversations} />
     </div>
   );
 }
@@ -210,7 +215,6 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
             <tr>
               <th>Name</th>
               <th>Avg</th>
-              <th>Samples</th>
               <th>Fastest</th>
               <th>Slowest</th>
             </tr>
@@ -218,7 +222,7 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ color: "var(--text-muted)" }}>No samples yet</td>
+                <td colSpan={4} style={{ color: "var(--text-muted)" }}>No data yet</td>
               </tr>
             ) : rows.map((row) => (
               <tr key={row.id}>
@@ -226,7 +230,6 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
                 <td style={{ color: responseColor(row.averageSeconds), fontWeight: 650 }}>
                   {formatDuration(row.averageSeconds)}
                 </td>
-                <td>{fmtNumber(row.sampleCount)}</td>
                 <td>{formatDuration(row.fastestSeconds)}</td>
                 <td>{formatDuration(row.slowestSeconds)}</td>
               </tr>
@@ -238,35 +241,71 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
   );
 }
 
-function SlowestGapsTable({ rows }: { rows: ResponseTimeMetrics["slowestGaps"] }) {
+function MissedTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] }) {
   return (
     <div>
-      <TableTitle>Slowest Gaps</TableTitle>
+      <TableTitle>{title}</TableTitle>
       <div className="glass-static" style={{ overflow: "auto" }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Missed</th>
+              <th>Replies</th>
+              <th>Miss %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ color: "var(--text-muted)" }}>No data yet</td>
+              </tr>
+            ) : rows.map((row) => (
+              <tr key={row.id}>
+                <td style={{ fontWeight: 650, color: "var(--text-primary)" }}>{row.label}</td>
+                <td style={{ color: row.missedCount > 0 ? "var(--danger)" : "var(--text-secondary)", fontWeight: 650 }}>
+                  {fmtNumber(row.missedCount)}
+                </td>
+                <td>{fmtNumber(row.sampleCount)}</td>
+                <td style={{ fontWeight: 650 }}>{missRate(row.missedCount, row.sampleCount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ConversationsTable({ rows }: { rows: Conversation[] }) {
+  return (
+    <div>
+      <TableTitle>All Response Times ({fmtNumber(rows.length)})</TableTitle>
+      <div className="glass-static" style={{ overflow: "auto", maxHeight: 540 }}>
         <table className="data-table">
           <thead>
             <tr>
               <th>Lead</th>
               <th>Offer</th>
               <th>Setter</th>
-              <th>Inbound</th>
-              <th>Reply</th>
-              <th>Gap</th>
+              <th>Messaged</th>
+              <th>Replied</th>
+              <th>Response</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ color: "var(--text-muted)" }}>No response gaps yet</td>
+                <td colSpan={6} style={{ color: "var(--text-muted)" }}>No conversations yet</td>
               </tr>
-            ) : rows.map((row) => (
-              <tr key={`${row.client}-${row.setterLabel}-${row.inboundAt}-${row.outboundAt}`}>
+            ) : rows.map((row, i) => (
+              <tr key={`${row.client}-${row.setterLabel}-${row.inboundAt}-${row.outboundAt}-${i}`}>
                 <td style={{ fontWeight: 650, color: "var(--text-primary)" }}>{row.leadName || "Unknown"}</td>
                 <td>{row.clientLabel}</td>
                 <td>{row.setterLabel}</td>
                 <td>{formatDateTime(row.inboundAt)}</td>
                 <td>{formatDateTime(row.outboundAt)}</td>
-                <td style={{ color: responseColor(row.activeSeconds), fontWeight: 650 }}>
+                <td style={{ color: row.missed ? "var(--danger)" : "var(--success)", fontWeight: 650 }}>
                   {formatDuration(row.activeSeconds)}
                 </td>
               </tr>
