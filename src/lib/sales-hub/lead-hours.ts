@@ -111,7 +111,8 @@ export async function getLeadHours(params: {
     if (dateStr < dateFrom || dateStr > dateTo) continue;
 
     team.counts[hour] += 1;
-    offerByKey.get(row.client)?.counts[hour]++;
+    const offer = offerByKey.get(row.client);
+    if (offer) offer.counts[hour] += 1;
 
     const setterKey = row.setter_name?.trim().toLowerCase() || "unassigned";
     let setter = setterByKey.get(setterKey);
