@@ -63,6 +63,13 @@ interface ResponseSample {
   activeSeconds: number;
 }
 
+export interface HourlyBucket {
+  hour: number; // ET hour, 11..22 (business hours)
+  count: number;
+  avgSeconds: number | null;
+  missedCount: number;
+}
+
 export interface ResponseTimeGroup {
   id: string;
   label: string;
@@ -71,6 +78,7 @@ export interface ResponseTimeGroup {
   fastestSeconds: number | null;
   slowestSeconds: number | null;
   missedCount: number;
+  hourly: HourlyBucket[];
 }
 
 export interface ResponseTimeMetrics {
@@ -140,6 +148,38 @@ const BUSINESS_END_SECOND = 23 * 3600;
 
 // A reply counts as a "miss" if it took longer than this many business-hours seconds.
 const MISS_THRESHOLD_SECONDS = 5 * 60;
+
+// Business-hour buckets (ET): 11am(11) … 10pm(22) — the 12 hours of the 11am–11pm window.
+const BUSINESS_HOURS = Array.from({ length: 12 }, (_, i) => 11 + i);
+
+function etHourOfIso(iso: string): number {
+  if (!iso) return 11;
+  const sec = getEtParts(new Date(iso)).secondsOfDay;
+  const hour = Math.floor(sec / 3600);
+  if (hour < 11) return 11;
+  if (hour > 22) return 22;
+  return hour;
+}
+
+function bucketSamplesByHour(samples: ResponseSample[]): HourlyBucket[] {
+  const byHour = new Map<number, ResponseSample[]>();
+  for (const sample of samples) {
+    const hour = etHourOfIso(sample.inboundAt);
+    const list = byHour.get(hour) || [];
+    list.push(sample);
+    byHour.set(hour, list);
+  }
+  return BUSINESS_HOURS.map((hour) => {
+    const list = byHour.get(hour) || [];
+    const values = list.map((s) => s.activeSeconds);
+    return {
+      hour,
+      count: list.length,
+      avgSeconds: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
+      missedCount: values.filter((v) => v > MISS_THRESHOLD_SECONDS).length,
+    };
+  });
+}
 
 // ManyChat live-chat deep link: https://app.manychat.com/fb{pageId}/chat/{subscriberId}
 // (the account path segment is prefixed with "fb", confirmed from a real inbox URL).
@@ -328,6 +368,8 @@ function findAssignmentForMessage(
 }
 
 function summarizeSamples(id: string, label: string, samples: ResponseSample[]): ResponseTimeGroup {
+  const hourly = bucketSamplesByHour(samples);
+
   if (samples.length === 0) {
     return {
       id,
@@ -337,6 +379,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
       fastestSeconds: null,
       slowestSeconds: null,
       missedCount: 0,
+      hourly,
     };
   }
 
@@ -349,6 +392,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
     fastestSeconds: Math.min(...values),
     slowestSeconds: Math.max(...values),
     missedCount: values.filter((value) => value > MISS_THRESHOLD_SECONDS).length,
+    hourly,
   };
 }
 
