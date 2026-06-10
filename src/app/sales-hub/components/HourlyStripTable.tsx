@@ -1,8 +1,13 @@
 "use client";
 
+import { useState } from "react";
+
 /**
- * Compact horizontal hour strip — a header row of hour labels and one row of
- * plain numbers per group. No bars, no annotations; numbers only, per request.
+ * Compact hourly strip rendered as a spreadsheet-style table: bordered cells,
+ * hour-label header row, one row of plain numbers per group.
+ *
+ * When `secondaryRows` is provided (e.g. % as primary, raw counts as
+ * secondary), the header shows a small toggle and clicking it flips the view.
  */
 
 export interface StripCell {
@@ -17,89 +22,150 @@ export interface StripRow {
   cells: StripCell[];
 }
 
+const CELL_BORDER = "1px solid var(--border-subtle)";
+
 export default function HourlyStripTable({
   title,
   hourLabels,
   rows,
+  secondaryRows,
+  toggleLabels = ["%", "#"],
 }: {
   title?: string;
   hourLabels: string[];
   rows: StripRow[];
+  secondaryRows?: StripRow[];
+  toggleLabels?: [string, string];
 }) {
+  const [showSecondary, setShowSecondary] = useState(false);
   if (rows.length === 0) return null;
+
+  const activeRows = showSecondary && secondaryRows ? secondaryRows : rows;
   const minWidth = 96 + hourLabels.length * 34;
 
   return (
     <div className="glass-static" style={{ padding: "10px 12px", overflowX: "auto", marginTop: 8 }}>
-      {title ? (
-        <div
-          style={{
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "1px",
-            color: "var(--text-muted)",
-            fontWeight: 600,
-            marginBottom: 6,
-          }}
-        >
-          {title}
-        </div>
-      ) : null}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        {title ? (
+          <div
+            style={{
+              fontSize: 10,
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+              color: "var(--text-muted)",
+              fontWeight: 600,
+            }}
+          >
+            {title}
+          </div>
+        ) : (
+          <div />
+        )}
+        {secondaryRows ? (
+          <button
+            onClick={() => setShowSecondary((v) => !v)}
+            title={`Switch to ${showSecondary ? toggleLabels[0] : toggleLabels[1]}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "2px 8px",
+              borderRadius: 6,
+              border: CELL_BORDER,
+              background: "transparent",
+              color: "var(--accent)",
+              cursor: "pointer",
+            }}
+          >
+            {showSecondary ? toggleLabels[1] : toggleLabels[0]} ▾
+          </button>
+        ) : null}
+      </div>
 
-      <div style={{ minWidth }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 88, flexShrink: 0 }} />
-          {hourLabels.map((label) => (
-            <div
-              key={label}
-              style={{ flex: 1, textAlign: "center", fontSize: 9, color: "var(--text-muted)" }}
-            >
-              {label}
-            </div>
-          ))}
-        </div>
-
-        {rows.map((row) => (
-          <div key={row.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
-            <div
+      <table
+        style={{
+          minWidth,
+          width: "100%",
+          borderCollapse: "collapse",
+          tableLayout: "fixed",
+        }}
+      >
+        <thead>
+          <tr>
+            <th
               style={{
-                width: 88,
-                flexShrink: 0,
-                fontSize: 11,
-                fontWeight: 650,
-                color: "var(--text-primary)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                width: 90,
+                border: CELL_BORDER,
+                padding: "3px 6px",
+                fontSize: 9,
+                textAlign: "left",
+                color: "var(--text-muted)",
+                fontWeight: 600,
               }}
-            >
-              {row.label}
-            </div>
-            {row.cells.map((cell, i) => (
-              <div
-                key={i}
-                title={cell.tooltip}
+            />
+            {hourLabels.map((label) => (
+              <th
+                key={label}
                 style={{
-                  flex: 1,
+                  border: CELL_BORDER,
+                  padding: "3px 2px",
+                  fontSize: 9,
                   textAlign: "center",
-                  fontSize: 11,
-                  fontWeight: 650,
-                  whiteSpace: "nowrap",
-                  color:
-                    cell.value === null
-                      ? "var(--text-muted)"
-                      : cell.danger
-                        ? "var(--danger)"
-                        : "var(--text-primary)",
-                  opacity: cell.value === null ? 0.45 : 1,
+                  color: "var(--text-muted)",
+                  fontWeight: 600,
                 }}
               >
-                {cell.value ?? "·"}
-              </div>
+                {label}
+              </th>
             ))}
-          </div>
-        ))}
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {activeRows.map((row) => (
+            <tr key={row.id}>
+              <td
+                style={{
+                  border: CELL_BORDER,
+                  padding: "4px 6px",
+                  fontSize: 11,
+                  fontWeight: 650,
+                  color: "var(--text-primary)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {row.label}
+              </td>
+              {row.cells.map((cell, i) => (
+                <td
+                  key={i}
+                  title={cell.tooltip}
+                  style={{
+                    border: CELL_BORDER,
+                    padding: "4px 2px",
+                    textAlign: "center",
+                    fontSize: 11,
+                    fontWeight: 650,
+                    whiteSpace: "nowrap",
+                    color:
+                      cell.value === null
+                        ? "var(--text-muted)"
+                        : cell.danger
+                          ? "var(--danger)"
+                          : "var(--text-primary)",
+                    opacity: cell.value === null ? 0.45 : 1,
+                  }}
+                >
+                  {cell.value ?? "·"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
