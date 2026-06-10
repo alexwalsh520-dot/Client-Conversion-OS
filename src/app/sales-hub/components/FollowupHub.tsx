@@ -13,8 +13,7 @@ type ClientKey = Exclude<Client, "all">;
 
 const CLIENT_TO_SERVER: Record<ClientKey, string> = {
   tyson: "tyson_sonnek",
-  keith: "keith_holland",
-  lucy: "lucy_hubbard",
+  antwan: "antwan_rarcus",
 };
 
 interface Variant {
@@ -198,8 +197,7 @@ function Header({
 }) {
   const k = kpis ?? { total_sends_30d: 0, total_replies_30d: 0, reply_rate_30d: 0, active_leads: 0 };
   const clientLabel = selectedClient === "all" ? "Tyson (default)" :
-    selectedClient === "tyson" ? "Tyson" :
-    selectedClient === "keith" ? "Keith" : "Lucy Hubbard";
+    selectedClient === "tyson" ? "Tyson" : "Antwan Rarcus";
 
   return (
     <div>

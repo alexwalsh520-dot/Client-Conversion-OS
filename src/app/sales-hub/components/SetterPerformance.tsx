@@ -58,9 +58,8 @@ interface SetterSummary {
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
 const CLIENT_SETTERS: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi"],
-  keith: ["Gideon"],
-  lucy: ["Debbie"],
+  tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
+  antwan: [],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -68,21 +67,17 @@ const SETTER_SHEET_KEYS: Record<string, string[]> = {
   Kelechi: ["KELCHI", "KELECHI"],
   Gideon: ["GIDEON"],
   Debbie: ["DEBBIE", "DEBBY", "CHIDIEBERE"],
+  Erin: ["ERIN"],
 };
 
 const CLIENT_BADGE_LABELS: Record<string, string> = {
   tyson: "Tyson",
-  keith: "Keith",
-  lucy: "Lucy Hubbard",
+  antwan: "Antwan Rarcus",
 };
 
 function getRelevantSetters(client: string): { name: string; client: string }[] {
   if (client === "all") {
-    return [
-      ...CLIENT_SETTERS.tyson.map((n) => ({ name: n, client: "tyson" })),
-      ...CLIENT_SETTERS.keith.map((n) => ({ name: n, client: "keith" })),
-      ...CLIENT_SETTERS.lucy.map((n) => ({ name: n, client: "lucy" })),
-    ];
+    return CLIENT_SETTERS.tyson.map((n) => ({ name: n, client: "tyson" }));
   }
   return (CLIENT_SETTERS[client] || []).map((n) => ({ name: n, client }));
 }
@@ -90,14 +85,12 @@ function getRelevantSetters(client: string): { name: string; client: string }[] 
 function rowMatchesClient(row: SheetRow, client: string): boolean {
   const offer = (row.offer || "").toLowerCase();
   if (client === "tyson") return offer.includes("tyson") || offer.includes("sonnek") || offer.includes("sonic");
-  if (client === "keith") return offer.includes("keith");
-  if (client === "lucy") return offer.includes("lucy") || offer.includes("hubbard");
+  if (client === "antwan") return offer.includes("antwan") || offer.includes("rarcus");
   return true;
 }
 
 function clientColor(client: string): string {
-  if (client === "keith") return "var(--keith)";
-  if (client === "lucy") return "var(--accent)";
+  if (client === "antwan") return "var(--accent)";
   return "var(--tyson)";
 }
 
@@ -165,17 +158,9 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
       let manychatPromise: Promise<Record<string, ManychatMetrics>>;
       if (filters.client === "all") {
-        manychatPromise = Promise.all([
-          fetchJSON<ManychatMetrics>(
-            `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-          ),
-          fetchJSON<ManychatMetrics>(
-            `/api/sales-hub/manychat-metrics?client=keith&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-          ),
-          fetchJSON<ManychatMetrics>(
-            `/api/sales-hub/manychat-metrics?client=lucy&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-          ),
-        ]).then(([tyson, keith, lucy]) => ({ tyson, keith, lucy }));
+        manychatPromise = fetchJSON<ManychatMetrics>(
+          `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        ).then((tyson) => ({ tyson }));
       } else {
         manychatPromise = fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
@@ -197,7 +182,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   }, [fetchData]);
 
   const summary = useMemo((): SetterSummary => {
-    const visibleClients = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
+    const visibleClients = filters.client === "all" ? ["tyson"] : [filters.client];
     const newLeads = visibleClients.reduce(
       (sum, client) => sum + (metricsMap[client]?.dashboard?.newLeads || 0),
       0,
@@ -242,7 +227,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   }, [filters.client, metricsMap, sheetRows]);
 
   const offerRows = useMemo((): OfferRow[] => {
-    const visibleClients = filters.client === "all" ? ["tyson", "keith", "lucy"] : [filters.client];
+    const visibleClients = filters.client === "all" ? ["tyson"] : [filters.client];
 
     return visibleClients.map((client) => {
       const rows = sheetRows.filter((row) => rowMatchesClient(row, client));

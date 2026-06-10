@@ -26,8 +26,7 @@ interface ClientFunnel {
 
 const CLIENT_META: Record<ClientKey, { label: string; color: string }> = {
   tyson: { label: "Tyson Sonnek", color: "#4d77ff" },
-  keith: { label: "Keith Holland", color: "#b6a0ff" },
-  lucy: { label: "Lucy Hubbard", color: "#d8b873" },
+  antwan: { label: "Antwan Rarcus", color: "#b6a0ff" },
 };
 
 function buildClientFunnels(
@@ -35,7 +34,7 @@ function buildClientFunnels(
   metricsMap: Partial<Record<ClientKey, ManychatMetrics>>,
 ): ClientFunnel[] {
   const clientKeys: ClientKey[] =
-    selectedClient === "all" ? ["tyson", "keith", "lucy"] : [selectedClient];
+    selectedClient === "all" ? ["tyson", "antwan"] : [selectedClient];
 
   return clientKeys
     .map((key) => {

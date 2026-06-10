@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
 
-  if (!["all", "tyson", "keith", "lucy"].includes(client)) {
+  if (!["all", "tyson", "antwan"].includes(client)) {
     return NextResponse.json({ error: "Invalid client" }, { status: 400 });
   }
 

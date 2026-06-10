@@ -13,8 +13,8 @@ function getCalendarIds(): string[] {
   const ids: string[] = [];
   const tysonId = process.env.GHL_CALENDAR_ID_TYSON;
   if (tysonId) ids.push(tysonId);
-  const keithId = process.env.GHL_CALENDAR_ID_KEITH;
-  if (keithId) ids.push(keithId);
+  const antwanId = process.env.GHL_CALENDAR_ID_ANTWAN;
+  if (antwanId) ids.push(antwanId);
   return ids;
 }
 

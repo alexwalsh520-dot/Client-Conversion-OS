@@ -9,7 +9,7 @@ Format the brief as:
 ## [Prospect Name] — Pre-Call Brief
 **Call Date:** [date/time]
 **Closer:** [closer name]
-**Client Offer:** [Tyson Sonnek / Keith Holland]
+**Client Offer:** [Tyson Sonnek]
 **Setter:** [who set this lead]
 
 ### Lead Temperature: [HOT / WARM / COLD]

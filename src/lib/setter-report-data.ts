@@ -5,7 +5,7 @@ import {
 } from "@/lib/slack-appointments";
 import { getServiceSupabase } from "@/lib/supabase";
 
-type ClientKey = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
+type ClientKey = "tyson_sonnek" | "antwan_rarcus";
 
 interface SetterDef {
   key: string;
@@ -162,8 +162,8 @@ const SETTERS: SetterDef[] = [
   {
     key: "gideon",
     name: "Gideon",
-    clientKey: "keith_holland",
-    clientLabel: "Keith Holland",
+    clientKey: "tyson_sonnek",
+    clientLabel: "Tyson Sonnek",
     sheetKeys: ["GIDEON"],
   },
   {
@@ -179,6 +179,13 @@ const SETTERS: SetterDef[] = [
     clientKey: "tyson_sonnek",
     clientLabel: "Tyson Sonnek",
     sheetKeys: ["DEBBIE"],
+  },
+  {
+    key: "erin",
+    name: "Erin",
+    clientKey: "tyson_sonnek",
+    clientLabel: "Tyson Sonnek",
+    sheetKeys: ["ERIN"],
   },
 ];
 
@@ -256,8 +263,7 @@ function namesLikelyMatch(a: string | null | undefined, b: string | null | undef
 function clientKeyFromOffer(offer: string | null | undefined): ClientKey | null {
   const normalized = (offer || "").toLowerCase();
   if (normalized.includes("tyson")) return "tyson_sonnek";
-  if (normalized.includes("keith")) return "keith_holland";
-  if (normalized.includes("lucy") || normalized.includes("hubbard")) return "lucy_hubbard";
+  if (normalized.includes("antwan") || normalized.includes("rarcus")) return "antwan_rarcus";
   return null;
 }
 
@@ -462,9 +468,7 @@ function filterSheetRowsForSetter(
     const clientMatch =
       setter.clientKey === "tyson_sonnek"
         ? offerLower.includes("tyson")
-        : setter.clientKey === "keith_holland"
-          ? offerLower.includes("keith")
-          : offerLower.includes("lucy") || offerLower.includes("hubbard");
+        : offerLower.includes("antwan") || offerLower.includes("rarcus");
 
     if (!clientMatch) return false;
     return row.date >= effectiveStart && row.date <= dateTo;
@@ -684,10 +688,6 @@ function matchSlackBookingsToSetters(
 
     if (clientKey === "tyson_sonnek") {
       return { bookedEtDate, clientKey, setterKey: "amara" };
-    }
-
-    if (clientKey === "keith_holland") {
-      return { bookedEtDate, clientKey, setterKey: "gideon" };
     }
 
     return {

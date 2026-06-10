@@ -4,8 +4,9 @@ import { getServiceSupabase } from "@/lib/supabase";
 const SETTER_CLIENT_MAP: Record<string, string> = {
   amara: "tyson",
   kelechi: "tyson",
-  gideon: "keith",
+  gideon: "tyson",
   debbie: "tyson",
+  erin: "tyson",
 };
 
 // POST — setter submits a transcript (public, no auth)

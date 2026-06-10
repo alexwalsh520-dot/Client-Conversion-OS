@@ -38,9 +38,8 @@ export async function GET(req: NextRequest) {
         if (clientLower === "tyson" || clientLower === "tyson sonnek" || clientLower === "sonic") {
           return offerLower.includes("tyson") || offerLower.includes("sonic");
         }
-        if (clientLower === "keith" || clientLower === "keith holland") return offerLower.includes("keith");
-        if (clientLower === "lucy" || clientLower === "lucy hubbard") {
-          return offerLower.includes("lucy") || offerLower.includes("hubbard");
+        if (clientLower === "antwan" || clientLower === "antwan rarcus") {
+          return offerLower.includes("antwan") || offerLower.includes("rarcus");
         }
         return offerLower.includes(clientLower);
       });

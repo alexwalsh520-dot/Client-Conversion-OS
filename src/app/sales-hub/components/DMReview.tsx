@@ -43,16 +43,16 @@ interface DMReviewProps {
 /* ── Constants ────────────────────────────────────────────────────── */
 
 const SETTER_MAP: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi", "Debbie"],
-  keith: ["Gideon"],
-  all: ["Amara", "Kelechi", "Gideon", "Debbie"],
+  tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
+  all: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
 };
 
 const SETTER_CLIENT: Record<string, string> = {
   Amara: "tyson",
   Kelechi: "tyson",
-  Gideon: "keith",
+  Gideon: "tyson",
   Debbie: "tyson",
+  Erin: "tyson",
 };
 
 function formatDate(iso: string): string {
@@ -89,7 +89,7 @@ export default function DMReview({ filters }: DMReviewProps) {
     try {
       const { dateFrom, dateTo } = getEffectiveDates(filters);
       const clients =
-        filters.client === "all" ? ["tyson", "keith"] : [filters.client];
+        filters.client === "all" ? ["tyson"] : [filters.client];
 
       const allTranscripts: Transcript[] = [];
 
@@ -311,7 +311,7 @@ export default function DMReview({ filters }: DMReviewProps) {
             const result = reviewResults[setter.name];
             const reviewError = reviewErrors[setter.name];
             const clientColor =
-              setter.client === "tyson" ? "var(--tyson)" : "var(--keith)";
+              setter.client === "tyson" ? "var(--tyson)" : "var(--accent)";
 
             return (
               <div key={setter.name} className="glass-static" style={{ padding: 20 }}>
@@ -358,7 +358,7 @@ export default function DMReview({ filters }: DMReviewProps) {
                       letterSpacing: "0.5px",
                     }}
                   >
-                    {setter.client === "tyson" ? "Tyson" : "Keith"}
+                    {setter.client === "tyson" ? "Tyson" : "Antwan"}
                   </span>
                 </div>
 
@@ -527,7 +527,7 @@ export default function DMReview({ filters }: DMReviewProps) {
 function ReviewHistoryCard({ transcript }: { transcript: Transcript }) {
   const [open, setOpen] = useState(false);
   const clientColor =
-    transcript.client === "tyson" ? "var(--tyson)" : "var(--keith)";
+    transcript.client === "tyson" ? "var(--tyson)" : "var(--accent)";
 
   return (
     <div className="glass-static" style={{ overflow: "hidden" }}>

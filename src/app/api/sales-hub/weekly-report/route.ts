@@ -86,7 +86,7 @@ async function fetchDMTranscripts(
 
 /* ── System prompt ──────────────────────────────────────────────── */
 
-const WEEKLY_REPORT_SYSTEM_PROMPT = `You are a senior marketing strategist and sales operations analyst for Core Shift LLC, a fitness coaching agency with two clients: Keith Holland and Tyson Sonnek.
+const WEEKLY_REPORT_SYSTEM_PROMPT = `You are a senior marketing strategist and sales operations analyst for Core Shift LLC, a fitness coaching agency whose active client is Tyson Sonnek.
 
 Your job: generate an in-depth weekly performance report with transcript-based insights and ad copy.
 
@@ -126,12 +126,6 @@ Based on transcript data and performance metrics:
 - What pain points to amplify in ads
 - Demographic/psychographic patterns
 - Content themes that should be tested
-
-## Ad Copy — Keith Holland (30 pieces)
-Write exactly 30 pieces of ad copy for Keith Holland's fitness coaching offer.
-For EACH piece: the ad copy text, then a 1-2 sentence explanation of why it should work based on the data.
-Vary the styles: hooks, long-form, short-form, testimonial-style, problem-agitate-solve, etc.
-Base the copy on actual patterns found in the transcripts and data.
 
 ## Ad Copy — Tyson Sonnek (30 pieces)
 Write exactly 30 pieces of ad copy for Tyson Sonnek's fitness coaching offer.
@@ -185,17 +179,13 @@ export async function POST(req: NextRequest) {
     const [
       sheetData,
       tysonManychat,
-      keithManychat,
       tysonStripe,
-      keithStripe,
       fathomTranscripts,
       dmTranscripts,
     ] = await Promise.all([
       fetchSheetData(dateFrom, dateTo).catch(() => []),
       getMetrics("tyson_sonnek", dateFrom, dateTo).catch(() => null),
-      getMetrics("keith_holland", dateFrom, dateTo).catch(() => null),
       countSubscriptionSales("tyson", dateFrom, dateTo).catch(() => 0),
-      countSubscriptionSales("keith", dateFrom, dateTo).catch(() => 0),
       fetchFathomTranscripts(dateFrom, dateTo),
       fetchDMTranscripts(dateFrom, dateTo),
     ]);
@@ -301,12 +291,11 @@ export async function POST(req: NextRequest) {
     // ManyChat
     dataParts.push("=== MANYCHAT / DM METRICS ===");
     dataParts.push(tysonManychat ? `Tyson: ${JSON.stringify(tysonManychat, null, 2)}` : "Tyson: No data");
-    dataParts.push(keithManychat ? `Keith: ${JSON.stringify(keithManychat, null, 2)}` : "Keith: No data");
     dataParts.push("");
 
     // Stripe
     dataParts.push("=== STRIPE SUBSCRIPTIONS ===");
-    dataParts.push(`Tyson: ${tysonStripe} | Keith: ${keithStripe}`);
+    dataParts.push(`Tyson: ${tysonStripe}`);
     dataParts.push("");
 
     // Fathom call transcripts

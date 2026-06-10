@@ -1,6 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 
-export type SalesHubClient = "tyson" | "keith" | "lucy" | "all";
+export type SalesHubClient = "tyson" | "antwan" | "all";
 
 type ClientId = Exclude<SalesHubClient, "all">;
 
@@ -107,8 +107,7 @@ export interface ResponseTimeMetrics {
 
 const CLIENTS: ClientDef[] = [
   { id: "tyson", key: "tyson_sonnek", label: "Tyson" },
-  { id: "keith", key: "keith_holland", label: "Keith" },
-  { id: "lucy", key: "lucy_hubbard", label: "Lucy Hubbard" },
+  { id: "antwan", key: "antwan_rarcus", label: "Antwan Rarcus" },
 ];
 
 const SETTER_LABELS: Record<string, string> = {

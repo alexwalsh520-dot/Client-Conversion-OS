@@ -135,7 +135,7 @@ function computePeriod(rows: SheetRow[]): PeriodMetrics {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const byClient: Record<string, ClientMetrics> = {};
-  for (const label of ["Tyson", "Keith"]) {
+  for (const label of ["Tyson", "Antwan"]) {
     const clientRows = rows.filter((r) =>
       r.offer?.toLowerCase().includes(label.toLowerCase()),
     );
@@ -1203,14 +1203,14 @@ function VerticalFunnel({
 
 /* ── FunnelSection ───────────────────────────────────────────────── */
 
-type FunnelView = "both" | "keith" | "tyson" | "side-by-side";
+type FunnelView = "both" | "antwan" | "tyson" | "side-by-side";
 
 function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
   const [view, setView] = useState<FunnelView>("both");
 
   const viewButtons: { key: FunnelView; label: string }[] = [
     { key: "both", label: "Both" },
-    { key: "keith", label: "Keith" },
+    { key: "antwan", label: "Antwan" },
     { key: "tyson", label: "Tyson" },
     { key: "side-by-side", label: "Side by Side" },
   ];
@@ -1228,7 +1228,7 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
     showRate: 0,
     aov: 0,
   };
-  const keithM = metrics.byClient["Keith"] || emptyClient;
+  const antwanM = metrics.byClient["Antwan"] || emptyClient;
   const tysonM = metrics.byClient["Tyson"] || emptyClient;
 
   return (
@@ -1276,8 +1276,8 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
         ))}
       </div>
       {view === "both" && <VerticalFunnel metrics={metrics} />}
-      {view === "keith" && (
-        <VerticalFunnel metrics={keithM} label="Keith Holland" />
+      {view === "antwan" && (
+        <VerticalFunnel metrics={antwanM} label="Antwan Rarcus" />
       )}
       {view === "tyson" && (
         <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />
@@ -1296,7 +1296,7 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
               paddingRight: 16,
             }}
           >
-            <VerticalFunnel metrics={keithM} label="Keith Holland" />
+            <VerticalFunnel metrics={antwanM} label="Antwan Rarcus" />
           </div>
           <div style={{ paddingLeft: 8 }}>
             <VerticalFunnel metrics={tysonM} label="Tyson Sonnek" />
@@ -1360,19 +1360,19 @@ function generateBottleneckAnalysis(m: PeriodMetrics): string {
     `\n\u{1F4B0} Revenue Per Show: ${fmtDollars(rps)}. This composite metric reflects the cash yield of every person who shows up.`,
   );
 
-  const keith = m.byClient["Keith"];
+  const antwan = m.byClient["Antwan"];
   const tyson = m.byClient["Tyson"];
   if (
-    keith &&
+    antwan &&
     tyson &&
-    keith.callsBooked > 2 &&
+    antwan.callsBooked > 2 &&
     tyson.callsBooked > 2
   ) {
-    const kCR = keith.closeRate;
+    const kCR = antwan.closeRate;
     const tCR = tyson.closeRate;
     if (Math.abs(kCR - tCR) > 10) {
-      const higher = kCR > tCR ? "Keith" : "Tyson";
-      const lower = kCR > tCR ? "Tyson" : "Keith";
+      const higher = kCR > tCR ? "Antwan" : "Tyson";
+      const lower = kCR > tCR ? "Tyson" : "Antwan";
       parts.push(
         `\n\u{1F4CA} Offer gap: ${higher} close rate (${Math.max(kCR, tCR).toFixed(1)}%) outperforms ${lower} (${Math.min(kCR, tCR).toFixed(1)}%) by ${Math.abs(kCR - tCR).toFixed(1)}pp. Use Side-by-Side view to compare funnels.`,
       );
@@ -1409,14 +1409,14 @@ function getAiResponse(userMsg: string, m: PeriodMetrics): string {
     return `RPS (Revenue Per Show) is ${fmtDollars(rps)}. This means every person who shows up on a call generates ${fmtDollars(rps)} in expected revenue. To increase RPS, improve either close rate or AOV.`;
   }
   if (
-    msg.includes("keith") ||
+    msg.includes("antwan") ||
     msg.includes("tyson") ||
     msg.includes("offer")
   ) {
-    const k = m.byClient["Keith"];
+    const k = m.byClient["Antwan"];
     const t = m.byClient["Tyson"];
     if (k && t) {
-      return `Keith: ${k.wins}W, ${fmtPercent(k.closeRate, 1)} close, ${fmtDollars(k.aov)} AOV. Tyson: ${t.wins}W, ${fmtPercent(t.closeRate, 1)} close, ${fmtDollars(t.aov)} AOV. Use the Side-by-Side toggle above to compare their full funnels.`;
+      return `Antwan: ${k.wins}W, ${fmtPercent(k.closeRate, 1)} close, ${fmtDollars(k.aov)} AOV. Tyson: ${t.wins}W, ${fmtPercent(t.closeRate, 1)} close, ${fmtDollars(t.aov)} AOV. Use the Side-by-Side toggle above to compare their full funnels.`;
     }
     return "Per-offer data is available in the funnel above. Toggle to Side-by-Side view for a detailed comparison.";
   }
@@ -1982,7 +1982,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
     setLoading(true);
     setError("");
     try {
-      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", keith: "Keith Holland", lucy: "Lucy Hubbard" };
+      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", antwan: "Antwan Rarcus" };
       const clientParam =
         filters.client !== "all" && clientNames[filters.client]
           ? `&client=${encodeURIComponent(clientNames[filters.client])}`
@@ -2599,8 +2599,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                       fontSize: 13,
                       fontWeight: 700,
                       color:
-                        name === "Keith"
-                          ? "var(--keith, #b8a4d9)"
+                        name === "Antwan"
+                          ? "var(--accent, #b8a4d9)"
                           : "var(--tyson, #82c5c5)",
                       ...RT,
                     }}

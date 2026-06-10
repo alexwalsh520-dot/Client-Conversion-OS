@@ -34,7 +34,7 @@ Format the brief in exactly 4 sections:
 [For each prospect on today's calendar:]
 
 ### [Time EST] — [Prospect Name]
-**Client:** [Keith Holland / Tyson Sonnek]
+**Client:** [Tyson Sonnek]
 **Setter:** [setter name — NEVER say "unknown". Check sales tracker if DM transcript unavailable.]
 **Status:** [Confirmed / Pending]
 
@@ -310,11 +310,11 @@ function matchCloser(
   return "Unassigned";
 }
 
-// Determine client (Tyson/Keith) from calendar name
+// Determine client (Tyson/Antwan) from calendar name
 function identifyClient(calendarName: string): string {
   const lower = calendarName.toLowerCase();
   if (lower.includes("tyson") || lower.includes("ts")) return "Tyson Sonnek";
-  if (lower.includes("keith") || lower.includes("kh")) return "Keith Holland";
+  if (lower.includes("antwan") || lower.includes("rarcus")) return "Antwan Rarcus";
   return calendarName || "Unknown Client";
 }
 

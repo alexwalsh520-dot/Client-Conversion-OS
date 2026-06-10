@@ -133,8 +133,7 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
           >
             <option value="all">All Clients</option>
             <option value="tyson">Tyson Sonnek</option>
-            <option value="keith">Keith Holland</option>
-            <option value="lucy">Lucy Hubbard</option>
+            <option value="antwan">Antwan Rarcus</option>
           </select>
         </div>
 

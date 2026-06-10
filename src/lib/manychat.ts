@@ -16,7 +16,7 @@
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
+type Client = "tyson_sonnek" | "antwan_rarcus";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -47,9 +47,8 @@ export interface ManychatMetrics {
 }
 
 const CLIENT_SETTERS: Record<Client, string[]> = {
-  tyson_sonnek: ["amara", "kelechi"],
-  keith_holland: ["gideon"],
-  lucy_hubbard: ["debbie"],
+  tyson_sonnek: ["amara", "kelechi", "debbie", "gideon", "erin"],
+  antwan_rarcus: [],
 };
 
 const LEAD_SOURCE_DEFS = [
@@ -195,8 +194,7 @@ function leadSourcesList(sources: Record<LeadSourceId, LeadSourceMetric>): LeadS
 
 function adsClientKey(client: Client): string {
   if (client === "tyson_sonnek") return "tyson";
-  if (client === "keith_holland") return "keith";
-  return "lucy";
+  return "antwan";
 }
 
 function textFromPayload(value: unknown): string {
@@ -284,8 +282,7 @@ function normalizePersonName(value: string | null | undefined): string {
 function matchesClientOffer(client: Client, offer: string | null | undefined): boolean {
   const normalized = (offer || "").toLowerCase();
   if (client === "tyson_sonnek") return normalized.includes("tyson");
-  if (client === "keith_holland") return normalized.includes("keith");
-  if (client === "lucy_hubbard") return normalized.includes("lucy") || normalized.includes("hubbard");
+  if (client === "antwan_rarcus") return normalized.includes("antwan") || normalized.includes("rarcus");
   return false;
 }
 
@@ -626,9 +623,7 @@ export async function getTags(client: Client): Promise<{ id: number; name: strin
   const key =
     client === "tyson_sonnek"
       ? process.env.MANYCHAT_API_KEY_TYSON
-      : client === "keith_holland"
-        ? process.env.MANYCHAT_API_KEY_KEITH
-        : process.env.MANYCHAT_API_KEY_LUCY_HUBBARD;
+      : process.env.MANYCHAT_API_KEY_ANTWAN;
   if (!key) return [];
 
   try {

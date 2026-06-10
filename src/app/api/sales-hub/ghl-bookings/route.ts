@@ -21,11 +21,11 @@ function getLocationId(): string {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const client = searchParams.get("client") as "tyson" | "keith";
+  const client = searchParams.get("client") as "tyson" | "antwan";
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
 
-  if (!client || !["tyson", "keith"].includes(client)) {
+  if (!client || !["tyson", "antwan"].includes(client)) {
     return NextResponse.json({ error: "Invalid client" }, { status: 400 });
   }
   if (!dateFrom || !dateTo) {
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     const matchingCalendars = calendars.filter((c: { name: string; id: string }) => {
       const nameLower = (c.name || "").toLowerCase();
       if (clientLower === "tyson") return nameLower.includes("tyson") || nameLower.includes("ts") || c.id === process.env.GHL_CALENDAR_ID_TYSON;
-      if (clientLower === "keith") return nameLower.includes("keith") || nameLower.includes("kh") || c.id === process.env.GHL_CALENDAR_ID_KEITH;
+      if (clientLower === "antwan") return nameLower.includes("antwan") || nameLower.includes("rarcus") || c.id === process.env.GHL_CALENDAR_ID_ANTWAN;
       return false;
     });
 

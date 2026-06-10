@@ -789,8 +789,8 @@ function OutcomeTrackingSection({
     // AOV by client
     const aovByClient: Record<string, { revenue: number; count: number }> = {};
     for (const row of wins) {
-      const client = row.offer?.toLowerCase().includes("keith")
-        ? "Keith"
+      const client = row.offer?.toLowerCase().includes("antwan")
+        ? "Antwan"
         : row.offer?.toLowerCase().includes("tyson")
           ? "Tyson"
           : "Other";
@@ -942,8 +942,8 @@ function OutcomeTrackingSection({
                     color:
                       client === "Tyson"
                         ? "var(--tyson)"
-                        : client === "Keith"
-                          ? "var(--keith)"
+                        : client === "Antwan"
+                          ? "var(--accent)"
                           : "var(--text-secondary)",
                     fontWeight: 600,
                   }}
@@ -1102,8 +1102,8 @@ function ShowRateSection({
     // By client
     const byClient: Record<string, { scheduled: number; shown: number }> = {};
     for (const row of sheetData) {
-      const client = row.offer?.toLowerCase().includes("keith")
-        ? "Keith"
+      const client = row.offer?.toLowerCase().includes("antwan")
+        ? "Antwan"
         : row.offer?.toLowerCase().includes("tyson")
           ? "Tyson"
           : "Other";
@@ -1239,8 +1239,8 @@ function ShowRateSection({
                       color={
                         client === "Tyson"
                           ? "var(--tyson)"
-                          : client === "Keith"
-                            ? "var(--keith)"
+                          : client === "Antwan"
+                            ? "var(--accent)"
                             : "var(--accent)"
                       }
                       valueLabel={`${fmtPercent(rate)} (${data.shown}/${data.scheduled})`}

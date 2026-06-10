@@ -3,11 +3,11 @@ import { countSubscriptionSales } from "@/lib/stripe-client";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const client = searchParams.get("client") as "tyson" | "keith";
+  const client = searchParams.get("client") as "tyson" | "antwan";
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
 
-  if (!client || !["tyson", "keith"].includes(client)) {
+  if (!client || !["tyson", "antwan"].includes(client)) {
     return NextResponse.json({ error: "Invalid client" }, { status: 400 });
   }
   if (!dateFrom || !dateTo) {

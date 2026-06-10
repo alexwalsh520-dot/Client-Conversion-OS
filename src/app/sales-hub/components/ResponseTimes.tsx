@@ -36,7 +36,7 @@ interface ResponseTimeMetrics {
   clients: ResponseTimeGroup[];
   setters: ResponseTimeGroup[];
   slowestGaps: Array<{
-    client: "tyson" | "keith" | "lucy";
+    client: "tyson" | "antwan";
     clientLabel: string;
     setterLabel: string;
     leadName: string | null;

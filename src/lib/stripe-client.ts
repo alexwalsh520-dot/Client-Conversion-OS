@@ -1,9 +1,9 @@
 // Stripe helper for DM Reviews
-// Per-client key switching for Tyson and Keith
+// Per-client key switching for Tyson and Antwan
 
 import Stripe from "stripe";
 
-type Client = "tyson" | "keith";
+type Client = "tyson" | "antwan";
 
 const stripeClients: Partial<Record<Client, Stripe>> = {};
 
@@ -13,7 +13,7 @@ function getStripeClient(client: Client): Stripe {
   const key =
     client === "tyson"
       ? process.env.STRIPE_SECRET_KEY_TYSON
-      : process.env.STRIPE_SECRET_KEY_KEITH;
+      : process.env.STRIPE_SECRET_KEY_ANTWAN;
 
   if (!key) throw new Error(`STRIPE_SECRET_KEY_${client.toUpperCase()} not configured`);
 
@@ -26,7 +26,7 @@ function getProductId(client: Client): string {
   const id =
     client === "tyson"
       ? process.env.STRIPE_PRODUCT_ID_TYSON
-      : process.env.STRIPE_PRODUCT_ID_KEITH;
+      : process.env.STRIPE_PRODUCT_ID_ANTWAN;
 
   if (!id) throw new Error(`STRIPE_PRODUCT_ID_${client.toUpperCase()} not configured`);
   return id;
