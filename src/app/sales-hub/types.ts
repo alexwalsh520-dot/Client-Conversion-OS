@@ -27,6 +27,7 @@ export interface SheetRow {
   callNotes: string;
   recordingLink: string;
   offer: string;
+  callType: string;
 }
 
 export interface ManychatDashboard {

@@ -25,6 +25,7 @@ export interface SheetRow {
   callNotes: string;
   recordingLink: string;
   offer: string; // Keith Holland, Tyson Sonnek, or Lucy Hubbard
+  callType: string; // "Type of call" column: Strategy Session / Onboarding Call / Miscellaneous Chat
   manychatLink: string; // ManyChat chat link pasted by setters (newer "expanded" rows, col D)
   manychatSubscriberId: string | null; // stable subscriber ID parsed from the link
 }
@@ -396,6 +397,7 @@ function parseHeaderRow(
   const callNotesIdx = findHeaderIndex(headers, ["Call Notes"]);
   const recordingLinkIdx = findHeaderIndex(headers, ["Call Recording Link", "Recording Link"]);
   const offerIdx = findHeaderIndex(headers, ["Offer"]);
+  const callTypeIdx = findHeaderIndex(headers, ["Type of call", "Type of Call", "Call Type"]);
   const callNumberIdx = Math.max(0, dateIdx - 1);
 
   const dateStr = parseDateString(headerValue(row, dateIdx));
@@ -423,6 +425,7 @@ function parseHeaderRow(
     callNotes: normalizeCell(headerValue(row, callNotesIdx)),
     recordingLink: normalizeCell(headerValue(row, recordingLinkIdx)),
     offer: normalizeCell(headerValue(row, offerIdx)),
+    callType: normalizeCell(headerValue(row, callTypeIdx)),
     manychatLink,
     manychatSubscriberId: manychatSubscriberIdFromLink(manychatLink),
   };
@@ -476,6 +479,7 @@ function parseRow(
       row[expandedLayout ? 17 : isJanuary ? 14 : 15]
     ),
     offer,
+    callType: "",
     manychatLink,
     manychatSubscriberId: manychatSubscriberIdFromLink(manychatLink),
   };
@@ -491,6 +495,7 @@ function parseSubscriptionHeaderRow(
   const amountIdx = findHeaderIndex(headers, ["New MRR", "Amount"]);
   const sourceIdx = findHeaderIndex(headers, ["Source"]);
   const offerIdx = findHeaderIndex(headers, ["Offer"]);
+  const callTypeIdx = findHeaderIndex(headers, ["Type of call", "Type of Call", "Call Type"]);
   const callNumberIdx = Math.max(0, dateIdx - 1);
 
   const dateStr = parseDateString(headerValue(row, dateIdx));
@@ -523,6 +528,7 @@ function parseSubscriptionHeaderRow(
     callNotes: "",
     recordingLink: "",
     offer,
+    callType: normalizeCell(headerValue(row, callTypeIdx)),
     manychatLink: "",
     manychatSubscriberId: null,
   };
@@ -564,6 +570,7 @@ function parseSubscriptionRow(
     callNotes: normalizeCell(row[7]),
     recordingLink: "",
     offer,
+    callType: "",
     manychatLink: "",
     manychatSubscriberId: null,
   };
