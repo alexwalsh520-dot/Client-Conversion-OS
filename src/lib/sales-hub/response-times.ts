@@ -320,6 +320,26 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
   };
 }
 
+// Supabase/PostgREST caps a single request at 1000 rows. Tyson alone generates far
+// more than 1000 ManyChat assignment events across the lookback window, so a single
+// ascending query silently returns only the OLDEST 1000 — dropping every recent lead
+// and producing zero matched samples. Page through all rows so nothing is truncated.
+async function loadAllRows<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  pageSize = 1000,
+  maxRows = 50000,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
+}
+
 export async function getResponseTimeMetrics(params: {
   client: SalesHubClient;
   dateFrom: string;
@@ -332,21 +352,29 @@ export async function getResponseTimeMetrics(params: {
   const messageEndDate = addDays(dateTo, 3);
   const assignmentStartDate = addDays(dateFrom, -120);
 
-  const [assignmentRes, messageRes, latestMessageRes] = await Promise.all([
-    sb
-      .from("manychat_tag_events")
-      .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
-      .in("client", clientKeys)
-      .gte("event_at", startOfUtcDay(assignmentStartDate))
-      .lte("event_at", endOfUtcDay(messageEndDate))
-      .order("event_at", { ascending: true }),
-    sb
-      .from("dm_conversation_messages")
-      .select("client, subscriber_id, conversation_id, message_id, direction, channel, message_type, body, sent_at, raw_payload")
-      .in("client", clientKeys)
-      .gte("sent_at", startOfUtcDay(dateFrom))
-      .lte("sent_at", endOfUtcDay(messageEndDate))
-      .order("sent_at", { ascending: true }),
+  const [assignmentRows, messageRows, latestMessageRes] = await Promise.all([
+    loadAllRows<AssignmentEventRow>(async (from, to) => {
+      const { data, error } = await sb
+        .from("manychat_tag_events")
+        .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
+        .in("client", clientKeys)
+        .gte("event_at", startOfUtcDay(assignmentStartDate))
+        .lte("event_at", endOfUtcDay(messageEndDate))
+        .order("event_at", { ascending: false })
+        .range(from, to);
+      return { data: (data as AssignmentEventRow[] | null) ?? null, error };
+    }),
+    loadAllRows<MessageRow>(async (from, to) => {
+      const { data, error } = await sb
+        .from("dm_conversation_messages")
+        .select("client, subscriber_id, conversation_id, message_id, direction, channel, message_type, body, sent_at, raw_payload")
+        .in("client", clientKeys)
+        .gte("sent_at", startOfUtcDay(dateFrom))
+        .lte("sent_at", endOfUtcDay(messageEndDate))
+        .order("sent_at", { ascending: false })
+        .range(from, to);
+      return { data: (data as MessageRow[] | null) ?? null, error };
+    }),
     sb
       .from("dm_conversation_messages")
       .select("sent_at")
@@ -356,12 +384,6 @@ export async function getResponseTimeMetrics(params: {
       .maybeSingle(),
   ]);
 
-  if (assignmentRes.error) {
-    throw new Error(`Failed to load lead assignments: ${assignmentRes.error.message}`);
-  }
-  if (messageRes.error) {
-    throw new Error(`Failed to load DM messages: ${messageRes.error.message}`);
-  }
   if (latestMessageRes.error) {
     throw new Error(`Failed to load latest DM message: ${latestMessageRes.error.message}`);
   }
@@ -369,18 +391,19 @@ export async function getResponseTimeMetrics(params: {
   let leadLinks: LeadLinkRow[] = [];
   let leadLinksReady = true;
   try {
-    const linkRes = await sb
-      .from("instagram_lead_links")
-      .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
-      .in("client", clientKeys);
-
-    if (linkRes.error) throw linkRes.error;
-    leadLinks = (linkRes.data || []) as LeadLinkRow[];
+    leadLinks = await loadAllRows<LeadLinkRow>(async (from, to) => {
+      const { data, error } = await sb
+        .from("instagram_lead_links")
+        .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
+        .in("client", clientKeys)
+        .range(from, to);
+      return { data: (data as LeadLinkRow[] | null) ?? null, error };
+    });
   } catch {
     leadLinksReady = false;
   }
 
-  const assignments = buildAssignments((assignmentRes.data || []) as AssignmentEventRow[], visibleClients);
+  const assignments = buildAssignments(assignmentRows, visibleClients);
   const leadLinkByInstagramId = buildLeadLinkMap(leadLinks);
   const groupedMessages = new Map<string, MessageRow[]>();
   const samples: ResponseSample[] = [];
@@ -388,7 +411,7 @@ export async function getResponseTimeMetrics(params: {
   let unmatchedInboundMessages = 0;
   let openInboundMessages = 0;
 
-  for (const message of ((messageRes.data || []) as MessageRow[])) {
+  for (const message of messageRows) {
     if (!message.conversation_id || !message.sent_at) continue;
     const key = `${message.client}:${message.conversation_id}`;
     const list = groupedMessages.get(key) || [];
@@ -495,7 +518,7 @@ export async function getResponseTimeMetrics(params: {
     summary: {
       ...summarizeSamples("team", "Team", samples),
       latestMessageAt,
-      leadAssignments: (assignmentRes.data || []).length,
+      leadAssignments: assignmentRows.length,
       leadIdentityLinks: leadLinks.length,
       matchedLeads: matchedLeadIds.size,
       unmatchedInboundMessages,

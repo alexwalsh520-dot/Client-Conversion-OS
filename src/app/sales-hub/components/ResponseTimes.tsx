@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
-  AlertTriangle,
-  CheckCircle2,
   Clock3,
   Loader2,
   MessageSquareReply,
@@ -12,7 +10,6 @@ import {
 import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters } from "../types";
-import InstagramConnectionSetup from "./InstagramConnectionSetup";
 
 interface ResponseTimeGroup {
   id: string;
@@ -167,9 +164,6 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
             value={fmtNumber(data.summary.matchedLeads)}
           />
         </div>
-
-        <StatusPanel data={data} />
-        <InstagramConnectionSetup />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 20 }}>
@@ -200,69 +194,6 @@ function MetricCard({
         {label}
       </div>
       <div className="metric-card-value" style={color ? { color } : undefined}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatusPanel({ data }: { data: ResponseTimeMetrics }) {
-  const ok = !data.summary.staleMessageFeed && data.summary.sampleCount > 0;
-
-  return (
-    <div
-      className="glass-static"
-      style={{
-        padding: 16,
-        borderColor: ok ? "rgba(126, 211, 170, 0.28)" : "rgba(225, 196, 108, 0.32)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        {ok ? (
-          <CheckCircle2 size={15} style={{ color: "var(--success)" }} />
-        ) : (
-          <AlertTriangle size={15} style={{ color: "var(--warning)" }} />
-        )}
-        <div style={{ color: "var(--text-primary)", fontSize: 13, fontWeight: 700 }}>
-          {ok ? "Live response samples found" : "Waiting on live response data"}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-          marginBottom: data.setup.needs.length > 0 ? 12 : 0,
-        }}
-      >
-        <StatusItem label="Business Hours" value={data.setup.businessHours} />
-        <StatusItem label="Latest DM Seen" value={formatDateTime(data.summary.latestMessageAt)} />
-        <StatusItem label="Lead Assignments" value={fmtNumber(data.summary.leadAssignments)} />
-        <StatusItem label="ID Links" value={fmtNumber(data.summary.leadIdentityLinks)} />
-        <StatusItem label="Open Inbounds" value={fmtNumber(data.summary.openInboundMessages)} />
-      </div>
-
-      {data.setup.needs.length > 0 && (
-        <div style={{ display: "grid", gap: 6 }}>
-          {data.setup.needs.map((item) => (
-            <div key={item} style={{ color: "var(--text-secondary)", fontSize: 12, lineHeight: 1.45 }}>
-              {item}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatusItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{ color: "var(--text-primary)", fontSize: 13, fontWeight: 650 }}>
         {value}
       </div>
     </div>
