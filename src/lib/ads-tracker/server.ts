@@ -905,6 +905,7 @@ function salesDbRowToSheetRow(row: SalesTrackerDbRow): SheetRow {
     callNotes: row.call_notes || "",
     recordingLink: row.recording_link || "",
     offer: row.offer || "",
+    callType: "", // ads-tracker DB path doesn't track call type; live-sheet path does
     // The synced table now stores the ManyChat link, so the DB read path can
     // attribute revenue by subscriber id exactly like the live-sheet path.
     manychatLink: row.manychat_link || "",
