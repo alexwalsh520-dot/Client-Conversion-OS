@@ -140,6 +140,7 @@ const SETTER_LABELS: Record<string, string> = {
   debbie: "Debbie",
   debby: "Debbie",
   chidiebere: "Debbie",
+  erin: "Erin",
 };
 
 const ET_TIMEZONE = "America/New_York";
