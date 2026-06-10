@@ -33,6 +33,8 @@ const PRICING: Record<string, ModelPricing> = {
   "claude-sonnet-4-5-20250929": { input: 3.0, output: 15.0, cacheWrite: 3.75, cacheRead: 0.3 },
   // Claude Haiku 4.5
   "claude-haiku-4-5": { input: 1.0, output: 5.0, cacheWrite: 1.25, cacheRead: 0.1 },
+  // Claude Sonnet 4.6 — Sales Hub Ask AI.
+  "claude-sonnet-4-6": { input: 3.0, output: 15.0, cacheWrite: 3.75, cacheRead: 0.3 },
 };
 
 // Sane fallback if a model id isn't in the table yet. We use Sonnet-class rates
