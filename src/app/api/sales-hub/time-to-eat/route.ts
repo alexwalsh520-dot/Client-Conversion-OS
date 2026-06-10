@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { addBusinessMinutes, businessMinutesBetween } from "@/lib/sales-hub/business-hours";
+import {
+  postAnswerLeadAlert,
+  postDeadMeatAlert,
+  postTimeToEatAlert,
+} from "@/lib/sales-hub/time-to-eat-alerts";
 
 type ClientFilter = "all" | "tyson" | "antwan";
 type ServerClient = "tyson_sonnek" | "antwan_rarcus";
@@ -84,9 +89,13 @@ const MEMORY_KEY = "time_to_eat_memory_v1";
 // overnight gaps don't push a lead into the list.
 const STALE_AFTER_BUSINESS_MINUTES = 60;
 // Dead Meat = the lead has gone stale on TWO separate occasions (it slipped,
-// got a reply, then slipped again). The first occasion is Time to Eat; the
-// second is Dead Meat. So "1 prior miss" already on record => Dead Meat.
+// got a reply, then slipped again), OR it has gone a single stretch of 2 working
+// hours with no reply. The first single-occasion slip is Time to Eat; a second
+// slip OR crossing 2 working hours makes it Dead Meat.
 const DEAD_MEAT_AFTER_MISSES = 2;
+const DEAD_MEAT_AFTER_BUSINESS_MINUTES = 120;
+// Early "answer your lead" nudge fires at 15 working minutes of no reply.
+const WARN_AFTER_BUSINESS_MINUTES = 15;
 const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
 const MANYCHAT_BASE = "https://api.manychat.com/fb";
@@ -97,6 +106,16 @@ const BUSINESS_HOURS_LABEL = "11am-11pm ET";
 // Change this if you ever want to re-baseline the queue.
 const GO_LIVE_AT = "2026-06-10T03:24:16Z";
 const GO_LIVE_MS = new Date(GO_LIVE_AT).getTime();
+
+// Slack alerts only fire for leads whose last reply is after this instant, so
+// turning the alerts on never replays a burst for leads already sitting stale.
+const ALERTS_GO_LIVE_AT = "2026-06-10T22:46:53Z";
+const ALERTS_GO_LIVE_MS = new Date(ALERTS_GO_LIVE_AT).getTime();
+
+// Remembers which Slack alerts already fired for each stale episode so the
+// 10-minute cron never double-posts. Keyed by `${subscriberId}:${lastInboundAt}`.
+const ALERT_LOG_KEY = "time_to_eat_alerts_v1";
+const ALERT_LOG_RETENTION_DAYS = 3;
 
 function normalizeClient(value: string | null): ClientFilter {
   if (value === "tyson" || value === "antwan") return value;
@@ -372,6 +391,44 @@ function hoursSince(iso: string) {
   return Math.max(0, diff / (60 * 60 * 1000));
 }
 
+// Which Slack alerts have already fired, per stale episode. The values are the
+// fire timestamps (used only for retention pruning).
+type AlertFlags = { warn15?: number; tte?: number; deadMeat?: number };
+type AlertLog = Record<string, AlertFlags>;
+
+async function loadAlertLog(sb: ReturnType<typeof getServiceSupabase>): Promise<AlertLog> {
+  try {
+    const { data } = await sb
+      .from("app_settings")
+      .select("value")
+      .eq("key", ALERT_LOG_KEY)
+      .maybeSingle();
+    if (!data?.value) return {};
+    const parsed = JSON.parse(String(data.value));
+    return parsed && typeof parsed === "object" ? (parsed as AlertLog) : {};
+  } catch (error) {
+    console.warn("[sales-hub/time-to-eat] alert log unavailable:", error);
+    return {};
+  }
+}
+
+async function saveAlertLog(sb: ReturnType<typeof getServiceSupabase>, log: AlertLog) {
+  const cutoff = Date.now() - ALERT_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  for (const [key, flags] of Object.entries(log)) {
+    const latest = Math.max(flags.warn15 ?? 0, flags.tte ?? 0, flags.deadMeat ?? 0);
+    if (latest && latest < cutoff) delete log[key];
+  }
+  await sb.from("app_settings").upsert(
+    {
+      key: ALERT_LOG_KEY,
+      value: JSON.stringify(log),
+      updated_at: new Date().toISOString(),
+      updated_by: "time-to-eat-alerts",
+    },
+    { onConflict: "key" },
+  );
+}
+
 export async function GET(req: NextRequest) {
   const client = normalizeClient(req.nextUrl.searchParams.get("client"));
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -397,6 +454,12 @@ export async function GET(req: NextRequest) {
     const memory = memoryState.memory;
     const warnings = memoryState.warning ? [memoryState.warning] : [];
     let memoryDirty = false;
+
+    // Slack alerts are driven only by the cron (`sync=1`) so they fire exactly
+    // once and even when nobody has the tab open — viewer page-loads never post.
+    const isSync = req.nextUrl.searchParams.get("sync") === "1";
+    const alertLog: AlertLog = isSync && memoryState.enabled ? await loadAlertLog(sb) : {};
+    let alertLogDirty = false;
 
     // Drop any pre-go-live history so the backlog clears and counts start fresh.
     for (const [key, state] of Object.entries(memory.leads)) {
@@ -528,6 +591,21 @@ export async function GET(req: NextRequest) {
       // Working minutes (11am–11pm ET) since the prospect's last reply decide
       // whether this lead is stale. waitingHours is kept only for display.
       const businessMinutesWaiting = businessMinutesBetween(lastMessage.sent_at, nowIso);
+
+      // Slack alerts: cron-only, and only for episodes after the alert go-live.
+      const episodeKey = `${subscriberId}:${lastMessage.sent_at}`;
+      const canAlert = isSync && new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
+
+      // 15-minute "answer your lead" nudge — fires once, before the stale line.
+      if (canAlert && businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES) {
+        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
+        if (!flags.warn15) {
+          await postAnswerLeadAlert(lead.leadName, lead.initialSetter);
+          flags.warn15 = Date.now();
+          alertLogDirty = true;
+        }
+      }
+
       if (businessMinutesWaiting < STALE_AFTER_BUSINESS_MINUTES) continue;
       const waitingHours = hoursSince(lastMessage.sent_at);
 
@@ -547,8 +625,12 @@ export async function GET(req: NextRequest) {
       // This stale event counts as one occasion; prior misses add to it. Two or
       // more total occasions => Dead Meat, otherwise Time to Eat.
       const totalOccasions = previousMisses + 1;
+      // Dead Meat if it slipped twice OR has sat a single 2-working-hour stretch.
       const status: TimeToEatStatus =
-        totalOccasions >= DEAD_MEAT_AFTER_MISSES ? "dead_meat" : "time_to_eat";
+        totalOccasions >= DEAD_MEAT_AFTER_MISSES ||
+        businessMinutesWaiting >= DEAD_MEAT_AFTER_BUSINESS_MINUTES
+          ? "dead_meat"
+          : "time_to_eat";
       const manychatUrl =
         lead.manychatUrl ||
         existing?.manychatUrl ||
@@ -589,6 +671,22 @@ export async function GET(req: NextRequest) {
 
       if (status === "dead_meat") deadMeat.push(card);
       else timeToEat.push(card);
+
+      // Entry alerts — fire once per episode when the lead lands in a section.
+      // A first-occasion lead fires Time to Eat at 1h, then Dead Meat at 2h; a
+      // straight-to-Dead-Meat lead only fires the Dead Meat one.
+      if (canAlert) {
+        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
+        if (status === "dead_meat" && !flags.deadMeat) {
+          await postDeadMeatAlert(lead.leadName, lead.initialSetter);
+          flags.deadMeat = Date.now();
+          alertLogDirty = true;
+        } else if (status === "time_to_eat" && !flags.tte) {
+          await postTimeToEatAlert(lead.leadName, lead.initialSetter);
+          flags.tte = Date.now();
+          alertLogDirty = true;
+        }
+      }
     }
 
     if (memoryState.enabled && memoryDirty) {
@@ -597,6 +695,14 @@ export async function GET(req: NextRequest) {
       } catch (error) {
         console.warn("[sales-hub/time-to-eat] memory save failed:", error);
         warnings.push("Time to Eat loaded, but memory could not be saved.");
+      }
+    }
+
+    if (isSync && memoryState.enabled && alertLogDirty) {
+      try {
+        await saveAlertLog(sb, alertLog);
+      } catch (error) {
+        console.warn("[sales-hub/time-to-eat] alert log save failed:", error);
       }
     }
 

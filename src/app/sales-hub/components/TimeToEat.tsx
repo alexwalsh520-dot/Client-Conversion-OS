@@ -511,7 +511,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEa
           />
           <LeadGroup
             title="Dead Meat"
-            subtitle="This lead has slipped twice — over 1 working hour with no reply, on two separate occasions."
+            subtitle="Slipped twice (over 1 working hour, on two occasions) — or sat 2 working hours with no reply."
             leads={data?.deadMeat ?? []}
             actionLabel="Go Revive"
             setterMode="all"
