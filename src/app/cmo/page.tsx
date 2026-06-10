@@ -207,6 +207,7 @@ function mdToHtml(md: string): string {
 }
 
 type Skill = { id: string; name: string; tagline?: string; selfImproving?: boolean; path?: string; description?: string; markdown?: string };
+type Doc = { id: string; title: string; category?: string; updated?: string; body?: string; path?: string };
 type Meeting = { id: string; date?: string; title: string; creator?: string; tags?: string[]; summary?: string; notes?: string; archive?: string };
 type FeedEntry = { at?: string; bucket?: string; title: string; detail?: string; tags?: string[]; where?: string };
 type LoopStatus = "in-progress" | "waiting-on-alex" | "hypothesis" | "paused" | "backlog";
@@ -557,21 +558,27 @@ export default function CmoPage() {
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [loops, setLoops] = useState<Loop[]>([]);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [docs, setDocs] = useState<Doc[]>([]);
   const [openLedger, setOpenLedger] = useState<string | null>(null);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [openFeed, setOpenFeed] = useState<number | null>(null);
-  const [fileSel, setFileSel] = useState<{ kind: "skill" | "meeting" | "transcript"; id: string } | null>(null);
+  const [fileSel, setFileSel] = useState<{ kind: "skill" | "meeting" | "transcript" | "doc"; id: string } | null>(null);
 
   useEffect(() => {
     let off = false;
     const grab = (url: string, key: string, set: (v: unknown) => void) =>
       fetch(url, { cache: "no-store" }).then((r) => r.json()).then((d) => { if (!off) set(d?.[key]); }).catch(() => {});
+    // Skills stay file-generated (from SKILL.md). Everything else reads LIVE from Supabase via /api/cmo.
     grab("/skills-data.json", "skills", (v) => setSkills(Array.isArray(v) ? (v as Skill[]) : []));
-    grab("/meetings-data.json", "meetings", (v) => setMeetings(Array.isArray(v) ? (v as Meeting[]) : []));
-    grab("/memory-log.json", "entries", (v) => setFeed(Array.isArray(v) ? (v as FeedEntry[]) : []));
-    grab("/open-loops.json", "loops", (v) => setLoops(Array.isArray(v) ? (v as Loop[]) : []));
-    grab("/cmo-ledger.json", "entries", (v) => setLedger(Array.isArray(v) ? (v as LedgerEntry[]) : []));
+    fetch("/api/cmo", { cache: "no-store" }).then((r) => r.json()).then((d) => {
+      if (off) return;
+      setLoops(Array.isArray(d?.loops) ? (d.loops as Loop[]) : []);
+      setFeed(Array.isArray(d?.feed) ? (d.feed as FeedEntry[]) : []);
+      setLedger(Array.isArray(d?.ledger) ? (d.ledger as LedgerEntry[]) : []);
+      setMeetings(Array.isArray(d?.meetings) ? (d.meetings as Meeting[]) : []);
+      setDocs(Array.isArray(d?.docs) ? (d.docs as Doc[]) : []);
+    }).catch(() => {});
     return () => { off = true; };
   }, []);
 
@@ -628,6 +635,7 @@ export default function CmoPage() {
   }, []);
   const fileMeeting = fileSel?.kind === "meeting" ? meetings.find((m) => m.id === fileSel.id) : fileSel?.kind === "transcript" ? meetings.find((m) => m.id === fileSel.id) : null;
   const fileSkill = fileSel?.kind === "skill" ? skills.find((s) => s.id === fileSel.id) : null;
+  const fileDoc = fileSel?.kind === "doc" ? docs.find((d) => d.id === fileSel.id) : null;
 
   return (
     <div className="cmo">
@@ -804,6 +812,9 @@ export default function CmoPage() {
             <FGroup title="Skills" hint="always-on playbooks">
               {skills.map((s) => <FRow key={s.id} name={s.name} on={fileSel?.kind === "skill" && fileSel.id === s.id} onClick={() => setFileSel({ kind: "skill", id: s.id })} />)}
             </FGroup>
+            <FGroup title="Docs" hint="research, ICP, specs, references">
+              {docs.map((d) => <FRow key={d.id} name={d.title} sub={d.category} on={fileSel?.kind === "doc" && fileSel.id === d.id} onClick={() => setFileSel({ kind: "doc", id: d.id })} />)}
+            </FGroup>
             <FGroup title="Meetings" hint="distilled context">
               {meetings.map((m) => <FRow key={m.id} name={m.title} on={fileSel?.kind === "meeting" && fileSel.id === m.id} onClick={() => setFileSel({ kind: "meeting", id: m.id })} />)}
             </FGroup>
@@ -814,6 +825,8 @@ export default function CmoPage() {
           <div className="cmo-files-view">
             {fileSkill ? (
               <Detail title={fileSkill.name} sub={fileSkill.tagline} path={fileSkill.path} desc={fileSkill.description} md={fileSkill.markdown} />
+            ) : fileDoc ? (
+              <Detail title={fileDoc.title} sub={[fileDoc.category, fileDoc.updated].filter(Boolean).join(" · ")} path={fileDoc.path} md={fileDoc.body} />
             ) : fileMeeting ? (
               <>
                 {fileSel?.kind === "transcript" && (
