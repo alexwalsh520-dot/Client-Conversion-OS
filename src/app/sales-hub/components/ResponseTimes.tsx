@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, Clock3, Loader2 } from "lucide-react";
+import { AlertTriangle, Clock3, ExternalLink, Loader2 } from "lucide-react";
 import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters } from "../types";
@@ -21,6 +21,8 @@ interface Conversation {
   clientLabel: string;
   setterLabel: string;
   leadName: string | null;
+  subscriberId: string;
+  manychatUrl: string | null;
   inboundAt: string;
   outboundAt: string;
   activeSeconds: number;
@@ -176,7 +178,7 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
         </div>
       </div>
 
-      <ConversationsTable rows={data.conversations} />
+      <ConversationsTable rows={data.conversations.filter((c) => c.missed)} />
     </div>
   );
 }
@@ -280,7 +282,7 @@ function MissedTable({ title, rows }: { title: string; rows: ResponseTimeGroup[]
 function ConversationsTable({ rows }: { rows: Conversation[] }) {
   return (
     <div>
-      <TableTitle>All Response Times ({fmtNumber(rows.length)})</TableTitle>
+      <TableTitle>Missed Response Times ({fmtNumber(rows.length)})</TableTitle>
       <div className="glass-static" style={{ overflow: "auto", maxHeight: 540 }}>
         <table className="data-table">
           <thead>
@@ -291,22 +293,47 @@ function ConversationsTable({ rows }: { rows: Conversation[] }) {
               <th>Messaged</th>
               <th>Replied</th>
               <th>Response</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ color: "var(--text-muted)" }}>No conversations yet</td>
+                <td colSpan={7} style={{ color: "var(--text-muted)" }}>No missed responses in this range 🎉</td>
               </tr>
             ) : rows.map((row, i) => (
-              <tr key={`${row.client}-${row.setterLabel}-${row.inboundAt}-${row.outboundAt}-${i}`}>
+              <tr key={`${row.client}-${row.subscriberId}-${row.inboundAt}-${i}`}>
                 <td style={{ fontWeight: 650, color: "var(--text-primary)" }}>{row.leadName || "Unknown"}</td>
                 <td>{row.clientLabel}</td>
                 <td>{row.setterLabel}</td>
                 <td>{formatDateTime(row.inboundAt)}</td>
                 <td>{formatDateTime(row.outboundAt)}</td>
-                <td style={{ color: row.missed ? "var(--danger)" : "var(--success)", fontWeight: 650 }}>
+                <td style={{ color: "var(--danger)", fontWeight: 650 }}>
                   {formatDuration(row.activeSeconds)}
+                </td>
+                <td>
+                  {row.manychatUrl ? (
+                    <a
+                      href={row.manychatUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--accent)",
+                        border: "1px solid var(--accent)",
+                        textDecoration: "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <ExternalLink size={11} /> Take me to chat
+                    </a>
+                  ) : null}
                 </td>
               </tr>
             ))}
