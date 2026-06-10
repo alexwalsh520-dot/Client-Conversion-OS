@@ -207,7 +207,7 @@ function mdToHtml(md: string): string {
 }
 
 type Skill = { id: string; name: string; tagline?: string; selfImproving?: boolean; path?: string; description?: string; markdown?: string };
-type Doc = { id: string; title: string; category?: string; updated?: string; body?: string; path?: string };
+type Doc = { id: string; title: string; category?: string; status?: string; updated?: string; body?: string; path?: string };
 type Meeting = { id: string; date?: string; title: string; creator?: string; tags?: string[]; summary?: string; notes?: string; archive?: string };
 type FeedEntry = { at?: string; bucket?: string; title: string; detail?: string; tags?: string[]; where?: string };
 type LoopStatus = "in-progress" | "waiting-on-alex" | "hypothesis" | "paused" | "backlog";
@@ -564,6 +564,7 @@ export default function CmoPage() {
   const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [openFeed, setOpenFeed] = useState<number | null>(null);
   const [fileSel, setFileSel] = useState<{ kind: "skill" | "meeting" | "transcript" | "doc"; id: string } | null>(null);
+  const [fileQuery, setFileQuery] = useState("");
 
   useEffect(() => {
     let off = false;
@@ -809,18 +810,48 @@ export default function CmoPage() {
       {tab === "files" && (
         <div className="cmo-files">
           <div className="cmo-files-list">
-            <FGroup title="Skills" hint="always-on playbooks">
-              {skills.map((s) => <FRow key={s.id} name={s.name} on={fileSel?.kind === "skill" && fileSel.id === s.id} onClick={() => setFileSel({ kind: "skill", id: s.id })} />)}
-            </FGroup>
-            <FGroup title="Docs" hint="research, ICP, specs, references">
-              {docs.map((d) => <FRow key={d.id} name={d.title} sub={d.category} on={fileSel?.kind === "doc" && fileSel.id === d.id} onClick={() => setFileSel({ kind: "doc", id: d.id })} />)}
-            </FGroup>
-            <FGroup title="Meetings" hint="distilled context">
-              {meetings.map((m) => <FRow key={m.id} name={m.title} on={fileSel?.kind === "meeting" && fileSel.id === m.id} onClick={() => setFileSel({ kind: "meeting", id: m.id })} />)}
-            </FGroup>
-            <FGroup title="Transcripts" hint="raw archive (private)">
-              {TRANSCRIPTS.map((tr) => <FRow key={tr.path} name={tr.name} sub={tr.sub} on={fileSel?.kind === "transcript" && fileSel.id === tr.meetingId} onClick={() => setFileSel({ kind: "transcript", id: tr.meetingId })} />)}
-            </FGroup>
+            <input value={fileQuery} onChange={(e) => setFileQuery(e.target.value)} placeholder="Search docs, skills, meetings…"
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 12, padding: "8px 11px", borderRadius: 8, border: "1px solid #ffffff20", background: "#ffffff0a", color: "inherit", fontSize: 13, outline: "none" }} />
+            {(() => {
+              const q = fileQuery.trim().toLowerCase();
+              const hit = (...xs: (string | undefined)[]) => !q || xs.some((x) => (x || "").toLowerCase().includes(q));
+              const fSkills = skills.filter((s) => hit(s.name, s.tagline, s.description));
+              const fDocsA = docs.filter((d) => d.status !== "archived" && hit(d.title, d.category, d.body));
+              const fDocsX = docs.filter((d) => d.status === "archived" && hit(d.title, d.category, d.body));
+              const fMeet = meetings.filter((m) => hit(m.title, m.summary, (m.tags || []).join(" ")));
+              const fTr = TRANSCRIPTS.filter((tr) => hit(tr.name, tr.sub));
+              const none = !fSkills.length && !fDocsA.length && !fDocsX.length && !fMeet.length && !fTr.length;
+              return (
+                <>
+                  {fDocsA.length > 0 && (
+                    <FGroup title="Docs" hint="research, ICP, specs, references">
+                      {fDocsA.map((d) => <FRow key={d.id} name={d.title} sub={d.category} on={fileSel?.kind === "doc" && fileSel.id === d.id} onClick={() => setFileSel({ kind: "doc", id: d.id })} />)}
+                    </FGroup>
+                  )}
+                  {fSkills.length > 0 && (
+                    <FGroup title="Skills" hint="always-on playbooks">
+                      {fSkills.map((s) => <FRow key={s.id} name={s.name} on={fileSel?.kind === "skill" && fileSel.id === s.id} onClick={() => setFileSel({ kind: "skill", id: s.id })} />)}
+                    </FGroup>
+                  )}
+                  {fMeet.length > 0 && (
+                    <FGroup title="Meetings" hint="distilled context">
+                      {fMeet.map((m) => <FRow key={m.id} name={m.title} on={fileSel?.kind === "meeting" && fileSel.id === m.id} onClick={() => setFileSel({ kind: "meeting", id: m.id })} />)}
+                    </FGroup>
+                  )}
+                  {fTr.length > 0 && (
+                    <FGroup title="Transcripts" hint="raw archive (private)">
+                      {fTr.map((tr) => <FRow key={tr.path} name={tr.name} sub={tr.sub} on={fileSel?.kind === "transcript" && fileSel.id === tr.meetingId} onClick={() => setFileSel({ kind: "transcript", id: tr.meetingId })} />)}
+                    </FGroup>
+                  )}
+                  {fDocsX.length > 0 && (
+                    <FGroup title="Archived" hint="former / historical">
+                      {fDocsX.map((d) => <FRow key={d.id} name={d.title} sub={d.category} badge="Archived" badgeColor="#c98b8b" on={fileSel?.kind === "doc" && fileSel.id === d.id} onClick={() => setFileSel({ kind: "doc", id: d.id })} />)}
+                    </FGroup>
+                  )}
+                  {none && <div className="cmo-files-empty" style={{ padding: 12, opacity: 0.6 }}>No matches.</div>}
+                </>
+              );
+            })()}
           </div>
           <div className="cmo-files-view">
             {fileSkill ? (
@@ -864,10 +895,10 @@ function FGroup({ title, hint, children }: { title: string; hint?: string; child
     </div>
   );
 }
-function FRow({ name, sub, on, onClick }: { name: string; sub?: string; on?: boolean; onClick?: () => void }) {
+function FRow({ name, sub, badge, badgeColor, on, onClick }: { name: string; sub?: string; badge?: string; badgeColor?: string; on?: boolean; onClick?: () => void }) {
   return (
     <button className={"cmo-frow" + (on ? " on" : "")} onClick={onClick}>
-      <span className="cmo-frow-name">{name}</span>
+      <span className="cmo-frow-name">{name}{badge && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, letterSpacing: 0.3, textTransform: "uppercase", padding: "1px 6px", borderRadius: 5, color: badgeColor || "#8b8f98", border: `1px solid ${badgeColor || "#8b8f98"}55`, background: `${badgeColor || "#8b8f98"}14` }}>{badge}</span>}</span>
       {sub && <span className="cmo-frow-sub">{sub}</span>}
     </button>
   );

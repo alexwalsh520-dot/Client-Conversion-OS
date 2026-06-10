@@ -16,6 +16,7 @@ function envGet(k){
 const sb = createClient(envGet('NEXT_PUBLIC_SUPABASE_URL'), envGet('SUPABASE_SERVICE_ROLE_KEY'));
 
 function categoryFor(file) {
+  if (file === 'current_state.md') return 'Source of Truth';
   if (file === 'MEMORY.md') return 'Index';
   if (/^antwan/i.test(file) || /icp/i.test(file)) return 'Antwan / ICP';
   if (/^project_/i.test(file)) return 'Project';
@@ -27,6 +28,11 @@ function titleFor(body, file) {
   const h = body.split(/\r?\n/).find(l => /^#\s+/.test(l));
   return h ? h.replace(/^#\s+/, '').trim() : file.replace(/\.md$/, '').replace(/[_-]/g, ' ');
 }
+function statusFor(body) {
+  const l = body.split(/\r?\n/).slice(0, 12).find(x => /^status:\s*\w+/i.test(x.trim()));
+  const s = l ? l.trim().replace(/^status:\s*/i, '').toLowerCase() : 'active';
+  return ['archived', 'former', 'inactive'].includes(s) ? 'archived' : 'active';
+}
 
 const files = fs.readdirSync(MEM).filter(f => f.endsWith('.md'));
 const rows = files.map(f => {
@@ -36,7 +42,7 @@ const rows = files.map(f => {
   return {
     id: f.replace(/\.md$/, ''),
     mtime: fs.statSync(full).mtimeMs,
-    data: { id: f.replace(/\.md$/, ''), title: titleFor(body, f), category: categoryFor(f), updated, body, path: `memory/${f}` },
+    data: { id: f.replace(/\.md$/, ''), title: titleFor(body, f), category: categoryFor(f), status: statusFor(body), updated, body, path: `memory/${f}` },
   };
 });
 // newest first by mtime -> position
