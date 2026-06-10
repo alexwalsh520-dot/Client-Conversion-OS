@@ -60,16 +60,16 @@ interface ResponseSample {
   conversationId: string;
   inboundAt: string;
   outboundAt: string;
-  activeMinutes: number;
+  activeSeconds: number;
 }
 
 export interface ResponseTimeGroup {
   id: string;
   label: string;
-  averageMinutes: number | null;
+  averageSeconds: number | null;
   sampleCount: number;
-  fastestMinutes: number | null;
-  slowestMinutes: number | null;
+  fastestSeconds: number | null;
+  slowestSeconds: number | null;
 }
 
 export interface ResponseTimeMetrics {
@@ -91,7 +91,7 @@ export interface ResponseTimeMetrics {
     leadName: string | null;
     inboundAt: string;
     outboundAt: string;
-    activeMinutes: number;
+    activeSeconds: number;
   }>;
   setup: {
     businessHours: string;
@@ -122,8 +122,8 @@ const SETTER_LABELS: Record<string, string> = {
 };
 
 const ET_TIMEZONE = "America/New_York";
-const BUSINESS_START_MINUTE = 11 * 60;
-const BUSINESS_END_MINUTE = 23 * 60;
+const BUSINESS_START_SECOND = 11 * 3600;
+const BUSINESS_END_SECOND = 23 * 3600;
 
 function getVisibleClients(client: SalesHubClient): ClientDef[] {
   if (client === "all") return CLIENTS;
@@ -158,16 +158,18 @@ function getEtParts(date: Date) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hourCycle: "h23",
   }).formatToParts(date);
 
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const hour = Number(values.hour || 0);
   const minute = Number(values.minute || 0);
+  const second = Number(values.second || 0);
 
   return {
     dateStr: `${values.year}-${values.month}-${values.day}`,
-    minutesOfDay: hour * 60 + minute,
+    secondsOfDay: hour * 3600 + minute * 60 + second,
   };
 }
 
@@ -180,7 +182,7 @@ function isDateInRangeEt(iso: string, dateFrom: string, dateTo: string) {
   return etDate >= dateFrom && etDate <= dateTo;
 }
 
-function computeTrackedWindowMinutes(startIso: string, endIso: string) {
+function computeTrackedWindowSeconds(startIso: string, endIso: string) {
   const start = new Date(startIso);
   const end = new Date(endIso);
 
@@ -193,12 +195,12 @@ function computeTrackedWindowMinutes(startIso: string, endIso: string) {
   let total = 0;
 
   while (cursor <= endEt.dateStr) {
-    const startMinute = cursor === startEt.dateStr ? startEt.minutesOfDay : 0;
-    const endMinute = cursor === endEt.dateStr ? endEt.minutesOfDay : 24 * 60;
+    const startSecond = cursor === startEt.dateStr ? startEt.secondsOfDay : 0;
+    const endSecond = cursor === endEt.dateStr ? endEt.secondsOfDay : 24 * 3600;
     total += Math.max(
       0,
-      Math.min(endMinute, BUSINESS_END_MINUTE) -
-        Math.max(startMinute, BUSINESS_START_MINUTE),
+      Math.min(endSecond, BUSINESS_END_SECOND) -
+        Math.max(startSecond, BUSINESS_START_SECOND),
     );
     cursor = addDays(cursor, 1);
   }
@@ -301,21 +303,21 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
     return {
       id,
       label,
-      averageMinutes: null,
+      averageSeconds: null,
       sampleCount: 0,
-      fastestMinutes: null,
-      slowestMinutes: null,
+      fastestSeconds: null,
+      slowestSeconds: null,
     };
   }
 
-  const values = samples.map((sample) => sample.activeMinutes);
+  const values = samples.map((sample) => sample.activeSeconds);
   return {
     id,
     label,
-    averageMinutes: values.reduce((sum, value) => sum + value, 0) / values.length,
+    averageSeconds: values.reduce((sum, value) => sum + value, 0) / values.length,
     sampleCount: samples.length,
-    fastestMinutes: Math.min(...values),
-    slowestMinutes: Math.max(...values),
+    fastestSeconds: Math.min(...values),
+    slowestSeconds: Math.max(...values),
   };
 }
 
@@ -439,7 +441,7 @@ export async function getResponseTimeMetrics(params: {
           conversationId: pending.message.conversation_id,
           inboundAt: pending.message.sent_at || "",
           outboundAt: message.sent_at,
-          activeMinutes: computeTrackedWindowMinutes(pending.message.sent_at || "", message.sent_at),
+          activeSeconds: computeTrackedWindowSeconds(pending.message.sent_at || "", message.sent_at),
         });
         pending = null;
       }
@@ -504,7 +506,7 @@ export async function getResponseTimeMetrics(params: {
     clients,
     setters,
     slowestGaps: [...samples]
-      .sort((a, b) => b.activeMinutes - a.activeMinutes)
+      .sort((a, b) => b.activeSeconds - a.activeSeconds)
       .slice(0, 5)
       .map((sample) => ({
         client: sample.client,
@@ -513,7 +515,7 @@ export async function getResponseTimeMetrics(params: {
         leadName: sample.leadName,
         inboundAt: sample.inboundAt,
         outboundAt: sample.outboundAt,
-        activeMinutes: sample.activeMinutes,
+        activeSeconds: sample.activeSeconds,
       })),
     setup: {
       businessHours: "11am-11pm ET",

@@ -105,6 +105,11 @@ function fromBase64url(value: string) {
   return Buffer.from(padded, "base64").toString("utf8");
 }
 
+function fromBase64urlToBuffer(value: string) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(padded, "base64");
+}
+
 function stateSecret() {
   return (
     process.env.AUTH_SECRET?.trim() ||
@@ -150,6 +155,25 @@ function encryptToken(token: string) {
   const tag = cipher.getAuthTag();
 
   return [base64url(iv), base64url(tag), base64url(encrypted)].join(".");
+}
+
+function decryptToken(encrypted: string | null | undefined): string | null {
+  if (!encrypted) return null;
+  const key = encryptionKey();
+  if (!key) return null;
+
+  try {
+    const [ivPart, tagPart, dataPart] = encrypted.split(".");
+    if (!ivPart || !tagPart || !dataPart) return null;
+    const iv = fromBase64urlToBuffer(ivPart);
+    const tag = fromBase64urlToBuffer(tagPart);
+    const data = fromBase64urlToBuffer(dataPart);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
 }
 
 function parseScopes(value: string | undefined, fallback: string[]) {
@@ -637,6 +661,61 @@ export async function upsertManychatLeadIdentity(input: {
   }
 }
 
+async function getDecryptedTokenForClient(clientKey: string): Promise<string | null> {
+  try {
+    const sb = getServiceSupabase();
+    const { data } = await sb
+      .from("instagram_connections")
+      .select("token_encrypted")
+      .eq("client_key", clientKey)
+      .eq("status", "connected")
+      .maybeSingle();
+    return decryptToken(data?.token_encrypted as string | null | undefined);
+  } catch {
+    return null;
+  }
+}
+
+const usernameResolveCache = new Map<string, string | null>();
+
+/**
+ * Instagram message webhooks only carry the numeric IGSID (Instagram-scoped, app-specific).
+ * ManyChat links every lead by @handle, so to attribute a DM to the setter who owns the
+ * lead we must translate IGSID -> @username via the Instagram Graph API. Best-effort:
+ * returns null on any failure so message storage is never blocked.
+ */
+export async function resolveInstagramUsernameByIgsid(
+  instagramUserId: string,
+  clientKey: string,
+): Promise<string | null> {
+  if (!instagramUserId || !clientKey) return null;
+  const cacheKey = `${clientKey}:${instagramUserId}`;
+  if (usernameResolveCache.has(cacheKey)) return usernameResolveCache.get(cacheKey) ?? null;
+
+  let username: string | null = null;
+  try {
+    const token = await getDecryptedTokenForClient(clientKey);
+    if (token) {
+      const version = process.env.META_GRAPH_VERSION?.trim() || "v24.0";
+      const url = new URL(`${instagramApiBase(version)}/${instagramUserId}`);
+      url.searchParams.set("fields", "username");
+      url.searchParams.set("access_token", token);
+      const res = await fetch(url.toString(), { cache: "no-store" });
+      if (res.ok) {
+        const data = (await res.json()) as { username?: unknown };
+        if (typeof data.username === "string" && data.username.trim()) {
+          username = data.username.trim();
+        }
+      }
+    }
+  } catch {
+    username = null;
+  }
+
+  usernameResolveCache.set(cacheKey, username);
+  return username;
+}
+
 export async function upsertInstagramLeadIdentity(input: {
   client: string;
   instagramUserId: string;
@@ -645,19 +724,33 @@ export async function upsertInstagramLeadIdentity(input: {
 }) {
   if (!input.client || !input.instagramUserId) return;
   const sb = getServiceSupabase();
+
+  // Resolve the @handle when the webhook didn't carry one: first from an existing link
+  // for this IGSID, otherwise from the Instagram Graph API. The @handle is the only key
+  // shared with ManyChat, so it's what lets us bridge a DM to the assigned setter.
+  let handle = normalizeInstagramHandle(input.instagramHandle);
+  if (!handle) {
+    const knownById = await findLeadLink(input.client, { instagramUserId: input.instagramUserId });
+    handle = normalizeInstagramHandle((knownById?.instagram_handle as string | null | undefined) || null);
+    if (!handle) {
+      handle = normalizeInstagramHandle(
+        await resolveInstagramUsernameByIgsid(input.instagramUserId, input.client),
+      );
+    }
+  }
+
   const existing = await findLeadLink(input.client, {
     instagramUserId: input.instagramUserId,
-    handle: input.instagramHandle,
+    handle,
   });
-  const normalizedHandle = normalizeInstagramHandle(input.instagramHandle);
 
   const payload = {
     client: input.client,
     manychat_subscriber_id: (existing?.manychat_subscriber_id as string | null | undefined) || null,
     instagram_user_id: input.instagramUserId,
-    instagram_handle: normalizedHandle || (existing?.instagram_handle as string | null | undefined) || null,
+    instagram_handle: handle || (existing?.instagram_handle as string | null | undefined) || null,
     lead_name: (existing?.lead_name as string | null | undefined) || null,
-    confidence: existing?.manychat_subscriber_id ? "matched" : normalizedHandle ? "handle_pending" : "instagram_pending",
+    confidence: existing?.manychat_subscriber_id ? "matched" : handle ? "handle_pending" : "instagram_pending",
     source: "instagram",
     last_instagram_message_at: input.sentAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -667,5 +760,29 @@ export async function upsertInstagramLeadIdentity(input: {
     await sb.from("instagram_lead_links").update(payload).eq("id", existing.id);
   } else {
     await sb.from("instagram_lead_links").insert(payload);
+  }
+
+  // Bridge: stamp this IGSID onto the ManyChat-side link (keyed by @handle, which carries
+  // the setter via manychat_subscriber_id) so the response-time join can attribute the DM
+  // to the right setter even when a separate Instagram-only link already exists.
+  if (handle) {
+    const { data: mcLink } = await sb
+      .from("instagram_lead_links")
+      .select("id, instagram_user_id")
+      .eq("client", input.client)
+      .eq("instagram_handle", handle)
+      .not("manychat_subscriber_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (mcLink?.id && mcLink.instagram_user_id !== input.instagramUserId) {
+      await sb
+        .from("instagram_lead_links")
+        .update({
+          instagram_user_id: input.instagramUserId,
+          confidence: "matched",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", mcLink.id);
+    }
   }
 }

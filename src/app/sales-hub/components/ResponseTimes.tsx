@@ -17,10 +17,10 @@ import InstagramConnectionSetup from "./InstagramConnectionSetup";
 interface ResponseTimeGroup {
   id: string;
   label: string;
-  averageMinutes: number | null;
+  averageSeconds: number | null;
   sampleCount: number;
-  fastestMinutes: number | null;
-  slowestMinutes: number | null;
+  fastestSeconds: number | null;
+  slowestSeconds: number | null;
 }
 
 interface ResponseTimeMetrics {
@@ -42,7 +42,7 @@ interface ResponseTimeMetrics {
     leadName: string | null;
     inboundAt: string;
     outboundAt: string;
-    activeMinutes: number;
+    activeSeconds: number;
   }>;
   setup: {
     businessHours: string;
@@ -66,13 +66,15 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-function formatDuration(minutes: number | null) {
-  if (minutes === null || !Number.isFinite(minutes)) return "—";
-  const rounded = Math.round(minutes);
-  if (rounded < 60) return `${rounded}m`;
-  const hours = Math.floor(rounded / 60);
-  const mins = rounded % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+function formatDuration(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return "—";
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}s`;
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+  return `${mins}m ${secs}s`;
 }
 
 function formatDateTime(iso: string | null) {
@@ -89,10 +91,10 @@ function formatDateTime(iso: string | null) {
   }).format(date);
 }
 
-function responseColor(minutes: number | null) {
-  if (minutes === null) return "var(--text-secondary)";
-  if (minutes <= 15) return "var(--success)";
-  if (minutes <= 45) return "var(--warning)";
+function responseColor(seconds: number | null) {
+  if (seconds === null) return "var(--text-secondary)";
+  if (seconds <= 15 * 60) return "var(--success)";
+  if (seconds <= 45 * 60) return "var(--warning)";
   return "var(--danger)";
 }
 
@@ -149,10 +151,10 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
 
         <div className="metric-grid metric-grid-3" style={{ marginBottom: 12 }}>
           <MetricCard
-            icon={<Clock3 size={12} style={{ color: responseColor(data.summary.averageMinutes) }} />}
+            icon={<Clock3 size={12} style={{ color: responseColor(data.summary.averageSeconds) }} />}
             label="Team Avg"
-            value={formatDuration(data.summary.averageMinutes)}
-            color={responseColor(data.summary.averageMinutes)}
+            value={formatDuration(data.summary.averageSeconds)}
+            color={responseColor(data.summary.averageSeconds)}
           />
           <MetricCard
             icon={<MessageSquareReply size={12} style={{ color: "var(--accent)" }} />}
@@ -290,12 +292,12 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
             ) : rows.map((row) => (
               <tr key={row.id}>
                 <td style={{ fontWeight: 650, color: "var(--text-primary)" }}>{row.label}</td>
-                <td style={{ color: responseColor(row.averageMinutes), fontWeight: 650 }}>
-                  {formatDuration(row.averageMinutes)}
+                <td style={{ color: responseColor(row.averageSeconds), fontWeight: 650 }}>
+                  {formatDuration(row.averageSeconds)}
                 </td>
                 <td>{fmtNumber(row.sampleCount)}</td>
-                <td>{formatDuration(row.fastestMinutes)}</td>
-                <td>{formatDuration(row.slowestMinutes)}</td>
+                <td>{formatDuration(row.fastestSeconds)}</td>
+                <td>{formatDuration(row.slowestSeconds)}</td>
               </tr>
             ))}
           </tbody>
@@ -333,8 +335,8 @@ function SlowestGapsTable({ rows }: { rows: ResponseTimeMetrics["slowestGaps"] }
                 <td>{row.setterLabel}</td>
                 <td>{formatDateTime(row.inboundAt)}</td>
                 <td>{formatDateTime(row.outboundAt)}</td>
-                <td style={{ color: responseColor(row.activeMinutes), fontWeight: 650 }}>
-                  {formatDuration(row.activeMinutes)}
+                <td style={{ color: responseColor(row.activeSeconds), fontWeight: 650 }}>
+                  {formatDuration(row.activeSeconds)}
                 </td>
               </tr>
             ))}
