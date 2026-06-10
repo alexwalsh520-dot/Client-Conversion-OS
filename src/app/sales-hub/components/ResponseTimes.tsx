@@ -6,6 +6,13 @@ import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters } from "../types";
 
+interface HourlyBucket {
+  hour: number;
+  count: number;
+  avgSeconds: number | null;
+  missedCount: number;
+}
+
 interface ResponseTimeGroup {
   id: string;
   label: string;
@@ -14,6 +21,7 @@ interface ResponseTimeGroup {
   fastestSeconds: number | null;
   slowestSeconds: number | null;
   missedCount: number;
+  hourly: HourlyBucket[];
 }
 
 interface Conversation {
@@ -86,6 +94,82 @@ function missRate(missed: number, total: number) {
 
 function thresholdLabel(seconds: number) {
   return `${Math.round(seconds / 60)} min`;
+}
+
+function fmtHour(hour: number) {
+  const period = hour < 12 ? "a" : "p";
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}${period}`;
+}
+
+function HourlyBars({ label, hourly }: { label: string; hourly: HourlyBucket[] }) {
+  const maxAvg = Math.max(1, ...hourly.map((h) => h.avgSeconds ?? 0));
+  const totalMissed = hourly.reduce((a, h) => a + h.missedCount, 0);
+  const worst = hourly
+    .filter((h) => h.avgSeconds != null)
+    .sort((a, b) => (b.avgSeconds as number) - (a.avgSeconds as number))[0];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 0" }}>
+      <div style={{ width: 104, fontSize: 12, fontWeight: 650, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 36, flex: 1 }}>
+        {hourly.map((h) => (
+          <div
+            key={h.hour}
+            title={`${fmtHour(h.hour)} — ${h.avgSeconds != null ? formatDuration(h.avgSeconds) : "no data"} · ${h.count} replies · ${h.missedCount} missed`}
+            style={{
+              flex: 1,
+              height: h.avgSeconds != null ? `${Math.max(8, (h.avgSeconds / maxAvg) * 100)}%` : "0%",
+              minHeight: h.avgSeconds != null ? 3 : 0,
+              background: h.missedCount > 0 ? "var(--danger)" : "var(--accent)",
+              opacity: h.avgSeconds != null ? 0.85 : 0.12,
+              borderRadius: "2px 2px 0 0",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ width: 150, fontSize: 11, color: "var(--text-secondary)", textAlign: "right", whiteSpace: "nowrap" }}>
+        {worst ? `peak ${formatDuration(worst.avgSeconds)} @ ${fmtHour(worst.hour)}` : "no data"}
+        {totalMissed > 0 ? ` · ${totalMissed} miss` : ""}
+      </div>
+    </div>
+  );
+}
+
+function HourlySection({
+  summary,
+  clients,
+  setters,
+}: {
+  summary: ResponseTimeGroup;
+  clients: ResponseTimeGroup[];
+  setters: ResponseTimeGroup[];
+}) {
+  return (
+    <div className="section" style={{ marginBottom: 20 }}>
+      <h2 className="section-title">
+        <Clock3 size={16} />
+        Avg Response Time by Hour (11am–11pm ET)
+      </h2>
+      <div className="glass-static" style={{ padding: 14, overflowX: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 2, minWidth: 520 }}>
+          <div style={{ width: 104 }} />
+          <div style={{ display: "flex", flex: 1, fontSize: 9, color: "var(--text-muted)" }}>
+            {summary.hourly.map((h) => (
+              <div key={h.hour} style={{ flex: 1, textAlign: "center" }}>{fmtHour(h.hour)}</div>
+            ))}
+          </div>
+          <div style={{ width: 150 }} />
+        </div>
+        <div style={{ minWidth: 520 }}>
+          <HourlyBars label="Team" hourly={summary.hourly} />
+          {clients.map((g) => <HourlyBars key={`o-${g.id}`} label={g.label} hourly={g.hourly} />)}
+          {setters.map((g) => <HourlyBars key={`s-${g.id}`} label={g.label} hourly={g.hourly} />)}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ResponseTimes({ filters }: ResponseTimesProps) {
@@ -177,6 +261,8 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           <MissedTable title="By Setter" rows={data.setters} />
         </div>
       </div>
+
+      <HourlySection summary={data.summary} clients={data.clients} setters={data.setters} />
 
       <ConversationsTable rows={data.conversations.filter((c) => c.missed)} />
     </div>
