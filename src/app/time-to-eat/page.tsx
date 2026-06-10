@@ -2,18 +2,16 @@
 
 import { useState } from "react";
 import { Utensils } from "lucide-react";
-import TimeToEat from "@/app/sales-hub/components/TimeToEat";
-import type { Client } from "@/app/sales-hub/types";
+import TimeToEat, { type TimeToEatClient } from "@/app/sales-hub/components/TimeToEat";
 
-const CLIENTS: Array<{ value: Client; label: string }> = [
+const CLIENTS: Array<{ value: TimeToEatClient; label: string }> = [
   { value: "all", label: "All Clients" },
   { value: "tyson", label: "Tyson" },
-  { value: "keith", label: "Keith" },
-  { value: "lucy", label: "Lucy" },
+  { value: "antwan", label: "Antwan" },
 ];
 
 export default function TimeToEatPage() {
-  const [client, setClient] = useState<Client>("all");
+  const [client, setClient] = useState<TimeToEatClient>("all");
 
   return (
     <main className="fade-in" style={{ maxWidth: 1240, margin: "0 auto", padding: "48px 24px 80px" }}>
@@ -38,7 +36,7 @@ export default function TimeToEatPage() {
             Time to Eat
           </h1>
           <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
-            Leads that replied and have not heard back in 24 hours.
+            Leads that replied and have not heard back in 1 hour, counted only during 11am–11pm ET.
           </p>
         </div>
       </div>

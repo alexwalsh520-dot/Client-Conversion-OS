@@ -11,7 +11,10 @@ import {
   Users,
   Utensils,
 } from "lucide-react";
-import type { Client } from "../types";
+// Time to Eat tracks its own client list, separate from the rest of Sales Hub.
+// Tyson is live; Antwan is shown as a placeholder until his Instagram is
+// connected. Keith and Lucy were removed — we no longer work with them.
+export type TimeToEatClient = "all" | "tyson" | "antwan";
 
 interface TimeToEatLead {
   id: string;
@@ -31,9 +34,10 @@ interface TimeToEatResponse {
   status: "ok" | "error";
   error?: string;
   warning?: string;
-  staleAfterHours: number;
-  deadMeatAfterHours: number;
-  lookbackDays: number;
+  staleAfterBusinessMinutes?: number;
+  deadMeatAfterMisses?: number;
+  businessHours?: string;
+  lookbackDays?: number;
   memory?: {
     enabled: boolean;
     trackedLeads: number;
@@ -53,11 +57,10 @@ function formatWait(hours: number) {
   return leftoverHours > 0 ? `${days}d ${leftoverHours}h waiting` : `${days}d waiting`;
 }
 
-function clientLabel(client: Client) {
+function clientLabel(client: TimeToEatClient) {
   if (client === "all") return "All clients";
   if (client === "tyson") return "Tyson";
-  if (client === "keith") return "Keith";
-  return "Lucy";
+  return "Antwan";
 }
 
 function setterList(lead: TimeToEatLead, mode: "initial" | "all") {
@@ -299,7 +302,7 @@ function LeadGroup({
   );
 }
 
-export default function TimeToEat({ selectedClient }: { selectedClient: Client }) {
+export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEatClient }) {
   const [data, setData] = useState<TimeToEatResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -347,7 +350,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: Client }
             Time to Eat
           </div>
           <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 2 }}>
-            {clientLabel(selectedClient)} leads with no team reply after 24 hours
+            {clientLabel(selectedClient)} leads with no team reply after 1 hour (11am–11pm ET)
           </div>
         </div>
         <div style={{ flex: 1 }} />
@@ -408,6 +411,23 @@ export default function TimeToEat({ selectedClient }: { selectedClient: Client }
         </div>
       )}
 
+      {selectedClient === "antwan" && (
+        <div
+          style={{
+            padding: "12px 14px",
+            borderRadius: 8,
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
+            fontSize: 13,
+            marginBottom: 14,
+            border: "1px solid var(--border-subtle)",
+          }}
+        >
+          Antwan&apos;s Instagram isn&apos;t connected to the CCOS yet, so there is no live data here
+          yet. This view is ready — leads will start showing automatically once Antwan is set up.
+        </div>
+      )}
+
       {loading && !data ? (
         <div
           style={{
@@ -427,7 +447,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: Client }
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <LeadGroup
             title="TIME TO EAT"
-            subtitle="First time this lead has waited over 24 hours."
+            subtitle="First time this lead has waited over 1 working hour (11am–11pm ET)."
             leads={data?.timeToEat ?? []}
             actionLabel="Go Hunt"
             setterMode="initial"
@@ -435,7 +455,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: Client }
           />
           <LeadGroup
             title="Dead Meat"
-            subtitle="Over 48 hours waiting, or this lead has slipped before."
+            subtitle="This lead has slipped twice — over 1 working hour with no reply, on two separate occasions."
             leads={data?.deadMeat ?? []}
             actionLabel="Go Revive"
             setterMode="all"

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { addBusinessMinutes, businessMinutesBetween } from "@/lib/sales-hub/business-hours";
 
-type ClientFilter = "all" | "tyson" | "keith" | "lucy";
-type ServerClient = "tyson_sonnek" | "keith_holland" | "lucy_hubbard";
+type ClientFilter = "all" | "tyson" | "antwan";
+type ServerClient = "tyson_sonnek" | "antwan_rarcus";
 type TimeToEatStatus = "watching" | "time_to_eat" | "dead_meat" | "resolved";
 
 interface TagEventRow {
@@ -74,19 +75,25 @@ interface TimeToEatMemory {
 
 const CLIENT_MAP: Record<Exclude<ClientFilter, "all">, ServerClient> = {
   tyson: "tyson_sonnek",
-  keith: "keith_holland",
-  lucy: "lucy_hubbard",
+  antwan: "antwan_rarcus",
 };
 
 const MEMORY_KEY = "time_to_eat_memory_v1";
-const STALE_AFTER_HOURS = 24;
-const DEAD_MEAT_AFTER_HOURS = 48;
+// A lead is "stale" after 60 minutes of WORKING time with no reply. Working time
+// is only counted inside 11am–11pm ET (see lib/sales-hub/business-hours.ts), so
+// overnight gaps don't push a lead into the list.
+const STALE_AFTER_BUSINESS_MINUTES = 60;
+// Dead Meat = the lead has gone stale on TWO separate occasions (it slipped,
+// got a reply, then slipped again). The first occasion is Time to Eat; the
+// second is Dead Meat. So "1 prior miss" already on record => Dead Meat.
+const DEAD_MEAT_AFTER_MISSES = 2;
 const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
 const MANYCHAT_BASE = "https://api.manychat.com/fb";
+const BUSINESS_HOURS_LABEL = "11am-11pm ET";
 
 function normalizeClient(value: string | null): ClientFilter {
-  if (value === "tyson" || value === "keith" || value === "lucy") return value;
+  if (value === "tyson" || value === "antwan") return value;
   return "all";
 }
 
@@ -120,7 +127,7 @@ function normalizeStoredState(value: unknown): StoredLeadState | null {
   const client = value.client;
   const subscriberId = value.subscriberId;
   if (
-    (client !== "tyson_sonnek" && client !== "keith_holland" && client !== "lucy_hubbard") ||
+    (client !== "tyson_sonnek" && client !== "antwan_rarcus") ||
     typeof subscriberId !== "string" ||
     !subscriberId
   ) {
@@ -224,8 +231,7 @@ async function saveMemory(sb: ReturnType<typeof getServiceSupabase>, memory: Tim
 
 function getManyChatKey(client: ServerClient) {
   if (client === "tyson_sonnek") return process.env.MANYCHAT_API_KEY_TYSON || null;
-  if (client === "keith_holland") return process.env.MANYCHAT_API_KEY_KEITH || null;
-  if (client === "lucy_hubbard") return process.env.MANYCHAT_API_KEY_LUCY || null;
+  if (client === "antwan_rarcus") return process.env.MANYCHAT_API_KEY_ANTWAN || null;
   return null;
 }
 
@@ -325,6 +331,9 @@ function buildLeadMeta(events: TagEventRow[]) {
   return leads;
 }
 
+// Count how many EARLIER times this lead waited past the stale threshold and
+// then got a reply. Each inbound→outbound gap is measured in working minutes
+// (11am–11pm ET), so an overnight reply isn't unfairly counted as a miss.
 function countPastMisses(messages: MessageRow[], currentLastInboundIndex: number) {
   let pendingInboundAt: string | null = null;
   let misses = 0;
@@ -339,8 +348,8 @@ function countPastMisses(messages: MessageRow[], currentLastInboundIndex: number
     }
 
     if (message.direction === "outbound" && pendingInboundAt) {
-      const waitMs = new Date(message.sent_at).getTime() - new Date(pendingInboundAt).getTime();
-      if (waitMs >= STALE_AFTER_HOURS * 60 * 60 * 1000) misses += 1;
+      const waitedMinutes = businessMinutesBetween(pendingInboundAt, message.sent_at);
+      if (waitedMinutes >= STALE_AFTER_BUSINESS_MINUTES) misses += 1;
       pendingInboundAt = null;
     }
   }
@@ -348,6 +357,9 @@ function countPastMisses(messages: MessageRow[], currentLastInboundIndex: number
   return misses;
 }
 
+// Wall-clock hours since the prospect replied — used for the human-facing
+// "Xh waiting" label and for sorting, NOT for the stale decision (that is
+// business-hours, via businessMinutesBetween).
 function hoursSince(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   return Math.max(0, diff / (60 * 60 * 1000));
@@ -363,8 +375,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         status: "ok",
         warning: "Supabase service env vars are not configured.",
-        staleAfterHours: STALE_AFTER_HOURS,
-        deadMeatAfterHours: DEAD_MEAT_AFTER_HOURS,
+        staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
+        deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
+        businessHours: BUSINESS_HOURS_LABEL,
         lookbackDays: LOOKBACK_DAYS,
         memory: { enabled: false, trackedLeads: 0, updatedAt: null },
         timeToEat: [],
@@ -396,8 +409,9 @@ export async function GET(req: NextRequest) {
     if (leads.size === 0) {
       return NextResponse.json({
         status: "ok",
-        staleAfterHours: STALE_AFTER_HOURS,
-        deadMeatAfterHours: DEAD_MEAT_AFTER_HOURS,
+        staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
+        deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
+        businessHours: BUSINESS_HOURS_LABEL,
         lookbackDays: LOOKBACK_DAYS,
         warning: warnings.join(" ") || undefined,
         memory: {
@@ -470,7 +484,7 @@ export async function GET(req: NextRequest) {
         lastMessage.direction === "inbound" &&
         existing.status !== "watching" &&
         existing.lastInboundAt !== lastMessage.sent_at &&
-        hoursSince(lastMessage.sent_at) < STALE_AFTER_HOURS
+        businessMinutesBetween(lastMessage.sent_at, nowIso) < STALE_AFTER_BUSINESS_MINUTES
       ) {
         memory.leads[id] = {
           ...existing,
@@ -493,8 +507,11 @@ export async function GET(req: NextRequest) {
       const lastMessage = messages.at(-1);
       if (!lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
 
+      // Working minutes (11am–11pm ET) since the prospect's last reply decide
+      // whether this lead is stale. waitingHours is kept only for display.
+      const businessMinutesWaiting = businessMinutesBetween(lastMessage.sent_at, nowIso);
+      if (businessMinutesWaiting < STALE_AFTER_BUSINESS_MINUTES) continue;
       const waitingHours = hoursSince(lastMessage.sent_at);
-      if (waitingHours < STALE_AFTER_HOURS) continue;
 
       const pastMisses = countPastMisses(messages, messages.length - 1);
       const id = memoryId(lead.client, subscriberId);
@@ -507,11 +524,13 @@ export async function GET(req: NextRequest) {
         ? Math.max(savedStaleEvents, pastMisses + 1)
         : Math.max(savedStaleEvents + 1, pastMisses + 1);
       const previousMisses = Math.max(pastMisses, staleEventCount - 1);
-      const staleStartedAt = new Date(
-        new Date(lastMessage.sent_at).getTime() + STALE_AFTER_HOURS * 60 * 60 * 1000,
-      ).toISOString();
+      // The instant this lead actually crossed the 1-working-hour mark.
+      const staleStartedAt = addBusinessMinutes(lastMessage.sent_at, STALE_AFTER_BUSINESS_MINUTES);
+      // This stale event counts as one occasion; prior misses add to it. Two or
+      // more total occasions => Dead Meat, otherwise Time to Eat.
+      const totalOccasions = previousMisses + 1;
       const status: TimeToEatStatus =
-        waitingHours >= DEAD_MEAT_AFTER_HOURS || previousMisses > 0 ? "dead_meat" : "time_to_eat";
+        totalOccasions >= DEAD_MEAT_AFTER_MISSES ? "dead_meat" : "time_to_eat";
       const manychatUrl =
         lead.manychatUrl ||
         existing?.manychatUrl ||
@@ -570,8 +589,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       status: "ok",
-      staleAfterHours: STALE_AFTER_HOURS,
-      deadMeatAfterHours: DEAD_MEAT_AFTER_HOURS,
+      staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
+      deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
+      businessHours: BUSINESS_HOURS_LABEL,
       lookbackDays: LOOKBACK_DAYS,
       warning: warnings.join(" ") || undefined,
       memory: {
@@ -588,8 +608,9 @@ export async function GET(req: NextRequest) {
       {
         status: "error",
         error: error instanceof Error ? error.message : "Failed to load Time to Eat",
-        staleAfterHours: STALE_AFTER_HOURS,
-        deadMeatAfterHours: DEAD_MEAT_AFTER_HOURS,
+        staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
+        deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
+        businessHours: BUSINESS_HOURS_LABEL,
         lookbackDays: LOOKBACK_DAYS,
         memory: { enabled: false, trackedLeads: 0, updatedAt: null },
         timeToEat: [],
