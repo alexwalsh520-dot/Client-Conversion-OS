@@ -202,6 +202,7 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           title="Team — avg response by hour (11am–11pm ET)"
           hourLabels={BUSINESS_HOUR_LABELS}
           rows={[hourlyStripRow(data.summary)]}
+          collapsible
         />
       </div>
 
@@ -211,6 +212,7 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           title="Avg response by hour"
           hourLabels={BUSINESS_HOUR_LABELS}
           rows={data.clients.map(hourlyStripRow)}
+          collapsible
         />
       </div>
 
@@ -220,6 +222,7 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           title="Avg response by hour"
           hourLabels={BUSINESS_HOUR_LABELS}
           rows={data.setters.map(hourlyStripRow)}
+          collapsible
         />
       </div>
 
