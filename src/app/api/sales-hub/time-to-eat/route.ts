@@ -91,6 +91,12 @@ const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
 const MANYCHAT_BASE = "https://api.manychat.com/fb";
 const BUSINESS_HOURS_LABEL = "11am-11pm ET";
+// The moment this tracker went live. Only prospect replies AFTER this instant
+// count — so there is no historical backlog, just leads moving forward. Past
+// slips before this time are ignored too, giving every lead a clean slate.
+// Change this if you ever want to re-baseline the queue.
+const GO_LIVE_AT = "2026-06-10T03:24:16Z";
+const GO_LIVE_MS = new Date(GO_LIVE_AT).getTime();
 
 function normalizeClient(value: string | null): ClientFilter {
   if (value === "tyson" || value === "antwan") return value;
@@ -343,7 +349,8 @@ function countPastMisses(messages: MessageRow[], currentLastInboundIndex: number
     if (!message.sent_at) continue;
 
     if (message.direction === "inbound") {
-      pendingInboundAt = message.sent_at;
+      // Only replies from go-live onward can count as a miss — clean slate.
+      pendingInboundAt = new Date(message.sent_at).getTime() >= GO_LIVE_MS ? message.sent_at : null;
       continue;
     }
 
@@ -390,6 +397,15 @@ export async function GET(req: NextRequest) {
     const memory = memoryState.memory;
     const warnings = memoryState.warning ? [memoryState.warning] : [];
     let memoryDirty = false;
+
+    // Drop any pre-go-live history so the backlog clears and counts start fresh.
+    for (const [key, state] of Object.entries(memory.leads)) {
+      const lastInboundMs = state.lastInboundAt ? new Date(state.lastInboundAt).getTime() : 0;
+      if (!lastInboundMs || lastInboundMs < GO_LIVE_MS) {
+        delete memory.leads[key];
+        memoryDirty = true;
+      }
+    }
 
     let eventQuery = sb
       .from("manychat_tag_events")
@@ -506,6 +522,8 @@ export async function GET(req: NextRequest) {
 
       const lastMessage = messages.at(-1);
       if (!lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
+      // No backlog: only leads whose latest reply is after go-live are tracked.
+      if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
 
       // Working minutes (11am–11pm ET) since the prospect's last reply decide
       // whether this lead is stale. waitingHours is kept only for display.

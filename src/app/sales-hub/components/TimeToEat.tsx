@@ -327,6 +327,24 @@ export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEa
 
   useEffect(() => {
     fetchData();
+    // Keep an open tab accurate to the minute without paying for extra crons:
+    // re-fetch every 60s, but ONLY while the tab is actually visible, and again
+    // the moment the user switches back to it. The server recomputes against the
+    // live clock on each call, so this is what makes the list tick up on its own.
+    const tick = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        fetchData();
+      }
+    };
+    const interval = setInterval(tick, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchData();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [fetchData]);
 
   const totals = useMemo(() => {
@@ -354,6 +372,9 @@ export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEa
           </div>
         </div>
         <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>
+          Live · auto-updates every minute
+        </span>
         <button
           onClick={fetchData}
           disabled={loading}
