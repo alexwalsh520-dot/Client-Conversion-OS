@@ -141,8 +141,8 @@ const BUSINESS_END_SECOND = 23 * 3600;
 // A reply counts as a "miss" if it took longer than this many business-hours seconds.
 const MISS_THRESHOLD_SECONDS = 5 * 60;
 
-// ManyChat live-chat deep link: https://app.manychat.com/{pageId}/chat/{subscriberId}.
-// Page id per client (Tyson's was read from the avatar URL path /ava/{pageId}/...).
+// ManyChat live-chat deep link: https://app.manychat.com/fb{pageId}/chat/{subscriberId}
+// (the account path segment is prefixed with "fb", confirmed from a real inbox URL).
 const CLIENT_MANYCHAT_PAGE_ID: Record<ClientId, string | null> = {
   tyson: "1024471",
   antwan: null,
@@ -151,7 +151,7 @@ const CLIENT_MANYCHAT_PAGE_ID: Record<ClientId, string | null> = {
 function manychatChatUrl(client: ClientId, subscriberId: string | null): string | null {
   const pageId = CLIENT_MANYCHAT_PAGE_ID[client];
   if (!pageId || !subscriberId) return null;
-  return `https://app.manychat.com/${pageId}/chat/${subscriberId}`;
+  return `https://app.manychat.com/fb${pageId}/chat/${subscriberId}`;
 }
 
 function getVisibleClients(client: SalesHubClient): ClientDef[] {
