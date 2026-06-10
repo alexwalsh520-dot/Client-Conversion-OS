@@ -77,13 +77,27 @@ function fmtHour(hour: number) {
 
 const HOUR_LABELS_24 = Array.from({ length: 24 }, (_, i) => fmtHour(i));
 
-function leadStripRow(group: LeadHourGroup): StripRow {
+// Primary view = % of that row's leads landing in each hour; secondary = raw counts.
+function leadPctRow(group: LeadHourGroup): StripRow {
+  const total = group.counts.reduce((a, b) => a + b, 0);
+  return {
+    id: group.id,
+    label: group.label,
+    cells: group.counts.map((count, hour) => ({
+      value: count > 0 && total > 0 ? `${Math.round((count / total) * 100)}%` : null,
+      tooltip: `${fmtHour(hour)} — ${count} of ${total} leads (${total > 0 ? ((count / total) * 100).toFixed(1) : "0"}%)`,
+    })),
+  };
+}
+
+function leadCountRow(group: LeadHourGroup): StripRow {
+  const total = group.counts.reduce((a, b) => a + b, 0);
   return {
     id: group.id,
     label: group.label,
     cells: group.counts.map((count, hour) => ({
       value: count > 0 ? String(count) : null,
-      tooltip: `${fmtHour(hour)} — ${count} new leads`,
+      tooltip: `${fmtHour(hour)} — ${count} of ${total} leads`,
     })),
   };
 }
@@ -290,7 +304,8 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
             <HourlyStripTable
               title="New leads by hour (ET)"
               hourLabels={HOUR_LABELS_24}
-              rows={[leadStripRow(leadHours.team)]}
+              rows={[leadPctRow(leadHours.team)]}
+              secondaryRows={[leadCountRow(leadHours.team)]}
             />
           ) : null
         }
@@ -310,7 +325,8 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               <HourlyStripTable
                 title="New leads by hour (ET)"
                 hourLabels={HOUR_LABELS_24}
-                rows={leadHours.offers.map(leadStripRow)}
+                rows={leadHours.offers.map(leadPctRow)}
+                secondaryRows={leadHours.offers.map(leadCountRow)}
               />
             </div>
           )}
@@ -320,7 +336,8 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               <HourlyStripTable
                 title="New leads by hour (ET)"
                 hourLabels={HOUR_LABELS_24}
-                rows={leadHours.setters.map(leadStripRow)}
+                rows={leadHours.setters.map(leadPctRow)}
+                secondaryRows={leadHours.setters.map(leadCountRow)}
               />
             </div>
           )}

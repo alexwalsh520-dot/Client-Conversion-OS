@@ -205,23 +205,22 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 20 }}>
-        <div>
-          <GroupTable title="By Offer" rows={data.clients} />
-          <HourlyStripTable
-            title="Avg response by hour"
-            hourLabels={BUSINESS_HOUR_LABELS}
-            rows={data.clients.map(hourlyStripRow)}
-          />
-        </div>
-        <div>
-          <GroupTable title="By Setter" rows={data.setters} />
-          <HourlyStripTable
-            title="Avg response by hour"
-            hourLabels={BUSINESS_HOUR_LABELS}
-            rows={data.setters.map(hourlyStripRow)}
-          />
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <GroupTable title="By Offer" rows={data.clients} />
+        <HourlyStripTable
+          title="Avg response by hour"
+          hourLabels={BUSINESS_HOUR_LABELS}
+          rows={data.clients.map(hourlyStripRow)}
+        />
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <GroupTable title="By Setter" rows={data.setters} />
+        <HourlyStripTable
+          title="Avg response by hour"
+          hourLabels={BUSINESS_HOUR_LABELS}
+          rows={data.setters.map(hourlyStripRow)}
+        />
       </div>
 
       <div className="section" style={{ marginBottom: 20 }}>
