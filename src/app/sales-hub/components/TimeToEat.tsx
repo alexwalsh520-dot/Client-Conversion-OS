@@ -11,6 +11,7 @@ import {
   Users,
   Utensils,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 // Time to Eat tracks its own client list, separate from the rest of Sales Hub.
 // Tyson is live; Antwan is shown as a placeholder until his Instagram is
 // connected. Keith and Lucy were removed — we no longer work with them.
@@ -119,11 +120,13 @@ function LeadCard({
   actionLabel,
   setterMode,
   tone,
+  onSteal,
 }: {
   lead: TimeToEatLead;
   actionLabel: "Go Hunt" | "Go Revive";
   setterMode: "initial" | "all";
   tone: "hunt" | "revive";
+  onSteal: (lead: TimeToEatLead) => void;
 }) {
   const canOpen = Boolean(lead.manychatUrl);
   const accent = tone === "hunt" ? "var(--accent)" : "var(--danger)";
@@ -150,6 +153,7 @@ function LeadCard({
             target="_blank"
             rel="noreferrer"
             title={lead.leadName || lead.subscriberId}
+            onClick={() => onSteal(lead)}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -219,6 +223,7 @@ function LeadGroup({
   actionLabel,
   setterMode,
   tone,
+  onSteal,
 }: {
   title: string;
   subtitle: string;
@@ -226,6 +231,7 @@ function LeadGroup({
   actionLabel: "Go Hunt" | "Go Revive";
   setterMode: "initial" | "all";
   tone: "hunt" | "revive";
+  onSteal: (lead: TimeToEatLead) => void;
 }) {
   return (
     <section
@@ -294,6 +300,7 @@ function LeadGroup({
               actionLabel={actionLabel}
               setterMode={setterMode}
               tone={tone}
+              onSteal={onSteal}
             />
           ))
         )}
@@ -303,9 +310,36 @@ function LeadGroup({
 }
 
 export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEatClient }) {
+  const { data: session } = useSession();
   const [data, setData] = useState<TimeToEatResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // When a setter opens a stale lead, tell the backend who took it. The backend
+  // decides if it's a real steal (a different setter than the owner) and posts
+  // the "LEAD STOLEN!" alert to Slack. Fire-and-forget with keepalive so it
+  // still lands even though the click also opens the ManyChat tab.
+  const handleSteal = useCallback(
+    (lead: TimeToEatLead) => {
+      if (!session?.user) return;
+      try {
+        fetch("/api/sales-hub/time-to-eat/steal", {
+          method: "POST",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscriberId: lead.subscriberId,
+            oldOwner: lead.initialSetter,
+            leadName: lead.leadName,
+            lastProspectResponseAt: lead.lastProspectResponseAt,
+          }),
+        }).catch(() => {});
+      } catch {
+        // never block opening the lead
+      }
+    },
+    [session?.user],
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -473,6 +507,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEa
             actionLabel="Go Hunt"
             setterMode="initial"
             tone="hunt"
+            onSteal={handleSteal}
           />
           <LeadGroup
             title="Dead Meat"
@@ -481,6 +516,7 @@ export default function TimeToEat({ selectedClient }: { selectedClient: TimeToEa
             actionLabel="Go Revive"
             setterMode="all"
             tone="revive"
+            onSteal={handleSteal}
           />
         </div>
       )}
