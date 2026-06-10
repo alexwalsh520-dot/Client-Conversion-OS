@@ -1,38 +1,468 @@
 {
-  "updated": "2026-06-05",
+  "updated": "2026-06-10",
   "note": "Learning Feed: every durable thing the CMO brain wrote to persistent memory, newest first. A row is added whenever something is captured to a skill, the org context, a meeting, or a rule. This is the live window into what the brain has learned.",
   "entries": [
-    { "at": "2026-06-06 16:30", "bucket": "System / protocol", "title": "New-session CMO boot: orient fast, don't flail (where context lives)", "detail": "A fresh Claude session was flailing (searching random folders) when engaged as CMO. Fixed: added a 'Booting a CMO session' section to the cmo skill + a pointer at the TOP of MEMORY.md (auto-loads). The 5 places ALL context lives: (1) cmo skill, (2) MEMORY.md index->topic files, (3) dashboard/public/open-loops.json + memory-log.json, (4) Supabase bostjayrguulwaltnbgt (live numbers), (5) macOS Keychain (creator tokens, e.g. lucy-meta-token). Boot = check date, skim open-loops + feed, give a 3-line 'where we are'. Alex just says 'load the CMO / you're my CMO, get up to speed'.", "tags": ["onboarding", "session", "context", "protocol"], "where": "cmo skill + MEMORY.md" },
-    { "at": "2026-06-06 16:10", "bucket": "Creator context", "title": "Keith is OFFBOARDING — ads off, stop Keith work", "detail": "Keith chose to part ways (his own content direction); amicable. Ads are OFF for Keith. Stop all Keith kill/scale/attribution work; a few trailing booked calls then done. His keywords free up over time; token can be deprecated. Active creators now: Tyson, Lucy (Antwan onboarding). Captured in MEMORY.md creator roster.", "tags": ["Keith", "offboarding", "creators", "ads"], "where": "MEMORY.md" },
-    { "at": "2026-06-06 16:05", "bucket": "System / protocol", "title": "Weekly kill/scale decision runs IN-CHAT on Sundays (no cron — saves API cost)", "detail": "Alex's call: don't run the 7-day decision as an autonomous cron — that burns API cost = extra untrustworthiness. Instead it runs through HIS session (his OAuth = free + builds the employee relationship). My job: be time-aware and proactively bring up 'time for the weekly read' on/around Sunday, then run it together here. Baked into CMO Principle #8.", "tags": ["autonomy", "cadence", "cost", "7-day"], "where": "CMO skill" },
-    { "at": "2026-06-06 15:30", "bucket": "Feature spec", "title": "CMO polish: sidebar tab-hiding, human icon, de-orange brain, softer file headers", "detail": "Shipped: (1) sidebar tab-hiding — two-finger/right-click any tab -> Hide; hidden tabs collapse into a revealable 'Hidden (N)' group near Settings, right-click to Unhide, still accessible (per-user, localStorage); (2) CMO sidebar icon Bot -> UserRound (human/manager); (3) de-orange the header brain (neutral graphite/soft-white, killed the gold glow — light mode looked bad); (4) softened the Files group headers (too dramatic before).", "tags": ["CMO", "sidebar", "design", "overwhelm"], "where": "Sidebar + CMO tab" },
-    { "at": "2026-06-06 15:00", "bucket": "How Alex thinks", "title": "Be his loop-CLOSER, not his loop-LIST (his #1 problem)", "detail": "Juggling open loops + prioritization is Alex's single biggest pain. He throws tasks at me in conversation and usually doesn't remember what he asked, so it's MY job to silently track every loop, close it, and surface/report at the RIGHT moment (one at a time), never as an overwhelming list or front-and-center tab. Removed the 'Open loops' tab for this reason. Model: Ahmad (his fitness-coach/product-delivery manager) — Alex throws things at him; Ahmad tracks, closes, reports back.", "tags": ["ADHD", "loops", "focus", "Ahmad", "org"], "where": "CMO skill" },
-    { "at": "2026-06-06 14:50", "bucket": "Feature spec", "title": "Brain tab v2 shipped: dense clustered graph + refined dots", "detail": "Rebuilt the Brain graph into a dense hub-and-spoke knowledge map (skills + their sections, meetings + topics, learnings, loops, tags as connective tissue ~100+ nodes, community clusters like the reference screenshot), with center-clamp physics so it never explodes, and redesigned the dots from cartoony white-shine bubbles to refined SaaS dots (flat core + subtle top-light + hairline ring + tight glow).", "tags": ["CMO", "brain", "design"], "where": "CMO tab" },
-    { "at": "2026-06-06 14:05", "bucket": "System / protocol", "title": "Never spam the ads API — the CREATE is the confirmation; respect backpressure", "detail": "Lucy's launch got rate-limited (code 17) NOT by the ~42 create calls but by my 5 redundant verification reads after the burst + polling AFTER the limit hit. Rules now hard in the launcher: (1) a create returns the new object's id = its own confirmation, never a separate GET to check a write; (2) at most ONE end read; (3) on code 17 = FULL STOP, never poll (it extends the limit, risks the ad account = account-safety/ban risk); (4) pace writes + use the Graph batch endpoint (≤50 ops/request). Over-verification isn't free.", "tags": ["ads", "rate-limit", "account-safety", "launcher", "discipline"], "where": "ccos-ad-launcher + cmo skills" },
-    { "at": "2026-06-06 13:30", "bucket": "System / protocol", "title": "ALWAYS stash creator Meta tokens in macOS Keychain (Vercel sensitive vars are unreadable)", "detail": "Vercel 'sensitive' env vars CANNOT be read back via `vercel env pull` (they pull as blank) — that wasted real time mid-launch claiming Lucy's token was 'missing' when it was fine. Fix/rule: every creator's long-lived Meta token gets ALSO stored in macOS Keychain (readable forever) so local ad-ops are never blocked. Lucy's is at Keychain service `lucy-meta-token` (Lucy Hubbard, expires 2026-08-05, ads_management). Account act_616852470282141. To launch Lucy ads: `security find-generic-password -s lucy-meta-token -w`. Also re-stored in Vercel for the app. Baked into the meta-token skill.", "tags": ["Lucy", "meta-token", "keychain", "vercel", "ads"], "where": "meta-token skill + keychain" },
-    { "at": "2026-06-06 12:25", "bucket": "Copywriting rule", "title": "Keyword selection: neutral, simple, POSITIVE, aspirational — never effort words", "detail": "The DM keyword is the word the person taps on the ad, so it can subtly nudge the click. Pick neutral simple positive ASPIRATIONAL dream-outcome words (radiance, vitality, golden, whole, grateful, journey). NEVER effort-associated words (sweat, cadence, barbell, mile, trail, grind, reps) — effort reads like work, not the dream, and can dampen clicks. The keyword does NOT need to match the angle (it's invisible). Avoid each creator's organic keyword too (Lucy=COACH, Tyson=LOCKED). Baked into ad-copywriter.", "tags": ["copywriting", "keywords", "ads", "Lucy"], "where": "ad-copywriter skill" },
-    { "at": "2026-06-06 12:10", "bucket": "Attribution rule", "title": "Lucy 6/5 direct-CTA launch — 15 keywords (verified unique all-time)", "detail": "Renamed the 15 ads in ~/Desktop/6:5 Lucy Direct CTA Ads: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback, reclaim, journey (ad-1..ad-15 order). Keywords are neutral/aspirational per the selection rule. All verified NOT used by any account all-time, and not Lucy's organic COACH or Tyson's organic LOCKED. These are Lucy's direct-CTA keywords — attribute her DM leads on these. GOTCHA captured: this Mac's shell is zsh (1-indexed arrays) — a bash-style 0-indexed array in a rename loop shifted every file by one and dumped ad-1 into a hidden '.png'; always rename with explicit per-file mv commands (no array indexing) and verify by file size after.", "tags": ["Lucy", "ads", "keywords", "attribution", "launch", "zsh"], "where": "rename op + ad-launcher" },
-    { "at": "2026-06-05 19:05", "bucket": "Copywriting rule", "title": "Studio 2 paste format — EXACT spacing (parser splits text boxes on blank lines)", "detail": "Blank line between EVERY block. The 'I'm looking for 5 women who:' line is its OWN box — needs a blank line BEFORE the bullets or they merge. Bullets stay tight (no blank between them). CTA verbatim = 'DM me for details on 1 of the 5 spots.' (digits 1 and 5). Between ads: a line of ----- with a blank line BEFORE it (after the CTA) AND a blank line AFTER it (before the next ad). That's how Alex's code works; never deviate.", "tags": ["studio-2", "format", "copywriting"], "where": "ad-copywriter skill" },
-    { "at": "2026-06-05 18:45", "bucket": "Copywriting rule", "title": "Match copy LENGTH to placement — 9x16 image/story ads must be tiny", "detail": "Alex: the first Lucy image ads were 'an absolute metric fuckload of text' for 9x16. A story/image single slide cannot hold a paragraph + 4 bullets + CTA. For image/story ads compress to ~3-4 ONE-LINE blocks: hook (scene/feeling/question) -> one-line turn -> the offer in ONE line -> 'DM me for details.' Bullets + setup are for longer feed/text placements only. Same persuasive punch, a quarter of the words. Baked into ad-copywriter rule #5.", "tags": ["copywriting", "format", "ads", "Lucy"], "where": "ad-copywriter skill" },
-    { "at": "2026-06-05 18:30", "bucket": "Copywriting rule", "title": "New skill: women's ad voice (Kennedy Farrell competitor teardown)", "detail": "Women's fitness ads convert on FEELING + relatability, not physique/aggression — different instrument than the alpha-male direct-CTA. Built womens-ad-voice skill from a real Meta Ad Library teardown of Kennedy Farrell: hyper-specific relatable SCENE (the mirror/outfit ad), niche the life HARD (nurse on 12s), founder-on-hard-mode proof, topical/contrarian hook (ChatGPT), feeling > physique, the reframe twist, sell the human 1:1 diff. Scenes/feelings are also Meta-compliant (not body-state verdicts). Steal the technique, not the words. Applied to write 5 new Lucy ads in her earnest/whole-foods/faith voice.", "tags": ["copywriting", "women", "Lucy", "competitor", "Kennedy Farrell"], "where": "womens-ad-voice skill" },
-    { "at": "2026-06-05 17:55", "bucket": "How Alex thinks", "title": "Alex anchors everything to the goal (mirror it)", "detail": "Alex deliberately frames work by its relationship to the overarching vision ($1M/month, the business, the task's objective) — it's his ADHD focus system, an anchor against a scattered brain. The CMO should mirror it: tie reasoning/recommendations back to the goal, connect the piece to the whole, and re-anchor when he pivots. He told me directly and values me catching it.", "tags": ["ADHD", "communication", "focus", "north-star"], "where": "CMO skill" },
-    { "at": "2026-06-05 17:50", "bucket": "Feature spec", "title": "Open Loops register shipped (Phase 4) — the earned moment", "detail": "Built the Open Loops register (open-loops.json + a 'Open loops' CMO tab) during an urgent pivot to the Lucy ads, exactly the use case it's for: capture everything in flight/paused/waiting/hypothesis so a context compaction can't lose it. Seeded with the live loops (Lucy launch = now; CMO Phase 2 paused; brain-graph redo; ads-tracker auth; attribution loop). Phases 2 (live-marketing Pulse) + 3 (Scorecard) resume after Lucy.", "tags": ["CMO", "open-loops", "roadmap"], "where": "open-loops.json + CMO tab" },
-    { "at": "2026-06-05 17:30", "bucket": "Identity", "title": "Stay in your lane: sales & marketing only, $1M/month north star", "detail": "Focus = the power to say no. The CMO is sales/marketing ONLY (ads, copy, attribution, funnel, show/close/booking/spend/revenue). NOT git, infra, dev, or other agents'/teammates' chats — that's noise that dilutes the one job. The only 'reality' the brain auto-ingests is the live marketing performance data per ad/adset/audience. Everything ladders to $1M/month. Always anchor to today's date + fresh data windows; decisions run on a 7-day cadence. Proven in this chat through real results.", "tags": ["identity", "scope", "focus", "north-star", "freshness"], "where": "CMO skill" },
-    { "at": "2026-06-05 16:10", "bucket": "Copywriting rule", "title": "Meta compliance for health/fitness ads (toe the line, don't get banned)", "detail": "Edgy/tough-love TONE is fine (calling the audience out worked). The hard limits: (1) never assert you know the viewer's body/health state (no 'are you overweight/fat/bloated' = personal-attributes policy) — reframe to first-person, a general 'women who...' group, or about effort not body; (2) no before/after BODY images (food before/after is OK); (3) no body-shaming; (4) no guaranteed/medical-cure claims; (5) 18+ targeting. Our voice stays in range; only soften any 'YOU are [body state]' hooks.", "tags": ["compliance", "Meta", "ads", "copywriting"], "where": "ad-copywriter skill" },
-    { "at": "2026-06-05 15:42", "bucket": "Org / people", "title": "Corrected: the team DEBATES fiercely on purpose", "detail": "Alex, Matt, and Will pit themselves against each other and play devil's advocate to find what's true. My earlier 'disagreements are delicate, never play them against each other' was wrong. The CMO is expected to disagree openly and challenge them.", "tags": ["culture", "Matt", "Will"], "where": "CMO skill" },
-    { "at": "2026-06-05 15:42", "bucket": "Org / people", "title": "Zakk is an external coach, not part of the business", "detail": "Zakk Colburn (Zach) is Alex's paid ads coach (source of the scaling rules). Janelle and Brian Mark are others in the coaching program; there may be more coaches. Treat coach advice as a separate external input from the internal team's conclusions.", "tags": ["coaches", "Zakk"], "where": "CMO skill" },
-    { "at": "2026-06-05 15:42", "bucket": "System / protocol", "title": "Capture criteria + cost model made explicit", "detail": "Wrote down exactly WHAT gets saved to memory (rules, corrections, people, nuances, offers, meetings) and that every save must also appear on this feed. Added the cost rule: never load the whole brain, only small always-on skills + on-demand retrieval, so it stays cheap.", "tags": ["protocol", "cost", "self-improving"], "where": "CMO skill" },
-    { "at": "2026-06-05 15:10", "bucket": "Copywriting rule", "title": "Imagery must show the creator authentically doing their thing", "detail": "Will's rule: never a posed physique shot. Match the image to the angle (Lucy running sweaty in the sun, lifting, real whole-food meals, before/after). The image proves the hook.", "tags": ["creative", "ads", "Lucy"], "where": "ad-launcher skill" },
-    { "at": "2026-06-05 15:10", "bucket": "How Alex thinks", "title": "Alex thrives on ONE focused, high-quality task", "detail": "He said it feels great to focus on one thing and do it well instead of being overwhelmed by a list. Overwhelm = option-count, not work. Always collapse to one sharp next step.", "tags": ["ADHD", "prioritization"], "where": "CMO skill" },
-    { "at": "2026-06-05 14:50", "bucket": "Copywriting rule", "title": "Never use em dashes in any copy", "detail": "Alex never uses em/en dashes; neither should any ad copy. Use commas, periods, or '...'.", "tags": ["copywriting", "ads", "style"], "where": "ad-launcher skill" },
-    { "at": "2026-06-05 14:50", "bucket": "Attribution rule", "title": "Keyword uniqueness is ALL-TIME across every account", "detail": "A keyword used by ANY creator at ANY point pollutes attribution. Check all history across all clients before picking new ad keywords (caught 'lift'/'strength' collisions on Lucy).", "tags": ["attribution", "ads", "keywords"], "where": "ad-launcher skill" },
-    { "at": "2026-06-05 14:30", "bucket": "Coaching playbook", "title": "Zakk's scaling + variation method", "detail": "One campaign, one ad set per ad at $50/day, scale 50->100->200 weekly until KPIs break; budget is a commitment, scale past it at 2x+ cash ROI; relaunch old winners; 6 creative-variation methods incl. one ad per ICP from sales-call language. Raw call archived deep.", "tags": ["ads", "Zakk", "scaling"], "where": "ad-decisions skill + deep transcript" },
-    { "at": "2026-06-05 14:00", "bucket": "Copywriting rule", "title": "Keyword never in the ad copy; every ad names the offer", "detail": "The DM keyword is invisible backend plumbing (CTA stays 'DM me for details on 1 of the 5 spots'). Every direct-response ad must state what they GET; borrow the proven offer structure from existing winning copy.", "tags": ["copywriting", "ads", "offer"], "where": "ad-launcher skill" },
-    { "at": "2026-06-05 13:30", "bucket": "Creator context", "title": "Lucy ICP + 5 ad angles + her real offer", "detail": "Lucy = whole foods + faith + lifting + running, injury-comeback story; NOT 'female Tyson'. 5 test angles (food, running, faith, weights, story). Offer: daily 1:1 check-ins, custom workouts + nutrition, all in one app, 1 of 5 spots.", "tags": ["Lucy", "ICP", "ads"], "where": "meeting card + ad copy" },
-    { "at": "2026-06-05 12:00", "bucket": "Meeting", "title": "Team strategy meeting (Alex/Matt/Will, 3h)", "detail": "Plan: push Lucy to $300/day, hold Tyson+Keith till Sunday, install weekend closer. DM 'Go Hunt' accountability build, setter bandwidth = the constraint, business model + incentives. Distilled card + raw deep archive stored.", "tags": ["strategy", "Lucy", "setters"], "where": "meetings-data.json + deep transcript" },
-    { "at": "2026-06-05 11:00", "bucket": "Company doctrine", "title": "Order of leverage: More -> Better -> New", "detail": "Exhaust scaling what works, then optimizing it, before anything new. 'New' has risk tiers (a placement tweak vs a whole webinar funnel). Always judge against the DM-funnel engine and the current constraint. Never pitch shiny-new shit.", "tags": ["strategy", "doctrine"], "where": "CMO skill" },
-    { "at": "2026-06-05 10:30", "bucket": "How Alex thinks", "title": "Alex is a non-technical, ADHD founder", "detail": "Wants the move, the proof, and the exact buttons. No jargon. One thing at a time. Overwhelmed by too many options, not by hard work. Collapse to one baby step.", "tags": ["ADHD", "communication"], "where": "CMO skill" },
-    { "at": "2026-06-05 10:00", "bucket": "Feature spec", "title": "Persistent memory: organic keyword control + attribution loop", "detail": "Build an organic-keyword registry with ad-vs-organic precedence + 30-day cooldown; route everything software can't catch to the Attribution Workspace with daily targeted setter Slack pings. The 100% target = everything automatable is tracked truthfully.", "tags": ["attribution", "roadmap"], "where": "memory note" },
-    { "at": "2026-06-05 09:30", "bucket": "Identity", "title": "The CMO mentality (20 families on the line)", "detail": "Occupy the identity of Alex's CMO whose neck is on the line. Verify don't assume, pressure-test your own numbers, separate signal from artifact, reconcile to the source of truth, no hedging but no false certainty, the unseen-data gap is part of the decision. Self-improving from every correction.", "tags": ["identity", "principles"], "where": "CMO skill" }
+    {
+      "at": "2026-06-10 13:10",
+      "bucket": "Creator context",
+      "title": "Antwan ICP LOCKED: 30-50 male lifter who wants results, NOT a businessman (data-derived + IG-confirmed)",
+      "detail": "Analyzed his 296 reels (15.9M views) + 1,461 comments via Apify, then confirmed with IG audience insights (261,477 followers). Content engine = technique/form (157 reels/15.9M) + diet/abs (48/2.3M); audience asks how-to questions but has no plan. IG demographics: 89.6% men, biggest band 35-44 (~36%), 35+ ~59%, under-25 ~3-4%, US 54.8%. ICP = experienced male lifter ~30-50 who trains but is not getting the lean/defined look to match his effort and would pay for structure. Targeting: men, 30-50, US (+ optional UK/CA/AU), retarget his training/abs engagers, exclude intl + funny-reel reach. Full doc: memory/antwan_icp.md. Kills the earlier businessman/CEO angle as primary.",
+      "tags": [
+        "Antwan",
+        "ICP",
+        "research",
+        "targeting"
+      ],
+      "where": "memory/antwan_icp.md"
+    },
+    {
+      "at": "2026-06-10 12:05",
+      "bucket": "Correction / principle",
+      "title": "Weigh by statistical significance; tag claims Measured/Inferred/Speculative; don't let vivid low-N quotes confirm a narrative",
+      "detail": "In Antwan's ICP I cited a 45k-view / 67-comment post twice as proof of coaching demand and built the whole age band on a few quotes. Alex caught the over-extrapolation. Rule: weight by frequency/N, separate measured vs inferred vs speculative, never conflate free-magnet engagement with paid intent, never let the boss's prior get confirmed by thin data. Banked to cmo skill.",
+      "tags": [
+        "principle",
+        "analysis",
+        "bias",
+        "honesty"
+      ],
+      "where": "cmo skill"
+    },
+    {
+      "at": "2026-06-10 11:30",
+      "bucket": "Correction / principle",
+      "title": "Derive a creator's ICP from their existing content + audience; never fabricate one",
+      "detail": "I built Antwan ads around an arbitrary businessman ICP. Wrong: he is warm/retargeting not cold, and Tyson wins because we target who his content ALREADY pulls (military). Run ads off the creator's content, not content off our ads. Older audience = more money + more years in the pain. Banked to cmo skill.",
+      "tags": [
+        "principle",
+        "ICP",
+        "strategy",
+        "Antwan"
+      ],
+      "where": "cmo skill"
+    },
+    {
+      "at": "2026-06-10 09:20",
+      "bucket": "Copywriting rule",
+      "title": "Scarcity = only the 'looking for 5 / one of the 5 spots' framing, never a tighter falsifiable claim",
+      "detail": "Even when varying ad structure, keep the open-ended 5-spots scarcity (true: we want 5 new clients, each takes one of 5 spots). Never 'only 5 a month / room for a handful / this round fills'. Banked to ad-copywriter skill.",
+      "tags": [
+        "copywriting",
+        "scarcity",
+        "rule"
+      ],
+      "where": "ad-copywriter skill"
+    },
+    {
+      "at": "2026-06-10 08:05",
+      "bucket": "Preference",
+      "title": "Always render generated images inline in chat, every time",
+      "detail": "When I generate ad creatives (Higgsfield/gpt_image_2), deliver them rendered IN chat, not just saved or opened in Preview. Standing default. Banked to cmo skill.",
+      "tags": [
+        "preference",
+        "images",
+        "delivery"
+      ],
+      "where": "cmo skill"
+    },
+    {
+      "at": "2026-06-06 16:30",
+      "bucket": "System / protocol",
+      "title": "New-session CMO boot: orient fast, don't flail (where context lives)",
+      "detail": "A fresh Claude session was flailing (searching random folders) when engaged as CMO. Fixed: added a 'Booting a CMO session' section to the cmo skill + a pointer at the TOP of MEMORY.md (auto-loads). The 5 places ALL context lives: (1) cmo skill, (2) MEMORY.md index->topic files, (3) dashboard/public/open-loops.json + memory-log.json, (4) Supabase bostjayrguulwaltnbgt (live numbers), (5) macOS Keychain (creator tokens, e.g. lucy-meta-token). Boot = check date, skim open-loops + feed, give a 3-line 'where we are'. Alex just says 'load the CMO / you're my CMO, get up to speed'.",
+      "tags": [
+        "onboarding",
+        "session",
+        "context",
+        "protocol"
+      ],
+      "where": "cmo skill + MEMORY.md"
+    },
+    {
+      "at": "2026-06-06 16:10",
+      "bucket": "Creator context",
+      "title": "Keith is OFFBOARDING — ads off, stop Keith work",
+      "detail": "Keith chose to part ways (his own content direction); amicable. Ads are OFF for Keith. Stop all Keith kill/scale/attribution work; a few trailing booked calls then done. His keywords free up over time; token can be deprecated. Active creators now: Tyson, Lucy (Antwan onboarding). Captured in MEMORY.md creator roster.",
+      "tags": [
+        "Keith",
+        "offboarding",
+        "creators",
+        "ads"
+      ],
+      "where": "MEMORY.md"
+    },
+    {
+      "at": "2026-06-06 16:05",
+      "bucket": "System / protocol",
+      "title": "Weekly kill/scale decision runs IN-CHAT on Sundays (no cron — saves API cost)",
+      "detail": "Alex's call: don't run the 7-day decision as an autonomous cron — that burns API cost = extra untrustworthiness. Instead it runs through HIS session (his OAuth = free + builds the employee relationship). My job: be time-aware and proactively bring up 'time for the weekly read' on/around Sunday, then run it together here. Baked into CMO Principle #8.",
+      "tags": [
+        "autonomy",
+        "cadence",
+        "cost",
+        "7-day"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-06 15:30",
+      "bucket": "Feature spec",
+      "title": "CMO polish: sidebar tab-hiding, human icon, de-orange brain, softer file headers",
+      "detail": "Shipped: (1) sidebar tab-hiding — two-finger/right-click any tab -> Hide; hidden tabs collapse into a revealable 'Hidden (N)' group near Settings, right-click to Unhide, still accessible (per-user, localStorage); (2) CMO sidebar icon Bot -> UserRound (human/manager); (3) de-orange the header brain (neutral graphite/soft-white, killed the gold glow — light mode looked bad); (4) softened the Files group headers (too dramatic before).",
+      "tags": [
+        "CMO",
+        "sidebar",
+        "design",
+        "overwhelm"
+      ],
+      "where": "Sidebar + CMO tab"
+    },
+    {
+      "at": "2026-06-06 15:00",
+      "bucket": "How Alex thinks",
+      "title": "Be his loop-CLOSER, not his loop-LIST (his #1 problem)",
+      "detail": "Juggling open loops + prioritization is Alex's single biggest pain. He throws tasks at me in conversation and usually doesn't remember what he asked, so it's MY job to silently track every loop, close it, and surface/report at the RIGHT moment (one at a time), never as an overwhelming list or front-and-center tab. Removed the 'Open loops' tab for this reason. Model: Ahmad (his fitness-coach/product-delivery manager) — Alex throws things at him; Ahmad tracks, closes, reports back.",
+      "tags": [
+        "ADHD",
+        "loops",
+        "focus",
+        "Ahmad",
+        "org"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-06 14:50",
+      "bucket": "Feature spec",
+      "title": "Brain tab v2 shipped: dense clustered graph + refined dots",
+      "detail": "Rebuilt the Brain graph into a dense hub-and-spoke knowledge map (skills + their sections, meetings + topics, learnings, loops, tags as connective tissue ~100+ nodes, community clusters like the reference screenshot), with center-clamp physics so it never explodes, and redesigned the dots from cartoony white-shine bubbles to refined SaaS dots (flat core + subtle top-light + hairline ring + tight glow).",
+      "tags": [
+        "CMO",
+        "brain",
+        "design"
+      ],
+      "where": "CMO tab"
+    },
+    {
+      "at": "2026-06-06 14:05",
+      "bucket": "System / protocol",
+      "title": "Never spam the ads API — the CREATE is the confirmation; respect backpressure",
+      "detail": "Lucy's launch got rate-limited (code 17) NOT by the ~42 create calls but by my 5 redundant verification reads after the burst + polling AFTER the limit hit. Rules now hard in the launcher: (1) a create returns the new object's id = its own confirmation, never a separate GET to check a write; (2) at most ONE end read; (3) on code 17 = FULL STOP, never poll (it extends the limit, risks the ad account = account-safety/ban risk); (4) pace writes + use the Graph batch endpoint (≤50 ops/request). Over-verification isn't free.",
+      "tags": [
+        "ads",
+        "rate-limit",
+        "account-safety",
+        "launcher",
+        "discipline"
+      ],
+      "where": "ccos-ad-launcher + cmo skills"
+    },
+    {
+      "at": "2026-06-06 13:30",
+      "bucket": "System / protocol",
+      "title": "ALWAYS stash creator Meta tokens in macOS Keychain (Vercel sensitive vars are unreadable)",
+      "detail": "Vercel 'sensitive' env vars CANNOT be read back via `vercel env pull` (they pull as blank) — that wasted real time mid-launch claiming Lucy's token was 'missing' when it was fine. Fix/rule: every creator's long-lived Meta token gets ALSO stored in macOS Keychain (readable forever) so local ad-ops are never blocked. Lucy's is at Keychain service `lucy-meta-token` (Lucy Hubbard, expires 2026-08-05, ads_management). Account act_616852470282141. To launch Lucy ads: `security find-generic-password -s lucy-meta-token -w`. Also re-stored in Vercel for the app. Baked into the meta-token skill.",
+      "tags": [
+        "Lucy",
+        "meta-token",
+        "keychain",
+        "vercel",
+        "ads"
+      ],
+      "where": "meta-token skill + keychain"
+    },
+    {
+      "at": "2026-06-06 12:25",
+      "bucket": "Copywriting rule",
+      "title": "Keyword selection: neutral, simple, POSITIVE, aspirational — never effort words",
+      "detail": "The DM keyword is the word the person taps on the ad, so it can subtly nudge the click. Pick neutral simple positive ASPIRATIONAL dream-outcome words (radiance, vitality, golden, whole, grateful, journey). NEVER effort-associated words (sweat, cadence, barbell, mile, trail, grind, reps) — effort reads like work, not the dream, and can dampen clicks. The keyword does NOT need to match the angle (it's invisible). Avoid each creator's organic keyword too (Lucy=COACH, Tyson=LOCKED). Baked into ad-copywriter.",
+      "tags": [
+        "copywriting",
+        "keywords",
+        "ads",
+        "Lucy"
+      ],
+      "where": "ad-copywriter skill"
+    },
+    {
+      "at": "2026-06-06 12:10",
+      "bucket": "Attribution rule",
+      "title": "Lucy 6/5 direct-CTA launch — 15 keywords (verified unique all-time)",
+      "detail": "Renamed the 15 ads in ~/Desktop/6:5 Lucy Direct CTA Ads: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback, reclaim, journey (ad-1..ad-15 order). Keywords are neutral/aspirational per the selection rule. All verified NOT used by any account all-time, and not Lucy's organic COACH or Tyson's organic LOCKED. These are Lucy's direct-CTA keywords — attribute her DM leads on these. GOTCHA captured: this Mac's shell is zsh (1-indexed arrays) — a bash-style 0-indexed array in a rename loop shifted every file by one and dumped ad-1 into a hidden '.png'; always rename with explicit per-file mv commands (no array indexing) and verify by file size after.",
+      "tags": [
+        "Lucy",
+        "ads",
+        "keywords",
+        "attribution",
+        "launch",
+        "zsh"
+      ],
+      "where": "rename op + ad-launcher"
+    },
+    {
+      "at": "2026-06-05 19:05",
+      "bucket": "Copywriting rule",
+      "title": "Studio 2 paste format — EXACT spacing (parser splits text boxes on blank lines)",
+      "detail": "Blank line between EVERY block. The 'I'm looking for 5 women who:' line is its OWN box — needs a blank line BEFORE the bullets or they merge. Bullets stay tight (no blank between them). CTA verbatim = 'DM me for details on 1 of the 5 spots.' (digits 1 and 5). Between ads: a line of ----- with a blank line BEFORE it (after the CTA) AND a blank line AFTER it (before the next ad). That's how Alex's code works; never deviate.",
+      "tags": [
+        "studio-2",
+        "format",
+        "copywriting"
+      ],
+      "where": "ad-copywriter skill"
+    },
+    {
+      "at": "2026-06-05 18:45",
+      "bucket": "Copywriting rule",
+      "title": "Match copy LENGTH to placement — 9x16 image/story ads must be tiny",
+      "detail": "Alex: the first Lucy image ads were 'an absolute metric fuckload of text' for 9x16. A story/image single slide cannot hold a paragraph + 4 bullets + CTA. For image/story ads compress to ~3-4 ONE-LINE blocks: hook (scene/feeling/question) -> one-line turn -> the offer in ONE line -> 'DM me for details.' Bullets + setup are for longer feed/text placements only. Same persuasive punch, a quarter of the words. Baked into ad-copywriter rule #5.",
+      "tags": [
+        "copywriting",
+        "format",
+        "ads",
+        "Lucy"
+      ],
+      "where": "ad-copywriter skill"
+    },
+    {
+      "at": "2026-06-05 18:30",
+      "bucket": "Copywriting rule",
+      "title": "New skill: women's ad voice (Kennedy Farrell competitor teardown)",
+      "detail": "Women's fitness ads convert on FEELING + relatability, not physique/aggression — different instrument than the alpha-male direct-CTA. Built womens-ad-voice skill from a real Meta Ad Library teardown of Kennedy Farrell: hyper-specific relatable SCENE (the mirror/outfit ad), niche the life HARD (nurse on 12s), founder-on-hard-mode proof, topical/contrarian hook (ChatGPT), feeling > physique, the reframe twist, sell the human 1:1 diff. Scenes/feelings are also Meta-compliant (not body-state verdicts). Steal the technique, not the words. Applied to write 5 new Lucy ads in her earnest/whole-foods/faith voice.",
+      "tags": [
+        "copywriting",
+        "women",
+        "Lucy",
+        "competitor",
+        "Kennedy Farrell"
+      ],
+      "where": "womens-ad-voice skill"
+    },
+    {
+      "at": "2026-06-05 17:55",
+      "bucket": "How Alex thinks",
+      "title": "Alex anchors everything to the goal (mirror it)",
+      "detail": "Alex deliberately frames work by its relationship to the overarching vision ($1M/month, the business, the task's objective) — it's his ADHD focus system, an anchor against a scattered brain. The CMO should mirror it: tie reasoning/recommendations back to the goal, connect the piece to the whole, and re-anchor when he pivots. He told me directly and values me catching it.",
+      "tags": [
+        "ADHD",
+        "communication",
+        "focus",
+        "north-star"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 17:50",
+      "bucket": "Feature spec",
+      "title": "Open Loops register shipped (Phase 4) — the earned moment",
+      "detail": "Built the Open Loops register (open-loops.json + a 'Open loops' CMO tab) during an urgent pivot to the Lucy ads, exactly the use case it's for: capture everything in flight/paused/waiting/hypothesis so a context compaction can't lose it. Seeded with the live loops (Lucy launch = now; CMO Phase 2 paused; brain-graph redo; ads-tracker auth; attribution loop). Phases 2 (live-marketing Pulse) + 3 (Scorecard) resume after Lucy.",
+      "tags": [
+        "CMO",
+        "open-loops",
+        "roadmap"
+      ],
+      "where": "open-loops.json + CMO tab"
+    },
+    {
+      "at": "2026-06-05 17:30",
+      "bucket": "Identity",
+      "title": "Stay in your lane: sales & marketing only, $1M/month north star",
+      "detail": "Focus = the power to say no. The CMO is sales/marketing ONLY (ads, copy, attribution, funnel, show/close/booking/spend/revenue). NOT git, infra, dev, or other agents'/teammates' chats — that's noise that dilutes the one job. The only 'reality' the brain auto-ingests is the live marketing performance data per ad/adset/audience. Everything ladders to $1M/month. Always anchor to today's date + fresh data windows; decisions run on a 7-day cadence. Proven in this chat through real results.",
+      "tags": [
+        "identity",
+        "scope",
+        "focus",
+        "north-star",
+        "freshness"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 16:10",
+      "bucket": "Copywriting rule",
+      "title": "Meta compliance for health/fitness ads (toe the line, don't get banned)",
+      "detail": "Edgy/tough-love TONE is fine (calling the audience out worked). The hard limits: (1) never assert you know the viewer's body/health state (no 'are you overweight/fat/bloated' = personal-attributes policy) — reframe to first-person, a general 'women who...' group, or about effort not body; (2) no before/after BODY images (food before/after is OK); (3) no body-shaming; (4) no guaranteed/medical-cure claims; (5) 18+ targeting. Our voice stays in range; only soften any 'YOU are [body state]' hooks.",
+      "tags": [
+        "compliance",
+        "Meta",
+        "ads",
+        "copywriting"
+      ],
+      "where": "ad-copywriter skill"
+    },
+    {
+      "at": "2026-06-05 15:42",
+      "bucket": "Org / people",
+      "title": "Corrected: the team DEBATES fiercely on purpose",
+      "detail": "Alex, Matt, and Will pit themselves against each other and play devil's advocate to find what's true. My earlier 'disagreements are delicate, never play them against each other' was wrong. The CMO is expected to disagree openly and challenge them.",
+      "tags": [
+        "culture",
+        "Matt",
+        "Will"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 15:42",
+      "bucket": "Org / people",
+      "title": "Zakk is an external coach, not part of the business",
+      "detail": "Zakk Colburn (Zach) is Alex's paid ads coach (source of the scaling rules). Janelle and Brian Mark are others in the coaching program; there may be more coaches. Treat coach advice as a separate external input from the internal team's conclusions.",
+      "tags": [
+        "coaches",
+        "Zakk"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 15:42",
+      "bucket": "System / protocol",
+      "title": "Capture criteria + cost model made explicit",
+      "detail": "Wrote down exactly WHAT gets saved to memory (rules, corrections, people, nuances, offers, meetings) and that every save must also appear on this feed. Added the cost rule: never load the whole brain, only small always-on skills + on-demand retrieval, so it stays cheap.",
+      "tags": [
+        "protocol",
+        "cost",
+        "self-improving"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 15:10",
+      "bucket": "Copywriting rule",
+      "title": "Imagery must show the creator authentically doing their thing",
+      "detail": "Will's rule: never a posed physique shot. Match the image to the angle (Lucy running sweaty in the sun, lifting, real whole-food meals, before/after). The image proves the hook.",
+      "tags": [
+        "creative",
+        "ads",
+        "Lucy"
+      ],
+      "where": "ad-launcher skill"
+    },
+    {
+      "at": "2026-06-05 15:10",
+      "bucket": "How Alex thinks",
+      "title": "Alex thrives on ONE focused, high-quality task",
+      "detail": "He said it feels great to focus on one thing and do it well instead of being overwhelmed by a list. Overwhelm = option-count, not work. Always collapse to one sharp next step.",
+      "tags": [
+        "ADHD",
+        "prioritization"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 14:50",
+      "bucket": "Copywriting rule",
+      "title": "Never use em dashes in any copy",
+      "detail": "Alex never uses em/en dashes; neither should any ad copy. Use commas, periods, or '...'.",
+      "tags": [
+        "copywriting",
+        "ads",
+        "style"
+      ],
+      "where": "ad-launcher skill"
+    },
+    {
+      "at": "2026-06-05 14:50",
+      "bucket": "Attribution rule",
+      "title": "Keyword uniqueness is ALL-TIME across every account",
+      "detail": "A keyword used by ANY creator at ANY point pollutes attribution. Check all history across all clients before picking new ad keywords (caught 'lift'/'strength' collisions on Lucy).",
+      "tags": [
+        "attribution",
+        "ads",
+        "keywords"
+      ],
+      "where": "ad-launcher skill"
+    },
+    {
+      "at": "2026-06-05 14:30",
+      "bucket": "Coaching playbook",
+      "title": "Zakk's scaling + variation method",
+      "detail": "One campaign, one ad set per ad at $50/day, scale 50->100->200 weekly until KPIs break; budget is a commitment, scale past it at 2x+ cash ROI; relaunch old winners; 6 creative-variation methods incl. one ad per ICP from sales-call language. Raw call archived deep.",
+      "tags": [
+        "ads",
+        "Zakk",
+        "scaling"
+      ],
+      "where": "ad-decisions skill + deep transcript"
+    },
+    {
+      "at": "2026-06-05 14:00",
+      "bucket": "Copywriting rule",
+      "title": "Keyword never in the ad copy; every ad names the offer",
+      "detail": "The DM keyword is invisible backend plumbing (CTA stays 'DM me for details on 1 of the 5 spots'). Every direct-response ad must state what they GET; borrow the proven offer structure from existing winning copy.",
+      "tags": [
+        "copywriting",
+        "ads",
+        "offer"
+      ],
+      "where": "ad-launcher skill"
+    },
+    {
+      "at": "2026-06-05 13:30",
+      "bucket": "Creator context",
+      "title": "Lucy ICP + 5 ad angles + her real offer",
+      "detail": "Lucy = whole foods + faith + lifting + running, injury-comeback story; NOT 'female Tyson'. 5 test angles (food, running, faith, weights, story). Offer: daily 1:1 check-ins, custom workouts + nutrition, all in one app, 1 of 5 spots.",
+      "tags": [
+        "Lucy",
+        "ICP",
+        "ads"
+      ],
+      "where": "meeting card + ad copy"
+    },
+    {
+      "at": "2026-06-05 12:00",
+      "bucket": "Meeting",
+      "title": "Team strategy meeting (Alex/Matt/Will, 3h)",
+      "detail": "Plan: push Lucy to $300/day, hold Tyson+Keith till Sunday, install weekend closer. DM 'Go Hunt' accountability build, setter bandwidth = the constraint, business model + incentives. Distilled card + raw deep archive stored.",
+      "tags": [
+        "strategy",
+        "Lucy",
+        "setters"
+      ],
+      "where": "meetings-data.json + deep transcript"
+    },
+    {
+      "at": "2026-06-05 11:00",
+      "bucket": "Company doctrine",
+      "title": "Order of leverage: More -> Better -> New",
+      "detail": "Exhaust scaling what works, then optimizing it, before anything new. 'New' has risk tiers (a placement tweak vs a whole webinar funnel). Always judge against the DM-funnel engine and the current constraint. Never pitch shiny-new shit.",
+      "tags": [
+        "strategy",
+        "doctrine"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 10:30",
+      "bucket": "How Alex thinks",
+      "title": "Alex is a non-technical, ADHD founder",
+      "detail": "Wants the move, the proof, and the exact buttons. No jargon. One thing at a time. Overwhelmed by too many options, not by hard work. Collapse to one baby step.",
+      "tags": [
+        "ADHD",
+        "communication"
+      ],
+      "where": "CMO skill"
+    },
+    {
+      "at": "2026-06-05 10:00",
+      "bucket": "Feature spec",
+      "title": "Persistent memory: organic keyword control + attribution loop",
+      "detail": "Build an organic-keyword registry with ad-vs-organic precedence + 30-day cooldown; route everything software can't catch to the Attribution Workspace with daily targeted setter Slack pings. The 100% target = everything automatable is tracked truthfully.",
+      "tags": [
+        "attribution",
+        "roadmap"
+      ],
+      "where": "memory note"
+    },
+    {
+      "at": "2026-06-05 09:30",
+      "bucket": "Identity",
+      "title": "The CMO mentality (20 families on the line)",
+      "detail": "Occupy the identity of Alex's CMO whose neck is on the line. Verify don't assume, pressure-test your own numbers, separate signal from artifact, reconcile to the source of truth, no hedging but no false certainty, the unseen-data gap is part of the decision. Self-improving from every correction.",
+      "tags": [
+        "identity",
+        "principles"
+      ],
+      "where": "CMO skill"
+    }
   ]
 }

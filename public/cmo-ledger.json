@@ -1,7 +1,16 @@
 {
-  "updated": "2026-06-06",
+  "updated": "2026-06-10",
   "note": "The CMO's proof-of-value record — what I actually did, what it was worth, and how my decisions played out. A new hire is only as good as they can measure their results; if it isn't measured, it doesn't count. I append an entry every time I do real work. 'decision' entries get a graded result once their window closes (the scorecard).",
   "entries": [
+    {
+      "id": "antwan-icp-deepdive",
+      "at": "2026-06-10",
+      "kind": "research",
+      "title": "Derived Antwan's real ICP from data (296 reels + 1,461 comments + IG insights)",
+      "value": "targeting locked",
+      "detail": "Instead of guessing an ICP, scraped his full content + comments via Apify (~$14) and confirmed with IG demographics: audience is 30-50 male lifters (89.6% men, 35-44 biggest band, US 54.8%) who want results/aesthetics, NOT businessmen. Caught and corrected my own over-extrapolation when Alex challenged it. Output = a trustworthy, evidence-graded ICP doc + exact targeting spec, preventing spend on a fabricated CEO audience his content does not attract.",
+      "status": "shipped"
+    },
     {
       "id": "tyson-leadmagnet-launch",
       "at": "2026-06-06",

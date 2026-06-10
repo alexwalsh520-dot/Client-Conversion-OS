@@ -1,14 +1,35 @@
 {
-  "updated": "2026-06-05",
+  "updated": "2026-06-10",
   "note": "Open Loops register — the CMO's live ledger of what's in flight, paused, waiting on Alex, or an untested hypothesis, so nothing important falls into the abyss across pivots and context compaction. status: in-progress | waiting-on-alex | hypothesis | paused | backlog. priority: now | soon | later.",
   "loops": [
+    {
+      "id": "antwan-icp-research-done",
+      "title": "Antwan ICP DERIVED + IG-CONFIRMED (2026-06-10). NEXT: rewrite the 15 ad angles off the REAL ICP, then image with his real photos.",
+      "detail": "Scraped 296 reels (15.9M views) + 1,461 comments via Apify (~$14) + IG insights (261k followers, 89.6% men, 35-44 biggest band, 35+ ~59%, US 54.8%). ICP = 30-50 male lifter who trains but is not seeing results, wants aesthetics (abs/size), would pay for structure. Doc: memory/antwan_icp.md. The 30 Antwan ads already written (15 proven-format + 15 format-test) used the WRONG businessman angle as primary, so REALIGN to results-frustration. Targeting spec: men 30-50, US (+ optional UK/CA/AU), retarget his training/abs engagers, exclude intl + funny-reel reach. Pending: (1) rewrite angles off the ICP, (2) image them with his real photos, (3) build OFF in Ads Manager as the reserve set, (4) launch ~$500/day fast-pivot.",
+      "status": "in-progress",
+      "priority": "now",
+      "tags": [
+        "Antwan",
+        "ICP",
+        "research",
+        "launch"
+      ],
+      "opened": "2026-06-10",
+      "where": "this chat + memory/antwan_icp.md"
+    },
     {
       "id": "tyson-leadmagnet-live",
       "title": "LIVE 2026-06-06: Tyson Summer Shred lead magnet — 14 ads, $300/day, ACTIVE. Run the 7-day read ~6/13.",
       "detail": "Launched tonight via media-buyer skill into campaign 52559335651064 (6/6 RE LAUNCH Summer Shred) / ad set 52559335651464 (Warm Audience Stack, $300/day, CONVERSATIONS, warm audience). 14 ads ACTIVE, each its own unique keyword in the IG ice-breaker + greeting ('Yo, you're tryna join my Free Summer Shredding Challenge, yea? Send \"<KW>\" and I'll send you the link'): step, path, max, set, good, ace, key, mode, lane, open, phase, slot, plus(video), range(video). SPOT was DISAPPROVED in Meta review (archived, excluded) — if leads underperform, worth checking whether the rejection reason was shared/structural. Greetings verified 14/14 at the creative level. NEXT: 7-day kill/scale read ~2026-06-13 — pull cost/lead + cost/call per keyword from the ADS TAB computed source (not raw), trend-first; this is the lead-magnet half of the $1k/day Tyson push. Direct CTA double (7 FIT variations) still pending = the other half.",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["Tyson", "lead-magnet", "LIVE", "7-day", "Summer-Shred"],
+      "tags": [
+        "Tyson",
+        "lead-magnet",
+        "LIVE",
+        "7-day",
+        "Summer-Shred"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -18,17 +39,31 @@
       "detail": "DECIDED on the 6/6 Matt+Will+Alex call. $1,000/day Tyson x 7 days. TWO builds tonight: (1) LEAD MAGNET (Summer Shred) $300/day = Alex's NORMAL system, ZERO Zakk: ONE ad set, ~25 ads, warm audience (refreshed: new video viewers etc.), STORY PLACEMENT ONLY, IG-text-on-image style ONLY, NO AI creative (AI only to mimic the text style). Grab winners from recent (Summer Shred: WIN, STRONG, DRIVE) + prior (Spring Shred: EDGE 3,869 clicks, TOUGH 3,136, GRIND, QUICK) lead magnet campaigns; fill rest with variations/new angles. NOTE: Spring Shred copy says 'Spring' -> swap to 'Summer'. (2) DIRECT CTA double via ~7 ads @ $50/day each, ONE ad per ad set (Zakk), SAME winner = FIT ('5 servicemen' offer, ad 52533069456464, ~5.8x ROAS) diversified into distinct VISUAL lanes (carousel, B-roll, AI high-CTR graphic, different placements) — Zakk methods welcome here. Each new ad needs a UNIQUE all-time keyword (avoid taken list + Tyson organic LOCKED). BREAKEVEN ~4x ($4k/day avg; June running ~$4,324/day). Bottleneck has always been LEAD FLOW not closing -> fill funnel; Keith out frees Gideon+Kels for lead-magnet leads; double Amara's volume. DECISION CADENCE: 5-7 days, NOT daily (Zakk+Will) — I run the read with Alex then. CMO ATTRIBUTION FLAG (my lane, nobody else raised it): the NEW Summer Shred ManyChat automation Matt is building (archived, ~5 versions) MUST pass {{custom_field.keyword}} on EVERY webhook step (esp. lead_engaged) or we leak keywords at $1k/day exactly when we need clean data for the 7-day call. Lucy's flows = 0% leak; replicate. Tyson LOCKED already added to the Organic Keywords panel. STRATEGY LEARNING (Will, bank it): instead of the every-3-week relaunch-after-fatigue cycle, proactively RELAUNCH old winners ~2 weeks in BEFORE current ads fatigue, keep both running, so as one trickles down the other ramps = 'catch the drift', smoother lead flow.",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["Tyson", "scale", "Zakk", "focus-guard", "tomorrow"],
+      "tags": [
+        "Tyson",
+        "scale",
+        "Zakk",
+        "focus-guard",
+        "tomorrow"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
     {
       "id": "tomorrow-antwan-launch",
       "title": "TOMORROW PRIORITY #2 (right after Tyson): Antwan launch — dialed, aggressive, $60k/mo target",
-      "detail": "2026-06-07, immediately after the Tyson scale is DONE (sequence, don't interleave): launch Antwan (Antoine). FULL SPEC per Alex: (1) Start spending AT LEAST $500/day with Antwan from day one. (2) Be ready to PIVOT within a COUPLE OF DAYS, not the usual 7 — if DM KPIs are bad we move fast. (3) Have backup ads LITERALLY launch-ready in Ads Manager — fully built, all the way ready, turned OFF, so we can flip them ON the instant we need to test more. Build that reserve NOW as part of the launch. (4) Goal = aggressive QUICK WINS; shooting hard for $60k/month with Antwan. (5) Sales team must be EXTREMELY locked in. (6) ATTRIBUTION MUST BE PERFECT for Antwan from the start (his keyword capture / ManyChat / subscriber-id wiring all correct before spend, so we never have a dark-revenue problem like we untangled for Tyson). Antwan's Meta account = act_275999723846625 (never-expiring System User token). Note: Antwan onboarding, Keith offboarding. PREPPED 2026-06-06 — fresh keyword pool, vetted unique against EVERY word ever used across all creators + Lucy's set + organics (LOCKED/COACH), all positive/aspirational dream-outcome words, none effort-associated: magnetic, vivid, legend, elite, victor, triumph, noble, anchored, flourish, abundant, crisp, zen, serene, poised, legacy (optional/borderline-intensity: unstoppable). Final pick + count depends on his creatives/offer/ICP tomorrow, and CONFIRM Antwan's organic keyword first to avoid collision. So tomorrow = assign from this pool + launch, no brainstorming.",
+      "detail": "2026-06-07, immediately after the Tyson scale is DONE (sequence, don't interleave): launch Antwan (Antoine). FULL SPEC per Alex: (1) Start spending AT LEAST $500/day with Antwan from day one. (2) Be ready to PIVOT within a COUPLE OF DAYS, not the usual 7 — if DM KPIs are bad we move fast. (3) Have backup ads LITERALLY launch-ready in Ads Manager — fully built, all the way ready, turned OFF, so we can flip them ON the instant we need to test more. Build that reserve NOW as part of the launch. (4) Goal = aggressive QUICK WINS; shooting hard for $60k/month with Antwan. (5) Sales team must be EXTREMELY locked in. (6) ATTRIBUTION MUST BE PERFECT for Antwan from the start (his keyword capture / ManyChat / subscriber-id wiring all correct before spend, so we never have a dark-revenue problem like we untangled for Tyson). Antwan's Meta account = act_275999723846625 (never-expiring System User token). Note: Antwan onboarding, Keith offboarding. PREPPED 2026-06-06 — fresh keyword pool, vetted unique against EVERY word ever used across all creators + Lucy's set + organics (LOCKED/COACH), all positive/aspirational dream-outcome words, none effort-associated: magnetic, vivid, legend, elite, victor, triumph, noble, anchored, flourish, abundant, crisp, zen, serene, poised, legacy (optional/borderline-intensity: unstoppable). Final pick + count depends on his creatives/offer/ICP tomorrow, and CONFIRM Antwan's organic keyword first to avoid collision. So tomorrow = assign from this pool + launch, no brainstorming. [UPDATE 2026-06-10: angle SUPERSEDED — ICP research (see antwan-icp-research-done) proves his audience is 30-50 results-seeking lifters, NOT businessmen. Rewrite angles to results-frustration before launch.]",
       "status": "waiting-on-alex",
       "priority": "now",
-      "tags": ["Antwan", "launch", "60k", "fast-pivot", "reserve-ads", "attribution", "tomorrow"],
+      "tags": [
+        "Antwan",
+        "launch",
+        "60k",
+        "fast-pivot",
+        "reserve-ads",
+        "attribution",
+        "tomorrow"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -38,7 +73,14 @@
       "detail": "2026-06-06 Alex (/frontend-design): new minimalist tab in the CMO page (alongside brain/feed/skills/meetings/files) = the equivalent of an employee writing down what they actually did, to CONSTANTLY MEASURE the real monetary ROI/value the CMO brings. Folds in: (a) what I did each session, (b) the measurable value/result, (c) decisions I made + their graded outcome after the window (Phase 3 Scorecard lives here), (d) logged hours / runtime. PREMISE: a new hire is only as good as they measure their results; if it's not measured, you don't care about it. Builds the psychological feedback loop that I'm actually helping + justifying continued use. Browser-rendered from public/cmo-ledger.json (zero model tokens), minimalist, premium dark/gold. I append entries as I work.",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["CMO", "ledger", "ROI", "scorecard", "value", "tab"],
+      "tags": [
+        "CMO",
+        "ledger",
+        "ROI",
+        "scorecard",
+        "value",
+        "tab"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -48,7 +90,13 @@
       "detail": "2026-06-06 SHIPPED: organic_keywords table (seeded locked->Tyson, coach->Lucy) + /api/organic-keywords + a Settings window (OrganicKeywordsPanel) where Alex adds/removes organic words per creator. Testable persistence now. REMAINING (money-pipeline, do with verification — NOT rushed): wire src/lib/ads-tracker/server.ts attribution so a lead/sale whose keyword matches a registered organic word for that creator AND has no live paid ad on that word (precedence; the spend guardrail already enforces ad-wins) auto-resolves to 'organic' instead of landing in the manual Attribution Workspace. Add the 30-day cooldown (a word counts organic again only after 30d with no ad spend) per project_organic_keyword_control.md. This removes setter work on organic revenue. Alex's framing: 90% auto by software + 10% by setters (via ManyChat link in the workspace) = 100%; organic-keyword auto-classify shrinks the manual 10%. Verify against live before trusting (don't repeat the rushed-money-code mistakes).",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["organic", "attribution", "engine", "setters", "server.ts"],
+      "tags": [
+        "organic",
+        "attribution",
+        "engine",
+        "setters",
+        "server.ts"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -58,7 +106,14 @@
       "detail": "Alex 2026-06-06 asked, honestly, whether the front-end (brain/impact/feed/skills/meetings/files) reliably updates forever across any cloud session. HONEST ANSWER: partly. RELIABLE: every tab reads a JSON file (clean architecture, won't rot); skills-data.json auto-regens from the real SKILL.md files via a PostToolUse hook. NOT AUTOMATIC (model-dependent each session): open-loops/memory-log/cmo-ledger/meetings-data update ONLY when I explicitly write them — it relies on the continuous-capture discipline in the CMO skill + me following it + me committing & pushing; and a fresh session only acts as 'the same employee' if it LOADS the cmo skill (triggered by its description + the MEMORY.md boot pointer — likely, not guaranteed). So it's held together by good instructions + one hook, not a closed guaranteed loop. TO MAKE IT BULLETPROOF: (1) SEMANTIC RETRIEVAL over my own files (skills+memory+transcripts; pgvector like Cortex) so the right context auto-surfaces as it grows — biggest intelligence upgrade, Alex flagged it 'extremely important'. (2) Harden capture into HOOKS not just instructions — a session-end hook that forces the loop+ledger update and commits, so it can't be forgotten. (3) Strengthen the boot trigger so any CMO-context session deterministically loads the skill. (4) Verify the working-copy/deploy path is singular (saw sync print a second 'Codex - CCOS' copy path; confirm updates always reach the live site, no drift).",
       "status": "backlog",
       "priority": "soon",
-      "tags": ["CMO", "reliability", "semantic-retrieval", "hooks", "self-improving", "infra"],
+      "tags": [
+        "CMO",
+        "reliability",
+        "semantic-retrieval",
+        "hooks",
+        "self-improving",
+        "infra"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -68,7 +123,14 @@
       "detail": "Alex 2026-06-06 (sooner-than-later). Goal: I can produce perfect, real-looking story ads end-to-end. Pieces: (1) a SYSTEM to actually KNOW what's in our media library (R2 / stored assets) — auto-describe each image (SEO-ish captions/tags per creator, e.g. Lucy) so I can semantically look up the right real background visual on demand. (2) Workflow: Alex tells me the ad concept -> I write the copy (ad-copywriter skill) -> I look up the actual background image from the library -> feed it to Higgsfield (gpt_image_2 image-to-image) as the REFERENCE background -> PLUS a fixed TEMPLATE reference image that encodes the exact Studio top-copy style, so output matches our real studio look. (3) Result = on-brand, real-looking creative without a designer. Ties into the existing Variations Factory engine (src/lib/ads-variations + R2 media picker) — extend it with library indexing + the template-reference + concept->copy->bg-lookup->generate chain. Makes me dialed as the creative-producer half of the CMO.",
       "status": "backlog",
       "priority": "soon",
-      "tags": ["creative", "Higgsfield", "media-library", "story-ads", "producer", "Variations-Factory"],
+      "tags": [
+        "creative",
+        "Higgsfield",
+        "media-library",
+        "story-ads",
+        "producer",
+        "Variations-Factory"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -78,7 +140,13 @@
       "detail": "2026-06-06: all 15 direct-CTA ads built + SCHEDULED by Alex; turn on Sat ~5am PDT (8am EST), $200/day total ABO in one ad set (campaign 120243547279710009, act_616852470282141). Keywords: whole, real, crave, stride, radiance, vitality, temple, faith, grateful, golden, defined, firm, comeback(seed), reclaim, journey. CMO ACTION: watch for results once live, then run the 7-day kill/scale read per keyword (judge cost/lead + cost/call). Token + launch script reusable (keychain lucy-meta-token).",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["Lucy", "ads", "launch", "7-day", "scheduled"],
+      "tags": [
+        "Lucy",
+        "ads",
+        "launch",
+        "7-day",
+        "scheduled"
+      ],
       "opened": "2026-06-05",
       "where": "Meta Ads Manager"
     },
@@ -88,7 +156,12 @@
       "detail": "Food / Running / Faith / Weights / Story come from Will's sales experience + a few closed females, not statistical significance. Judge on real cost-per-lead and cost-per-call over 7 days once live. Don't treat as fact until the numbers say so.",
       "status": "hypothesis",
       "priority": "now",
-      "tags": ["Lucy", "ads", "ICP", "7-day"],
+      "tags": [
+        "Lucy",
+        "ads",
+        "ICP",
+        "7-day"
+      ],
       "opened": "2026-06-05",
       "where": "team meeting card"
     },
@@ -98,7 +171,10 @@
       "detail": "Lucy token stored (expires 2026-08-01). Once her ManyChat keyword capture is wired, her ad->sale attribution becomes certain (subscriber-id-first). Until then her ROAS is less trustworthy.",
       "status": "waiting-on-alex",
       "priority": "soon",
-      "tags": ["Lucy", "attribution"],
+      "tags": [
+        "Lucy",
+        "attribution"
+      ],
       "opened": "2026-06-05",
       "where": "task #12"
     },
@@ -109,7 +185,13 @@
       "detail": "Phase 1 DONE. Phase 2 = 'be queryable / always know the numbers' — DONE via the canonical read (no UI). Phase 4 (Open Loops file) DONE. STILL OPEN: PHASE 3 = 'Scorecard': after each logged kill/scale decision's 7-day window, grade it vs the real before/after numbers — my hit rate ('here's what I said, here's what happened'). Keep it as MY accountability discipline (logged + surfaced in chat), NOT a dashboard, unless Alex asks for a view. Weekly kill/scale decision runs IN-CHAT Sundays (Alex's OAuth, no cron). Live snapshot the read gave 2026-06-06: Tyson fit 3.85x (scale), focus 3.49x, healthy 2.78x, win 1.12x @ $4k spend (bleeder), strong 0x. Lucy not spending materially yet (ads scheduled).",
       "status": "in-progress",
       "priority": "now",
-      "tags": ["CMO", "roadmap", "scorecard", "phase-3", "queryable"],
+      "tags": [
+        "CMO",
+        "roadmap",
+        "scorecard",
+        "phase-3",
+        "queryable"
+      ],
       "opened": "2026-06-05",
       "where": "this chat"
     },
@@ -123,7 +205,14 @@
       "detail": "2026-06-06 forensic audit (sales since 2026-05-22 floor): 51 sales / $46,849. The $5,200 bucket splits by CERTAINTY (Alex's rule: I only credit machine-certain ad signals; everything ambiguous goes to a human via the Attribution Workspace — I do NOT self-classify 'organic'): (A) CREDIT NOW — 3 sales, $2,600, each with ManyChat custom field keyword=STRONG (Gabriel Rosine-Nixon $1,800, Ethan Drapeau $600, Tommy Peacock $200), Tyson. Rock-solid. (B) ATTRIBUTION WORKSPACE (NOT organic) — 3 sales, $2,600 (Jake Plummer $1,500 no ad footprint; Justin Weber $900 has only a possibly-6-months-stale 'Organic - Winter Weight Loss' tag; John Saloom $200 empty profile). Absence of footprint != organic; a human/setter resolves. (C) the 17 no-subscriber-id sales ($3,250) also → Workspace. STRUCTURAL ROOT CAUSE (the real fix): canonical writer reads the keyword from the ManyChat TAG/webhook (manychat_tag_events.keyword_normalized); these 3 fired only a generic 'lead_engaged' tag (no keyword, setter kelechi) while the keyword lived ONLY in the ManyChat custom field — so the writer had nothing and they never entered ads_keyword_events. Origin-check (reads custom field via API) caught them but its verdict isn't promoted. DURABLE FIX = make canonical attribution ALSO read the ManyChat keyword custom field / promote origin-check from_ad=true verdicts into ads_keyword_events. This is a SHARED-backbone change (ads_keyword_events powers Ads tab + Deep Dive + CMO read) → show diff + verify before touching live data. IMPACT: Tyson `strong` is ~1.8x ($2,600/$1,433 spend), not 0x. Also 11 ad-verified leads/calls (STRONG/BUILT/WIN/Keith SHAPE) missing from canonical — same fix promotes them, improving cost/lead + cost/call. CALLS: Tyson booked-call coverage 72.2% (109/151). LUCY day-one healthy: $482 spend, 30 leads (~$16/lead), keyword capture working, 0 calls/sales yet, call linkage not wired (loop #12). IMPORTANT FRAMING (Alex 2026-06-06): the Ads tab's OWN code (src/lib/ads-tracker/server.ts) ALREADY routes any keyword-less sale/call into the Attribution Workspace as an alert with human-resolution buttons (attribute/organic/unattributed/ignore) — these 3 were already sitting there. 'Routing to the workspace' is NOT a CMO feature; it's existing Ads-tab code, independent of me. My audit's value-add = the structural WHY (custom-field-not-read) + which are machine-certain + that 11 leads/calls hit the same hole. REFINED PLAN: (1) STRUCTURAL FIX in server.ts so canonical attribution also reads the ManyChat keyword custom field (prevents these from ever becoming alerts) — prep exact DIFF, show Alex before touching the shared backbone. (2) resolve the 3 STRONG via the system's own attribute flow / auto-backfill from fix #1 (NOT a raw hand-insert). (3) ORGANIC KEYWORD CONTROL front-end (see project_organic_keyword_control.md) = the systematic 'mark a word organic once' registry Alex asked for; the per-sale 'organic' button already exists, the registry doesn't. NEXT ACTION: prep the server.ts structural-fix diff for Alex's review.",
       "status": "waiting-on-alex",
       "priority": "now",
-      "tags": ["attribution", "accuracy", "audit", "trust", "STRONG-recovery", "structural-fix"],
+      "tags": [
+        "attribution",
+        "accuracy",
+        "audit",
+        "trust",
+        "STRONG-recovery",
+        "structural-fix"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -133,7 +222,13 @@
       "detail": "Alex 2026-06-06 (downtime project, not now): build a daily automation that, for each unresolved Attribution Workspace item, DMs the SPECIFIC assigned setter on Slack (use setter assignment data + the ManyChat link we have) asking them to go fill in the attribution. Makes the setter's workflow dead-simple and closes the gap our software can't auto-resolve (no-footprint / custom-field-only / stale-tag sales). This is the targeted-setter-Slack half of the broader attribution-completeness loop. Targeted to the owner of each item, never a broadcast. Depends on: setter-assignment data per lead + ManyChat link per subscriber (we have manychat_contact_links + setter_name in tag events).",
       "status": "backlog",
       "priority": "soon",
-      "tags": ["attribution", "slack", "setters", "automation", "completeness"],
+      "tags": [
+        "attribution",
+        "slack",
+        "setters",
+        "automation",
+        "completeness"
+      ],
       "opened": "2026-06-06",
       "where": "this chat"
     },
@@ -143,7 +238,10 @@
       "detail": "The ads-tracker API returns revenue data to an unauthenticated curl. Should sit behind the session check like other routes. Real exposure of business numbers.",
       "status": "backlog",
       "priority": "soon",
-      "tags": ["security", "api"],
+      "tags": [
+        "security",
+        "api"
+      ],
       "opened": "2026-06-05",
       "where": "this chat finding"
     },
@@ -153,7 +251,11 @@
       "detail": "Build the organic-keyword registry (ad-vs-organic precedence + 30-day cooldown) and route everything software can't auto-catch to the Attribution Workspace with daily TARGETED Slack pings to the specific setter who owns each untagged sale/call. 100% = everything automatable is tracked truthfully; the rest caught by the manual loop. Alex: 'do not let me forget it.'",
       "status": "backlog",
       "priority": "later",
-      "tags": ["attribution", "organic", "roadmap"],
+      "tags": [
+        "attribution",
+        "organic",
+        "roadmap"
+      ],
       "opened": "2026-06-04",
       "where": "memory note"
     }
