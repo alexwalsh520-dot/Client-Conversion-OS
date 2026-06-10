@@ -306,6 +306,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               hourLabels={HOUR_LABELS_24}
               rows={[leadPctRow(leadHours.team)]}
               secondaryRows={[leadCountRow(leadHours.team)]}
+              collapsible
             />
           ) : null
         }
@@ -327,6 +328,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
                 hourLabels={HOUR_LABELS_24}
                 rows={leadHours.offers.map(leadPctRow)}
                 secondaryRows={leadHours.offers.map(leadCountRow)}
+                collapsible
               />
             </div>
           )}
@@ -338,6 +340,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
                 hourLabels={HOUR_LABELS_24}
                 rows={leadHours.setters.map(leadPctRow)}
                 secondaryRows={leadHours.setters.map(leadCountRow)}
+                collapsible
               />
             </div>
           )}
