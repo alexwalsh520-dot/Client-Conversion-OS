@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
+import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
 import type { Filters, ManychatDashboard, ManychatMetrics } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
@@ -53,6 +54,38 @@ interface SheetRow {
 interface SetterSummary {
   newLeads: number;
   callsBooked: number;
+}
+
+interface LeadHourGroup {
+  id: string;
+  label: string;
+  counts: number[];
+}
+
+interface LeadHours {
+  hours: number[];
+  team: LeadHourGroup;
+  offers: LeadHourGroup[];
+  setters: LeadHourGroup[];
+}
+
+function fmtHour(hour: number) {
+  const period = hour < 12 ? "a" : "p";
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}${period}`;
+}
+
+const HOUR_LABELS_24 = Array.from({ length: 24 }, (_, i) => fmtHour(i));
+
+function leadStripRow(group: LeadHourGroup): StripRow {
+  return {
+    id: group.id,
+    label: group.label,
+    cells: group.counts.map((count, hour) => ({
+      value: count > 0 ? String(count) : null,
+      tooltip: `${fmtHour(hour)} — ${count} new leads`,
+    })),
+  };
 }
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
@@ -147,6 +180,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   const [error, setError] = useState("");
   const [metricsMap, setMetricsMap] = useState<Record<string, ManychatMetrics>>({});
   const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
+  const [leadHours, setLeadHours] = useState<LeadHours | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -167,9 +201,18 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         ).then((data) => ({ [filters.client]: data }));
       }
 
-      const [manychatData, sheetData] = await Promise.all([manychatPromise, sheetPromise]);
+      const leadHoursPromise = fetchJSON<LeadHours>(
+        `/api/sales-hub/leads-by-hour?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+      ).catch(() => null);
+
+      const [manychatData, sheetData, leadHoursData] = await Promise.all([
+        manychatPromise,
+        sheetPromise,
+        leadHoursPromise,
+      ]);
       setMetricsMap(manychatData);
       setSheetRows(sheetData.rows || []);
+      setLeadHours(leadHoursData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -238,7 +281,20 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
   return (
     <div>
-      <SetterPerformanceSummary summary={summary} loading={loading} error={error} />
+      <SetterPerformanceSummary
+        summary={summary}
+        loading={loading}
+        error={error}
+        extra={
+          leadHours ? (
+            <HourlyStripTable
+              title="New leads by hour (ET)"
+              hourLabels={HOUR_LABELS_24}
+              rows={[leadStripRow(leadHours.team)]}
+            />
+          ) : null
+        }
+      />
 
       {loading ? (
         <LoadingCard />
@@ -249,7 +305,25 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       ) : (
         <>
           <OfferTable rows={offerRows} />
+          {leadHours && leadHours.offers.length > 0 && (
+            <div style={{ marginTop: -12, marginBottom: 20 }}>
+              <HourlyStripTable
+                title="New leads by hour (ET)"
+                hourLabels={HOUR_LABELS_24}
+                rows={leadHours.offers.map(leadStripRow)}
+              />
+            </div>
+          )}
           <SetterTable rows={setterRows} />
+          {leadHours && leadHours.setters.length > 0 && (
+            <div style={{ marginTop: -12, marginBottom: 20 }}>
+              <HourlyStripTable
+                title="New leads by hour (ET)"
+                hourLabels={HOUR_LABELS_24}
+                rows={leadHours.setters.map(leadStripRow)}
+              />
+            </div>
+          )}
         </>
       )}
     </div>
@@ -260,10 +334,12 @@ function SetterPerformanceSummary({
   summary,
   loading,
   error,
+  extra,
 }: {
   summary: SetterSummary;
   loading: boolean;
   error: string;
+  extra?: ReactNode;
 }) {
   if (loading) {
     return (
@@ -314,6 +390,8 @@ function SetterPerformanceSummary({
           color="var(--success)"
         />
       </div>
+
+      {extra}
     </div>
   );
 }
