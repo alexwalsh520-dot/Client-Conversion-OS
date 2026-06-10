@@ -91,6 +91,8 @@ export interface ResponseTimeMetrics {
     clientLabel: string;
     setterLabel: string;
     leadName: string | null;
+    subscriberId: string;
+    manychatUrl: string | null;
     inboundAt: string;
     outboundAt: string;
     activeSeconds: number;
@@ -138,6 +140,19 @@ const BUSINESS_END_SECOND = 23 * 3600;
 
 // A reply counts as a "miss" if it took longer than this many business-hours seconds.
 const MISS_THRESHOLD_SECONDS = 5 * 60;
+
+// ManyChat live-chat deep link: https://app.manychat.com/{pageId}/chat/{subscriberId}.
+// Page id per client (Tyson's was read from the avatar URL path /ava/{pageId}/...).
+const CLIENT_MANYCHAT_PAGE_ID: Record<ClientId, string | null> = {
+  tyson: "1024471",
+  antwan: null,
+};
+
+function manychatChatUrl(client: ClientId, subscriberId: string | null): string | null {
+  const pageId = CLIENT_MANYCHAT_PAGE_ID[client];
+  if (!pageId || !subscriberId) return null;
+  return `https://app.manychat.com/${pageId}/chat/${subscriberId}`;
+}
 
 function getVisibleClients(client: SalesHubClient): ClientDef[] {
   if (client === "all") return CLIENTS;
@@ -552,6 +567,8 @@ export async function getResponseTimeMetrics(params: {
         clientLabel: sample.clientLabel,
         setterLabel: sample.setterLabel,
         leadName: sample.leadName,
+        subscriberId: sample.subscriberId,
+        manychatUrl: manychatChatUrl(sample.client, sample.subscriberId),
         inboundAt: sample.inboundAt,
         outboundAt: sample.outboundAt,
         activeSeconds: sample.activeSeconds,
