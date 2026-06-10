@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Clock3, ExternalLink, Loader2 } from "lucide-react";
 import { fmtNumber } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
+import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
 import type { Filters } from "../types";
 
 interface HourlyBucket {
@@ -102,74 +103,26 @@ function fmtHour(hour: number) {
   return `${h12}${period}`;
 }
 
-function HourlyBars({ label, hourly }: { label: string; hourly: HourlyBucket[] }) {
-  const maxAvg = Math.max(1, ...hourly.map((h) => h.avgSeconds ?? 0));
-  const totalMissed = hourly.reduce((a, h) => a + h.missedCount, 0);
-  const worst = hourly
-    .filter((h) => h.avgSeconds != null)
-    .sort((a, b) => (b.avgSeconds as number) - (a.avgSeconds as number))[0];
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 0" }}>
-      <div style={{ width: 104, fontSize: 12, fontWeight: 650, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {label}
-      </div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 36, flex: 1 }}>
-        {hourly.map((h) => (
-          <div
-            key={h.hour}
-            title={`${fmtHour(h.hour)} — ${h.avgSeconds != null ? formatDuration(h.avgSeconds) : "no data"} · ${h.count} replies · ${h.missedCount} missed`}
-            style={{
-              flex: 1,
-              height: h.avgSeconds != null ? `${Math.max(8, (h.avgSeconds / maxAvg) * 100)}%` : "0%",
-              minHeight: h.avgSeconds != null ? 3 : 0,
-              background: h.missedCount > 0 ? "var(--danger)" : "var(--accent)",
-              opacity: h.avgSeconds != null ? 0.85 : 0.12,
-              borderRadius: "2px 2px 0 0",
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ width: 150, fontSize: 11, color: "var(--text-secondary)", textAlign: "right", whiteSpace: "nowrap" }}>
-        {worst ? `peak ${formatDuration(worst.avgSeconds)} @ ${fmtHour(worst.hour)}` : "no data"}
-        {totalMissed > 0 ? ` · ${totalMissed} miss` : ""}
-      </div>
-    </div>
-  );
+// Compact m:ss for the hour-strip cells (e.g. 0:52, 2:56, 5:30).
+function fmtMmSs(seconds: number) {
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function HourlySection({
-  summary,
-  clients,
-  setters,
-}: {
-  summary: ResponseTimeGroup;
-  clients: ResponseTimeGroup[];
-  setters: ResponseTimeGroup[];
-}) {
-  return (
-    <div className="section" style={{ marginBottom: 20 }}>
-      <h2 className="section-title">
-        <Clock3 size={16} />
-        Avg Response Time by Hour (11am–11pm ET)
-      </h2>
-      <div className="glass-static" style={{ padding: 14, overflowX: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 2, minWidth: 520 }}>
-          <div style={{ width: 104 }} />
-          <div style={{ display: "flex", flex: 1, fontSize: 9, color: "var(--text-muted)" }}>
-            {summary.hourly.map((h) => (
-              <div key={h.hour} style={{ flex: 1, textAlign: "center" }}>{fmtHour(h.hour)}</div>
-            ))}
-          </div>
-          <div style={{ width: 150 }} />
-        </div>
-        <div style={{ minWidth: 520 }}>
-          <HourlyBars label="Team" hourly={summary.hourly} />
-          {clients.map((g) => <HourlyBars key={`o-${g.id}`} label={g.label} hourly={g.hourly} />)}
-          {setters.map((g) => <HourlyBars key={`s-${g.id}`} label={g.label} hourly={g.hourly} />)}
-        </div>
-      </div>
-    </div>
-  );
+const BUSINESS_HOUR_LABELS = Array.from({ length: 12 }, (_, i) => fmtHour(11 + i));
+
+function hourlyStripRow(group: ResponseTimeGroup): StripRow {
+  return {
+    id: group.id,
+    label: group.label,
+    cells: group.hourly.map((h) => ({
+      value: h.avgSeconds != null ? fmtMmSs(h.avgSeconds) : null,
+      danger: h.missedCount > 0,
+      tooltip: `${fmtHour(h.hour)} — ${h.avgSeconds != null ? formatDuration(h.avgSeconds) : "no data"} · ${h.count} replies · ${h.missedCount} missed`,
+    })),
+  };
 }
 
 export default function ResponseTimes({ filters }: ResponseTimesProps) {
@@ -244,11 +197,31 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
             value={missRate(data.summary.missedCount, data.summary.sampleCount)}
           />
         </div>
+
+        <HourlyStripTable
+          title="Team — avg response by hour (11am–11pm ET)"
+          hourLabels={BUSINESS_HOUR_LABELS}
+          rows={[hourlyStripRow(data.summary)]}
+        />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 20 }}>
-        <GroupTable title="By Offer" rows={data.clients} />
-        <GroupTable title="By Setter" rows={data.setters} />
+        <div>
+          <GroupTable title="By Offer" rows={data.clients} />
+          <HourlyStripTable
+            title="Avg response by hour"
+            hourLabels={BUSINESS_HOUR_LABELS}
+            rows={data.clients.map(hourlyStripRow)}
+          />
+        </div>
+        <div>
+          <GroupTable title="By Setter" rows={data.setters} />
+          <HourlyStripTable
+            title="Avg response by hour"
+            hourLabels={BUSINESS_HOUR_LABELS}
+            rows={data.setters.map(hourlyStripRow)}
+          />
+        </div>
       </div>
 
       <div className="section" style={{ marginBottom: 20 }}>
@@ -261,8 +234,6 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           <MissedTable title="By Setter" rows={data.setters} />
         </div>
       </div>
-
-      <HourlySection summary={data.summary} clients={data.clients} setters={data.setters} />
 
       <ConversationsTable rows={data.conversations.filter((c) => c.missed)} />
     </div>
