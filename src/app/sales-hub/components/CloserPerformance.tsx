@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Loader2,
   Trophy,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 import type { Filters, SheetRow } from "../types";
+import { CALL_CATEGORIES, rowsForCategory } from "./callType";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -68,10 +69,8 @@ function formatSeconds(totalSeconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
-  const closerRows = rows.filter(
-    (r) => r.closer?.trim().toLowerCase() === closerName.toLowerCase(),
-  );
+function statsFromRows(rows: SheetRow[]): Omit<CloserStats, "name"> {
+  const closerRows = rows;
 
   const callsBooked = closerRows.length;
   const takenRows = closerRows.filter((r) => r.callTakenStatus === "yes");
@@ -113,7 +112,6 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
       : "—";
 
   return {
-    name: closerName,
     callsBooked,
     callsTaken,
     showRate,
@@ -125,6 +123,13 @@ function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
     avgCallLength: formatSeconds(avgCallSeconds),
     topObjection,
   };
+}
+
+function computeCloserStats(rows: SheetRow[], closerName: string): CloserStats {
+  const closerRows = rows.filter(
+    (r) => r.closer?.trim().toLowerCase() === closerName.toLowerCase(),
+  );
+  return { name: closerName, ...statsFromRows(closerRows) };
 }
 
 function getSetterQuality(
@@ -227,6 +232,9 @@ export default function CloserPerformance({
     return result;
   }, [sheetData, closerStats]);
 
+  const [openCloser, setOpenCloser] = useState<string | null>(null);
+  const [showAggBreakdown, setShowAggBreakdown] = useState(false);
+
   /* ── Loading state ──────────────────────────────────────────────── */
   if (loading) {
     return (
@@ -320,6 +328,64 @@ export default function CloserPerformance({
             <SummaryStat icon={<Trophy size={12} style={{ color: "var(--success)" }} />} label="Wins" value={fmtNumber(aggregated.wins)} color="var(--success)" />
             <SummaryStat icon={<XCircle size={12} style={{ color: "var(--danger)" }} />} label="Losses" value={fmtNumber(aggregated.losses)} color="var(--danger)" />
           </div>
+
+          <button
+            onClick={() => setShowAggBreakdown((v) => !v)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 8,
+              padding: "6px 12px",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--text-secondary)",
+              marginBottom: showAggBreakdown ? 12 : 20,
+            }}
+          >
+            <span style={{ fontSize: 9 }}>{showAggBreakdown ? "\u25be" : "\u25b8"}</span>
+            Breakdown by call type
+          </button>
+          {showAggBreakdown && (
+            <div className="glass-static" style={{ overflow: "auto", marginBottom: 20 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Call Type</th>
+                    <th>Cash</th>
+                    <th>AOV</th>
+                    <th>Close Rate</th>
+                    <th>Show Rate</th>
+                    <th>Booked</th>
+                    <th>Taken</th>
+                    <th>Wins</th>
+                    <th>Losses</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {CALL_CATEGORIES.map((cat) => {
+                    const m = statsFromRows(rowsForCategory(sheetData || [], cat.key));
+                    return (
+                      <tr key={cat.key}>
+                        <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{cat.label}</td>
+                        <td style={{ color: "var(--success)" }}>{fmtDollars(m.cash)}</td>
+                        <td>{fmtDollars(m.aov)}</td>
+                        <td>{fmtPercent(m.closeRate)}</td>
+                        <td>{fmtPercent(m.showRate)}</td>
+                        <td>{fmtNumber(m.callsBooked)}</td>
+                        <td>{fmtNumber(m.callsTaken)}</td>
+                        <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
+                        <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -342,45 +408,68 @@ export default function CloserPerformance({
             </tr>
           </thead>
           <tbody>
-            {closerStats.map((s) => (
-              <tr key={s.name}>
-                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                  {s.name}
-                </td>
-                <td style={{ color: "var(--success)" }}>
-                  {fmtDollars(s.cash)}
-                  <TopBadge show={topPerformers.cash === s.name} />
-                </td>
-                <td>
-                  {fmtDollars(s.aov)}
-                  <TopBadge show={topPerformers.aov === s.name} />
-                </td>
-                <td>
-                  {fmtPercent(s.closeRate)}
-                  <TopBadge show={topPerformers.closeRate === s.name} />
-                </td>
-                <td>
-                  {fmtPercent(s.showRate)}
-                  <TopBadge show={topPerformers.showRate === s.name} />
-                </td>
-                <td>{fmtNumber(s.callsBooked)}</td>
-                <td>{fmtNumber(s.callsTaken)}</td>
-                <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
-                <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
-                <td>{s.avgCallLength}</td>
-                <td
-                  style={{
-                    maxWidth: 140,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={s.topObjection}
-                >
-                  {s.topObjection}
-                </td>
-              </tr>
-            ))}
+            {closerStats.map((s) => {
+              const isOpen = openCloser === s.name;
+              const closerRows = (sheetData || []).filter(
+                (r) => r.closer?.trim().toLowerCase() === s.name.toLowerCase(),
+              );
+              return (
+                <Fragment key={s.name}>
+                  <tr onClick={() => setOpenCloser(isOpen ? null : s.name)} style={{ cursor: "pointer" }}>
+                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                      <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)" }}>{isOpen ? "\u25be" : "\u25b8"}</span>
+                      {s.name}
+                    </td>
+                    <td style={{ color: "var(--success)" }}>
+                      {fmtDollars(s.cash)}
+                      <TopBadge show={topPerformers.cash === s.name} />
+                    </td>
+                    <td>
+                      {fmtDollars(s.aov)}
+                      <TopBadge show={topPerformers.aov === s.name} />
+                    </td>
+                    <td>
+                      {fmtPercent(s.closeRate)}
+                      <TopBadge show={topPerformers.closeRate === s.name} />
+                    </td>
+                    <td>
+                      {fmtPercent(s.showRate)}
+                      <TopBadge show={topPerformers.showRate === s.name} />
+                    </td>
+                    <td>{fmtNumber(s.callsBooked)}</td>
+                    <td>{fmtNumber(s.callsTaken)}</td>
+                    <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
+                    <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
+                    <td>{s.avgCallLength}</td>
+                    <td
+                      style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      title={s.topObjection}
+                    >
+                      {s.topObjection}
+                    </td>
+                  </tr>
+                  {isOpen &&
+                    CALL_CATEGORIES.map((cat) => {
+                      const m = statsFromRows(rowsForCategory(closerRows, cat.key));
+                      return (
+                        <tr key={s.name + cat.key} style={{ background: "rgba(127,127,127,0.06)" }}>
+                          <td style={{ paddingLeft: 28, color: "var(--text-secondary)", fontSize: 12 }}>{cat.label}</td>
+                          <td style={{ color: "var(--success)" }}>{fmtDollars(m.cash)}</td>
+                          <td>{fmtDollars(m.aov)}</td>
+                          <td>{fmtPercent(m.closeRate)}</td>
+                          <td>{fmtPercent(m.showRate)}</td>
+                          <td>{fmtNumber(m.callsBooked)}</td>
+                          <td>{fmtNumber(m.callsTaken)}</td>
+                          <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
+                          <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
+                          <td>{m.avgCallLength}</td>
+                          <td style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.topObjection}>{m.topObjection}</td>
+                        </tr>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

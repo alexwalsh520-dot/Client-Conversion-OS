@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { Fragment, useEffect, useState, useMemo, useCallback } from "react";
 import { Users } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, SheetRow } from "../types";
+import { CALL_CATEGORIES, rowsForCategory } from "./callType";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -141,10 +142,12 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
     });
 
     return {
-      tyson: computeMetrics(tysonRows, "Tyson Sonnek"),
-      antwan: computeMetrics(antwanRows, "Antwan Rarcus"),
+      tyson: { metrics: computeMetrics(tysonRows, "Tyson Sonnek"), rows: tysonRows },
+      antwan: { metrics: computeMetrics(antwanRows, "Antwan Rarcus"), rows: antwanRows },
     };
   }, [sheet.data, filters.client]);
+
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   /* ── Render ─────────────────────────────────────────────────────── */
   if (filters.client !== "all") {
@@ -199,6 +202,9 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       >
         <Users size={12} />
         Client Comparison
+        <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--text-muted)", fontWeight: 400, marginLeft: 4 }}>
+          — click a client to break down by call type
+        </span>
       </div>
 
       <div className="glass-static" style={{ overflow: "auto" }}>
@@ -218,34 +224,47 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             </tr>
           </thead>
           <tbody>
-            {[clientBreakdown.tyson, clientBreakdown.antwan].map((c) => (
-              <tr key={c.label}>
-                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                  {c.label}
-                </td>
-                <td style={{ color: "var(--success)", fontWeight: 600 }}>
-                  {fmtDollars(c.cashCollected)}
-                </td>
-                <td>{fmtDollars(c.aov)}</td>
-                <td>
-                  <span style={{ color: rateColor(c.closeRate), fontWeight: 600 }}>
-                    {fmtPercent(c.closeRate)}
-                  </span>
-                </td>
-                <td>
-                  <span style={{ color: rateColor(c.showRate), fontWeight: 600 }}>
-                    {fmtPercent(c.showRate)}
-                  </span>
-                </td>
-                <td>{fmtNumber(c.callsBooked)}</td>
-                <td>{fmtNumber(c.callsTaken)}</td>
-                <td style={{ color: "var(--success)" }}>{fmtNumber(c.wins)}</td>
-                <td style={{ color: "var(--danger)" }}>{fmtNumber(c.losses)}</td>
-                <td style={{ color: c.pending > 0 ? "var(--warning)" : "var(--text-secondary)" }}>
-                  {fmtNumber(c.pending)}
-                </td>
-              </tr>
-            ))}
+            {[clientBreakdown.tyson, clientBreakdown.antwan].map((cb) => {
+              const c = cb.metrics;
+              const isOpen = expanded === c.label;
+              return (
+                <Fragment key={c.label}>
+                  <tr onClick={() => setExpanded(isOpen ? null : c.label)} style={{ cursor: "pointer" }}>
+                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                      <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)" }}>{isOpen ? "\u25be" : "\u25b8"}</span>
+                      {c.label}
+                    </td>
+                    <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(c.cashCollected)}</td>
+                    <td>{fmtDollars(c.aov)}</td>
+                    <td><span style={{ color: rateColor(c.closeRate), fontWeight: 600 }}>{fmtPercent(c.closeRate)}</span></td>
+                    <td><span style={{ color: rateColor(c.showRate), fontWeight: 600 }}>{fmtPercent(c.showRate)}</span></td>
+                    <td>{fmtNumber(c.callsBooked)}</td>
+                    <td>{fmtNumber(c.callsTaken)}</td>
+                    <td style={{ color: "var(--success)" }}>{fmtNumber(c.wins)}</td>
+                    <td style={{ color: "var(--danger)" }}>{fmtNumber(c.losses)}</td>
+                    <td style={{ color: c.pending > 0 ? "var(--warning)" : "var(--text-secondary)" }}>{fmtNumber(c.pending)}</td>
+                  </tr>
+                  {isOpen &&
+                    CALL_CATEGORIES.map((cat) => {
+                      const m = computeMetrics(rowsForCategory(cb.rows, cat.key), cat.label);
+                      return (
+                        <tr key={c.label + cat.key} style={{ background: "rgba(127,127,127,0.06)" }}>
+                          <td style={{ paddingLeft: 28, color: "var(--text-secondary)", fontSize: 12 }}>{cat.label}</td>
+                          <td style={{ color: "var(--success)" }}>{fmtDollars(m.cashCollected)}</td>
+                          <td>{fmtDollars(m.aov)}</td>
+                          <td>{fmtPercent(m.closeRate)}</td>
+                          <td>{fmtPercent(m.showRate)}</td>
+                          <td>{fmtNumber(m.callsBooked)}</td>
+                          <td>{fmtNumber(m.callsTaken)}</td>
+                          <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
+                          <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
+                          <td>{fmtNumber(m.pending)}</td>
+                        </tr>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
