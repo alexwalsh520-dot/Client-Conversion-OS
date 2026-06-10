@@ -16,6 +16,7 @@ import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
 import ResponseTimes from "./components/ResponseTimes";
+import AskAI from "./components/AskAI";
 import AlexTesting from "./components/AlexTesting";
 
 /* ------------------------------------------------------------------ */
@@ -490,6 +491,9 @@ export default function SalesHubPage() {
       >
         <ResponseTimes filters={filters} />
       </CollapsibleSection>
+
+      {/* Section 5: Ask AI (allowlisted users only — component hides itself otherwise) */}
+      <AskAI />
 
     </div>
   );
