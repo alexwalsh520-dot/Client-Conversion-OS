@@ -30,23 +30,48 @@ export default function HourlyStripTable({
   rows,
   secondaryRows,
   toggleLabels = ["%", "#"],
+  collapsible = false,
 }: {
   title?: string;
   hourLabels: string[];
   rows: StripRow[];
   secondaryRows?: StripRow[];
   toggleLabels?: [string, string];
+  collapsible?: boolean;
 }) {
   const [showSecondary, setShowSecondary] = useState(false);
+  const [open, setOpen] = useState(!collapsible);
   if (rows.length === 0) return null;
 
   const activeRows = showSecondary && secondaryRows ? secondaryRows : rows;
   const minWidth = 96 + hourLabels.length * 34;
+  const expanded = !collapsible || open;
 
   return (
     <div className="glass-static" style={{ padding: "10px 12px", overflowX: "auto", marginTop: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        {title ? (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: expanded ? 6 : 0 }}>
+        {collapsible ? (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontSize: 10,
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+              color: open ? "var(--text-secondary)" : "var(--text-muted)",
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ fontSize: 9 }}>{open ? "▾" : "▸"}</span>
+            {title || "Show breakdown"}
+          </button>
+        ) : title ? (
           <div
             style={{
               fontSize: 10,
@@ -61,7 +86,7 @@ export default function HourlyStripTable({
         ) : (
           <div />
         )}
-        {secondaryRows ? (
+        {expanded && secondaryRows ? (
           <button
             onClick={() => setShowSecondary((v) => !v)}
             title={`Switch to ${showSecondary ? toggleLabels[0] : toggleLabels[1]}`}
@@ -84,6 +109,7 @@ export default function HourlyStripTable({
         ) : null}
       </div>
 
+      {expanded && (
       <table
         style={{
           minWidth,
@@ -166,6 +192,7 @@ export default function HourlyStripTable({
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }
