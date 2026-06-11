@@ -29,6 +29,7 @@ import {
   UserRound,
   EyeOff,
   Pill,
+  Trophy,
 } from "lucide-react";
 
 const navItems = [
@@ -50,6 +51,7 @@ const navItems = [
 const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
 ];
@@ -154,6 +156,8 @@ export default function Sidebar() {
   if (pathname.startsWith("/welcome/")) return null;
   // Public Instagram connection setup — client-shared token URL, no CCOS chrome.
   if (pathname.startsWith("/connect/instagram/")) return null;
+  // Public Ads Leaderboard contestant flow — client-shared token URL, no chrome.
+  if (pathname.startsWith("/ads-leaderboard/compete/")) return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },

@@ -98,6 +98,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /connect/instagram/<client> is a public client setup link. It uses a
     // signed token in the URL and never exposes the Sales Hub.
     pathname.startsWith("/connect/instagram/") ||
+    // /ads-leaderboard/compete/<token> is the public Ads Leaderboard contestant
+    // flow. Clients open it via an unguessable token link; no CCOS login. The
+    // /ads-leaderboard admin tab itself stays gated (startsWith would defeat it,
+    // so this is an explicit /compete/ prefix match).
+    pathname.startsWith("/ads-leaderboard/compete/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

@@ -68,6 +68,18 @@ export function createTestimonialR2Key(clientId: number | string, filename: stri
   return `testimonials/${safeClient}/${date}/${Date.now()}-${random}.${ext}`;
 }
 
+// Ads Leaderboard contest videos. Same R2 bucket as Studio 2 + testimonials,
+// but under a dedicated `ad-contest/` prefix so they never share a path with
+// studio-2/ or testimonials/. High-entropy keys keep the public-read bucket
+// unenumerable; the URL is surfaced only on the leaderboard for submitted ads.
+export function createAdContestR2Key(entryId: string, filename: string, contentType: string) {
+  const ext = getSafeExtension(filename, contentType);
+  const date = new Date().toISOString().slice(0, 10);
+  const random = crypto.randomBytes(24).toString("hex");
+  const safeEntry = String(entryId).replace(/[^a-z0-9]/gi, "") || "unknown";
+  return `ad-contest/${safeEntry}/${date}/${Date.now()}-${random}.${ext}`;
+}
+
 export function getR2PublicUrl(key: string) {
   const config = getR2Config();
   return `${config.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
