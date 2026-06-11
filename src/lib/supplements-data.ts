@@ -217,7 +217,7 @@ function buildFuture(): MetricSection[] {
       subtitle: "Unlocks once per-SKU COGS + ad spend are connected.",
       kind: "money",
       rows: [
-        moneyRow("profit", "Profit", "cogs"),
+        moneyRow("profit", "Profit", "money", "cogs"),
         moneyRow("profit_per_booked", "Profit / Call Booked", "moneyPerCall", "cogs"),
         moneyRow("profit_per_taken", "Profit / Call Taken", "moneyPerCall", "cogs"),
         moneyRow("gp_30d", "30-Day Gross Profit", "money", "cogs", "GP collected in first 30 days"),
