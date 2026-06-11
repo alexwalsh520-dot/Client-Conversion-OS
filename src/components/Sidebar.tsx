@@ -28,6 +28,7 @@ import {
   Utensils,
   UserRound,
   EyeOff,
+  Pill,
 } from "lucide-react";
 
 const navItems = [
@@ -42,6 +43,8 @@ const navItems = [
   { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard, adminOnly: true },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
+  // Private single-owner tab — gated to ownerEmail in canViewItem (overrides admin).
+  { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
 ];
 
 const marketingNavItems = [
@@ -84,6 +87,7 @@ export default function Sidebar() {
   }, [menu]);
 
   const isAdmin = session?.user?.role === "admin";
+  const userEmail = session?.user?.email?.toLowerCase();
   const allowedTabs = session?.user?.allowedTabs;
   const hasPermissions = !!session?.user?.role && !!allowedTabs;
 
@@ -93,7 +97,9 @@ export default function Sidebar() {
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-  const canViewItem = (item: { href: string; adminOnly?: boolean }) => {
+  const canViewItem = (item: { href: string; adminOnly?: boolean; ownerEmail?: string }) => {
+    // ownerEmail restricts a tab to exactly one person — overrides the admin bypass.
+    if (item.ownerEmail) return userEmail === item.ownerEmail.toLowerCase();
     if (item.adminOnly) return isAdmin;
     return (
       !hasPermissions ||

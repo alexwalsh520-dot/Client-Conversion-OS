@@ -5,6 +5,48 @@ import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
 
+// Single-owner tabs (e.g. /supplements) restrict to one email, overriding admin.
+const OWNER_ONLY_TABS: Record<string, string> = {
+  "/supplements": "matthew@clientconversion.io",
+};
+
+function RestrictedView() {
+  return (
+    <div
+      className="fade-up"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "60vh",
+        gap: 16,
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 16,
+          background: "rgba(239,68,68,0.1)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ShieldOff size={28} style={{ color: "var(--danger)" }} />
+      </div>
+      <h2 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 600, margin: 0 }}>
+        Access Restricted
+      </h2>
+      <p style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 400 }}>
+        You don&apos;t have permission to view this page. Contact your admin to request access.
+      </p>
+    </div>
+  );
+}
+
 export default function AccessGate({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
@@ -82,6 +124,15 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // Not authenticated — show nothing while redirect happens
   if (!session?.user) return null;
 
+  // Single-owner tabs are gated by email first — this runs BEFORE the admin bypass
+  // and old-JWT fallback below, so no other admin can reach them by direct URL.
+  const ownerOnly = Object.entries(OWNER_ONLY_TABS).find(
+    ([tab]) => pathname === tab || pathname.startsWith(tab + "/"),
+  );
+  if (ownerOnly) {
+    return session.user.email?.toLowerCase() === ownerOnly[1] ? <>{children}</> : <RestrictedView />;
+  }
+
   const isAdmin = session.user.role === "admin";
   const allowedTabs = session.user.allowedTabs;
 
@@ -109,40 +160,7 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   });
 
   if (!hasAccess) {
-    return (
-      <div
-        className="fade-up"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          gap: 16,
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 16,
-            background: "rgba(239,68,68,0.1)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <ShieldOff size={28} style={{ color: "var(--danger)" }} />
-        </div>
-        <h2 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 600, margin: 0 }}>
-          Access Restricted
-        </h2>
-        <p style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 400 }}>
-          You don&apos;t have permission to view this page. Contact your admin to request access.
-        </p>
-      </div>
-    );
+    return <RestrictedView />;
   }
 
   return <>{children}</>;
