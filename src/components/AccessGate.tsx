@@ -103,6 +103,9 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /ads-leaderboard admin tab itself stays gated (startsWith would defeat it,
     // so this is an explicit /compete/ prefix match).
     pathname.startsWith("/ads-leaderboard/compete/") ||
+    // /ads-leaderboard/board is the public front-facing leaderboard (no auth,
+    // no financials). Exact match so the admin /ads-leaderboard tab stays gated.
+    pathname === "/ads-leaderboard/board" ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

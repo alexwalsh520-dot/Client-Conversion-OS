@@ -252,6 +252,15 @@ body {
   overflow: hidden;
 }
 
+/* Full-bleed for the public Ads Leaderboard pages (contestant flow + public
+   board). Kills the centered max-width + padding so the dark premium UI fills
+   the viewport edge-to-edge. Keeps overflow visible so the page scrolls. */
+.main-content:has(.ads-lb-fullbleed) {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;

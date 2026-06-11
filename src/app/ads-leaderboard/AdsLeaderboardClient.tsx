@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Trophy, Plus, Copy, Check, Link2, ExternalLink } from "lucide-react";
+import { Trophy, Plus, Copy, Check, Link2, ExternalLink, Eye } from "lucide-react";
 
 interface AdMetrics {
   spend: number;
@@ -119,14 +119,20 @@ export default function AdsLeaderboardClient() {
             <Trophy size={24} style={{ color: "var(--accent)" }} /> Ads Leaderboard
           </h1>
           <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "6px 0 0", maxWidth: 560, lineHeight: 1.55 }}>
-            Clients compete to make the best video ad. We script it, launch it, and run it at 10x ROAS — winners earn
-            commission (up to $10k/mo). Create an invite link and send it to a client to start.
+            Clients turn their coaching story into a video ad. We script it, launch it, and put real budget behind it —
+            winners earn commission (up to $10k/mo). Create an invite link and send it to a client to start.
           </p>
         </div>
-        <button onClick={createInvite} disabled={creating}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#1a1205", fontWeight: 700, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" }}>
-          <Plus size={16} /> {creating ? "Creating…" : "New invite link"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <a href="/ads-leaderboard/board" target="_blank" rel="noopener noreferrer"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 10, border: "1px solid var(--border-primary)", background: "transparent", color: "var(--text-secondary)", fontWeight: 600, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none" }}>
+            <Eye size={16} /> Public leaderboard
+          </a>
+          <button onClick={createInvite} disabled={creating}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#1a1205", fontWeight: 700, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <Plus size={16} /> {creating ? "Creating…" : "New invite link"}
+          </button>
+        </div>
       </div>
 
       {/* Summary stats */}

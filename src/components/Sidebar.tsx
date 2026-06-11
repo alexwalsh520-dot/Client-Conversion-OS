@@ -158,6 +158,8 @@ export default function Sidebar() {
   if (pathname.startsWith("/connect/instagram/")) return null;
   // Public Ads Leaderboard contestant flow — client-shared token URL, no chrome.
   if (pathname.startsWith("/ads-leaderboard/compete/")) return null;
+  // Public front-facing Ads Leaderboard — no CCOS chrome.
+  if (pathname === "/ads-leaderboard/board") return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },

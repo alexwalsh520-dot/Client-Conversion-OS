@@ -2,6 +2,10 @@
 // Kept free of any Node-only imports (no crypto/fs) so it can be bundled into
 // the public contestant client component. The SONNET script generator
 // (server-only) re-exports these from sonnet-framework.ts.
+//
+// Framing: the contestant is one of OUR coaching clients making an ad about
+// THEIR OWN experience with our 1:1 fitness coaching — a real story, in their
+// words. Every question is about their journey, not about running a business.
 
 export interface IntakeQuestion {
   id: string;
@@ -15,65 +19,59 @@ export interface IntakeQuestion {
 
 export const INTAKE_QUESTIONS: IntakeQuestion[] = [
   {
-    id: "niche",
-    label: "What does your offer help people do?",
-    help: "One line. The transformation, plainly.",
-    placeholder: "e.g. Help busy dads lose 20lbs without giving up beer",
-    type: "text",
+    id: "before",
+    label: "Where were you at before you started coaching with us?",
+    help: "The real picture — how you looked, felt, and what your day was like.",
+    placeholder: "e.g. 40lbs heavier, exhausted by 2pm, hiding in photos",
+    type: "textarea",
+    required: true,
+  },
+  {
+    id: "struggle",
+    label: "What had you already tried that didn't work?",
+    help: "Diets, apps, gyms, programs — whatever you'd spun your wheels on.",
+    placeholder: "e.g. Keto, F45, three different apps... nothing stuck",
+    type: "textarea",
+    required: true,
+  },
+  {
+    id: "yes_moment",
+    label: "What finally made you say yes to 1:1 coaching with us?",
+    help: "The thing that tipped you over the edge to actually commit.",
+    placeholder: "e.g. I saw a client's results and realized I needed real accountability",
+    type: "textarea",
+    required: true,
+  },
+  {
+    id: "results",
+    label: "What's different now? Be specific.",
+    help: "Real numbers and real changes — pounds, energy, confidence, habits.",
+    placeholder: "e.g. Down 38lbs, off my blood pressure meds, up at 6am every day",
+    type: "textarea",
+    required: true,
+  },
+  {
+    id: "turning_point",
+    label: "What was the moment it clicked that this was actually working?",
+    help: "One specific memory or moment that proved it to you.",
+    placeholder: "e.g. My daughter asked to race me to the car... and I won",
+    type: "textarea",
     required: true,
   },
   {
     id: "audience",
-    label: "Who is this for? Describe your dream client.",
-    help: "Age, gender, what their life looks like right now.",
-    placeholder: "e.g. Men 30-45 who used to be athletic and are now 30lbs heavier",
+    label: "Who is the one person watching this who needs to hear it?",
+    help: "Describe the version of you from before — who is this for?",
+    placeholder: "e.g. A busy dad who keeps saying 'I'll start Monday'",
     type: "textarea",
-    required: true,
-  },
-  {
-    id: "pain",
-    label: "What is the #1 thing they're frustrated about?",
-    help: "The exact words they'd use. Be specific, not generic.",
-    placeholder: "e.g. They've started 5 diets this year and quit every one by week 2",
-    type: "textarea",
-    required: true,
-  },
-  {
-    id: "lie",
-    label: "What's the biggest lie or mistake keeping them stuck?",
-    help: "What does everyone tell them that's actually wrong?",
-    placeholder: "e.g. That they need to do 2 hours of cardio a day",
-    type: "textarea",
-    required: true,
-  },
-  {
-    id: "offer",
-    label: "What's the free thing you're giving away?",
-    help: "Your challenge / plan / group. Keep it dead simple.",
-    placeholder: "e.g. Free 6-week shred challenge: workout plan + simple diet + group",
-    type: "textarea",
-    required: true,
-  },
-  {
-    id: "proof",
-    label: "What's one specific proof point?",
-    help: "A real number or result. Specific beats impressive.",
-    placeholder: "e.g. 312 guys joined the last round / I lost 41lbs myself",
-    type: "text",
-  },
-  {
-    id: "keyword",
-    label: "What word should people DM you to join?",
-    help: "One short, punchy word. This is your CTA.",
-    placeholder: "e.g. SHRED",
-    type: "text",
     required: true,
   },
   {
     id: "vibe",
     label: "Pick your energy",
+    help: "How do you want to come across on camera?",
     type: "select",
-    options: ["Tough-love / call them out", "Hype / high energy", "Calm + confident", "Funny / self-aware"],
+    options: ["Real & raw", "Hyped & high energy", "Calm & confident", "Funny & self-aware"],
     required: true,
   },
 ];

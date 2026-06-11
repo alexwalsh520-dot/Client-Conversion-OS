@@ -1,31 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { INTAKE_QUESTIONS } from "@/lib/ads-leaderboard/intake";
 
-// ── Self-contained theme (this is a public page, no CCOS shell) ──────────────
+// ── Theme ────────────────────────────────────────────────────────────────────
 const C = {
-  bg: "#0a0a0b",
-  bg2: "#0f0f12",
-  card: "#15151a",
-  line: "#26262e",
-  text: "#f4f4f6",
-  sub: "#a0a0ad",
-  gold: "#c9a96e",
+  bg: "#070708",
+  card: "rgba(22,22,26,0.55)",
+  cardSolid: "#141418",
+  line: "rgba(255,255,255,0.08)",
+  lineStrong: "rgba(255,255,255,0.14)",
+  text: "#f6f6f8",
+  sub: "#9a9aa6",
+  gold: "#d8b878",
+  gold2: "#c9a96e",
   goldInk: "#1a1205",
   green: "#5fdb8e",
   danger: "#ef6b6b",
 };
 
-const STEPS = ["Start", "Your offer", "Your script", "Record", "Done"] as const;
+const STEPS = ["Start", "Story", "Script", "Record", "Done"] as const;
 
-// Rotating motivation shown in the sticky banner so people don't fall off.
+// Money-only motivation (no ROAS talk — they just need to know they can earn).
 const MOTIVATION = [
-  "🔥 A great ad can earn you up to $10,000/month. You're minutes away.",
-  "💰 We run these ads at 10x ROAS. Your job is just the video — we handle the spend.",
-  "🚀 Most people never start. You already did. Keep going.",
-  "🎯 One good 30-second video can change your month. Don't stop now.",
-  "🏆 The leaderboard rewards the best ad. That could be yours.",
+  "💰 Your story could earn you up to $10,000 a month.",
+  "🔥 One short video. Real money. Don't stop now.",
+  "🚀 Someone out there needs to hear your story. Keep going.",
+  "🏆 The best ad each month wins big.",
+  "✨ You already did the hard part — living it. Now just tell it.",
 ];
 
 type Phase = "loading" | "invalid" | "flow" | "done";
@@ -46,7 +48,6 @@ export default function CompeteFlow({ token }: { token: string }) {
   const [script, setScript] = useState<string | null>(null);
   const [motivationIdx, setMotivationIdx] = useState(0);
 
-  // ── Load / resume ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -59,6 +60,7 @@ export default function CompeteFlow({ token }: { token: string }) {
         const { entry } = (await res.json()) as { entry: EntryState };
         if (cancelled) return;
         if (entry.status === "submitted" || entry.status === "live") {
+          setName(entry.contestant_name || "");
           setPhase("done");
           return;
         }
@@ -76,9 +78,8 @@ export default function CompeteFlow({ token }: { token: string }) {
     };
   }, [token]);
 
-  // Rotate motivation every 7s.
   useEffect(() => {
-    const id = setInterval(() => setMotivationIdx((i) => (i + 1) % MOTIVATION.length), 7000);
+    const id = setInterval(() => setMotivationIdx((i) => (i + 1) % MOTIVATION.length), 6500);
     return () => clearInterval(id);
   }, []);
 
@@ -91,32 +92,32 @@ export default function CompeteFlow({ token }: { token: string }) {
           body: JSON.stringify({ token, ...patch }),
         });
       } catch {
-        /* best-effort; the next save will catch up */
+        /* best-effort */
       }
     },
     [token],
   );
 
   const goTo = useCallback(
-    (next: number) => {
+    (next: number, status?: string) => {
       const clamped = Math.max(0, Math.min(next, STEPS.length - 1));
       setStep(clamped);
-      saveProgress({ step: clamped, intake, contestantName: name });
+      saveProgress({ step: clamped, intake, contestantName: name, status });
       if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [intake, name, saveProgress],
   );
 
-  // ── Render gates ─────────────────────────────────────────────────────────────
   if (phase === "loading") {
-    return <Shell><Center><p style={{ color: C.sub }}>Loading…</p></Center></Shell>;
+    return <Shell><Center><div className="alb-spin" /><p style={{ color: C.sub, marginTop: 14 }}>Loading…</p></Center></Shell>;
   }
   if (phase === "invalid") {
     return (
       <Shell>
         <Center>
+          <div style={{ fontSize: 40, marginBottom: 14 }}>🔒</div>
           <h1 style={{ fontSize: 22, margin: "0 0 10px" }}>This link isn&apos;t valid</h1>
-          <p style={{ color: C.sub, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: C.sub, margin: 0, lineHeight: 1.6, maxWidth: 380 }}>
             The contest link may be incorrect or expired. Reach out to your coach for a fresh one.
           </p>
         </Center>
@@ -129,171 +130,208 @@ export default function CompeteFlow({ token }: { token: string }) {
 
   return (
     <Shell>
-      {/* Sticky motivation banner */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          background: "rgba(201,169,110,0.12)",
-          borderBottom: `1px solid ${C.line}`,
-          backdropFilter: "blur(8px)",
-          padding: "10px 16px",
-          textAlign: "center",
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: C.gold,
-        }}
-      >
-        {MOTIVATION[motivationIdx]}
-      </div>
+      <div className="alb-banner">{MOTIVATION[motivationIdx]}</div>
 
-      <div style={{ maxWidth: 620, margin: "0 auto", padding: "20px 18px 80px" }}>
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "22px 20px 90px", position: "relative", zIndex: 1 }}>
         <ProgressBar step={step} />
 
-        {step === 0 && <StartStep onStart={() => goTo(1)} />}
-        {step === 1 && (
-          <IntakeStep
-            intake={intake}
-            setIntake={setIntake}
-            name={name}
-            setName={setName}
-            onBack={() => goTo(0)}
-            onNext={() => {
-              saveProgress({ step: 2, intake, contestantName: name, status: "intake_done" });
-              goTo(2);
-            }}
-          />
-        )}
-        {step === 2 && (
-          <ScriptStep
-            token={token}
-            intake={intake}
-            script={script}
-            setScript={setScript}
-            onBack={() => goTo(1)}
-            onNext={() => goTo(3)}
-          />
-        )}
-        {step === 3 && (
-          <RecordStep
-            token={token}
-            script={script}
-            onBack={() => goTo(2)}
-            onDone={() => {
-              setPhase("done");
-            }}
-          />
-        )}
+        <div key={step} className="alb-stepIn">
+          {step === 0 && <StartStep onStart={() => goTo(1)} />}
+          {step === 1 && (
+            <StoryStep
+              intake={intake}
+              setIntake={setIntake}
+              name={name}
+              setName={setName}
+              saveProgress={saveProgress}
+              onBack={() => goTo(0)}
+              onNext={() => goTo(2, "intake_done")}
+            />
+          )}
+          {step === 2 && (
+            <ScriptStep token={token} intake={intake} script={script} setScript={setScript} onBack={() => goTo(1)} onNext={() => goTo(3)} />
+          )}
+          {step === 3 && (
+            <RecordStep token={token} script={script} onBack={() => goTo(2)} onDone={() => setPhase("done")} />
+          )}
+        </div>
       </div>
     </Shell>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STEP 0 — Start / ROI hook
+// STEP 0 — Start
 // ════════════════════════════════════════════════════════════════════════════
 function StartStep({ onStart }: { onStart: () => void }) {
   return (
-    <div className="fade-up">
-      <div style={{ fontSize: 44, marginBottom: 10 }}>🏆</div>
-      <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-        Make one ad. <span style={{ color: C.gold }}>Get paid when it wins.</span>
+    <div style={{ textAlign: "center" }}>
+      <div className="alb-badge">🏆 Ads Leaderboard</div>
+      <h1 style={{ fontSize: 34, fontWeight: 800, margin: "16px 0 14px", letterSpacing: "-0.025em", lineHeight: 1.1 }}>
+        Turn your story<br /><span className="alb-grad">into income.</span>
       </h1>
-      <p style={{ color: C.sub, fontSize: 16, lineHeight: 1.65, margin: "0 0 20px" }}>
-        You record one short video. We turn it into a real ad, put real money behind it, and run it at the same
-        playbook that does <strong style={{ color: C.text }}>10x ROAS</strong>. When your ad performs, you earn a
-        commission on the results — up to <strong style={{ color: C.gold }}>$10,000/month</strong> for a great one.
+      <p style={{ color: C.sub, fontSize: 16, lineHeight: 1.65, margin: "0 auto 22px", maxWidth: 440 }}>
+        You lived the transformation. Now tell it. Record one short video about your journey with coaching — we turn it
+        into a real ad and put real money behind it.
       </p>
 
-      <div style={{ display: "grid", gap: 10, marginBottom: 24 }}>
+      <MoneyHero />
+
+      <div style={{ display: "grid", gap: 10, margin: "24px 0", textAlign: "left" }}>
         {[
-          ["1", "Answer a few quick questions about your offer"],
-          ["2", "We write you a custom script using our SONNET framework"],
-          ["3", "Record it on your phone in one take + a 2-minute edit"],
-          ["4", "We launch it. You climb the leaderboard and earn."],
+          ["①", "Answer a few quick questions about your journey"],
+          ["②", "We write you a custom script in seconds"],
+          ["③", "Record it on your phone + a 2-minute edit"],
+          ["④", "We launch it. You earn when people join because of you."],
         ].map(([n, t]) => (
-          <div key={n} style={{ display: "flex", gap: 12, alignItems: "center", background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
-            <div style={{ width: 28, height: 28, flexShrink: 0, borderRadius: 8, background: "rgba(201,169,110,0.14)", color: C.gold, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{n}</div>
+          <div key={n} className="alb-glass" style={{ display: "flex", gap: 13, alignItems: "center", padding: "13px 15px" }}>
+            <span className="alb-num">{n}</span>
             <span style={{ fontSize: 14.5, color: C.text }}>{t}</span>
           </div>
         ))}
       </div>
 
-      <p style={{ color: C.sub, fontSize: 13, margin: "0 0 18px", textAlign: "center" }}>
-        Takes about 10 minutes. Your progress saves automatically — come back anytime with this link.
+      <p style={{ color: C.sub, fontSize: 12.5, margin: "0 0 18px" }}>
+        Takes about 10 minutes. Saves automatically — come back anytime with this link.
       </p>
 
-      <Btn primary onClick={onStart}>Let&apos;s build my ad →</Btn>
+      <PrimaryBtn onClick={onStart}>Tell my story →</PrimaryBtn>
+    </div>
+  );
+}
+
+function MoneyHero() {
+  const target = 10000;
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const dur = 1100;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setVal(Math.round(eased * target));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className="alb-glass alb-glow" style={{ padding: "20px 18px", position: "relative", overflow: "hidden" }}>
+      <div style={{ fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: C.sub, marginBottom: 6 }}>
+        Top ads can earn up to
+      </div>
+      <div className="alb-grad" style={{ fontSize: 40, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1 }}>
+        ${val.toLocaleString()}
+        <span style={{ fontSize: 18, fontWeight: 700, opacity: 0.8 }}>/mo</span>
+      </div>
+      <div className="alb-shine" />
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STEP 1 — Intake
+// STEP 1 — Story (one question per screen)
 // ════════════════════════════════════════════════════════════════════════════
-function IntakeStep({
-  intake, setIntake, name, setName, onBack, onNext,
+function StoryStep({
+  intake, setIntake, name, setName, saveProgress, onBack, onNext,
 }: {
   intake: Record<string, string>;
   setIntake: (v: Record<string, string>) => void;
   name: string;
   setName: (v: string) => void;
+  saveProgress: (p: { intake?: Record<string, string>; contestantName?: string }) => void;
   onBack: () => void;
   onNext: () => void;
 }) {
+  // Screen 0 = name, then one screen per question. Resume at first unanswered
+  // (computed once on mount via a lazy initializer — pure, runs a single time).
+  const total = INTAKE_QUESTIONS.length + 1;
+  const [i, setI] = useState(() => {
+    if (!name.trim()) return 0;
+    const idx = INTAKE_QUESTIONS.findIndex((q) => q.required && !(intake[q.id] || "").trim());
+    return idx === -1 ? total - 1 : idx + 1;
+  });
   const [touched, setTouched] = useState(false);
-  const set = (id: string, v: string) => setIntake({ ...intake, [id]: v });
-  const missing = INTAKE_QUESTIONS.filter((q) => q.required && !(intake[q.id] || "").trim());
-  const canNext = missing.length === 0;
+  const isName = i === 0;
+  const q = isName ? null : INTAKE_QUESTIONS[i - 1];
+
+  const currentValue = isName ? name : intake[q!.id] || "";
+  const isRequired = isName ? true : !!q!.required;
+  const filled = currentValue.trim().length > 0;
+  const canAdvance = !isRequired || filled;
+
+  const set = (v: string) => {
+    if (isName) setName(v);
+    else setIntake({ ...intake, [q!.id]: v });
+  };
+
+  const next = () => {
+    if (!canAdvance) {
+      setTouched(true);
+      return;
+    }
+    setTouched(false);
+    saveProgress({ intake, contestantName: name });
+    if (i < total - 1) {
+      setI(i + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else onNext();
+  };
+  const back = () => {
+    setTouched(false);
+    if (i > 0) setI(i - 1);
+    else onBack();
+  };
 
   return (
-    <div className="fade-up">
-      <h2 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 6px" }}>Tell us about your offer</h2>
-      <p style={{ color: C.sub, fontSize: 14.5, lineHeight: 1.6, margin: "0 0 22px" }}>
-        Be specific and real — the more honest your answers, the better your ad. There are no wrong answers.
-      </p>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <span style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, letterSpacing: "0.04em" }}>
+          {isName ? "Let's start" : `Question ${i} of ${total - 1}`}
+        </span>
+        <span className="alb-badge-sm">Your story</span>
+      </div>
 
-      <Field label="Your name">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First name" style={inputStyle} />
-      </Field>
+      <div key={i} className="alb-stepIn">
+        <h2 style={{ fontSize: 25, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.2, letterSpacing: "-0.015em" }}>
+          {isName ? "First, what's your name?" : q!.label}
+        </h2>
+        {!isName && q!.help && <p style={{ color: C.sub, fontSize: 14, margin: "0 0 18px", lineHeight: 1.5 }}>{q!.help}</p>}
+        {isName && <p style={{ color: C.sub, fontSize: 14, margin: "0 0 18px", lineHeight: 1.5 }}>So we can put your name on the leaderboard.</p>}
 
-      {INTAKE_QUESTIONS.map((q) => {
-        const showErr = touched && q.required && !(intake[q.id] || "").trim();
-        return (
-          <Field key={q.id} label={q.label + (q.required ? "" : "  (optional)")} help={q.help} error={showErr ? "Required" : undefined}>
-            {q.type === "textarea" ? (
-              <textarea value={intake[q.id] || ""} onChange={(e) => set(q.id, e.target.value)} placeholder={q.placeholder} rows={3} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
-            ) : q.type === "select" ? (
-              <div style={{ display: "grid", gap: 8 }}>
-                {q.options!.map((opt) => {
-                  const active = intake[q.id] === opt;
-                  return (
-                    <button key={opt} type="button" onClick={() => set(q.id, opt)} style={{ textAlign: "left", padding: "11px 14px", borderRadius: 10, cursor: "pointer", fontSize: 14.5, fontWeight: active ? 600 : 400, border: `1px solid ${active ? C.gold : C.line}`, background: active ? "rgba(201,169,110,0.12)" : "transparent", color: active ? C.gold : C.text }}>
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <input value={intake[q.id] || ""} onChange={(e) => set(q.id, e.target.value)} placeholder={q.placeholder} style={inputStyle} />
-            )}
-          </Field>
-        );
-      })}
+        <div style={{ marginTop: 18 }}>
+          {!isName && q!.type === "select" ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              {q!.options!.map((opt) => {
+                const active = currentValue === opt;
+                return (
+                  <button key={opt} type="button" onClick={() => { set(opt); }} className={`alb-opt ${active ? "alb-opt-on" : ""}`}>
+                    {opt}
+                    {active && <span style={{ marginLeft: "auto" }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ) : !isName && q!.type === "textarea" ? (
+            <textarea autoFocus value={currentValue} onChange={(e) => set(e.target.value)} placeholder={q!.placeholder} rows={4} className="alb-input" style={{ resize: "vertical", lineHeight: 1.5 }} />
+          ) : (
+            <input autoFocus value={currentValue} onChange={(e) => set(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && canAdvance) next(); }} placeholder={isName ? "Your first name" : q!.placeholder} className="alb-input" />
+          )}
+          {touched && !canAdvance && <p style={{ color: C.danger, fontSize: 12.5, margin: "8px 0 0" }}>This one&apos;s required to keep going.</p>}
+        </div>
+      </div>
 
-      <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-        <Btn onClick={onBack}>← Back</Btn>
-        <Btn primary onClick={() => { setTouched(true); if (canNext) onNext(); }}>
-          {canNext ? "Write my script →" : `Fill ${missing.length} more`}
-        </Btn>
+      <div style={{ display: "flex", gap: 10, marginTop: 26 }}>
+        <GhostBtn onClick={back}>← Back</GhostBtn>
+        <PrimaryBtn onClick={next}>{i < total - 1 ? "Next →" : "Write my script →"}</PrimaryBtn>
       </div>
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STEP 2 — Script (SONNET)
+// STEP 2 — Script
 // ════════════════════════════════════════════════════════════════════════════
 function ScriptStep({
   token, intake, script, setScript, onBack, onNext,
@@ -327,50 +365,49 @@ function ScriptStep({
     }
   }, [token, intake, setScript]);
 
-  // Auto-generate on first arrival if there's no script yet.
   useEffect(() => {
     if (!script && !loading) generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="fade-up">
-      <h2 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 6px" }}>Your custom script ✍️</h2>
+    <div>
+      <span className="alb-badge-sm">Your script</span>
+      <h2 style={{ fontSize: 25, fontWeight: 700, margin: "12px 0 6px", letterSpacing: "-0.015em" }}>Written just for you ✍️</h2>
       <p style={{ color: C.sub, fontSize: 14.5, lineHeight: 1.6, margin: "0 0 18px" }}>
-        Written with our in-house <strong style={{ color: C.gold }}>SONNET</strong> framework — the exact structure
-        behind our highest-performing ads. Read it to camera. Make it yours.
+        Built from your real story. Read it to camera and make it yours — don&apos;t memorize, just talk.
       </p>
 
       {loading && (
-        <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 28, textAlign: "center" }}>
-          <div className="spin" style={{ width: 28, height: 28, margin: "0 auto 12px", border: `3px solid ${C.line}`, borderTopColor: C.gold, borderRadius: "50%" }} />
+        <div className="alb-glass" style={{ padding: 30, textAlign: "center" }}>
+          <div className="alb-spin" style={{ margin: "0 auto 14px" }} />
           <p style={{ color: C.sub, margin: 0, fontSize: 14 }}>Writing your script…</p>
         </div>
       )}
 
       {!loading && err && (
-        <div style={{ background: "rgba(239,107,107,0.08)", border: `1px solid ${C.danger}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div className="alb-glass" style={{ padding: 16, marginBottom: 14, borderColor: C.danger }}>
           <p style={{ color: C.danger, margin: "0 0 10px", fontSize: 14 }}>{err}</p>
-          <Btn onClick={generate}>Try again</Btn>
+          <GhostBtn onClick={generate}>Try again</GhostBtn>
         </div>
       )}
 
       {!loading && script && (
         <>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "18px 18px", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.7, color: C.text }}>
+          <div className="alb-glass alb-script" style={{ padding: 20, whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75, color: C.text }}>
             {script}
           </div>
-          <button type="button" onClick={generate} style={{ marginTop: 12, background: "transparent", border: "none", color: C.gold, fontSize: 13.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-            ↻ Not feeling it? Generate a different one
+          <button type="button" onClick={generate} className="alb-link" style={{ marginTop: 12 }}>
+            ↻ Not feeling it? Write a different one
           </button>
 
-          <div style={{ background: "rgba(95,219,142,0.07)", border: `1px solid rgba(95,219,142,0.25)`, borderRadius: 12, padding: "12px 14px", margin: "18px 0", fontSize: 13.5, color: C.text, lineHeight: 1.55 }}>
-            💡 Don&apos;t memorize it word-for-word. Glance, look up, talk like a human. Energy beats perfection.
+          <div className="alb-tip" style={{ margin: "18px 0" }}>
+            💡 Glance, look up, talk like a human. Energy beats perfection — your realness is what makes people join.
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
-            <Btn onClick={onBack}>← Back</Btn>
-            <Btn primary onClick={onNext}>I&apos;ve got my script →</Btn>
+            <GhostBtn onClick={onBack}>← Back</GhostBtn>
+            <PrimaryBtn onClick={onNext}>I&apos;ve got my script →</PrimaryBtn>
           </div>
         </>
       )}
@@ -441,9 +478,7 @@ function RecordStep({
       });
       const presign = await presignRes.json();
       if (!presignRes.ok) throw new Error(presign.error || "Could not start the upload.");
-
       await putWithProgress(presign.uploadUrl, file, presign.headers || {}, setProgress);
-
       const completeRes = await fetch("/api/ads-leaderboard/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -451,7 +486,6 @@ function RecordStep({
       });
       const complete = await completeRes.json();
       if (!completeRes.ok) throw new Error(complete.error || "Could not finish the upload.");
-
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       onDone();
     } catch (e) {
@@ -461,62 +495,59 @@ function RecordStep({
   }
 
   return (
-    <div className="fade-up">
+    <div>
       <input ref={inputRef} type="file" accept="video/*" capture="user" onChange={onFileChange} style={{ display: "none" }} />
 
-      <h2 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 6px" }}>Record &amp; submit 🎥</h2>
+      <span className="alb-badge-sm">Record</span>
+      <h2 style={{ fontSize: 25, fontWeight: 700, margin: "12px 0 6px", letterSpacing: "-0.015em" }}>Record &amp; submit 🎥</h2>
       <p style={{ color: C.sub, fontSize: 14.5, lineHeight: 1.6, margin: "0 0 18px" }}>
-        Film vertically, in good light, in one take. Hold the phone steady or prop it up. You can re-record as many
-        times as you want before submitting.
+        Film vertically, good light, one take. Prop your phone up. Re-record as many times as you like before submitting.
       </p>
 
-      {/* Collapsible script reminder */}
       {script && (
-        <details style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+        <details className="alb-glass" style={{ padding: "13px 15px", marginBottom: 16 }}>
           <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 600, color: C.gold }}>📜 Show my script</summary>
-          <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.65, color: C.text, marginTop: 12 }}>{script}</div>
+          <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7, color: C.text, marginTop: 12 }}>{script}</div>
         </details>
       )}
 
-      {/* CapCut edit guide */}
-      <div style={{ background: C.bg2, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 16px", marginBottom: 18 }}>
+      <div className="alb-glass" style={{ padding: 16, marginBottom: 18 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>✂️ Make it pop in CapCut (2 min, free)</h3>
-        <ol style={{ margin: "0 0 12px", padding: "0 0 0 18px", color: C.sub, fontSize: 13.5, lineHeight: 1.7 }}>
+        <ol style={{ margin: "0 0 12px", padding: "0 0 0 18px", color: C.sub, fontSize: 13.5, lineHeight: 1.75 }}>
           <li>Open CapCut → <strong style={{ color: C.text }}>New Project</strong> → add your clip.</li>
           <li>Tap <strong style={{ color: C.text }}>Captions → Auto Captions</strong> so the words show on screen.</li>
-          <li>Trim any dead air at the start so it hooks instantly.</li>
-          <li>Optional: drop a trending sound low in the background.</li>
-          <li>Export at <strong style={{ color: C.text }}>1080p</strong>, then come back and upload below.</li>
+          <li>Trim dead air at the start so it hooks instantly.</li>
+          <li>Optional: a quiet trending sound underneath.</li>
+          <li>Export at <strong style={{ color: C.text }}>1080p</strong>, then upload below.</li>
         </ol>
-        <a href="https://apps.apple.com/app/capcut-video-editor/id1500855883" target="_blank" rel="noopener noreferrer"
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "transparent", border: `1px solid ${C.gold}`, color: C.gold, fontSize: 13.5, fontWeight: 600, textDecoration: "none" }}>
+        <a href="https://apps.apple.com/app/capcut-video-editor/id1500855883" target="_blank" rel="noopener noreferrer" className="alb-capcut">
            Get CapCut free →
         </a>
       </div>
 
       {previewUrl && (
-        <video src={previewUrl} controls playsInline style={{ width: "100%", borderRadius: 14, background: "#000", marginBottom: 16, border: `1px solid ${C.line}` }} />
+        <video src={previewUrl} controls playsInline className="alb-video" style={{ marginBottom: 16 }} />
       )}
 
       {uploading ? (
         <div style={{ textAlign: "center" }}>
           <p style={{ color: C.sub, margin: "0 0 10px", fontSize: 14 }}>Uploading your ad… {progress}%</p>
-          <div style={{ height: 8, background: C.line, borderRadius: 999, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${progress}%`, background: C.gold, transition: "width 120ms linear" }} />
-          </div>
+          <div className="alb-track"><div className="alb-fill" style={{ width: `${progress}%` }} /></div>
           <p style={{ color: C.sub, margin: "12px 0 0", fontSize: 12 }}>Keep this page open until it finishes.</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {err && <p style={{ color: C.danger, fontSize: 14, margin: 0, textAlign: "center" }}>{err}</p>}
-          <Btn primary={!file} onClick={() => inputRef.current?.click()}>
-            {file ? "Record again" : "🎬 Record my video"}
-          </Btn>
-          {file && <Btn primary onClick={submit}>Submit my ad 🚀</Btn>}
-          {!file && (
-            <button type="button" onClick={onBack} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 13.5, cursor: "pointer", marginTop: 4 }}>
-              ← Back to script
-            </button>
+          {file ? (
+            <>
+              <PrimaryBtn onClick={submit}>Submit my ad 🚀</PrimaryBtn>
+              <GhostBtn onClick={() => inputRef.current?.click()}>Record again</GhostBtn>
+            </>
+          ) : (
+            <>
+              <PrimaryBtn onClick={() => inputRef.current?.click()}>🎬 Record my video</PrimaryBtn>
+              <button type="button" onClick={onBack} className="alb-link" style={{ textAlign: "center", marginTop: 2 }}>← Back to script</button>
+            </>
           )}
         </div>
       )}
@@ -530,43 +561,66 @@ function RecordStep({
 function DoneScreen({ name }: { name: string }) {
   return (
     <Center>
-      <div style={{ fontSize: 52, marginBottom: 10 }}>🎉</div>
-      <h1 style={{ fontSize: 28, fontWeight: 800, margin: "0 0 12px" }}>
+      <Confetti />
+      <div style={{ fontSize: 56, marginBottom: 12 }} className="alb-pop">🎉</div>
+      <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 14px", letterSpacing: "-0.02em" }}>
         You&apos;re in{name ? `, ${name}` : ""}!
       </h1>
-      <p style={{ color: C.sub, fontSize: 16, lineHeight: 1.65, margin: "0 0 8px", maxWidth: 460 }}>
-        Your ad is submitted. Our team reviews it, puts real budget behind it, and launches it on Meta.
+      <p style={{ color: C.sub, fontSize: 16, lineHeight: 1.65, margin: "0 0 10px", maxWidth: 440 }}>
+        Your ad is submitted. Our team reviews it, puts real budget behind it, and launches it.
       </p>
-      <p style={{ color: C.gold, fontSize: 16, fontWeight: 700, lineHeight: 1.6, margin: "0 0 20px", maxWidth: 460 }}>
-        When it performs, you climb the leaderboard — and you get paid. Up to $10,000/month for a winner.
+      <p className="alb-grad" style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.5, margin: "0 0 22px", maxWidth: 440 }}>
+        When people join coaching because of your story, you get paid — up to $10,000 a month.
       </p>
-      <p style={{ color: C.sub, fontSize: 13.5, margin: 0, maxWidth: 460 }}>
-        Keep this link — we&apos;ll update it as your ad goes live so you can track how it&apos;s doing.
+      <p style={{ color: C.sub, fontSize: 13.5, margin: 0, maxWidth: 440 }}>
+        Keep this link — we&apos;ll update it as your ad goes live so you can watch it climb the leaderboard.
       </p>
     </Center>
   );
 }
 
+function Confetti() {
+  // Deterministic pseudo-random (seeded by index) so render stays pure — no
+  // Math.random() during render. Still looks scattered.
+  const pieces = useMemo(() => {
+    const rand = (n: number) => {
+      const x = Math.sin(n * 9973.13) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 36 }, (_, i) => ({
+      left: rand(i * 4 + 1) * 100,
+      delay: rand(i * 4 + 2) * 0.6,
+      dur: 2.4 + rand(i * 4 + 3) * 1.8,
+      rot: rand(i * 4 + 4) * 360,
+      color: [C.gold, C.gold2, C.green, "#fff", "#e8c36a"][i % 5],
+      size: 6 + rand(i * 4 + 5) * 6,
+    }));
+  }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+      {pieces.map((p, i) => (
+        <span key={i} className="alb-confetti" style={{ left: `${p.left}%`, width: p.size, height: p.size * 1.6, background: p.color, animationDelay: `${p.delay}s`, animationDuration: `${p.dur}s`, transform: `rotate(${p.rot}deg)` }} />
+      ))}
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
-// Shared UI bits
+// Shell + shared UI + styles
 // ════════════════════════════════════════════════════════════════════════════
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif" }}>
+    <div className="ads-lb-fullbleed alb-root">
+      <div className="alb-bg" aria-hidden />
       {children}
-      <style>{`
-        .fade-up { animation: fadeUp .3s ease both; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-        .spin { animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
+      <Styles />
     </div>
   );
 }
 
 function Center({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 22px" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 24px", position: "relative", zIndex: 1 }}>
       {children}
     </div>
   );
@@ -574,59 +628,19 @@ function Center({ children }: { children: React.ReactNode }) {
 
 function ProgressBar({ step }: { step: number }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 24 }}>
+    <div style={{ display: "flex", gap: 6, marginBottom: 26 }}>
       {STEPS.slice(0, 4).map((_, i) => (
-        <div key={i} style={{ flex: 1, height: 4, borderRadius: 999, background: i <= step ? C.gold : C.line, transition: "background .25s" }} />
+        <div key={i} className={`alb-prog ${i <= step ? "alb-prog-on" : ""}`} />
       ))}
     </div>
   );
 }
 
-function Field({ label, help, error, children }: { label: string; help?: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ display: "block", fontSize: 14.5, fontWeight: 600, marginBottom: 4 }}>{label}</label>
-      {help && <p style={{ color: C.sub, fontSize: 12.5, margin: "0 0 8px", lineHeight: 1.45 }}>{help}</p>}
-      {children}
-      {error && <p style={{ color: C.danger, fontSize: 12, margin: "6px 0 0" }}>{error}</p>}
-    </div>
-  );
+function PrimaryBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return <button type="button" onClick={onClick} className="alb-btn alb-btn-primary">{children}</button>;
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px 14px",
-  fontSize: 15,
-  borderRadius: 10,
-  border: `1px solid ${C.line}`,
-  background: C.bg2,
-  color: C.text,
-  outline: "none",
-  fontFamily: "inherit",
-  boxSizing: "border-box",
-};
-
-function Btn({ children, primary, onClick }: { children: React.ReactNode; primary?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        flex: 1,
-        padding: "14px 18px",
-        fontSize: 15.5,
-        fontWeight: 700,
-        borderRadius: 12,
-        cursor: "pointer",
-        border: primary ? "none" : `1px solid ${C.line}`,
-        background: primary ? C.gold : "transparent",
-        color: primary ? C.goldInk : C.text,
-        fontFamily: "inherit",
-      }}
-    >
-      {children}
-    </button>
-  );
+function GhostBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return <button type="button" onClick={onClick} className="alb-btn alb-btn-ghost">{children}</button>;
 }
 
 function putWithProgress(url: string, file: File, headers: Record<string, string>, onProgress: (pct: number) => void): Promise<void> {
@@ -639,4 +653,140 @@ function putWithProgress(url: string, file: File, headers: Record<string, string
     xhr.onerror = () => reject(new Error("Network error during upload."));
     xhr.send(file);
   });
+}
+
+function Styles() {
+  return (
+    <style>{`
+      .alb-root {
+        min-height: 100vh;
+        background: ${C.bg};
+        color: ${C.text};
+        position: relative;
+        overflow-x: hidden;
+        font-family: var(--font-geist-sans), -apple-system, BlinkMacFont, sans-serif;
+      }
+      .alb-bg {
+        position: fixed; inset: 0; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(60% 50% at 50% -5%, rgba(216,184,120,0.16), transparent 70%),
+          radial-gradient(45% 40% at 85% 15%, rgba(126,201,160,0.08), transparent 70%),
+          radial-gradient(50% 45% at 10% 80%, rgba(216,184,120,0.07), transparent 70%),
+          ${C.bg};
+        animation: albDrift 16s ease-in-out infinite alternate;
+      }
+      @keyframes albDrift { from { background-position: 0 0, 0 0, 0 0, 0 0; } to { background-position: 0 -18px, 14px 10px, -10px 8px, 0 0; } }
+
+      .alb-banner {
+        position: sticky; top: 0; z-index: 20; text-align: center;
+        padding: 11px 16px; font-size: 13.5px; font-weight: 600; color: ${C.gold};
+        background: rgba(216,184,120,0.10);
+        border-bottom: 1px solid ${C.line};
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        animation: albBannerIn .5s ease both;
+      }
+      @keyframes albBannerIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+      .alb-stepIn { animation: albIn .42s cubic-bezier(.16,.84,.44,1) both; }
+      @keyframes albIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+      .alb-grad {
+        background: linear-gradient(95deg, ${C.gold} 0%, #f2dca6 45%, ${C.gold2} 100%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .alb-badge {
+        display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+        color: ${C.gold}; background: rgba(216,184,120,0.12); border: 1px solid rgba(216,184,120,0.25);
+        padding: 6px 13px; border-radius: 999px;
+      }
+      .alb-badge-sm {
+        display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+        color: ${C.gold}; background: rgba(216,184,120,0.10); border: 1px solid rgba(216,184,120,0.22);
+        padding: 4px 10px; border-radius: 999px;
+      }
+      .alb-num {
+        width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px;
+        background: rgba(216,184,120,0.14); color: ${C.gold}; font-weight: 800; font-size: 15px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .alb-glass {
+        background: ${C.card}; border: 1px solid ${C.line}; border-radius: 16px;
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 40px rgba(0,0,0,0.35);
+      }
+      .alb-glow { box-shadow: 0 0 0 1px rgba(216,184,120,0.18), 0 14px 50px rgba(216,184,120,0.10), 0 12px 40px rgba(0,0,0,0.4); }
+      .alb-shine {
+        position: absolute; top: 0; left: -40%; width: 40%; height: 100%;
+        background: linear-gradient(105deg, transparent, rgba(255,255,255,0.10), transparent);
+        animation: albShine 3.2s ease-in-out infinite; transform: skewX(-18deg);
+      }
+      @keyframes albShine { 0% { left: -45%; } 55%,100% { left: 130%; } }
+
+      .alb-prog { flex: 1; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
+      .alb-prog-on { background: linear-gradient(90deg, ${C.gold2}, ${C.gold}); box-shadow: 0 0 12px rgba(216,184,120,0.45); }
+
+      .alb-input {
+        width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 13px;
+        border: 1px solid ${C.lineStrong}; background: rgba(255,255,255,0.035); color: ${C.text};
+        outline: none; font-family: inherit; box-sizing: border-box; transition: border-color .15s, box-shadow .15s, background .15s;
+      }
+      .alb-input::placeholder { color: rgba(255,255,255,0.28); }
+      .alb-input:focus { border-color: rgba(216,184,120,0.55); background: rgba(255,255,255,0.05); box-shadow: 0 0 0 3px rgba(216,184,120,0.14); }
+
+      .alb-opt {
+        display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+        padding: 14px 16px; border-radius: 13px; cursor: pointer; font-size: 15px; font-family: inherit;
+        border: 1px solid ${C.lineStrong}; background: rgba(255,255,255,0.03); color: ${C.text};
+        transition: all .15s;
+      }
+      .alb-opt:hover { border-color: rgba(216,184,120,0.4); background: rgba(255,255,255,0.05); }
+      .alb-opt-on { border-color: ${C.gold}; background: rgba(216,184,120,0.12); color: ${C.gold}; font-weight: 600; box-shadow: 0 0 0 3px rgba(216,184,120,0.12); }
+
+      .alb-btn {
+        flex: 1; padding: 15px 18px; font-size: 15.5px; font-weight: 700; border-radius: 13px;
+        cursor: pointer; font-family: inherit; transition: transform .12s ease, box-shadow .2s, filter .2s; border: none;
+      }
+      .alb-btn:active { transform: translateY(1px) scale(.99); }
+      .alb-btn-primary {
+        color: ${C.goldInk};
+        background: linear-gradient(95deg, ${C.gold} 0%, #f0d79f 50%, ${C.gold2} 100%);
+        box-shadow: 0 8px 26px rgba(216,184,120,0.32), 0 0 0 1px rgba(216,184,120,0.4) inset;
+      }
+      .alb-btn-primary:hover { filter: brightness(1.06); box-shadow: 0 10px 34px rgba(216,184,120,0.45); }
+      .alb-btn-ghost { background: transparent; color: ${C.text}; border: 1px solid ${C.lineStrong}; flex: 0 0 auto; padding-left: 22px; padding-right: 22px; }
+      .alb-btn-ghost:hover { border-color: ${C.lineStrong}; background: rgba(255,255,255,0.04); }
+
+      .alb-link { background: transparent; border: none; color: ${C.gold}; font-size: 13.5px; font-weight: 600; cursor: pointer; padding: 0; font-family: inherit; }
+      .alb-link:hover { text-decoration: underline; }
+
+      .alb-script { position: relative; }
+      .alb-tip {
+        background: rgba(95,219,142,0.07); border: 1px solid rgba(95,219,142,0.25); border-radius: 13px;
+        padding: 13px 15px; font-size: 13.5px; color: ${C.text}; line-height: 1.55;
+      }
+      .alb-capcut {
+        display: inline-flex; align-items: center; gap: 8px; padding: 10px 15px; border-radius: 11px;
+        background: transparent; border: 1px solid ${C.gold}; color: ${C.gold}; font-size: 13.5px; font-weight: 600; text-decoration: none;
+        transition: background .15s;
+      }
+      .alb-capcut:hover { background: rgba(216,184,120,0.1); }
+
+      .alb-video { width: 100%; border-radius: 16px; background: #000; border: 1px solid ${C.line}; }
+      .alb-track { height: 9px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+      .alb-fill { height: 100%; background: linear-gradient(90deg, ${C.gold2}, ${C.gold}); transition: width .12s linear; box-shadow: 0 0 12px rgba(216,184,120,0.5); }
+
+      .alb-spin { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top-color: ${C.gold}; border-radius: 50%; animation: albSpin .8s linear infinite; }
+      @keyframes albSpin { to { transform: rotate(360deg); } }
+
+      .alb-pop { animation: albPop .6s cubic-bezier(.2,1.3,.4,1) both; }
+      @keyframes albPop { from { transform: scale(0); } to { transform: scale(1); } }
+
+      .alb-confetti { position: absolute; top: -20px; border-radius: 2px; animation-name: albFall; animation-timing-function: linear; animation-iteration-count: 1; }
+      @keyframes albFall { to { transform: translateY(110vh) rotate(540deg); opacity: 0; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .alb-bg, .alb-shine, .alb-stepIn, .alb-banner, .alb-pop, .alb-confetti { animation: none !important; }
+      }
+    `}</style>
+  );
 }
