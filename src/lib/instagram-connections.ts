@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase";
 
-export type InstagramClientSlug = "tyson" | "keith" | "lucy";
+export type InstagramClientSlug = "tyson" | "keith" | "lucy" | "antwan";
 
 export interface InstagramClientDef {
   slug: InstagramClientSlug;
@@ -88,6 +88,7 @@ interface InstagramAccountCandidate {
 
 const CLIENTS: InstagramClientDef[] = [
   { slug: "tyson", clientKey: "tyson_sonnek", label: "Tyson" },
+  { slug: "antwan", clientKey: "antwan_rarcus", label: "Antwan Rarcus" },
   { slug: "keith", clientKey: "keith_holland", label: "Keith" },
   { slug: "lucy", clientKey: "lucy_hubbard", label: "Lucy Hubbard" },
 ];
