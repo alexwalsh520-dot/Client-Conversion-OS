@@ -22,12 +22,25 @@ interface TagEventRow {
 }
 
 interface MessageRow {
+  client: string;
   subscriber_id: string;
-  setter_name: string | null;
   conversation_id: string;
   direction: string | null;
   body: string | null;
   sent_at: string | null;
+}
+
+interface Assignment {
+  setterKey: string | null;
+  leadName: string | null;
+  manychatUrl: string | null;
+}
+
+interface LeadLinkRow {
+  client: string;
+  manychat_subscriber_id: string | null;
+  instagram_user_id: string | null;
+  instagram_handle: string | null;
 }
 
 interface LeadMeta {
@@ -98,7 +111,6 @@ const DEAD_MEAT_AFTER_BUSINESS_MINUTES = 120;
 const WARN_AFTER_BUSINESS_MINUTES = 15;
 const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
-const MANYCHAT_BASE = "https://api.manychat.com/fb";
 const BUSINESS_HOURS_LABEL = "11am-11pm ET";
 // The moment this tracker went live. Only prospect replies AFTER this instant
 // count — so there is no historical backlog, just leads moving forward. Past
@@ -109,7 +121,7 @@ const GO_LIVE_MS = new Date(GO_LIVE_AT).getTime();
 
 // Slack alerts only fire for leads whose last reply is after this instant, so
 // turning the alerts on never replays a burst for leads already sitting stale.
-const ALERTS_GO_LIVE_AT = "2026-06-10T22:46:53Z";
+const ALERTS_GO_LIVE_AT = "2026-06-12T05:45:00Z";
 const ALERTS_GO_LIVE_MS = new Date(ALERTS_GO_LIVE_AT).getTime();
 
 // Remembers which Slack alerts already fired for each stale episode so the
@@ -254,29 +266,6 @@ async function saveMemory(sb: ReturnType<typeof getServiceSupabase>, memory: Tim
   if (error) throw new Error(error.message);
 }
 
-function getManyChatKey(client: ServerClient) {
-  if (client === "tyson_sonnek") return process.env.MANYCHAT_API_KEY_TYSON || null;
-  if (client === "antwan_rarcus") return process.env.MANYCHAT_API_KEY_ANTWAN || null;
-  return null;
-}
-
-async function fetchManyChatLiveChatUrl(client: ServerClient, subscriberId: string) {
-  const key = getManyChatKey(client);
-  if (!key) return null;
-
-  const res = await fetch(
-    `${MANYCHAT_BASE}/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`,
-    { headers: { Authorization: `Bearer ${key}` } },
-  );
-
-  if (!res.ok) return null;
-
-  const body = (await res.json().catch(() => ({}))) as {
-    data?: { live_chat_url?: unknown };
-  };
-  return typeof body.data?.live_chat_url === "string" ? body.data.live_chat_url : null;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -322,38 +311,133 @@ function extractManychatUrl(raw: unknown): string | null {
   return found[0] || null;
 }
 
-function buildLeadMeta(events: TagEventRow[]) {
-  const leads = new Map<string, LeadMeta>();
+// ManyChat live-chat deep link (the account path segment is "fb"-prefixed).
+const CLIENT_MANYCHAT_PAGE_ID: Record<ServerClient, string | null> = {
+  tyson_sonnek: "1024471",
+  antwan_rarcus: null,
+};
+
+function manychatChatUrl(client: ServerClient, manychatSubscriberId: string | null): string | null {
+  const pageId = CLIENT_MANYCHAT_PAGE_ID[client];
+  if (!pageId || !manychatSubscriberId) return null;
+  return `https://app.manychat.com/fb${pageId}/chat/${manychatSubscriberId}`;
+}
+
+// Latest setter + name per ManyChat subscriber, derived from their tag events.
+function buildAssignments(events: TagEventRow[]): Map<string, Assignment> {
+  const byId = new Map<string, Assignment>();
   const sorted = [...events].sort(
     (a, b) => new Date(a.event_at).getTime() - new Date(b.event_at).getTime(),
   );
 
   for (const event of sorted) {
     const setter = normalizeSetter(event.setter_name);
-    const existing = leads.get(event.subscriber_id);
     const url = extractManychatUrl(event.raw_payload);
-
-    if (!existing) {
-      leads.set(event.subscriber_id, {
-        subscriberId: event.subscriber_id,
-        client: event.client,
-        leadName: event.subscriber_name?.trim() || null,
-        initialSetter: setter,
-        setters: new Set(setter ? [setter] : []),
-        manychatUrl: url,
-        newLeadAt: event.event_at,
-      });
-      continue;
+    const current = byId.get(event.subscriber_id) || {
+      setterKey: null,
+      leadName: null,
+      manychatUrl: null,
+    };
+    if (setter) current.setterKey = setter; // most recent assignment wins
+    if (!current.leadName && event.subscriber_name?.trim()) {
+      current.leadName = event.subscriber_name.trim();
     }
-
-    if (setter) existing.setters.add(setter);
-    if (!existing.leadName && event.subscriber_name?.trim()) {
-      existing.leadName = event.subscriber_name.trim();
-    }
-    if (!existing.manychatUrl && url) existing.manychatUrl = url;
+    if (!current.manychatUrl && url) current.manychatUrl = url;
+    byId.set(event.subscriber_id, current);
   }
 
-  return leads;
+  return byId;
+}
+
+// Resolve a conversation's prospect identity through the IGSID↔ManyChat bridge.
+// Best-effort: where the IGSID isn't bridged yet, the owner is unknown.
+function resolveConversation(
+  client: ServerClient,
+  igsid: string | null,
+  assignments: Map<string, Assignment>,
+  igToManychat: Map<string, string>,
+  manychatToHandle: Map<string, string>,
+): LeadMeta {
+  const manychatId =
+    igsid && assignments.has(igsid)
+      ? igsid
+      : igsid
+        ? igToManychat.get(igsid) ?? null
+        : null;
+  const assignment = manychatId ? assignments.get(manychatId) ?? null : null;
+  const setter = assignment?.setterKey ?? null;
+  const handle = manychatId ? manychatToHandle.get(manychatId) ?? null : null;
+  const leadName = assignment?.leadName ?? (handle ? `@${handle}` : null);
+  const manychatUrl = assignment?.manychatUrl ?? manychatChatUrl(client, manychatId);
+
+  return {
+    subscriberId: manychatId || igsid || "unknown",
+    client,
+    leadName,
+    initialSetter: setter,
+    setters: new Set(setter ? [setter] : []),
+    manychatUrl,
+    newLeadAt: "",
+  };
+}
+
+// True when the current instant is inside the 11am–11pm ET working window.
+function withinEtBusinessHours(now: Date): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(now),
+  );
+  return hour >= 11 && hour < 23;
+}
+
+// PostgREST caps one response at 1000 rows, so page through to get the full set.
+async function fetchMessages(
+  sb: ReturnType<typeof getServiceSupabase>,
+  clients: ServerClient[],
+  since: string,
+): Promise<MessageRow[]> {
+  const out: MessageRow[] = [];
+  const PAGE = 1000;
+  for (let page = 0; page < 8; page += 1) {
+    const { data, error } = await sb
+      .from("dm_conversation_messages")
+      .select("client, subscriber_id, conversation_id, direction, body, sent_at")
+      .in("client", clients)
+      .gte("sent_at", since)
+      .order("sent_at", { ascending: false })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as MessageRow[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+async function fetchTagEvents(
+  sb: ReturnType<typeof getServiceSupabase>,
+  clients: ServerClient[],
+  since: string,
+): Promise<TagEventRow[]> {
+  const out: TagEventRow[] = [];
+  const PAGE = 1000;
+  for (let page = 0; page < 6; page += 1) {
+    const { data, error } = await sb
+      .from("manychat_tag_events")
+      .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
+      .in("client", clients)
+      .gte("event_at", since)
+      .order("event_at", { ascending: false })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as TagEventRow[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
 }
 
 // Count how many EARLIER times this lead waited past the stale threshold and
@@ -432,6 +516,9 @@ async function saveAlertLog(sb: ReturnType<typeof getServiceSupabase>, log: Aler
 export async function GET(req: NextRequest) {
   const client = normalizeClient(req.nextUrl.searchParams.get("client"));
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  // Messages are only needed recently — enough to see current threads and recent
+  // misses. Keeps the paged read cheap even at high volume.
+  const messagesSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = new Date().toISOString();
 
   try {
@@ -470,72 +557,71 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    let eventQuery = sb
-      .from("manychat_tag_events")
-      .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
-      .gte("event_at", since)
-      .order("event_at", { ascending: true });
+    const serverClients: ServerClient[] =
+      client === "all" ? (Object.values(CLIENT_MAP) as ServerClient[]) : [CLIENT_MAP[client]];
 
-    if (client !== "all") eventQuery = eventQuery.eq("client", CLIENT_MAP[client]);
+    // Assignments: who owns / what's the name of each ManyChat subscriber.
+    const tagEvents = await fetchTagEvents(sb, serverClients, since);
+    const assignments = buildAssignments(tagEvents);
 
-    const { data: eventData, error: eventError } = await eventQuery;
-    if (eventError) throw new Error(eventError.message);
-
-    const events = (eventData ?? []) as TagEventRow[];
-    const newLeadEvents = events.filter((event) => event.tag_name === "new_lead");
-    const leads = buildLeadMeta(newLeadEvents);
-
-    if (leads.size === 0) {
-      return NextResponse.json({
-        status: "ok",
-        staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
-        deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
-        businessHours: BUSINESS_HOURS_LABEL,
-        lookbackDays: LOOKBACK_DAYS,
-        warning: warnings.join(" ") || undefined,
-        memory: {
-          enabled: memoryState.enabled,
-          trackedLeads: Object.keys(memory.leads).length,
-          updatedAt: memory.updatedAt,
-        },
-        timeToEat: [],
-        deadMeat: [],
-      });
+    // Identity bridge: Instagram IGSID ↔ ManyChat subscriber (sparse, best-effort).
+    const igToManychat = new Map<string, string>();
+    const manychatToHandle = new Map<string, string>();
+    try {
+      const { data: linkData } = await sb
+        .from("instagram_lead_links")
+        .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
+        .in("client", serverClients);
+      for (const row of (linkData ?? []) as LeadLinkRow[]) {
+        if (row.instagram_user_id && row.manychat_subscriber_id) {
+          igToManychat.set(row.instagram_user_id, row.manychat_subscriber_id);
+        }
+        if (row.manychat_subscriber_id && row.instagram_handle) {
+          manychatToHandle.set(row.manychat_subscriber_id, row.instagram_handle);
+        }
+      }
+    } catch (error) {
+      console.warn("[sales-hub/time-to-eat] lead-link bridge unavailable:", error);
     }
 
-    let messageQuery = sb
-      .from("dm_conversation_messages")
-      .select("subscriber_id, setter_name, conversation_id, direction, body, sent_at")
-      .gte("sent_at", since)
-      .order("sent_at", { ascending: true })
-      .limit(5000);
+    // The live Instagram feed keys messages by IGSID, not the ManyChat id, so we
+    // detect stale leads from the conversation THREAD (exactly how Response Times
+    // does) and resolve the owner/name through the bridge.
+    const allMessages = await fetchMessages(sb, serverClients, messagesSince);
 
-    if (client !== "all") messageQuery = messageQuery.eq("client", CLIENT_MAP[client]);
-
-    const { data: messageData, error: messageError } = await messageQuery;
-    if (messageError) throw new Error(messageError.message);
-
-    const messagesBySubscriber = new Map<string, MessageRow[]>();
-    for (const message of (messageData ?? []) as MessageRow[]) {
-      if (!message.sent_at || !leads.has(message.subscriber_id)) continue;
-      const meta = leads.get(message.subscriber_id);
-      const setter = normalizeSetter(message.setter_name);
-      if (meta && setter) meta.setters.add(setter);
-
-      const list = messagesBySubscriber.get(message.subscriber_id) ?? [];
+    const messagesByConversation = new Map<string, MessageRow[]>();
+    for (const message of allMessages) {
+      if (!message.sent_at || !message.conversation_id) continue;
+      const list = messagesByConversation.get(message.conversation_id) ?? [];
       list.push(message);
-      messagesBySubscriber.set(message.subscriber_id, list);
+      messagesByConversation.set(message.conversation_id, list);
+    }
+    for (const list of messagesByConversation.values()) {
+      list.sort((a, b) => (a.sent_at! < b.sent_at! ? -1 : a.sent_at! > b.sent_at! ? 1 : 0));
+    }
+
+    const conversationLeads = new Map<string, LeadMeta>();
+    for (const [conversationId, messages] of messagesByConversation) {
+      const serverClient = (messages[0].client as ServerClient) || serverClients[0];
+      const inbound = messages.find((m) => m.direction === "inbound");
+      const igsid = inbound?.subscriber_id || conversationId.replace(/^instagram:/, "") || null;
+      conversationLeads.set(
+        conversationId,
+        resolveConversation(serverClient, igsid, assignments, igToManychat, manychatToHandle),
+      );
     }
 
     const timeToEat: TimeToEatLead[] = [];
     const deadMeat: TimeToEatLead[] = [];
+    const businessHoursNow = withinEtBusinessHours(new Date());
 
-    for (const [subscriberId, messages] of messagesBySubscriber.entries()) {
-      const lead = leads.get(subscriberId);
+    // Pass 1 — resolve/reset memory state for conversations we already track.
+    for (const [conversationId, messages] of messagesByConversation.entries()) {
+      const lead = conversationLeads.get(conversationId);
       const lastMessage = messages.at(-1);
       if (!lead || !lastMessage?.sent_at) continue;
 
-      const id = memoryId(lead.client, subscriberId);
+      const id = memoryId(lead.client, conversationId);
       const existing = memory.leads[id];
       if (!existing) continue;
 
@@ -549,7 +635,7 @@ export async function GET(req: NextRequest) {
           ...existing,
           leadName: lead.leadName || existing.leadName,
           manychatUrl: lead.manychatUrl || existing.manychatUrl,
-          conversationId: lastMessage.conversation_id || existing.conversationId,
+          conversationId,
           setters,
           status: "resolved",
           lastResolvedAt: lastMessage.sent_at,
@@ -569,7 +655,7 @@ export async function GET(req: NextRequest) {
           ...existing,
           leadName: lead.leadName || existing.leadName,
           manychatUrl: lead.manychatUrl || existing.manychatUrl,
-          conversationId: lastMessage.conversation_id || existing.conversationId,
+          conversationId,
           setters,
           status: "watching",
           lastInboundAt: lastMessage.sent_at,
@@ -579,8 +665,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    for (const [subscriberId, messages] of messagesBySubscriber.entries()) {
-      const lead = leads.get(subscriberId);
+    // Pass 2 — detect stale leads + fire alerts.
+    for (const [conversationId, messages] of messagesByConversation.entries()) {
+      const lead = conversationLeads.get(conversationId);
       if (!lead) continue;
 
       const lastMessage = messages.at(-1);
@@ -588,13 +675,15 @@ export async function GET(req: NextRequest) {
       // No backlog: only leads whose latest reply is after go-live are tracked.
       if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
 
-      // Working minutes (11am–11pm ET) since the prospect's last reply decide
-      // whether this lead is stale. waitingHours is kept only for display.
       const businessMinutesWaiting = businessMinutesBetween(lastMessage.sent_at, nowIso);
 
-      // Slack alerts: cron-only, and only for episodes after the alert go-live.
-      const episodeKey = `${subscriberId}:${lastMessage.sent_at}`;
-      const canAlert = isSync && new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
+      // Alerts: cron-only, business-hours-only, and only for episodes after the
+      // alert go-live (so turning this on never replays the existing backlog).
+      const episodeKey = `${conversationId}:${lastMessage.sent_at}`;
+      const canAlert =
+        isSync &&
+        businessHoursNow &&
+        new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
 
       // 15-minute "answer your lead" nudge — fires once, before the stale line.
       if (canAlert && businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES) {
@@ -610,7 +699,7 @@ export async function GET(req: NextRequest) {
       const waitingHours = hoursSince(lastMessage.sent_at);
 
       const pastMisses = countPastMisses(messages, messages.length - 1);
-      const id = memoryId(lead.client, subscriberId);
+      const id = memoryId(lead.client, conversationId);
       const existing = memory.leads[id];
       const hasAlreadyCountedCurrentStale =
         existing?.lastInboundAt === lastMessage.sent_at &&
@@ -622,8 +711,6 @@ export async function GET(req: NextRequest) {
       const previousMisses = Math.max(pastMisses, staleEventCount - 1);
       // The instant this lead actually crossed the 1-working-hour mark.
       const staleStartedAt = addBusinessMinutes(lastMessage.sent_at, STALE_AFTER_BUSINESS_MINUTES);
-      // This stale event counts as one occasion; prior misses add to it. Two or
-      // more total occasions => Dead Meat, otherwise Time to Eat.
       const totalOccasions = previousMisses + 1;
       // Dead Meat if it slipped twice OR has sat a single 2-working-hour stretch.
       const status: TimeToEatStatus =
@@ -631,17 +718,14 @@ export async function GET(req: NextRequest) {
         businessMinutesWaiting >= DEAD_MEAT_AFTER_BUSINESS_MINUTES
           ? "dead_meat"
           : "time_to_eat";
-      const manychatUrl =
-        lead.manychatUrl ||
-        existing?.manychatUrl ||
-        (await fetchManyChatLiveChatUrl(lead.client, subscriberId));
+      const manychatUrl = lead.manychatUrl || existing?.manychatUrl || null;
       const setters = [...lead.setters].map(titleName).filter(isString);
       const card = {
-        id: `${subscriberId}:${lastMessage.sent_at}`,
-        subscriberId,
+        id: episodeKey,
+        subscriberId: lead.subscriberId,
         leadName: lead.leadName,
         manychatUrl,
-        conversationId: lastMessage.conversation_id,
+        conversationId,
         lastProspectResponseAt: lastMessage.sent_at,
         hoursSinceProspectResponse: waitingHours,
         initialSetter: titleName(lead.initialSetter),
@@ -652,10 +736,10 @@ export async function GET(req: NextRequest) {
 
       memory.leads[id] = {
         client: lead.client,
-        subscriberId,
+        subscriberId: lead.subscriberId,
         leadName: lead.leadName || existing?.leadName || null,
         manychatUrl,
-        conversationId: lastMessage.conversation_id || existing?.conversationId || null,
+        conversationId,
         initialSetter: titleName(lead.initialSetter) || existing?.initialSetter || null,
         setters: [...new Set([...(existing?.setters ?? []), ...setters])],
         firstStaleAt: existing?.firstStaleAt || staleStartedAt,
