@@ -34,7 +34,7 @@ const CLIENT_LABELS: Record<ClientKey, string> = {
   tyson_sonnek: "Tyson Sonnek",
   keith_holland: "Keith Holland",
   lucy_hubbard: "Lucy Hubbard",
-  antwan: "Antwan",
+  antwan_rarcus: "Antwan Rarcus",
 };
 
 const TAG_TO_DATE_FIELD: Record<string, string> = {
@@ -180,8 +180,21 @@ export function normalizeClientKey(raw: string): ClientKey {
   ) {
     return "lucy_hubbard";
   }
-  if (["antwan", "client_antwan"].includes(value)) {
-    return "antwan";
+  if (
+    [
+      "antwan",
+      "rarcus",
+      "antwan_rarcus",
+      "client_antwan",
+      "client_antwan_rarcus",
+      "antwan rarcus",
+    ].includes(value)
+  ) {
+    // Long form to match the rest of the Sales Hub + the Instagram connection
+    // (response-times, lead-hours, time-to-eat all query "antwan_rarcus"),
+    // exactly like tyson → "tyson_sonnek". The ads path remaps this back to the
+    // short "antwan" via creatorKeyFromText(), so ads attribution is unaffected.
+    return "antwan_rarcus";
   }
 
   const slug = value.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
