@@ -46,6 +46,9 @@ interface LeadLinkRow {
 interface LeadMeta {
   subscriberId: string;
   client: ServerClient;
+  // Resolved ManyChat subscriber id (via the IGSID bridge). Null = this Instagram
+  // conversation isn't a known ManyChat lead, so it isn't actionable / shown.
+  manychatId: string | null;
   leadName: string | null;
   initialSetter: string | null;
   setters: Set<string>;
@@ -373,6 +376,7 @@ function resolveConversation(
   return {
     subscriberId: manychatId || igsid || "unknown",
     client,
+    manychatId,
     leadName,
     initialSetter: setter,
     setters: new Set(setter ? [setter] : []),
@@ -601,14 +605,20 @@ export async function GET(req: NextRequest) {
     }
 
     const conversationLeads = new Map<string, LeadMeta>();
+    let unbridgedConversations = 0;
     for (const [conversationId, messages] of messagesByConversation) {
       const serverClient = (messages[0].client as ServerClient) || serverClients[0];
       const inbound = messages.find((m) => m.direction === "inbound");
       const igsid = inbound?.subscriber_id || conversationId.replace(/^instagram:/, "") || null;
-      conversationLeads.set(
-        conversationId,
-        resolveConversation(serverClient, igsid, assignments, igToManychat, manychatToHandle),
-      );
+      const resolved = resolveConversation(serverClient, igsid, assignments, igToManychat, manychatToHandle);
+      // Only conversations that resolve to a known ManyChat lead are actionable
+      // (real lead with a name, an owner, and a working steal-link). Unbridged
+      // Instagram DMs — organic messages, story replies, spam — are skipped.
+      if (!resolved.manychatId) {
+        unbridgedConversations += 1;
+        continue;
+      }
+      conversationLeads.set(conversationId, resolved);
     }
 
     const timeToEat: TimeToEatLead[] = [];
@@ -807,6 +817,9 @@ export async function GET(req: NextRequest) {
         trackedLeads: Object.keys(memory.leads).length,
         updatedAt: memory.updatedAt,
       },
+      // Unanswered Instagram DMs we couldn't tie to a ManyChat lead (and so don't
+      // show) — organic/spam, or leads whose IGSID hasn't bridged yet.
+      unbridgedConversations,
       timeToEat: timeToEat.sort(byAge),
       deadMeat: deadMeat.sort(byAge),
     });
