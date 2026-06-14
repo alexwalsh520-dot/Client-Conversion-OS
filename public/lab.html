@@ -2052,6 +2052,18 @@
   .btn-confirm-big:hover{filter:brightness(1.06)}
   .btn-confirm-big:disabled{opacity:.42;cursor:not-allowed;filter:none}
 
+  /* Setter capacity modal (gear) */
+  .lab-cap-toggle{display:inline-flex;border:1px solid var(--border-2);border-radius:8px;background:var(--bg-1);padding:3px;align-self:flex-start}
+  .lab-cap-seg{padding:6px 14px;font-size:12px;color:var(--text-3);border-radius:5px;font-weight:500;transition:background .14s,color .14s}
+  .lab-cap-seg:hover{color:var(--text-2)}
+  .lab-cap-seg.on{background:var(--panel-2);color:var(--text)}
+  .lab-cap-grid{display:flex;flex-direction:column;gap:8px}
+  .lab-cap-row{display:flex;align-items:center;gap:12px;padding:9px 13px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+  .lab-cap-name{flex:1;font-size:12.5px;color:var(--text);font-weight:500}
+  .lab-cap-input{width:88px;height:30px;padding:0 10px;border:1px solid var(--border-2);border-radius:6px;background:var(--bg-1);color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right}
+  .lab-cap-input:focus{border-color:var(--gold-dim);background:var(--panel-2)}
+  .lab-cap-unit{font-size:10.5px;color:var(--text-4);width:62px;flex:none}
+
   /* Constraint card (data-driven, bars vs threshold) */
   .lab-constraint{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
   .lab-constraint-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 18px;border-bottom:1px solid var(--border)}
@@ -2535,15 +2547,38 @@ function ClimbLadder(){
   );
 }
 
+// ---- A small inline gear button (subtle, muted) for the gate corner
+const IcGear = () => (
+  <Icon size={14} stroke={1.4} d={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>} />
+);
+
 // ---- A green-light gate = the funnel-scoreboard metric card (number + line graph + meaning)
-function Gate({label, value, chip, chipClass, series, labels, fmt, note, empty}){
+// Modes:
+//  - empty (or status "unknown"/loading): the dashed "awaiting input" look
+//  - series present: number + line graph (Gate 1 — ad economics)
+//  - value present, no series: single % reading, colored by state ("green"|"red")
+function Gate({label, value, chip, chipClass, series, labels, fmt, note, empty, state, gear, onGear}){
+  const isAwaiting = empty || state === "unknown";
+  const valColor = state === "red" ? "var(--red)" : "var(--green)";
   return (
-    <div className="fs-tile" style={{minHeight:178}}>
+    <div className="fs-tile" style={{minHeight:178, position:"relative"}}>
       <div className="fs-top">
         <div className="fs-lbl">{label}</div>
         {chip && <span className={"fs-chip "+(chipClass||"neutral")}>{chip}</span>}
       </div>
-      {empty ? (
+      {gear && (
+        <button
+          onClick={onGear}
+          title="Setter capacity settings"
+          style={{position:"absolute",top:10,right:11,color:"var(--text-4)",display:"inline-flex",
+            padding:"3px",borderRadius:"6px",lineHeight:0,transition:"color .14s"}}
+          onMouseEnter={(e)=>{e.currentTarget.style.color="var(--gold)";}}
+          onMouseLeave={(e)=>{e.currentTarget.style.color="var(--text-4)";}}
+        >
+          <IcGear/>
+        </button>
+      )}
+      {isAwaiting ? (
         <>
           <div className="fs-val" style={{color:"var(--text-4)"}}>—</div>
           <div className="lc-wrap" style={{height:48,display:"flex",alignItems:"center",justifyContent:"center",
@@ -2551,14 +2586,19 @@ function Gate({label, value, chip, chipClass, series, labels, fmt, note, empty})
             <span style={{fontSize:10.5,color:"var(--text-4)",letterSpacing:".04em"}}>awaiting input</span>
           </div>
         </>
-      ) : (
+      ) : series ? (
         <>
-          <div className="fs-val" style={{color:"var(--green)"}}>{value}</div>
+          <div className="fs-val" style={{color:valColor}}>{value}</div>
           <LineChart
             labels={labels}
-            series={[{name:label, values:series, color:"var(--green)", isPrimary:true, fmt:fmt}]}
+            series={[{name:label, values:series, color:valColor, isPrimary:true, fmt:fmt}]}
             height={64} width={300} fmt={fmt}
           />
+        </>
+      ) : (
+        <>
+          <div className="fs-val" style={{color:valColor, fontSize:34, lineHeight:"1.1", marginTop:2}}>{value}</div>
+          <div style={{flex:1}}></div>
         </>
       )}
       <div className="fs-explain">{note}</div>
@@ -2566,10 +2606,31 @@ function Gate({label, value, chip, chipClass, series, labels, fmt, note, empty})
   );
 }
 
-function Gates(){
+function Gates({closer, setter, onGear}){
   const roasLabels = ["Jun 8","Jun 9","Jun 10","Jun 11","Jun 12","Jun 13","Jun 14"];
   const roasSeries = [3.1,3.6,4.2,2.9,3.4,3.9,3.8];
   const roasFmt = (v)=>v.toFixed(1)+"×";
+
+  // ---- Gate 2 — Closer calendar (single % reading) ----
+  const c = closer || {};
+  const closerHasPct = typeof c.filledPct === "number";
+  const closerState = c.status === "green" ? "green" : (c.status === "red" ? "red" : "unknown");
+  const closerEmpty = !closerHasPct || closerState === "unknown";
+  const closerValue = closerHasPct ? Math.round(c.filledPct*100)+"%" : "—";
+  const closerNote = (typeof c.booked === "number" && typeof c.total === "number")
+    ? `${c.booked} of ${c.total} slots booked · target ≤ 80%`
+    : "awaiting closer capacity input · target ≤ 80% of prime slots";
+
+  // ---- Gate 3 — Setter load (single % reading) ----
+  const t = (setter && setter.team) || {};
+  const setterHasPct = typeof t.loadPct === "number";
+  const setterState = t.status === "green" ? "green" : (t.status === "red" ? "red" : "unknown");
+  const setterEmpty = !setterHasPct || setterState === "unknown";
+  const setterValue = setterHasPct ? Math.round(t.loadPct*100)+"%" : "—";
+  const setterNote = (typeof t.handledTotal === "number" && typeof t.capacityTotal === "number")
+    ? `${t.handledTotal} of ${t.capacityTotal} leads today · target ≤ 80%`
+    : "awaiting setter max-volume input · target ≤ 80%";
+
   return (
     <div>
       <div className="section-head">
@@ -2586,17 +2647,22 @@ function Gates(){
         />
         <Gate
           label="Closer calendar"
-          empty
-          note="awaiting closer capacity input · target ≤ 80% of prime slots"
+          value={closerValue}
+          state={closerState}
+          empty={closerEmpty}
+          note={closerNote}
         />
         <Gate
           label="Setter load"
-          empty
-          note="awaiting setter max-volume input · target ≤ 80%"
+          value={setterValue}
+          state={setterState}
+          empty={setterEmpty}
+          note={setterNote}
+          gear onGear={onGear}
         />
       </div>
       <div className="lab-verdict">
-        Hold. Gate 1 is green, but Gates 2 &amp; 3 aren&rsquo;t wired yet. Scaling stays locked until all three read green.
+        Hold. Scaling stays locked until all three gates read green.
       </div>
     </div>
   );
@@ -2913,16 +2979,24 @@ function ConstraintBar({c, isBinding}){
 }
 
 // Composite ROAS headroom modeled as utilization: floor(3×) / current(3.8×) = 0.79 → 79% of the floor used.
-const CONSTRAINTS = [
-  {key:"ads", label:"Ad economics", util:3/3.8, limit:1.0,
-   sub:"Composite ROAS 3.8× vs 3× floor — headroom to spend more."},
-  {key:"closer", label:"Closer calendar", util:null, limit:0.8,
-   sub:"% of prime slots filled vs 80% — awaiting capacity data."},
-  {key:"setter", label:"Setter bandwidth", util:null, limit:0.8,
-   sub:"% of max convo volume vs 80% — awaiting capacity data."},
-];
+// Closer + setter utilizations are now fed live; ad-economics stays a placeholder.
+function buildConstraints(closerUtil, setterUtil){
+  return [
+    {key:"ads", label:"Ad economics", util:3/3.8, limit:1.0,
+     sub:"Composite ROAS 3.8× vs 3× floor — headroom to spend more."},
+    {key:"closer", label:"Closer calendar", util:typeof closerUtil==="number"?closerUtil:null, limit:0.8,
+     sub:typeof closerUtil==="number"
+       ? Math.round(closerUtil*100)+"% of prime slots filled vs 80% ceiling."
+       : "% of prime slots filled vs 80% — awaiting capacity data."},
+    {key:"setter", label:"Setter bandwidth", util:typeof setterUtil==="number"?setterUtil:null, limit:0.8,
+     sub:typeof setterUtil==="number"
+       ? Math.round(setterUtil*100)+"% of max lead volume vs 80% ceiling."
+       : "% of max convo volume vs 80% — awaiting capacity data."},
+  ];
+}
 
-function ConstraintCard(){
+function ConstraintCard({closerUtil, setterUtil}){
+  const CONSTRAINTS = buildConstraints(closerUtil, setterUtil);
   const result = pickConstraint(CONSTRAINTS);
   const headline = result.state === "bound"
     ? "Current constraint: "+result.verdict
@@ -2967,12 +3041,165 @@ const ACCOUNTS = [
   {id:"antwan", label:"Antwan", dot:"keith", campaign:"Antwan · Direct CTA — Warm Stack Split", adSet:"Warm Audience Stack — Success ICP"},
 ];
 
+const SETTER_NAMES = ["Erin","Amara","Debbie","Kelechi","Gideon"];
+
+/* ====== Setter capacity settings modal (gear) ====== */
+function SetterCapacityModal({onClose, onSaved}){
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [cfg, setCfg] = useState(null);  // {mode, teamLeadsPerDay, setters:{...}}
+
+  useEffect(()=>{
+    let alive = true;
+    (async()=>{
+      try{
+        const res = await fetch("/api/lab/setter-capacity");
+        const data = await res.json();
+        if(!alive) return;
+        const setters = (data && data.setters) || {};
+        const filled = {};
+        SETTER_NAMES.forEach(n=>{ filled[n] = typeof setters[n]==="number" ? setters[n] : 100; });
+        setCfg({
+          mode: data && data.mode === "team" ? "team" : "per_setter",
+          teamLeadsPerDay: (data && typeof data.teamLeadsPerDay==="number") ? data.teamLeadsPerDay : 100,
+          setters: filled,
+        });
+      }catch(e){
+        if(!alive) return;
+        const filled = {};
+        SETTER_NAMES.forEach(n=>{ filled[n]=100; });
+        setCfg({mode:"per_setter", teamLeadsPerDay:100, setters:filled});
+      }finally{
+        if(alive) setLoading(false);
+      }
+    })();
+    return ()=>{ alive = false; };
+  },[]);
+
+  const setMode = (mode)=> setCfg(c=>({...c, mode}));
+  const setTeam = (v)=> setCfg(c=>({...c, teamLeadsPerDay: numOrZero(v)}));
+  const setSetter = (name, v)=> setCfg(c=>({...c, setters:{...c.setters, [name]: numOrZero(v)}}));
+
+  const save = async()=>{
+    if(!cfg) return;
+    setSaving(true);
+    try{
+      await fetch("/api/lab/setter-capacity", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(cfg),
+      });
+    }catch(e){ /* swallow — never crash the UI */ }
+    setSaving(false);
+    onClose();
+    if(onSaved) onSaved();
+  };
+
+  return (
+    <div className="lab-modal-backdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="lab-modal" role="dialog" aria-modal="true" style={{width:480}}>
+        <div className="lab-modal-head">
+          <div>
+            <h3 className="lab-modal-title">Setter capacity · leads per day</h3>
+            <div className="lab-modal-sub">Sets the ceiling Gate 3 measures load against.</div>
+          </div>
+          <button className="lab-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="lab-modal-body">
+          {loading || !cfg ? (
+            <div style={{fontSize:12,color:"var(--text-4)",padding:"8px 2px"}}>Loading…</div>
+          ) : (
+            <>
+              <div className="lab-cap-toggle">
+                <button
+                  className={"lab-cap-seg "+(cfg.mode==="per_setter"?"on":"")}
+                  onClick={()=>setMode("per_setter")}
+                >Per setter</button>
+                <button
+                  className={"lab-cap-seg "+(cfg.mode==="team"?"on":"")}
+                  onClick={()=>setMode("team")}
+                >Team-wide</button>
+              </div>
+
+              {cfg.mode==="per_setter" ? (
+                <div className="lab-cap-grid">
+                  {SETTER_NAMES.map(name=>(
+                    <div key={name} className="lab-cap-row">
+                      <span className="lab-cap-name">{name}</span>
+                      <input
+                        className="lab-cap-input"
+                        type="number" min="0"
+                        value={cfg.setters[name]}
+                        onChange={(e)=>setSetter(name, e.target.value)}
+                      />
+                      <span className="lab-cap-unit">leads/day</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="lab-cap-grid">
+                  <div className="lab-cap-row">
+                    <span className="lab-cap-name">Team leads/day</span>
+                    <input
+                      className="lab-cap-input"
+                      type="number" min="0"
+                      value={cfg.teamLeadsPerDay}
+                      onChange={(e)=>setTeam(e.target.value)}
+                    />
+                    <span className="lab-cap-unit">total/day</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="lab-modal-foot">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-confirm-big" disabled={loading||saving||!cfg} onClick={save}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function numOrZero(v){ const n = parseInt(v,10); return Number.isFinite(n) && n>=0 ? n : 0; }
+
 function Lab(){
   const [account, setAccount] = useState("tyson");
   const [dateRange, setDateRange] = useState(()=>rangeForPreset("last14"));
   const [turnOff, setTurnOff] = useState(null);   // ad row pending turn-off confirm
   const [promote, setPromote] = useState(null);   // ad row pending promote confirm
+  const [capOpen, setCapOpen] = useState(false);  // setter capacity (gear) modal
+  const [closer, setCloser] = useState(null);     // live closer-calendar payload
+  const [setter, setSetter] = useState(null);     // live setter-load payload
+  const [reloadKey, setReloadKey] = useState(0);  // bump to refetch after capacity save
   const acct = ACCOUNTS.find(a=>a.id===account) || ACCOUNTS[0];
+
+  // Fetch gate 2 + gate 3 data for the selected account (on mount, account change, and after a capacity save).
+  useEffect(()=>{
+    let alive = true;
+    setCloser(null);
+    setSetter(null);
+    (async()=>{
+      try{
+        const res = await fetch("/api/lab/closer-calendar?account="+encodeURIComponent(account));
+        const data = await res.json();
+        if(alive) setCloser(data);
+      }catch(e){ if(alive) setCloser({status:"unknown"}); }
+    })();
+    (async()=>{
+      try{
+        const res = await fetch("/api/lab/setter-load?account="+encodeURIComponent(account));
+        const data = await res.json();
+        if(alive) setSetter(data);
+      }catch(e){ if(alive) setSetter({team:{status:"unknown"}}); }
+    })();
+    return ()=>{ alive = false; };
+  },[account, reloadKey]);
+
+  const closerUtil = closer && typeof closer.filledPct==="number" && closer.status!=="unknown" ? closer.filledPct : null;
+  const setterUtil = setter && setter.team && typeof setter.team.loadPct==="number" && setter.team.status!=="unknown" ? setter.team.loadPct : null;
 
   return (
     <div className="app">
@@ -3000,7 +3227,7 @@ function Lab(){
         </div>
 
         {/* Green-light gates */}
-        <div style={{marginTop:8}}><Gates/></div>
+        <div style={{marginTop:8}}><Gates closer={closer} setter={setter} onGear={()=>setCapOpen(true)}/></div>
 
         {/* Graduates */}
         <div style={{marginTop:28}}>
@@ -3064,13 +3291,14 @@ function Lab(){
 
         {/* Constraint — at the very bottom */}
         <div style={{marginTop:18}}>
-          <ConstraintCard/>
+          <ConstraintCard closerUtil={closerUtil} setterUtil={setterUtil}/>
         </div>
       </div>
 
       {/* Action modals (skeletons) */}
       {turnOff && <TurnOffModal row={turnOff} campaign={acct.campaign} adSet={acct.adSet} onClose={()=>setTurnOff(null)}/>}
       {promote && <PromoteModal row={promote} onClose={()=>setPromote(null)}/>}
+      {capOpen && <SetterCapacityModal onClose={()=>setCapOpen(false)} onSaved={()=>setReloadKey(k=>k+1)}/>}
     </div>
   );
 }
