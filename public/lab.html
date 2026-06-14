@@ -1749,6 +1749,32 @@
   .fs-close{font-size:12px;color:var(--text-3);padding:2px 8px;border-radius:6px;border:1px solid var(--border)}
   .fs-close:hover{color:var(--text);border-color:var(--border-2)}
 
+  /* ---- Setter detail panel (Gate 3 transparency: per-setter load + leads/day trend) ---- */
+  .sd-panel{margin-top:10px;border:1px solid var(--border);border-radius:11px;background:var(--panel);overflow:hidden}
+  .sd-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .sd-head-l{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .sd-title{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:600}
+  .sd-cap{font-size:10.5px;color:var(--text-4);line-height:1.4}
+  .sd-team{display:flex;align-items:baseline;gap:7px;white-space:nowrap}
+  .sd-team-val{font-family:'Inter',system-ui,sans-serif;font-size:20px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:var(--text)}
+  .sd-team-val.green{color:var(--green)} .sd-team-val.red{color:var(--red)}
+  .sd-team-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4)}
+  .sd-body{padding:14px 16px;display:grid;gap:16px}
+  .sd-rows{display:flex;flex-direction:column;gap:3px}
+  .sd-row{display:grid;grid-template-columns:minmax(90px,1.1fr) 1fr 132px;gap:13px;align-items:center;padding:8px 10px;border-radius:9px;border:1px solid transparent;transition:background .15s,border-color .15s}
+  .sd-row:hover{background:var(--row-hover);border-color:var(--border)}
+  .sd-name{font-size:12.5px;color:var(--text-2);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sd-bar{position:relative;height:8px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border);overflow:hidden}
+  .sd-fill{position:absolute;top:0;left:0;bottom:0;border-radius:99px;transition:width .5s ease}
+  .sd-fill.green{background:var(--green)} .sd-fill.red{background:var(--red)}
+  .sd-stat{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--text-3);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sd-stat b{color:var(--text-2);font-weight:600}
+  .sd-stat .pct{margin-left:8px}
+  .sd-stat .pct.green{color:var(--green)} .sd-stat .pct.red{color:var(--red)}
+  .sd-empty{padding:18px 6px;color:var(--text-4);font-size:11.5px;text-align:center;border:1px dashed var(--border);border-radius:9px;background:var(--bg-1)}
+  .sd-chart-h{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4);font-weight:600;margin-bottom:6px}
+  .sd-chart-wrap{border:1px solid var(--border);border-radius:9px;background:var(--bg-1);padding:8px 6px 2px}
+
   /* ---- Winners & money pits: cards that open a proving trend graph ---- */
   .wp{display:grid;grid-template-columns:1fr 1fr;gap:13px}
   @media(max-width:760px){.wp{grid-template-columns:1fr}}
@@ -2621,14 +2647,15 @@ function Gates({closer, setter, onGear}){
     ? `${c.booked} of ${c.total} slots booked · target ≤ 80%`
     : "awaiting closer capacity input · target ≤ 80% of prime slots";
 
-  // ---- Gate 3 — Setter load (single % reading) ----
+  // ---- Gate 3 — Setter load (multi-day average % reading) ----
   const t = (setter && setter.team) || {};
+  const w = (setter && setter.window) || {};
   const setterHasPct = typeof t.loadPct === "number";
   const setterState = t.status === "green" ? "green" : (t.status === "red" ? "red" : "unknown");
   const setterEmpty = !setterHasPct || setterState === "unknown";
   const setterValue = setterHasPct ? Math.round(t.loadPct*100)+"%" : "—";
-  const setterNote = (typeof t.handledTotal === "number" && typeof t.capacityTotal === "number")
-    ? `${t.handledTotal} of ${t.capacityTotal} leads today · target ≤ 80%`
+  const setterNote = (typeof t.avgPerDayTotal === "number" && typeof t.capacityTotal === "number")
+    ? `${t.avgPerDayTotal} avg leads/day vs ${t.capacityTotal} cap · ${w.days != null ? w.days : "—"}d`
     : "awaiting setter max-volume input · target ≤ 80%";
 
   return (
@@ -2663,6 +2690,90 @@ function Gates({closer, setter, onGear}){
       </div>
       <div className="lab-verdict">
         Hold. Scaling stays locked until all three gates read green.
+      </div>
+    </div>
+  );
+}
+
+/* ---- Setter detail — the transparency panel under the gates row. Shows what's
+   actually driving the Gate 3 reading: each setter's average load over the window
+   (utilization bar, green < 0.8 / red over) + a leads/day history chart fed by the
+   `daily` series (reuses LineChart exactly like Gate 1). Awaiting-safe: renders the
+   dashed placeholder until the multi-day setter-load payload arrives. */
+function SetterDetail({setter}){
+  const team = (setter && setter.team) || null;
+  const win = (setter && setter.window) || null;
+  const perSetter = (setter && Array.isArray(setter.perSetter)) ? setter.perSetter : [];
+  const daily = (setter && Array.isArray(setter.daily)) ? setter.daily : [];
+
+  // Awaiting / nothing-yet: no payload, or no usable team reading.
+  const hasTeam = team && typeof team.loadPct === "number" && team.status !== "unknown";
+  const ready = !!setter && (perSetter.length > 0 || daily.length > 0 || hasTeam);
+
+  const fmtPctSmall = (p)=> (typeof p === "number" ? Math.round(p*100)+"%" : "—");
+  const barColor = (p)=> (typeof p === "number" && p > 0.8) ? "red" : "green";
+
+  // History chart: x = date labels (Mon D), y = total leads that day.
+  const chartLabels = daily.map(d => dateLabelFromIso(d && d.date));
+  const chartValues = daily.map(d => (typeof (d && d.total) === "number" ? d.total : 0));
+
+  const teamState = hasTeam ? (team.status === "red" ? "red" : "green") : "";
+  const teamPct = hasTeam ? Math.round(team.loadPct*100)+"%" : "—";
+
+  return (
+    <div className="sd-panel">
+      <div className="sd-head">
+        <div className="sd-head-l">
+          <div className="sd-title">Setter detail · what Gate 3 is reading</div>
+          {win && (win.from || win.to)
+            ? <div className="sd-cap">Last {win.days != null ? win.days : "—"} days · {win.from || "—"} → {win.to || "—"}</div>
+            : <div className="sd-cap">Average load across the selected window</div>}
+        </div>
+        <div className="sd-team">
+          <span className={"sd-team-val "+teamState}>{teamPct}</span>
+          <span className="sd-team-lbl">team load</span>
+        </div>
+      </div>
+      <div className="sd-body">
+        {/* Per-setter utilization rows */}
+        {ready && perSetter.length > 0 ? (
+          <div className="sd-rows">
+            {perSetter.map((s,i)=>{
+              const pct = typeof s.loadPct === "number" ? Math.max(0, Math.min(1, s.loadPct)) : 0;
+              const col = barColor(s.loadPct);
+              return (
+                <div className="sd-row" key={(s.name||"setter")+i}>
+                  <div className="sd-name">{s.name || "—"}</div>
+                  <div className="sd-bar">
+                    <div className={"sd-fill "+col} style={{width: (pct*100).toFixed(0)+"%"}}></div>
+                  </div>
+                  <div className="sd-stat">
+                    <b>{typeof s.avgPerDay === "number" ? s.avgPerDay : "—"}</b>/day · cap <b>{typeof s.capacity === "number" ? s.capacity : "—"}</b>
+                    <span className={"pct "+col}>{fmtPctSmall(s.loadPct)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="sd-empty">{ready ? "No per-setter breakdown for this window yet." : "Awaiting setter load — pick an account and date range."}</div>
+        )}
+
+        {/* Leads/day history chart — reused LineChart, one primary series */}
+        {ready && daily.length > 0 ? (
+          <div>
+            <div className="sd-chart-h">Leads/day · over the window</div>
+            <div className="sd-chart-wrap">
+              <LineChart
+                labels={chartLabels}
+                series={[{name:"Leads/day", values:chartValues, color:"var(--gold)", isPrimary:true, fmt:(v)=>Math.round(v)}]}
+                height={140} width={640} fmt={(v)=>Math.round(v)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="sd-empty">{ready ? "No daily history for this window yet." : "Awaiting daily lead history."}</div>
+        )}
       </div>
     </div>
   );
@@ -3176,7 +3287,12 @@ function Lab(){
   const [reloadKey, setReloadKey] = useState(0);  // bump to refetch after capacity save
   const acct = ACCOUNTS.find(a=>a.id===account) || ACCOUNTS[0];
 
-  // Fetch gate 2 + gate 3 data for the selected account (on mount, account change, and after a capacity save).
+  // Fetch gate 2 + gate 3 data for the selected account (on mount, account change,
+  // date-range change, and after a capacity save).
+  // The setter-load call carries the selected date range so Gate 3 + the detail
+  // panel reflect a multi-day average over that window (closer-calendar stays as-is).
+  const rangeFrom = (dateRange && dateRange.dateFrom) || "";
+  const rangeTo = (dateRange && dateRange.dateTo) || "";
   useEffect(()=>{
     let alive = true;
     setCloser(null);
@@ -3190,13 +3306,16 @@ function Lab(){
     })();
     (async()=>{
       try{
-        const res = await fetch("/api/lab/setter-load?account="+encodeURIComponent(account));
+        let url = "/api/lab/setter-load?account="+encodeURIComponent(account);
+        if(rangeFrom) url += "&from="+encodeURIComponent(rangeFrom);
+        if(rangeTo) url += "&to="+encodeURIComponent(rangeTo);
+        const res = await fetch(url);
         const data = await res.json();
         if(alive) setSetter(data);
       }catch(e){ if(alive) setSetter({team:{status:"unknown"}}); }
     })();
     return ()=>{ alive = false; };
-  },[account, reloadKey]);
+  },[account, rangeFrom, rangeTo, reloadKey]);
 
   const closerUtil = closer && typeof closer.filledPct==="number" && closer.status!=="unknown" ? closer.filledPct : null;
   const setterUtil = setter && setter.team && typeof setter.team.loadPct==="number" && setter.team.status!=="unknown" ? setter.team.loadPct : null;
@@ -3228,6 +3347,9 @@ function Lab(){
 
         {/* Green-light gates */}
         <div style={{marginTop:8}}><Gates closer={closer} setter={setter} onGear={()=>setCapOpen(true)}/></div>
+
+        {/* Setter detail — transparency under the gates: per-setter load + leads/day trend */}
+        <div style={{marginTop:12}}><SetterDetail setter={setter}/></div>
 
         {/* Graduates */}
         <div style={{marginTop:28}}>
