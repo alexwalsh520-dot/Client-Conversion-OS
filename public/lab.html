@@ -1760,20 +1760,25 @@
   .sd-team-val.green{color:var(--green)} .sd-team-val.red{color:var(--red)}
   .sd-team-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4)}
   .sd-body{padding:14px 16px;display:grid;gap:16px}
-  .sd-rows{display:flex;flex-direction:column;gap:3px}
-  .sd-row{display:grid;grid-template-columns:minmax(90px,1.1fr) 1fr 132px;gap:13px;align-items:center;padding:8px 10px;border-radius:9px;border:1px solid transparent;transition:background .15s,border-color .15s}
+  .sd-rows{display:flex;flex-direction:column;gap:2px}
+  .sd-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 11px;border-radius:8px;border:1px solid transparent;border-bottom:1px solid var(--border);transition:background .15s,border-color .15s}
+  .sd-row:last-child{border-bottom:1px solid transparent}
   .sd-row:hover{background:var(--row-hover);border-color:var(--border)}
-  .sd-name{font-size:12.5px;color:var(--text-2);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .sd-bar{position:relative;height:8px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border);overflow:hidden}
-  .sd-fill{position:absolute;top:0;left:0;bottom:0;border-radius:99px;transition:width .5s ease}
-  .sd-fill.green{background:var(--green)} .sd-fill.red{background:var(--red)}
-  .sd-stat{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--text-3);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .sd-stat b{color:var(--text-2);font-weight:600}
-  .sd-stat .pct{margin-left:8px}
-  .sd-stat .pct.green{color:var(--green)} .sd-stat .pct.red{color:var(--red)}
+  .sd-name{font-size:12.5px;color:var(--text-2);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .sd-nums{display:inline-flex;align-items:baseline;gap:7px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sd-nums b{color:var(--text-2);font-weight:600}
+  .sd-sep{color:var(--text-4)}
+  .sd-load{font-weight:600;min-width:40px;text-align:right}
+  .sd-load.green{color:var(--green)} .sd-load.red{color:var(--red)}
   .sd-empty{padding:18px 6px;color:var(--text-4);font-size:11.5px;text-align:center;border:1px dashed var(--border);border-radius:9px;background:var(--bg-1)}
   .sd-chart-h{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-4);font-weight:600;margin-bottom:6px}
   .sd-chart-wrap{border:1px solid var(--border);border-radius:9px;background:var(--bg-1);padding:8px 6px 2px}
+  /* Closer detail — current-availability stat strip */
+  .cd-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:560px){.cd-strip{grid-template-columns:1fr}}
+  .cd-stat{display:flex;flex-direction:column;gap:5px;padding:12px 13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-1)}
+  .cd-stat-val{font-family:'Inter',system-ui,sans-serif;font-size:20px;font-weight:500;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+  .cd-stat-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-weight:600}
 
   /* ---- Winners & money pits: cards that open a proving trend graph ---- */
   .wp{display:grid;grid-template-columns:1fr 1fr;gap:13px}
@@ -2008,7 +2013,7 @@
   .lab-step.goal .lab-step-lbl{color:var(--gold);font-weight:600}
   .lab-step-arrow{color:var(--text-4);font-size:13px;padding:0 2px;flex:none}
 
-  .lab-verdict{margin-top:13px;border:1px solid color-mix(in srgb,var(--gold) 22%,var(--border));border-radius:10px;
+  .lab-verdict{display:inline-block;width:max-content;max-width:100%;margin-top:13px;border:1px solid color-mix(in srgb,var(--gold) 22%,var(--border));border-left:3px solid color-mix(in srgb,var(--gold) 55%,var(--border));border-radius:10px;
     background:color-mix(in srgb,var(--gold) 5%,var(--panel));padding:11px 14px;font-size:12.5px;line-height:1.5;color:var(--text-2)}
 
   /* Gold primary pill — matches the tracker's gold-pill family (alert-workspace-btn) */
@@ -2079,7 +2084,7 @@
   .btn-confirm-big:disabled{opacity:.42;cursor:not-allowed;filter:none}
 
   /* Setter capacity modal (gear) */
-  .lab-cap-toggle{display:inline-flex;border:1px solid var(--border-2);border-radius:8px;background:var(--bg-1);padding:3px;align-self:flex-start}
+  .lab-cap-toggle{display:inline-flex;width:max-content;max-width:100%;align-self:flex-start;border:1px solid var(--border-2);border-radius:8px;background:var(--bg-1);padding:3px}
   .lab-cap-seg{padding:6px 14px;font-size:12px;color:var(--text-3);border-radius:5px;font-weight:500;transition:background .14s,color .14s}
   .lab-cap-seg:hover{color:var(--text-2)}
   .lab-cap-seg.on{background:var(--panel-2);color:var(--text)}
@@ -2099,19 +2104,22 @@
   .lab-constraint-verdict.bound{color:var(--red)}
   .lab-constraint-verdict.unknown{color:var(--text-3)}
   .lab-constraint-meta{font-size:11px;color:var(--text-4);margin-top:5px;line-height:1.4}
-  .lab-constraint-body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:16px}
-  .lab-bar-row{display:flex;flex-direction:column;gap:7px}
-  .lab-bar-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-  .lab-bar-name{font-size:12.5px;color:var(--text-2);font-weight:500}
-  .lab-bar-name .binding{margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--red);border:1px solid rgba(232,154,148,.32);border-radius:999px;padding:1px 6px;vertical-align:middle}
-  .lab-bar-util{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--text-3)}
-  .lab-bar-util.over{color:var(--red)} .lab-bar-util.under{color:var(--green)} .lab-bar-util.na{color:var(--text-4)}
-  .lab-bar-track{position:relative;height:10px;border-radius:6px;background:var(--bg);border:1px solid var(--border);overflow:hidden}
-  .lab-bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;transition:width .35s cubic-bezier(.4,0,.2,1)}
-  .lab-bar-fill.under{background:var(--green)} .lab-bar-fill.over{background:var(--red)}
-  .lab-bar-threshold{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text-2);opacity:.85}
-  .lab-bar-track.na{background:repeating-linear-gradient(45deg,var(--bg),var(--bg) 6px,var(--bg-1) 6px,var(--bg-1) 12px)}
-  .lab-bar-sub{font-size:10.5px;color:var(--text-4);line-height:1.4}
+  .lab-constraint-body{padding:18px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  @media(max-width:680px){.lab-constraint-body{grid-template-columns:1fr}}
+  /* Radial / arc gauge rings — one per constraint */
+  .lab-gauge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:14px 10px;
+    border:1px solid var(--border);border-radius:11px;background:var(--bg-1);transition:border-color .15s,background .15s}
+  .lab-gauge.binding{border-color:rgba(232,154,148,.4);background:color-mix(in srgb,var(--red) 5%,var(--bg-1))}
+  .lab-gauge-ring{position:relative;width:118px;height:118px}
+  .lab-gauge-ring svg{display:block;width:100%;height:100%}
+  .lab-gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+  .lab-gauge-pct{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+  .lab-gauge-pct.under{color:var(--green)} .lab-gauge-pct.over{color:var(--red)} .lab-gauge-pct.na{color:var(--text-4)}
+  .lab-gauge-cap{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);font-family:'JetBrains Mono',ui-monospace,monospace}
+  .lab-gauge-name{font-size:12px;color:var(--text-2);font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:center}
+  .lab-gauge-name .binding{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--red);
+    border:1px solid rgba(232,154,148,.35);border-radius:999px;padding:1px 6px}
+  .lab-gauge-sub{font-size:10px;color:var(--text-4);line-height:1.4;max-width:200px}
 </style>
 </head>
 <body>
@@ -2643,9 +2651,11 @@ function Gates({closer, setter, onGear}){
   const closerState = c.status === "green" ? "green" : (c.status === "red" ? "red" : "unknown");
   const closerEmpty = !closerHasPct || closerState === "unknown";
   const closerValue = closerHasPct ? Math.round(c.filledPct*100)+"%" : "—";
-  const closerNote = (typeof c.booked === "number" && typeof c.total === "number")
-    ? `${c.booked} of ${c.total} slots booked · target ≤ 80%`
-    : "awaiting closer capacity input · target ≤ 80% of prime slots";
+  const closerNote = (typeof c.bookedUpcoming === "number" && typeof c.openSlots === "number")
+    ? `${c.bookedUpcoming} of ${c.bookedUpcoming + c.openSlots} upcoming slots booked · ${c.openSlots} open now`
+    : ((typeof c.booked === "number" && typeof c.total === "number")
+        ? `${c.booked} of ${c.total} slots booked · target ≤ 80%`
+        : "awaiting closer capacity input · target ≤ 80% of prime slots");
 
   // ---- Gate 3 — Setter load (multi-day average % reading) ----
   const t = (setter && setter.team) || {};
@@ -2739,17 +2749,16 @@ function SetterDetail({setter}){
         {ready && perSetter.length > 0 ? (
           <div className="sd-rows">
             {perSetter.map((s,i)=>{
-              const pct = typeof s.loadPct === "number" ? Math.max(0, Math.min(1, s.loadPct)) : 0;
               const col = barColor(s.loadPct);
               return (
                 <div className="sd-row" key={(s.name||"setter")+i}>
                   <div className="sd-name">{s.name || "—"}</div>
-                  <div className="sd-bar">
-                    <div className={"sd-fill "+col} style={{width: (pct*100).toFixed(0)+"%"}}></div>
-                  </div>
-                  <div className="sd-stat">
-                    <b>{typeof s.avgPerDay === "number" ? s.avgPerDay : "—"}</b>/day · cap <b>{typeof s.capacity === "number" ? s.capacity : "—"}</b>
-                    <span className={"pct "+col}>{fmtPctSmall(s.loadPct)}</span>
+                  <div className="sd-nums">
+                    <span><b>{typeof s.avgPerDay === "number" ? s.avgPerDay : "—"}</b>/day</span>
+                    <span className="sd-sep">·</span>
+                    <span>cap <b>{typeof s.capacity === "number" ? s.capacity : "—"}</b></span>
+                    <span className="sd-sep">·</span>
+                    <span className={"sd-load "+col}>{fmtPctSmall(s.loadPct)}</span>
                   </div>
                 </div>
               );
@@ -2767,12 +2776,88 @@ function SetterDetail({setter}){
               <LineChart
                 labels={chartLabels}
                 series={[{name:"Leads/day", values:chartValues, color:"var(--gold)", isPrimary:true, fmt:(v)=>Math.round(v)}]}
-                height={140} width={640} fmt={(v)=>Math.round(v)}
+                height={150} width={860} fmt={(v)=>Math.round(v)}
               />
             </div>
           </div>
         ) : (
           <div className="sd-empty">{ready ? "No daily history for this window yet." : "Awaiting daily lead history."}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Closer detail — backward + current view of closer-calendar availability.
+   Top strip: open now / booked next 7d / booked last 7d. Below: a bookings/day
+   history chart (reuses LineChart, x=date, y=booked) so the trend is visible.
+   Awaiting-safe: renders the dashed placeholder until the payload arrives. */
+function CloserDetail({closer}){
+  const c = closer || null;
+  const win = (c && c.window) || null;
+  const daily = (c && Array.isArray(c.daily)) ? c.daily : [];
+
+  const hasNumbers = c && (typeof c.openSlots === "number"
+    || typeof c.bookedUpcoming === "number" || typeof c.recentBooked === "number");
+  const ready = !!c && c.status !== "unknown" && (hasNumbers || daily.length > 0);
+
+  const filledHasPct = c && typeof c.filledPct === "number";
+  const filledState = (c && c.status === "red") ? "red" : (c && c.status === "green" ? "green" : "");
+  const filledPct = filledHasPct ? Math.round(c.filledPct*100)+"%" : "—";
+  const num = (v)=> typeof v === "number" ? v : "—";
+
+  // History chart: x = date labels (Mon D), y = bookings that day.
+  const chartLabels = daily.map(d => dateLabelFromIso(d && d.date));
+  const chartValues = daily.map(d => (typeof (d && d.booked) === "number" ? d.booked : 0));
+
+  return (
+    <div className="sd-panel">
+      <div className="sd-head">
+        <div className="sd-head-l">
+          <div className="sd-title">Closer detail · current + backward availability</div>
+          {win && (win.from || win.to)
+            ? <div className="sd-cap">Last {win.days != null ? win.days : "—"} days · {win.from || "—"} → {win.to || "—"}</div>
+            : <div className="sd-cap">Booked vs open across the selected window</div>}
+        </div>
+        <div className="sd-team">
+          <span className={"sd-team-val "+filledState}>{filledPct}</span>
+          <span className="sd-team-lbl">filled</span>
+        </div>
+      </div>
+      <div className="sd-body">
+        {ready ? (
+          <div className="cd-strip">
+            <div className="cd-stat">
+              <span className="cd-stat-val">{num(c.openSlots)}</span>
+              <span className="cd-stat-lbl">Open now</span>
+            </div>
+            <div className="cd-stat">
+              <span className="cd-stat-val">{num(c.bookedUpcoming)}</span>
+              <span className="cd-stat-lbl">Booked next 7d</span>
+            </div>
+            <div className="cd-stat">
+              <span className="cd-stat-val">{num(c.recentBooked)}</span>
+              <span className="cd-stat-lbl">Booked last 7d</span>
+            </div>
+          </div>
+        ) : (
+          <div className="sd-empty">Awaiting closer calendar — pick an account and date range.</div>
+        )}
+
+        {/* Bookings/day history chart — reused LineChart, one primary series */}
+        {ready && daily.length > 0 ? (
+          <div>
+            <div className="sd-chart-h">Bookings/day · over the window</div>
+            <div className="sd-chart-wrap">
+              <LineChart
+                labels={chartLabels}
+                series={[{name:"Bookings/day", values:chartValues, color:"var(--blue)", isPrimary:true, fmt:(v)=>Math.round(v)}]}
+                height={150} width={860} fmt={(v)=>Math.round(v)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="sd-empty">{ready ? "No daily booking history for this window yet." : "Awaiting daily booking history."}</div>
         )}
       </div>
     </div>
@@ -3064,27 +3149,77 @@ function pickConstraint(constraints){
   return {verdict:binding.label, state:"bound", binding:binding.key};
 }
 
-function ConstraintBar({c, isBinding}){
+// A single radial/arc gauge ring: shows utilization % as a swept arc, with the
+// limit threshold marked as a tick on the ring. Green under limit, red at/over.
+// "not measured" → dashed track + muted dash in the center.
+function ConstraintGauge({c, isBinding}){
   const measured = typeof c.util === "number";
   const over = measured && c.util >= c.limit;
-  const pct = measured ? Math.min(100, Math.round(c.util*100)) : 0;
+  const state = measured ? (over ? "over" : "under") : "na";
+  const color = measured ? (over ? "var(--red)" : "var(--green)") : "var(--text-4)";
+
+  // Geometry — a 270° open arc (gap at the bottom), classic gauge look.
+  const size = 118, cx = size/2, cy = size/2, r = 49, sw = 9;
+  const sweep = 270;                 // degrees of usable arc
+  const start = 135;                 // start angle (bottom-left), going clockwise
+  const circ = 2 * Math.PI * r;
+  const arcFrac = sweep / 360;       // fraction of full circle the track occupies
+  const trackLen = circ * arcFrac;
+
+  const utilClamped = measured ? Math.max(0, Math.min(1, c.util)) : 0;
+  const limitClamped = Math.max(0, Math.min(1, c.limit));
+
+  // Polar → cartesian, angles measured clockwise from the +x axis (SVG y-down).
+  const ptAt = (frac) => {
+    const ang = (start + frac * sweep) * Math.PI / 180;
+    return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) };
+  };
+  const tick = ptAt(limitClamped);     // threshold marker on the ring
+  const pct = measured ? Math.round(c.util*100) : null;
   const limitPct = Math.round(c.limit*100);
+
+  // dasharray to render only the swept portion of the value arc
+  const valDash = `${trackLen * utilClamped} ${circ}`;
+  const trackDash = `${trackLen} ${circ}`;
+  // rotate so the dash starts at our `start` angle
+  const rot = `rotate(${start} ${cx} ${cy})`;
+
   return (
-    <div className="lab-bar-row">
-      <div className="lab-bar-top">
-        <span className="lab-bar-name">
-          {c.label}
-          {isBinding && <span className="binding">binding</span>}
-        </span>
-        <span className={"lab-bar-util "+(measured?(over?"over":"under"):"na")}>
-          {measured ? pct+"% / "+limitPct+"%" : "not measured"}
-        </span>
+    <div className={"lab-gauge"+(isBinding?" binding":"")}>
+      <div className="lab-gauge-ring">
+        <svg viewBox={`0 0 ${size} ${size}`} xmlns="http://www.w3.org/2000/svg">
+          {/* track */}
+          <circle cx={cx} cy={cy} r={r} fill="none"
+            stroke={measured ? "var(--panel-2)" : "var(--border)"} strokeWidth={sw}
+            strokeLinecap="round" strokeDasharray={trackDash}
+            strokeDashoffset="0" transform={rot}
+            style={measured ? undefined : {strokeDasharray:"2 6"}}/>
+          {/* value arc */}
+          {measured && (
+            <circle cx={cx} cy={cy} r={r} fill="none"
+              stroke={color} strokeWidth={sw} strokeLinecap="round"
+              strokeDasharray={valDash} strokeDashoffset="0" transform={rot}/>
+          )}
+          {/* threshold tick */}
+          {measured && (
+            <line
+              x1={cx + (r - sw/2 - 2) * Math.cos((start+limitClamped*sweep)*Math.PI/180)}
+              y1={cy + (r - sw/2 - 2) * Math.sin((start+limitClamped*sweep)*Math.PI/180)}
+              x2={cx + (r + sw/2 + 2) * Math.cos((start+limitClamped*sweep)*Math.PI/180)}
+              y2={cy + (r + sw/2 + 2) * Math.sin((start+limitClamped*sweep)*Math.PI/180)}
+              stroke="var(--text-2)" strokeWidth="2" strokeLinecap="round"/>
+          )}
+        </svg>
+        <div className="lab-gauge-center">
+          <span className={"lab-gauge-pct "+state}>{measured ? pct+"%" : "—"}</span>
+          <span className="lab-gauge-cap">{measured ? "limit "+limitPct+"%" : "not measured"}</span>
+        </div>
       </div>
-      <div className={"lab-bar-track "+(measured?"":"na")}>
-        {measured && <div className={"lab-bar-fill "+(over?"over":"under")} style={{width:pct+"%"}}></div>}
-        {measured && <div className="lab-bar-threshold" style={{left:limitPct+"%"}}></div>}
+      <div className="lab-gauge-name">
+        {c.label}
+        {isBinding && <span className="binding">binding</span>}
       </div>
-      <div className="lab-bar-sub">{c.sub}</div>
+      <div className="lab-gauge-sub">{c.sub}</div>
     </div>
   );
 }
@@ -3128,7 +3263,7 @@ function ConstraintCard({closerUtil, setterUtil}){
       </div>
       <div className="lab-constraint-body">
         {CONSTRAINTS.map(c=>(
-          <ConstraintBar key={c.key} c={c} isBinding={result.binding===c.key}/>
+          <ConstraintGauge key={c.key} c={c} isBinding={result.binding===c.key}/>
         ))}
       </div>
     </div>
@@ -3299,7 +3434,10 @@ function Lab(){
     setSetter(null);
     (async()=>{
       try{
-        const res = await fetch("/api/lab/closer-calendar?account="+encodeURIComponent(account));
+        let url = "/api/lab/closer-calendar?account="+encodeURIComponent(account);
+        if(rangeFrom) url += "&from="+encodeURIComponent(rangeFrom);
+        if(rangeTo) url += "&to="+encodeURIComponent(rangeTo);
+        const res = await fetch(url);
         const data = await res.json();
         if(alive) setCloser(data);
       }catch(e){ if(alive) setCloser({status:"unknown"}); }
@@ -3347,6 +3485,9 @@ function Lab(){
 
         {/* Green-light gates */}
         <div style={{marginTop:8}}><Gates closer={closer} setter={setter} onGear={()=>setCapOpen(true)}/></div>
+
+        {/* Closer detail — current + backward availability: open/booked + bookings/day trend */}
+        <div style={{marginTop:12}}><CloserDetail closer={closer}/></div>
 
         {/* Setter detail — transparency under the gates: per-setter load + leads/day trend */}
         <div style={{marginTop:12}}><SetterDetail setter={setter}/></div>
