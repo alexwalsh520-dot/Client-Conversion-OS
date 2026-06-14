@@ -1739,7 +1739,7 @@
   .fs-chip.good{color:var(--green);background:color-mix(in srgb,var(--green) 13%,transparent)}
   .fs-chip.bad{color:var(--red);background:color-mix(in srgb,var(--red) 13%,transparent)}
   .fs-chip.neutral,.fs-chip.flat{color:var(--text-4);background:var(--panel-2)}
-  .fs-val{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500;letter-spacing:-0.02em;color:var(--text)}
+  .fs-val{font-family:'Inter',system-ui,sans-serif;font-size:20px;font-weight:500;letter-spacing:-0.02em;color:var(--text);font-variant-numeric:tabular-nums}
   .fs-tile .spark{display:block;width:100%;height:28px}
   .fs-explain{font-size:10.5px;line-height:1.4;color:var(--text-4)}
   .fs-expand{margin-top:6px;border:1px solid var(--gold-dim);border-radius:12px;background:var(--panel);padding:14px 16px;animation:mi-rise .3s both}
@@ -1972,7 +1972,7 @@
   .lab-ladder-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
   .lab-step{display:flex;flex-direction:column;align-items:center;gap:5px;padding:6px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel);position:relative}
   .lab-step-dot{width:7px;height:7px;border-radius:99px;background:var(--text-4)}
-  .lab-step-lbl{font-family:var(--mono);font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .lab-step-lbl{font-family:'Inter',system-ui,sans-serif;font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .lab-step-note{position:absolute;top:-9px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);background:var(--bg);padding:1px 6px;border:1px solid var(--gold-dim);border-radius:99px;white-space:nowrap}
   .lab-step.here{border-color:var(--gold-dim);box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 22%,transparent)}
   .lab-step.here .lab-step-dot{background:var(--gold)}
@@ -2005,6 +2005,75 @@
   .lab-todo-check.on{background:color-mix(in srgb,var(--gold) 14%,transparent);border-color:var(--gold-dim)}
   .lab-todo-txt{font-size:13px;color:var(--text)}
   .lab-todo-txt.done{color:var(--text-4);text-decoration:line-through}
+
+  /* Scale-pending badge (shown, not hidden) */
+  .lab-pending-note{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg-1);color:var(--text-3);font-size:11.5px;line-height:1.4}
+  .lab-pending-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border:1px solid rgba(212,178,122,.32);border-radius:999px;background:rgba(212,178,122,.07);color:var(--gold);font-size:10px;font-weight:600;letter-spacing:.02em;white-space:nowrap;flex:none}
+  .lab-pending-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+
+  /* Action modals (reuse token system) */
+  .lab-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.58);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:9vh 18px 28px;z-index:180;overflow:auto}
+  .lab-modal{width:560px;max-width:calc(100vw - 36px);background:var(--panel);border:1px solid var(--border-2);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.7);overflow:hidden;display:flex;flex-direction:column}
+  .lab-modal-head{padding:16px 20px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .lab-modal-title{font-size:15px;font-weight:650;color:var(--text);letter-spacing:-.01em;margin:0}
+  .lab-modal-sub{font-size:11.5px;color:var(--text-3);margin-top:5px;line-height:1.4}
+  .lab-modal-sub .mono{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--text-2)}
+  .lab-modal-close{color:var(--text-3);padding:4px 8px;border-radius:4px;font-size:16px;line-height:1;flex:none}
+  .lab-modal-close:hover{background:var(--panel-2);color:var(--text)}
+  .lab-modal-body{padding:16px 20px 18px;overflow:auto;display:grid;gap:14px}
+  .lab-modal-foot{padding:13px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg-1);align-items:center;flex-wrap:wrap}
+  .lab-safe-line{font-size:11.5px;color:var(--text-4);line-height:1.45;display:flex;align-items:flex-start;gap:7px}
+  .lab-safe-line .ic{color:var(--green);flex:none;margin-top:1px}
+  /* Compact metric readout (label:value pairs reusing per-ad columns) */
+  .lab-readout{border:1px solid var(--border);border-radius:8px;background:var(--bg);overflow:hidden}
+  .lab-readout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lab-readout-cell{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:8px 13px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);min-width:0}
+  .lab-readout-cell:nth-child(2n){border-right:none}
+  .lab-readout-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lab-readout-val{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap;flex:none}
+  .lab-readout-val.pos{color:var(--green)} .lab-readout-val.neg{color:var(--red)} .lab-readout-val.dim{color:var(--text-3)}
+  /* Promote two-part skeleton */
+  .lab-promo-block{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:13px 15px}
+  .lab-promo-block .h{font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:600;color:var(--text-3);margin-bottom:10px}
+  .lab-promo-block.auto .h{color:var(--blue)}
+  .lab-promo-block.manual .h{color:var(--gold)}
+  .lab-promo-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .lab-promo-list li{position:relative;padding-left:19px;font-size:12.5px;line-height:1.4;color:var(--text-2)}
+  .lab-promo-list li:before{content:"+";position:absolute;left:0;top:0;color:var(--blue);font-weight:700}
+  .lab-check-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--border);cursor:pointer}
+  .lab-check-row:first-of-type{border-top:none}
+  .lab-check-box{width:18px;height:18px;border:1px solid var(--border-2);border-radius:5px;background:var(--bg-1);display:inline-flex;align-items:center;justify-content:center;color:var(--gold);flex:none;margin-top:1px;transition:border-color .14s,background .14s}
+  .lab-check-row:hover .lab-check-box{border-color:var(--gold-dim)}
+  .lab-check-box.on{background:color-mix(in srgb,var(--gold) 16%,transparent);border-color:var(--gold-dim)}
+  .lab-check-txt{font-size:12.5px;color:var(--text);line-height:1.4}
+  .btn-danger-big{padding:9px 18px;border:1px solid var(--red-dim);background:var(--red);color:var(--bg);border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.01em}
+  .btn-danger-big:hover{filter:brightness(1.06)}
+  .btn-confirm-big{padding:9px 18px;border:1px solid var(--gold-dim);background:var(--gold);color:var(--bg);border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.01em}
+  .btn-confirm-big:hover{filter:brightness(1.06)}
+  .btn-confirm-big:disabled{opacity:.42;cursor:not-allowed;filter:none}
+
+  /* Constraint card (data-driven, bars vs threshold) */
+  .lab-constraint{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
+  .lab-constraint-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 18px;border-bottom:1px solid var(--border)}
+  .lab-constraint-k{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3)}
+  .lab-constraint-verdict{font-size:15px;font-weight:650;letter-spacing:-.01em;color:var(--text);margin-top:6px}
+  .lab-constraint-verdict.clear{color:var(--green)}
+  .lab-constraint-verdict.bound{color:var(--red)}
+  .lab-constraint-verdict.unknown{color:var(--text-3)}
+  .lab-constraint-meta{font-size:11px;color:var(--text-4);margin-top:5px;line-height:1.4}
+  .lab-constraint-body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:16px}
+  .lab-bar-row{display:flex;flex-direction:column;gap:7px}
+  .lab-bar-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .lab-bar-name{font-size:12.5px;color:var(--text-2);font-weight:500}
+  .lab-bar-name .binding{margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--red);border:1px solid rgba(232,154,148,.32);border-radius:999px;padding:1px 6px;vertical-align:middle}
+  .lab-bar-util{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--text-3)}
+  .lab-bar-util.over{color:var(--red)} .lab-bar-util.under{color:var(--green)} .lab-bar-util.na{color:var(--text-4)}
+  .lab-bar-track{position:relative;height:10px;border-radius:6px;background:var(--bg);border:1px solid var(--border);overflow:hidden}
+  .lab-bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .lab-bar-fill.under{background:var(--green)} .lab-bar-fill.over{background:var(--red)}
+  .lab-bar-threshold{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text-2);opacity:.85}
+  .lab-bar-track.na{background:repeating-linear-gradient(45deg,var(--bg),var(--bg) 6px,var(--bg-1) 6px,var(--bg-1) 12px)}
+  .lab-bar-sub{font-size:10.5px;color:var(--text-4);line-height:1.4}
 </style>
 </head>
 <body>
@@ -2016,7 +2085,7 @@
 
 
 <script type="text/babel" data-presets="react">
-const { useState } = React;
+const { useState, useEffect, useRef } = React;
 
 // ------- Icons (minimal, stroke) — same style as the tracker
 const Icon = ({ d, size=14, stroke=1.4 }) => (
@@ -2024,6 +2093,245 @@ const Icon = ({ d, size=14, stroke=1.4 }) => (
 );
 const IcCheck = () => <Icon d={<path d="M20 6L9 17l-5-5"/>} />;
 const IcLock = () => <Icon d={<><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>} />;
+/* IcCal + IcCaret — copied verbatim from ads-tracker-export.html (lines 1989–1992) */
+const IcCal = () => <Icon d={<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>} />;
+const IcCaret = () => (
+  <svg width="9" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M1 1l4 4 4-4"/></svg>
+);
+
+/* ====== date helpers + DateDropdown/MiniCalendar copied verbatim from ads-tracker-export.html
+   (helpers ~lines 2171–2271, MiniCalendar ~2511–2546, DateDropdown ~2548–2632, SelectFilter ~2635–2662) ====== */
+function isoDate(d){
+  return d.toISOString().slice(0,10);
+}
+function todayEt(){
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone:"America/New_York",
+    year:"numeric",
+    month:"2-digit",
+    day:"2-digit",
+  }).format(new Date());
+}
+function shiftIso(date, days){
+  const d = new Date(date+"T00:00:00.000Z");
+  d.setUTCDate(d.getUTCDate()+days);
+  return isoDate(d);
+}
+function monthStartIso(date){
+  return (date || todayEt()).slice(0,7)+"-01";
+}
+function shiftMonth(monthIso, delta){
+  const d = new Date(monthIso+"T00:00:00");
+  d.setMonth(d.getMonth()+delta);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+}
+function monthTitle(monthIso){
+  const d = new Date(monthIso+"T00:00:00");
+  return d.toLocaleDateString("en-US", {month:"long", year:"numeric"});
+}
+function daysInMonth(monthIso){
+  const d = new Date(monthIso+"T00:00:00");
+  return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+}
+function isoForMonthDay(monthIso, day){
+  return `${monthIso.slice(0,7)}-${String(day).padStart(2,"0")}`;
+}
+const PRESETS = [
+  {id:"today",label:"Today",days:0},
+  {id:"yesterday",label:"Yesterday",days:-1},
+  {id:"last3",label:"Last 3 days",days:3},
+  {id:"last7",label:"Last 7 days",days:7},
+  {id:"last14",label:"Last 14 days",days:14},
+  {id:"last30",label:"Last 30 days",days:30},
+  {id:"mtd",label:"This month"},
+  {id:"lmtd",label:"Last month"},
+  {id:"custom",label:"Custom"},
+];
+function rangeForPreset(id, anchor=todayEt()){
+  if(id==="today") return {preset:id, dateFrom:anchor, dateTo:anchor};
+  if(id==="yesterday"){
+    const y = shiftIso(anchor, -1);
+    return {preset:id, dateFrom:y, dateTo:y};
+  }
+  if(id==="last3") return {preset:id, dateFrom:shiftIso(anchor, -2), dateTo:anchor};
+  if(id==="last7") return {preset:id, dateFrom:shiftIso(anchor, -6), dateTo:anchor};
+  if(id==="last14") return {preset:id, dateFrom:shiftIso(anchor, -13), dateTo:anchor};
+  if(id==="last30") return {preset:id, dateFrom:shiftIso(anchor, -29), dateTo:anchor};
+  if(id==="mtd") return {preset:id, dateFrom:anchor.slice(0,8)+"01", dateTo:anchor};
+  if(id==="lmtd"){
+    const start = shiftMonth(monthStartIso(anchor), -1);
+    return {preset:id, dateFrom:start, dateTo:isoForMonthDay(start, daysInMonth(start))};
+  }
+  return {preset:id, dateFrom:shiftIso(anchor, -6), dateTo:anchor};
+}
+function dateLabelFromIso(value){
+  if(!value) return "";
+  const d = new Date(value+"T00:00:00");
+  if(Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {month:"short", day:"numeric"});
+}
+function rangeLabel(range){
+  const from = dateLabelFromIso(range.dateFrom);
+  const to = dateLabelFromIso(range.dateTo);
+  const year = (range.dateTo || "").slice(0,4);
+  return from===to ? `${from}, ${year}` : `${from} – ${to}, ${year}`;
+}
+function labelForPreset(id){
+  return PRESETS.find(p=>p.id===id)?.label || "Custom";
+}
+
+function MiniCalendar({monthIso, rangeStart, rangeEnd, onPick, onShift}){
+  const days = [];
+  const monthDate = new Date(monthIso+"T00:00:00");
+  const startBlank = monthDate.getDay();
+  for(let i=0;i<startBlank;i++) days.push({blank:true});
+  for(let d=1; d<=daysInMonth(monthIso); d++) days.push({d, iso:isoForMonthDay(monthIso, d)});
+  while(days.length % 7 !== 0) days.push({blank:true, trail:true});
+  const dow = ["S","M","T","W","T","F","S"];
+  const today = todayEt();
+  return (
+    <div>
+      <div className="cal-head">
+        <button className="cal-nav" onClick={()=>onShift(-1)}>‹</button>
+        <span>{monthTitle(monthIso)}</span>
+        <button className="cal-nav" onClick={()=>onShift(1)}>›</button>
+      </div>
+      <div className="cal-grid">
+        {dow.map((d,i)=><div key={"h"+i} className="cal-dow">{d}</div>)}
+        {days.map((x,i)=>{
+          if(x.blank) return <div key={i} className={"cal-day muted "+(x.trail?"trail":"")}></div>;
+          const inRange = x.iso>=rangeStart && x.iso<=rangeEnd;
+          const endpoint = x.iso===rangeStart || x.iso===rangeEnd;
+          return (
+            <button
+              key={i}
+              className={"cal-day "+(endpoint?"endpoint":(inRange?"in-range":""))+(x.iso===today?" today":"")}
+              onClick={()=>onPick(x.iso)}
+            >
+              {x.d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DateDropdown({value, onChange}){
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value || rangeForPreset("last7"));
+  const [monthIso, setMonthIso] = useState(monthStartIso((value || rangeForPreset("last7")).dateTo));
+  const [selectingEnd, setSelectingEnd] = useState(false);
+  const ref = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+  },[]);
+  const current = value || rangeForPreset("last7");
+  useEffect(()=>{
+    if(open){
+      setDraft(current);
+      setMonthIso(monthStartIso(current.dateTo));
+      setSelectingEnd(false);
+    }
+  },[open, current.dateFrom, current.dateTo, current.preset]);
+  const label = labelForPreset(current.preset);
+  const days = Math.max(1, Math.round((new Date(draft.dateTo) - new Date(draft.dateFrom))/(1000*60*60*24)) + 1);
+  const pickDate = (iso) => {
+    setDraft(prev => {
+      if(!selectingEnd){
+        setSelectingEnd(true);
+        return {preset:"custom", dateFrom:iso, dateTo:iso};
+      }
+      setSelectingEnd(false);
+      const dateFrom = iso < prev.dateFrom ? iso : prev.dateFrom;
+      const dateTo = iso < prev.dateFrom ? prev.dateFrom : iso;
+      return {preset:"custom", dateFrom, dateTo};
+    });
+  };
+  return (
+    <div className="filter" ref={ref}>
+      <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
+        <span style={{color:'var(--text-3)',display:'inline-flex'}}><IcCal /></span>
+        <span className="val">{label}</span>
+        <span className="dim" style={{fontSize:11}}>· {rangeLabel(current)}</span>
+        <span className="caret"><IcCaret/></span>
+      </button>
+      {open && (
+        <div className="pop date-pop" style={{minWidth:520}}>
+          <div className="date-presets">
+            {PRESETS.map(p=>(
+              <div
+                key={p.id}
+                className={"pop-item "+(draft.preset===p.id?"selected":"")}
+                onClick={()=>{
+                  if(p.id!=="custom") {
+                    onChange && onChange(rangeForPreset(p.id));
+                    setOpen(false);
+                  } else {
+                    setDraft({...draft, preset:"custom"});
+                    setSelectingEnd(false);
+                  }
+                }}
+              >
+                <span>{p.label}</span>
+                <span className="check"><IcCheck/></span>
+              </div>
+            ))}
+          </div>
+          <div className="date-cal">
+            <MiniCalendar
+              monthIso={monthIso}
+              rangeStart={draft.dateFrom}
+              rangeEnd={draft.dateTo}
+              onPick={pickDate}
+              onShift={(delta)=>setMonthIso(m=>shiftMonth(m, delta))}
+            />
+          </div>
+          <div className="date-foot">
+            <span className="mono" style={{fontSize:11}}>
+              {draft.dateFrom} → {draft.dateTo} · {days} day{days===1?"":"s"}{draft.preset==="custom" && selectingEnd ? " · pick end date" : ""}
+            </span>
+            <div style={{display:'flex',gap:6}}>
+              <button className="filter-btn" style={{padding:'4px 10px'}} onClick={()=>setOpen(false)}>Cancel</button>
+              <button className="apply-btn" onClick={()=>{onChange && onChange(draft); setOpen(false);}}>Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------- Account dropdown — copied verbatim from ads-tracker-export.html (SelectFilter, ~lines 2635–2662) */
+function SelectFilter({label, options, value, onChange}){
+  const [open,setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+  },[]);
+  const cur = options.find(o=>o.id===value) || options[0];
+  return (
+    <div className="filter" ref={ref}>
+      <button className={"filter-btn "+(open?"open":"")} onClick={()=>setOpen(!open)}>
+        <span className="lbl">{label}</span>
+        <span className="val">{cur.label}</span>
+        <span className="caret"><IcCaret/></span>
+      </button>
+      {open && (
+        <div className="pop">
+          {options.map(o=>(
+            <div key={o.id} className={"pop-item "+(value===o.id?"selected":"")} onClick={()=>{onChange(o.id);setOpen(false);}}>
+              <span>{o.label}</span>
+              <span className="check"><IcCheck/></span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---- formatters (mirror the tracker's helpers)
 const fmtUsd = (v,dp=0)=>"$"+Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
@@ -2328,11 +2636,11 @@ const W = {date:230, spend:96, imp:108, cpm:78, clicks:96, ctr:78, cpc:78, msgs:
   calls:140, cpCall:150, taken:140, cpTaken:124, clients:104, closing:118, msgConv:96,
   collected:118, cpClient:108, collectedRoi:116, st1:118, st2:118, act:124};
 
-function AdMetricsTable({rows, statusCols, actionLabel, actionClass, locked}){
+function AdMetricsTable({rows, statusCols, actionLabel, actionClass, onAction, dotClass}){
   const allKeys = [...AD_COLS.map(c=>c.k), ...statusCols.map(s=>s.k), "act"];
   const minW = allKeys.reduce((s,k)=>s+(W[k]||100), W.date);
   return (
-    <div className="panel" style={locked?{position:"relative"}:null}>
+    <div className="panel">
       <div className="tbl-scroll">
         <table className="ads" style={{minWidth:minW}}>
           <colgroup>
@@ -2360,7 +2668,7 @@ function AdMetricsTable({rows, statusCols, actionLabel, actionClass, locked}){
               <tr key={r.name}>
                 <td>
                   <div className="campaign-cell">
-                    <span className="camp-dot tyson"></span>
+                    <span className={"camp-dot "+(dotClass||"tyson")}></span>
                     <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</span>
                     <span className="status-pill active">{r.aud}</span>
                   </div>
@@ -2373,21 +2681,13 @@ function AdMetricsTable({rows, statusCols, actionLabel, actionClass, locked}){
                   <td key={s.k} className="num"><YesNo ok={s.ok(r)}/></td>
                 ))}
                 <td className="num">
-                  <button className={actionClass}>{actionLabel}</button>
+                  <button className={actionClass} onClick={()=>onAction && onAction(r)}>{actionLabel}</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {locked && (
-        <div className="lab-lock-overlay">
-          <div className="lab-lock-card">
-            <span className="lab-lock-ic"><IcLock/></span>
-            Locked — unlocks when all 3 gates are green
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2418,20 +2718,26 @@ const SCALE = [
    collected:0, cpClient:0, collectedRoi:0},
 ];
 
-// Scale table = current budgets only, no metric noise, no % step. Reuse table shell, dim it.
-function ScaleTable(){
+// Scale table = current budgets only, no metric noise, no % step. SHOWN clearly,
+// with a per-row "pending until all gates green" status — no blur/lock overlay.
+function ScaleTable({dotClass}){
   return (
-    <div className="panel" style={{position:"relative"}}>
+    <div className="panel">
+      <div className="lab-pending-note">
+        <span className="lab-pending-badge"><span className="dot"></span>Pending · all gates green</span>
+        <span>These moves are visible now but stay queued until all 3 gates read green. Each opens the winner&rsquo;s creative on a fresh Warm + Broad ad set.</span>
+      </div>
       <div className="tbl-scroll">
-        <table className="ads" style={{minWidth:520}}>
+        <table className="ads" style={{minWidth:660}}>
           <colgroup>
-            <col style={{width:230}} /><col style={{width:160}} /><col style={{width:150}} />
+            <col style={{width:210}} /><col style={{width:150}} /><col style={{width:150}} /><col style={{width:150}} />
           </colgroup>
           <thead>
             <tr>
               <th><span className="th-inner">Winner</span></th>
               <th className="num"><span className="th-inner">Audience</span></th>
               <th className="num"><span className="th-inner">Current budget / day</span></th>
+              <th className="num"><span className="th-inner">Status</span></th>
             </tr>
           </thead>
           <tbody>
@@ -2439,22 +2745,206 @@ function ScaleTable(){
               <tr key={i}>
                 <td>
                   <div className="campaign-cell">
-                    <span className="camp-dot tyson"></span>
+                    <span className={"camp-dot "+(dotClass||"tyson")}></span>
                     <span>{r.name}</span>
                   </div>
                 </td>
                 <td className="num dim">{r.aud}</td>
                 <td className="num">{fmtUsd(r.spend,0)}</td>
+                <td className="num">
+                  <span className="lab-pending-badge"><span className="dot"></span>Pending</span>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="lab-lock-overlay">
-        <div className="lab-lock-card">
-          <span className="lab-lock-ic"><IcLock/></span>
-          Locked — unlocks when all 3 gates are green
+    </div>
+  );
+}
+
+/* ====== Action modals (skeletons; the real API call is a stub/no-op for now) ====== */
+
+// Reusable per-ad metric readout (label:value pairs reusing the AD_COLS columns).
+function AdReadout({row}){
+  return (
+    <div className="lab-readout">
+      <div className="lab-readout-grid">
+        {AD_COLS.map(col=>{
+          const cls = col.cls ? col.cls(row) : "";
+          return (
+            <div key={col.k} className="lab-readout-cell">
+              <span className="lab-readout-lbl">{col.label}</span>
+              <span className={"lab-readout-val "+cls}>{col.fmt(row)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TurnOffModal({row, campaign, adSet, onClose}){
+  if(!row) return null;
+  return (
+    <div className="lab-modal-backdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="lab-modal" role="dialog" aria-modal="true">
+        <div className="lab-modal-head">
+          <div>
+            <h3 className="lab-modal-title">Confirm — turn off this ad?</h3>
+            <div className="lab-modal-sub">
+              <span className="mono">{row.name}</span> in {campaign} · {adSet}
+            </div>
+          </div>
+          <button className="lab-modal-close" onClick={onClose}>×</button>
         </div>
+        <div className="lab-modal-body">
+          <AdReadout row={row}/>
+          <div className="lab-safe-line">
+            <span className="ic"><IcCheck/></span>
+            Safe + reversible — this only pauses the ad; nothing is deleted.
+          </div>
+        </div>
+        <div className="lab-modal-foot">
+          <button className="btn-secondary" onClick={onClose}>Go back</button>
+          {/* stub/no-op: real pause call wires here later */}
+          <button className="btn-danger-big" onClick={onClose}>Yes, turn off ad</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PROMOTE_CHECKS = [
+  {k:"cta", label:"CTA is correct"},
+  {k:"advantage", label:"Advantage+ creative is OFF in audience settings"},
+  {k:"audience", label:"Audience is the proven stack"},
+];
+
+function PromoteModal({row, onClose}){
+  const [ticked, setTicked] = useState({});
+  if(!row) return null;
+  const allTicked = PROMOTE_CHECKS.every(c=>ticked[c.k]);
+  const toggle = (k)=> setTicked(t=>({...t,[k]:!t[k]}));
+  return (
+    <div className="lab-modal-backdrop" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="lab-modal" role="dialog" aria-modal="true">
+        <div className="lab-modal-head">
+          <div>
+            <h3 className="lab-modal-title">Promote {row.name} to Scale</h3>
+            <div className="lab-modal-sub">Hybrid move — the app does the safe part; you confirm the rest.</div>
+          </div>
+          <button className="lab-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="lab-modal-body">
+          <div className="lab-promo-block auto">
+            <div className="h">The app will do (paused, reversible):</div>
+            <ul className="lab-promo-list">
+              <li>Create a Warm ad set, paused, at {row.name}&rsquo;s winning creative.</li>
+              <li>Create a Broad ad set, paused, at the same creative.</li>
+            </ul>
+          </div>
+          <div className="lab-promo-block manual">
+            <div className="h">You confirm first (manual checks):</div>
+            {PROMOTE_CHECKS.map(c=>(
+              <div key={c.k} className="lab-check-row" onClick={()=>toggle(c.k)}>
+                <span className={"lab-check-box "+(ticked[c.k]?"on":"")}>{ticked[c.k] && <IcCheck/>}</span>
+                <span className="lab-check-txt">{c.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="lab-safe-line">
+            <span className="ic"><IcCheck/></span>
+            Nothing goes live automatically — the app only creates PAUSED ad sets; you flip them on yourself.
+          </div>
+        </div>
+        <div className="lab-modal-foot">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          {/* stub/no-op: real ad-set creation wires here later */}
+          <button className="btn-confirm-big" disabled={!allTicked} onClick={onClose}>Create ad sets (paused)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ====== Constraint card — data-driven binding-constraint detector ====== */
+
+// Pure decision rule: returns the binding constraint purely from the numbers.
+// Each constraint: {key, label, util (0..1 or null if not measured), limit (0..1)}.
+// Binding = the measured constraint with the HIGHEST utilization that is at/over its limit.
+// If none measured → "unknown — capacity not wired". If measured but none over → "none — clear to scale".
+function pickConstraint(constraints){
+  const measured = constraints.filter(c => typeof c.util === "number");
+  if(measured.length === 0){
+    return {verdict:"unknown — capacity not wired", state:"unknown", binding:null};
+  }
+  const over = measured.filter(c => c.util >= c.limit);
+  if(over.length === 0){
+    return {verdict:"none — clear to scale", state:"clear", binding:null};
+  }
+  const binding = over.reduce((a,b)=> b.util > a.util ? b : a);
+  return {verdict:binding.label, state:"bound", binding:binding.key};
+}
+
+function ConstraintBar({c, isBinding}){
+  const measured = typeof c.util === "number";
+  const over = measured && c.util >= c.limit;
+  const pct = measured ? Math.min(100, Math.round(c.util*100)) : 0;
+  const limitPct = Math.round(c.limit*100);
+  return (
+    <div className="lab-bar-row">
+      <div className="lab-bar-top">
+        <span className="lab-bar-name">
+          {c.label}
+          {isBinding && <span className="binding">binding</span>}
+        </span>
+        <span className={"lab-bar-util "+(measured?(over?"over":"under"):"na")}>
+          {measured ? pct+"% / "+limitPct+"%" : "not measured"}
+        </span>
+      </div>
+      <div className={"lab-bar-track "+(measured?"":"na")}>
+        {measured && <div className={"lab-bar-fill "+(over?"over":"under")} style={{width:pct+"%"}}></div>}
+        {measured && <div className="lab-bar-threshold" style={{left:limitPct+"%"}}></div>}
+      </div>
+      <div className="lab-bar-sub">{c.sub}</div>
+    </div>
+  );
+}
+
+// Composite ROAS headroom modeled as utilization: floor(3×) / current(3.8×) = 0.79 → 79% of the floor used.
+const CONSTRAINTS = [
+  {key:"ads", label:"Ad economics", util:3/3.8, limit:1.0,
+   sub:"Composite ROAS 3.8× vs 3× floor — headroom to spend more."},
+  {key:"closer", label:"Closer calendar", util:null, limit:0.8,
+   sub:"% of prime slots filled vs 80% — awaiting capacity data."},
+  {key:"setter", label:"Setter bandwidth", util:null, limit:0.8,
+   sub:"% of max convo volume vs 80% — awaiting capacity data."},
+];
+
+function ConstraintCard(){
+  const result = pickConstraint(CONSTRAINTS);
+  const headline = result.state === "bound"
+    ? "Current constraint: "+result.verdict
+    : (result.state === "clear" ? "Current constraint: none — clear to scale" : "Awaiting capacity data");
+  const meta = result.state === "unknown"
+    ? "Closer + setter capacity aren't wired yet — can't name the true binding constraint until they are."
+    : (result.state === "clear"
+        ? "Every measured constraint is under its limit. Nothing is pinning growth right now."
+        : "This is the part of the machine running closest to its ceiling — fix it first to unlock more scale.");
+  return (
+    <div className="lab-constraint">
+      <div className="lab-constraint-head">
+        <div>
+          <div className="lab-constraint-k">Constraint</div>
+          <div className={"lab-constraint-verdict "+result.state}>{headline}</div>
+          <div className="lab-constraint-meta">{meta}</div>
+        </div>
+      </div>
+      <div className="lab-constraint-body">
+        {CONSTRAINTS.map(c=>(
+          <ConstraintBar key={c.key} c={c} isBinding={result.binding===c.key}/>
+        ))}
       </div>
     </div>
   );
@@ -2472,15 +2962,25 @@ function ThisWeek(){
   );
 }
 
+const ACCOUNTS = [
+  {id:"tyson", label:"Tyson", dot:"tyson", campaign:"6/12 · Warm — Winner Variations", adSet:"Warm Stack — Success ICP"},
+  {id:"antwan", label:"Antwan", dot:"keith", campaign:"Antwan · Direct CTA — Warm Stack Split", adSet:"Warm Audience Stack — Success ICP"},
+];
+
 function Lab(){
+  const [account, setAccount] = useState("tyson");
+  const [dateRange, setDateRange] = useState(()=>rangeForPreset("last14"));
+  const [turnOff, setTurnOff] = useState(null);   // ad row pending turn-off confirm
+  const [promote, setPromote] = useState(null);   // ad row pending promote confirm
+  const acct = ACCOUNTS.find(a=>a.id===account) || ACCOUNTS[0];
+
   return (
     <div className="app">
       <div className="page">
-        {/* Header */}
+        {/* Header — clean title + preview pill (account switcher carries the client) */}
         <div className="page-head">
           <div>
             <h1 className="page-title">Lab</h1>
-            <div className="page-sub">Tyson · Test → Graduate → Scale</div>
           </div>
           <div className="sync-pill">
             <span className="sync-ic" style={{width:7,height:7,borderRadius:99,background:"var(--gold)",display:"inline-block"}}></span>
@@ -2488,13 +2988,21 @@ function Lab(){
           </div>
         </div>
 
-        {/* 1. The climb ladder — standalone, at the very top */}
-        <ClimbLadder/>
+        {/* Top row — account switcher + date-range calendar (timeline/context anchor) */}
+        <div className="filter-bar">
+          <SelectFilter
+            label="Account"
+            options={ACCOUNTS}
+            value={account}
+            onChange={setAccount}
+          />
+          <DateDropdown value={dateRange} onChange={setDateRange} />
+        </div>
 
-        {/* 2. Green-light gates */}
-        <div style={{marginTop:24}}><Gates/></div>
+        {/* Green-light gates */}
+        <div style={{marginTop:8}}><Gates/></div>
 
-        {/* 3. Graduates */}
+        {/* Graduates */}
         <div style={{marginTop:28}}>
           <div className="section-head">
             <span className="section-label">Graduates · Test → Scale</span>
@@ -2502,16 +3010,18 @@ function Lab(){
           </div>
           <AdMetricsTable
             rows={GRADUATES}
+            dotClass={acct.dot}
             statusCols={[
               {k:"st1", label:"≥3× ROAS", ok:(r)=> r.collectedRoi>=3},
               {k:"st2", label:"3+ sales", ok:(r)=> r.clients>=3},
             ]}
             actionLabel="Promote"
             actionClass="lab-promote"
+            onAction={setPromote}
           />
         </div>
 
-        {/* 4. Kills */}
+        {/* Kills */}
         <div style={{marginTop:28}}>
           <div className="section-head">
             <span className="section-label">Kills · Test losers</span>
@@ -2519,32 +3029,48 @@ function Lab(){
           </div>
           <AdMetricsTable
             rows={KILLS}
+            dotClass={acct.dot}
             statusCols={[
               {k:"st1", label:"Spent ≥ 2× profit", ok:(r)=> true},
               {k:"st2", label:"Clearly worse", ok:(r)=> true},
             ]}
             actionLabel="Turn off"
             actionClass="alert-resolve"
+            onAction={setTurnOff}
           />
         </div>
 
-        {/* 5. Scale moves */}
+        {/* Scale moves — shown, pending until all gates green */}
         <div style={{marginTop:28}}>
           <div className="section-head">
             <span className="section-label">Scale moves</span>
             <span className="section-meta">winners&rsquo; current budgets</span>
           </div>
-          <ScaleTable/>
+          <ScaleTable dotClass={acct.dot}/>
         </div>
 
-        {/* 6. This week */}
+        {/* This week */}
         <div style={{marginTop:28}}>
           <div className="section-head">
             <span className="section-label">This week</span>
           </div>
           <ThisWeek/>
         </div>
+
+        {/* The climb ladder — standalone, at the bottom */}
+        <div style={{marginTop:28}}>
+          <ClimbLadder/>
+        </div>
+
+        {/* Constraint — at the very bottom */}
+        <div style={{marginTop:18}}>
+          <ConstraintCard/>
+        </div>
       </div>
+
+      {/* Action modals (skeletons) */}
+      {turnOff && <TurnOffModal row={turnOff} campaign={acct.campaign} adSet={acct.adSet} onClose={()=>setTurnOff(null)}/>}
+      {promote && <PromoteModal row={promote} onClose={()=>setPromote(null)}/>}
     </div>
   );
 }
