@@ -10,7 +10,7 @@ export default function LabPage() {
     <main className="ads-export-page" aria-label="Lab">
       <iframe
         className="ads-export-frame"
-        src={`/lab.html?v=phase1-preview&t=${cacheBust}`}
+        src={`/lab.html?v=phase1-b&t=${cacheBust}`}
         title="Lab"
       />
     </main>
