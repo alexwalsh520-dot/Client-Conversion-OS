@@ -33,10 +33,18 @@ export default function RecordTestimonial({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const recordInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
+  // Opens the camera to record a new clip (capture="user").
   function pickVideo() {
-    inputRef.current?.click();
+    recordInputRef.current?.click();
+  }
+
+  // Opens the photo library / file picker to choose an existing video
+  // (no capture attribute, so the OS offers the gallery instead of the camera).
+  function pickUpload() {
+    uploadInputRef.current?.click();
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -134,11 +142,20 @@ export default function RecordTestimonial({
         fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
+      {/* Record: capture="user" opens the camera directly. */}
       <input
-        ref={inputRef}
+        ref={recordInputRef}
         type="file"
         accept="video/*"
         capture="user"
+        onChange={onFileChange}
+        style={{ display: "none" }}
+      />
+      {/* Upload: no capture, so the OS offers the photo library / files. */}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept="video/*"
         onChange={onFileChange}
         style={{ display: "none" }}
       />
@@ -166,8 +183,9 @@ export default function RecordTestimonial({
                 Hi {firstName}, share your story
               </h1>
               <p style={{ color: COLORS.sub, margin: 0, fontSize: 15, lineHeight: 1.6 }}>
-                Record a short video telling us about your journey. Film it in one take in a quiet, well lit spot,
-                holding your phone steady. You can re-record as many times as you like before you submit.
+                Record a short video telling us about your journey, or upload one you already have. Film it in one
+                take in a quiet, well lit spot, holding your phone steady. You can re-record or pick a different
+                video as many times as you like before you submit.
               </p>
               <p
                 style={{
@@ -232,6 +250,10 @@ export default function RecordTestimonial({
 
                 <button onClick={pickVideo} style={btn(phase === "ready")}>
                   {phase === "ready" ? "Record video" : "Record again"}
+                </button>
+
+                <button onClick={pickUpload} style={btn(false)}>
+                  {phase === "ready" ? "Upload a video" : "Choose a different video"}
                 </button>
 
                 {file && (phase === "preview" || phase === "error") && (
