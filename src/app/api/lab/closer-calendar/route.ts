@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServiceSupabase } from "@/lib/supabase";
 
 /**
  * Closer calendar gate (Lab tab).
@@ -8,18 +9,26 @@ import { NextRequest, NextResponse } from "next/server";
  *   1. CURRENT availability (the gate value): how full is the creator's
  *      bookable time RIGHT NOW — from now to +7 days.
  *        filledPct = bookedUpcoming / (bookedUpcoming + openSlots)
- *      `openSlots` comes from /calendars/{id}/free-slots; `bookedUpcoming`
- *      comes from /calendars/events over now→+7d.
+ *      `openSlots` comes from GHL /calendars/{id}/free-slots (the only endpoint
+ *      our Private Integration token can read); `bookedUpcoming` comes from our
+ *      own Supabase `ghl_appointments` table (the GHL events API returns 401
+ *      "Invalid Private Integration token" for appointments, so it can't be used).
  *
  *   2. Daily booked history (backward + forward context): a per-ET-day count
- *      of booked events across a window that straddles today (default = past
- *      7 days through next 7 days). `recentBooked` = booked in the past 7 days.
+ *      of booked appointments across a window that straddles today (default =
+ *      past 7 days through next 7 days). `recentBooked` = booked in the past 7 days.
+ *
+ * The booked reads (bookedUpcoming, recentBooked, daily) all come from
+ * `ghl_appointments` in Supabase, filtered by the resolved calendar_id and
+ * excluding cancelled appointments. `openSlots` is the only value still read
+ * from GHL (free-slots, which works).
  *
  * ALWAYS returns 200 — never 500 — so the Lab gate can render "awaiting data"
  * instead of crashing. On any missing cred / failed fetch / unknown response
- * shape we return { status: "unknown", reason }.
+ * shape we return { status: "unknown", reason }. If only the DB read fails we
+ * degrade gracefully: booked fields go 0/null but openSlots is still returned.
  *
- * GHL v2 auth/fetch pattern copied verbatim from
+ * GHL v2 free-slots auth/fetch pattern copied verbatim from
  * src/app/api/sales-hub/ghl-upcoming/route.ts and daily-brief/route.ts.
  * ET day bucketing mirrors src/app/api/lab/setter-load/route.ts (DST-correct).
  */
@@ -40,9 +49,6 @@ const HISTORY_FWD_DAYS = 7;
 
 const THRESHOLD_PCT = 0.8;
 const ET_TIMEZONE = "America/New_York";
-
-// Statuses that mean the slot is NOT actually taken — exclude these from "booked".
-const NON_BOOKED_STATUS = ["cancel", "noshow", "no-show", "no_show", "invalid", "deleted", "declined"];
 
 // ── ET calendar-day helpers (DST-correct), mirrored from setter-load ─────────
 
@@ -194,43 +200,39 @@ async function resolveCalendar(
 }
 
 /**
- * Fetch booked events in [startISO, endISO] and return them as instants.
- * Works for PAST and FUTURE ranges alike. Excludes cancelled/noshow/etc.
- * Robust to response shape (data.events || data.data || data), matching
- * ghl-upcoming. Each returned instant is the event's start time, for ET bucketing.
+ * Fetch booked appointment start-times in [startISO, endISO) from our own
+ * Supabase `ghl_appointments` table (the GHL events API returns 401 for
+ * appointments with our Private Integration token, so it can't be used).
+ *
+ * Works for PAST and FUTURE ranges alike. Filters by the resolved calendar_id
+ * and excludes cancelled appointments (a cancelled appt frees the slot;
+ * booked/confirmed/showed/noshow all occupy a slot). Each returned instant is
+ * the appointment's start time, for ET bucketing. Half-open range: start
+ * inclusive, end exclusive.
  */
 async function fetchBookedInstants(
+  db: ReturnType<typeof getServiceSupabase>,
   calendarId: string,
-  headers: Record<string, string>,
-  locationId: string,
   startISO: string,
   endISO: string
 ): Promise<Date[]> {
-  const url =
-    `${GHL_V2_BASE}/calendars/events?locationId=${locationId}` +
-    `&calendarId=${calendarId}` +
-    `&startTime=${encodeURIComponent(startISO)}` +
-    `&endTime=${encodeURIComponent(endISO)}`;
+  const { data, error } = await db
+    .from("ghl_appointments")
+    .select("start_time, status")
+    .eq("calendar_id", calendarId)
+    .neq("status", "cancelled")
+    .gte("start_time", startISO)
+    .lt("start_time", endISO);
 
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error(`GHL events fetch failed (${res.status})`);
+  if (error) {
+    throw new Error(`ghl_appointments read failed: ${error.message}`);
   }
-  const data = await res.json();
-  const events = data.events || data.data || data || [];
-  if (!Array.isArray(events)) return [];
 
   const instants: Date[] = [];
-  for (const evt of events as Array<Record<string, unknown>>) {
-    const status = String(evt.appointmentStatus || evt.status || "").toLowerCase();
-    // Keep booked/confirmed/showed (and unknown/blank → assume it takes a slot).
-    const isExcluded = NON_BOOKED_STATUS.some((s) => status.includes(s));
-    if (isExcluded) continue;
-
-    const startRaw = String(evt.startTime || evt.start_time || evt.startTimeISO || "");
-    const instant = startRaw ? new Date(startRaw) : null;
-    // Keep events with a parseable start; that's what we bucket by ET day.
-    if (instant && !Number.isNaN(instant.getTime())) {
+  for (const row of (data ?? []) as Array<{ start_time: string | null }>) {
+    if (!row.start_time) continue;
+    const instant = new Date(row.start_time);
+    if (!Number.isNaN(instant.getTime())) {
       instants.push(instant);
     }
   }
@@ -414,37 +416,43 @@ export async function GET(req: NextRequest) {
   // Full daily-history window, in UTC, from the ET day bounds.
   const { startIso: histStartIso, endIso: histEndIso } = windowUtcBounds(from, to);
 
-  // ── Fetch everything in parallel; any hard failure → unknown ──────────────
-  let openSlots: number;
-  let upcomingInstants: Date[];
-  let recentInstants: Date[];
-  let historyInstants: Date[];
+  // ── openSlots: GHL free-slots (the ONLY value still read from GHL) ─────────
+  // This endpoint works with our Private Integration token. If it fails we lose
+  // the denominator and the gate can't compute filledPct → unknown.
+  let openSlots: number | null;
   try {
-    [openSlots, upcomingInstants, recentInstants, historyInstants] = await Promise.all([
-      // Current availability open slots (now → +7d).
-      countFreeSlots(calendarId, headers, availStartEpochMs, availEndEpochMs),
-      // Booked upcoming (now → +7d) for the gate denominator.
-      fetchBookedInstants(calendarId, headers, locationId, availStartIso, availEndIso),
-      // Booked in the trailing 7 days (backward context).
-      fetchBookedInstants(calendarId, headers, locationId, recentStartIso, recentEndIso),
-      // Booked across the whole daily-history window (past + future).
-      fetchBookedInstants(calendarId, headers, locationId, histStartIso, histEndIso),
-    ]);
+    openSlots = await countFreeSlots(calendarId, headers, availStartEpochMs, availEndEpochMs);
   } catch (err) {
-    return NextResponse.json({
-      account,
-      calendarId,
-      calendarName,
-      window,
-      thresholdPct: THRESHOLD_PCT,
-      status: "unknown",
-      updatedAt,
-      reason: err instanceof Error ? err.message : "Failed to fetch calendar data",
-    });
+    console.error("[lab/closer-calendar] free-slots fetch failed", err);
+    openSlots = null;
   }
 
-  const bookedUpcoming = upcomingInstants.length;
-  const recentBooked = recentInstants.length;
+  // ── booked reads: our own Supabase `ghl_appointments` table ────────────────
+  // The GHL events API returns 401 for appointments, so booked counts come from
+  // the table the GHL appointment webhook populates. A DB failure degrades
+  // gracefully: booked fields go 0/null but we still return openSlots.
+  let bookedUpcoming = 0;
+  let recentBooked = 0;
+  let historyInstants: Date[] = [];
+  let bookedKnown = false;
+  try {
+    const db = getServiceSupabase();
+    const [upcomingInstants, recentInstants, histInstants] = await Promise.all([
+      // Booked upcoming (now → +7d) for the gate numerator.
+      fetchBookedInstants(db, calendarId, availStartIso, availEndIso),
+      // Booked in the trailing 7 days (backward context).
+      fetchBookedInstants(db, calendarId, recentStartIso, recentEndIso),
+      // Booked across the whole daily-history window (past + future).
+      fetchBookedInstants(db, calendarId, histStartIso, histEndIso),
+    ]);
+    bookedUpcoming = upcomingInstants.length;
+    recentBooked = recentInstants.length;
+    historyInstants = histInstants;
+    bookedKnown = true;
+  } catch (err) {
+    console.error("[lab/closer-calendar] ghl_appointments read failed", err);
+    bookedKnown = false;
+  }
 
   // ── Daily booked history, bucketed per ET day across the full window ──────
   // Seed every day in the window with a zero bucket so the series is dense.
@@ -454,19 +462,24 @@ export async function GET(req: NextRequest) {
   for (const instant of historyInstants) {
     const etDay = etDateStringForInstant(instant);
     const bucket = dailyByDate.get(etDay);
-    // Skip events whose ET day falls just outside [from, to] (range-edge slack).
+    // Skip appts whose ET day falls just outside [from, to] (range-edge slack).
     if (!bucket) continue;
     bucket.booked += 1;
   }
   const daily = days.map((date) => dailyByDate.get(date)!);
 
   // ── The gate value: how full is bookable time RIGHT NOW (next 7d) ─────────
-  const denom = bookedUpcoming + openSlots;
-  const filledPct = denom > 0 ? bookedUpcoming / denom : null;
+  // filledPct is null unless we have BOTH a real openSlots and real booked
+  // counts and a non-zero denominator.
+  const denom = openSlots != null ? bookedUpcoming + openSlots : 0;
+  const filledPct =
+    openSlots != null && bookedKnown && denom > 0 ? bookedUpcoming / denom : null;
   const status: "green" | "red" | "unknown" =
     filledPct == null ? "unknown" : filledPct <= THRESHOLD_PCT ? "green" : "red";
 
-  const note = `current upcoming availability (next ${AVAIL_DAYS}d); daily history spans ${from}→${to}`;
+  const note = `current upcoming availability (next ${AVAIL_DAYS}d); daily history spans ${from}→${to}${
+    bookedKnown ? "" : "; booked counts unavailable (ghl_appointments read failed)"
+  }${openSlots == null ? "; open slots unavailable (free-slots fetch failed)" : ""}`;
 
   return NextResponse.json(
     {
