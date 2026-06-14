@@ -30,6 +30,7 @@ import {
   EyeOff,
   Pill,
   Trophy,
+  FlaskConical,
 } from "lucide-react";
 
 const navItems = [
@@ -51,6 +52,7 @@ const navItems = [
 const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/lab", label: "Lab", icon: FlaskConical },
   { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
