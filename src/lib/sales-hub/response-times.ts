@@ -483,7 +483,7 @@ export async function getResponseTimeMetrics(params: {
   const assignments = buildAssignments(assignmentRows, visibleClients);
   const leadLinkByInstagramId = buildLeadLinkMap(leadLinks);
   const groupedMessages = new Map<string, MessageRow[]>();
-  const samples: ResponseSample[] = [];
+  let samples: ResponseSample[] = [];
   const matchedLeadIds = new Set<string>();
   let unmatchedInboundMessages = 0;
   let openInboundMessages = 0;
@@ -547,6 +547,37 @@ export async function getResponseTimeMetrics(params: {
     }
 
     if (pending) openInboundMessages += 1;
+  }
+
+  // Stop tracking a conversation FROM THE MOMENT it's marked done. When a lead is
+  // tagged Booked Call / Subscription Sold / Closed in ManyChat, the conversation
+  // has reached a terminal outcome, so any response to a message received at or
+  // after that instant must not count toward response times (it was unfairly
+  // dinging setters). Replies to messages received BEFORE the tag still count —
+  // that was real setting work.
+  //
+  // We read the tag-application time from the synced ManyChat tag events
+  // (manychat_tag_events, already loaded as assignmentRows above). For this to
+  // fire, those terminal tags must be sent to /api/sales-hub/manychat-webhook
+  // (an External Request per tag, like new_lead) so CCOS records WHEN each was
+  // applied — ManyChat's API does not expose tag timestamps.
+  const doneAtBySubscriber = new Map<string, number>();
+  for (const event of assignmentRows) {
+    if (!event.subscriber_id || !event.event_at) continue;
+    const name = (event.tag_name || "").toLowerCase();
+    if (!name.includes("booked") && !name.includes("sold") && !name.includes("closed")) continue;
+    const at = new Date(event.event_at).getTime();
+    if (Number.isNaN(at)) continue;
+    const prev = doneAtBySubscriber.get(event.subscriber_id);
+    if (prev === undefined || at < prev) doneAtBySubscriber.set(event.subscriber_id, at);
+  }
+  if (doneAtBySubscriber.size > 0) {
+    samples = samples.filter((sample) => {
+      const doneAt = doneAtBySubscriber.get(sample.subscriberId);
+      // Keep the sample only if the prospect's message arrived before the lead
+      // was marked done.
+      return doneAt === undefined || new Date(sample.inboundAt).getTime() < doneAt;
+    });
   }
 
   const clients = visibleClients.map((item) =>
