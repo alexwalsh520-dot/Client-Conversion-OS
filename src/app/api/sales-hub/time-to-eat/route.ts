@@ -7,6 +7,10 @@ import {
   postTimeToEatAlert,
 } from "@/lib/sales-hub/time-to-eat-alerts";
 
+// Checking ManyChat tags for candidate leads adds a handful of API calls, so give
+// the function room beyond the default timeout.
+export const maxDuration = 60;
+
 type ClientFilter = "all" | "tyson" | "antwan";
 type ServerClient = "tyson_sonnek" | "antwan_rarcus";
 type TimeToEatStatus = "watching" | "time_to_eat" | "dead_meat" | "resolved";
@@ -115,6 +119,14 @@ const WARN_AFTER_BUSINESS_MINUTES = 15;
 const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
 const BUSINESS_HOURS_LABEL = "11am-11pm ET";
+
+// A lead carrying any of these ManyChat tags is done — never chase or alert it.
+// (Booked Call / Subscription Sold / Closed — matched loosely so prefixed variants
+// like "Sales - Booked Call", "Subscription - Closed", "AI-CLOSED" also count.)
+const EXEMPT_TAG_SUBSTRINGS = ["booked call", "sold", "closed"];
+// Manychat ids confirmed exempt are cached here so we don't re-hit the API.
+const EXEMPT_CACHE_KEY = "time_to_eat_exempt_v1";
+const EXEMPT_RETENTION_DAYS = 30;
 // The moment this tracker went live. Only prospect replies AFTER this instant
 // count — so there is no historical backlog, just leads moving forward. Past
 // slips before this time are ignored too, giving every lead a clean slate.
@@ -517,6 +529,95 @@ async function saveAlertLog(sb: ReturnType<typeof getServiceSupabase>, log: Aler
   );
 }
 
+// ── Exempt leads (Booked Call / Subscription Sold / Closed) ────────────────────
+// These tags aren't synced into CCOS, so we read them live from ManyChat for the
+// handful of candidate leads, and cache the confirmed-exempt ids.
+
+function manychatApiKey(client: ServerClient): string | null {
+  if (client === "tyson_sonnek") return process.env.MANYCHAT_API_KEY_TYSON || null;
+  if (client === "antwan_rarcus") return process.env.MANYCHAT_API_KEY_ANTWAN || null;
+  return null;
+}
+
+function tagsAreExempt(tags: string[]): boolean {
+  return tags.some((tag) => {
+    const name = tag.toLowerCase();
+    return EXEMPT_TAG_SUBSTRINGS.some((sub) => name.includes(sub));
+  });
+}
+
+// A subscriber's current ManyChat tag names, or null if the call failed (which we
+// treat as "not exempt" so we never hide a real lead on a transient error).
+async function fetchSubscriberTags(client: ServerClient, manychatId: string): Promise<string[] | null> {
+  const key = manychatApiKey(client);
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(manychatId)}`,
+      { headers: { Authorization: `Bearer ${key}` } },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as
+      | { data?: { tags?: Array<{ name?: unknown }> } }
+      | null;
+    const tags = body?.data?.tags;
+    if (!Array.isArray(tags)) return null;
+    return tags.map((t) => (typeof t?.name === "string" ? t.name : "")).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+// Run an async fn over items with bounded concurrency (keeps us under ManyChat's
+// rate limit while still finishing quickly).
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      out[index] = await fn(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+type ExemptCache = Record<string, number>; // manychatId -> confirmed-exempt timestamp
+
+async function loadExemptCache(sb: ReturnType<typeof getServiceSupabase>): Promise<ExemptCache> {
+  try {
+    const { data } = await sb
+      .from("app_settings")
+      .select("value")
+      .eq("key", EXEMPT_CACHE_KEY)
+      .maybeSingle();
+    if (!data?.value) return {};
+    const parsed = JSON.parse(String(data.value));
+    return parsed && typeof parsed === "object" ? (parsed as ExemptCache) : {};
+  } catch (error) {
+    console.warn("[sales-hub/time-to-eat] exempt cache unavailable:", error);
+    return {};
+  }
+}
+
+async function saveExemptCache(sb: ReturnType<typeof getServiceSupabase>, cache: ExemptCache) {
+  const cutoff = Date.now() - EXEMPT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  for (const [key, at] of Object.entries(cache)) {
+    if (at < cutoff) delete cache[key];
+  }
+  await sb.from("app_settings").upsert(
+    {
+      key: EXEMPT_CACHE_KEY,
+      value: JSON.stringify(cache),
+      updated_at: new Date().toISOString(),
+      updated_by: "time-to-eat-exempt",
+    },
+    { onConflict: "key" },
+  );
+}
+
 export async function GET(req: NextRequest) {
   const client = normalizeClient(req.nextUrl.searchParams.get("client"));
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -621,6 +722,40 @@ export async function GET(req: NextRequest) {
       conversationLeads.set(conversationId, resolved);
     }
 
+    // Exempt leads: anyone tagged Booked Call / Subscription Sold / Closed in
+    // ManyChat is done — never list or alert them (they "just replied" but don't
+    // need chasing). Cached ids are reused; on cron runs we refresh by checking
+    // the live ManyChat tags of any candidate not already known to be exempt.
+    const exemptCache: ExemptCache = memoryState.enabled ? await loadExemptCache(sb) : {};
+    let exemptCacheDirty = false;
+
+    if (isSync) {
+      const toCheck: LeadMeta[] = [];
+      const seenManychatIds = new Set<string>();
+      for (const [conversationId, messages] of messagesByConversation.entries()) {
+        const lead = conversationLeads.get(conversationId);
+        const lastMessage = messages.at(-1);
+        if (!lead?.manychatId || !lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
+        if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
+        if (businessMinutesBetween(lastMessage.sent_at, nowIso) < WARN_AFTER_BUSINESS_MINUTES) continue;
+        if (exemptCache[lead.manychatId] || seenManychatIds.has(lead.manychatId)) continue;
+        seenManychatIds.add(lead.manychatId);
+        toCheck.push(lead);
+      }
+      const results = await mapLimit(toCheck, 5, async (lead) => {
+        const tags = await fetchSubscriberTags(lead.client, lead.manychatId as string);
+        return { manychatId: lead.manychatId as string, exempt: tags ? tagsAreExempt(tags) : false };
+      });
+      for (const result of results) {
+        if (result.exempt) {
+          exemptCache[result.manychatId] = Date.now();
+          exemptCacheDirty = true;
+        }
+      }
+    }
+
+    const isExempt = (lead: LeadMeta) => Boolean(lead.manychatId && exemptCache[lead.manychatId]);
+
     const timeToEat: TimeToEatLead[] = [];
     const deadMeat: TimeToEatLead[] = [];
     const businessHoursNow = withinEtBusinessHours(new Date());
@@ -630,6 +765,7 @@ export async function GET(req: NextRequest) {
       const lead = conversationLeads.get(conversationId);
       const lastMessage = messages.at(-1);
       if (!lead || !lastMessage?.sent_at) continue;
+      if (isExempt(lead)) continue;
 
       const id = memoryId(lead.client, conversationId);
       const existing = memory.leads[id];
@@ -679,6 +815,8 @@ export async function GET(req: NextRequest) {
     for (const [conversationId, messages] of messagesByConversation.entries()) {
       const lead = conversationLeads.get(conversationId);
       if (!lead) continue;
+      // Booked / Sold / Closed leads are exempt from the lists and every alert.
+      if (isExempt(lead)) continue;
 
       const lastMessage = messages.at(-1);
       if (!lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
@@ -800,6 +938,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    if (isSync && memoryState.enabled && exemptCacheDirty) {
+      try {
+        await saveExemptCache(sb, exemptCache);
+      } catch (error) {
+        console.warn("[sales-hub/time-to-eat] exempt cache save failed:", error);
+      }
+    }
+
     const byAge = (
       a: { hoursSinceProspectResponse: number },
       b: { hoursSinceProspectResponse: number },
@@ -820,6 +966,8 @@ export async function GET(req: NextRequest) {
       // Unanswered Instagram DMs we couldn't tie to a ManyChat lead (and so don't
       // show) — organic/spam, or leads whose IGSID hasn't bridged yet.
       unbridgedConversations,
+      // How many leads are currently held back because they're Booked/Sold/Closed.
+      exemptLeads: Object.keys(exemptCache).length,
       timeToEat: timeToEat.sort(byAge),
       deadMeat: deadMeat.sort(byAge),
     });
