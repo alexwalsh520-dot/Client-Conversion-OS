@@ -83,6 +83,14 @@ interface PerCoachEngagement {
   missingClientCount: number;
   missingPct: number;
   missingClients: string[];
+  /** Names of this coach's clients who DID submit this week, sorted
+   *  alphabetically. Mirror of missingClients; lets the digest show
+   *  who showed up as well as who didn't. */
+  submittedClients: string[];
+  /** Avg of per-client weekly scores for this coach's submitters
+   *  (each client weighted equally, not each submission). null when
+   *  no client submitted. */
+  coachAvgScore: number | null;
 }
 
 export interface DigestData {
@@ -201,6 +209,21 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
   const perCoach: PerCoachEngagement[] = Array.from(coachMap.entries())
     .map(([coachName, clients]) => {
       const missing = clients.filter((c) => !submittedClientIds.has(c.id));
+      const submitted = clients.filter((c) => submittedClientIds.has(c.id));
+      // Average of per-client weekly avgs for this coach's submitters
+      // (matches the per-coach Client Progress boost logic in
+      // CoachPerformanceTab — each client weighted equally, not each
+      // submission). null when nobody submitted.
+      const submittedIdSet = new Set(submitted.map((c) => c.id));
+      const submittedPerClient = perClient.filter(
+        (p) => p.coachName === coachName && p.clientId && submittedIdSet.has(p.clientId),
+      );
+      const coachAvgScore = submittedPerClient.length > 0
+        ? Math.round(
+            submittedPerClient.reduce((sum, p) => sum + p.avgScore, 0) /
+              submittedPerClient.length,
+          )
+        : null;
       return {
         coachName,
         activeClientCount: clients.length,
@@ -208,6 +231,8 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
         missingClientCount: missing.length,
         missingPct: Math.round((missing.length / clients.length) * 100),
         missingClients: missing.map((c) => c.name).sort(),
+        submittedClients: submitted.map((c) => c.name).sort(),
+        coachAvgScore,
       };
     })
     .sort((a, b) => b.missingPct - a.missingPct);
@@ -294,10 +319,13 @@ function buildSummaryPrompt(d: DigestData): string {
         .join("\n\n");
 
   const coachStats = d.perCoach
-    .map(
-      (c) =>
-        `  ${c.coachName}: ${c.missingClientCount}/${c.activeClientCount} missing (${c.missingPct}%)`
-    )
+    .map((c) => {
+      const avgPart =
+        c.coachAvgScore !== null
+          ? `, ${c.submittedClientCount} submitted (avg ${c.coachAvgScore}/100)`
+          : "";
+      return `  ${c.coachName}: ${c.missingClientCount}/${c.activeClientCount} missing (${c.missingPct}%)${avgPart}`;
+    })
     .join("\n");
 
   return `You are summarizing this week's CCOS client check-in forms for Saeed, the manager of the entire coaching operation. Saeed reads this Slack DM Sunday evening and uses it to know which clients and which coaches need attention this coming week.
@@ -468,10 +496,13 @@ export function buildDigestSlackBlocks(
       },
     });
   } else {
-    const lines = d.perCoach.map(
-      (c) =>
-        `${pctEmoji(c.missingPct)} *${c.coachName}* — ${c.missingClientCount}/${c.activeClientCount} missing (*${c.missingPct}%*)`
-    );
+    const lines = d.perCoach.map((c) => {
+      const avgPart =
+        c.coachAvgScore !== null
+          ? `  ·  ${c.submittedClientCount} submitted (avg *${c.coachAvgScore}/100*)`
+          : `  ·  0 submitted`;
+      return `${pctEmoji(c.missingPct)} *${c.coachName}* — ${c.missingClientCount}/${c.activeClientCount} missing (*${c.missingPct}%*)${avgPart}`;
+    });
     blocks.push({
       type: "section",
       text: {
@@ -481,6 +512,32 @@ export function buildDigestSlackBlocks(
         ),
       },
     });
+  }
+
+  // Submitted Check-Ins per coach — mirrors the Missing section so
+  // Saeed can see WHO showed up as well as who didn't.
+  const coachesWithSubmissions = d.perCoach.filter((c) => c.submittedClientCount > 0);
+  if (coachesWithSubmissions.length > 0) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: "*Submitted Check-Ins by Coach*" },
+    });
+    for (const c of coachesWithSubmissions) {
+      // Block-limit defense; same as the Missing loop below.
+      if (blocks.length >= 45) break;
+      const names = c.submittedClients.join(", ");
+      const avgPart =
+        c.coachAvgScore !== null ? `, avg ${c.coachAvgScore}/100` : "";
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: truncateForSlack(
+            `*${c.coachName}* (${c.submittedClientCount} submitted${avgPart}):\n${names}`
+          ),
+        },
+      });
+    }
   }
 
   // Missing Check-Ins per coach. Each coach with missing clients gets
