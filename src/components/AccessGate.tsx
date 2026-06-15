@@ -88,6 +88,10 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // recording page. Clients open it via an unguessable token link from their
     // coach; no CCOS login required.
     pathname.startsWith("/testimonials/record/") ||
+    // /testimonials/watch/<token> is the public shareable watch page (the Slack
+    // "Watch testimonial" link). Token-gated, no login, so coaches can view
+    // their client's submission without admin access.
+    pathname.startsWith("/testimonials/watch/") ||
     // /check-in is the public bi-weekly check-in form. Coaches share the
     // URL via Everfit DMs; clients pick themselves from the typeahead
     // and submit. Exact-match (no /check-in/* subroutes today).

@@ -152,6 +152,8 @@ export default function Sidebar() {
   if (pathname === "/testimonials") return null;
   // Public client video-testimonial recording page — coach-shared token URL, no CCOS chrome.
   if (pathname.startsWith("/testimonials/record/")) return null;
+  // Public shareable testimonial watch page (Slack link) — token URL, no CCOS chrome.
+  if (pathname.startsWith("/testimonials/watch/")) return null;
   // Public client check-in form — coach-shared URL, no CCOS chrome.
   if (pathname === "/check-in") return null;
   // Public partner onboarding portal — partner-shared token URL, no CCOS chrome.

@@ -59,11 +59,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Slack #testimonials ping (fire-and-forget).
+    // Slack #testimonials ping (fire-and-forget). Use the token-based public
+    // watch link so anyone with the link (e.g. the client's coach) can view it
+    // without an admin login. The token is unguessable, so videos can't be
+    // enumerated the way the sequential /videos/<id> admin URL could.
     void notifyVideoTestimonialCompleted({
       clientName: row.client_name,
       coachName: row.coach_name ?? null,
-      watchUrl: `${APP_BASE_URL}/testimonials/videos/${row.id}`,
+      watchUrl: `${APP_BASE_URL}/testimonials/watch/${token}`,
     }).catch((e) => console.warn("[testimonials/video/complete] slack notify failed:", e));
 
     return NextResponse.json({ ok: true });
