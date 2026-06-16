@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import TeamPayouts from "./TeamPayouts";
 
 // ---- shapes returned by /api/invoicing ----
 interface StripeSource {
@@ -224,11 +225,9 @@ export default function InvoicingClient() {
         )}
       </Section>
 
-      {/* ===================== TEAM PAYOUTS (placeholder) ===================== */}
+      {/* ===================== TEAM PAYOUTS ===================== */}
       <Section title="Team Payouts">
-        <div className="glass-static" style={{ padding: 28, textAlign: "center", color: "var(--text-muted)" }}>
-          Coming soon — not built yet.
-        </div>
+        <TeamPayouts />
       </Section>
     </div>
   );
