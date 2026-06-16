@@ -119,6 +119,14 @@ export function payDateOnOrBefore(dateStr: string): string {
   const pm = priorMonth(y, m);
   return ymd(pm.year, pm.month, 15);
 }
+// Previous scheduled pay date strictly before the given pay date.
+export function prevPayDate(payDate: string): string {
+  const [y, m] = payDate.split("-").map(Number);
+  const d = dayOf(payDate);
+  if (d >= 15) return ymd(y, m, 1); // 15th → 1st of the same month
+  const pm = priorMonth(y, m); // 1st → 15th of the previous month
+  return ymd(pm.year, pm.month, 15);
+}
 // A descending list of pay dates: `back` before-or-on `today`, plus `fwd` upcoming.
 export function recentPayDates(today: string, back: number, fwd: number): string[] {
   const out: string[] = [];

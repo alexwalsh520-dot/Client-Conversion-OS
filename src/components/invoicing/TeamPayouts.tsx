@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { nextPayDateAfter, payDateOnOrBefore, recentPayDates } from "@/lib/payouts/compute";
+import { nextPayDateAfter, payDateOnOrBefore, prevPayDate } from "@/lib/payouts/compute";
+
+// Earliest pay date we have data for: the tracker starts with the January tab,
+// so the first payout that reads a real prior month is Feb 1 2026 (earns January).
+const EARLIEST_PAYDATE = "2026-02-01";
 
 // ---- shapes returned by /api/payouts (mirror of PayoutRun) ----
 interface PayoutLine {
@@ -56,7 +60,7 @@ async function fetchRun(endpoint: string, payDate: string, asOf: string): Promis
 export default function TeamPayouts({ endpoint = "/api/payouts" }: { endpoint?: string }) {
   const today = useMemo(() => todayET(), []);
   const upcomingDate = useMemo(() => nextPayDateAfter(today), [today]);
-  const payDateOptions = useMemo(() => recentPayDates(today, 8, 2), [today]);
+  const mostRecent = useMemo(() => payDateOnOrBefore(today), [today]);
 
   const [upcoming, setUpcoming] = useState<PayoutRun | null>(null);
   const [upErr, setUpErr] = useState<string | null>(null);
@@ -121,20 +125,60 @@ export default function TeamPayouts({ endpoint = "/api/payouts" }: { endpoint?: 
 
       {/* ===================== HISTORY / DETAIL ===================== */}
       <h3 style={{ ...h3Style, marginTop: 34 }}>Payout detail &amp; history</h3>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 6, flexWrap: "wrap" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Pay date</span>
-          <select className="form-input" value={selDate} onChange={(e) => setSelDate(e.target.value)} style={{ minWidth: 220 }}>
-            {payDateOptions.map((d) => (
-              <option key={d} value={d}>
-                {prettyDate(d)}
-                {d === payDateOnOrBefore(today) ? " — most recent" : ""}
-                {d === upcomingDate ? " — upcoming" : ""}
-              </option>
-            ))}
-          </select>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Pick a pay period (back-date to any past run)</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+            <button
+              className="form-input"
+              style={stepBtn}
+              disabled={selDate <= EARLIEST_PAYDATE}
+              onClick={() => setSelDate(prevPayDate(selDate))}
+              title="Previous pay date"
+              aria-label="Previous pay date"
+            >
+              ◀
+            </button>
+            <input
+              type="date"
+              className="form-input"
+              value={selDate}
+              min={EARLIEST_PAYDATE}
+              max={upcomingDate}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const snapped = payDateOnOrBefore(v); // snap any picked day to its pay run
+                setSelDate(snapped < EARLIEST_PAYDATE ? EARLIEST_PAYDATE : snapped > upcomingDate ? upcomingDate : snapped);
+              }}
+              style={{ minWidth: 170 }}
+            />
+            <button
+              className="form-input"
+              style={stepBtn}
+              disabled={selDate >= upcomingDate}
+              onClick={() => setSelDate(nextPayDateAfter(selDate))}
+              title="Next pay date"
+              aria-label="Next pay date"
+            >
+              ▶
+            </button>
+          </div>
         </label>
+        <div style={{ display: "flex", gap: 6, paddingBottom: 2 }}>
+          <button className="form-input" style={chip(selDate === mostRecent)} onClick={() => setSelDate(mostRecent)}>
+            Most recent
+          </button>
+          <button className="form-input" style={chip(selDate === upcomingDate)} onClick={() => setSelDate(upcomingDate)}>
+            Upcoming
+          </button>
+        </div>
       </div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 14px" }}>
+        Showing <strong style={{ color: "var(--text-secondary)" }}>{prettyDate(selDate)}</strong>
+        {selDate === mostRecent ? " · most recent paid" : selDate === upcomingDate ? " · upcoming (forecast)" : selDate < mostRecent ? " · historical" : ""} ·
+        history back to {prettyDate(EARLIEST_PAYDATE)}. Use ◀ ▶ to step period by period.
+      </p>
 
       {detErr && <Banner tone="danger">{detErr}</Banner>}
       {detLoading && !detail && <div style={{ color: "var(--text-muted)", padding: 16 }}>Computing…</div>}
@@ -257,6 +301,16 @@ const h3Style: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: "va
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 14 };
 const td: React.CSSProperties = { padding: "11px 16px", color: "var(--text-secondary)" };
 const periodBanner: React.CSSProperties = { padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 };
+const stepBtn: React.CSSProperties = { cursor: "pointer", padding: "0 12px", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center" };
+function chip(active: boolean): React.CSSProperties {
+  return {
+    cursor: "pointer",
+    fontSize: 12,
+    padding: "6px 12px",
+    borderColor: active ? "var(--accent)" : undefined,
+    color: active ? "var(--accent)" : "var(--text-muted)",
+  };
+}
 
 function TotalCard({ label, value, sub, emphasis }: { label: string; value: number; sub?: string; emphasis?: boolean }) {
   return (
