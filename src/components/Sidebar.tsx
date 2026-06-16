@@ -23,6 +23,7 @@ import {
   BookOpen,
   FileText,
   Star,
+  Receipt,
   Clapperboard,
   Handshake,
   Utensils,
@@ -45,8 +46,9 @@ const navItems = [
   { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard, adminOnly: true },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
-  // Private single-owner tab — gated to ownerEmail in canViewItem (overrides admin).
+  // Private single-owner tabs — gated to ownerEmail in canViewItem (overrides admin).
   { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
+  { href: "/invoicing-payouts", label: "Invoicing & Payouts", icon: Receipt, ownerEmail: "matthew@clientconversion.io" },
 ];
 
 const marketingNavItems = [
