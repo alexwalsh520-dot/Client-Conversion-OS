@@ -685,6 +685,87 @@ export async function fetchSheetData(
   return allRows;
 }
 
+// ---------------------------------------------------------------------------
+// Payout readers — used by the Team Payouts engine. These return RAW rows for a
+// single month tab (no date filtering, no year normalization); the payouts data
+// layer normalizes the year to the tab and slices the windows. Kept separate
+// from fetchSheetData so payout logic never depends on its internal date filter.
+// ---------------------------------------------------------------------------
+
+/** All parsed MAIN sales rows for one month tab (1-based month). No date filter. */
+export async function fetchMonthTabSalesRows(year: number, month: number): Promise<SheetRow[]> {
+  const tab = MONTH_NAMES[month - 1];
+  const { headers, rows } = await fetchTabValues(tab);
+  const out: SheetRow[] = [];
+  for (const raw of rows) {
+    const parsed = parseRow(raw, tab, headers);
+    if (parsed) out.push(parsed);
+  }
+  return out;
+}
+
+export interface MrrTabRow {
+  date: string; // literal parsed YYYY-MM-DD from the cell
+  dmCloser: string; // uppercase name from the subscriptions "Closer" column
+  mrr: number; // up-front New MRR cash (Refunded/blank → 0)
+  name: string;
+  offer: string;
+}
+
+/**
+ * New MRR (subscriptions) rows for one month tab. The block lives at AJ4:AP with
+ * headers Date | Name | Closer | New MRR | Source | Offer | Manychat. We read a
+ * touch wider (AI4:AP) and locate columns by header so a small column shift can't
+ * silently misread money. Rows with no positive New MRR (e.g. "Refunded") are
+ * dropped — they pay no commission.
+ */
+export async function fetchMonthTabMrrRows(year: number, month: number): Promise<MrrTabRow[]> {
+  const tab = MONTH_NAMES[month - 1];
+  const sheetId = getSheetId();
+  const apiKey = getApiKey();
+  const range = encodeURIComponent(`${tab}!AI4:AP`);
+  const url = `${SHEETS_BASE_URL}/${sheetId}/values/${range}?key=${apiKey}`;
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 404) return [];
+    const body = await response.text().catch(() => "");
+    throw new Error(`Google Sheets API error (HTTP ${response.status}): ${body.substring(0, 200)}`);
+  }
+  const json = await response.json();
+  const values: (string | undefined)[][] = json.values || [];
+
+  // Find the header row inside the block (the one carrying "New MRR").
+  const headerIdx = values.findIndex((row) => {
+    const norm = row.map(normalizeHeader);
+    return norm.includes("newmrr") || (norm.includes("date") && norm.includes("closer"));
+  });
+  if (headerIdx < 0) return [];
+  const headers = values[headerIdx];
+  const dateIdx = findHeaderIndex(headers, ["Date"]);
+  const closerIdx = findHeaderIndex(headers, ["Closer"]);
+  const mrrIdx = findHeaderIndex(headers, ["New MRR", "Amount", "MRR"]);
+  const nameIdx = findHeaderIndex(headers, ["Name"]);
+  const offerIdx = findHeaderIndex(headers, ["Offer"]);
+  if (dateIdx < 0 || mrrIdx < 0 || closerIdx < 0) return [];
+
+  const out: MrrTabRow[] = [];
+  for (const row of values.slice(headerIdx + 1)) {
+    const date = parseDateString(headerValue(row, dateIdx));
+    if (!date) continue;
+    const mrr = parseRevenue(headerValue(row, mrrIdx) || "");
+    if (!(mrr > 0)) continue; // Refunded / blank → no commission
+    out.push({
+      date,
+      dmCloser: normalizeCell(headerValue(row, closerIdx)).toUpperCase(),
+      mrr,
+      name: normalizeCell(headerValue(row, nameIdx)),
+      offer: normalizeCell(headerValue(row, offerIdx)),
+    });
+  }
+  return out;
+}
+
 /**
  * Fetch the subscriptions sold count from the monthly tab summary row.
  */
