@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import {
   Users,
   UserPlus,
@@ -77,6 +78,12 @@ async function fetchCheckInSubmissions(): Promise<CheckInSubmissionRow[]> {
 }
 
 export default function CoachingPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
+  // Coach Performance compares coaches against each other, so it stays admin-only
+  // even though the rest of the coaching team can now see Client Progress.
+  const visibleTabs = TABS.filter((t) => t.key !== "performance" || isAdmin);
+
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
 
@@ -285,7 +292,7 @@ export default function CoachingPage() {
         overflowX: "auto",
         paddingBottom: 4,
       }}>
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -319,7 +326,7 @@ export default function CoachingPage() {
         {activeTab === "onboarding" && (
           <OnboardingTab clients={clients} onClientClick={navigateToClient} />
         )}
-        {activeTab === "performance" && (
+        {activeTab === "performance" && isAdmin && (
           <CoachPerformanceTab
             clients={clients}
             milestones={milestones}

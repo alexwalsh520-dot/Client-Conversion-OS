@@ -1,10 +1,12 @@
 /**
- * GET /api/check-in/submissions — admin-only list of all check-in
- * submissions joined with their client metadata (name, coach, end_date)
- * so the Client Progress tab can compute days-left and effectiveness
- * averages in one round-trip.
+ * GET /api/check-in/submissions — list of all check-in submissions joined with
+ * their client metadata (name, coach, end_date) so the Client Progress tab can
+ * compute days-left and effectiveness averages in one round-trip.
  *
- * Returns 401 for unauthenticated. Returns 403 for non-admins.
+ * Visible to the whole coaching team: any user with the Coaching tab in their
+ * allowedTabs (or an admin). The data is still served via the service role
+ * (client_check_ins has RLS with no anon policy), so this auth check is the
+ * gate. Returns 401 for unauthenticated, 403 for users without coaching access.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,8 +22,10 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
-    return NextResponse.json({ error: "admin role required" }, { status: 403 });
+  const allowedTabs = session.user.allowedTabs ?? [];
+  const hasCoachingAccess = session.user.role === "admin" || allowedTabs.includes("/coaching");
+  if (!hasCoachingAccess) {
+    return NextResponse.json({ error: "coaching access required" }, { status: 403 });
   }
 
   const db = getServiceSupabase();
