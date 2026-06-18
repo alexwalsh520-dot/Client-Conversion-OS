@@ -36,6 +36,10 @@
       "schedule": "0 11 * * 0"
     },
     {
+      "path": "/api/cron/weekly-meetings-report",
+      "schedule": "0 8 * * 0"
+    },
+    {
       "path": "/api/cron/variations-pregenerate",
       "schedule": "0 8 * * *"
     },

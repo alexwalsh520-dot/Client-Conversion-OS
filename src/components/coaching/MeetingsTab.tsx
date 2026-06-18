@@ -34,10 +34,15 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
   const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
   const handleSave = async () => {
-    if (!formData.clientName || !formData.coachName || !formData.meetingDate) return;
+    if (!formData.clientName || !formData.meetingDate) return;
     const client = activeClients.find((c) => c.name === formData.clientName);
+    // Coach is derived from the selected client's assignment (not free text), so
+    // the credited coach name is always uniform and the weekly per-coach counts
+    // are reliable. Falls back to "Unassigned" if the client has no coach.
+    const coachName = client?.coachName?.trim() || "Unassigned";
     await onSave({
       ...formData,
+      coachName,
       clientId: client?.id || 0,
     });
     setShowForm(false);
@@ -110,7 +115,12 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
               <label className="field-label">Client *</label>
               <select className="input-field" value={formData.clientName || ""} onChange={(e) => {
                 const client = activeClients.find((c) => c.name === e.target.value);
-                setFormData({ ...formData, clientName: e.target.value, coachName: client?.coachName || formData.coachName });
+                setFormData({
+                  ...formData,
+                  clientName: e.target.value,
+                  // Coach is auto-set from the client's assignment (read-only below).
+                  coachName: client?.coachName?.trim() || (e.target.value ? "Unassigned" : ""),
+                });
               }}>
                 <option value="">Select client...</option>
                 {activeClients.map((c) => (
@@ -119,8 +129,16 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
               </select>
             </div>
             <div>
-              <label className="field-label">Coach *</label>
-              <input className="input-field" value={formData.coachName || ""} onChange={(e) => setFormData({ ...formData, coachName: e.target.value })} />
+              <label className="field-label">Coach</label>
+              <input
+                className="input-field"
+                value={formData.coachName || ""}
+                readOnly
+                disabled
+                placeholder="Set from client"
+                title="Automatically credited to the client's assigned coach"
+                style={{ opacity: 0.75, cursor: "not-allowed" }}
+              />
             </div>
             <div>
               <label className="field-label">Date *</label>
