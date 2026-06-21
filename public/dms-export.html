@@ -7,7 +7,7 @@
 <script>(function(){try{var t=localStorage.getItem("ccos-theme:last");if(t!=="light"&&t!=="dark")t="dark";var c=document.documentElement.classList;c.remove("light","dark");c.add(t);}catch(e){}try{window.addEventListener("storage",function(e){if(e.key==="ccos-theme:last"){var n=e.newValue==="light"?"light":"dark";var c=document.documentElement.classList;c.remove("light","dark");c.add(n);}});}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* Theme tokens — copied verbatim from ads-tracker-export.html so the DMs tab
      matches the Ads tab pixel-for-pixel (deep black/charcoal + gold accent). */
@@ -70,7 +70,7 @@
   .app{height:100vh;display:flex;flex-direction:column;background:var(--bg)}
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg-1);flex:0 0 auto}
   .topbar-left{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .topbar-title{font-size:16px;font-weight:600;letter-spacing:-0.02em;margin:0}
+  .topbar-title{font-family:'Fraunces',Georgia,serif;font-size:20px;font-weight:600;letter-spacing:-0.01em;margin:0}
   .topbar-sub{font-size:11px;color:var(--text-3)}
   .topbar-sub b{color:var(--text-2);font-weight:600}
   .sync-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--border-2);border-radius:99px;font-size:11px;color:var(--text-3);background:var(--bg-1);letter-spacing:0.01em;flex:0 0 auto}
@@ -240,7 +240,7 @@
 
   /* ---- View switch (Inbox | Dashboard) ---- */
   .view-switch{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border-2);border-radius:9px;background:var(--panel);flex:0 0 auto}
-  .view-tab{padding:6px 16px;border-radius:7px;font-size:12px;font-weight:600;color:var(--text-3);letter-spacing:0.01em}
+  .view-tab{font-family:'Sora',system-ui,sans-serif;padding:6px 16px;border-radius:7px;font-size:11.5px;font-weight:600;color:var(--text-3);letter-spacing:0.02em}
   .view-tab:hover{color:var(--text-2)}
   .view-tab.on{background:var(--panel-2);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-dim)}
 
@@ -250,71 +250,123 @@
   .ai-evidence-lbl{font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:5px}
   .ai-evidence-txt{font-size:11.5px;color:var(--text-2);line-height:1.5;white-space:pre-wrap;word-break:break-word}
 
-  /* ---- DASHBOARD ---- */
-  .dash{flex:1;overflow-y:auto;min-height:0;background:var(--bg)}
-  .dash-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:13px 20px;border-bottom:1px solid var(--border);background:var(--bg-1);position:sticky;top:0;z-index:5}
+  /* ====================================================================
+     DASHBOARD — elevated. Deep-black canvas, ONE gold accent, a refined
+     display serif (Fraunces) for numbers/titles + Sora for structural
+     labels. Atmosphere via a faint radial wash + grain; staggered load-in.
+     ==================================================================== */
+  :root{
+    --serif:'Fraunces',Georgia,serif;
+    --sora:'Sora',system-ui,sans-serif;
+    --gold-soft:rgba(212,178,122,.13);
+    --gold-line:rgba(212,178,122,.30);
+  }
+  .dash{flex:1;overflow-y:auto;min-height:0;position:relative;
+    background:
+      radial-gradient(1100px 520px at 78% -8%, rgba(212,178,122,.07), transparent 60%),
+      radial-gradient(900px 500px at 8% 8%, rgba(122,167,212,.045), transparent 55%),
+      var(--bg);
+  }
+  html.light .dash{background:
+      radial-gradient(1100px 520px at 78% -8%, rgba(169,130,63,.08), transparent 60%),
+      var(--bg);}
+  /* subtle grain overlay for texture/depth */
+  .dash::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");}
+  .dash-bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    padding:13px 26px;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb, var(--bg-1) 86%, transparent);backdrop-filter:blur(10px) saturate(1.1)}
   .dash-bar .spacer{flex:1}
-  .dash-hint{font-size:11px;color:var(--text-4)}
-  .dash-body{padding:20px;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-  .dash-cov{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-4);background:var(--bg-1);border:1px solid var(--border);border-radius:99px;padding:3px 9px;white-space:nowrap}
+  .dash-hint{font-family:var(--sora);font-size:10.5px;color:var(--text-4);letter-spacing:.01em}
+  .dash-body{padding:26px;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:22px;position:relative;z-index:1}
+
+  /* staggered reveal */
+  @keyframes dashRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .rise{opacity:0;animation:dashRise .62s cubic-bezier(.2,.7,.2,1) forwards}
+
+  .dash-cov{display:inline-flex;align-items:center;gap:6px;font-family:var(--sora);font-size:10px;color:var(--text-4);
+    background:var(--bg-1);border:1px solid var(--border);border-radius:99px;padding:3px 10px;white-space:nowrap;letter-spacing:.01em}
   .dash-cov b{color:var(--text-2);font-weight:600}
-  .dash-cov.warn{border-color:rgba(212,178,122,.3);color:var(--gold-dim)}
+  .dash-cov.warn{border-color:var(--gold-line);color:var(--gold-dim)}
 
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
-  .kpi{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:15px 16px;display:flex;flex-direction:column;gap:6px;cursor:default;transition:border-color .12s,background .12s}
+  /* ---- KPI row: editorial hero numbers ---- */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;
+    border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel)}
+  @media (max-width:1080px){ .kpi-grid{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:560px){ .kpi-grid{grid-template-columns:1fr} }
+  .kpi{position:relative;padding:20px 20px 18px;display:flex;flex-direction:column;gap:9px;
+    border-right:1px solid var(--border);transition:background .16s}
+  .kpi:last-child{border-right:none}
+  @media (max-width:1080px){ .kpi:nth-child(2n){border-right:none} .kpi{border-bottom:1px solid var(--border)} }
+  .kpi.lead-kpi{background:linear-gradient(180deg, var(--gold-soft), transparent 70%)}
   .kpi.click{cursor:pointer}
-  .kpi.click:hover{border-color:var(--gold-dim);background:var(--panel-2)}
-  .kpi-lbl{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em}
-  .kpi-val{font-size:26px;font-weight:600;color:var(--text);line-height:1}
-  .kpi-val .unit{font-size:13px;color:var(--text-3);font-weight:500;margin-left:3px}
-  .kpi-sub{font-size:11px;color:var(--text-4)}
-  .kpi-sub .g{color:var(--gold)}
+  .kpi.click::after{content:"↗";position:absolute;top:14px;right:14px;font-family:var(--sora);font-size:12px;color:var(--text-4);opacity:0;transition:opacity .16s}
+  .kpi.click:hover{background:var(--panel-2)}
+  .kpi.click:hover::after{opacity:.8;color:var(--gold)}
+  .kpi-lbl{font-family:var(--sora);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.13em;font-weight:600}
+  .kpi-val{font-family:var(--serif);font-size:40px;font-weight:500;color:var(--text);line-height:.92;letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
+  .kpi.lead-kpi .kpi-val{color:var(--gold)}
+  .kpi-val .unit{font-family:var(--sora);font-size:13px;color:var(--text-4);font-weight:500;margin-left:4px;letter-spacing:0}
+  .kpi-sub{font-family:var(--sora);font-size:10.5px;color:var(--text-4);letter-spacing:.005em;line-height:1.4}
+  .kpi-sub .g{color:var(--gold);font-weight:600}
 
-  .card{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
-  .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px 10px}
-  .card-title{font-size:13px;font-weight:600;color:var(--text)}
-  .card-body{padding:4px 16px 16px}
-  .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  @media (max-width:900px){ .dash-2col{grid-template-columns:1fr} }
+  /* ---- cards ---- */
+  .card{border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 18px 40px -28px rgba(0,0,0,.8)}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 6px}
+  .card-titles{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .card-title{font-family:var(--serif);font-size:17px;font-weight:600;color:var(--text);letter-spacing:-0.01em}
+  .card-desc{font-family:var(--sora);font-size:11px;color:var(--text-4);letter-spacing:.005em}
+  .card-body{padding:8px 20px 20px}
+  .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media (max-width:980px){ .dash-2col{grid-template-columns:1fr} }
+  .seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border-2);border-radius:9px;background:var(--bg-1)}
+  .seg button{font-family:var(--sora);padding:5px 11px;border-radius:6px;font-size:10.5px;font-weight:600;color:var(--text-3);letter-spacing:.02em}
+  .seg button:hover{color:var(--text-2)}
+  .seg button.on{background:var(--panel-2);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-line)}
 
-  /* grouped bar table (per campaign / ad set) */
-  .gtable{width:100%;border-collapse:collapse;font-size:12px}
-  .gtable th{text-align:right;font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.07em;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
-  .gtable th.l{text-align:left}
-  .gtable td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:right;color:var(--text-2);vertical-align:middle}
-  .gtable td.l{text-align:left}
-  .gtable tr:last-child td{border-bottom:none}
-  .gtable tr.click{cursor:pointer}
-  .gtable tr.click:hover td{background:var(--row-hover)}
-  .gname{display:flex;flex-direction:column;gap:3px;max-width:280px}
-  .gname .nm{color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .gname .st{font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;display:inline-flex;align-items:center;gap:5px;color:var(--text-4)}
-  .gname .st .dot{width:5px;height:5px;border-radius:99px;background:var(--text-4)}
-  .gname .st.live{color:var(--green-dim)} .gname .st.live .dot{background:var(--green);box-shadow:0 0 5px var(--green-dim)}
-  .readiness-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
-  .rbar{width:74px;height:7px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border-2);overflow:hidden;flex:0 0 auto}
-  .rfill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
-  .rnum{min-width:26px;color:var(--text);font-variant-numeric:tabular-nums}
-  .cov-inline{font-size:10px;color:var(--text-4)}
+  /* ---- ranked lollipop rows ---- */
+  .lolli{display:flex;flex-direction:column}
+  .lolli-row{display:grid;grid-template-columns:minmax(150px,1.4fr) 1fr auto;align-items:center;gap:14px;
+    padding:11px 8px;border-radius:9px;cursor:pointer;transition:background .12s}
+  .lolli-row:hover{background:var(--row-hover)}
+  .lolli-name{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .lolli-name .nm{font-family:var(--sora);font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lolli-name .st{font-family:var(--sora);font-size:9px;text-transform:uppercase;letter-spacing:.08em;display:inline-flex;align-items:center;gap:5px;color:var(--text-4)}
+  .lolli-name .st .dot{width:5px;height:5px;border-radius:99px;background:var(--text-4)}
+  .lolli-name .st.live{color:var(--green-dim)} .lolli-name .st.live .dot{background:var(--green);box-shadow:0 0 6px var(--green-dim)}
+  .lolli-track{position:relative;height:22px;display:flex;align-items:center}
+  .lolli-line{position:absolute;left:0;height:2px;border-radius:99px;background:linear-gradient(90deg,var(--gold-dim),var(--gold));transition:width .5s cubic-bezier(.2,.7,.2,1)}
+  .lolli-dot{position:absolute;width:9px;height:9px;border-radius:99px;background:var(--gold);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 22%,transparent);transition:left .5s cubic-bezier(.2,.7,.2,1)}
+  .lolli-val{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;min-width:38px}
+  .lolli-val .sub{font-family:var(--sora);font-size:9.5px;font-weight:500;color:var(--text-4);display:block;letter-spacing:.02em}
 
-  /* line trend (inline SVG) */
+  /* ---- scatter ---- */
+  .scatter-wrap{position:relative}
+  .scatter-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:var(--sora);font-size:10px;color:var(--text-4);letter-spacing:.02em}
+  .scatter-tip{position:absolute;pointer-events:none;z-index:20;background:var(--panel);border:1px solid var(--gold-line);border-radius:9px;
+    padding:9px 11px;font-family:var(--sora);font-size:11px;color:var(--text);box-shadow:0 14px 40px rgba(0,0,0,.6);min-width:130px}
+  .scatter-tip .tnm{font-weight:600;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+  .scatter-tip .trow{display:flex;justify-content:space-between;gap:14px;color:var(--text-3)}
+  .scatter-tip .trow b{color:var(--gold);font-weight:600}
+
+  /* ---- area trend ---- */
   .trend-wrap{position:relative}
-  .trend-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--text-3)}
-  .trend-legend .lk{display:inline-flex;align-items:center;gap:6px}
-  .trend-legend .sw{width:12px;height:3px;border-radius:99px;display:inline-block}
+  .trend-tip{position:absolute;pointer-events:none;z-index:20;background:var(--panel);border:1px solid var(--gold-line);border-radius:8px;padding:7px 10px;font-family:var(--sora);font-size:11px;color:var(--text);box-shadow:0 12px 32px rgba(0,0,0,.6);white-space:nowrap}
+  .trend-tip b{color:var(--gold)}
 
-  /* distribution bars */
-  .dist{display:flex;flex-direction:column;gap:10px}
-  .dist-row{display:grid;grid-template-columns:120px 1fr 44px;align-items:center;gap:10px;font-size:12px}
-  .dist-lbl{color:var(--text-2)}
-  .dist-track{height:10px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border-2);overflow:hidden}
-  .dist-fill{height:100%;border-radius:99px}
-  .dist-fill.hot{background:var(--red)} .dist-fill.warm{background:var(--gold)}
-  .dist-fill.contact{background:var(--blue)} .dist-fill.new{background:var(--text-3)}
-  .dist-num{text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+  /* ---- distribution: gradient band ---- */
+  .distb{display:flex;flex-direction:column;gap:4px}
+  .distb-bars{display:flex;align-items:flex-end;gap:10px;height:150px;padding:0 4px}
+  .distb-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%}
+  .distb-bar{width:100%;border-radius:8px 8px 3px 3px;min-height:3px;transition:height .55s cubic-bezier(.2,.7,.2,1);position:relative}
+  .distb-bar .cnt{position:absolute;top:-19px;left:0;right:0;text-align:center;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--text)}
+  .distb-x{display:flex;gap:10px;padding:0 4px}
+  .distb-xl{flex:1;text-align:center;font-family:var(--sora);font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:.04em;line-height:1.3}
 
-  .dash-empty{padding:60px 24px;text-align:center;color:var(--text-3);font-size:13px}
-  .dash-empty .big{font-size:15px;color:var(--text-2);font-weight:600;margin-bottom:6px}
+  .dash-empty{padding:70px 24px;text-align:center;color:var(--text-3);font-family:var(--sora);font-size:12.5px}
+  .dash-empty .big{font-family:var(--serif);font-size:20px;color:var(--text-2);font-weight:600;margin-bottom:8px;letter-spacing:-0.01em}
+  .chart-empty{padding:34px 16px;text-align:center;color:var(--text-4);font-family:var(--sora);font-size:11.5px}
 </style>
 </head>
 <body>
@@ -814,96 +866,186 @@ function Coverage({have, of, warnBelow=0.6, noun="leads"}){
   );
 }
 
-const TREND_COLORS = ["#d4b27a","#7aa7d4","#7dd3a8","#c2477e","#a04ec9","#d4763b"];
-
-function LineTrend({days, total, campaigns}){
-  if(!days || days.length===0) return <div className="dash-empty">No keyword fires in this window.</div>;
-  const W = 760, H = 200, PADL = 36, PADR = 12, PADT = 14, PADB = 26;
-  const series = (campaigns && campaigns.length) ? campaigns.map((c,i)=>({label:c.label, points:c.points, color:TREND_COLORS[i%TREND_COLORS.length]}))
-                : [{label:"All leads", points:total, color:TREND_COLORS[0]}];
-  const maxY = Math.max(1, ...series.flatMap(s=>s.points), ...total);
+// ---------------------------------------------------------------------------
+// AREA TREND — one clean filled line. A campaign selector swaps the series so
+// there is NEVER overlapping spaghetti. Default = total leads/day.
+// ---------------------------------------------------------------------------
+function AreaTrend({days, total, campaigns}){
+  const [sel, setSel] = useState("__all");
+  if(!days || days.length===0) return <div className="chart-empty">No keyword fires in this window.</div>;
+  const camp = (campaigns||[]).find(c=>c.id===sel);
+  const points = camp ? camp.points : total;
+  const label = camp ? camp.label : "All leads";
+  const [tip, setTip] = useState(null);
+  const W = 760, H = 210, PADL = 30, PADR = 14, PADT = 18, PADB = 26;
+  const maxY = Math.max(1, ...points);
   const n = days.length;
   const x = (i)=> PADL + (n<=1 ? (W-PADL-PADR)/2 : (i*(W-PADL-PADR)/(n-1)));
   const y = (v)=> PADT + (H-PADT-PADB) - (v/maxY)*(H-PADT-PADB);
-  const path = (pts)=> pts.map((v,i)=>(i===0?"M":"L")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
-  // sparse x labels (first, mid, last)
+  const line = points.map((v,i)=>(i===0?"M":"L")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
+  const area = n<=1 ? "" : line+` L ${x(n-1).toFixed(1)} ${y(0)} L ${x(0).toFixed(1)} ${y(0)} Z`;
   const ticks = n<=1 ? [0] : [0, Math.floor((n-1)/2), n-1];
   const yticks = [0, Math.round(maxY/2), maxY];
   return (
     <div className="trend-wrap">
-      <svg viewBox={"0 0 "+W+" "+H} width="100%" preserveAspectRatio="xMidYMid meet" style={{display:"block"}}>
+      {(campaigns && campaigns.length>0) && (
+        <div style={{marginBottom:12}}>
+          <SelectFilter options={[{id:"__all",label:"All campaigns"}, ...campaigns.map(c=>({id:c.id,label:c.label}))]}
+            value={sel==="__all"?"":sel} onChange={(v)=>setSel(v||"__all")} minWidth={180}/>
+        </div>
+      )}
+      <svg viewBox={"0 0 "+W+" "+H} width="100%" preserveAspectRatio="xMidYMid meet" style={{display:"block",overflow:"visible"}}>
+        <defs>
+          <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.28"/>
+            <stop offset="100%" stopColor="var(--gold)" stopOpacity="0"/>
+          </linearGradient>
+        </defs>
         {yticks.map((v,i)=>(
           <g key={"y"+i}>
             <line x1={PADL} y1={y(v)} x2={W-PADR} y2={y(v)} stroke="var(--border)" strokeWidth="1"/>
-            <text x={PADL-6} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{v}</text>
+            <text x={PADL-6} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}</text>
           </g>
         ))}
+        {area && <path d={area} fill="url(#areaFill)"/>}
+        <path d={line} fill="none" stroke="var(--gold)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+        {points.map((v,i)=>(
+          <g key={i}>
+            {(n<=1) && <circle cx={x(i)} cy={y(v)} r="3.4" fill="var(--gold)"/>}
+            <rect x={x(i)-(W-PADL-PADR)/(2*Math.max(1,n-1))} y={PADT} width={Math.max(8,(W-PADL-PADR)/Math.max(1,n-1))} height={H-PADT-PADB}
+              fill="transparent" style={{cursor:"crosshair"}}
+              onMouseEnter={()=>setTip({i,v})} onMouseLeave={()=>setTip(null)}/>
+          </g>
+        ))}
+        {tip && <circle cx={x(tip.i)} cy={y(tip.v)} r="4.5" fill="var(--gold)" stroke="var(--bg)" strokeWidth="1.5"/>}
         {ticks.map((i)=>(
-          <text key={"x"+i} x={x(i)} y={H-8} textAnchor="middle" fontSize="9" fill="var(--text-4)">
+          <text key={"x"+i} x={x(i)} y={H-7} textAnchor="middle" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">
             {(days[i]||"").slice(5)}
           </text>
         ))}
-        {series.map((s,si)=>(
-          <g key={si}>
-            <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
-            {n<=1 && s.points.map((v,i)=><circle key={i} cx={x(i)} cy={y(v)} r="3" fill={s.color}/>)}
-          </g>
-        ))}
       </svg>
-      <div className="trend-legend">
-        {series.map((s,i)=>(
-          <span className="lk" key={i}><span className="sw" style={{background:s.color}}/>{s.label}</span>
-        ))}
+      {tip && (
+        <div className="trend-tip" style={{left:`calc(${(x(tip.i)/W)*100}% - 40px)`, top:8}}>
+          {(days[tip.i]||"").slice(5)} · <b>{tip.v}</b> lead{tip.v===1?"":"s"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RANKED LOLLIPOP — campaigns/ad sets ranked by a chosen metric (leads,
+// readiness, booked %). Instantly scannable; click drills to the inbox.
+// ---------------------------------------------------------------------------
+const RANK_METRICS = [
+  {id:"leads", label:"Leads"},
+  {id:"readiness", label:"Quality"},
+  {id:"booked", label:"Booked %"},
+];
+function metricVal(g, m){
+  if(m==="leads") return g.leads;
+  if(m==="readiness") return g.avgReadiness;
+  if(m==="booked") return g.leads ? (g.booked/g.leads)*100 : null;
+  return 0;
+}
+function metricDisplay(g, m){
+  if(m==="leads") return {big:num(g.leads), sub:null};
+  if(m==="readiness") return g.avgReadiness!=null ? {big:Math.round(g.avgReadiness), sub:num(g.stageLeads)+"/"+num(g.leads)} : {big:"—", sub:"no convos"};
+  if(m==="booked") return {big:pct(g.leads?g.booked/g.leads:null), sub:num(g.booked)+"/"+num(g.leads)};
+  return {big:"—",sub:null};
+}
+function Lollipop({rows, kind, onDrill}){
+  const [metric, setMetric] = useState("leads");
+  if(!rows || rows.length===0) return <div className="chart-empty">No {kind==="campaign"?"campaigns":"ad sets"} with leads in this window.</div>;
+  const usable = rows.filter(g=>metricVal(g,metric)!=null);
+  const ranked = [...usable].sort((a,b)=>(metricVal(b,metric)||0)-(metricVal(a,metric)||0)).slice(0,8);
+  const max = Math.max(1, ...ranked.map(g=>metricVal(g,metric)||0));
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+        <div className="seg">
+          {RANK_METRICS.map(m=>(
+            <button key={m.id} className={metric===m.id?"on":""} onClick={()=>setMetric(m.id)}>{m.label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="lolli">
+        {ranked.map((g,idx)=>{
+          const live = (g.status||"").toUpperCase()==="ACTIVE";
+          const v = metricVal(g,metric)||0;
+          const w = Math.max(3,(v/max)*100);
+          const disp = metricDisplay(g,metric);
+          return (
+            <div className="lolli-row" key={g.id} onClick={()=>onDrill(g)} title="Open these leads in the inbox to verify">
+              <div className="lolli-name">
+                <span className="nm">{g.label}</span>
+                <span className={"st "+(live?"live":"")}><span className="dot"/>{live?"Active":(g.status||"Off")}</span>
+              </div>
+              <div className="lolli-track">
+                <span className="lolli-line" style={{width:`calc(${w}% - 9px)`,animationDelay:(idx*40)+"ms"}}/>
+                <span className="lolli-dot" style={{left:`calc(${w}% - 9px)`}}/>
+              </div>
+              <div className="lolli-val">{disp.big}{disp.sub && <span className="sub">{disp.sub}</span>}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function GroupTable({rows, onDrill, kind}){
-  if(!rows || rows.length===0) return <div className="dash-empty">No {kind==="campaign"?"campaigns":"ad sets"} with leads in this window.</div>;
-  const maxReadiness = 100;
+// ---------------------------------------------------------------------------
+// SCATTER — avg lead readiness (x) vs booking rate (y) per campaign. The money
+// insight: which campaigns bring quality that actually books. Bubble size = leads.
+// ---------------------------------------------------------------------------
+function Scatter({rows, onDrill}){
+  const [tip, setTip] = useState(null);
+  const pts = (rows||[]).filter(g=>g.avgReadiness!=null && g.leads>0)
+    .map(g=>({...g, rx:g.avgReadiness, ry:(g.booked/g.leads)*100}));
+  if(pts.length===0) return <div className="chart-empty">Needs campaigns with both synced quality scores and bookings to plot.</div>;
+  const W=760,H=300,PADL=42,PADR=18,PADT=18,PADB=42;
+  const maxY = Math.max(10, ...pts.map(p=>p.ry));
+  const maxLeads = Math.max(1, ...pts.map(p=>p.leads));
+  const x=(v)=>PADL+(v/100)*(W-PADL-PADR);
+  const y=(v)=>PADT+(H-PADT-PADB)-(v/maxY)*(H-PADT-PADB);
+  const r=(leads)=>5+Math.sqrt(leads/maxLeads)*16;
+  const xt=[0,25,50,75,100];
+  const yt=[0,Math.round(maxY/2),Math.round(maxY)];
   return (
-    <table className="gtable">
-      <thead>
-        <tr>
-          <th className="l">{kind==="campaign"?"Campaign":"Ad set"}</th>
-          <th>Leads</th>
-          <th>Lead quality (avg readiness)</th>
-          <th>Booked</th>
-          <th>Closed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(g=>{
-          const bookedRate = g.leads ? g.booked/g.leads : null;
-          const closedRate = g.leads ? g.closed/g.leads : null;
-          const live = (g.status||"").toUpperCase()==="ACTIVE";
-          return (
-            <tr key={g.id} className="click" onClick={()=>onDrill(g)}
-                title="Open these leads in the inbox to verify">
-              <td className="l">
-                <div className="gname">
-                  <span className="nm">{g.label}</span>
-                  <span className={"st "+(live?"live":"")}><span className="dot"/>{live?"Active":(g.status||"Off")}</span>
-                </div>
-              </td>
-              <td>{num(g.leads)}</td>
-              <td>
-                {g.avgReadiness!=null ? (
-                  <div className="readiness-cell">
-                    <span className="cov-inline">{num(g.stageLeads)}/{num(g.leads)}</span>
-                    <span className="rbar"><span className="rfill" style={{width:Math.max(3,Math.min(100,(g.avgReadiness/maxReadiness)*100))+"%"}}/></span>
-                    <span className="rnum">{Math.round(g.avgReadiness)}</span>
-                  </div>
-                ) : <span className="cov-inline">no synced convos</span>}
-              </td>
-              <td>{num(g.booked)} <span className="cov-inline">({pct(bookedRate)})</span></td>
-              <td>{num(g.closed)} <span className="cov-inline">({pct(closedRate)})</span></td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="scatter-wrap">
+      <svg viewBox={"0 0 "+W+" "+H} width="100%" preserveAspectRatio="xMidYMid meet" style={{display:"block",overflow:"visible"}}>
+        {yt.map((v,i)=>(
+          <g key={"y"+i}>
+            <line x1={PADL} y1={y(v)} x2={W-PADR} y2={y(v)} stroke="var(--border)" strokeDasharray={i===0?"":"2 4"} strokeWidth="1"/>
+            <text x={PADL-7} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}%</text>
+          </g>
+        ))}
+        {xt.map((v,i)=>(
+          <text key={"x"+i} x={x(v)} y={H-PADB+16} textAnchor="middle" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}</text>
+        ))}
+        <text x={(PADL+W-PADR)/2} y={H-6} textAnchor="middle" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--sora)" letterSpacing="0.06em">AVG LEAD QUALITY →</text>
+        <text x={-((PADT+H-PADB)/2)} y={13} transform="rotate(-90)" textAnchor="middle" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--sora)" letterSpacing="0.06em">BOOKING RATE →</text>
+        {pts.map((p)=>(
+          <g key={p.id} style={{cursor:"pointer"}} onClick={()=>onDrill(p)}
+             onMouseEnter={()=>setTip({p,cx:x(p.rx),cy:y(p.ry)})} onMouseLeave={()=>setTip(null)}>
+            <circle cx={x(p.rx)} cy={y(p.ry)} r={r(p.leads)}
+              fill="color-mix(in srgb, var(--gold) 26%, transparent)" stroke="var(--gold)" strokeWidth={tip&&tip.p.id===p.id?2:1.2}/>
+          </g>
+        ))}
+      </svg>
+      {tip && (
+        <div className="scatter-tip" style={{left:`min(calc(${(tip.cx/W)*100}% + 14px), calc(100% - 150px))`, top:`calc(${(tip.cy/H)*100}% - 10px)`}}>
+          <div className="tnm">{tip.p.label}</div>
+          <div className="trow"><span>Quality</span><b>{Math.round(tip.p.rx)}</b></div>
+          <div className="trow"><span>Booking rate</span><b>{pct(tip.p.booked/tip.p.leads)}</b></div>
+          <div className="trow"><span>Leads</span><b>{num(tip.p.leads)}</b></div>
+        </div>
+      )}
+      <div className="scatter-legend">
+        <span>Bubble size = lead volume</span>
+        <span style={{color:"var(--gold)"}}>↗ top-right = quality that books</span>
+      </div>
+    </div>
   );
 }
 
@@ -956,9 +1098,9 @@ function Dashboard(props){
           <div className="dash-empty"><div className="big">No keyword-fired leads in this window</div><div>Widen the date range or change the client filter.</div></div>
         ) : (
         <>
-          {/* KPI row — leads/booked/closed/revenue/quality, each honest about coverage */}
-          <div className="kpi-grid">
-            <div className="kpi">
+          {/* KPI row — editorial hero numbers, each honest about coverage */}
+          <div className="kpi-grid rise" style={{animationDelay:"0ms"}}>
+            <div className="kpi lead-kpi">
               <span className="kpi-lbl">Keyword leads</span>
               <span className="kpi-val">{num(totalLeads)}</span>
               <span className="kpi-sub">complete · every ad-keyword fire</span>
@@ -966,7 +1108,7 @@ function Dashboard(props){
             <div className="kpi click" onClick={()=>onDrill({}, "booked")} title="Open booked leads in the inbox">
               <span className="kpi-lbl">Booked</span>
               <span className="kpi-val">{num(s.booked)}<span className="unit">/ {num(totalLeads)}</span></span>
-              <span className="kpi-sub"><span className="g">{pct(s.bookedRate)}</span> · real GHL appointments</span>
+              <span className="kpi-sub"><span className="g">{pct(s.bookedRate)}</span> · real GHL appts</span>
             </div>
             <div className="kpi click" onClick={()=>onDrill({}, "closed")} title="Open closed leads in the inbox">
               <span className="kpi-lbl">Closed</span>
@@ -979,51 +1121,75 @@ function Dashboard(props){
               <span className="kpi-sub">from {num(s.closed)} closed lead{s.closed===1?"":"s"}</span>
             </div>
             <div className="kpi">
-              <span className="kpi-lbl">Avg lead quality</span>
+              <span className="kpi-lbl">Avg quality</span>
               <span className="kpi-val">{s.avgReadiness!=null?Math.round(s.avgReadiness):"—"}<span className="unit">/ 100</span></span>
               <span className="kpi-sub">AI readiness · {num(s.stageCoverage)}/{num(totalLeads)} synced</span>
             </div>
           </div>
 
-          {/* Leads over time */}
-          <div className="card">
+          {/* The money insight: quality vs booking-rate scatter */}
+          <div className="card rise" style={{animationDelay:"80ms"}}>
             <div className="card-head">
-              <span className="card-title">Leads over time per campaign</span>
-              <Coverage have={totalLeads} of={totalLeads} noun="keyword fires" />
+              <div className="card-titles">
+                <span className="card-title">Quality that actually books</span>
+                <span className="card-desc">Each bubble is a campaign · top-right = high-quality leads that convert</span>
+              </div>
+              <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
             </div>
             <div className="card-body">
-              <LineTrend days={d.trend.days} total={d.trend.total} campaigns={d.trend.campaigns} />
+              <Scatter rows={d.byCampaign} onDrill={(g)=>onDrill({campaign:g.id, adset:"", keyword:""}, "booked")} />
             </div>
           </div>
 
-          {/* Per-campaign + per-ad-set quality/booking/close */}
+          {/* Ranked campaigns + ad sets */}
           <div className="dash-2col">
-            <div className="card">
+            <div className="card rise" style={{animationDelay:"140ms"}}>
               <div className="card-head">
-                <span className="card-title">By campaign</span>
-                <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
+                <div className="card-titles">
+                  <span className="card-title">Top campaigns</span>
+                  <span className="card-desc">Ranked · click any row to verify its leads</span>
+                </div>
               </div>
               <div className="card-body">
-                <GroupTable rows={d.byCampaign} kind="campaign"
+                <Lollipop rows={d.byCampaign} kind="campaign"
                   onDrill={(g)=>onDrill({campaign:g.id, adset:"", keyword:""}, "booked")} />
               </div>
             </div>
-            <div className="card">
+            <div className="card rise" style={{animationDelay:"200ms"}}>
               <div className="card-head">
-                <span className="card-title">By ad set</span>
-                <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
+                <div className="card-titles">
+                  <span className="card-title">Top ad sets</span>
+                  <span className="card-desc">Ranked · click any row to verify its leads</span>
+                </div>
               </div>
               <div className="card-body">
-                <GroupTable rows={d.byAdset} kind="adset"
+                <Lollipop rows={d.byAdset} kind="adset"
                   onDrill={(g)=>onDrill({adset:g.id, campaign:"", keyword:""}, "booked")} />
               </div>
             </div>
           </div>
 
-          {/* Lead-score distribution */}
-          <div className="card">
+          {/* Leads over time (single clean area + selector) */}
+          <div className="card rise" style={{animationDelay:"260ms"}}>
             <div className="card-head">
-              <span className="card-title">Lead-quality distribution</span>
+              <div className="card-titles">
+                <span className="card-title">Leads over time</span>
+                <span className="card-desc">Daily keyword fires · pick a campaign to isolate it</span>
+              </div>
+              <Coverage have={totalLeads} of={totalLeads} noun="keyword fires" />
+            </div>
+            <div className="card-body">
+              <AreaTrend days={d.trend.days} total={d.trend.total} campaigns={d.trend.campaigns} />
+            </div>
+          </div>
+
+          {/* Lead-quality distribution */}
+          <div className="card rise" style={{animationDelay:"320ms"}}>
+            <div className="card-head">
+              <div className="card-titles">
+                <span className="card-title">Lead-quality distribution</span>
+                <span className="card-desc">How AI booking-readiness scores spread across synced leads</span>
+              </div>
               <Coverage have={d.scoreDistribution.coverage} of={totalLeads} noun="scored leads" />
             </div>
             <div className="card-body">
@@ -1037,18 +1203,38 @@ function Dashboard(props){
   );
 }
 
+// Gradient-band histogram: New → Hot, cool→warm, count above each column.
+const DIST_GRAD = {
+  new:    ["#5b6470","#7a8694"],
+  contact:["#4f7fb0","#7aa7d4"],
+  warm:   ["#b08a3d","#d4b27a"],
+  hot:    ["#b85a52","#e89a94"],
+};
 function ScoreDist({buckets, coverage}){
-  if(!coverage){ return <div className="dash-empty">No conversations synced yet — no AI quality scores to show.</div>; }
-  const max = Math.max(1, ...buckets.map(b=>b.count));
+  if(!coverage){ return <div className="chart-empty">No conversations synced yet — no AI quality scores to show.</div>; }
+  // order low→high for a natural distribution read
+  const order = ["new","contact","warm","hot"];
+  const ordered = order.map(id=>buckets.find(b=>b.id===id)).filter(Boolean);
+  const max = Math.max(1, ...ordered.map(b=>b.count));
+  const shortLbl = {new:"New",contact:"In contact",warm:"Warm",hot:"Hot"};
   return (
-    <div className="dist">
-      {buckets.map(b=>(
-        <div className="dist-row" key={b.id}>
-          <span className="dist-lbl">{b.label}</span>
-          <span className="dist-track"><span className={"dist-fill "+b.id} style={{width:Math.max(2,(b.count/max)*100)+"%"}}/></span>
-          <span className="dist-num">{num(b.count)}</span>
-        </div>
-      ))}
+    <div className="distb">
+      <div className="distb-bars">
+        {ordered.map((b,i)=>{
+          const g = DIST_GRAD[b.id] || DIST_GRAD.new;
+          return (
+            <div className="distb-col" key={b.id}>
+              <div className="distb-bar" style={{height:`calc(${(b.count/max)*100}% + 3px)`,
+                background:`linear-gradient(180deg, ${g[1]}, ${g[0]})`,animationDelay:(i*60)+"ms"}}>
+                <span className="cnt">{num(b.count)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="distb-x">
+        {ordered.map(b=>(<span className="distb-xl" key={b.id}>{shortLbl[b.id]||b.label}</span>))}
+      </div>
     </div>
   );
 }

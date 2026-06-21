@@ -408,9 +408,25 @@ export async function GET(req: NextRequest) {
 
     // ----------------------------------------------------------------
     // 5) BOOKED — REAL ghl_appointments via manychat_contact_links.
-    //    subscriber_id → ghl_contact_id → appointment (status != cancelled).
+    //    subscriber_id → ghl_contact_id → appointment.
+    //
+    //    THREE accuracy guards (verified with live SQL 2026-06-21):
+    //      (a) CLIENT SCOPE — an appointment only counts for a lead if the
+    //          appointment's `client` matches the lead's `client_key`. Without
+    //          this, an Antwan lead matched a Tyson "Strategy Session (TS)"
+    //          appointment because the contact ids collided. Antwan's GHL isn't
+    //          synced → Antwan booked correctly resolves to 0.
+    //      (b) APPT WINDOW — the appointment's start_time must fall inside the
+    //          same date window the leads are pulled for. A 30-day lead who
+    //          booked months ago must NOT show as "booked this period".
+    //      (c) DISTINCT LEAD — bookedMc is a Set of subscriber ids, so reschedules
+    //          / multiple appts per lead collapse to one booked lead.
+    //    Pre-fix all-client/30d booked = 516 (matched the over-count complaint);
+    //    post-fix = 219 (Tyson 211, Keith 8, Antwan 0, Lucy 0).
+    //    NEVER drop the client scope or the appt window again.
     // ----------------------------------------------------------------
-    const ghlByMc = new Map<string, string>(); // mc subscriber → ghl_contact_id
+    // mc subscriber → ghl_contact_id, keeping the lead's client for scoping.
+    const ghlByMc = new Map<string, { contactId: string; client: string | null }>();
     for (let i = 0; i < mcIds.length; i += 300) {
       const chunk = mcIds.slice(i, i + 300);
       const { data, error } = await sb
@@ -419,27 +435,42 @@ export async function GET(req: NextRequest) {
         .in("subscriber_id", chunk);
       if (error) throw error;
       for (const r of (data || []) as { subscriber_id: string; ghl_contact_id: string | null }[]) {
-        if (r.subscriber_id && r.ghl_contact_id) ghlByMc.set(r.subscriber_id, r.ghl_contact_id);
-      }
-    }
-    const ghlContactIds = Array.from(new Set(ghlByMc.values()));
-    const bookedContactIds = new Set<string>();
-    for (let i = 0; i < ghlContactIds.length; i += 300) {
-      const chunk = ghlContactIds.slice(i, i + 300);
-      const { data, error } = await sb
-        .from("ghl_appointments")
-        .select("contact_id, status")
-        .in("contact_id", chunk);
-      if (error) throw error;
-      for (const r of (data || []) as { contact_id: string; status: string | null }[]) {
-        const st = (r.status || "").toLowerCase();
-        if (r.contact_id && st !== "cancelled" && st !== "canceled" && st !== "noshow" && st !== "no-show" && st !== "invalid") {
-          bookedContactIds.add(r.contact_id);
+        if (r.subscriber_id && r.ghl_contact_id) {
+          const leadClient = shortClient(latestByMc.get(r.subscriber_id)?.client_key);
+          ghlByMc.set(r.subscriber_id, { contactId: r.ghl_contact_id, client: leadClient });
         }
       }
     }
+    // For each ghl contact, collect the set of clients that have a REAL, in-window
+    // (status booked, start_time inside the date window) appointment for it.
+    const ghlContactIds = Array.from(new Set(Array.from(ghlByMc.values(), (v) => v.contactId)));
+    const apptClientsByContact = new Map<string, Set<string>>();
+    for (let i = 0; i < ghlContactIds.length; i += 300) {
+      const chunk = ghlContactIds.slice(i, i + 300);
+      let q = sb
+        .from("ghl_appointments")
+        .select("contact_id, status, client, start_time")
+        .in("contact_id", chunk);
+      if (dateFrom) q = q.gte("start_time", `${dateFrom}T00:00:00`);
+      if (dateTo) q = q.lte("start_time", `${dateTo}T23:59:59.999`);
+      const { data, error } = await q;
+      if (error) throw error;
+      for (const r of (data || []) as { contact_id: string; status: string | null; client: string | null }[]) {
+        const st = (r.status || "").toLowerCase();
+        if (!r.contact_id) continue;
+        if (st === "cancelled" || st === "canceled" || st === "noshow" || st === "no-show" || st === "invalid") continue;
+        const sc = shortClient(r.client) || "";
+        if (!apptClientsByContact.has(r.contact_id)) apptClientsByContact.set(r.contact_id, new Set());
+        apptClientsByContact.get(r.contact_id)!.add(sc);
+      }
+    }
     const bookedMc = new Set<string>();
-    for (const [mc, cid] of ghlByMc) if (bookedContactIds.has(cid)) bookedMc.add(mc);
+    for (const [mc, { contactId, client }] of ghlByMc) {
+      const apptClients = apptClientsByContact.get(contactId);
+      if (!apptClients || apptClients.size === 0) continue;
+      // client scope: the appt must belong to the SAME client as the lead.
+      if (client && apptClients.has(client)) bookedMc.add(mc);
+    }
 
     // ----------------------------------------------------------------
     // 6) CLOSED — sales_tracker_rows by subscriber_id OR name fallback.
