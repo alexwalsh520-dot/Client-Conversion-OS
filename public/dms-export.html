@@ -7,7 +7,7 @@
 <script>(function(){try{var t=localStorage.getItem("ccos-theme:last");if(t!=="light"&&t!=="dark")t="dark";var c=document.documentElement.classList;c.remove("light","dark");c.add(t);}catch(e){}try{window.addEventListener("storage",function(e){if(e.key==="ccos-theme:last"){var n=e.newValue==="light"?"light":"dark";var c=document.documentElement.classList;c.remove("light","dark");c.add(n);}});}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* Theme tokens — copied verbatim from ads-tracker-export.html so the DMs tab
      matches the Ads tab pixel-for-pixel (deep black/charcoal + gold accent). */
@@ -70,7 +70,7 @@
   .app{height:100vh;display:flex;flex-direction:column;background:var(--bg)}
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg-1);flex:0 0 auto}
   .topbar-left{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .topbar-title{font-family:'Fraunces',Georgia,serif;font-size:20px;font-weight:600;letter-spacing:-0.01em;margin:0}
+  .topbar-title{font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:0}
   .topbar-sub{font-size:11px;color:var(--text-3)}
   .topbar-sub b{color:var(--text-2);font-weight:600}
   .sync-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--border-2);border-radius:99px;font-size:11px;color:var(--text-3);background:var(--bg-1);letter-spacing:0.01em;flex:0 0 auto}
@@ -240,7 +240,7 @@
 
   /* ---- View switch (Inbox | Dashboard) ---- */
   .view-switch{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border-2);border-radius:9px;background:var(--panel);flex:0 0 auto}
-  .view-tab{font-family:'Sora',system-ui,sans-serif;padding:6px 16px;border-radius:7px;font-size:11.5px;font-weight:600;color:var(--text-3);letter-spacing:0.02em}
+  .view-tab{padding:6px 16px;border-radius:7px;font-size:11.5px;font-weight:600;color:var(--text-3);letter-spacing:0.02em}
   .view-tab:hover{color:var(--text-2)}
   .view-tab.on{background:var(--panel-2);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-dim)}
 
@@ -251,122 +251,83 @@
   .ai-evidence-txt{font-size:11.5px;color:var(--text-2);line-height:1.5;white-space:pre-wrap;word-break:break-word}
 
   /* ====================================================================
-     DASHBOARD — elevated. Deep-black canvas, ONE gold accent, a refined
-     display serif (Fraunces) for numbers/titles + Sora for structural
-     labels. Atmosphere via a faint radial wash + grain; staggered load-in.
+     DASHBOARD — uniform with the Ads tab. Flat deep-black canvas, Inter
+     everywhere, ONE gold accent. KPI cards are a direct style-copy of the
+     Ads tab's .panel / .chart-card. No serif, no grain, no radial wash.
      ==================================================================== */
-  :root{
-    --serif:'Fraunces',Georgia,serif;
-    --sora:'Sora',system-ui,sans-serif;
-    --gold-soft:rgba(212,178,122,.13);
-    --gold-line:rgba(212,178,122,.30);
-  }
-  .dash{flex:1;overflow-y:auto;min-height:0;position:relative;
-    background:
-      radial-gradient(1100px 520px at 78% -8%, rgba(212,178,122,.07), transparent 60%),
-      radial-gradient(900px 500px at 8% 8%, rgba(122,167,212,.045), transparent 55%),
-      var(--bg);
-  }
-  html.light .dash{background:
-      radial-gradient(1100px 520px at 78% -8%, rgba(169,130,63,.08), transparent 60%),
-      var(--bg);}
-  /* subtle grain overlay for texture/depth */
-  .dash::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;mix-blend-mode:overlay;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");}
+  .dash{flex:1;overflow-y:auto;min-height:0;background:var(--bg)}
   .dash-bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
-    padding:13px 26px;border-bottom:1px solid var(--border);
-    background:color-mix(in srgb, var(--bg-1) 86%, transparent);backdrop-filter:blur(10px) saturate(1.1)}
+    padding:13px 26px;border-bottom:1px solid var(--border);background:var(--bg-1)}
   .dash-bar .spacer{flex:1}
-  .dash-hint{font-family:var(--sora);font-size:10.5px;color:var(--text-4);letter-spacing:.01em}
-  .dash-body{padding:26px;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:22px;position:relative;z-index:1}
+  .dash-hint{font-size:10.5px;color:var(--text-4);letter-spacing:.01em}
+  .dash-body{padding:26px;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 
-  /* staggered reveal */
-  @keyframes dashRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-  .rise{opacity:0;animation:dashRise .62s cubic-bezier(.2,.7,.2,1) forwards}
+  /* ---- cards: copied verbatim from ads-tracker-export.html ---- */
+  .panel{border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:hidden}
+  .chart-card{padding:18px 20px 14px;display:flex;flex-direction:column}
+  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+  .chart-title{font-size:11px;color:var(--text-3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px}
+  .chart-subtitle{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .chart-big{font-size:26px;font-weight:500;color:var(--text);letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
+  .chart-sub-label{font-size:11px;color:var(--text-4)}
+  .chart-empty{padding:34px 16px;text-align:center;color:var(--text-4);font-size:11.5px}
 
-  .dash-cov{display:inline-flex;align-items:center;gap:6px;font-family:var(--sora);font-size:10px;color:var(--text-4);
-    background:var(--bg-1);border:1px solid var(--border);border-radius:99px;padding:3px 10px;white-space:nowrap;letter-spacing:.01em}
-  .dash-cov b{color:var(--text-2);font-weight:600}
-  .dash-cov.warn{border-color:var(--gold-line);color:var(--gold-dim)}
-
-  /* ---- KPI row: editorial hero numbers ---- */
-  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;
-    border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel)}
+  /* ---- KPI grid: Ads-tab card style, one card per metric ---- */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
   @media (max-width:1080px){ .kpi-grid{grid-template-columns:repeat(2,1fr)} }
   @media (max-width:560px){ .kpi-grid{grid-template-columns:1fr} }
-  .kpi{position:relative;padding:20px 20px 18px;display:flex;flex-direction:column;gap:9px;
-    border-right:1px solid var(--border);transition:background .16s}
-  .kpi:last-child{border-right:none}
-  @media (max-width:1080px){ .kpi:nth-child(2n){border-right:none} .kpi{border-bottom:1px solid var(--border)} }
-  .kpi.lead-kpi{background:linear-gradient(180deg, var(--gold-soft), transparent 70%)}
-  .kpi.click{cursor:pointer}
-  .kpi.click::after{content:"↗";position:absolute;top:14px;right:14px;font-family:var(--sora);font-size:12px;color:var(--text-4);opacity:0;transition:opacity .16s}
-  .kpi.click:hover{background:var(--panel-2)}
+  .kpi{position:relative;min-height:110px;justify-content:space-between}
+  .kpi.click{cursor:pointer;transition:border-color .14s,background-color .14s}
+  .kpi.click:hover{border-color:var(--focus);background:var(--panel-2)}
+  .kpi.click::after{content:"↗";position:absolute;top:13px;right:14px;font-size:12px;color:var(--text-4);opacity:0;transition:opacity .14s}
   .kpi.click:hover::after{opacity:.8;color:var(--gold)}
-  .kpi-lbl{font-family:var(--sora);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.13em;font-weight:600}
-  .kpi-val{font-family:var(--serif);font-size:40px;font-weight:500;color:var(--text);line-height:.92;letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
-  .kpi.lead-kpi .kpi-val{color:var(--gold)}
-  .kpi-val .unit{font-family:var(--sora);font-size:13px;color:var(--text-4);font-weight:500;margin-left:4px;letter-spacing:0}
-  .kpi-sub{font-family:var(--sora);font-size:10.5px;color:var(--text-4);letter-spacing:.005em;line-height:1.4}
+  .chart-big .unit{font-size:13px;color:var(--text-4);font-weight:400;margin-left:4px;letter-spacing:0}
+  .kpi.lead-kpi .chart-big{color:var(--gold)}
+  .kpi-sub{font-size:11px;color:var(--text-4);line-height:1.4;margin-top:8px}
   .kpi-sub .g{color:var(--gold);font-weight:600}
 
-  /* ---- cards ---- */
-  .card{border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden;
-    box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 18px 40px -28px rgba(0,0,0,.8)}
-  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 6px}
-  .card-titles{display:flex;flex-direction:column;gap:3px;min-width:0}
-  .card-title{font-family:var(--serif);font-size:17px;font-weight:600;color:var(--text);letter-spacing:-0.01em}
-  .card-desc{font-family:var(--sora);font-size:11px;color:var(--text-4);letter-spacing:.005em}
-  .card-body{padding:8px 20px 20px}
-  .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:22px}
-  @media (max-width:980px){ .dash-2col{grid-template-columns:1fr} }
-  .seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border-2);border-radius:9px;background:var(--bg-1)}
-  .seg button{font-family:var(--sora);padding:5px 11px;border-radius:6px;font-size:10.5px;font-weight:600;color:var(--text-3);letter-spacing:.02em}
-  .seg button:hover{color:var(--text-2)}
-  .seg button.on{background:var(--panel-2);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-line)}
+  /* ---- coverage chip ---- */
+  .dash-cov{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text-4);
+    background:var(--bg-1);border:1px solid var(--border);border-radius:99px;padding:3px 10px;white-space:nowrap;letter-spacing:.01em}
+  .dash-cov b{color:var(--text-2);font-weight:600}
+  .dash-cov.warn{border-color:var(--gold-dim);color:var(--gold-dim)}
 
-  /* ---- ranked lollipop rows ---- */
-  .lolli{display:flex;flex-direction:column}
-  .lolli-row{display:grid;grid-template-columns:minmax(150px,1.4fr) 1fr auto;align-items:center;gap:14px;
-    padding:11px 8px;border-radius:9px;cursor:pointer;transition:background .12s}
-  .lolli-row:hover{background:var(--row-hover)}
-  .lolli-name{display:flex;flex-direction:column;gap:3px;min-width:0}
-  .lolli-name .nm{font-family:var(--sora);font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .lolli-name .st{font-family:var(--sora);font-size:9px;text-transform:uppercase;letter-spacing:.08em;display:inline-flex;align-items:center;gap:5px;color:var(--text-4)}
-  .lolli-name .st .dot{width:5px;height:5px;border-radius:99px;background:var(--text-4)}
-  .lolli-name .st.live{color:var(--green-dim)} .lolli-name .st.live .dot{background:var(--green);box-shadow:0 0 6px var(--green-dim)}
-  .lolli-track{position:relative;height:22px;display:flex;align-items:center}
-  .lolli-line{position:absolute;left:0;height:2px;border-radius:99px;background:linear-gradient(90deg,var(--gold-dim),var(--gold));transition:width .5s cubic-bezier(.2,.7,.2,1)}
-  .lolli-dot{position:absolute;width:9px;height:9px;border-radius:99px;background:var(--gold);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 22%,transparent);transition:left .5s cubic-bezier(.2,.7,.2,1)}
-  .lolli-val{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;min-width:38px}
-  .lolli-val .sub{font-family:var(--sora);font-size:9.5px;font-weight:500;color:var(--text-4);display:block;letter-spacing:.02em}
-
-  /* ---- scatter ---- */
-  .scatter-wrap{position:relative}
-  .scatter-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:var(--sora);font-size:10px;color:var(--text-4);letter-spacing:.02em}
-  .scatter-tip{position:absolute;pointer-events:none;z-index:20;background:var(--panel);border:1px solid var(--gold-line);border-radius:9px;
-    padding:9px 11px;font-family:var(--sora);font-size:11px;color:var(--text);box-shadow:0 14px 40px rgba(0,0,0,.6);min-width:130px}
-  .scatter-tip .tnm{font-weight:600;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
-  .scatter-tip .trow{display:flex;justify-content:space-between;gap:14px;color:var(--text-3)}
-  .scatter-tip .trow b{color:var(--gold);font-weight:600}
+  /* ---- card header (for chart + response-time sections) ---- */
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .card-titles{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .card-title{font-size:13px;font-weight:650;color:var(--text);letter-spacing:-0.01em}
+  .card-desc{font-size:11px;color:var(--text-4);letter-spacing:.005em}
 
   /* ---- area trend ---- */
   .trend-wrap{position:relative}
-  .trend-tip{position:absolute;pointer-events:none;z-index:20;background:var(--panel);border:1px solid var(--gold-line);border-radius:8px;padding:7px 10px;font-family:var(--sora);font-size:11px;color:var(--text);box-shadow:0 12px 32px rgba(0,0,0,.6);white-space:nowrap}
+  .trend-tip{position:absolute;pointer-events:none;z-index:20;background:var(--panel);border:1px solid var(--border-2);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.6);white-space:nowrap}
   .trend-tip b{color:var(--gold)}
 
-  /* ---- distribution: gradient band ---- */
-  .distb{display:flex;flex-direction:column;gap:4px}
-  .distb-bars{display:flex;align-items:flex-end;gap:10px;height:150px;padding:0 4px}
-  .distb-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%}
-  .distb-bar{width:100%;border-radius:8px 8px 3px 3px;min-height:3px;transition:height .55s cubic-bezier(.2,.7,.2,1);position:relative}
-  .distb-bar .cnt{position:absolute;top:-19px;left:0;right:0;text-align:center;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--text)}
-  .distb-x{display:flex;gap:10px;padding:0 4px}
-  .distb-xl{flex:1;text-align:center;font-family:var(--sora);font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:.04em;line-height:1.3}
+  /* ---- Response Times (ported from Sales Hub; orange accent removed) ---- */
+  .rt-section{display:flex;flex-direction:column;gap:14px}
+  .rt-section-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:var(--text);letter-spacing:-0.01em;margin:0}
+  .rt-section-title .ic{color:var(--text-3);display:inline-flex}
+  .rt-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media (max-width:680px){ .rt-grid-3{grid-template-columns:1fr} }
+  .rt-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){ .rt-grid-2{grid-template-columns:1fr} }
+  .rt-metric{padding:14px 16px}
+  .rt-metric-label{display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3)}
+  .rt-metric-value{font-size:22px;font-weight:500;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-0.02em;margin-top:8px}
+  .rt-table-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-4);font-weight:600;margin-bottom:10px}
+  .data-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+  .data-table thead th{text-align:left;padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);font-weight:500;white-space:nowrap;border-bottom:1px solid var(--border-2);background:var(--panel)}
+  .data-table tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .data-table tbody tr:last-child td{border-bottom:none}
+  .data-table tbody tr:hover td{background:var(--row-hover)}
+  .rt-link{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;color:var(--gold);border:1px solid var(--gold-dim);text-decoration:none;white-space:nowrap}
+  .rt-link:hover{background:rgba(212,178,122,.09)}
+  .rt-scroll{overflow:auto;max-height:540px}
 
-  .dash-empty{padding:70px 24px;text-align:center;color:var(--text-3);font-family:var(--sora);font-size:12.5px}
-  .dash-empty .big{font-family:var(--serif);font-size:20px;color:var(--text-2);font-weight:600;margin-bottom:8px;letter-spacing:-0.01em}
-  .chart-empty{padding:34px 16px;text-align:center;color:var(--text-4);font-family:var(--sora);font-size:11.5px}
+  .dash-empty{padding:70px 24px;text-align:center;color:var(--text-3);font-size:12.5px}
+  .dash-empty .big{font-size:18px;color:var(--text-2);font-weight:600;margin-bottom:8px;letter-spacing:-0.01em}
+  .spin{animation:rtspin 1s linear infinite}
+  @keyframes rtspin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -904,7 +865,7 @@ function AreaTrend({days, total, campaigns}){
         {yticks.map((v,i)=>(
           <g key={"y"+i}>
             <line x1={PADL} y1={y(v)} x2={W-PADR} y2={y(v)} stroke="var(--border)" strokeWidth="1"/>
-            <text x={PADL-6} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}</text>
+            <text x={PADL-6} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{v}</text>
           </g>
         ))}
         {area && <path d={area} fill="url(#areaFill)"/>}
@@ -919,7 +880,7 @@ function AreaTrend({days, total, campaigns}){
         ))}
         {tip && <circle cx={x(tip.i)} cy={y(tip.v)} r="4.5" fill="var(--gold)" stroke="var(--bg)" strokeWidth="1.5"/>}
         {ticks.map((i)=>(
-          <text key={"x"+i} x={x(i)} y={H-7} textAnchor="middle" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">
+          <text key={"x"+i} x={x(i)} y={H-7} textAnchor="middle" fontSize="9" fill="var(--text-4)">
             {(days[i]||"").slice(5)}
           </text>
         ))}
@@ -933,118 +894,193 @@ function AreaTrend({days, total, campaigns}){
   );
 }
 
-// ---------------------------------------------------------------------------
-// RANKED LOLLIPOP — campaigns/ad sets ranked by a chosen metric (leads,
-// readiness, booked %). Instantly scannable; click drills to the inbox.
-// ---------------------------------------------------------------------------
-const RANK_METRICS = [
-  {id:"leads", label:"Leads"},
-  {id:"readiness", label:"Quality"},
-  {id:"booked", label:"Booked %"},
-];
-function metricVal(g, m){
-  if(m==="leads") return g.leads;
-  if(m==="readiness") return g.avgReadiness;
-  if(m==="booked") return g.leads ? (g.booked/g.leads)*100 : null;
-  return 0;
+// ===========================================================================
+// RESPONSE TIMES — ported from src/app/sales-hub/components/ResponseTimes.tsx.
+// Same /api/sales-hub/response-times endpoint + same data/presentation, wired
+// to the DMs date picker + client filter. Orange accent removed (neutral/gold).
+// The API only accepts client = all | tyson | antwan, so other DMs clients
+// (keith, lucy) fall back to "all".
+// ===========================================================================
+function rtFmtNumber(n){ return (n==null||!Number.isFinite(n))?"0":n.toLocaleString(); }
+function rtFormatDuration(seconds){
+  if(seconds===null||seconds===undefined||!Number.isFinite(seconds)) return "—";
+  const total = Math.round(seconds);
+  if(total < 60) return total+"s";
+  const hours = Math.floor(total/3600);
+  const mins = Math.floor((total%3600)/60);
+  const secs = total%60;
+  if(hours > 0) return hours+"h "+mins+"m "+secs+"s";
+  return mins+"m "+secs+"s";
 }
-function metricDisplay(g, m){
-  if(m==="leads") return {big:num(g.leads), sub:null};
-  if(m==="readiness") return g.avgReadiness!=null ? {big:Math.round(g.avgReadiness), sub:num(g.stageLeads)+"/"+num(g.leads)} : {big:"—", sub:"no convos"};
-  if(m==="booked") return {big:pct(g.leads?g.booked/g.leads:null), sub:num(g.booked)+"/"+num(g.leads)};
-  return {big:"—",sub:null};
+function rtFormatDateTime(iso){
+  if(!iso) return "—";
+  const date = new Date(iso);
+  if(!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",timeZoneName:"short"}).format(date);
 }
-function Lollipop({rows, kind, onDrill}){
-  const [metric, setMetric] = useState("leads");
-  if(!rows || rows.length===0) return <div className="chart-empty">No {kind==="campaign"?"campaigns":"ad sets"} with leads in this window.</div>;
-  const usable = rows.filter(g=>metricVal(g,metric)!=null);
-  const ranked = [...usable].sort((a,b)=>(metricVal(b,metric)||0)-(metricVal(a,metric)||0)).slice(0,8);
-  const max = Math.max(1, ...ranked.map(g=>metricVal(g,metric)||0));
+function rtResponseColor(seconds){
+  if(seconds===null||seconds===undefined) return "var(--text-3)";
+  if(seconds <= 15*60) return "var(--green)";
+  if(seconds <= 45*60) return "var(--gold)";
+  return "var(--red)";
+}
+function rtMissRate(missed, total){
+  if(!total) return "—";
+  return Math.round((missed/total)*100)+"%";
+}
+function rtThresholdLabel(seconds){ return Math.round(seconds/60)+" min"; }
+
+function RtMetric({label, value, color}){
+  return (
+    <div className="panel rt-metric">
+      <div className="rt-metric-label">{label}</div>
+      <div className="rt-metric-value" style={color?{color}:null}>{value}</div>
+    </div>
+  );
+}
+function RtGroupTable({title, rows}){
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
-        <div className="seg">
-          {RANK_METRICS.map(m=>(
-            <button key={m.id} className={metric===m.id?"on":""} onClick={()=>setMetric(m.id)}>{m.label}</button>
-          ))}
-        </div>
+      <div className="rt-table-title">{title}</div>
+      <div className="panel rt-scroll">
+        <table className="data-table">
+          <thead><tr><th>Name</th><th>Avg</th><th>Fastest</th><th>Slowest</th></tr></thead>
+          <tbody>
+            {(!rows || rows.length===0) ? (
+              <tr><td colSpan={4} style={{color:"var(--text-4)"}}>No data yet</td></tr>
+            ) : rows.map(row=>(
+              <tr key={row.id}>
+                <td style={{fontWeight:650,color:"var(--text)"}}>{row.label}</td>
+                <td style={{color:rtResponseColor(row.averageSeconds),fontWeight:650}}>{rtFormatDuration(row.averageSeconds)}</td>
+                <td>{rtFormatDuration(row.fastestSeconds)}</td>
+                <td>{rtFormatDuration(row.slowestSeconds)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <div className="lolli">
-        {ranked.map((g,idx)=>{
-          const live = (g.status||"").toUpperCase()==="ACTIVE";
-          const v = metricVal(g,metric)||0;
-          const w = Math.max(3,(v/max)*100);
-          const disp = metricDisplay(g,metric);
-          return (
-            <div className="lolli-row" key={g.id} onClick={()=>onDrill(g)} title="Open these leads in the inbox to verify">
-              <div className="lolli-name">
-                <span className="nm">{g.label}</span>
-                <span className={"st "+(live?"live":"")}><span className="dot"/>{live?"Active":(g.status||"Off")}</span>
-              </div>
-              <div className="lolli-track">
-                <span className="lolli-line" style={{width:`calc(${w}% - 9px)`,animationDelay:(idx*40)+"ms"}}/>
-                <span className="lolli-dot" style={{left:`calc(${w}% - 9px)`}}/>
-              </div>
-              <div className="lolli-val">{disp.big}{disp.sub && <span className="sub">{disp.sub}</span>}</div>
-            </div>
-          );
-        })}
+    </div>
+  );
+}
+function RtMissedTable({title, rows}){
+  return (
+    <div>
+      <div className="rt-table-title">{title}</div>
+      <div className="panel rt-scroll">
+        <table className="data-table">
+          <thead><tr><th>Name</th><th>Missed</th><th>Replies</th><th>Miss %</th></tr></thead>
+          <tbody>
+            {(!rows || rows.length===0) ? (
+              <tr><td colSpan={4} style={{color:"var(--text-4)"}}>No data yet</td></tr>
+            ) : rows.map(row=>(
+              <tr key={row.id}>
+                <td style={{fontWeight:650,color:"var(--text)"}}>{row.label}</td>
+                <td style={{color:row.missedCount>0?"var(--red)":"var(--text-2)",fontWeight:650}}>{rtFmtNumber(row.missedCount)}</td>
+                <td>{rtFmtNumber(row.sampleCount)}</td>
+                <td style={{fontWeight:650}}>{rtMissRate(row.missedCount,row.sampleCount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+function RtConversationsTable({rows}){
+  return (
+    <div>
+      <div className="rt-table-title">Missed Response Times ({rtFmtNumber(rows.length)})</div>
+      <div className="panel rt-scroll">
+        <table className="data-table">
+          <thead><tr><th>Lead</th><th>Offer</th><th>Setter</th><th>Messaged</th><th>Replied</th><th>Response</th><th></th></tr></thead>
+          <tbody>
+            {rows.length===0 ? (
+              <tr><td colSpan={7} style={{color:"var(--text-4)"}}>No missed responses in this range 🎉</td></tr>
+            ) : rows.map((row,i)=>(
+              <tr key={row.client+"-"+row.subscriberId+"-"+row.inboundAt+"-"+i}>
+                <td style={{fontWeight:650,color:"var(--text)"}}>{row.leadName||"Unknown"}</td>
+                <td>{row.clientLabel}</td>
+                <td>{row.setterLabel}</td>
+                <td>{rtFormatDateTime(row.inboundAt)}</td>
+                <td>{rtFormatDateTime(row.outboundAt)}</td>
+                <td style={{color:"var(--red)",fontWeight:650}}>{rtFormatDuration(row.activeSeconds)}</td>
+                <td>{row.manychatUrl ? (
+                  <a className="rt-link" href={row.manychatUrl} target="_blank" rel="noopener noreferrer">Take me to chat</a>
+                ) : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// SCATTER — avg lead readiness (x) vs booking rate (y) per campaign. The money
-// insight: which campaigns bring quality that actually books. Bubble size = leads.
-// ---------------------------------------------------------------------------
-function Scatter({rows, onDrill}){
-  const [tip, setTip] = useState(null);
-  const pts = (rows||[]).filter(g=>g.avgReadiness!=null && g.leads>0)
-    .map(g=>({...g, rx:g.avgReadiness, ry:(g.booked/g.leads)*100}));
-  if(pts.length===0) return <div className="chart-empty">Needs campaigns with both synced quality scores and bookings to plot.</div>;
-  const W=760,H=300,PADL=42,PADR=18,PADT=18,PADB=42;
-  const maxY = Math.max(10, ...pts.map(p=>p.ry));
-  const maxLeads = Math.max(1, ...pts.map(p=>p.leads));
-  const x=(v)=>PADL+(v/100)*(W-PADL-PADR);
-  const y=(v)=>PADT+(H-PADT-PADB)-(v/maxY)*(H-PADT-PADB);
-  const r=(leads)=>5+Math.sqrt(leads/maxLeads)*16;
-  const xt=[0,25,50,75,100];
-  const yt=[0,Math.round(maxY/2),Math.round(maxY)];
-  return (
-    <div className="scatter-wrap">
-      <svg viewBox={"0 0 "+W+" "+H} width="100%" preserveAspectRatio="xMidYMid meet" style={{display:"block",overflow:"visible"}}>
-        {yt.map((v,i)=>(
-          <g key={"y"+i}>
-            <line x1={PADL} y1={y(v)} x2={W-PADR} y2={y(v)} stroke="var(--border)" strokeDasharray={i===0?"":"2 4"} strokeWidth="1"/>
-            <text x={PADL-7} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}%</text>
-          </g>
-        ))}
-        {xt.map((v,i)=>(
-          <text key={"x"+i} x={x(v)} y={H-PADB+16} textAnchor="middle" fontSize="9" fill="var(--text-4)" fontFamily="var(--sora)">{v}</text>
-        ))}
-        <text x={(PADL+W-PADR)/2} y={H-6} textAnchor="middle" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--sora)" letterSpacing="0.06em">AVG LEAD QUALITY →</text>
-        <text x={-((PADT+H-PADB)/2)} y={13} transform="rotate(-90)" textAnchor="middle" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--sora)" letterSpacing="0.06em">BOOKING RATE →</text>
-        {pts.map((p)=>(
-          <g key={p.id} style={{cursor:"pointer"}} onClick={()=>onDrill(p)}
-             onMouseEnter={()=>setTip({p,cx:x(p.rx),cy:y(p.ry)})} onMouseLeave={()=>setTip(null)}>
-            <circle cx={x(p.rx)} cy={y(p.ry)} r={r(p.leads)}
-              fill="color-mix(in srgb, var(--gold) 26%, transparent)" stroke="var(--gold)" strokeWidth={tip&&tip.p.id===p.id?2:1.2}/>
-          </g>
-        ))}
-      </svg>
-      {tip && (
-        <div className="scatter-tip" style={{left:`min(calc(${(tip.cx/W)*100}% + 14px), calc(100% - 150px))`, top:`calc(${(tip.cy/H)*100}% - 10px)`}}>
-          <div className="tnm">{tip.p.label}</div>
-          <div className="trow"><span>Quality</span><b>{Math.round(tip.p.rx)}</b></div>
-          <div className="trow"><span>Booking rate</span><b>{pct(tip.p.booked/tip.p.leads)}</b></div>
-          <div className="trow"><span>Leads</span><b>{num(tip.p.leads)}</b></div>
-        </div>
-      )}
-      <div className="scatter-legend">
-        <span>Bubble size = lead volume</span>
-        <span style={{color:"var(--gold)"}}>↗ top-right = quality that books</span>
+function ResponseTimes({client, dateFrom, dateTo}){
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [data, setData] = useState(null);
+  // API supports only tyson | antwan | all.
+  const rtClient = (client==="tyson"||client==="antwan") ? client : "all";
+
+  useEffect(()=>{
+    let off = false;
+    setLoading(true); setError("");
+    fetch("/api/sales-hub/response-times?client="+rtClient+"&dateFrom="+dateFrom+"&dateTo="+dateTo)
+      .then(r=>{ if(!r.ok) throw new Error("Failed to fetch: "+r.statusText); return r.json(); })
+      .then(d=>{ if(off) return; if(d && d.error){ setError(d.error); setData(null); } else setData(d); })
+      .catch(e=>{ if(!off) setError(e instanceof Error ? e.message : "Failed to load response time data"); })
+      .finally(()=>{ if(!off) setLoading(false); });
+    return ()=>{ off = true; };
+  },[rtClient, dateFrom, dateTo]);
+
+  if(loading){
+    return (
+      <div className="panel" style={{padding:40,display:"flex",justifyContent:"center"}}>
+        <svg className="spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
       </div>
+    );
+  }
+  if(error){
+    return <div className="panel" style={{padding:24,color:"var(--red)",fontSize:13}}>Failed to load response time data: {error}</div>;
+  }
+  if(!data) return null;
+
+  const threshold = rtThresholdLabel(data.missThresholdSeconds);
+  const summary = data.summary || {};
+  const missed = (data.conversations||[]).filter(c=>c.missed);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:22}}>
+      <div className="rt-section">
+        <h2 className="rt-section-title">
+          <span className="ic"><Icon size={15} d={<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>} /></span>
+          Response Time Tracking
+        </h2>
+        <div className="rt-grid-3">
+          <RtMetric label="Team Avg" value={rtFormatDuration(summary.averageSeconds)} color={rtResponseColor(summary.averageSeconds)} />
+          <RtMetric label={"Missed (>"+threshold+")"} value={rtFmtNumber(summary.missedCount)} color={summary.missedCount>0?"var(--red)":undefined} />
+          <RtMetric label="Miss Rate" value={rtMissRate(summary.missedCount, summary.sampleCount)} />
+        </div>
+      </div>
+
+      <div className="rt-grid-2">
+        <RtGroupTable title="By Offer" rows={data.clients} />
+        <RtGroupTable title="By Setter" rows={data.setters} />
+      </div>
+
+      <div className="rt-section">
+        <h2 className="rt-section-title">
+          <span className="ic"><Icon size={15} d={<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></>} /></span>
+          Missed Response Time (over {threshold})
+        </h2>
+        <div className="rt-grid-2">
+          <RtMissedTable title="By Offer" rows={data.clients} />
+          <RtMissedTable title="By Setter" rows={data.setters} />
+        </div>
+      </div>
+
+      <RtConversationsTable rows={missed} />
     </div>
   );
 }
@@ -1094,83 +1130,42 @@ function Dashboard(props){
     <div className="dash">
       <DashBar {...{range,onChangeRange,clientOpts,client,onChangeClient,campaignOpts,campaign,onChangeCampaign}}/>
       <div className="dash-body">
+        {/* KPI cards — direct style-copy of the Ads tab's .panel/.chart-card.
+            Numbers + coverage labels + drill-down preserved. */}
         {totalLeads===0 ? (
           <div className="dash-empty"><div className="big">No keyword-fired leads in this window</div><div>Widen the date range or change the client filter.</div></div>
         ) : (
         <>
-          {/* KPI row — editorial hero numbers, each honest about coverage */}
-          <div className="kpi-grid rise" style={{animationDelay:"0ms"}}>
-            <div className="kpi lead-kpi">
-              <span className="kpi-lbl">Keyword leads</span>
-              <span className="kpi-val">{num(totalLeads)}</span>
-              <span className="kpi-sub">complete · every ad-keyword fire</span>
+          <div className="kpi-grid">
+            <div className="panel chart-card kpi lead-kpi">
+              <div className="chart-title">Keyword leads</div>
+              <div className="chart-subtitle"><span className="chart-big">{num(totalLeads)}</span></div>
+              <div className="kpi-sub">complete · every ad-keyword fire</div>
             </div>
-            <div className="kpi click" onClick={()=>onDrill({}, "booked")} title="Open booked leads in the inbox">
-              <span className="kpi-lbl">Booked</span>
-              <span className="kpi-val">{num(s.booked)}<span className="unit">/ {num(totalLeads)}</span></span>
-              <span className="kpi-sub"><span className="g">{pct(s.bookedRate)}</span> · real GHL appts</span>
+            <div className="panel chart-card kpi click" onClick={()=>onDrill({}, "booked")} title="Open booked leads in the inbox">
+              <div className="chart-title">Booked</div>
+              <div className="chart-subtitle"><span className="chart-big">{num(s.booked)}<span className="unit">/ {num(totalLeads)}</span></span></div>
+              <div className="kpi-sub"><span className="g">{pct(s.bookedRate)}</span> · real GHL appts</div>
             </div>
-            <div className="kpi click" onClick={()=>onDrill({}, "closed")} title="Open closed leads in the inbox">
-              <span className="kpi-lbl">Closed</span>
-              <span className="kpi-val">{num(s.closed)}<span className="unit">/ {num(totalLeads)}</span></span>
-              <span className="kpi-sub"><span className="g">{pct(s.closedRate)}</span> · collected sales</span>
+            <div className="panel chart-card kpi click" onClick={()=>onDrill({}, "closed")} title="Open closed leads in the inbox">
+              <div className="chart-title">Closed</div>
+              <div className="chart-subtitle"><span className="chart-big">{num(s.closed)}<span className="unit">/ {num(totalLeads)}</span></span></div>
+              <div className="kpi-sub"><span className="g">{pct(s.closedRate)}</span> · collected sales</div>
             </div>
-            <div className="kpi">
-              <span className="kpi-lbl">Collected</span>
-              <span className="kpi-val">{money(s.collectedCents)}</span>
-              <span className="kpi-sub">from {num(s.closed)} closed lead{s.closed===1?"":"s"}</span>
+            <div className="panel chart-card kpi">
+              <div className="chart-title">Collected</div>
+              <div className="chart-subtitle"><span className="chart-big">{money(s.collectedCents)}</span></div>
+              <div className="kpi-sub">from {num(s.closed)} closed lead{s.closed===1?"":"s"}</div>
             </div>
-            <div className="kpi">
-              <span className="kpi-lbl">Avg quality</span>
-              <span className="kpi-val">{s.avgReadiness!=null?Math.round(s.avgReadiness):"—"}<span className="unit">/ 100</span></span>
-              <span className="kpi-sub">AI readiness · {num(s.stageCoverage)}/{num(totalLeads)} synced</span>
-            </div>
-          </div>
-
-          {/* The money insight: quality vs booking-rate scatter */}
-          <div className="card rise" style={{animationDelay:"80ms"}}>
-            <div className="card-head">
-              <div className="card-titles">
-                <span className="card-title">Quality that actually books</span>
-                <span className="card-desc">Each bubble is a campaign · top-right = high-quality leads that convert</span>
-              </div>
-              <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
-            </div>
-            <div className="card-body">
-              <Scatter rows={d.byCampaign} onDrill={(g)=>onDrill({campaign:g.id, adset:"", keyword:""}, "booked")} />
+            <div className="panel chart-card kpi">
+              <div className="chart-title">Avg quality</div>
+              <div className="chart-subtitle"><span className="chart-big">{s.avgReadiness!=null?Math.round(s.avgReadiness):"—"}<span className="unit">/ 100</span></span></div>
+              <div className="kpi-sub">AI readiness · {num(s.stageCoverage)}/{num(totalLeads)} synced</div>
             </div>
           </div>
 
-          {/* Ranked campaigns + ad sets */}
-          <div className="dash-2col">
-            <div className="card rise" style={{animationDelay:"140ms"}}>
-              <div className="card-head">
-                <div className="card-titles">
-                  <span className="card-title">Top campaigns</span>
-                  <span className="card-desc">Ranked · click any row to verify its leads</span>
-                </div>
-              </div>
-              <div className="card-body">
-                <Lollipop rows={d.byCampaign} kind="campaign"
-                  onDrill={(g)=>onDrill({campaign:g.id, adset:"", keyword:""}, "booked")} />
-              </div>
-            </div>
-            <div className="card rise" style={{animationDelay:"200ms"}}>
-              <div className="card-head">
-                <div className="card-titles">
-                  <span className="card-title">Top ad sets</span>
-                  <span className="card-desc">Ranked · click any row to verify its leads</span>
-                </div>
-              </div>
-              <div className="card-body">
-                <Lollipop rows={d.byAdset} kind="adset"
-                  onDrill={(g)=>onDrill({adset:g.id, campaign:"", keyword:""}, "booked")} />
-              </div>
-            </div>
-          </div>
-
-          {/* Leads over time (single clean area + selector) */}
-          <div className="card rise" style={{animationDelay:"260ms"}}>
+          {/* Leads over time — kept (area chart with fade), restyled to Ads-tab card */}
+          <div className="panel chart-card">
             <div className="card-head">
               <div className="card-titles">
                 <span className="card-title">Leads over time</span>
@@ -1178,62 +1173,13 @@ function Dashboard(props){
               </div>
               <Coverage have={totalLeads} of={totalLeads} noun="keyword fires" />
             </div>
-            <div className="card-body">
-              <AreaTrend days={d.trend.days} total={d.trend.total} campaigns={d.trend.campaigns} />
-            </div>
-          </div>
-
-          {/* Lead-quality distribution */}
-          <div className="card rise" style={{animationDelay:"320ms"}}>
-            <div className="card-head">
-              <div className="card-titles">
-                <span className="card-title">Lead-quality distribution</span>
-                <span className="card-desc">How AI booking-readiness scores spread across synced leads</span>
-              </div>
-              <Coverage have={d.scoreDistribution.coverage} of={totalLeads} noun="scored leads" />
-            </div>
-            <div className="card-body">
-              <ScoreDist buckets={d.scoreDistribution.buckets} coverage={d.scoreDistribution.coverage} />
-            </div>
+            <AreaTrend days={d.trend.days} total={d.trend.total} campaigns={d.trend.campaigns} />
           </div>
         </>
         )}
-      </div>
-    </div>
-  );
-}
 
-// Gradient-band histogram: New → Hot, cool→warm, count above each column.
-const DIST_GRAD = {
-  new:    ["#5b6470","#7a8694"],
-  contact:["#4f7fb0","#7aa7d4"],
-  warm:   ["#b08a3d","#d4b27a"],
-  hot:    ["#b85a52","#e89a94"],
-};
-function ScoreDist({buckets, coverage}){
-  if(!coverage){ return <div className="chart-empty">No conversations synced yet — no AI quality scores to show.</div>; }
-  // order low→high for a natural distribution read
-  const order = ["new","contact","warm","hot"];
-  const ordered = order.map(id=>buckets.find(b=>b.id===id)).filter(Boolean);
-  const max = Math.max(1, ...ordered.map(b=>b.count));
-  const shortLbl = {new:"New",contact:"In contact",warm:"Warm",hot:"Hot"};
-  return (
-    <div className="distb">
-      <div className="distb-bars">
-        {ordered.map((b,i)=>{
-          const g = DIST_GRAD[b.id] || DIST_GRAD.new;
-          return (
-            <div className="distb-col" key={b.id}>
-              <div className="distb-bar" style={{height:`calc(${(b.count/max)*100}% + 3px)`,
-                background:`linear-gradient(180deg, ${g[1]}, ${g[0]})`,animationDelay:(i*60)+"ms"}}>
-                <span className="cnt">{num(b.count)}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="distb-x">
-        {ordered.map(b=>(<span className="distb-xl" key={b.id}>{shortLbl[b.id]||b.label}</span>))}
+        {/* Response Times — ported from Sales Hub; reacts to the date picker + client filter */}
+        <ResponseTimes client={client} dateFrom={range.dateFrom} dateTo={range.dateTo} />
       </div>
     </div>
   );
@@ -1246,7 +1192,7 @@ function DashBar({range,onChangeRange,clientOpts,client,onChangeClient,campaignO
       <SelectFilter options={clientOpts} value={client} onChange={onChangeClient} />
       <SelectFilter label="Camp" options={campaignOpts} value={campaign} onChange={onChangeCampaign} />
       <span className="spacer"/>
-      <span className="dash-hint">Click any campaign, ad set, or KPI to verify its leads in the inbox</span>
+      <span className="dash-hint">Click a KPI to verify its leads in the inbox</span>
     </div>
   );
 }
