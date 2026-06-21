@@ -5897,7 +5897,7 @@ function systemKeywordWins(campaigns, clientKey){
 // it touch ROAS or profit (those stay on hard tracking only). Clearly labelled
 // setter-reported so nobody mistakes a memory for a measurement.
 function SetterCountsPanel({campaigns, clientFilter, onToast}){
-  const initialClient = (clientFilter==="tyson"||clientFilter==="keith") ? clientFilter : "tyson";
+  const initialClient = (clientFilter==="tyson"||clientFilter==="keith"||clientFilter==="lucy"||clientFilter==="antwan") ? clientFilter : "tyson";
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -5988,6 +5988,8 @@ function SetterCountsPanel({campaigns, clientFilter, onToast}){
               <div className="sc-client-pills">
                 <button className={"sc-pill "+(cmpClient==="tyson"?"active":"")} onClick={()=>setCmpClient("tyson")}><span className="sc-dot"></span>Tyson</button>
                 <button className={"sc-pill "+(cmpClient==="keith"?"active":"")} onClick={()=>setCmpClient("keith")}><span className="sc-dot keith"></span>Keith</button>
+                <button className={"sc-pill "+(cmpClient==="lucy"?"active":"")} onClick={()=>setCmpClient("lucy")}><span className="sc-dot"></span>Lucy</button>
+                <button className={"sc-pill "+(cmpClient==="antwan"?"active":"")} onClick={()=>setCmpClient("antwan")}><span className="sc-dot"></span>Antwan</button>
               </div>
             </div>
             <div className="sc-field">
@@ -10308,6 +10310,13 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
   const profitReturn = sum && sum.grossProfitRoi != null ? Number(sum.grossProfitRoi) : null;
   const profitClass = profitReturn==null ? "mid" : (profitReturn>=9 ? "good" : profitReturn>=3 ? "mid" : "bad");
 
+  // Some creators (e.g. Antwan) don't have full costs tracked yet, so their CAC and
+  // Real Profit (LTGP:CAC) are incomplete — flag it instead of showing a misleading
+  // number. Keep this list in sync with CLIENT_KEYS in src/lib/mozi-costs-config.ts;
+  // when a creator's real monthly costs are added there, drop the caveat here too.
+  const COST_TRACKED_CREATORS = ["tyson","keith","lucy"];
+  const costsNotTracked = scope !== "all" && !COST_TRACKED_CREATORS.includes(scope);
+
   if(skillsOpen) return <MemoryPage onBack={()=>setSkillsOpen(false)}/>;
 
   return (
@@ -10324,6 +10333,12 @@ function DeepDiveReport({campaigns, dashboard, decisionDash, decisionRange, rang
         </div>
       </div>
       <DecisionRulesPanel open={rulesOpen}/>
+
+      {costsNotTracked && (
+        <div style={{margin:"0 0 13px",padding:"12px 16px",border:"1px solid var(--gold-dim)",borderRadius:10,background:"rgba(212,178,122,.08)",fontSize:13,lineHeight:1.55,color:"var(--text-2)"}}>
+          <b style={{color:"var(--gold)"}}>⚠ {cap(scope)}'s CAC &amp; Real Profit (LTGP:CAC) aren't accurate yet.</b> Full costs aren't tracked for this creator, so the profit/CAC math is missing his software + comp split until we have a full month of his expenses. Spend, DMs, booked calls and collected ROAS are real.
+        </div>
+      )}
       {/* Data-flow map hidden from this page for now (component kept for later) */}
 
       {/* Data-health tripwire — catches a silently broken ad feed before it skews everything */}

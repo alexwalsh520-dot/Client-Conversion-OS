@@ -2260,6 +2260,15 @@ function applyBackfillHint(group: Group, hint: BackfillGroupHint | null, level: 
   }
 }
 
+// ManyChat fires the keyword webhook multiple times per person (re-sends within
+// seconds), so ads_keyword_events holds several rows for one real DM. Counting
+// raw rows inflated the DM metric (e.g. 35 rows for 19 real people). We dedupe
+// the auto "manychat" message count to distinct subscriber per group. Keyed by
+// the group object so it dedupes correctly across the per-level calls; group
+// objects are per-request, so the WeakMap entries GC with them (no cross-request
+// leak). Manual message entries are intentionally NOT deduped.
+const seenMessageSubscribersByGroup = new WeakMap<Group, Set<string>>();
+
 function addKeywordEventsToGroups(
   groups: Map<string, Group>,
   events: KeywordEvent[],
@@ -2300,7 +2309,20 @@ function addKeywordEventsToGroups(
     } else if (event.event_type === "manual_missing_booking_attribution_override") {
       group.bookedCalls += 1;
     } else if (event.event_type !== "manual_attribution_override") {
-      if (event.source === "manychat") group.messages += 1;
+      if (event.source === "manychat") {
+        const sub = (event.subscriber_id || "").trim();
+        let seen = seenMessageSubscribersByGroup.get(group);
+        if (!seen) {
+          seen = new Set<string>();
+          seenMessageSubscribersByGroup.set(group, seen);
+        }
+        if (!sub) {
+          group.messages += 1; // no subscriber id, cannot dedupe, count it
+        } else if (!seen.has(sub)) {
+          seen.add(sub);
+          group.messages += 1; // count each unique person once per group
+        }
+      }
       if (event.source === "ghl") group.bookedCalls += 1;
     }
 
