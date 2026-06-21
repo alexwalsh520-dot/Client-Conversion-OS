@@ -237,6 +237,84 @@
   .more-btn{display:block;width:calc(100% - 28px);margin:12px 14px;padding:9px;border:1px solid var(--border-2);border-radius:8px;background:var(--panel);color:var(--text-2);font-size:12px}
   .more-btn:hover:not(:disabled){background:var(--panel-2);color:var(--text)}
   .more-btn:disabled{opacity:.4;cursor:default}
+
+  /* ---- View switch (Inbox | Dashboard) ---- */
+  .view-switch{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border-2);border-radius:9px;background:var(--panel);flex:0 0 auto}
+  .view-tab{padding:6px 16px;border-radius:7px;font-size:12px;font-weight:600;color:var(--text-3);letter-spacing:0.01em}
+  .view-tab:hover{color:var(--text-2)}
+  .view-tab.on{background:var(--panel-2);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-dim)}
+
+  /* ---- AI-estimate honesty annotations in the profile ---- */
+  .ai-note{font-size:10px;color:var(--text-4);margin-top:9px;text-transform:uppercase;letter-spacing:0.07em}
+  .ai-evidence{margin-top:12px;padding:10px 11px;border:1px solid var(--border-2);border-radius:8px;background:var(--bg-1)}
+  .ai-evidence-lbl{font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:5px}
+  .ai-evidence-txt{font-size:11.5px;color:var(--text-2);line-height:1.5;white-space:pre-wrap;word-break:break-word}
+
+  /* ---- DASHBOARD ---- */
+  .dash{flex:1;overflow-y:auto;min-height:0;background:var(--bg)}
+  .dash-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:13px 20px;border-bottom:1px solid var(--border);background:var(--bg-1);position:sticky;top:0;z-index:5}
+  .dash-bar .spacer{flex:1}
+  .dash-hint{font-size:11px;color:var(--text-4)}
+  .dash-body{padding:20px;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .dash-cov{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-4);background:var(--bg-1);border:1px solid var(--border);border-radius:99px;padding:3px 9px;white-space:nowrap}
+  .dash-cov b{color:var(--text-2);font-weight:600}
+  .dash-cov.warn{border-color:rgba(212,178,122,.3);color:var(--gold-dim)}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+  .kpi{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:15px 16px;display:flex;flex-direction:column;gap:6px;cursor:default;transition:border-color .12s,background .12s}
+  .kpi.click{cursor:pointer}
+  .kpi.click:hover{border-color:var(--gold-dim);background:var(--panel-2)}
+  .kpi-lbl{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em}
+  .kpi-val{font-size:26px;font-weight:600;color:var(--text);line-height:1}
+  .kpi-val .unit{font-size:13px;color:var(--text-3);font-weight:500;margin-left:3px}
+  .kpi-sub{font-size:11px;color:var(--text-4)}
+  .kpi-sub .g{color:var(--gold)}
+
+  .card{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px 10px}
+  .card-title{font-size:13px;font-weight:600;color:var(--text)}
+  .card-body{padding:4px 16px 16px}
+  .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:900px){ .dash-2col{grid-template-columns:1fr} }
+
+  /* grouped bar table (per campaign / ad set) */
+  .gtable{width:100%;border-collapse:collapse;font-size:12px}
+  .gtable th{text-align:right;font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.07em;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .gtable th.l{text-align:left}
+  .gtable td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:right;color:var(--text-2);vertical-align:middle}
+  .gtable td.l{text-align:left}
+  .gtable tr:last-child td{border-bottom:none}
+  .gtable tr.click{cursor:pointer}
+  .gtable tr.click:hover td{background:var(--row-hover)}
+  .gname{display:flex;flex-direction:column;gap:3px;max-width:280px}
+  .gname .nm{color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gname .st{font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;display:inline-flex;align-items:center;gap:5px;color:var(--text-4)}
+  .gname .st .dot{width:5px;height:5px;border-radius:99px;background:var(--text-4)}
+  .gname .st.live{color:var(--green-dim)} .gname .st.live .dot{background:var(--green);box-shadow:0 0 5px var(--green-dim)}
+  .readiness-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+  .rbar{width:74px;height:7px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border-2);overflow:hidden;flex:0 0 auto}
+  .rfill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
+  .rnum{min-width:26px;color:var(--text);font-variant-numeric:tabular-nums}
+  .cov-inline{font-size:10px;color:var(--text-4)}
+
+  /* line trend (inline SVG) */
+  .trend-wrap{position:relative}
+  .trend-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--text-3)}
+  .trend-legend .lk{display:inline-flex;align-items:center;gap:6px}
+  .trend-legend .sw{width:12px;height:3px;border-radius:99px;display:inline-block}
+
+  /* distribution bars */
+  .dist{display:flex;flex-direction:column;gap:10px}
+  .dist-row{display:grid;grid-template-columns:120px 1fr 44px;align-items:center;gap:10px;font-size:12px}
+  .dist-lbl{color:var(--text-2)}
+  .dist-track{height:10px;border-radius:99px;background:var(--panel-2);border:1px solid var(--border-2);overflow:hidden}
+  .dist-fill{height:100%;border-radius:99px}
+  .dist-fill.hot{background:var(--red)} .dist-fill.warm{background:var(--gold)}
+  .dist-fill.contact{background:var(--blue)} .dist-fill.new{background:var(--text-3)}
+  .dist-num{text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+
+  .dash-empty{padding:60px 24px;text-align:center;color:var(--text-3);font-size:13px}
+  .dash-empty .big{font-size:15px;color:var(--text-2);font-weight:600;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -664,17 +742,29 @@ function Profile({t}){
               <div className="score-bar"><div className="score-fill" style={{width:Math.max(3,Math.min(100,score))+"%"}}/></div>
             </div>
           ) : <div className="kv"><span className="k">Score</span><span className="v muted">—</span></div>}
+          <div className="ai-note">
+            AI estimate
+            {stage.version ? " · "+stage.version : ""}
+            {stage.confidence!=null ? " · conf "+Math.round(stage.confidence*100)+"%" : ""}
+          </div>
           <div className="flags">
             <FlagRow on={stage.goalClear} label="Goal clear" />
             <FlagRow on={stage.gapClear} label="Gap clear" />
             <FlagRow on={stage.stakesClear} label="Stakes clear" />
             <FlagRow on={stage.qualified} label="Qualified" />
           </div>
+          {stage.evidence && (
+            <div className="ai-evidence">
+              <div className="ai-evidence-lbl">Why the model says this</div>
+              <div className="ai-evidence-txt">{stage.evidence}</div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="prof-sec">
           <div className="prof-sec-title">Booking readiness</div>
-          <div className="kv"><span className="k">Stage</span><span className="v muted">Not analyzed yet</span></div>
+          <div className="kv"><span className="k">Stage</span><span className="v muted">Conversation not synced yet</span></div>
+          <div className="ai-note">No AI analysis until the DM thread syncs.</div>
         </div>
       )}
 
@@ -703,6 +793,278 @@ function Profile({t}){
   );
 }
 
+// ===========================================================================
+// DASHBOARD VIEW
+// A trustworthy advertising + lead-quality decision view. EVERY number carries
+// its coverage denominator and is drillable into the underlying leads (clicking
+// re-queries the inbox with the matching filter, so what you see IS the cause).
+// ===========================================================================
+function pct(n){ return n==null ? "—" : (Math.round(n*1000)/10).toFixed(1)+"%"; }
+function money(cents){ return "$"+((cents||0)/100).toLocaleString(undefined,{maximumFractionDigits:0}); }
+function num(n){ return (n||0).toLocaleString(); }
+
+// Coverage chip: "based on N of M leads".
+function Coverage({have, of, warnBelow=0.6, noun="leads"}){
+  const ratio = of>0 ? have/of : 0;
+  const warn = of>0 && ratio < warnBelow;
+  return (
+    <span className={"dash-cov"+(warn?" warn":"")} title={"This metric is based on "+num(have)+" of "+num(of)+" "+noun+" — the rest have no synced data yet."}>
+      based on <b>{num(have)}</b> of <b>{num(of)}</b> {noun}
+    </span>
+  );
+}
+
+const TREND_COLORS = ["#d4b27a","#7aa7d4","#7dd3a8","#c2477e","#a04ec9","#d4763b"];
+
+function LineTrend({days, total, campaigns}){
+  if(!days || days.length===0) return <div className="dash-empty">No keyword fires in this window.</div>;
+  const W = 760, H = 200, PADL = 36, PADR = 12, PADT = 14, PADB = 26;
+  const series = (campaigns && campaigns.length) ? campaigns.map((c,i)=>({label:c.label, points:c.points, color:TREND_COLORS[i%TREND_COLORS.length]}))
+                : [{label:"All leads", points:total, color:TREND_COLORS[0]}];
+  const maxY = Math.max(1, ...series.flatMap(s=>s.points), ...total);
+  const n = days.length;
+  const x = (i)=> PADL + (n<=1 ? (W-PADL-PADR)/2 : (i*(W-PADL-PADR)/(n-1)));
+  const y = (v)=> PADT + (H-PADT-PADB) - (v/maxY)*(H-PADT-PADB);
+  const path = (pts)=> pts.map((v,i)=>(i===0?"M":"L")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
+  // sparse x labels (first, mid, last)
+  const ticks = n<=1 ? [0] : [0, Math.floor((n-1)/2), n-1];
+  const yticks = [0, Math.round(maxY/2), maxY];
+  return (
+    <div className="trend-wrap">
+      <svg viewBox={"0 0 "+W+" "+H} width="100%" preserveAspectRatio="xMidYMid meet" style={{display:"block"}}>
+        {yticks.map((v,i)=>(
+          <g key={"y"+i}>
+            <line x1={PADL} y1={y(v)} x2={W-PADR} y2={y(v)} stroke="var(--border)" strokeWidth="1"/>
+            <text x={PADL-6} y={y(v)+3} textAnchor="end" fontSize="9" fill="var(--text-4)">{v}</text>
+          </g>
+        ))}
+        {ticks.map((i)=>(
+          <text key={"x"+i} x={x(i)} y={H-8} textAnchor="middle" fontSize="9" fill="var(--text-4)">
+            {(days[i]||"").slice(5)}
+          </text>
+        ))}
+        {series.map((s,si)=>(
+          <g key={si}>
+            <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+            {n<=1 && s.points.map((v,i)=><circle key={i} cx={x(i)} cy={y(v)} r="3" fill={s.color}/>)}
+          </g>
+        ))}
+      </svg>
+      <div className="trend-legend">
+        {series.map((s,i)=>(
+          <span className="lk" key={i}><span className="sw" style={{background:s.color}}/>{s.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupTable({rows, onDrill, kind}){
+  if(!rows || rows.length===0) return <div className="dash-empty">No {kind==="campaign"?"campaigns":"ad sets"} with leads in this window.</div>;
+  const maxReadiness = 100;
+  return (
+    <table className="gtable">
+      <thead>
+        <tr>
+          <th className="l">{kind==="campaign"?"Campaign":"Ad set"}</th>
+          <th>Leads</th>
+          <th>Lead quality (avg readiness)</th>
+          <th>Booked</th>
+          <th>Closed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(g=>{
+          const bookedRate = g.leads ? g.booked/g.leads : null;
+          const closedRate = g.leads ? g.closed/g.leads : null;
+          const live = (g.status||"").toUpperCase()==="ACTIVE";
+          return (
+            <tr key={g.id} className="click" onClick={()=>onDrill(g)}
+                title="Open these leads in the inbox to verify">
+              <td className="l">
+                <div className="gname">
+                  <span className="nm">{g.label}</span>
+                  <span className={"st "+(live?"live":"")}><span className="dot"/>{live?"Active":(g.status||"Off")}</span>
+                </div>
+              </td>
+              <td>{num(g.leads)}</td>
+              <td>
+                {g.avgReadiness!=null ? (
+                  <div className="readiness-cell">
+                    <span className="cov-inline">{num(g.stageLeads)}/{num(g.leads)}</span>
+                    <span className="rbar"><span className="rfill" style={{width:Math.max(3,Math.min(100,(g.avgReadiness/maxReadiness)*100))+"%"}}/></span>
+                    <span className="rnum">{Math.round(g.avgReadiness)}</span>
+                  </div>
+                ) : <span className="cov-inline">no synced convos</span>}
+              </td>
+              <td>{num(g.booked)} <span className="cov-inline">({pct(bookedRate)})</span></td>
+              <td>{num(g.closed)} <span className="cov-inline">({pct(closedRate)})</span></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function Dashboard(props){
+  const {dash, loading, err, range, onChangeRange, client, onChangeClient,
+         campaign, onChangeCampaign, keyword, onChangeKeyword, adset, onChangeAdset,
+         filterOpts, onDrill} = props;
+
+  const clientOpts = useMemo(()=>[
+    {id:"", label:"All clients"},
+    ...["tyson","antwan","keith","lucy"].map(c=>({id:c, label:clientLabel(c)})),
+  ],[]);
+  const campaignOpts = useMemo(()=>{
+    const camps = filterOpts.campaigns || [];
+    const active = camps.filter(c=>c.status==="ACTIVE");
+    const off = camps.filter(c=>c.status!=="ACTIVE");
+    const out = [{id:"", label:"All campaigns"}];
+    if(active.length){ out.push({_sub:true, sub:"live", dot:true, label:"Active"}); active.forEach(c=>out.push({id:c.id, label:c.label})); }
+    if(off.length){ out.push({_sub:true, sub:"off", dot:true, label:"Off"}); off.forEach(c=>out.push({id:c.id, label:c.label})); }
+    return out;
+  },[filterOpts.campaigns]);
+
+  if(loading && !dash){
+    return (
+      <div className="dash">
+        <DashBar {...{range,onChangeRange,clientOpts,client,onChangeClient,campaignOpts,campaign,onChangeCampaign}}/>
+        <div className="dash-body">
+          <div className="kpi-grid">{[0,1,2,3,4].map(i=><div className="kpi skel" key={i} style={{height:90}}/>)}</div>
+        </div>
+      </div>
+    );
+  }
+  if(err){
+    return (
+      <div className="dash">
+        <DashBar {...{range,onChangeRange,clientOpts,client,onChangeClient,campaignOpts,campaign,onChangeCampaign}}/>
+        <div className="dash-empty"><div className="big">Couldn’t load the dashboard</div><div>{err}</div></div>
+      </div>
+    );
+  }
+  const d = dash?.dashboard;
+  const totalLeads = d?.summary?.totalLeads || 0;
+  const s = d?.summary || {};
+
+  return (
+    <div className="dash">
+      <DashBar {...{range,onChangeRange,clientOpts,client,onChangeClient,campaignOpts,campaign,onChangeCampaign}}/>
+      <div className="dash-body">
+        {totalLeads===0 ? (
+          <div className="dash-empty"><div className="big">No keyword-fired leads in this window</div><div>Widen the date range or change the client filter.</div></div>
+        ) : (
+        <>
+          {/* KPI row — leads/booked/closed/revenue/quality, each honest about coverage */}
+          <div className="kpi-grid">
+            <div className="kpi">
+              <span className="kpi-lbl">Keyword leads</span>
+              <span className="kpi-val">{num(totalLeads)}</span>
+              <span className="kpi-sub">complete · every ad-keyword fire</span>
+            </div>
+            <div className="kpi click" onClick={()=>onDrill({}, "booked")} title="Open booked leads in the inbox">
+              <span className="kpi-lbl">Booked</span>
+              <span className="kpi-val">{num(s.booked)}<span className="unit">/ {num(totalLeads)}</span></span>
+              <span className="kpi-sub"><span className="g">{pct(s.bookedRate)}</span> · real GHL appointments</span>
+            </div>
+            <div className="kpi click" onClick={()=>onDrill({}, "closed")} title="Open closed leads in the inbox">
+              <span className="kpi-lbl">Closed</span>
+              <span className="kpi-val">{num(s.closed)}<span className="unit">/ {num(totalLeads)}</span></span>
+              <span className="kpi-sub"><span className="g">{pct(s.closedRate)}</span> · collected sales</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-lbl">Collected</span>
+              <span className="kpi-val">{money(s.collectedCents)}</span>
+              <span className="kpi-sub">from {num(s.closed)} closed lead{s.closed===1?"":"s"}</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-lbl">Avg lead quality</span>
+              <span className="kpi-val">{s.avgReadiness!=null?Math.round(s.avgReadiness):"—"}<span className="unit">/ 100</span></span>
+              <span className="kpi-sub">AI readiness · {num(s.stageCoverage)}/{num(totalLeads)} synced</span>
+            </div>
+          </div>
+
+          {/* Leads over time */}
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">Leads over time per campaign</span>
+              <Coverage have={totalLeads} of={totalLeads} noun="keyword fires" />
+            </div>
+            <div className="card-body">
+              <LineTrend days={d.trend.days} total={d.trend.total} campaigns={d.trend.campaigns} />
+            </div>
+          </div>
+
+          {/* Per-campaign + per-ad-set quality/booking/close */}
+          <div className="dash-2col">
+            <div className="card">
+              <div className="card-head">
+                <span className="card-title">By campaign</span>
+                <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
+              </div>
+              <div className="card-body">
+                <GroupTable rows={d.byCampaign} kind="campaign"
+                  onDrill={(g)=>onDrill({campaign:g.id, adset:"", keyword:""}, "booked")} />
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <span className="card-title">By ad set</span>
+                <Coverage have={s.stageCoverage} of={totalLeads} noun="leads w/ quality" />
+              </div>
+              <div className="card-body">
+                <GroupTable rows={d.byAdset} kind="adset"
+                  onDrill={(g)=>onDrill({adset:g.id, campaign:"", keyword:""}, "booked")} />
+              </div>
+            </div>
+          </div>
+
+          {/* Lead-score distribution */}
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">Lead-quality distribution</span>
+              <Coverage have={d.scoreDistribution.coverage} of={totalLeads} noun="scored leads" />
+            </div>
+            <div className="card-body">
+              <ScoreDist buckets={d.scoreDistribution.buckets} coverage={d.scoreDistribution.coverage} />
+            </div>
+          </div>
+        </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScoreDist({buckets, coverage}){
+  if(!coverage){ return <div className="dash-empty">No conversations synced yet — no AI quality scores to show.</div>; }
+  const max = Math.max(1, ...buckets.map(b=>b.count));
+  return (
+    <div className="dist">
+      {buckets.map(b=>(
+        <div className="dist-row" key={b.id}>
+          <span className="dist-lbl">{b.label}</span>
+          <span className="dist-track"><span className={"dist-fill "+b.id} style={{width:Math.max(2,(b.count/max)*100)+"%"}}/></span>
+          <span className="dist-num">{num(b.count)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashBar({range,onChangeRange,clientOpts,client,onChangeClient,campaignOpts,campaign,onChangeCampaign}){
+  return (
+    <div className="dash-bar">
+      <DateDropdown value={range} onChange={onChangeRange} />
+      <SelectFilter options={clientOpts} value={client} onChange={onChangeClient} />
+      <SelectFilter label="Camp" options={campaignOpts} value={campaign} onChange={onChangeCampaign} />
+      <span className="spacer"/>
+      <span className="dash-hint">Click any campaign, ad set, or KPI to verify its leads in the inbox</span>
+    </div>
+  );
+}
+
 // Every client always selectable, regardless of current selection (no mutation bug).
 const ALL_CLIENTS = ["tyson","antwan","keith","lucy"];
 const SORTS = [
@@ -712,6 +1074,7 @@ const SORTS = [
 ];
 
 function App(){
+  const [view, setView] = useState("inbox"); // inbox | dashboard
   const [range, setRange] = useState(rangeForPreset("last30"));
   const [client, setClient] = useState("");      // "" = all
   const [campaign, setCampaign] = useState("");   // campaign_id
@@ -732,14 +1095,22 @@ function App(){
   const [showFilters, setShowFilters] = useState(false);
   const [profileOpen, setProfileOpen] = useState(true);
 
+  // Dashboard view has its own fetch (server-side aggregation).
+  const [dash, setDash] = useState(null);
+  const [dashLoading, setDashLoading] = useState(false);
+  const [dashErr, setDashErr] = useState(null);
+  const [drill, setDrill] = useState(null); // {title, threads} | null
+
   useEffect(()=>{ const id=setTimeout(()=>setDebouncedSearch(search), 350); return ()=>clearTimeout(id); },[search]);
   // reset to page 1 + clear accumulation when filters change
   useEffect(()=>{ setPage(1); },[range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, sort, debouncedSearch]);
   // changing client invalidates the ad sub-filters (they belong to the old client)
   useEffect(()=>{ setCampaign(""); setKeyword(""); setAdset(""); setAd(""); },[client]);
 
-  const fetchKey = [range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, sort, debouncedSearch, page].join("|");
+  // ---- INBOX fetch (only when inbox view active) ----
+  const fetchKey = [view, range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, sort, debouncedSearch, page].join("|");
   useEffect(()=>{
+    if(view!=="inbox") return;
     let off = false;
     if(page===1){ setLoading(true); } else { setLoadingMore(true); }
     setErr(null);
@@ -768,6 +1139,35 @@ function App(){
       .finally(()=>{ if(!off){ setLoading(false); setLoadingMore(false); } });
     return ()=>{ off = true; };
   },[fetchKey]);
+
+  // ---- DASHBOARD fetch (server aggregation; respects all filters) ----
+  const dashKey = [view, range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad].join("|");
+  useEffect(()=>{
+    if(view!=="dashboard") return;
+    let off = false;
+    setDashLoading(true); setDashErr(null);
+    const qs = new URLSearchParams();
+    qs.set("view","dashboard");
+    qs.set("dateFrom", range.dateFrom); qs.set("dateTo", range.dateTo);
+    if(client) qs.set("client", client);
+    if(campaign) qs.set("campaign", campaign);
+    if(keyword) qs.set("keyword", keyword);
+    if(adset) qs.set("adset", adset);
+    if(ad) qs.set("ad", ad);
+    // We also need the full (capped) thread set to power drill-downs without a
+    // second round trip. Ask for the max page size; the dashboard pulls leads.
+    qs.set("pageSize","80"); qs.set("page","1");
+    fetch("/api/dms/conversations?"+qs.toString())
+      .then(r=>r.json())
+      .then(d=>{
+        if(off) return;
+        if(d.error){ setDashErr(d.error); setDash(null); }
+        else { setDash(d); if(d.filters) setFilterOpts(d.filters); }
+      })
+      .catch(e=>{ if(!off) setDashErr(String(e)); })
+      .finally(()=>{ if(!off) setDashLoading(false); });
+    return ()=>{ off = true; };
+  },[dashKey]);
 
   // Client list is STATIC — always every client + All Clients, never derived from
   // the current result set (that was the disappearing-option bug).
@@ -807,9 +1207,6 @@ function App(){
   const total = data?.total || 0;
   const pageSize = data?.pageSize || 40;
   const hasMore = accThreads.length < total;
-  const totalLeads = data?.totalLeads || 0;
-  const bookedLeads = data?.bookedLeads || 0;
-  const closedLeads = data?.closedLeads || 0;
   const activeFilterCount = [client, campaign, keyword, adset, ad].filter(Boolean).length;
 
   const selected = useMemo(()=> accThreads.find(t=>t.conversationId===selectedId) || null, [accThreads, selectedId]);
@@ -818,25 +1215,42 @@ function App(){
     setClient(""); setCampaign(""); setKeyword(""); setAdset(""); setAd("");
   },[]);
 
-  // honest counter text — anchored on keyword-fired leads
-  const counterText = useMemo(()=>{
-    if(loading) return "Loading…";
-    if(activeFilterCount || debouncedSearch){
-      return total.toLocaleString()+" lead"+(total===1?"":"s")+" · of "+totalLeads.toLocaleString()+" keyword-linked";
-    }
-    return totalLeads.toLocaleString()+" keyword-linked lead"+(totalLeads===1?"":"s")+" · "+bookedLeads.toLocaleString()+" booked · "+closedLeads.toLocaleString()+" closed";
-  },[loading, activeFilterCount, debouncedSearch, total, totalLeads, bookedLeads, closedLeads]);
+  // Drill from the dashboard into the inbox with a narrow filter applied. This
+  // re-queries the DB, so the leads shown are exactly what drives the metric.
+  const drillToInbox = useCallback((patch, srt)=>{
+    if(patch.campaign!==undefined) setCampaign(patch.campaign);
+    if(patch.adset!==undefined) setAdset(patch.adset);
+    if(patch.keyword!==undefined) setKeyword(patch.keyword);
+    if(srt) setSort(srt);
+    if(patch.campaign || patch.adset || patch.keyword) setShowFilters(true);
+    setSelectedId(null);
+    setView("inbox");
+  },[]);
 
   return (
     <div className="app">
       <div className="topbar">
         <div className="topbar-left">
           <h1 className="topbar-title">DMs</h1>
-          <div className="topbar-sub">{counterText}</div>
         </div>
-        <span className="sync-pill"><span className="dot"/>Read-only · live</span>
+        <div className="view-switch">
+          <button className={"view-tab "+(view==="inbox"?"on":"")} onClick={()=>setView("inbox")}>Inbox</button>
+          <button className={"view-tab "+(view==="dashboard"?"on":"")} onClick={()=>setView("dashboard")}>Dashboard</button>
+        </div>
       </div>
 
+      {view==="dashboard" ? (
+        <Dashboard
+          dash={dash} loading={dashLoading} err={dashErr} range={range}
+          onChangeRange={setRange}
+          client={client} onChangeClient={setClient}
+          campaign={campaign} onChangeCampaign={setCampaign}
+          keyword={keyword} onChangeKeyword={setKeyword}
+          adset={adset} onChangeAdset={setAdset}
+          filterOpts={filterOpts}
+          onDrill={drillToInbox}
+        />
+      ) : (
       <div className={"panes "+(profileOpen?"":"no-profile")}>
         {/* LEFT — thread list */}
         <div className={"pane-list "+(selected?"has-sel":"")}>
@@ -888,7 +1302,7 @@ function App(){
 
             {!loading && !err && accThreads.length>0 && (
               <>
-                <div className="list-meta">{total.toLocaleString()} lead{total===1?"":"s"} · {rangeLabel(range)}</div>
+                <div className="list-meta">{total.toLocaleString()} lead{total===1?"":"s"} · {rangeLabel(range)}{data && data.conversationLeads!=null ? " · "+data.conversationLeads.toLocaleString()+" w/ synced convo" : ""}</div>
                 <div className="list-body">
                   {accThreads.map(t=>(
                     <ThreadCard key={t.conversationId} t={t} selected={t.conversationId===selectedId} onSelect={(x)=>setSelectedId(x.conversationId)} />
@@ -911,6 +1325,7 @@ function App(){
         {/* RIGHT — profile (collapsible) */}
         {profileOpen && <Profile t={selected} />}
       </div>
+      )}
     </div>
   );
 }
