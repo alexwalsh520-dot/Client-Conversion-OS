@@ -77,8 +77,9 @@
   .sync-pill .dot{width:6px;height:6px;border-radius:99px;background:var(--green);box-shadow:0 0 7px var(--green-dim)}
 
   .panes{flex:1;display:grid;grid-template-columns:340px 1fr 312px;min-height:0}
-  @media (max-width:1180px){ .panes{grid-template-columns:300px 1fr} .pane-profile{display:none} }
-  @media (max-width:820px){ .panes{grid-template-columns:1fr} .pane-list.has-sel{display:none} .pane-convo{display:none} .pane-convo.has-sel{display:flex} }
+  .panes.no-profile{grid-template-columns:340px 1fr}
+  @media (max-width:1180px){ .panes{grid-template-columns:300px 1fr} .panes.no-profile{grid-template-columns:300px 1fr} .pane-profile{display:none} }
+  @media (max-width:820px){ .panes{grid-template-columns:1fr} .panes.no-profile{grid-template-columns:1fr} .pane-list.has-sel{display:none} .pane-convo{display:none} .pane-convo.has-sel{display:flex} }
 
   /* ---- LEFT pane: thread list ---- */
   .pane-list{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--panel)}
@@ -114,6 +115,11 @@
   .pop-item .lbl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pop-item .check{color:var(--gold);font-size:10px;opacity:0;flex:0 0 auto}
   .pop-item.selected .check{opacity:1}
+  .pop-sub{padding:8px 10px 5px;font-size:9.5px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.09em}
+  .pop-sub.dim{color:var(--text-4)}
+  .pop-sub .dot{display:inline-block;width:5px;height:5px;border-radius:99px;margin-right:6px;vertical-align:middle}
+  .pop-sub.live .dot{background:var(--green);box-shadow:0 0 5px var(--green-dim)}
+  .pop-sub.off .dot{background:var(--text-4)}
 
   /* Date panel */
   .date-pop{width:500px;display:grid;grid-template-columns:160px 1fr;padding:0;max-width:none}
@@ -138,11 +144,12 @@
   /* Thread list */
   .list-scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
   .list-meta{padding:9px 14px;font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2}
-  .tcard{display:flex;align-items:flex-start;gap:11px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+  .list-body{padding:6px 8px;display:flex;flex-direction:column;gap:4px}
+  .tcard{display:flex;align-items:flex-start;gap:11px;padding:10px 11px;cursor:pointer;border-radius:10px;transition:background .1s}
   .tcard:hover{background:var(--row-hover)}
-  .tcard.sel{background:var(--panel-2);box-shadow:inset 2px 0 0 var(--gold)}
-  .avatar{width:36px;height:36px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;background:linear-gradient(140deg,var(--panel-2),var(--bg-1));color:var(--gold);border:1px solid var(--border-2);text-transform:uppercase}
-  .avatar.lg{width:54px;height:54px;font-size:19px}
+  .tcard.sel{background:var(--panel-2)}
+  .avatar{width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;text-transform:uppercase}
+  .avatar.lg{width:56px;height:56px;font-size:20px}
   .tcard-main{flex:1;min-width:0}
   .tcard-top{display:flex;align-items:baseline;gap:7px}
   .tcard-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
@@ -159,13 +166,19 @@
   .pill.contact{border-color:rgba(122,167,212,.30);background:rgba(122,167,212,.09);color:var(--blue)}
   .pill.new{border-color:var(--border-2);color:var(--text-3)}
   .pill.qual{border-color:rgba(125,211,168,.34);background:rgba(125,211,168,.10);color:var(--green)}
+  .pill.booked{border-color:rgba(122,167,212,.36);background:rgba(122,167,212,.12);color:var(--blue)}
+  .pill.closed{border-color:rgba(125,211,168,.40);background:rgba(125,211,168,.14);color:var(--green)}
 
   /* ---- CENTER pane: conversation ---- */
   .pane-convo{display:flex;flex-direction:column;min-height:0;background:var(--bg)}
   .convo-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--bg-1)}
   .convo-head .back{display:none}
   @media (max-width:820px){ .convo-head .back{display:inline-flex;color:var(--text-2);padding:4px} }
-  .convo-head-main{min-width:0}
+  .convo-head-main{min-width:0;flex:1}
+  .panel-toggle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--border-2);border-radius:7px;background:var(--panel);color:var(--text-3)}
+  .panel-toggle:hover{background:var(--panel-2);color:var(--text)}
+  .panel-toggle.on{border-color:var(--gold-dim);color:var(--gold)}
+  @media (max-width:1180px){ .panel-toggle{display:none} }
   .convo-head-name{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .convo-head-sub{font-size:11px;color:var(--text-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .convo-scroll{flex:1;overflow-y:auto;padding:18px 22px 26px;min-height:0;display:flex;flex-direction:column;gap:2px}
@@ -176,7 +189,8 @@
   .brow.out .bwrap{align-items:flex-end}
   .bubble{padding:9px 13px;border-radius:14px;font-size:12.5px;line-height:1.46;white-space:pre-wrap;word-break:break-word}
   .bubble.in{background:var(--panel-2);color:var(--text);border:1px solid var(--border-2);border-bottom-left-radius:5px}
-  .bubble.out{background:var(--gold);color:#1a1407;border-bottom-right-radius:5px}
+  .bubble.out{background:#2563eb;color:#fff;border-bottom-right-radius:5px}
+  html.light .bubble.out{background:#2f6fde;color:#fff}
   .btime{font-size:9.5px;color:var(--text-4);margin-top:4px;padding:0 4px}
   .convo-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-3);text-align:center;padding:30px;gap:8px}
   .convo-empty .ico{color:var(--text-4);opacity:.7}
@@ -248,6 +262,7 @@ const IcSearch = () => <Icon d={<><circle cx="11" cy="11" r="7"/><path d="M21 21
 const IcSliders = () => <Icon d={<><path d="M4 6h12M4 12h6M4 18h9"/><circle cx="18" cy="6" r="2"/><circle cx="13" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></>} />;
 const IcBack = () => <Icon size={18} d={<path d="M15 18l-6-6 6-6"/>} />;
 const IcInbox = () => <Icon size={34} stroke={1.1} d={<><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></>} />;
+const IcPanel = () => <Icon size={16} d={<><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></>} />;
 
 // ------- Date helpers — copied verbatim from ads-tracker-export.html
 function isoDate(d){ return d.toISOString().slice(0,10); }
@@ -425,7 +440,8 @@ function DateDropdown({value, onChange}){
   );
 }
 
-// ------- Custom in-app dropdown — same styling as the Ads tab's SelectFilter
+// ------- Custom in-app dropdown — same styling as the Ads tab's SelectFilter.
+// An option with `_sub:true` renders as a non-clickable subheading row.
 function SelectFilter({label, options, value, onChange, minWidth}){
   const [open,setOpen] = useState(false);
   const ref = useRef(null);
@@ -433,7 +449,8 @@ function SelectFilter({label, options, value, onChange, minWidth}){
     const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
   },[]);
-  const cur = options.find(o=>o.id===value) || options[0];
+  const selectable = options.filter(o=>!o._sub);
+  const cur = selectable.find(o=>o.id===value) || selectable[0];
   const active = !!value;
   return (
     <div className="filter" ref={ref}>
@@ -444,7 +461,9 @@ function SelectFilter({label, options, value, onChange, minWidth}){
       </button>
       {open && (
         <div className="pop">
-          {options.map(o=>(
+          {options.map((o,i)=> o._sub ? (
+            <div key={"s"+i} className={"pop-sub "+(o.sub||"")}>{o.dot && <span className="dot"/>}{o.label}</div>
+          ) : (
             <div key={o.id} className={"pop-item "+(value===o.id?"selected":"")} onClick={()=>{onChange(o.id);setOpen(false);}}>
               <span className="lbl-txt">{o.label}</span>
               <span className="check"><IcCheck/></span>
@@ -464,8 +483,20 @@ function initials(name, handle){
   return src.slice(0,2);
 }
 function displayName(t){
-  return t.leadName || (t.handle ? "@"+t.handle.replace(/^@/,"") : "Instagram lead");
+  return t.leadName || (t.handle ? "@"+t.handle.replace(/^@/,"") : "Lead");
 }
+// Deterministic, pleasant initials-avatar color from a name/handle/id seed.
+const AVATAR_COLORS = [
+  "#3b6fd4","#8b5cf6","#d4763b","#3ba88a","#c2477e",
+  "#d4a93b","#5b8fd4","#a04ec9","#cf5b52","#4fae7b",
+];
+function avatarColor(seed){
+  const s = String(seed || "?");
+  let h = 0;
+  for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) >>> 0; }
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+function avatarSeed(t){ return t.leadName || t.handle || t.conversationId; }
 
 const CLIENT_LABELS = {
   tyson_sonnek:"Tyson", tyson:"Tyson",
@@ -486,11 +517,18 @@ function stagePillClass(stage){
 }
 
 // ------- Thread card (LEFT pane) -------
+// At most ONE status/stage pill: Closed > Booked > stage. Plus the keyword tag.
+function statusPill(t){
+  if(t.closed) return {cls:"closed", label:"Closed"};
+  if(t.booked) return {cls:"booked", label:"Booked"};
+  if(t.stage && t.stage.label) return {cls:stagePillClass(t.stage), label:t.stage.label};
+  return null;
+}
 function ThreadCard({t, selected, onSelect}){
-  const stageCls = stagePillClass(t.stage);
+  const sp = statusPill(t);
   return (
     <div className={"tcard "+(selected?"sel":"")} onClick={()=>onSelect(t)}>
-      <div className="avatar">{initials(t.leadName, t.handle)}</div>
+      <div className="avatar" style={{background:avatarColor(avatarSeed(t))}}>{initials(t.leadName, t.handle)}</div>
       <div className="tcard-main">
         <div className="tcard-top">
           <span className="tcard-name">{displayName(t)}</span>
@@ -500,9 +538,9 @@ function ThreadCard({t, selected, onSelect}){
         <div className="tcard-prev">
           <span className="dir">{t.lastDirection==="outbound"?"You: ":""}</span>{t.lastMessage}
         </div>
-        {(t.keyword || (t.stage && t.stage.label)) && (
+        {(sp || t.keyword) && (
           <div className="tcard-tags">
-            {t.stage && t.stage.label && <span className={"pill "+stageCls}><span className="dot"></span>{t.stage.label}</span>}
+            {sp && <span className={"pill "+sp.cls}><span className="dot"></span>{sp.label}</span>}
             {t.keyword && <span className="pill kw"><span className="dot"></span>{t.keyword}</span>}
           </div>
         )}
@@ -512,7 +550,7 @@ function ThreadCard({t, selected, onSelect}){
 }
 
 // ------- Conversation (CENTER pane) -------
-function Conversation({t, onBack}){
+function Conversation({t, onBack, profileOpen, onToggleProfile}){
   const scrollRef = useRef(null);
   useEffect(()=>{
     if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -523,8 +561,8 @@ function Conversation({t, onBack}){
       <div className="pane-convo">
         <div className="convo-empty">
           <div className="ico"><IcInbox/></div>
-          <div className="big">Select a conversation</div>
-          <div className="small">Pick a thread on the left to read the full message history.</div>
+          <div className="big">Select a lead</div>
+          <div className="small">Pick a keyword-linked lead on the left to read the full message history.</div>
         </div>
       </div>
     );
@@ -535,7 +573,7 @@ function Conversation({t, onBack}){
     <div className="pane-convo has-sel">
       <div className="convo-head">
         <button className="back" onClick={onBack}><IcBack/></button>
-        <div className="avatar">{initials(t.leadName, t.handle)}</div>
+        <div className="avatar" style={{background:avatarColor(avatarSeed(t))}}>{initials(t.leadName, t.handle)}</div>
         <div className="convo-head-main">
           <div className="convo-head-name">{displayName(t)}</div>
           <div className="convo-head-sub">
@@ -545,26 +583,36 @@ function Conversation({t, onBack}){
             {" · "+t.messageCount+" message"+(t.messageCount===1?"":"s")}
           </div>
         </div>
+        <button className={"panel-toggle "+(profileOpen?"on":"")} onClick={onToggleProfile}
+          title={profileOpen?"Hide lead details":"Show lead details"}><IcPanel/></button>
       </div>
-      <div className="convo-scroll" ref={scrollRef}>
-        {msgs.map((m,i)=>{
-          const out = m.direction === "outbound";
-          const dk = dayKey(m.sentAt);
-          const sep = dk !== lastDay;
-          lastDay = dk;
-          return (
-            <React.Fragment key={i}>
-              {sep && <div className="day-sep">{dayHeading(m.sentAt)}</div>}
-              <div className={"brow "+(out?"out":"in")}>
-                <div className="bwrap">
-                  <div className={"bubble "+(out?"out":"in")}>{m.body}</div>
-                  <div className="btime">{clockTime(m.sentAt)}</div>
+      {msgs.length===0 ? (
+        <div className="convo-empty">
+          <div className="ico"><IcInbox/></div>
+          <div className="big">No captured conversation</div>
+          <div className="small">This lead fired the keyword <b style={{color:"var(--gold)"}}>{t.keyword||"—"}</b> but no DM thread is linked yet. Source &amp; status are in the right panel.</div>
+        </div>
+      ) : (
+        <div className="convo-scroll" ref={scrollRef}>
+          {msgs.map((m,i)=>{
+            const out = m.direction === "outbound";
+            const dk = dayKey(m.sentAt);
+            const sep = dk !== lastDay;
+            lastDay = dk;
+            return (
+              <React.Fragment key={i}>
+                {sep && <div className="day-sep">{dayHeading(m.sentAt)}</div>}
+                <div className={"brow "+(out?"out":"in")}>
+                  <div className="bwrap">
+                    <div className={"bubble "+(out?"out":"in")}>{m.body}</div>
+                    <div className="btime">{clockTime(m.sentAt)}</div>
+                  </div>
                 </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -590,20 +638,21 @@ function Profile({t}){
   const stageCls = stagePillClass(stage);
   const score = stage && stage.score != null ? stage.score : null;
   const linked = t.keyword || t.campaignName || t.adName;
+  const money = t.collectedCents ? "$"+(t.collectedCents/100).toLocaleString(undefined,{maximumFractionDigits:0}) : null;
   return (
     <div className="pane-profile">
       <div className="prof-top">
-        <div className="avatar lg">{initials(t.leadName, t.handle)}</div>
+        <div className="avatar lg" style={{background:avatarColor(avatarSeed(t))}}>{initials(t.leadName, t.handle)}</div>
         <div>
           <div className="prof-name">{displayName(t)}</div>
           {t.handle && <div className="prof-handle">@{t.handle.replace(/^@/,"")}</div>}
         </div>
-        {stage && stage.label && (
-          <div className="prof-stage-pills">
-            <span className={"pill "+stageCls}><span className="dot"></span>{stage.label}</span>
-            {stage.qualified && stage.label!=="Qualified" && <span className="pill qual"><span className="dot"></span>Qualified</span>}
-          </div>
-        )}
+        <div className="prof-stage-pills">
+          {t.closed && <span className="pill closed"><span className="dot"></span>Closed{money?" · "+money:""}</span>}
+          {t.booked && <span className="pill booked"><span className="dot"></span>Booked</span>}
+          {stage && stage.label && <span className={"pill "+stageCls}><span className="dot"></span>{stage.label}</span>}
+          {stage && stage.qualified && stage.label!=="Qualified" && <span className="pill qual"><span className="dot"></span>Qualified</span>}
+        </div>
       </div>
 
       {stage ? (
@@ -645,7 +694,7 @@ function Profile({t}){
 
       <div className="prof-sec">
         <div className="prof-sec-title">Conversation</div>
-        <div className="kv"><span className="k">Coach</span><span className="v">{t.client ? clientLabel(t.client) : "—"}</span></div>
+        <div className="kv"><span className="k">Client</span><span className="v">{t.client ? clientLabel(t.client) : "—"}</span></div>
         {t.setterName && <div className="kv"><span className="k">Setter</span><span className="v">{t.setterName}</span></div>}
         <div className="kv"><span className="k">Messages</span><span className="v">{t.messageCount}</span></div>
         <div className="kv"><span className="k">Last activity</span><span className="v">{relTime(t.lastAt)} ago</span></div>
@@ -654,30 +703,42 @@ function Profile({t}){
   );
 }
 
+// Every client always selectable, regardless of current selection (no mutation bug).
+const ALL_CLIENTS = ["tyson","antwan","keith","lucy"];
+const SORTS = [
+  {id:"recent", label:"Recent"},
+  {id:"booked", label:"Booked first"},
+  {id:"closed", label:"Closed first"},
+];
+
 function App(){
-  const [range, setRange] = useState(rangeForPreset("last7"));
+  const [range, setRange] = useState(rangeForPreset("last30"));
   const [client, setClient] = useState("");      // "" = all
   const [campaign, setCampaign] = useState("");   // campaign_id
   const [keyword, setKeyword] = useState("");
   const [adset, setAdset] = useState("");
   const [ad, setAd] = useState("");
+  const [sort, setSort] = useState("recent");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [accThreads, setAccThreads] = useState([]); // accumulated across pages
-  const [filterOpts, setFilterOpts] = useState({clients:[],campaigns:[],keywords:[],adsets:[],ads:[]});
+  const [filterOpts, setFilterOpts] = useState({campaigns:[],keywords:[],adsets:[],ads:[]});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(true);
 
   useEffect(()=>{ const id=setTimeout(()=>setDebouncedSearch(search), 350); return ()=>clearTimeout(id); },[search]);
   // reset to page 1 + clear accumulation when filters change
-  useEffect(()=>{ setPage(1); },[range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, debouncedSearch]);
+  useEffect(()=>{ setPage(1); },[range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, sort, debouncedSearch]);
+  // changing client invalidates the ad sub-filters (they belong to the old client)
+  useEffect(()=>{ setCampaign(""); setKeyword(""); setAdset(""); setAd(""); },[client]);
 
-  const fetchKey = [range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, debouncedSearch, page].join("|");
+  const fetchKey = [range.dateFrom, range.dateTo, client, campaign, keyword, adset, ad, sort, debouncedSearch, page].join("|");
   useEffect(()=>{
     let off = false;
     if(page===1){ setLoading(true); } else { setLoadingMore(true); }
@@ -689,6 +750,7 @@ function App(){
     if(keyword) qs.set("keyword", keyword);
     if(adset) qs.set("adset", adset);
     if(ad) qs.set("ad", ad);
+    if(sort) qs.set("sort", sort);
     if(debouncedSearch) qs.set("search", debouncedSearch);
     qs.set("page", String(page));
     fetch("/api/dms/conversations?"+qs.toString())
@@ -707,32 +769,47 @@ function App(){
     return ()=>{ off = true; };
   },[fetchKey]);
 
+  // Client list is STATIC — always every client + All Clients, never derived from
+  // the current result set (that was the disappearing-option bug).
   const clientOpts = useMemo(()=>[
-    {id:"", label:"All coaches"},
-    ...filterOpts.clients.map(c=>({id:c, label:clientLabel(c)})),
-  ],[filterOpts.clients]);
-  const campaignOpts = useMemo(()=>[
-    {id:"", label:"All campaigns"},
-    ...filterOpts.campaigns.map(c=>({id:c.id, label:c.label})),
-  ],[filterOpts.campaigns]);
+    {id:"", label:"All clients"},
+    ...ALL_CLIENTS.map(c=>({id:c, label:clientLabel(c)})),
+  ],[]);
+  // Campaigns grouped Active / Off via campaign_effective_status.
+  const campaignOpts = useMemo(()=>{
+    const camps = filterOpts.campaigns || [];
+    const active = camps.filter(c=>c.status==="ACTIVE");
+    const off = camps.filter(c=>c.status!=="ACTIVE");
+    const out = [{id:"", label:"All campaigns"}];
+    if(active.length){
+      out.push({_sub:true, sub:"live", dot:true, label:"Active"});
+      active.forEach(c=>out.push({id:c.id, label:c.label}));
+    }
+    if(off.length){
+      out.push({_sub:true, sub:"off", dot:true, label:"Off"});
+      off.forEach(c=>out.push({id:c.id, label:c.label}));
+    }
+    return out;
+  },[filterOpts.campaigns]);
   const keywordOpts = useMemo(()=>[
     {id:"", label:"All keywords"},
-    ...filterOpts.keywords.map(k=>({id:k, label:k})),
+    ...(filterOpts.keywords||[]).map(k=>({id:k, label:k})),
   ],[filterOpts.keywords]);
   const adsetOpts = useMemo(()=>[
     {id:"", label:"All ad sets"},
-    ...filterOpts.adsets.map(a=>({id:a.id, label:a.label})),
+    ...(filterOpts.adsets||[]).map(a=>({id:a.id, label:a.label})),
   ],[filterOpts.adsets]);
   const adOpts = useMemo(()=>[
     {id:"", label:"All ads"},
-    ...filterOpts.ads.map(a=>({id:a.id, label:a.label})),
+    ...(filterOpts.ads||[]).map(a=>({id:a.id, label:a.label})),
   ],[filterOpts.ads]);
 
   const total = data?.total || 0;
   const pageSize = data?.pageSize || 40;
   const hasMore = accThreads.length < total;
-  const totalConversations = data?.totalConversations || 0;
-  const linkedConversations = data?.linkedConversations || 0;
+  const totalLeads = data?.totalLeads || 0;
+  const bookedLeads = data?.bookedLeads || 0;
+  const closedLeads = data?.closedLeads || 0;
   const activeFilterCount = [client, campaign, keyword, adset, ad].filter(Boolean).length;
 
   const selected = useMemo(()=> accThreads.find(t=>t.conversationId===selectedId) || null, [accThreads, selectedId]);
@@ -741,14 +818,14 @@ function App(){
     setClient(""); setCampaign(""); setKeyword(""); setAdset(""); setAd("");
   },[]);
 
-  // honest counter text
+  // honest counter text — anchored on keyword-fired leads
   const counterText = useMemo(()=>{
     if(loading) return "Loading…";
     if(activeFilterCount || debouncedSearch){
-      return total.toLocaleString()+" match"+(total===1?"":"es")+" · of "+totalConversations.toLocaleString()+" conversation"+(totalConversations===1?"":"s");
+      return total.toLocaleString()+" lead"+(total===1?"":"s")+" · of "+totalLeads.toLocaleString()+" keyword-linked";
     }
-    return totalConversations.toLocaleString()+" conversation"+(totalConversations===1?"":"s")+" · "+linkedConversations.toLocaleString()+" linked to an ad";
-  },[loading, activeFilterCount, debouncedSearch, total, totalConversations, linkedConversations]);
+    return totalLeads.toLocaleString()+" keyword-linked lead"+(totalLeads===1?"":"s")+" · "+bookedLeads.toLocaleString()+" booked · "+closedLeads.toLocaleString()+" closed";
+  },[loading, activeFilterCount, debouncedSearch, total, totalLeads, bookedLeads, closedLeads]);
 
   return (
     <div className="app">
@@ -760,7 +837,7 @@ function App(){
         <span className="sync-pill"><span className="dot"/>Read-only · live</span>
       </div>
 
-      <div className="panes">
+      <div className={"panes "+(profileOpen?"":"no-profile")}>
         {/* LEFT — thread list */}
         <div className={"pane-list "+(selected?"has-sel":"")}>
           <div className="list-head">
@@ -773,6 +850,7 @@ function App(){
                 <IcSliders/>Filters{activeFilterCount>0 && <span className="filter-count">{activeFilterCount}</span>}
               </button>
               <DateDropdown value={range} onChange={setRange} />
+              <SelectFilter label="Sort" options={SORTS} value={sort} onChange={setSort} />
               {activeFilterCount>0 && <button className="clear-link" onClick={clearFilters}>Clear</button>}
             </div>
             {showFilters && (
@@ -810,10 +888,12 @@ function App(){
 
             {!loading && !err && accThreads.length>0 && (
               <>
-                <div className="list-meta">{total.toLocaleString()} thread{total===1?"":"s"} · {rangeLabel(range)}</div>
-                {accThreads.map(t=>(
-                  <ThreadCard key={t.conversationId} t={t} selected={t.conversationId===selectedId} onSelect={(x)=>setSelectedId(x.conversationId)} />
-                ))}
+                <div className="list-meta">{total.toLocaleString()} lead{total===1?"":"s"} · {rangeLabel(range)}</div>
+                <div className="list-body">
+                  {accThreads.map(t=>(
+                    <ThreadCard key={t.conversationId} t={t} selected={t.conversationId===selectedId} onSelect={(x)=>setSelectedId(x.conversationId)} />
+                  ))}
+                </div>
                 {hasMore && (
                   <button className="more-btn" disabled={loadingMore} onClick={()=>setPage(p=>p+1)}>
                     {loadingMore ? "Loading…" : "Load more ("+(total-accThreads.length).toLocaleString()+" more)"}
@@ -825,10 +905,11 @@ function App(){
         </div>
 
         {/* CENTER — conversation */}
-        <Conversation t={selected} onBack={()=>setSelectedId(null)} />
+        <Conversation t={selected} onBack={()=>setSelectedId(null)}
+          profileOpen={profileOpen} onToggleProfile={()=>setProfileOpen(o=>!o)} />
 
-        {/* RIGHT — profile */}
-        <Profile t={selected} />
+        {/* RIGHT — profile (collapsible) */}
+        {profileOpen && <Profile t={selected} />}
       </div>
     </div>
   );

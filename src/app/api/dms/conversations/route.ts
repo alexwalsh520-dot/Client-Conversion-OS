@@ -5,29 +5,35 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // ---------------------------------------------------------------------------
-// DMs tab — read-only inbox for Instagram DM conversations.
+// DMs tab — read-only inbox of AD-KEYWORD-LINKED conversations.
 //
-// Data flow (verified against live Supabase 2026-06-21):
-//   dm_conversation_messages.subscriber_id  (IG-scoped numeric, conversation_id = "instagram:<id>")
-//     → instagram_lead_links.instagram_user_id ↔ .manychat_subscriber_id
-//       → ads_keyword_events.subscriber_id  → .keyword_normalized
-//         → ads_meta_insights_daily (keyword_normalized → campaign/adset/ad names)
+// SCOPE (revised 2026-06-21): show ONLY leads that fired an ad keyword, and show
+// EVERY one of them (no silent drops). We therefore ANCHOR the list on
+// `ads_keyword_events` — each row is a keyword fire, and that table is the reliable
+// complete set of ad-attributable leads. We dedupe to the LATEST fire per subscriber,
+// then LEFT-JOIN the DM conversation thread. A keyword-fired lead with no captured
+// conversation still appears (header + status pills), it just has an empty thread.
 //
-// The two `subscriber_id` columns live in DIFFERENT id namespaces (IG vs ManyChat),
-// so the bridge table instagram_lead_links is REQUIRED — never join them directly.
+// Bridge chain (ids live in different namespaces, so the bridge is required):
+//   ads_keyword_events.subscriber_id  (ManyChat id)
+//     → instagram_lead_links.manychat_subscriber_id ↔ .instagram_user_id
+//       → dm_conversation_messages.subscriber_id  (IG numeric id, conversation_id "instagram:<id>")
+//   ads_keyword_events.keyword_normalized
+//     → ads_meta_insights_daily (campaign / adset / ad names + effective status)
 //
-// LEFT-JOIN PHILOSOPHY: the default / "All campaigns" view shows EVERY conversation
-// in the window (organic + ad-linked). The ad chain is an OPTIONAL tag. Only when the
-// user actively picks a campaign / keyword / ad / ad-set do we restrict to that subset.
-// In the last 7 days ~1,300 conversations exist but only ~29% bridge to a keyword, so
-// requiring the ad chain would hide the majority of the inbox — we never do that.
+// Status:
+//   Booked = ads_keyword_events.appointment_id populated (cross-checked vs ghl_appointments)
+//   Closed = sales_tracker_rows.collected_revenue_cents > 0 (join via manychat_subscriber_id)
+//   Stage  = dm_conversation_stage_state (booking_readiness_score etc), LEFT join.
 //
-// Lead stage (right panel / pills) comes from dm_conversation_stage_state
-// (booking_readiness_score 0-100, qualified, goal/gap/stakes flags) — also a LEFT join.
+// Filter OPTIONS (campaign / keyword / ad / adset) come from ads_meta_insights_daily
+// for the SELECTED client (short key like "antwan"/"tyson"), NOT from the thread set —
+// so they populate even before any conversation loads. Campaigns carry their
+// effective status so the UI can group Active vs Off.
 // ---------------------------------------------------------------------------
 
-// client column on dm_conversation_messages uses the long form (tyson_sonnek),
-// while ads_keyword_events / ads_meta_insights_daily use the short form (tyson).
+// dm_conversation_messages.client uses the long form (tyson_sonnek), while
+// ads_keyword_events / ads_meta_insights_daily use the short form (tyson).
 const CLIENT_LONG_TO_SHORT: Record<string, string> = {
   tyson_sonnek: "tyson",
   antwan_rarcus: "antwan",
@@ -40,10 +46,26 @@ function shortClient(longOrShort: string | null | undefined): string | null {
   return CLIENT_LONG_TO_SHORT[longOrShort] || longOrShort;
 }
 
-// Hard cap on the number of DISTINCT conversations we assemble per request. The 7-day
-// window holds ~1.3k conversations / ~12.5k messages, so this comfortably covers it
-// while protecting the route from a pathological wide window.
-const MAX_CONVERSATIONS = 2500;
+// Hard cap on assembled leads per request.
+const MAX_LEADS = 4000;
+
+interface KeywordEvent {
+  subscriber_id: string;
+  subscriber_name: string | null;
+  contact_name: string | null;
+  keyword_normalized: string | null;
+  client_key: string | null;
+  appointment_id: string | null;
+  event_at: string;
+}
+
+interface LeadLink {
+  instagram_user_id: string | null;
+  manychat_subscriber_id: string | null;
+  instagram_handle: string | null;
+  lead_name: string | null;
+  client: string | null;
+}
 
 interface MessageRow {
   conversation_id: string;
@@ -56,26 +78,12 @@ interface MessageRow {
   message_type: string | null;
 }
 
-interface LeadLink {
-  instagram_user_id: string | null;
-  manychat_subscriber_id: string | null;
-  instagram_handle: string | null;
-  lead_name: string | null;
-  client: string | null;
-}
-
-interface KeywordEvent {
-  subscriber_id: string;
-  keyword_normalized: string | null;
-  client_key: string | null;
-  event_at: string;
-}
-
 interface InsightLabel {
   keyword_normalized: string;
   client_key: string | null;
   campaign_id: string | null;
   campaign_name: string | null;
+  campaign_effective_status: string | null;
   adset_id: string | null;
   adset_name: string | null;
   ad_id: string | null;
@@ -104,17 +112,18 @@ interface Stage {
   goalClear: boolean;
   gapClear: boolean;
   stakesClear: boolean;
-  label: string; // "Hot lead" / "Warm" / "In contact" / "New" / null
+  label: string;
 }
 
 interface Thread {
-  conversationId: string;
+  conversationId: string; // the keyword-event subscriber_id (stable per lead)
   client: string | null;
   leadName: string | null;
   handle: string | null;
   keyword: string | null;
   campaignName: string | null;
   campaignId: string | null;
+  campaignStatus: string | null;
   adsetName: string | null;
   adsetId: string | null;
   adName: string | null;
@@ -122,9 +131,12 @@ interface Thread {
   setterName: string | null;
   lastMessage: string;
   lastDirection: string;
-  lastAt: string;
+  lastAt: string; // latest of conversation message / keyword fire
   messageCount: number;
-  linked: boolean;
+  hasConversation: boolean;
+  booked: boolean;
+  closed: boolean;
+  collectedCents: number;
   stage: Stage | null;
   messages: ThreadMessage[];
 }
@@ -142,7 +154,13 @@ function previewBody(type: string | null, body: string | null): string {
   return "Attachment";
 }
 
-// Map a booking-readiness score to a human stage pill. Scores observed live: 0-95.
+function cleanName(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const t = v.trim();
+  if (!t || t.includes("{{")) return null;
+  return t;
+}
+
 function stageLabel(score: number | null, qualified: boolean): string {
   if (qualified) return "Qualified";
   if (score == null) return "";
@@ -158,215 +176,237 @@ export async function GET(req: NextRequest) {
     const params = req.nextUrl.searchParams;
 
     const clientFilter = shortClient(params.get("client")); // short form or null = all
-    const campaignId = params.get("campaign") || ""; // campaign_id, "" = all
+    const campaignId = params.get("campaign") || "";
     const keywordFilter = (params.get("keyword") || "").toLowerCase();
     const adsetId = params.get("adset") || "";
     const adId = params.get("ad") || "";
     const dateFrom = params.get("dateFrom"); // YYYY-MM-DD
-    const dateTo = params.get("dateTo"); // YYYY-MM-DD
+    const dateTo = params.get("dateTo");
     const search = (params.get("search") || "").trim().toLowerCase();
+    const sort = params.get("sort") || "recent"; // recent | booked | closed
     const page = Math.max(1, parseInt(params.get("page") || "1", 10));
     const pageSize = Math.min(80, Math.max(10, parseInt(params.get("pageSize") || "40", 10)));
 
-    // 1) Resolve the set of conversation_ids that have ANY message in the window.
-    //    We page through lightweight (conversation_id, sent_at, client) rows so the
-    //    4000-row scan cap can never silently drop conversations from a wide window.
-    //    We keep the MOST RECENT message timestamp per conversation for ordering.
-    const lastAtByConvo = new Map<string, string>();
-    const clientByConvo = new Map<string, string>();
+    // --------------------------------------------------------------------
+    // 0) Filter OPTIONS from ads_meta_insights_daily for the selected client.
+    //    Loaded independently of the thread set so they always populate.
+    // --------------------------------------------------------------------
+    const campaignMap = new Map<string, { label: string; status: string }>();
+    const keywordSet = new Set<string>();
+    const adsetMap = new Map<string, string>();
+    const adMap = new Map<string, string>();
+    {
+      let q = sb
+        .from("ads_meta_insights_daily")
+        .select(
+          "client_key, keyword_normalized, campaign_id, campaign_name, campaign_effective_status, adset_id, adset_name, ad_id, ad_name, date"
+        )
+        .order("date", { ascending: false })
+        .limit(20000);
+      if (clientFilter) q = q.eq("client_key", clientFilter);
+      const { data, error } = await q;
+      if (error) throw error;
+      for (const r of (data || []) as (InsightLabel & { date: string })[]) {
+        if (r.campaign_id && r.campaign_name && !campaignMap.has(r.campaign_id)) {
+          campaignMap.set(r.campaign_id, {
+            label: r.campaign_name,
+            status: (r.campaign_effective_status || "").toUpperCase(),
+          });
+        }
+        if (r.keyword_normalized) keywordSet.add(r.keyword_normalized);
+        if (r.adset_id && r.adset_name && !adsetMap.has(r.adset_id)) adsetMap.set(r.adset_id, r.adset_name);
+        if (r.ad_id && r.ad_name && !adMap.has(r.ad_id)) adMap.set(r.ad_id, r.ad_name);
+      }
+    }
+
+    // --------------------------------------------------------------------
+    // 1) ANCHOR: ads_keyword_events → latest fire per subscriber.
+    //    Filtered by client + date window. This is the complete lead set.
+    // --------------------------------------------------------------------
+    const latestByMc = new Map<string, KeywordEvent>();
     {
       const PAGE = 1000;
       let offset = 0;
-      // hard ceiling on scanned message rows to stay well within runtime limits
-      const SCAN_CEILING = 60000;
+      const SCAN_CEILING = 40000;
       for (;;) {
         let q = sb
-          .from("dm_conversation_messages")
-          .select("conversation_id, sent_at, client")
-          .order("sent_at", { ascending: false })
+          .from("ads_keyword_events")
+          .select("subscriber_id, subscriber_name, contact_name, keyword_normalized, client_key, appointment_id, event_at")
+          .order("event_at", { ascending: false })
           .range(offset, offset + PAGE - 1);
-
-        if (clientFilter) {
-          const longForm = Object.keys(CLIENT_LONG_TO_SHORT).find(
-            (k) => CLIENT_LONG_TO_SHORT[k] === clientFilter
-          );
-          const variants = [clientFilter];
-          if (longForm) variants.push(longForm);
-          q = q.in("client", variants);
-        }
-        if (dateFrom) q = q.gte("sent_at", `${dateFrom}T00:00:00`);
-        if (dateTo) q = q.lte("sent_at", `${dateTo}T23:59:59.999`);
+        if (clientFilter) q = q.eq("client_key", clientFilter);
+        if (dateFrom) q = q.gte("event_at", `${dateFrom}T00:00:00`);
+        if (dateTo) q = q.lte("event_at", `${dateTo}T23:59:59.999`);
 
         const { data, error } = await q;
         if (error) throw error;
-        const rows = data || [];
+        const rows = (data || []) as KeywordEvent[];
         for (const r of rows) {
-          if (!r.conversation_id) continue;
-          // rows arrive newest-first; first time we see a convo = its latest message
-          if (!lastAtByConvo.has(r.conversation_id)) {
-            lastAtByConvo.set(r.conversation_id, r.sent_at);
-            if (r.client) clientByConvo.set(r.conversation_id, r.client);
-          }
+          if (!r.subscriber_id) continue;
+          // rows arrive newest-first → first time we see a subscriber = latest fire
+          if (!latestByMc.has(r.subscriber_id)) latestByMc.set(r.subscriber_id, r);
         }
         offset += PAGE;
         if (rows.length < PAGE) break;
         if (offset >= SCAN_CEILING) break;
-        if (lastAtByConvo.size >= MAX_CONVERSATIONS * 3) break;
       }
     }
 
-    // Order conversations by recency, take the top MAX_CONVERSATIONS.
-    const convoIds = Array.from(lastAtByConvo.entries())
-      .sort((a, b) => (a[1] < b[1] ? 1 : -1))
-      .slice(0, MAX_CONVERSATIONS)
-      .map(([id]) => id);
+    const mcIds = Array.from(latestByMc.keys());
+    const totalLeads = mcIds.length;
 
-    const totalConversations = lastAtByConvo.size;
-
-    if (convoIds.length === 0) {
+    if (mcIds.length === 0) {
       return NextResponse.json({
         threads: [],
         total: 0,
-        totalConversations: 0,
-        linkedConversations: 0,
+        totalLeads: 0,
+        bookedLeads: 0,
+        closedLeads: 0,
         page,
         pageSize,
-        filters: { clients: [], campaigns: [], keywords: [], adsets: [], ads: [] },
+        filters: {
+          campaigns: Array.from(campaignMap, ([id, v]) => ({ id, label: v.label, status: v.status })),
+          keywords: Array.from(keywordSet).sort(),
+          adsets: Array.from(adsetMap, ([id, label]) => ({ id, label })),
+          ads: Array.from(adMap, ([id, label]) => ({ id, label })),
+        },
       });
     }
 
-    // 2) Pull ALL messages for those conversations (full threads). Chunk the IN() list.
-    const messages: MessageRow[] = [];
-    for (let i = 0; i < convoIds.length; i += 200) {
-      const chunk = convoIds.slice(i, i + 200);
-      const { data, error } = await sb
-        .from("dm_conversation_messages")
-        .select("conversation_id, subscriber_id, direction, body, sent_at, setter_name, client, message_type")
-        .in("conversation_id", chunk)
-        .order("sent_at", { ascending: true })
-        .limit(40000);
-      if (error) throw error;
-      if (data) messages.push(...(data as MessageRow[]));
-    }
-
-    // Group messages by conversation.
-    const byConvo = new Map<string, MessageRow[]>();
-    for (const m of messages) {
-      if (!byConvo.has(m.conversation_id)) byConvo.set(m.conversation_id, []);
-      byConvo.get(m.conversation_id)!.push(m);
-    }
-
-    // 3) Bridge subscriber_id (IG) → manychat_subscriber_id via instagram_lead_links.
-    const igIds = Array.from(
-      new Set(messages.map((m) => m.subscriber_id).filter(Boolean))
-    );
-    const leadLinks: LeadLink[] = [];
-    for (let i = 0; i < igIds.length; i += 300) {
-      const chunk = igIds.slice(i, i + 300);
-      const { data, error } = await sb
-        .from("instagram_lead_links")
-        .select("instagram_user_id, manychat_subscriber_id, instagram_handle, lead_name, client")
-        .in("instagram_user_id", chunk);
-      if (error) throw error;
-      if (data) leadLinks.push(...(data as LeadLink[]));
-    }
-    const linkByIg = new Map<string, LeadLink>();
-    for (const l of leadLinks) {
-      if (l.instagram_user_id) linkByIg.set(l.instagram_user_id, l);
-    }
-
-    // 4) Keyword events for the bridged manychat subscriber ids.
-    const mcIds = Array.from(
-      new Set(leadLinks.map((l) => l.manychat_subscriber_id).filter(Boolean) as string[])
-    );
-    const kwEvents: KeywordEvent[] = [];
+    // --------------------------------------------------------------------
+    // 2) Bridge ManyChat subscriber → IG conversation via instagram_lead_links.
+    // --------------------------------------------------------------------
+    const linkByMc = new Map<string, LeadLink>();
+    const igToMc = new Map<string, string>();
     for (let i = 0; i < mcIds.length; i += 300) {
       const chunk = mcIds.slice(i, i + 300);
       const { data, error } = await sb
-        .from("ads_keyword_events")
-        .select("subscriber_id, keyword_normalized, client_key, event_at")
-        .in("subscriber_id", chunk)
-        .order("event_at", { ascending: false });
+        .from("instagram_lead_links")
+        .select("instagram_user_id, manychat_subscriber_id, instagram_handle, lead_name, client")
+        .in("manychat_subscriber_id", chunk);
       if (error) throw error;
-      if (data) kwEvents.push(...(data as KeywordEvent[]));
-    }
-    // newest keyword per manychat subscriber
-    const kwByMc = new Map<string, KeywordEvent>();
-    for (const e of kwEvents) {
-      if (!kwByMc.has(e.subscriber_id)) kwByMc.set(e.subscriber_id, e);
+      for (const l of (data || []) as LeadLink[]) {
+        if (l.manychat_subscriber_id) linkByMc.set(l.manychat_subscriber_id, l);
+        if (l.instagram_user_id && l.manychat_subscriber_id)
+          igToMc.set(l.instagram_user_id, l.manychat_subscriber_id);
+      }
     }
 
-    // 5) Insight labels (campaign/adset/ad) per keyword. Newest row per keyword+client.
+    // --------------------------------------------------------------------
+    // 3) Conversation messages for the bridged IG ids.
+    // --------------------------------------------------------------------
+    const igIds = Array.from(igToMc.keys());
+    const msgsByMc = new Map<string, MessageRow[]>();
+    for (let i = 0; i < igIds.length; i += 200) {
+      const chunk = igIds.slice(i, i + 200);
+      const { data, error } = await sb
+        .from("dm_conversation_messages")
+        .select("conversation_id, subscriber_id, direction, body, sent_at, setter_name, client, message_type")
+        .in("subscriber_id", chunk)
+        .order("sent_at", { ascending: true })
+        .limit(40000);
+      if (error) throw error;
+      for (const m of (data || []) as MessageRow[]) {
+        const mc = igToMc.get(m.subscriber_id);
+        if (!mc) continue;
+        if (!msgsByMc.has(mc)) msgsByMc.set(mc, []);
+        msgsByMc.get(mc)!.push(m);
+      }
+    }
+
+    // --------------------------------------------------------------------
+    // 4) Insight labels (campaign/adset/ad) per keyword. Newest row per keyword+client.
+    // --------------------------------------------------------------------
     const keywords = Array.from(
-      new Set(kwEvents.map((e) => e.keyword_normalized).filter(Boolean) as string[])
+      new Set(Array.from(latestByMc.values()).map((e) => e.keyword_normalized).filter(Boolean) as string[])
     );
     const labelByKey = new Map<string, InsightLabel>();
-    if (keywords.length) {
-      const insights: (InsightLabel & { date: string })[] = [];
-      for (let i = 0; i < keywords.length; i += 200) {
-        const chunk = keywords.slice(i, i + 200);
-        const { data, error } = await sb
-          .from("ads_meta_insights_daily")
-          .select("keyword_normalized, client_key, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name, date")
-          .in("keyword_normalized", chunk)
-          .order("date", { ascending: false });
-        if (error) throw error;
-        if (data) insights.push(...(data as (InsightLabel & { date: string })[]));
-      }
-      for (const row of insights) {
+    for (let i = 0; i < keywords.length; i += 200) {
+      const chunk = keywords.slice(i, i + 200);
+      const { data, error } = await sb
+        .from("ads_meta_insights_daily")
+        .select(
+          "keyword_normalized, client_key, campaign_id, campaign_name, campaign_effective_status, adset_id, adset_name, ad_id, ad_name, date"
+        )
+        .in("keyword_normalized", chunk)
+        .order("date", { ascending: false });
+      if (error) throw error;
+      for (const row of (data || []) as (InsightLabel & { date: string })[]) {
         const key = `${row.keyword_normalized}::${row.client_key || ""}`;
         if (!labelByKey.has(key)) labelByKey.set(key, row);
       }
     }
-
-    function labelForEvent(e: KeywordEvent | undefined): InsightLabel | null {
-      if (!e?.keyword_normalized) return null;
+    function labelForEvent(e: KeywordEvent): InsightLabel | null {
+      if (!e.keyword_normalized) return null;
       const exact = labelByKey.get(`${e.keyword_normalized}::${e.client_key || ""}`);
       if (exact) return exact;
-      // fall back to any client match for that keyword
-      for (const [k, v] of labelByKey) {
-        if (k.startsWith(`${e.keyword_normalized}::`)) return v;
-      }
+      for (const [k, v] of labelByKey) if (k.startsWith(`${e.keyword_normalized}::`)) return v;
       return null;
     }
 
-    // 6) Lead stage / booking-readiness — LEFT join via conversation_id.
+    // --------------------------------------------------------------------
+    // 5) BOOKED — appointment_id on the event, cross-checked vs ghl_appointments.
+    // --------------------------------------------------------------------
+    const apptIds = Array.from(
+      new Set(Array.from(latestByMc.values()).map((e) => e.appointment_id).filter(Boolean) as string[])
+    );
+    const ghlAppts = new Set<string>();
+    for (let i = 0; i < apptIds.length; i += 300) {
+      const chunk = apptIds.slice(i, i + 300);
+      const { data, error } = await sb
+        .from("ghl_appointments")
+        .select("appointment_id")
+        .in("appointment_id", chunk);
+      if (error) throw error;
+      for (const r of (data || []) as { appointment_id: string }[]) ghlAppts.add(r.appointment_id);
+    }
+
+    // --------------------------------------------------------------------
+    // 6) CLOSED — sales_tracker_rows via manychat_subscriber_id.
+    // --------------------------------------------------------------------
+    const collectedByMc = new Map<string, number>();
+    for (let i = 0; i < mcIds.length; i += 300) {
+      const chunk = mcIds.slice(i, i + 300);
+      const { data, error } = await sb
+        .from("sales_tracker_rows")
+        .select("manychat_subscriber_id, collected_revenue_cents")
+        .in("manychat_subscriber_id", chunk);
+      if (error) throw error;
+      for (const r of (data || []) as { manychat_subscriber_id: string; collected_revenue_cents: number | null }[]) {
+        const cents = Number(r.collected_revenue_cents || 0);
+        if (cents > 0 && r.manychat_subscriber_id)
+          collectedByMc.set(r.manychat_subscriber_id, (collectedByMc.get(r.manychat_subscriber_id) || 0) + cents);
+      }
+    }
+
+    // --------------------------------------------------------------------
+    // 7) Lead stage via conversation_id.
+    // --------------------------------------------------------------------
+    const convoIds = new Set<string>();
+    for (const list of msgsByMc.values()) for (const m of list) if (m.conversation_id) convoIds.add(m.conversation_id);
+    const convoIdArr = Array.from(convoIds);
     const stageByConvo = new Map<string, StageRow>();
-    for (let i = 0; i < convoIds.length; i += 300) {
-      const chunk = convoIds.slice(i, i + 300);
+    for (let i = 0; i < convoIdArr.length; i += 300) {
+      const chunk = convoIdArr.slice(i, i + 300);
       const { data, error } = await sb
         .from("dm_conversation_stage_state")
         .select("conversation_id, booking_readiness_score, qualified, goal_clear, gap_clear, stakes_clear")
         .in("conversation_id", chunk);
       if (error) throw error;
-      for (const r of (data || []) as StageRow[]) {
-        if (r.conversation_id) stageByConvo.set(r.conversation_id, r);
-      }
+      for (const r of (data || []) as StageRow[]) if (r.conversation_id) stageByConvo.set(r.conversation_id, r);
     }
 
-    // 7) Assemble threads.
+    // --------------------------------------------------------------------
+    // 8) Assemble one thread per keyword-fired lead.
+    // --------------------------------------------------------------------
     let threads: Thread[] = [];
-    for (const [conversationId, list] of byConvo) {
-      if (!list.length) continue;
-      const sorted = list; // already ascending
-      const last = sorted[sorted.length - 1];
-      const igId = sorted[0].subscriber_id;
-      const link = linkByIg.get(igId);
-      const kwEvent = link?.manychat_subscriber_id
-        ? kwByMc.get(link.manychat_subscriber_id)
-        : undefined;
-      const label = labelForEvent(kwEvent);
-
-      const setterName = sorted.find((m) => m.setter_name)?.setter_name || null;
-
-      const leadName =
-        (link?.lead_name &&
-          !link.lead_name.includes("{{") &&
-          link.lead_name.trim()) ||
-        null;
-      const handle = link?.instagram_handle || null;
-
-      const stageRow = stageByConvo.get(conversationId);
+    for (const [mc, e] of latestByMc) {
+      const link = linkByMc.get(mc);
+      const msgs = msgsByMc.get(mc) || [];
+      const label = labelForEvent(e);
+      const last = msgs.length ? msgs[msgs.length - 1] : null;
+      const convoId = msgs.length ? msgs[0].conversation_id : null;
+      const stageRow = convoId ? stageByConvo.get(convoId) : undefined;
       const stage: Stage | null = stageRow
         ? {
             score: stageRow.booking_readiness_score,
@@ -378,28 +418,40 @@ export async function GET(req: NextRequest) {
           }
         : null;
 
-      const keyword = kwEvent?.keyword_normalized || null;
+      const leadName =
+        cleanName(link?.lead_name) || cleanName(e.subscriber_name) || cleanName(e.contact_name) || null;
+      const handle = link?.instagram_handle || null;
+      const setterName = msgs.find((m) => m.setter_name)?.setter_name || null;
+      const booked = !!(e.appointment_id && ghlAppts.has(e.appointment_id));
+      const collectedCents = collectedByMc.get(mc) || 0;
+
+      const lastAt =
+        last && last.sent_at && last.sent_at > e.event_at ? last.sent_at : e.event_at;
 
       threads.push({
-        conversationId,
-        client: list[0].client || clientByConvo.get(conversationId) || link?.client || null,
+        conversationId: mc,
+        client: shortClient(e.client_key) || shortClient(link?.client) || null,
         leadName,
         handle,
-        keyword,
+        keyword: e.keyword_normalized || null,
         campaignName: label?.campaign_name || null,
         campaignId: label?.campaign_id || null,
+        campaignStatus: (label?.campaign_effective_status || "").toUpperCase() || null,
         adsetName: label?.adset_name || null,
         adsetId: label?.adset_id || null,
         adName: label?.ad_name || null,
         adId: label?.ad_id || null,
         setterName,
-        lastMessage: previewBody(last.message_type, last.body),
-        lastDirection: last.direction || "inbound",
-        lastAt: last.sent_at,
-        messageCount: sorted.length,
-        linked: !!keyword,
+        lastMessage: last ? previewBody(last.message_type, last.body) : "No captured conversation",
+        lastDirection: last?.direction || "inbound",
+        lastAt,
+        messageCount: msgs.length,
+        hasConversation: msgs.length > 0,
+        booked,
+        closed: collectedCents > 0,
+        collectedCents,
         stage,
-        messages: sorted.map((m) => ({
+        messages: msgs.map((m) => ({
           direction: m.direction || "inbound",
           body: previewBody(m.message_type, m.body),
           sentAt: m.sent_at,
@@ -408,30 +460,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Honest linked-vs-total counter (over the assembled set, before narrow filters).
-    const linkedConversations = threads.filter((t) => t.linked).length;
+    const bookedLeads = threads.filter((t) => t.booked).length;
+    const closedLeads = threads.filter((t) => t.closed).length;
 
-    // Build filter option lists from the (unfiltered-by-keyword) thread set.
-    const campaignMap = new Map<string, string>();
-    const keywordSet = new Set<string>();
-    const adsetMap = new Map<string, string>();
-    const adMap = new Map<string, string>();
-    const clientSet = new Set<string>();
-    for (const t of threads) {
-      if (t.client) clientSet.add(t.client);
-      if (t.campaignId && t.campaignName) campaignMap.set(t.campaignId, t.campaignName);
-      if (t.keyword) keywordSet.add(t.keyword);
-      if (t.adsetId && t.adsetName) adsetMap.set(t.adsetId, t.adsetName);
-      if (t.adId && t.adName) adMap.set(t.adId, t.adName);
-    }
-
-    // 8) Apply the OPTIONAL narrow filters (campaign/keyword/adset/ad/search).
-    //    Only these restrict to the linked subset — the default view keeps everything.
+    // --------------------------------------------------------------------
+    // 9) Optional narrow filters (campaign/keyword/ad/adset/search).
+    // --------------------------------------------------------------------
     if (campaignId) threads = threads.filter((t) => t.campaignId === campaignId);
     if (adsetId) threads = threads.filter((t) => t.adsetId === adsetId);
     if (adId) threads = threads.filter((t) => t.adId === adId);
-    if (keywordFilter)
-      threads = threads.filter((t) => (t.keyword || "").toLowerCase() === keywordFilter);
+    if (keywordFilter) threads = threads.filter((t) => (t.keyword || "").toLowerCase() === keywordFilter);
     if (search) {
       threads = threads.filter((t) => {
         if ((t.leadName || "").toLowerCase().includes(search)) return true;
@@ -442,28 +480,43 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Sort by most recent message, paginate.
-    threads.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
-    const total = threads.length;
-    const start = (page - 1) * pageSize;
-    const paged = threads.slice(start, start + pageSize);
+    // --------------------------------------------------------------------
+    // 10) Sort. Booked / Closed bubble matching leads to top, then recency.
+    // --------------------------------------------------------------------
+    const byRecent = (a: Thread, b: Thread) => (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0);
+    if (sort === "booked") {
+      threads.sort((a, b) => (a.booked === b.booked ? byRecent(a, b) : a.booked ? -1 : 1));
+    } else if (sort === "closed") {
+      threads.sort((a, b) => {
+        if (a.closed !== b.closed) return a.closed ? -1 : 1;
+        if (a.closed && b.closed && a.collectedCents !== b.collectedCents)
+          return b.collectedCents - a.collectedCents;
+        return byRecent(a, b);
+      });
+    } else {
+      threads.sort(byRecent);
+    }
 
-    const sortByLabel = (a: { label: string }, b: { label: string }) =>
-      a.label.localeCompare(b.label);
+    const total = threads.length;
+    const capped = threads.slice(0, MAX_LEADS);
+    const start = (page - 1) * pageSize;
+    const paged = capped.slice(start, start + pageSize);
 
     return NextResponse.json({
       threads: paged,
-      total, // count after the active narrow filters (drives pagination)
-      totalConversations, // every conversation in the window (LEFT-join, organic + ad)
-      linkedConversations, // subset that bridges to an ad keyword
+      total,
+      totalLeads,
+      bookedLeads,
+      closedLeads,
       page,
       pageSize,
       filters: {
-        clients: Array.from(clientSet).sort(),
-        campaigns: Array.from(campaignMap, ([id, label]) => ({ id, label })).sort(sortByLabel),
+        campaigns: Array.from(campaignMap, ([id, v]) => ({ id, label: v.label, status: v.status })).sort((a, b) =>
+          a.label.localeCompare(b.label)
+        ),
         keywords: Array.from(keywordSet).sort(),
-        adsets: Array.from(adsetMap, ([id, label]) => ({ id, label })).sort(sortByLabel),
-        ads: Array.from(adMap, ([id, label]) => ({ id, label })).sort(sortByLabel),
+        adsets: Array.from(adsetMap, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
+        ads: Array.from(adMap, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
       },
     });
   } catch (err) {
