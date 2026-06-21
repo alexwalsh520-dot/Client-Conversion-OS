@@ -15,8 +15,15 @@ export const revalidate = 0;
 //
 // The two `subscriber_id` columns live in DIFFERENT id namespaces (IG vs ManyChat),
 // so the bridge table instagram_lead_links is REQUIRED — never join them directly.
-// ~622 of ~1996 conversations carry a keyword; the rest are organic / unlinked and
-// still appear in the inbox (just without an ad label).
+//
+// LEFT-JOIN PHILOSOPHY: the default / "All campaigns" view shows EVERY conversation
+// in the window (organic + ad-linked). The ad chain is an OPTIONAL tag. Only when the
+// user actively picks a campaign / keyword / ad / ad-set do we restrict to that subset.
+// In the last 7 days ~1,300 conversations exist but only ~29% bridge to a keyword, so
+// requiring the ad chain would hide the majority of the inbox — we never do that.
+//
+// Lead stage (right panel / pills) comes from dm_conversation_stage_state
+// (booking_readiness_score 0-100, qualified, goal/gap/stakes flags) — also a LEFT join.
 // ---------------------------------------------------------------------------
 
 // client column on dm_conversation_messages uses the long form (tyson_sonnek),
@@ -32,6 +39,11 @@ function shortClient(longOrShort: string | null | undefined): string | null {
   if (!longOrShort) return null;
   return CLIENT_LONG_TO_SHORT[longOrShort] || longOrShort;
 }
+
+// Hard cap on the number of DISTINCT conversations we assemble per request. The 7-day
+// window holds ~1.3k conversations / ~12.5k messages, so this comfortably covers it
+// while protecting the route from a pathological wide window.
+const MAX_CONVERSATIONS = 2500;
 
 interface MessageRow {
   conversation_id: string;
@@ -70,11 +82,29 @@ interface InsightLabel {
   ad_name: string | null;
 }
 
+interface StageRow {
+  conversation_id: string;
+  booking_readiness_score: number | null;
+  qualified: boolean | null;
+  goal_clear: boolean | null;
+  gap_clear: boolean | null;
+  stakes_clear: boolean | null;
+}
+
 interface ThreadMessage {
   direction: string;
   body: string;
   sentAt: string;
   type: string | null;
+}
+
+interface Stage {
+  score: number | null;
+  qualified: boolean;
+  goalClear: boolean;
+  gapClear: boolean;
+  stakesClear: boolean;
+  label: string; // "Hot lead" / "Warm" / "In contact" / "New" / null
 }
 
 interface Thread {
@@ -94,6 +124,8 @@ interface Thread {
   lastDirection: string;
   lastAt: string;
   messageCount: number;
+  linked: boolean;
+  stage: Stage | null;
   messages: ThreadMessage[];
 }
 
@@ -110,6 +142,16 @@ function previewBody(type: string | null, body: string | null): string {
   return "Attachment";
 }
 
+// Map a booking-readiness score to a human stage pill. Scores observed live: 0-95.
+function stageLabel(score: number | null, qualified: boolean): string {
+  if (qualified) return "Qualified";
+  if (score == null) return "";
+  if (score >= 70) return "Hot lead";
+  if (score >= 40) return "Warm";
+  if (score >= 15) return "In contact";
+  return "New";
+}
+
 export async function GET(req: NextRequest) {
   try {
     const sb = getServiceSupabase();
@@ -124,56 +166,88 @@ export async function GET(req: NextRequest) {
     const dateTo = params.get("dateTo"); // YYYY-MM-DD
     const search = (params.get("search") || "").trim().toLowerCase();
     const page = Math.max(1, parseInt(params.get("page") || "1", 10));
-    const pageSize = Math.min(60, Math.max(10, parseInt(params.get("pageSize") || "30", 10)));
+    const pageSize = Math.min(80, Math.max(10, parseInt(params.get("pageSize") || "40", 10)));
 
-    // 1) Pull messages in the date window (by sent_at). We pull all messages of any
-    //    conversation that has ANY message in the window so the expanded thread is complete.
-    //    Date filter is on UTC sent_at; we widen by a day on each side to be safe re: TZ.
-    let convoQuery = sb
-      .from("dm_conversation_messages")
-      .select("conversation_id, sent_at, client")
-      .order("sent_at", { ascending: false });
+    // 1) Resolve the set of conversation_ids that have ANY message in the window.
+    //    We page through lightweight (conversation_id, sent_at, client) rows so the
+    //    4000-row scan cap can never silently drop conversations from a wide window.
+    //    We keep the MOST RECENT message timestamp per conversation for ordering.
+    const lastAtByConvo = new Map<string, string>();
+    const clientByConvo = new Map<string, string>();
+    {
+      const PAGE = 1000;
+      let offset = 0;
+      // hard ceiling on scanned message rows to stay well within runtime limits
+      const SCAN_CEILING = 60000;
+      for (;;) {
+        let q = sb
+          .from("dm_conversation_messages")
+          .select("conversation_id, sent_at, client")
+          .order("sent_at", { ascending: false })
+          .range(offset, offset + PAGE - 1);
 
-    if (clientFilter) {
-      // match either short or long client form
-      const longForm = Object.keys(CLIENT_LONG_TO_SHORT).find(
-        (k) => CLIENT_LONG_TO_SHORT[k] === clientFilter
-      );
-      const variants = [clientFilter];
-      if (longForm) variants.push(longForm);
-      convoQuery = convoQuery.in("client", variants);
+        if (clientFilter) {
+          const longForm = Object.keys(CLIENT_LONG_TO_SHORT).find(
+            (k) => CLIENT_LONG_TO_SHORT[k] === clientFilter
+          );
+          const variants = [clientFilter];
+          if (longForm) variants.push(longForm);
+          q = q.in("client", variants);
+        }
+        if (dateFrom) q = q.gte("sent_at", `${dateFrom}T00:00:00`);
+        if (dateTo) q = q.lte("sent_at", `${dateTo}T23:59:59.999`);
+
+        const { data, error } = await q;
+        if (error) throw error;
+        const rows = data || [];
+        for (const r of rows) {
+          if (!r.conversation_id) continue;
+          // rows arrive newest-first; first time we see a convo = its latest message
+          if (!lastAtByConvo.has(r.conversation_id)) {
+            lastAtByConvo.set(r.conversation_id, r.sent_at);
+            if (r.client) clientByConvo.set(r.conversation_id, r.client);
+          }
+        }
+        offset += PAGE;
+        if (rows.length < PAGE) break;
+        if (offset >= SCAN_CEILING) break;
+        if (lastAtByConvo.size >= MAX_CONVERSATIONS * 3) break;
+      }
     }
-    if (dateFrom) convoQuery = convoQuery.gte("sent_at", `${dateFrom}T00:00:00`);
-    if (dateTo) convoQuery = convoQuery.lte("sent_at", `${dateTo}T23:59:59.999`);
 
-    // Cap the scan; conversations are ordered by recency so newest window wins.
-    const { data: convoHits, error: convoErr } = await convoQuery.limit(4000);
-    if (convoErr) throw convoErr;
+    // Order conversations by recency, take the top MAX_CONVERSATIONS.
+    const convoIds = Array.from(lastAtByConvo.entries())
+      .sort((a, b) => (a[1] < b[1] ? 1 : -1))
+      .slice(0, MAX_CONVERSATIONS)
+      .map(([id]) => id);
 
-    const convoIds = Array.from(
-      new Set((convoHits || []).map((r) => r.conversation_id).filter(Boolean))
-    );
+    const totalConversations = lastAtByConvo.size;
 
     if (convoIds.length === 0) {
       return NextResponse.json({
         threads: [],
         total: 0,
+        totalConversations: 0,
+        linkedConversations: 0,
         page,
         pageSize,
         filters: { clients: [], campaigns: [], keywords: [], adsets: [], ads: [] },
       });
     }
 
-    // 2) Pull ALL messages for those conversations (full threads).
-    const { data: msgs, error: msgErr } = await sb
-      .from("dm_conversation_messages")
-      .select("conversation_id, subscriber_id, direction, body, sent_at, setter_name, client, message_type")
-      .in("conversation_id", convoIds)
-      .order("sent_at", { ascending: true })
-      .limit(40000);
-    if (msgErr) throw msgErr;
-
-    const messages = (msgs || []) as MessageRow[];
+    // 2) Pull ALL messages for those conversations (full threads). Chunk the IN() list.
+    const messages: MessageRow[] = [];
+    for (let i = 0; i < convoIds.length; i += 200) {
+      const chunk = convoIds.slice(i, i + 200);
+      const { data, error } = await sb
+        .from("dm_conversation_messages")
+        .select("conversation_id, subscriber_id, direction, body, sent_at, setter_name, client, message_type")
+        .in("conversation_id", chunk)
+        .order("sent_at", { ascending: true })
+        .limit(40000);
+      if (error) throw error;
+      if (data) messages.push(...(data as MessageRow[]));
+    }
 
     // Group messages by conversation.
     const byConvo = new Map<string, MessageRow[]>();
@@ -228,7 +302,7 @@ export async function GET(req: NextRequest) {
     );
     const labelByKey = new Map<string, InsightLabel>();
     if (keywords.length) {
-      const insights: InsightLabel[] = [];
+      const insights: (InsightLabel & { date: string })[] = [];
       for (let i = 0; i < keywords.length; i += 200) {
         const chunk = keywords.slice(i, i + 200);
         const { data, error } = await sb
@@ -256,7 +330,21 @@ export async function GET(req: NextRequest) {
       return null;
     }
 
-    // 6) Assemble threads.
+    // 6) Lead stage / booking-readiness — LEFT join via conversation_id.
+    const stageByConvo = new Map<string, StageRow>();
+    for (let i = 0; i < convoIds.length; i += 300) {
+      const chunk = convoIds.slice(i, i + 300);
+      const { data, error } = await sb
+        .from("dm_conversation_stage_state")
+        .select("conversation_id, booking_readiness_score, qualified, goal_clear, gap_clear, stakes_clear")
+        .in("conversation_id", chunk);
+      if (error) throw error;
+      for (const r of (data || []) as StageRow[]) {
+        if (r.conversation_id) stageByConvo.set(r.conversation_id, r);
+      }
+    }
+
+    // 7) Assemble threads.
     let threads: Thread[] = [];
     for (const [conversationId, list] of byConvo) {
       if (!list.length) continue;
@@ -269,8 +357,7 @@ export async function GET(req: NextRequest) {
         : undefined;
       const label = labelForEvent(kwEvent);
 
-      const setterName =
-        sorted.find((m) => m.setter_name)?.setter_name || null;
+      const setterName = sorted.find((m) => m.setter_name)?.setter_name || null;
 
       const leadName =
         (link?.lead_name &&
@@ -279,12 +366,26 @@ export async function GET(req: NextRequest) {
         null;
       const handle = link?.instagram_handle || null;
 
+      const stageRow = stageByConvo.get(conversationId);
+      const stage: Stage | null = stageRow
+        ? {
+            score: stageRow.booking_readiness_score,
+            qualified: !!stageRow.qualified,
+            goalClear: !!stageRow.goal_clear,
+            gapClear: !!stageRow.gap_clear,
+            stakesClear: !!stageRow.stakes_clear,
+            label: stageLabel(stageRow.booking_readiness_score, !!stageRow.qualified),
+          }
+        : null;
+
+      const keyword = kwEvent?.keyword_normalized || null;
+
       threads.push({
         conversationId,
-        client: list[0].client || link?.client || null,
+        client: list[0].client || clientByConvo.get(conversationId) || link?.client || null,
         leadName,
         handle,
-        keyword: kwEvent?.keyword_normalized || null,
+        keyword,
         campaignName: label?.campaign_name || null,
         campaignId: label?.campaign_id || null,
         adsetName: label?.adset_name || null,
@@ -296,6 +397,8 @@ export async function GET(req: NextRequest) {
         lastDirection: last.direction || "inbound",
         lastAt: last.sent_at,
         messageCount: sorted.length,
+        linked: !!keyword,
+        stage,
         messages: sorted.map((m) => ({
           direction: m.direction || "inbound",
           body: previewBody(m.message_type, m.body),
@@ -304,6 +407,9 @@ export async function GET(req: NextRequest) {
         })),
       });
     }
+
+    // Honest linked-vs-total counter (over the assembled set, before narrow filters).
+    const linkedConversations = threads.filter((t) => t.linked).length;
 
     // Build filter option lists from the (unfiltered-by-keyword) thread set.
     const campaignMap = new Map<string, string>();
@@ -319,7 +425,8 @@ export async function GET(req: NextRequest) {
       if (t.adId && t.adName) adMap.set(t.adId, t.adName);
     }
 
-    // 7) Apply the narrow filters (campaign/keyword/adset/ad/search).
+    // 8) Apply the OPTIONAL narrow filters (campaign/keyword/adset/ad/search).
+    //    Only these restrict to the linked subset — the default view keeps everything.
     if (campaignId) threads = threads.filter((t) => t.campaignId === campaignId);
     if (adsetId) threads = threads.filter((t) => t.adsetId === adsetId);
     if (adId) threads = threads.filter((t) => t.adId === adId);
@@ -346,7 +453,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       threads: paged,
-      total,
+      total, // count after the active narrow filters (drives pagination)
+      totalConversations, // every conversation in the window (LEFT-join, organic + ad)
+      linkedConversations, // subset that bridges to an ad keyword
       page,
       pageSize,
       filters: {

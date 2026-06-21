@@ -8,7 +8,7 @@ export default function DmsPage() {
     <main className="ads-export-page" aria-label="DMs">
       <iframe
         className="ads-export-frame"
-        src={`/dms-export.html?v=dms-inbox-v1&t=${cacheBust}`}
+        src={`/dms-export.html?v=dms-inbox-v2&t=${cacheBust}`}
         title="DMs"
       />
     </main>
