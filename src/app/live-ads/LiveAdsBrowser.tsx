@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type {
   LiveAdsAdSetGroup,
   LiveAdsCampaignGroup,
@@ -85,7 +85,14 @@ function adSetMeta(adSet: LiveAdsAdSetGroup) {
     .join(" · ");
 }
 
-export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
+export default function LiveAdsBrowser({
+  data,
+  headerSlot,
+}: {
+  data: LiveAdsPayload;
+  /** Operator-only affordance rendered in the header (e.g. the Share button). */
+  headerSlot?: ReactNode;
+}) {
   const [selection, setSelection] = useState<Selection | null>(() => firstSelection(data));
   const [viewMode, setViewMode] = useState<ViewMode>("campaigns");
   const selected = useMemo(() => findSelected(data, selection), [data, selection]);
@@ -137,6 +144,7 @@ export default function LiveAdsBrowser({ data }: { data: LiveAdsPayload }) {
             </button>
           </div>
           <div className={styles.syncPill}>Checked {formatCheckedAt(data.checkedAt)} ET</div>
+          {headerSlot}
         </div>
       </header>
 

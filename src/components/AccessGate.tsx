@@ -114,6 +114,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // token server-side to ONE creator and shows only that creator's live Ads
     // view (data hard-scoped by /api/public/ads/<token>). No CCOS login.
     pathname.startsWith("/p/ads/") ||
+    // /p/live-ads/<token> is a public, no-login creator share link for the LIVE
+    // ADS tab. It resolves the token server-side to ONE creator and shows only
+    // that creator's live ad creatives (data hard-scoped to that one account by
+    // /api/public/live-ads/<token>). No CCOS login.
+    pathname.startsWith("/p/live-ads/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

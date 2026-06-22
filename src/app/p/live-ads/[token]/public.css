@@ -1,0 +1,52 @@
+/* Public creator share view (Live Ads) — strip ALL CCOS app chrome so the
+   creator sees only their own live ads, with no sidebar/nav into the rest of
+   the app. */
+
+/* Hide the sidebar whenever the public Live Ads view (or its "not available"
+   card) is on screen. The sidebar is a sibling of .main-content inside
+   .app-layout. */
+.app-layout:has(.pub-live-ads-page) .sidebar,
+.app-layout:has(.pub-unavailable) .sidebar {
+  display: none !important;
+}
+
+.app-layout:has(.pub-live-ads-page) .main-content,
+.app-layout:has(.pub-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 24px;
+  width: 100%;
+}
+
+/* Clean "link not available" state — no data, no stack traces. */
+.pub-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050505;
+  padding: 24px;
+}
+
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+
+.pub-unavailable-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.pub-unavailable-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9a9aa2;
+}
