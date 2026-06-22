@@ -110,6 +110,10 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /ads-leaderboard/board is the public front-facing leaderboard (no auth,
     // no financials). Exact match so the admin /ads-leaderboard tab stays gated.
     pathname === "/ads-leaderboard/board" ||
+    // /p/ads/<token> is a public, no-login creator share link. It resolves the
+    // token server-side to ONE creator and shows only that creator's live Ads
+    // view (data hard-scoped by /api/public/ads/<token>). No CCOS login.
+    pathname.startsWith("/p/ads/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||
