@@ -378,7 +378,13 @@ export async function getMetrics(
 
     for (const lead of cohort.values()) {
       const setter = lead.setterName;
-      if (setter && setterMetrics[setter]) {
+      if (setter) {
+        // Count any setter that actually appears, even if they're not in the
+        // hardcoded CLIENT_SETTERS roster (e.g. Antwan's setters) — so new
+        // setters/offers show up without editing this list.
+        if (!setterMetrics[setter]) {
+          setterMetrics[setter] = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+        }
         setterMetrics[setter].newLeads += 1;
       }
     }
@@ -422,7 +428,10 @@ export async function getMetrics(
       }
 
       const setter = lead.setterName;
-      if (setter && setterMetrics[setter]) {
+      if (setter) {
+        if (!setterMetrics[setter]) {
+          setterMetrics[setter] = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
+        }
         if (stageSubscribers.lead_engaged.has(lead.subscriberId)) setterMetrics[setter].leadsEngaged += 1;
         if (stageSubscribers.call_link_sent.has(lead.subscriberId)) setterMetrics[setter].callLinksSent += 1;
         if (stageSubscribers.sub_link_sent.has(lead.subscriberId)) setterMetrics[setter].subLinksSent += 1;
