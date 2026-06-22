@@ -49,8 +49,6 @@ interface SetterQualityRow {
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
-const CLOSERS = ["Broz", "Will", "Austin"];
-
 function parseCallLength(len: string): number {
   // Expects formats like "12:34" (mm:ss) or a raw number (minutes)
   if (!len || len.trim() === "") return 0;
@@ -191,9 +189,21 @@ export default function CloserPerformance({
 }: CloserPerformanceProps) {
   const closerStats = useMemo(() => {
     if (!sheetData) return [];
-    return CLOSERS.map((name) => computeCloserStats(sheetData, name)).filter(
-      (s) => s.callsBooked > 0,
-    );
+    // Derive the closer list straight from the sheet's Closer column so new
+    // closers appear automatically — no hardcoded roster to keep in sync.
+    const byKey = new Map<string, string>(); // lowercased -> display name
+    for (const r of sheetData) {
+      const raw = (r.closer || "").trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!byKey.has(key)) {
+        byKey.set(key, raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+      }
+    }
+    return Array.from(byKey.values())
+      .map((name) => computeCloserStats(sheetData, name))
+      .filter((s) => s.callsBooked > 0)
+      .sort((a, b) => b.cash - a.cash);
   }, [sheetData]);
 
   const aggregated = useMemo(() => {

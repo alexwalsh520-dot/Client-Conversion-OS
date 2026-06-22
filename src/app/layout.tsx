@@ -40,7 +40,7 @@ export default function RootLayout({
             the session loads. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('ccos-theme:last');if(t!=='light'&&t!=='dark')t='dark';var c=document.documentElement.classList;c.remove('light','dark');c.add(t);}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('ccos-theme:last');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}var c=document.documentElement.classList;c.remove('light','dark');c.add(t);}catch(e){}})();`,
           }}
         />
       </head>

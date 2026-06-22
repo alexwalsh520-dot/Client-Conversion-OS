@@ -15,14 +15,26 @@ function userKey(email: string | null): string {
 
 const LAST_KEY = "ccos-theme:last";
 
-function readTheme(key: string): Theme {
+function readTheme(key: string): Theme | null {
   try {
     const v = localStorage.getItem(key);
     if (v === "light" || v === "dark") return v;
   } catch {
     // ignore storage errors (private mode, etc.)
   }
-  return "dark";
+  return null;
+}
+
+// The OS appearance (System Settings → light/dark). Used when the person has no
+// saved choice yet, so the app follows their device instead of forcing dark.
+function osPreference(): Theme {
+  try {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+      ? "light"
+      : "dark";
+  } catch {
+    return "dark";
+  }
 }
 
 function applyTheme(theme: Theme, key: string) {
@@ -48,12 +60,15 @@ export default function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("dark");
 
   // Once we know who's signed in, load that person's saved theme and apply it.
+  // Prefer their explicit choice; otherwise fall back to the last-applied theme
+  // (what the no-flash loader painted), then the OS appearance — so we never
+  // force dark on someone whose system or last session was light.
   useEffect(() => {
     if (status === "loading") return;
     const key = userKey(email);
-    const saved = readTheme(key);
-    setTheme(saved);
-    applyTheme(saved, key);
+    const resolved = readTheme(key) ?? readTheme(LAST_KEY) ?? osPreference();
+    setTheme(resolved);
+    applyTheme(resolved, key);
   }, [email, status]);
 
   function choose(next: Theme) {
