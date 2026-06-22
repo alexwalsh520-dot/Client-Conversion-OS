@@ -33,6 +33,7 @@ import {
   Trophy,
   FlaskConical,
   MessageCircle,
+  Factory,
 } from "lucide-react";
 
 const navItems = [
@@ -57,6 +58,7 @@ const marketingNavItems = [
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/dms", label: "DMs", icon: MessageCircle },
   { href: "/lab", label: "Lab", icon: FlaskConical },
+  { href: "/factory", label: "Factory", icon: Factory },
   { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
   { href: "/live-ads", label: "Live Ads", icon: Monitor },
   { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
