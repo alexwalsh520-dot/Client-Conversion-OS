@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Loader2,
   PhoneCall,
@@ -10,7 +10,7 @@ import {
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
-import type { Filters, ManychatDashboard, ManychatMetrics } from "../types";
+import type { Filters, ManychatMetrics } from "../types";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -18,9 +18,7 @@ interface SetterPerformanceProps {
   filters: Filters;
 }
 
-interface SetterRow {
-  name: string;
-  client: string;
+interface PerfCounts {
   newLeads: number;
   callsBooked: number;
   callsTaken: number;
@@ -28,6 +26,18 @@ interface SetterRow {
   noShows: number;
   cashCollected: number;
   subsSold: number;
+}
+
+// One offer a setter is active on (e.g. Tyson or Antwan).
+interface SetterOfferRow extends PerfCounts {
+  client: string;
+  label: string;
+}
+
+// One setter, aggregated across their offers, with the per-offer breakdown.
+interface SetterGroup extends PerfCounts {
+  name: string;
+  offers: SetterOfferRow[];
 }
 
 interface OfferRow {
@@ -104,6 +114,12 @@ function leadCountRow(group: LeadHourGroup): StripRow {
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
+// Active offers shown when the filter is "All Clients". Dropped clients
+// (Keith Holland, Lucy, zoe_and_emily) are intentionally excluded.
+const ACTIVE_CLIENTS = ["tyson", "antwan"];
+
+// Base roster per client; actual setters are also derived live from the
+// ManyChat metrics so new setters (e.g. Antwan's) appear automatically.
 const CLIENT_SETTERS: Record<string, string[]> = {
   tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
   antwan: [],
@@ -121,13 +137,6 @@ const CLIENT_BADGE_LABELS: Record<string, string> = {
   tyson: "Tyson",
   antwan: "Antwan Rarcus",
 };
-
-function getRelevantSetters(client: string): { name: string; client: string }[] {
-  if (client === "all") {
-    return CLIENT_SETTERS.tyson.map((n) => ({ name: n, client: "tyson" }));
-  }
-  return (CLIENT_SETTERS[client] || []).map((n) => ({ name: n, client }));
-}
 
 function rowMatchesClient(row: SheetRow, client: string): boolean {
   const offer = (row.offer || "").toLowerCase();
@@ -206,9 +215,20 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
       let manychatPromise: Promise<Record<string, ManychatMetrics>>;
       if (filters.client === "all") {
-        manychatPromise = fetchJSON<ManychatMetrics>(
-          `/api/sales-hub/manychat-metrics?client=tyson&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-        ).then((tyson) => ({ tyson }));
+        // Fetch every active client (Tyson + Antwan), not just Tyson.
+        manychatPromise = Promise.all(
+          ACTIVE_CLIENTS.map((client) =>
+            fetchJSON<ManychatMetrics>(
+              `/api/sales-hub/manychat-metrics?client=${client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+            )
+              .then((data) => [client, data] as const)
+              .catch(() => null),
+          ),
+        ).then((entries) => {
+          const map: Record<string, ManychatMetrics> = {};
+          for (const entry of entries) if (entry) map[entry[0]] = entry[1];
+          return map;
+        });
       } else {
         manychatPromise = fetchJSON<ManychatMetrics>(
           `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
@@ -239,14 +259,16 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
   }, [fetchData]);
 
   const summary = useMemo((): SetterSummary => {
-    const visibleClients = filters.client === "all" ? ["tyson"] : [filters.client];
+    const visibleClients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
     const newLeads = visibleClients.reduce(
       (sum, client) => sum + (metricsMap[client]?.dashboard?.newLeads || 0),
       0,
     );
-    const visibleRows = filters.client === "all"
-      ? sheetRows
-      : sheetRows.filter((row) => rowMatchesClient(row, filters.client));
+    // Only count rows for active clients (Tyson + Antwan), so dropped-client
+    // rows lingering on the sheet don't inflate the totals.
+    const visibleRows = sheetRows.filter((row) =>
+      visibleClients.some((client) => rowMatchesClient(row, client)),
+    );
 
     return {
       newLeads,
@@ -254,43 +276,72 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     };
   }, [filters.client, metricsMap, sheetRows]);
 
-  const setterRows = useMemo((): SetterRow[] => {
-    const relevant = getRelevantSetters(filters.client);
-
-    return relevant.map(({ name, client }) => {
-      const metrics = metricsMap[client];
-      let mc: ManychatDashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
-
-      if (metrics?.setters) {
-        mc = metrics.setters[name] ||
-          metrics.setters[name.toLowerCase()] ||
-          Object.entries(metrics.setters).find(
-            ([k]) => k.toLowerCase() === name.toLowerCase(),
-          )?.[1] || mc;
-      }
-
-      const keys = SETTER_SHEET_KEYS[name] || [name.toUpperCase()];
-      const setterSheetRows = sheetRows.filter((r) =>
-        rowMatchesClient(r, client) &&
-        keys.some((k) => (r.setter || "").toUpperCase().includes(k))
-      );
-      const performance = buildPerformanceRow(client, mc.newLeads, setterSheetRows);
-
-      return {
-        name,
-        ...performance,
-      };
-    });
-  }, [filters.client, metricsMap, sheetRows]);
-
   const offerRows = useMemo((): OfferRow[] => {
-    const visibleClients = filters.client === "all" ? ["tyson"] : [filters.client];
-
-    return visibleClients.map((client) => {
+    const clients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
+    return clients.map((client) => {
       const rows = sheetRows.filter((row) => rowMatchesClient(row, client));
       const newLeads = metricsMap[client]?.dashboard?.newLeads || 0;
       return buildPerformanceRow(client, newLeads, rows);
     });
+  }, [filters.client, metricsMap, sheetRows]);
+
+  // One group per setter, each with a per-offer breakdown underneath. The setter
+  // universe is the active clients' rosters PLUS whoever actually appears in the
+  // ManyChat metrics, so new setters (e.g. on Antwan) show up on their own.
+  const setterGroups = useMemo((): SetterGroup[] => {
+    const clients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
+
+    const names = new Map<string, string>(); // lowercased -> display name
+    for (const client of clients) {
+      for (const n of CLIENT_SETTERS[client] || []) names.set(n.toLowerCase(), n);
+      for (const key of Object.keys(metricsMap[client]?.setters || {})) {
+        const lc = key.trim().toLowerCase();
+        if (lc && !names.has(lc)) names.set(lc, key.charAt(0).toUpperCase() + key.slice(1));
+      }
+    }
+
+    const setterNewLeads = (client: string, name: string): number => {
+      const setters = metricsMap[client]?.setters;
+      if (!setters) return 0;
+      const entry =
+        setters[name] ||
+        setters[name.toLowerCase()] ||
+        Object.entries(setters).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+      return entry?.newLeads || 0;
+    };
+
+    const groups: SetterGroup[] = [];
+    for (const name of names.values()) {
+      const keys = SETTER_SHEET_KEYS[name] || [name.toUpperCase()];
+      const offers: SetterOfferRow[] = [];
+      for (const client of clients) {
+        const setterSheetRows = sheetRows.filter(
+          (r) =>
+            rowMatchesClient(r, client) &&
+            keys.some((k) => (r.setter || "").toUpperCase().includes(k)),
+        );
+        const perf = buildPerformanceRow(client, setterNewLeads(client, name), setterSheetRows);
+        // Only list an offer the setter is actually active on.
+        if (perf.newLeads > 0 || perf.callsBooked > 0) {
+          offers.push({ ...perf, label: CLIENT_BADGE_LABELS[client] ?? client });
+        }
+      }
+      if (offers.length === 0) continue;
+      const agg = offers.reduce<PerfCounts>(
+        (a, o) => ({
+          newLeads: a.newLeads + o.newLeads,
+          callsBooked: a.callsBooked + o.callsBooked,
+          callsTaken: a.callsTaken + o.callsTaken,
+          wins: a.wins + o.wins,
+          noShows: a.noShows + o.noShows,
+          cashCollected: a.cashCollected + o.cashCollected,
+          subsSold: a.subsSold + o.subsSold,
+        }),
+        { newLeads: 0, callsBooked: 0, callsTaken: 0, wins: 0, noShows: 0, cashCollected: 0, subsSold: 0 },
+      );
+      groups.push({ name, offers, ...agg });
+    }
+    return groups.sort((a, b) => b.newLeads - a.newLeads);
   }, [filters.client, metricsMap, sheetRows]);
 
   return (
@@ -304,8 +355,9 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
             <HourlyStripTable
               title="New leads by hour (ET)"
               hourLabels={HOUR_LABELS_24}
-              rows={[leadPctRow(leadHours.team)]}
-              secondaryRows={[leadCountRow(leadHours.team)]}
+              rows={[leadCountRow(leadHours.team)]}
+              secondaryRows={[leadPctRow(leadHours.team)]}
+              toggleLabels={["#", "%"]}
               collapsible
             />
           ) : null
@@ -316,7 +368,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         <LoadingCard />
       ) : error ? (
         <ErrorCard message={`Failed to load setter data: ${error}`} />
-      ) : setterRows.length === 0 ? (
+      ) : setterGroups.length === 0 ? (
         <EmptyCard message="No setter data available for this period." />
       ) : (
         <>
@@ -326,20 +378,22 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
               <HourlyStripTable
                 title="New leads by hour (ET)"
                 hourLabels={HOUR_LABELS_24}
-                rows={leadHours.offers.map(leadPctRow)}
-                secondaryRows={leadHours.offers.map(leadCountRow)}
+                rows={leadHours.offers.map(leadCountRow)}
+                secondaryRows={leadHours.offers.map(leadPctRow)}
+                toggleLabels={["#", "%"]}
                 collapsible
               />
             </div>
           )}
-          <SetterTable rows={setterRows} />
+          <SetterTable groups={setterGroups} />
           {leadHours && leadHours.setters.length > 0 && (
             <div style={{ marginTop: -12, marginBottom: 20 }}>
               <HourlyStripTable
                 title="New leads by hour (ET)"
                 hourLabels={HOUR_LABELS_24}
-                rows={leadHours.setters.map(leadPctRow)}
-                secondaryRows={leadHours.setters.map(leadCountRow)}
+                rows={leadHours.setters.map(leadCountRow)}
+                secondaryRows={leadHours.setters.map(leadPctRow)}
+                toggleLabels={["#", "%"]}
                 collapsible
               />
             </div>
@@ -440,17 +494,38 @@ function SummaryCard({
   );
 }
 
-function SetterTable({ rows }: { rows: SetterRow[] }) {
+function SetterTable({ groups }: { groups: SetterGroup[] }) {
   return (
     <PerformanceTable
       title="Setter Breakdown"
       firstColumnLabel="Setter"
-      rows={rows.map((row) => ({
-        ...row,
-        label: row.name,
-        key: `${row.client}-${row.name}`,
+      rows={groups.map((g) => ({
+        label: g.name,
+        key: g.name,
+        newLeads: g.newLeads,
+        callsBooked: g.callsBooked,
+        callsTaken: g.callsTaken,
+        wins: g.wins,
+        noShows: g.noShows,
+        cashCollected: g.cashCollected,
+        subsSold: g.subsSold,
+        // Drill-down only when the setter works more than one offer.
+        subRows:
+          g.offers.length > 1
+            ? g.offers.map((o) => ({
+                label: o.label,
+                key: `${g.name}-${o.client}`,
+                client: o.client,
+                newLeads: o.newLeads,
+                callsBooked: o.callsBooked,
+                callsTaken: o.callsTaken,
+                wins: o.wins,
+                noShows: o.noShows,
+                cashCollected: o.cashCollected,
+                subsSold: o.subsSold,
+              }))
+            : undefined,
       }))}
-      showOffer
     />
   );
 }
@@ -461,11 +536,57 @@ function OfferTable({ rows }: { rows: OfferRow[] }) {
       title="Offer Breakdown"
       firstColumnLabel="Offer"
       rows={rows.map((row) => ({
-        ...row,
         label: CLIENT_BADGE_LABELS[row.client] ?? row.client,
         key: row.client,
+        newLeads: row.newLeads,
+        callsBooked: row.callsBooked,
+        callsTaken: row.callsTaken,
+        wins: row.wins,
+        noShows: row.noShows,
+        cashCollected: row.cashCollected,
+        subsSold: row.subsSold,
       }))}
     />
+  );
+}
+
+interface TableRow extends PerfCounts {
+  label: string;
+  key: string;
+  subRows?: Array<PerfCounts & { label: string; client: string; key: string }>;
+}
+
+// The 10 metric <td>s, shared by a setter row and its per-offer sub-rows.
+function MetricCells({ s }: { s: PerfCounts }) {
+  const showDenominator = s.callsTaken + s.noShows;
+  const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
+  const showRate = showDenominator > 0 ? (s.callsTaken / showDenominator) * 100 : 0;
+  const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
+  return (
+    <>
+      <td>{fmtNumber(s.newLeads)}</td>
+      <td>{fmtNumber(s.callsBooked)}</td>
+      <td>
+        <span style={{ color: s.newLeads > 0 ? rateColor(bookingRate, 15, 8) : "var(--text-secondary)", fontWeight: 600 }}>
+          {formatRate(s.callsBooked, s.newLeads)}
+        </span>
+      </td>
+      <td>{fmtNumber(s.callsTaken)}</td>
+      <td style={{ color: s.wins > 0 ? "var(--success)" : "var(--text-secondary)" }}>{fmtNumber(s.wins)}</td>
+      <td style={{ color: s.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>{fmtNumber(s.noShows)}</td>
+      <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(s.cashCollected)}</td>
+      <td style={{ color: s.subsSold > 0 ? "var(--accent)" : "var(--text-secondary)" }}>{fmtNumber(s.subsSold)}</td>
+      <td>
+        <span style={{ color: showDenominator > 0 ? rateColor(showRate, 65, 45) : "var(--text-secondary)", fontWeight: 600 }}>
+          {formatRate(s.callsTaken, showDenominator)}
+        </span>
+      </td>
+      <td>
+        <span style={{ color: s.callsTaken > 0 ? rateColor(closeRate, 40, 25) : "var(--text-secondary)", fontWeight: 600 }}>
+          {formatRate(s.wins, s.callsTaken)}
+        </span>
+      </td>
+    </>
   );
 }
 
@@ -473,13 +594,20 @@ function PerformanceTable({
   title,
   firstColumnLabel,
   rows,
-  showOffer = false,
 }: {
   title: string;
   firstColumnLabel: string;
-  rows: Array<(SetterRow | OfferRow) & { label: string; key: string }>;
-  showOffer?: boolean;
+  rows: TableRow[];
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   return (
     <div style={{ marginBottom: 20 }}>
       <div
@@ -499,7 +627,6 @@ function PerformanceTable({
         <thead>
           <tr>
             <th>{firstColumnLabel}</th>
-            {showOffer && <th>Offer</th>}
             <th>New Leads</th>
             <th>Booked</th>
             <th>Booking Rate</th>
@@ -513,54 +640,35 @@ function PerformanceTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((s) => {
-            const showDenominator = s.callsTaken + s.noShows;
-            const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
-            const showRate = showDenominator > 0 ? (s.callsTaken / showDenominator) * 100 : 0;
-            const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
-            const cc = clientColor(s.client);
-
+          {rows.map((row) => {
+            const canExpand = !!row.subRows && row.subRows.length > 1;
+            const isOpen = expanded.has(row.key);
             return (
-              <tr key={s.key}>
-                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                  {s.label}
-                </td>
-                {showOffer && <td>
-                  <span style={{ color: cc, fontWeight: 600 }}>
-                    {CLIENT_BADGE_LABELS[s.client] ?? s.client}
-                  </span>
-                </td>}
-                <td>{fmtNumber(s.newLeads)}</td>
-                <td>{fmtNumber(s.callsBooked)}</td>
-                <td>
-                  <span style={{ color: s.newLeads > 0 ? rateColor(bookingRate, 15, 8) : "var(--text-secondary)", fontWeight: 600 }}>
-                    {formatRate(s.callsBooked, s.newLeads)}
-                  </span>
-                </td>
-                <td>{fmtNumber(s.callsTaken)}</td>
-                <td style={{ color: s.wins > 0 ? "var(--success)" : "var(--text-secondary)" }}>
-                  {fmtNumber(s.wins)}
-                </td>
-                <td style={{ color: s.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
-                  {fmtNumber(s.noShows)}
-                </td>
-                <td style={{ color: "var(--success)", fontWeight: 600 }}>
-                  {fmtDollars(s.cashCollected)}
-                </td>
-                <td style={{ color: s.subsSold > 0 ? "var(--accent)" : "var(--text-secondary)" }}>
-                  {fmtNumber(s.subsSold)}
-                </td>
-                <td>
-                  <span style={{ color: showDenominator > 0 ? rateColor(showRate, 65, 45) : "var(--text-secondary)", fontWeight: 600 }}>
-                    {formatRate(s.callsTaken, showDenominator)}
-                  </span>
-                </td>
-                <td>
-                  <span style={{ color: s.callsTaken > 0 ? rateColor(closeRate, 40, 25) : "var(--text-secondary)", fontWeight: 600 }}>
-                    {formatRate(s.wins, s.callsTaken)}
-                  </span>
-                </td>
-              </tr>
+              <Fragment key={row.key}>
+                <tr
+                  onClick={canExpand ? () => toggle(row.key) : undefined}
+                  style={canExpand ? { cursor: "pointer" } : undefined}
+                >
+                  <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                    {canExpand && (
+                      <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)" }}>
+                        {isOpen ? "▾" : "▸"}
+                      </span>
+                    )}
+                    {row.label}
+                  </td>
+                  <MetricCells s={row} />
+                </tr>
+                {canExpand && isOpen &&
+                  row.subRows!.map((sub) => (
+                    <tr key={sub.key} style={{ background: "rgba(127,127,127,0.06)" }}>
+                      <td style={{ paddingLeft: 28, fontSize: 12 }}>
+                        <span style={{ color: clientColor(sub.client), fontWeight: 600 }}>{sub.label}</span>
+                      </td>
+                      <MetricCells s={sub} />
+                    </tr>
+                  ))}
+              </Fragment>
             );
           })}
         </tbody>
