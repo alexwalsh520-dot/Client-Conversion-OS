@@ -18,6 +18,7 @@ interface ResponseTimeGroup {
   id: string;
   label: string;
   averageSeconds: number | null;
+  medianSeconds: number | null;
   sampleCount: number;
   fastestSeconds: number | null;
   slowestSeconds: number | null;
@@ -178,12 +179,18 @@ export default function ResponseTimes({ filters }: ResponseTimesProps) {
           Response Time Tracking
         </h2>
 
-        <div className="metric-grid metric-grid-3" style={{ marginBottom: 12 }}>
+        <div className="metric-grid metric-grid-4" style={{ marginBottom: 12 }}>
           <MetricCard
             icon={<Clock3 size={12} style={{ color: responseColor(data.summary.averageSeconds) }} />}
             label="Team Avg"
             value={formatDuration(data.summary.averageSeconds)}
             color={responseColor(data.summary.averageSeconds)}
+          />
+          <MetricCard
+            icon={<Clock3 size={12} style={{ color: responseColor(data.summary.medianSeconds) }} />}
+            label="Team Median"
+            value={formatDuration(data.summary.medianSeconds)}
+            color={responseColor(data.summary.medianSeconds)}
           />
           <MetricCard
             icon={<AlertTriangle size={12} style={{ color: "var(--danger)" }} />}
@@ -276,6 +283,7 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
             <tr>
               <th>Name</th>
               <th>Avg</th>
+              <th>Median</th>
               <th>Fastest</th>
               <th>Slowest</th>
             </tr>
@@ -283,13 +291,16 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ color: "var(--text-muted)" }}>No data yet</td>
+                <td colSpan={5} style={{ color: "var(--text-muted)" }}>No data yet</td>
               </tr>
             ) : rows.map((row) => (
               <tr key={row.id}>
                 <td style={{ fontWeight: 650, color: "var(--text-primary)" }}>{row.label}</td>
                 <td style={{ color: responseColor(row.averageSeconds), fontWeight: 650 }}>
                   {formatDuration(row.averageSeconds)}
+                </td>
+                <td style={{ color: responseColor(row.medianSeconds), fontWeight: 650 }}>
+                  {formatDuration(row.medianSeconds)}
                 </td>
                 <td>{formatDuration(row.fastestSeconds)}</td>
                 <td>{formatDuration(row.slowestSeconds)}</td>

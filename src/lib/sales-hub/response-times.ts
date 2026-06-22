@@ -74,6 +74,7 @@ export interface ResponseTimeGroup {
   id: string;
   label: string;
   averageSeconds: number | null;
+  medianSeconds: number | null;
   sampleCount: number;
   fastestSeconds: number | null;
   slowestSeconds: number | null;
@@ -368,6 +369,14 @@ function findAssignmentForMessage(
   return findAssignment(assignments, clientKey, manychatSubscriberId, at);
 }
 
+// True median (middle value) — robust to outliers, so one 3-hour reply can't
+// skew it the way the average gets skewed.
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 function summarizeSamples(id: string, label: string, samples: ResponseSample[]): ResponseTimeGroup {
   const hourly = bucketSamplesByHour(samples);
 
@@ -376,6 +385,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
       id,
       label,
       averageSeconds: null,
+      medianSeconds: null,
       sampleCount: 0,
       fastestSeconds: null,
       slowestSeconds: null,
@@ -389,6 +399,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
     id,
     label,
     averageSeconds: values.reduce((sum, value) => sum + value, 0) / values.length,
+    medianSeconds: medianOf(values),
     sampleCount: samples.length,
     fastestSeconds: Math.min(...values),
     slowestSeconds: Math.max(...values),
@@ -550,22 +561,25 @@ export async function getResponseTimeMetrics(params: {
   }
 
   // Stop tracking a conversation FROM THE MOMENT it's marked done. When a lead is
-  // tagged Booked Call / Subscription Sold / Closed in ManyChat, the conversation
-  // has reached a terminal outcome, so any response to a message received at or
-  // after that instant must not count toward response times (it was unfairly
-  // dinging setters). Replies to messages received BEFORE the tag still count —
-  // that was real setting work.
+  // tagged Booked Call / Subscription Sold / Closed / Waiting On Response in
+  // ManyChat, the setter no longer owes a fast reply, so any response to a message
+  // received at or after that instant must not count toward response times (it was
+  // unfairly dinging setters). Replies to messages received BEFORE the tag still
+  // count — that was real setting work.
   //
   // We read the tag-application time from the synced ManyChat tag events
   // (manychat_tag_events, already loaded as assignmentRows above). For this to
-  // fire, those terminal tags must be sent to /api/sales-hub/manychat-webhook
-  // (an External Request per tag, like new_lead) so CCOS records WHEN each was
-  // applied — ManyChat's API does not expose tag timestamps.
+  // fire, those tags must be sent to /api/sales-hub/manychat-webhook (an External
+  // Request per tag, like new_lead) so CCOS records WHEN each was applied —
+  // ManyChat's API does not expose tag timestamps. Matched substrings: booked /
+  // sold / closed / waiting (so "Sales - Booked Call", "AI-CLOSED", "Waiting On
+  // Response" all count; "Sales - Yet To Respond" intentionally does NOT).
+  const STOP_TAG_SUBSTRINGS = ["booked", "sold", "closed", "waiting"];
   const doneAtBySubscriber = new Map<string, number>();
   for (const event of assignmentRows) {
     if (!event.subscriber_id || !event.event_at) continue;
     const name = (event.tag_name || "").toLowerCase();
-    if (!name.includes("booked") && !name.includes("sold") && !name.includes("closed")) continue;
+    if (!STOP_TAG_SUBSTRINGS.some((sub) => name.includes(sub))) continue;
     const at = new Date(event.event_at).getTime();
     if (Number.isNaN(at)) continue;
     const prev = doneAtBySubscriber.get(event.subscriber_id);
