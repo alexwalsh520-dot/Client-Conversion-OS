@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import AccessGate from "@/components/AccessGate";
 import GlassGlow from "@/components/GlassGlow";
 import SessionWrapper from "@/components/SessionWrapper";
+import ThemeInit from "@/components/ThemeInit";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <SessionWrapper>
+          <ThemeInit />
           <div className="app-layout">
             <Sidebar />
             <main className="main-content">
