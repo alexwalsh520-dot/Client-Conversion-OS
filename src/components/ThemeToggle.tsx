@@ -66,7 +66,15 @@ export default function ThemeToggle() {
   useEffect(() => {
     if (status === "loading") return;
     const key = userKey(email);
-    const resolved = readTheme(key) ?? readTheme(LAST_KEY) ?? osPreference();
+    // Prefer this user's explicit saved choice. Otherwise DO NOT re-resolve to the
+    // OS preference and flip — keep exactly what the no-flash loader already painted
+    // on <html> (from the last choice / OS). This is what stops the theme from
+    // flipping on reload, and from flipping when Settings (the only page this toggle
+    // mounts on) opens. Always re-sync storage so future reloads match.
+    const painted: Theme = document.documentElement.classList.contains("light")
+      ? "light"
+      : "dark";
+    const resolved = readTheme(key) ?? painted;
     setTheme(resolved);
     applyTheme(resolved, key);
   }, [email, status]);

@@ -339,6 +339,10 @@ body {
   font-family: inherit;
   text-align: left;
   border-radius: 8px;
+  /* Override the label's tall asymmetric 16px/6px padding so the Marketing
+     dropdown header is a compact, balanced section toggle (was looking boxy). */
+  padding: 7px 12px;
+  margin-top: 4px;
   transition: color 0.2s ease, background 0.2s ease;
 }
 

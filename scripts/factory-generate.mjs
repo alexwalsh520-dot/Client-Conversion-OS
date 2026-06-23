@@ -97,9 +97,16 @@ const SUBJECT_PHOTO_BY_LABEL = {};
 // Stat/chart ads: matching style + a clean chart/figure graphic in the middle band.
 const CHART_NOTE_BY_LABEL = {
   B16: "Also include a simple, clean, minimal pie/donut chart in the middle band illustrating the breakdown referenced in the copy. Flat and legible, styled to match. A graphic element, not a photo.",
-  B17: "Also include a simple, clean stat/figure graphic in the middle band that visualizes the statistic in the copy. Flat, minimal, legible, styled to match.",
   B18: "Also include a simple, clean stat/figure graphic in the middle band that visualizes the statistic in the copy. Flat, minimal, legible, styled to match.",
+  // B17 chart removed per revision ("get rid of the stat chart").
 };
+// Revisions: rebuild these from the man's PHOTO alone (single ref) so the photo's
+// own background is kept (the two-ref version blended in the winning ad's tank bg).
+const REVISION_SINGLE_REF = new Set(["C31", "C34", "C39"]);
+const REVISION_PHOTO = { C31: "IMG_0148.JPG", C34: "IMG_0835.JPG", C39: "IMG_0851.JPG" };
+// Copy was already corrected in the DB for these; don't also append the note to the
+// prompt (would make the model re-edit copy that's already fixed).
+const COPY_ONLY_REVISIONS = new Set(["B21", "B25", "B30", "C26", "C40"]);
 
 // Frame-safe layout (Alex HARD RULE, from the proven Antwan generations): Instagram
 // overlays the account name at the very top and the Send Message button at the bottom.
@@ -308,15 +315,18 @@ function buildPrompt(item, preserveScreenshot) {
 }
 
 // Match-style prompt: reproduce a proven winning ad's exact look with new copy.
-function buildMatchPrompt(item, chartNote, hasSubject) {
+function buildMatchPrompt(item, chartNote, refMode) {
   const copy = item.copy_text.trim();
   const reds = pickRedPhrases(copy);
   const redLine = reds.length
     ? `Color ONLY these exact phrases red, and keep EVERY other word white: ${reds.map((r) => `"${r}"`).join(", ")}. Do not make any other words red.`
     : "Keep all text white.";
-  const refLine = hasSubject
-    ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Reference image 2 is a PHOTO of the man — feature HIM as the subject (his real face, physique, skin tone, tattoos). Put the man from image 2 into the ad style of image 1. Do not distort or beautify him; no before/after comparison."
-    : "The reference image is one of our PROVEN finished ads — copy its EXACT visual style and keep the man in it. No before/after comparison.";
+  const refLine =
+    refMode === "photo"
+      ? "The reference image is a PHOTO of the man. Use HIM as the subject and keep his real face, physique, skin tone, tattoos, and his ORIGINAL background and setting exactly as in the photo. Do NOT composite, swap, or invent a different background. No before/after comparison."
+      : refMode === "two"
+        ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Reference image 2 is a PHOTO of the man — feature HIM as the subject (his real face, physique, skin tone, tattoos). Put the man from image 2 into the ad style of image 1. Do not distort or beautify him; no before/after comparison."
+        : "The reference image is one of our PROVEN finished ads — copy its EXACT visual style and keep the man in it. No before/after comparison.";
   return [
     "Create a finished 9:16 vertical Instagram Story DM ad.",
     refLine,
@@ -364,6 +374,7 @@ async function getProjectId() {
 async function main() {
   const args = process.argv.slice(2);
   const all = args.includes("--all");
+  const revisionsMode = args.includes("--revisions");
   const explicitLabels = args.filter((a) => !a.startsWith("--"));
 
   const { path: credPath, cleanup } = await resolveCredentialsPath();
@@ -381,7 +392,15 @@ async function main() {
   await fsp.mkdir(CAMPAIGN_DIR, { recursive: true });
 
   let labels;
-  if (all) {
+  if (revisionsMode) {
+    const { data } = await sb
+      .from("factory_items")
+      .select("label")
+      .eq("project_id", projectId)
+      .eq("stage", "revision")
+      .order("sort_order", { ascending: true });
+    labels = (data || []).map((r) => r.label);
+  } else if (all) {
     const { data } = await sb
       .from("factory_items")
       .select("label")
@@ -411,17 +430,28 @@ async function main() {
       // Resolve reference(s) + prompt by style.
       let refPaths, prompt, refLabel;
       if (!PRESERVE_SCREENSHOT_LABELS.has(label)) {
-        // Match style = TWO references (the Antwan recipe): a winning ad supplies the
-        // style/font/layout, a fresh Tyson photo supplies the new subject. Rotated by
-        // index so the matching ads use different winners + photos (variety).
-        const styleRef = STYLE_REF_BY_LABEL[label] || STYLE_REFS[genIndex % STYLE_REFS.length];
-        if (!fs.existsSync(styleRef)) throw new Error(`Style reference missing: ${styleRef}`);
-        const subjFile = SUBJECT_PHOTO_BY_LABEL[label] || SUBJECT_PHOTOS[genIndex % SUBJECT_PHOTOS.length];
-        const subjPath = path.join(RAW_PICS_DIR, subjFile);
-        if (!fs.existsSync(subjPath)) throw new Error(`Subject photo missing: ${subjPath}`);
-        refPaths = [styleRef, subjPath];
-        prompt = buildMatchPrompt(item, CHART_NOTE_BY_LABEL[label], true);
-        refLabel = `style=${path.basename(styleRef)} + subject=${subjFile} (MATCH)`;
+        if (item.stage === "revision" && REVISION_SINGLE_REF.has(label)) {
+          // Revision: rebuild from the man's PHOTO alone, keeping its own background
+          // (the two-ref version was blending the winning ad's tank background in).
+          const subjFile = REVISION_PHOTO[label] || SUBJECT_PHOTOS[genIndex % SUBJECT_PHOTOS.length];
+          const subjPath = path.join(RAW_PICS_DIR, subjFile);
+          if (!fs.existsSync(subjPath)) throw new Error(`Subject photo missing: ${subjPath}`);
+          refPaths = [subjPath];
+          prompt = buildMatchPrompt(item, undefined, "photo");
+          refLabel = `photo-only=${subjFile} (REVISION)`;
+        } else {
+          // Match style = TWO references (the Antwan recipe): a winning ad supplies the
+          // style/font/layout, a fresh Tyson photo supplies the new subject. Rotated by
+          // index so the matching ads use different winners + photos (variety).
+          const styleRef = STYLE_REF_BY_LABEL[label] || STYLE_REFS[genIndex % STYLE_REFS.length];
+          if (!fs.existsSync(styleRef)) throw new Error(`Style reference missing: ${styleRef}`);
+          const subjFile = SUBJECT_PHOTO_BY_LABEL[label] || SUBJECT_PHOTOS[genIndex % SUBJECT_PHOTOS.length];
+          const subjPath = path.join(RAW_PICS_DIR, subjFile);
+          if (!fs.existsSync(subjPath)) throw new Error(`Subject photo missing: ${subjPath}`);
+          refPaths = [styleRef, subjPath];
+          prompt = buildMatchPrompt(item, CHART_NOTE_BY_LABEL[label], "two");
+          refLabel = `style=${path.basename(styleRef)} + subject=${subjFile} (MATCH)`;
+        }
       } else {
         let refFile = REFERENCE_BY_LABEL[label];
         if (!refFile && /img\s+([A-Z0-9_-]+)/i.test(item.image_direction || "")) {
@@ -438,6 +468,13 @@ async function main() {
         refLabel = `${refFile}${preserve ? " (PRESERVE screenshot UI)" : ""}`;
       }
       console.log(`References: ${refLabel}`);
+
+      // Revisions: fold the user's note into the prompt (except copy-only edits,
+      // whose copy_text was already corrected in the DB).
+      if (item.stage === "revision" && item.revision_note && !COPY_ONLY_REVISIONS.has(label)) {
+        prompt += `\n\nREVISION REQUESTED — apply this exact change while keeping everything else the same: ${item.revision_note}`;
+        console.log(`  revision note applied: ${item.revision_note.slice(0, 80)}`);
+      }
 
       // 1-3. Submit, poll, download — retry transient Higgsfield errors (502s,
       // timeouts, CDN hiccups) so one blip never loses an ad.
@@ -487,9 +524,12 @@ async function main() {
       console.log(`Public URL: ${publicUrl}`);
 
       // 6. Update factory_items.
+      const upd = { image_url: publicUrl, stage: "image_generated", updated_at: new Date().toISOString() };
+      // Clear the note once a revision has been applied (history keeps it on the version row).
+      if (item.stage === "revision") upd.revision_note = null;
       const { error: upErr } = await sb
         .from("factory_items")
-        .update({ image_url: publicUrl, stage: "image_generated", updated_at: new Date().toISOString() })
+        .update(upd)
         .eq("id", item.id);
       if (upErr) throw new Error(`DB update failed: ${upErr.message}`);
       console.log(`Updated factory_items: stage=image_generated`);
