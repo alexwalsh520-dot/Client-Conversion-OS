@@ -2734,6 +2734,9 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'adset' | 'ad'
   const [selectedCampaignIds, setSelectedCampaignIds] = useState(()=>new Set()); // Ads-Manager-style checkbox selection
   const [selectedAdsetIds, setSelectedAdsetIds] = useState(()=>new Set()); // Ads-Manager-style ad-set checkbox selection (display filter only)
+  // When the account or status filter changes, a previously-selected campaign/ad-set
+  // may no longer be in view — leaving the table filtered to nothing. Drop the selection.
+  useEffect(()=>{ setSelectedCampaignIds(new Set()); setSelectedAdsetIds(new Set()); }, [account, status]);
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
   const [expandedDays, setExpandedDays] = useState({});
   const [expandedAdsets, setExpandedAdsets] = useState({}); // retained for legacy branch; flat views are primary
@@ -3163,12 +3166,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
               return (
                 <tr key={as.campaignId+":adset:"+(as.adsetId||as.adsetName)} className="flat-row">
                   <td>
-                    <span
-                      className="flat-cell"
-                      onMouseEnter={(e)=>showTablePreview(e, as)}
-                      onMouseMove={(e)=>moveTablePreview(e, as)}
-                      onMouseLeave={()=>setPreview(null)}
-                    >
+                    <span className="flat-cell">
                       <input type="checkbox" className="camp-check" checked={selectedAdsetIds.has(adsetSelectId(as.adsetId, as.adsetName))} onClick={(e)=>e.stopPropagation()} onChange={()=>toggleAdsetSelect(adsetSelectId(as.adsetId, as.adsetName))} />
                       <span className={"camp-dot "+as.dot}></span>
                       <span className="flat-camp">{as.campaignName}</span>
@@ -3186,13 +3184,18 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
               return (
                 <tr key={ad.campaignId+":ad:"+ad.adId} className="flat-row">
                   <td>
-                    <span
-                      className="flat-cell"
-                      onMouseEnter={(e)=>showTablePreview(e, ad)}
-                      onMouseMove={(e)=>moveTablePreview(e, ad)}
-                      onMouseLeave={()=>setPreview(null)}
-                    >
+                    <span className="flat-cell">
                       <span className={"camp-dot "+ad.dot}></span>
+                      {tablePreviewUrlFor(ad) && (
+                        <span
+                          className="ad-preview-trigger"
+                          title="Hover to preview the ad creative"
+                          style={{cursor:"zoom-in",marginRight:"7px",opacity:.75,fontSize:"12px",userSelect:"none"}}
+                          onMouseEnter={(e)=>showTablePreview(e, ad)}
+                          onMouseMove={(e)=>moveTablePreview(e, ad)}
+                          onMouseLeave={()=>setPreview(null)}
+                        >🖼</span>
+                      )}
                       <span className="flat-camp">{ad.campaignName}</span>
                       <span className="flat-sep">·</span>
                       <span className="ad-id mono">{ad.adId}</span>
@@ -3435,17 +3438,22 @@ function ROASChart({campaigns=CAMPAIGNS}){
   );
 }
 
-function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null}){
+function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null, account="all", status="all"}){
   const labels = labelsFromCampaigns(campaigns);
   const spend = seriesForCampaignKey("spend", "all", campaigns, labels);
   const confirmedRevenue = seriesForCampaignKey("collected", "all", campaigns, labels);
   const totalSpend = spend.reduce((a,b)=>a+b,0);
-  const confirmed = Number(
+  const scopedConfirmed = confirmedRevenue.reduce((a,b)=>a+b,0);
+  // When the view is filtered to one account/status, the global attribution totals
+  // (every creator combined) must NOT be divided by this slice's spend — that prints a
+  // fake multiple (e.g. all revenue / tiny Antwan spend = 78x). Scope to the slice instead.
+  const filtered = account !== "all" || status !== "all";
+  const confirmed = filtered ? scopedConfirmed : Number(
     dashboard?.attribution?.selectedRange?.paidAttributedRevenue ??
     dashboard?.summary?.paidAttributedRevenue ??
-    confirmedRevenue.reduce((a,b)=>a+b,0)
+    scopedConfirmed
   );
-  const unattributed = Number(
+  const unattributed = filtered ? 0 : Number(
     dashboard?.attribution?.selectedRange?.unattributedRevenue ??
     dashboard?.summary?.unattributedRevenue ??
     0
@@ -3460,7 +3468,7 @@ function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null}){
           <div className="chart-title">Potential ROAS</div>
           <div className="chart-subtitle">
             <span className="chart-big">{potentialRoas.toFixed(2)}×</span>
-            <span className="chart-sub-label">if unresolved is paid</span>
+            <span className="chart-sub-label">{filtered ? "ad-attributed, this view" : "if unresolved is paid"}</span>
           </div>
         </div>
       </div>
@@ -3469,15 +3477,19 @@ function PotentialROASCard({campaigns=CAMPAIGNS, dashboard=null}){
           <span>Confirmed paid revenue</span>
           <strong>{fmtUsd(confirmed)}</strong>
         </div>
-        <div className="potential-roas-row warn">
-          <span>+ Unattributed revenue</span>
-          <strong>{fmtUsd(unattributed)}</strong>
-        </div>
-        <div className="potential-roas-divider"></div>
-        <div className="potential-roas-row total">
-          <span>Potential paid revenue</span>
-          <strong>{fmtUsd(potential)}</strong>
-        </div>
+        {!filtered && (
+          <React.Fragment>
+            <div className="potential-roas-row warn">
+              <span>+ Unattributed revenue</span>
+              <strong>{fmtUsd(unattributed)}</strong>
+            </div>
+            <div className="potential-roas-divider"></div>
+            <div className="potential-roas-row total">
+              <span>Potential paid revenue</span>
+              <strong>{fmtUsd(potential)}</strong>
+            </div>
+          </React.Fragment>
+        )}
         <div className="potential-roas-spacer"></div>
         <div className="potential-roas-row">
           <span>Ad spend</span>
@@ -4143,7 +4155,7 @@ function GenericMetricCard({metricId, campaigns=CAMPAIGNS}){
 
 const METRIC_CARD_DEFS = [
   {id:"roas", label:"ROAS", meta:"Revenue compared with ad spend", render:({campaigns})=><ROASChart campaigns={campaigns}/>},
-  {id:"potential_roas", label:"Potential ROAS", meta:"Confirmed plus unattributed revenue", render:({campaigns,dashboard})=><PotentialROASCard campaigns={campaigns} dashboard={dashboard}/>},
+  {id:"potential_roas", label:"Potential ROAS", meta:"Confirmed plus unattributed revenue", render:({campaigns,dashboard,account,status})=><PotentialROASCard campaigns={campaigns} dashboard={dashboard} account={account} status={status}/>},
   {id:"ad_roas", label:"Ad ROAS", meta:"Ad-level revenue view", render:({campaigns,dashboard})=><AdROASChart campaigns={campaigns} dashboard={dashboard}/>},
   {id:"cost_per_dm", label:"Cost per DM", meta:"Spend divided by messages", render:({campaigns})=><CostPerDMChart campaigns={campaigns}/>},
   {id:"cac", label:"CAC", meta:"Cost per client", render:({campaigns})=><CACChart campaigns={campaigns}/>},
@@ -4253,7 +4265,7 @@ function MetricAddModal({layout, onApply, onClose}){
   );
 }
 
-function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null}){
+function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null, account="all", status="all"}){
   const [layout, setLayout] = useState(loadMetricLayout);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -4460,7 +4472,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null}){
         onPointerDown={beginPointerDrag}
         registerRef={registerRef}
       >
-        {def.render({campaigns,dashboard})}
+        {def.render({campaigns,dashboard,account,status})}
       </MetricCardShell>
     );
   };
@@ -4482,7 +4494,7 @@ function MetricCardBoard({campaigns=CAMPAIGNS, dashboard=null}){
       </div>
       {floatingDef && (
         <div className="metric-floating-card" style={floatingStyle}>
-          {floatingDef.render({campaigns,dashboard})}
+          {floatingDef.render({campaigns,dashboard,account,status})}
         </div>
       )}
       {pickerOpen && <MetricAddModal layout={visibleLayout} onApply={applyPicker} onClose={()=>setPickerOpen(false)}/>}
@@ -10996,7 +11008,7 @@ function App(){
           </div>
 
           {/* Charts */}
-          <MetricCardBoard campaigns={metricCampaigns} dashboard={dashboard}/>
+          <MetricCardBoard campaigns={metricCampaigns} dashboard={dashboard} account={account} status={status}/>
 
           <TasksSection dashboard={dashboard} campaigns={resolveCampaigns} onResolve={onResolveAlert} onToast={showToast} onOpenWorkspace={()=>setWorkspaceOpen(true)}/>
 
