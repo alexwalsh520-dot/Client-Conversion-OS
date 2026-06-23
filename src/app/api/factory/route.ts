@@ -124,6 +124,22 @@ export async function GET(req: NextRequest) {
       items = (itemRows ?? []) as FactoryItem[];
     }
 
+    // Version history per item (newest first) — additive, read-only.
+    const versionsByItem = new Map<string, Array<Record<string, unknown>>>();
+    if (items.length) {
+      const { data: vRows, error: vErr } = await sb
+        .from("factory_item_versions")
+        .select("item_id, version, image_url, revision_note, created_at")
+        .in("item_id", items.map((i) => i.id))
+        .order("version", { ascending: false });
+      if (vErr) throw vErr;
+      for (const v of vRows ?? []) {
+        const arr = versionsByItem.get(v.item_id as string) ?? [];
+        arr.push(v);
+        versionsByItem.set(v.item_id as string, arr);
+      }
+    }
+
     const byProject = new Map<string, FactoryItem[]>();
     for (const it of items) {
       if (!byProject.has(it.project_id)) byProject.set(it.project_id, []);
@@ -139,7 +155,11 @@ export async function GET(req: NextRequest) {
         completed: its.filter((i) => i.stage === "completed").length,
         total: its.length,
       };
-      return { ...p, counts, items: its };
+      return {
+        ...p,
+        counts,
+        items: its.map((i) => ({ ...i, versions: versionsByItem.get(i.id) ?? [] })),
+      };
     });
 
     return NextResponse.json({ projects: out });

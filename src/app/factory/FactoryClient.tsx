@@ -10,6 +10,7 @@ import {
   RotateCcw,
   ChevronLeft,
   Image as ImageIcon,
+  History,
   X,
 } from "lucide-react";
 import "./factory.css";
@@ -29,6 +30,14 @@ interface Item {
   image_url: string | null;
   revision_note: string | null;
   sort_order: number;
+  versions?: Version[];
+}
+
+interface Version {
+  version: number;
+  image_url: string;
+  revision_note: string | null;
+  created_at: string;
 }
 
 interface Project {
@@ -81,6 +90,7 @@ export default function FactoryClient() {
   const [styleFilter, setStyleFilter] = useState<string>("all");
   const [groupByBucket, setGroupByBucket] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [historyItem, setHistoryItem] = useState<Item | null>(null);
   const [filesFolder, setFilesFolder] = useState<string>("all"); // bucket folder in Files view
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -217,6 +227,7 @@ export default function FactoryClient() {
           onBack={() => setView("board")}
           onApprove={approve}
           onRevision={sendRevision}
+          onHistory={setHistoryItem}
         />
       ) : (
         <>
@@ -301,6 +312,7 @@ export default function FactoryClient() {
               onRevision={sendRevision}
               onExport={exportCompleted}
               onLightbox={setLightbox}
+              onHistory={setHistoryItem}
               completedCount={
                 filteredItems.filter((i) => i.stage === "completed").length
               }
@@ -314,6 +326,14 @@ export default function FactoryClient() {
             />
           )}
         </>
+      )}
+
+      {historyItem && (
+        <VersionHistory
+          item={historyItem}
+          onClose={() => setHistoryItem(null)}
+          onLightbox={setLightbox}
+        />
       )}
 
       {lightbox && (
@@ -339,6 +359,7 @@ function BoardView({
   onRevision,
   onExport,
   onLightbox,
+  onHistory,
   completedCount,
 }: {
   items: Item[];
@@ -347,6 +368,7 @@ function BoardView({
   onRevision: (id: string, note: string) => void;
   onExport: () => void;
   onLightbox: (url: string) => void;
+  onHistory: (item: Item) => void;
   completedCount: number;
 }) {
   return (
@@ -377,6 +399,7 @@ function BoardView({
                           onApprove={onApprove}
                           onRevision={onRevision}
                           onLightbox={onLightbox}
+                          onHistory={onHistory}
                         />
                       ))}
                     </div>
@@ -388,6 +411,7 @@ function BoardView({
                       onApprove={onApprove}
                       onRevision={onRevision}
                       onLightbox={onLightbox}
+                      onHistory={onHistory}
                     />
                   ))}
             </div>
@@ -407,16 +431,75 @@ function groupedByBucket(items: Item[]): [string, Item[]][] {
   return Array.from(map.entries());
 }
 
+// =========================================================================
+// Version history — subtle vN pill opens this read-only past-images modal
+// =========================================================================
+function VersionHistory({
+  item,
+  onClose,
+  onLightbox,
+}: {
+  item: Item;
+  onClose: () => void;
+  onLightbox: (url: string) => void;
+}) {
+  const versions = (item.versions ?? []).slice().sort((a, b) => b.version - a.version);
+  return (
+    <div className="fc-history" onClick={onClose}>
+      <div className="fc-history-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="fc-history-head">
+          <span className="fc-history-title">{item.label} · version history</span>
+          <button className="fc-history-close" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        {versions.length === 0 ? (
+          <div className="fc-col-empty">No versions yet.</div>
+        ) : (
+          <div className="fc-history-list">
+            {versions.map((v) => (
+              <div key={v.version} className="fc-history-row">
+                {v.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="fc-history-thumb"
+                    src={v.image_url}
+                    alt={`v${v.version}`}
+                    onClick={() => onLightbox(v.image_url)}
+                  />
+                ) : (
+                  <div className="fc-history-noimg">no image</div>
+                )}
+                <div className="fc-history-meta">
+                  <span className="fc-history-vlabel">v{v.version}</span>
+                  <span className="fc-history-date">
+                    {new Date(v.created_at).toLocaleString()}
+                  </span>
+                  <span className="fc-history-note">
+                    {v.revision_note ? v.revision_note : "Original"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Card({
   item,
   onApprove,
   onRevision,
   onLightbox,
+  onHistory,
 }: {
   item: Item;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
   onLightbox: (url: string) => void;
+  onHistory: (item: Item) => void;
 }) {
   const [note, setNote] = useState("");
   const [open, setOpen] = useState(false);
@@ -434,6 +517,15 @@ function Card({
         <span className="fc-card-label">{item.label}</span>
         <span className={bucketClass(item.bucket)}>{BUCKET_LABEL[item.bucket] || item.bucket}</span>
         {item.style && <span className="fc-tag-style">{prettyStyle(item.style)}</span>}
+        {(item.versions?.length ?? 0) > 0 && (
+          <button
+            className="fc-vpill"
+            onClick={() => onHistory(item)}
+            title="Version history"
+          >
+            <History size={10} /> v{item.versions!.length}
+          </button>
+        )}
       </div>
 
       {item.image_url ? (
@@ -499,12 +591,14 @@ function DetailView({
   onBack,
   onApprove,
   onRevision,
+  onHistory,
 }: {
   project: Project;
   items: Item[];
   onBack: () => void;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
+  onHistory: (item: Item) => void;
 }) {
   return (
     <div className="fc-detail">
@@ -518,7 +612,7 @@ function DetailView({
 
       <div className="fc-detail-list">
         {items.map((it) => (
-          <DetailRow key={it.id} item={it} onApprove={onApprove} onRevision={onRevision} />
+          <DetailRow key={it.id} item={it} onApprove={onApprove} onRevision={onRevision} onHistory={onHistory} />
         ))}
       </div>
     </div>
@@ -529,10 +623,12 @@ function DetailRow({
   item,
   onApprove,
   onRevision,
+  onHistory,
 }: {
   item: Item;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
+  onHistory: (item: Item) => void;
 }) {
   const [note, setNote] = useState("");
   const submit = () => {
@@ -550,6 +646,11 @@ function DetailRow({
         <span className={`fc-stage-pill fc-stage-${item.stage}`}>
           {STAGE_COLUMNS.find((s) => s.key === item.stage)?.label}
         </span>
+        {(item.versions?.length ?? 0) > 0 && (
+          <button className="fc-vpill" onClick={() => onHistory(item)} title="Version history">
+            <History size={10} /> v{item.versions!.length}
+          </button>
+        )}
       </div>
       <div className="fc-detail-body">
         <pre className="fc-detail-copy">{item.copy_text}</pre>

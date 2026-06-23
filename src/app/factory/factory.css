@@ -688,3 +688,124 @@
   color: #fff;
   cursor: pointer;
 }
+
+/* ---- Version history (subtle vN pill + read-only modal) ---- */
+.fc-vpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.fc-vpill:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.fc-history {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.fc-history-panel {
+  width: min(520px, 94vw);
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--surface-1, #0f0f12);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.fc-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  position: sticky;
+  top: 0;
+  background: var(--surface-1, #0f0f12);
+}
+.fc-history-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.fc-history-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.fc-history-close:hover {
+  color: var(--text-primary);
+}
+.fc-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.fc-history-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+}
+.fc-history-thumb {
+  width: 64px;
+  height: 114px;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: #000;
+}
+.fc-history-noimg {
+  width: 64px;
+  height: 114px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  flex-shrink: 0;
+}
+.fc-history-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.fc-history-vlabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.fc-history-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.fc-history-note {
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
