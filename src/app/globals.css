@@ -346,10 +346,14 @@ body {
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.sidebar-section-toggle:hover,
-.sidebar-section-toggle-active {
+.sidebar-section-toggle:hover {
   color: var(--text-secondary);
   background: var(--hover-bg-subtle);
+}
+/* Active section header: no filled background behind the label, just the text color. */
+.sidebar-section-toggle-active {
+  color: var(--text-secondary);
+  background: transparent;
 }
 
 .sidebar-section-chevron {
