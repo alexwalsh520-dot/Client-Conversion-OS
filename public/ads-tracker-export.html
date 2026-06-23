@@ -2733,6 +2733,7 @@ const LOGGED_KEYS = new Set(["msgs","calls","taken","clients","collected"]);
 function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const [view, setView] = useState("campaign"); // 'campaign' | 'adset' | 'ad'
   const [selectedCampaignIds, setSelectedCampaignIds] = useState(()=>new Set()); // Ads-Manager-style checkbox selection
+  const [selectedAdsetIds, setSelectedAdsetIds] = useState(()=>new Set()); // Ads-Manager-style ad-set checkbox selection (display filter only)
   const [expanded, setExpanded] = useState({tyson:false, keith:false});
   const [expandedDays, setExpandedDays] = useState({});
   const [expandedAdsets, setExpandedAdsets] = useState({}); // retained for legacy branch; flat views are primary
@@ -2741,6 +2742,32 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     if(next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  const toggleAdsetSelect = (id) => setSelectedAdsetIds(prev => {
+    const next = new Set(prev);
+    if(next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  // Hover-to-preview the ad creative from the main table — reuses the SAME
+  // .ad-preview-popover / .ad-preview-image system as the Ad ROAS chart (display only).
+  const [preview, setPreview] = useState(null);
+  const tablePreviewUrlFor = (row) => {
+    if(!row) return null;
+    if(row.previewImageUrl || row.previewThumbnailUrl) return row.previewImageUrl || row.previewThumbnailUrl;
+    // Aggregate (campaign/ad-set) rows: fall back to a representative ad's creative if present.
+    const reps = row.ads || [];
+    for(const a of reps){ if(a.previewImageUrl || a.previewThumbnailUrl) return a.previewImageUrl || a.previewThumbnailUrl; }
+    return null;
+  };
+  const showTablePreview = (event, row) => {
+    const url = tablePreviewUrlFor(row);
+    if(!url) return;
+    setPreview({url, position: adPreviewPosition(event)});
+  };
+  const moveTablePreview = (event, row) => {
+    const url = tablePreviewUrlFor(row);
+    if(!url) return;
+    setPreview({url, position: adPreviewPosition(event)});
+  };
   const [sort, setSort] = useState({key:"date", dir:"desc"});
   const [widths, setWidths] = useState(DEFAULT_COL_WIDTHS);
   const [resizingKey, setResizingKey] = useState(null);
@@ -2822,12 +2849,22 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
     .sort((a,b) => compareBySort({...aggregate(a.rows), latestIso:a.latestIso}, {...aggregate(b.rows), latestIso:b.latestIso}));
   // Ads-Manager model: checked campaigns scope the flat Ad-set / Ad views (none checked = all).
   const flatScope = selectedCampaignIds.size ? visibleCampaigns.filter(c => selectedCampaignIds.has(c.id)) : visibleCampaigns;
-  const flatAdSets = flatScope
+  // Each ad-set's stable selection id mirrors its row key: real Meta adsetId when present, else its name.
+  const adsetSelectId = (adsetId, adsetName) => adsetId || adsetName || "(no ad set)";
+  const flatAdSetsAll = flatScope
     .flatMap(c => aggregateAdSetRowsForCampaign(c).map(as => ({...as, campaignId:c.id, campaignName:c.name, campaignShort:c.short, dot:c.dot})))
     .sort((a,b)=>(b.collected-a.collected)||(b.spend-a.spend));
-  const flatAds = flatScope
+  const flatAdsAll = flatScope
     .flatMap(c => aggregateAdRowsForCampaign(c).map(ad => ({...ad, campaignId:c.id, campaignName:c.name, campaignShort:c.short, dot:c.dot})))
     .sort((a,b)=>(b.collected-a.collected)||(b.spend-a.spend));
+  // Ads-Manager model (one level deeper than the campaign filter): checked ad sets
+  // narrow the Ad-set / Ad views. None checked = all (display filter only, no re-aggregation).
+  const flatAdSets = selectedAdsetIds.size
+    ? flatAdSetsAll.filter(as => selectedAdsetIds.has(adsetSelectId(as.adsetId, as.adsetName)))
+    : flatAdSetsAll;
+  const flatAds = selectedAdsetIds.size
+    ? flatAdsAll.filter(ad => selectedAdsetIds.has(adsetSelectId(ad.adsetId, ad.adsetName)))
+    : flatAdsAll;
   const tableCampaigns = augmentedCampaigns.filter(c => !c.attributionOnly);
 
   const setTableView = (next) => {
@@ -2879,12 +2916,18 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           </button>
         </div>
         <div className="tbl-toolbar-meta">
+          {selectedAdsetIds.size > 0 && (
+            <span className="tbl-sel-chip">
+              {selectedAdsetIds.size} ad set{selectedAdsetIds.size>1?"s":""} selected
+              <button className="tbl-sel-clear" onClick={()=>setSelectedAdsetIds(new Set())}>×</button>
+            </span>
+          )}
           {selectedCampaignIds.size > 0 ? (
             <span className="tbl-sel-chip">
               {selectedCampaignIds.size} campaign{selectedCampaignIds.size>1?"s":""} selected
               <button className="tbl-sel-clear" onClick={()=>setSelectedCampaignIds(new Set())}>×</button>
             </span>
-          ) : (view!=="campaign" ? <span>all campaigns · check one to isolate</span> : null)}
+          ) : (view!=="campaign" && selectedAdsetIds.size===0 ? <span>all campaigns · check one to isolate</span> : null)}
         </div>
       </div>
       <div className="tbl-scroll" style={{cursor: resizingKey?"col-resize":"auto"}}>
@@ -3120,7 +3163,13 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
               return (
                 <tr key={as.campaignId+":adset:"+(as.adsetId||as.adsetName)} className="flat-row">
                   <td>
-                    <span className="flat-cell">
+                    <span
+                      className="flat-cell"
+                      onMouseEnter={(e)=>showTablePreview(e, as)}
+                      onMouseMove={(e)=>moveTablePreview(e, as)}
+                      onMouseLeave={()=>setPreview(null)}
+                    >
+                      <input type="checkbox" className="camp-check" checked={selectedAdsetIds.has(adsetSelectId(as.adsetId, as.adsetName))} onClick={(e)=>e.stopPropagation()} onChange={()=>toggleAdsetSelect(adsetSelectId(as.adsetId, as.adsetName))} />
                       <span className={"camp-dot "+as.dot}></span>
                       <span className="flat-camp">{as.campaignName}</span>
                       <span className="flat-sep">·</span>
@@ -3137,7 +3186,12 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
               return (
                 <tr key={ad.campaignId+":ad:"+ad.adId} className="flat-row">
                   <td>
-                    <span className="flat-cell">
+                    <span
+                      className="flat-cell"
+                      onMouseEnter={(e)=>showTablePreview(e, ad)}
+                      onMouseMove={(e)=>moveTablePreview(e, ad)}
+                      onMouseLeave={()=>setPreview(null)}
+                    >
                       <span className={"camp-dot "+ad.dot}></span>
                       <span className="flat-camp">{ad.campaignName}</span>
                       <span className="flat-sep">·</span>
@@ -3159,6 +3213,11 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           </tbody>
         </table>
       </div>
+      {preview && (
+        <div className="ad-preview-popover" style={{left:preview.position.left, top:preview.position.top}}>
+          <img className="ad-preview-image" src={preview.url} alt="" />
+        </div>
+      )}
     </div>
   );
 }
