@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   Image as ImageIcon,
   History,
+  ChevronDown,
+  BookOpen,
   X,
 } from "lucide-react";
 import "./factory.css";
@@ -91,6 +93,7 @@ export default function FactoryClient() {
   const [groupByBucket, setGroupByBucket] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [historyItem, setHistoryItem] = useState<Item | null>(null);
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
   const [filesFolder, setFilesFolder] = useState<string>("all"); // bucket folder in Files view
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -233,15 +236,34 @@ export default function FactoryClient() {
         <>
           {/* Project bar: name + view toggle */}
           <div className="fc-projectbar">
-            <button
-              className="fc-projectname"
-              onClick={() => setView("detail")}
-              title="Open read-all detail view"
-            >
-              <span className="fc-projectname-text">{activeProject.name}</span>
-              {activeProject.client && <span className="fc-projectclient">{activeProject.client}</span>}
-              <span className="fc-projectcount">{activeProject.counts.total} ads</span>
-            </button>
+            <div className="fc-projectwrap">
+              <button
+                className="fc-projectname"
+                onClick={() => setProjMenuOpen((o) => !o)}
+                title="Switch project"
+              >
+                <span className="fc-projectname-text">{activeProject.name}</span>
+                {activeProject.client && <span className="fc-projectclient">{activeProject.client}</span>}
+                <span className="fc-projectcount">{activeProject.counts.total} ads</span>
+                <ChevronDown size={14} className="fc-proj-chev" />
+              </button>
+              {projMenuOpen && (
+                <div className="fc-projmenu">
+                  <div className="fc-projmenu-label">Projects</div>
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`fc-projmenu-item ${p.id === activeProjectId ? "on" : ""}`}
+                      onClick={() => { setActiveProjectId(p.id); setProjMenuOpen(false); setView("board"); }}
+                    >
+                      <span>{p.name}</span>
+                      <span className="fc-projmenu-count">{p.counts.total}</span>
+                    </button>
+                  ))}
+                  <div className="fc-projmenu-hint">More projects show up here as you add creative sprints.</div>
+                </div>
+              )}
+            </div>
 
             <div className="fc-viewtoggle">
               <button
@@ -255,6 +277,12 @@ export default function FactoryClient() {
                 onClick={() => setView("files")}
               >
                 <FolderOpen size={14} /> Files
+              </button>
+              <button
+                className="fc-vt-btn"
+                onClick={() => setView("detail")}
+              >
+                <BookOpen size={14} /> Read all
               </button>
             </div>
           </div>
@@ -565,13 +593,15 @@ function Card({
       </div>
 
       <div className="fc-revise-row">
-        <input
+        <textarea
           className="fc-revise-input"
           placeholder="What to change…"
+          rows={2}
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submitRevision();
+          onChange={(e) => {
+            setNote(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = Math.min(e.target.scrollHeight, 220) + "px";
           }}
         />
         <button className="fc-revise-send" onClick={submitRevision} disabled={!note.trim()}>
@@ -667,13 +697,15 @@ function DetailRow({
             <Check size={13} /> Approve
           </button>
         )}
-        <input
+        <textarea
           className="fc-revise-input"
           placeholder="What to change…"
+          rows={2}
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
+          onChange={(e) => {
+            setNote(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = Math.min(e.target.scrollHeight, 220) + "px";
           }}
         />
         <button className="fc-revise-send" onClick={submit} disabled={!note.trim()}>
