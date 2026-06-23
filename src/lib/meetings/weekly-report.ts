@@ -1,52 +1,78 @@
-// Weekly Meetings Report — built and DM'd to Saeed every Sunday 1 PM PKT.
+// Weekly Meetings Report — built and DM'd to Saeed every Monday ~1 AM PKT,
+// covering the week that just closed (Mon 00:00 – Sun 23:59:59 PKT).
 //
-// Counts meetings by meeting_date over the 7-day window ending on the report
-// day (Mon–Sun of the current week, in PKT), and breaks them down per coach.
-// Because the coach is now derived from each client's assignment when a meeting
-// is logged (see MeetingsTab), the per-coach counts are reliable and uniform.
+// Counts meetings by WHEN THEY WERE LOGGED (created_at), not by session date.
+// Coaches frequently log meetings days after they happen and well into Sunday
+// evening, so a Sunday-afternoon snapshot by session-date silently undercounts.
+// Running just after the week closes and counting by logged-time means every
+// meeting lands in exactly one weekly report and nothing is missed.
 //
-// Delivery mirrors the check-in weekly digest: a Slack DM to Saeed via the
-// coaching bot. Resilient — never throws into the cron handler.
+// The coach is whatever was stored on the meeting (now auto-credited from the
+// client's assignment when logged). Delivery mirrors the check-in weekly digest:
+// a Slack DM to Saeed via the coaching bot. Resilient — never throws into cron.
+//
+// A dedupe marker in app_settings makes the send idempotent: if the same week
+// has already been reported (e.g. a duplicate cron invocation), we skip.
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { openDmChannel, postBlocks, ADMIN_SLACK_USER_ID } from "@/lib/slack/coaching-bot";
 
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5
+const DAY_MS = 24 * 60 * 60 * 1000;
+const LAST_SENT_KEY = "meetings_report_last_week_start";
 
-// Calendar date (YYYY-MM-DD) in Pakistan time for a given instant.
-function pktDateStr(instant: number): string {
-  return new Date(instant + PKT_OFFSET_MS).toISOString().slice(0, 10);
+// Calendar date (YYYY-MM-DD) in Pakistan time for a UTC instant (ms).
+function pktDateStr(instantMs: number): string {
+  return new Date(instantMs + PKT_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 export interface MeetingsWeek {
-  startDate: string; // inclusive, PKT, YYYY-MM-DD
-  endDate: string; // inclusive, PKT, YYYY-MM-DD
+  startMs: number; // inclusive, real UTC instant of Mon 00:00 PKT
+  endMs: number; // exclusive, real UTC instant of next Mon 00:00 PKT
+  startDate: string; // PKT YYYY-MM-DD (Monday)
+  endDate: string; // PKT YYYY-MM-DD (Sunday)
   total: number;
   perCoach: { coach: string; count: number }[];
 }
 
-// 7-day window ending today (PKT), inclusive — Monday..Sunday when run on Sunday.
-export function getReportWeek(now: Date = new Date()): { startDate: string; endDate: string } {
-  const nowMs = now.getTime();
+// The most recently COMPLETED Mon–Sun week, in PKT, relative to `now`.
+// Run at Monday ~1 AM PKT, this is the week that ended a few hours earlier.
+export function getReportWindow(now: Date = new Date()): {
+  startMs: number;
+  endMs: number;
+  startDate: string;
+  endDate: string;
+} {
+  const shifted = new Date(now.getTime() + PKT_OFFSET_MS); // PKT wall-clock in UTC fields
+  const dow = shifted.getUTCDay(); // 0=Sun .. 6=Sat (in PKT)
+  // Real UTC instant of "today 00:00 PKT".
+  const pktMidnightTodayMs =
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - PKT_OFFSET_MS;
+  const daysSinceMonday = (dow + 6) % 7; // Mon→0, Sun→6
+  const thisWeekMondayMs = pktMidnightTodayMs - daysSinceMonday * DAY_MS;
+  const startMs = thisWeekMondayMs - 7 * DAY_MS; // previous week's Monday
+  const endMs = thisWeekMondayMs; // this week's Monday (exclusive)
   return {
-    startDate: pktDateStr(nowMs - 6 * 24 * 60 * 60 * 1000),
-    endDate: pktDateStr(nowMs),
+    startMs,
+    endMs,
+    startDate: pktDateStr(startMs),
+    endDate: pktDateStr(endMs - DAY_MS), // Sunday = day before the exclusive end
   };
 }
 
 export async function gatherMeetingsWeek(now: Date = new Date()): Promise<MeetingsWeek> {
-  const { startDate, endDate } = getReportWeek(now);
+  const { startMs, endMs, startDate, endDate } = getReportWindow(now);
   const db = getServiceSupabase();
 
   const { data, error } = await db
     .from("coach_meetings")
-    .select("coach_name, meeting_date")
-    .gte("meeting_date", startDate)
-    .lte("meeting_date", endDate);
+    .select("coach_name, created_at")
+    .gte("created_at", new Date(startMs).toISOString())
+    .lt("created_at", new Date(endMs).toISOString());
 
   if (error) {
     console.error("[meetings/weekly-report] query failed:", error.message);
-    return { startDate, endDate, total: 0, perCoach: [] };
+    return { startMs, endMs, startDate, endDate, total: 0, perCoach: [] };
   }
 
   const rows = data ?? [];
@@ -60,10 +86,10 @@ export async function gatherMeetingsWeek(now: Date = new Date()): Promise<Meetin
     .map(([coach, count]) => ({ coach, count }))
     .sort((a, b) => b.count - a.count || a.coach.localeCompare(b.coach));
 
-  return { startDate, endDate, total: rows.length, perCoach };
+  return { startMs, endMs, startDate, endDate, total: rows.length, perCoach };
 }
 
-// Render a "Jun 09 – Jun 15, 2026" style range from two YYYY-MM-DD strings.
+// Render a "Jun 15 – Jun 21, 2026" style range from two YYYY-MM-DD strings.
 function formatRange(startDate: string, endDate: string): string {
   const fmt = (s: string) =>
     new Date(s + "T00:00:00Z").toLocaleDateString("en-US", {
@@ -85,7 +111,7 @@ export function buildMeetingsReportBlocks(week: MeetingsWeek): unknown[] {
     },
     {
       type: "context",
-      elements: [{ type: "mrkdwn", text: range }],
+      elements: [{ type: "mrkdwn", text: `${range}  ·  counted by date logged` }],
     },
     {
       type: "section",
@@ -113,14 +139,27 @@ export function buildMeetingsReportBlocks(week: MeetingsWeek): unknown[] {
 export interface BuildAndSendResult {
   week: MeetingsWeek;
   slack: { ok: boolean; error?: string };
+  skipped?: boolean;
 }
 
 export async function buildAndSendWeeklyMeetingsReport(
   now: Date = new Date()
 ): Promise<BuildAndSendResult> {
   const week = await gatherMeetingsWeek(now);
-  const blocks = buildMeetingsReportBlocks(week);
+  const db = getServiceSupabase();
 
+  // Idempotency: if this exact week was already reported, skip (guards against
+  // duplicate cron invocations sending the DM twice).
+  const { data: marker } = await db
+    .from("app_settings")
+    .select("value")
+    .eq("key", LAST_SENT_KEY)
+    .maybeSingle();
+  if (marker?.value === week.startDate) {
+    return { week, slack: { ok: true }, skipped: true };
+  }
+
+  const blocks = buildMeetingsReportBlocks(week);
   const channel = await openDmChannel(ADMIN_SLACK_USER_ID);
   if (!channel) {
     return {
@@ -131,6 +170,16 @@ export async function buildAndSendWeeklyMeetingsReport(
 
   const fallback = `CCOS Weekly Meetings Report: ${week.total} meetings logged this week.`;
   const result = await postBlocks(channel, blocks, fallback);
+
+  // Mark this week as sent only on success, so a failed send can retry.
+  if (result.ok) {
+    await db
+      .from("app_settings")
+      .upsert(
+        { key: LAST_SENT_KEY, value: week.startDate, updated_at: new Date().toISOString(), updated_by: "cron/weekly-meetings-report" },
+        { onConflict: "key" }
+      );
+  }
 
   return {
     week,

@@ -37,7 +37,7 @@
     },
     {
       "path": "/api/cron/weekly-meetings-report",
-      "schedule": "0 8 * * 0"
+      "schedule": "0 20 * * 0"
     },
     {
       "path": "/api/cron/variations-pregenerate",
