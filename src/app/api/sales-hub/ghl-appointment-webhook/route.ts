@@ -48,9 +48,11 @@ function missingColumn(error: { message?: string } | null, column: string) {
 
 function adsClientMatchesContactLink(adsClient: string, linkClient: string | null | undefined) {
   if (!linkClient) return false;
+  // Resolve the contact-link's client (stored long-form, e.g. "antwan_rarcus") to a
+  // canonical creator key and compare. Works for every creator instead of hardcoding
+  // tyson/keith, so Antwan/Lucy bookings resolve their subscriber->keyword fallback too.
+  if (creatorKeyFromText(linkClient) === adsClient) return true;
   const normalized = linkClient.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-  if (adsClient === "tyson") return normalized === "tyson" || normalized === "tyson_sonnek";
-  if (adsClient === "keith") return normalized === "keith" || normalized === "keith_holland";
   return normalized === adsClient;
 }
 

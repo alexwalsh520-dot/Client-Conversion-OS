@@ -64,7 +64,7 @@ export const CREATORS: readonly Creator[] = [
     adAccountEnv: ["META_AD_ACCOUNT_LUCY_HUBBARD", "META_AD_ACCOUNT_LUCY", "META_ADS_ACCOUNT_LUCY"],
     tokenEnv: ["META_ACCESS_TOKEN_LUCY_HUBBARD", "META_ACCESS_TOKEN_LUCY", "META_ACCESS_TOKEN"],
     // No defaultAdAccountId yet — supplied via Vercel env var once Lucy is connected.
-    matchTokens: ["lucy", "hubbard"],
+    matchTokens: ["lucy", "hubbard", "(lh)"],
   },
   {
     key: "antwan",
@@ -74,7 +74,7 @@ export const CREATORS: readonly Creator[] = [
     adAccountEnv: ["META_AD_ACCOUNT_ANTWAN_RARCUS", "META_AD_ACCOUNT_ANTWAN"],
     tokenEnv: ["META_ACCESS_TOKEN_ANTWAN_RARCUS", "META_ACCESS_TOKEN_ANTWAN", "META_ACCESS_TOKEN"],
     defaultAdAccountId: "act_275999723846625", // Against All Odds Fitness (never-expire System User token)
-    matchTokens: ["antwan", "rarcus", "against all odds"],
+    matchTokens: ["antwan", "rarcus", "against all odds", "(ar)"],
   },
 ];
 
