@@ -30,12 +30,22 @@ export interface ContentIdea {
 
 export interface WordStat { word: string; count: number }
 
+export interface VocQuote {
+  id: string;
+  bucket: string;
+  quote: string;
+  attribution: string | null;
+  source: string | null;
+}
+
 export interface CreatorContent {
   creator: string;
   name: string;
   reels: ContentReel[];
   ideas: ContentIdea[];
   words: WordStat[];
+  voc: VocQuote[];
+  audience: { summary: string | null; metrics: unknown } | null;
   summary: {
     posts: number;
     totalLikes: number;
@@ -73,7 +83,7 @@ function topWords(texts: string[], limit = 50): WordStat[] {
 
 export async function getContentForCreator(slug: string): Promise<CreatorContent> {
   const sb = getServiceSupabase();
-  const [{ data: reelRows }, { data: ideaRows }] = await Promise.all([
+  const [{ data: reelRows }, { data: ideaRows }, { data: vocRows }, { data: audienceRow }] = await Promise.all([
     sb
       .from("creator_content")
       .select(
@@ -87,10 +97,22 @@ export async function getContentForCreator(slug: string): Promise<CreatorContent
       .eq("client_key", slug)
       .neq("status", "dismissed")
       .order("created_at", { ascending: false }),
+    sb
+      .from("content_voc")
+      .select("id, bucket, quote, attribution, source")
+      .eq("client_key", slug)
+      .order("sort_order", { ascending: true }),
+    sb
+      .from("content_audience_read")
+      .select("summary, metrics")
+      .eq("client_key", slug)
+      .maybeSingle(),
   ]);
 
   const reels = (reelRows || []) as ContentReel[];
   const ideas = (ideaRows || []) as ContentIdea[];
+  const voc = (vocRows || []) as VocQuote[];
+  const audience = audienceRow ? { summary: audienceRow.summary as string | null, metrics: audienceRow.metrics } : null;
 
   const texts = reels.map((r) => [r.caption || "", r.transcript || ""].join(" "));
   const words = topWords(texts);
@@ -108,6 +130,8 @@ export async function getContentForCreator(slug: string): Promise<CreatorContent
     reels,
     ideas,
     words,
+    voc,
+    audience,
     summary: {
       posts,
       totalLikes,
