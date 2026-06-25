@@ -662,7 +662,7 @@ export async function upsertManychatLeadIdentity(input: {
   }
 }
 
-async function getDecryptedTokenForClient(clientKey: string): Promise<string | null> {
+export async function getDecryptedTokenForClient(clientKey: string): Promise<string | null> {
   try {
     const sb = getServiceSupabase();
     const { data } = await sb

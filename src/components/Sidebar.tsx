@@ -34,6 +34,7 @@ import {
   FlaskConical,
   MessageCircle,
   Factory,
+  Film,
 } from "lucide-react";
 
 const navItems = [
@@ -57,6 +58,7 @@ const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/dms", label: "DMs", icon: MessageCircle },
+  { href: "/content", label: "Content", icon: Film },
   { href: "/lab", label: "Lab", icon: FlaskConical },
   { href: "/factory", label: "Factory", icon: Factory },
   { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
