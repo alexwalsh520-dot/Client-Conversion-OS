@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Sparkles, Send, Loader2, RefreshCw, Users } from "lucide-react";
+import { Sparkles, Send, Loader2, Users } from "lucide-react";
 import type { CreatorContent } from "@/lib/content-data";
 
 const BUCKETS: { key: string; label: string; hint: string }[] = [
@@ -36,9 +36,7 @@ function mdToHtml(md: string): string {
   return html;
 }
 
-export default function CoachView({
-  data, creator, onRegen, regenBusy,
-}: { data: CreatorContent; creator: string; onRegen: () => void; regenBusy: boolean }) {
+export default function CoachView({ data, creator }: { data: CreatorContent; creator: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,13 +72,7 @@ export default function CoachView({
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1fr)", gap: 22, alignItems: "start" }}>
       {/* LEFT: Voice of customer */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 13, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Voice of the customer</h3>
-          <button onClick={onRegen} disabled={regenBusy}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "6px 11px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: regenBusy ? "default" : "pointer" }}>
-            {regenBusy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Refresh from calls + DMs
-          </button>
-        </div>
+        <h3 style={{ margin: 0, fontSize: 13, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Voice of the customer</h3>
 
         {/* Audience read */}
         <div className="glass" style={{ background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 14, padding: 16 }}>
@@ -90,7 +82,7 @@ export default function CoachView({
           </div>
           {data.audience?.summary
             ? <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13.5, lineHeight: 1.55 }}>{data.audience.summary}</p>
-            : <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>No read yet — hit “Refresh from calls + DMs” to analyze who&apos;s showing up and how good these leads are.</p>}
+            : <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>Building automatically as {data.name}&apos;s calls + DMs come in.</p>}
           {metrics && (metrics.strong_signals?.length || metrics.weak_signals?.length) ? (
             <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
               {!!metrics.strong_signals?.length && <div style={{ flex: 1, minWidth: 180 }}>
@@ -128,7 +120,7 @@ export default function CoachView({
         })}
         {data.voc.length === 0 && (
           <div className="glass" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-hover)", borderRadius: 12, padding: 18, color: "var(--text-secondary)", fontSize: 13 }}>
-            No quotes yet. “Refresh from calls + DMs” pulls real prospect language and sorts it into pain, objections, desires, and lead-quality signals.
+            Filling in automatically as {data.name}&apos;s calls + DMs come in — pain, objections, desires, and who&apos;s showing up, in their words.
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Film, RefreshCw, Share2, Loader2, Check, BarChart3, Sparkles, FileAudio } from "lucide-react";
+import { Film, Share2, Loader2, Check, BarChart3, Sparkles } from "lucide-react";
 import AnalyticsView from "@/components/content/AnalyticsView";
 import CoachView from "@/components/content/CoachView";
 import type { CreatorContent } from "@/lib/content-data";
@@ -36,27 +36,13 @@ export default function ContentClient() {
     finally { setBusy(null); }
   };
 
-  const ingest = () => run("ingest", async () => {
-    const j = await (await fetch(`/api/content/ingest?creator=${active}`, { method: "POST" })).json();
-    const r = (j.results || []).find((x: { creator: string }) => x.creator === active) || j.results?.[0];
-    return r?.ok ? `Pulled ${r.pulled} posts for ${active}` : `Ingest: ${r?.error || j.error || "issue"}`;
-  });
-  const transcribe = () => run("transcribe", async () => {
-    const j = await (await fetch(`/api/content/transcribe?creator=${active}`, { method: "POST" })).json();
-    return j.reason === "no_key" ? j.message : j.ok ? `Transcribed ${j.transcribed} (failed ${j.failed}). ${j.note || ""}` : `Transcribe: ${j.error || "issue"}`;
-  });
-  const regenVoc = () => run("voc", async () => {
-    const j = await (await fetch(`/api/content/mine?creator=${active}`, { method: "POST" })).json();
-    if (!j.ok) return `Mine: ${j.error || "issue"}`;
-    return `Mined ${j.mined} sources (+${j.quotes_added} quotes). ${j.remaining ? `${j.remaining} left — click again.` : "All calls + DMs mined."}`;
-  });
   const shareLink = () => run("share", async () => {
     const j = await (await fetch(`/api/content/share-link?creator=${active}`)).json();
     if (j.url) { await navigator.clipboard.writeText(j.url).catch(() => {}); return `Public link copied: ${j.url}`; }
     return `Share: ${j.error || "issue"}`;
   });
 
-  const actionBtn = (key: string, fn: () => void, Icon: typeof RefreshCw, label: string) => (
+  const actionBtn = (key: string, fn: () => void, Icon: typeof Share2, label: string) => (
     <button onClick={fn} disabled={!!busy}
       style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 13px", borderRadius: 10, border: "1px solid var(--border-hover)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 12.5, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy && busy !== key ? 0.45 : 1 }}>
       {busy === key ? <Loader2 size={14} className="spin" /> : <Icon size={14} />} {label}
@@ -84,8 +70,9 @@ export default function ContentClient() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {mode === "analytics" && actionBtn("ingest", ingest, RefreshCw, "Pull latest posts")}
-        {mode === "analytics" && actionBtn("transcribe", transcribe, FileAudio, "Transcribe reels")}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#37d67a", boxShadow: "0 0 6px #37d67a" }} /> Always up to date
+        </span>
         {actionBtn("share", shareLink, Share2, "Share link")}
       </div>
 
@@ -112,7 +99,7 @@ export default function ContentClient() {
       ) : mode === "analytics" ? (
         <AnalyticsView data={current} />
       ) : (
-        <CoachView data={current} creator={active} onRegen={regenVoc} regenBusy={busy === "voc"} />
+        <CoachView data={current} creator={active} />
       )}
 
       <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
