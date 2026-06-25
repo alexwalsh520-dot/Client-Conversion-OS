@@ -45,7 +45,7 @@ const navItems = [
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
-  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard, adminOnly: true },
+  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
   // Private single-owner tabs — gated to ownerEmail in canViewItem (overrides admin).
@@ -115,7 +115,9 @@ export default function Sidebar() {
       !hasPermissions ||
       isAdmin ||
       allowedTabs?.includes(item.href) ||
-      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"))
+      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub")) ||
+      // Video Testimonials manager rides on Coaching access (view + download).
+      (item.href === "/testimonials/videos" && allowedTabs?.includes("/coaching"))
     );
   };
   const isHidden = (href: string) => hidden.includes(href);

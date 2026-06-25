@@ -12,8 +12,12 @@ import { createPresignedGetUrl } from "@/lib/r2";
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Whole coaching team can stream/download (view access); management actions
+  // live on separate admin-only routes.
   const session = await auth();
-  if (session?.user?.role !== "admin") {
+  const allowedTabs = session?.user?.allowedTabs ?? [];
+  const canView = session?.user?.role === "admin" || allowedTabs.includes("/coaching");
+  if (!canView) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

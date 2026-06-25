@@ -173,6 +173,16 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // in-page gate can do its job.
   if (pathname === "/partner-onboarding" || pathname.startsWith("/partner-onboarding/")) return <>{children}</>;
 
+  // Video Testimonials manager is open to the whole coaching team for view +
+  // download. Management actions (feature/delete) stay admin-only, enforced in
+  // the page and the manage API — not by hiding the page.
+  if (
+    (pathname === "/testimonials/videos" || pathname.startsWith("/testimonials/videos/")) &&
+    allowedTabs.includes("/coaching")
+  ) {
+    return <>{children}</>;
+  }
+
   // Check if current path matches any allowed tab
   const hasAccess = allowedTabs.some((tab) => {
     if (tab === "/") return pathname === "/";

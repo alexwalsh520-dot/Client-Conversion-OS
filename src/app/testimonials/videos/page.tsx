@@ -35,7 +35,10 @@ type Row = {
 export default async function VideoTestimonialsPage() {
   const session = await auth();
   if (!session?.user?.email) return <AccessDenied reason="signed_out" />;
-  if (session.user.role !== "admin") return <AccessDenied reason="not_admin" />;
+  // Whole coaching team can view + download; only admins manage (feature/delete).
+  const isAdmin = session.user.role === "admin";
+  const hasCoachingAccess = isAdmin || (session.user.allowedTabs ?? []).includes("/coaching");
+  if (!hasCoachingAccess) return <AccessDenied reason="not_admin" />;
 
   const db = getServiceSupabase();
   const { data } = await db
@@ -66,11 +69,13 @@ export default async function VideoTestimonialsPage() {
         </h1>
       </div>
       <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "0 0 20px", maxWidth: 640 }}>
-        {pending.length} awaiting recording. Feature a video to show it in the gallery on the public
-        testimonials page (alongside the written Senja reviews). Delete removes the video permanently.
+        {pending.length} awaiting recording.{" "}
+        {isAdmin
+          ? "Feature a video to show it in the gallery on the public testimonials page (alongside the written Senja reviews). Delete removes the video permanently."
+          : "Watch or download any client testimonial below."}
       </p>
 
-      <VideoManager initial={submittedForManager} />
+      <VideoManager initial={submittedForManager} canManage={isAdmin} />
 
       {pending.length > 0 && (
         <div style={{ marginTop: 32 }}>

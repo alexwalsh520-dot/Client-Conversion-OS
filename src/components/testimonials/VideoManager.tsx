@@ -22,7 +22,14 @@ export type VideoRow = {
   featured: boolean;
 };
 
-export default function VideoManager({ initial }: { initial: VideoRow[] }) {
+export default function VideoManager({
+  initial,
+  canManage = true,
+}: {
+  initial: VideoRow[];
+  // Admins manage (feature + delete). Coaches get view + download only.
+  canManage?: boolean;
+}) {
   const [rows, setRows] = useState<VideoRow[]>(initial);
   const [busy, setBusy] = useState<Record<number, "feature" | "delete" | undefined>>({});
 
@@ -133,27 +140,29 @@ export default function VideoManager({ initial }: { initial: VideoRow[] }) {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => toggleFeature(row)}
-                  disabled={!!rowBusy}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "7px 12px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    cursor: rowBusy ? "default" : "pointer",
-                    border: row.featured ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
-                    color: row.featured ? "var(--bg-primary)" : "var(--text-primary)",
-                    background: row.featured ? "var(--accent)" : "transparent",
-                  }}
-                >
-                  {rowBusy === "feature" ? <Loader2 size={14} className="spin" /> : <Star size={14} />}
-                  {row.featured ? "Featured" : "Feature"}
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => toggleFeature(row)}
+                    disabled={!!rowBusy}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 8,
+                      cursor: rowBusy ? "default" : "pointer",
+                      border: row.featured ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
+                      color: row.featured ? "var(--bg-primary)" : "var(--text-primary)",
+                      background: row.featured ? "var(--accent)" : "transparent",
+                    }}
+                  >
+                    {rowBusy === "feature" ? <Loader2 size={14} className="spin" /> : <Star size={14} />}
+                    {row.featured ? "Featured" : "Feature"}
+                  </button>
+                )}
 
                 <a
                   href={`${src}?download=1`}
@@ -173,28 +182,30 @@ export default function VideoManager({ initial }: { initial: VideoRow[] }) {
                   <Download size={14} /> Download
                 </a>
 
-                <button
-                  type="button"
-                  onClick={() => remove(row)}
-                  disabled={!!rowBusy}
-                  title="Delete permanently"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "7px 12px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    cursor: rowBusy ? "default" : "pointer",
-                    border: "1px solid rgba(239,68,68,0.4)",
-                    color: "var(--danger)",
-                    background: "transparent",
-                    marginLeft: "auto",
-                  }}
-                >
-                  {rowBusy === "delete" ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => remove(row)}
+                    disabled={!!rowBusy}
+                    title="Delete permanently"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 8,
+                      cursor: rowBusy ? "default" : "pointer",
+                      border: "1px solid rgba(239,68,68,0.4)",
+                      color: "var(--danger)",
+                      background: "transparent",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {rowBusy === "delete" ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                  </button>
+                )}
               </div>
             </div>
           );
