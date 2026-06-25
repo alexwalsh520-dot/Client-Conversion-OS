@@ -40,12 +40,21 @@ const execFileAsync = promisify(execFile);
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const PROJECT_NAME = "Tyson 100-Ad Sprint";
-const PROJECT_CLIENT = "tyson";
+// Defaults preserve the original Tyson run. Any project can be targeted with
+//   --project "<name>" --client <client> [--outdir <dir>]
+// and the generator resolves each item's reference image(s) + mode from the DB
+// (factory_items.reference_paths / prompt_mode), so it is no longer hardcoded to
+// one project. Items WITHOUT reference_paths fall back to the legacy in-script
+// Tyson resolution below, keeping the original sprint reproducible.
+const DEFAULT_PROJECT_NAME = "Tyson 100-Ad Sprint";
+const DEFAULT_PROJECT_CLIENT = "tyson";
 const STORAGE_BUCKET = "ad-variations";
 const RAW_PICS_DIR = "/Users/alexwalsh/Documents/All/Agency/Tyson/00_RAW_LIBRARY/Tyson Raw Pics";
-const CAMPAIGN_DIR =
+const DEFAULT_CAMPAIGN_DIR =
   "/Users/alexwalsh/Documents/All/Agency/Tyson/01_CAMPAIGNS/06:22:2026 - Tyson - 100 Ad Sprint";
+
+const slugify = (s) =>
+  String(s || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
 
 const HIGGSFIELD_MODEL = "gpt_image_2";
 const HIGGSFIELD_ASPECT_RATIO = "9:16";
@@ -343,11 +352,60 @@ function buildMatchPrompt(item, chartNote, refMode) {
 }
 
 // ---------------------------------------------------------------------------
+// Evergreen prompt (DB-driven) — used for any project whose items carry their
+// own reference_paths + prompt_mode. Generic red-phrase picker so new copy sets
+// ("5 men", "5 spots", "DM me", "$0", "Free") get the proven emphasis without
+// per-project tuning. Tyson items (no reference_paths) never hit this path.
+// ---------------------------------------------------------------------------
+function pickRedsEvergreen(copy) {
+  const reds = [];
+  if (/\$0\b/.test(copy)) reds.push("$0");
+  else if (/Zero dollars/i.test(copy)) reds.push("Zero dollars");
+  else if (/\bFree\b/.test(copy)) reds.push("Free");
+  for (const m of copy.matchAll(/\b\d+\s+(?:men|women|people|spots?|guys|moms|dads|coaches)\b/gi)) {
+    if (!reds.includes(m[0])) reds.push(m[0]);
+  }
+  if (/\bDM me\b/i.test(copy) && !reds.includes("DM me")) reds.push("DM me");
+  return reds.slice(0, 4);
+}
+
+function buildEvergreenPrompt(item) {
+  const copy = item.copy_text.trim();
+  const mode = item.prompt_mode || "photo";
+  const reds = pickRedsEvergreen(copy);
+  const redLine = reds.length
+    ? `Color ONLY these exact phrases red, and keep EVERY other word white: ${reds.map((r) => `"${r}"`).join(", ")}. Do not make any other words red.`
+    : "Keep all text white.";
+
+  if (mode === "screenshot") return buildPrompt(item, true);
+
+  const refLine =
+    mode === "two_ref"
+      ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Reference image 2 is a PHOTO of the person — feature THEM as the subject (their real face, physique, skin tone, tattoos). Do not distort or beautify them; no before/after comparison."
+      : mode === "finished_ad"
+        ? "The reference image is one of our PROVEN finished ads. Copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Keep the SAME person from the reference exactly as they are — real face, physique, skin tone, tattoos, pose, clothing, and the original background — do not distort, slim, inflate, beautify, or replace them or the setting. No before/after comparison."
+        : "The reference image is a PHOTO of the person. Use THEM as the subject and keep their real face, physique, skin tone, tattoos, and their ORIGINAL background and setting exactly as in the photo. Do NOT composite, swap, or invent a different background. No before/after comparison.";
+
+  return [
+    "Create a finished 9:16 vertical Instagram Story DM ad.",
+    refLine,
+    STYLE_RULE,
+    redLine,
+    FRAMING_RULE,
+    "Render the following ad copy WORD FOR WORD exactly as written (correct spelling, no added or removed words, no invented statistics):",
+    "",
+    copy,
+    "",
+    "Clean and premium.",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Storage + DB wiring
 // ---------------------------------------------------------------------------
-async function uploadToStorage(label, bytes, contentType) {
+async function uploadToStorage(slug, label, bytes, contentType) {
   const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
-  const objectPath = `factory/tyson-100-sprint/${label}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+  const objectPath = `factory/${slug}/${label}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
   const { error } = await sb.storage.from(STORAGE_BUCKET).upload(objectPath, bytes, {
     contentType,
     upsert: true,
@@ -357,15 +415,12 @@ async function uploadToStorage(label, bytes, contentType) {
   return data.publicUrl;
 }
 
-async function getProjectId() {
-  const { data } = await sb
-    .from("factory_projects")
-    .select("id")
-    .eq("name", PROJECT_NAME)
-    .eq("client", PROJECT_CLIENT)
-    .maybeSingle();
-  if (!data?.id) throw new Error(`Project "${PROJECT_NAME}" (${PROJECT_CLIENT}) not found.`);
-  return data.id;
+async function getProject(name, client) {
+  let q = sb.from("factory_projects").select("id, name, client").eq("name", name);
+  if (client) q = q.eq("client", client);
+  const { data } = await q.maybeSingle();
+  if (!data?.id) throw new Error(`Project "${name}"${client ? ` (${client})` : ""} not found.`);
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +430,17 @@ async function main() {
   const args = process.argv.slice(2);
   const all = args.includes("--all");
   const revisionsMode = args.includes("--revisions");
-  const explicitLabels = args.filter((a) => !a.startsWith("--"));
+  // Flag values: --project "<name>", --client <key>, --outdir <dir>.
+  const flagValue = (name) => {
+    const i = args.indexOf(name);
+    return i >= 0 && args[i + 1] ? args[i + 1] : null;
+  };
+  const projectName = flagValue("--project") || DEFAULT_PROJECT_NAME;
+  const clientKey = flagValue("--client") || (flagValue("--project") ? null : DEFAULT_PROJECT_CLIENT);
+  const FLAG_NAMES = new Set(["--all", "--revisions", "--project", "--client", "--outdir"]);
+  const explicitLabels = args.filter(
+    (a, i) => !a.startsWith("--") && !FLAG_NAMES.has(args[i - 1])
+  );
 
   const { path: credPath, cleanup } = await resolveCredentialsPath();
   console.log(`Higgsfield creds: ${credPath}`);
@@ -388,8 +453,13 @@ async function main() {
     console.warn("Could not read account status (continuing):", e.message);
   }
 
-  const projectId = await getProjectId();
-  await fsp.mkdir(CAMPAIGN_DIR, { recursive: true });
+  const project = await getProject(projectName, clientKey);
+  const projectId = project.id;
+  const projectSlug = slugify(project.name);
+  const outDir = flagValue("--outdir") ||
+    (projectSlug === slugify(DEFAULT_PROJECT_NAME) ? DEFAULT_CAMPAIGN_DIR : `/tmp/factory/${projectSlug}`);
+  console.log(`Project: "${project.name}" (${project.client || "—"}) | out: ${outDir}`);
+  await fsp.mkdir(outDir, { recursive: true });
 
   let labels;
   if (revisionsMode) {
@@ -429,7 +499,16 @@ async function main() {
 
       // Resolve reference(s) + prompt by style.
       let refPaths, prompt, refLabel;
-      if (!PRESERVE_SCREENSHOT_LABELS.has(label)) {
+      if (Array.isArray(item.reference_paths) && item.reference_paths.length) {
+        // EVERGREEN PATH: the item carries its own reference image(s) + mode in the
+        // DB, so any project works without per-project code. Refs are local files.
+        for (const p of item.reference_paths) {
+          if (!fs.existsSync(p)) throw new Error(`Reference file missing: ${p}`);
+        }
+        refPaths = item.reference_paths;
+        prompt = buildEvergreenPrompt(item);
+        refLabel = `${item.prompt_mode || "photo"} :: ${item.reference_paths.map((p) => path.basename(p)).join(" + ")}`;
+      } else if (!PRESERVE_SCREENSHOT_LABELS.has(label)) {
         if (item.stage === "revision" && REVISION_SINGLE_REF.has(label)) {
           // Revision: rebuild from the man's PHOTO alone, keeping its own background
           // (the two-ref version was blending the winning ad's tank background in).
@@ -515,12 +594,12 @@ async function main() {
 
       // 4. Save local copy.
       const ext = ct.includes("png") ? "png" : ct.includes("webp") ? "webp" : "jpg";
-      const localPath = path.join(CAMPAIGN_DIR, `${label}.${ext}`);
+      const localPath = path.join(outDir, `${label}.${ext}`);
       await fsp.writeFile(localPath, bytes);
       console.log(`Saved local: ${localPath}`);
 
       // 5. Upload to public Storage.
-      const publicUrl = await uploadToStorage(label, bytes, ct);
+      const publicUrl = await uploadToStorage(projectSlug, label, bytes, ct);
       console.log(`Public URL: ${publicUrl}`);
 
       // 6. Update factory_items.
