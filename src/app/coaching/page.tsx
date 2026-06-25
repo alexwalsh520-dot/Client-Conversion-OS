@@ -85,7 +85,10 @@ export default function CoachingPage() {
   const isAdmin = session?.user?.role === "admin";
   // Coach Performance compares coaches against each other, so it stays admin-only
   // even though the rest of the coaching team can now see Client Progress.
-  const visibleTabs = TABS.filter((t) => t.key !== "performance" || isAdmin);
+  // Ask Ahmad is admin-only while it is still being tested; the coaches and Nicole
+  // get it once it is ready (Phase 4+).
+  const adminOnlyTabs = new Set<CoachingTab>(["performance", "ask-ahmad"]);
+  const visibleTabs = TABS.filter((t) => !adminOnlyTabs.has(t.key) || isAdmin);
 
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
