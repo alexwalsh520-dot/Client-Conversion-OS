@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 
 /* ============================================================
  * "Ask Ahmad" — the MAS Coaching Brain tab.
@@ -144,10 +145,11 @@ function mdToHtml(md: string): string {
 }
 
 type BrainSnapshot = { updated?: string; brain?: { name?: string; tagline?: string; markdown?: string; description?: string; path?: string } };
+type ReviewRow = { id: number; kind: string; situation_summary: string; status: string; urgent: boolean; created_at: string; brain_take?: string | null; uncertainty_reason?: string | null; mas_ruling?: string | null; asked_by?: string | null; client_id?: number | null };
 type MasData = {
   notes: { id: number; client_id: number; category: string; note: string; importance: string; created_by: string; created_at: string }[];
   queries: { id: number; asked_by?: string; question: string; confidence?: string; created_at: string }[];
-  review: { id: number; kind: string; situation_summary: string; status: string; urgent: boolean; created_at: string }[];
+  review: ReviewRow[];
   learning: { id: number; content: string; approved: boolean; created_at: string }[];
 };
 
@@ -186,6 +188,8 @@ export default function AskAhmadTab() {
       const d = await res.json();
       if (!res.ok) throw new Error(d?.error || "Ask Ahmad failed");
       setChat((c) => [...c, { role: "assistant", content: String(d.answer || "") }]);
+      loadData(); // the brain may have logged the query, saved a note, or escalated
+
     } catch (e) {
       setChatErr(e instanceof Error ? e.message : "Something went wrong");
       setChat((c) => c.slice(0, -1)); // drop the unanswered user turn
@@ -195,20 +199,46 @@ export default function AskAhmadTab() {
     }
   }
 
-  useEffect(() => {
-    let off = false;
-    fetch("/mas-brain-data.json", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (!off) setSnap(d); }).catch(() => {});
-    fetch("/api/mas", { cache: "no-store" }).then((r) => r.json()).then((d) => {
-      if (off) return;
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
+  const [rulingDraft, setRulingDraft] = useState<Record<number, string>>({});
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const d = await fetch("/api/mas", { cache: "no-store" }).then((r) => r.json());
       setData({
         notes: Array.isArray(d?.notes) ? d.notes : [],
         queries: Array.isArray(d?.queries) ? d.queries : [],
         review: Array.isArray(d?.review) ? d.review : [],
         learning: Array.isArray(d?.learning) ? d.learning : [],
       });
-    }).catch(() => {});
-    return () => { off = true; };
+    } catch { /* leave previous data */ }
   }, []);
+
+  useEffect(() => {
+    let off = false;
+    fetch("/mas-brain-data.json", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (!off) setSnap(d); }).catch(() => {});
+    loadData();
+    return () => { off = true; };
+  }, [loadData]);
+
+  async function doAdmin(action: string, id: number, ruling?: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/mas/admin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, id, ruling }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error || "Action failed"); }
+      setRulingDraft((d) => { const n = { ...d }; delete n[id]; return n; });
+      await loadData();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const brainHtml = useMemo(() => mdToHtml(snap?.brain?.markdown || ""), [snap]);
   const pendingReview = data.review.filter((r) => r.status === "pending").length;
@@ -234,7 +264,7 @@ export default function AskAhmadTab() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "var(--text-secondary)" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success, #3fb27f)", display: "inline-block" }} />
-            coaching brain · grounded in Ahmad&apos;s SOPs · read-only preview
+            coaching brain · grounded in Ahmad&apos;s SOPs · live
           </div>
         </div>
       </div>
@@ -324,7 +354,7 @@ export default function AskAhmadTab() {
               </button>
             </div>
             <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 8 }}>
-              Read-only preview. Ahmad reads the SOPs and client history but does not save notes or escalate yet.
+              Ahmad reads the SOPs and client history, saves important notes, and flags anything he is unsure about to your inbox.
             </div>
           </div>
         )}
@@ -347,16 +377,82 @@ export default function AskAhmadTab() {
             : <List rows={data.queries.map((q) => ({ id: q.id, top: q.asked_by || "coach", body: q.question, foot: `${q.confidence ? q.confidence + " confidence · " : ""}${fmt(q.created_at)}` }))} />
         )}
 
-        {section === "review" && (
-          data.review.length === 0
-            ? <Empty title="Your inbox is clear" body="Situations the brain is unsure about, and learnings it proposes, will wait here for your ruling. Urgent ones also ping you on Slack." />
-            : <List rows={data.review.map((r) => ({ id: r.id, top: `${cap(r.kind.replace(/_/g, " "))}${r.urgent ? " · urgent" : ""}`, body: r.situation_summary, foot: `${r.status} · ${fmt(r.created_at)}` }))} />
-        )}
+        {section === "review" && (() => {
+          const pending = data.review.filter((r) => r.status === "pending");
+          const resolved = data.review.filter((r) => r.status !== "pending");
+          if (data.review.length === 0) {
+            return <Empty title="Your inbox is clear" body="Situations the brain is unsure about will wait here for your ruling. Urgent ones also ping you on Slack. Your ruling becomes guidance the brain applies to similar situations on its own." />;
+          }
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {pending.map((r) => (
+                <div key={r.id} style={{ border: `1px solid ${r.urgent ? "var(--danger, #e0564f)" : "var(--border)"}`, borderRadius: 10, padding: "12px 14px", background: "var(--bg-glass)" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: r.urgent ? "var(--danger, #e0564f)" : "var(--text-secondary)", marginBottom: 4 }}>
+                    {cap(r.kind.replace(/_/g, " "))}{r.urgent ? " · URGENT" : ""}{r.client_id ? ` · client #${r.client_id}` : ""}{r.asked_by ? ` · ${r.asked_by}` : ""}
+                  </div>
+                  <div style={{ fontSize: 14, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{r.situation_summary}</div>
+                  {r.brain_take && <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 6 }}><b>Brain&apos;s take:</b> {r.brain_take}</div>}
+                  {r.uncertainty_reason && <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}><b>Unsure because:</b> {r.uncertainty_reason}</div>}
+                  <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6 }}>{fmt(r.created_at)}</div>
+                  {isAdmin && (
+                    <div style={{ marginTop: 10 }}>
+                      <textarea
+                        value={rulingDraft[r.id] || ""}
+                        onChange={(e) => setRulingDraft((d) => ({ ...d, [r.id]: e.target.value }))}
+                        placeholder="Your ruling — how should this be handled? (becomes guidance the brain reuses)"
+                        rows={2}
+                        style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card, var(--bg-glass))", color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit" }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button onClick={() => doAdmin("rule_review", r.id, rulingDraft[r.id])} disabled={busyId === r.id || !(rulingDraft[r.id] || "").trim()}
+                          style={{ padding: "7px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: "var(--accent)", color: "var(--bg-primary)", opacity: busyId === r.id || !(rulingDraft[r.id] || "").trim() ? 0.55 : 1 }}>
+                          {busyId === r.id ? "…" : "Save ruling"}
+                        </button>
+                        <button onClick={() => doAdmin("dismiss_review", r.id)} disabled={busyId === r.id}
+                          style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", fontSize: 12.5, background: "var(--bg-glass)", color: "var(--text-secondary)" }}>
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {resolved.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: "8px 0" }}>Resolved</div>
+                  {resolved.map((r) => (
+                    <div key={r.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", marginBottom: 8, opacity: 0.7 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 3 }}>{cap(r.status)} · {fmt(r.created_at)}</div>
+                      <div style={{ fontSize: 13.5, color: "var(--text-primary)" }}>{r.situation_summary}</div>
+                      {r.mas_ruling && <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}><b>Your ruling:</b> {r.mas_ruling}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {section === "learning" && (
           data.learning.length === 0
-            ? <Empty title="Nothing learned yet" body="Once you approve a ruling, it becomes permanent guidance here and the brain applies it to similar situations on its own." />
-            : <List rows={data.learning.map((l) => ({ id: l.id, top: l.approved ? "approved" : "proposed", body: l.content, foot: fmt(l.created_at) }))} />
+            ? <Empty title="Nothing learned yet" body="Once you rule on a flagged situation, it becomes permanent guidance here and the brain applies it to similar situations on its own." />
+            : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {data.learning.map((l) => (
+                  <div key={l.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", background: "var(--bg-glass)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: l.approved ? "var(--success, #3fb27f)" : "var(--text-secondary)", marginBottom: 4 }}>{l.approved ? "Approved guidance" : "Proposed · awaiting your approval"}</div>
+                    <div style={{ fontSize: 14, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{l.content}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6 }}>{fmt(l.created_at)}</div>
+                    {isAdmin && !l.approved && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button onClick={() => doAdmin("approve_learning", l.id)} disabled={busyId === l.id}
+                          style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: "var(--accent)", color: "var(--bg-primary)" }}>Approve</button>
+                        <button onClick={() => doAdmin("reject_learning", l.id)} disabled={busyId === l.id}
+                          style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", fontSize: 12.5, background: "var(--bg-glass)", color: "var(--text-secondary)" }}>Reject</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
         )}
       </div>
 
