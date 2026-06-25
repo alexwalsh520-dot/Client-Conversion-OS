@@ -187,7 +187,7 @@ export interface FinanceRecord {
   retentionDate: string | null;
 }
 
-export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses' | 'nutrition' | 'client-progress';
+export type CoachingTab = 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses' | 'nutrition' | 'client-progress' | 'ask-ahmad';
 
 export interface Expense {
   id?: number;
