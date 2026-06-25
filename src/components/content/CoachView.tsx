@@ -106,9 +106,12 @@ export default function CoachView({ data, creator }: { data: CreatorContent; cre
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 14 }}>{b.label}</span>
                 <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{b.hint}</span>
+                {(data.vocCounts[b.key] || qs.length) > 12 && (
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--accent)" }}>{data.vocCounts[b.key] || qs.length} signals</span>
+                )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {qs.map((q) => (
+                {qs.slice(0, 12).map((q) => (
                   <div key={q.id} className="glass" style={{ background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderLeft: "2px solid var(--accent)", borderRadius: 10, padding: "10px 13px" }}>
                     <div style={{ fontSize: 13.5, color: "var(--text-primary)", fontStyle: "italic", lineHeight: 1.5 }}>“{q.quote}”</div>
                     {q.attribution && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>— {q.attribution}{q.source ? ` · ${q.source}` : ""}</div>}

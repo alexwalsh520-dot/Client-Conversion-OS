@@ -47,6 +47,7 @@ export interface CreatorContent {
   ideas: ContentIdea[];
   words: WordStat[];
   voc: VocQuote[];
+  vocCounts: Record<string, number>;
   audience: { summary: string | null; metrics: unknown } | null;
   summary: {
     posts: number;
@@ -85,7 +86,7 @@ function topWords(texts: string[], limit = 50): WordStat[] {
 
 export async function getContentForCreator(slug: string): Promise<CreatorContent> {
   const sb = getServiceSupabase();
-  const [{ data: reelRows }, { data: ideaRows }, { data: vocRows }, { data: audienceRow }] = await Promise.all([
+  const [{ data: reelRows }, { data: ideaRows }, { data: vocRows }, { data: audienceRow }, { data: vocCountRows }] = await Promise.all([
     sb
       .from("creator_content")
       .select(
@@ -103,18 +104,25 @@ export async function getContentForCreator(slug: string): Promise<CreatorContent
       .from("content_voc")
       .select("id, bucket, quote, attribution, source")
       .eq("client_key", slug)
-      .order("sort_order", { ascending: true }),
+      .order("created_at", { ascending: false })
+      .limit(400),
     sb
       .from("content_audience_read")
       .select("summary, metrics")
       .eq("client_key", slug)
       .maybeSingle(),
+    sb
+      .from("content_voc")
+      .select("bucket")
+      .eq("client_key", slug),
   ]);
 
   const reels = (reelRows || []) as ContentReel[];
   const ideas = (ideaRows || []) as ContentIdea[];
   const voc = (vocRows || []) as VocQuote[];
   const audience = audienceRow ? { summary: audienceRow.summary as string | null, metrics: audienceRow.metrics } : null;
+  const vocCounts: Record<string, number> = {};
+  for (const r of (vocCountRows || []) as { bucket: string }[]) vocCounts[r.bucket] = (vocCounts[r.bucket] || 0) + 1;
 
   const texts = reels.map((r) => [r.caption || "", r.transcript || ""].join(" "));
   const words = topWords(texts);
@@ -133,6 +141,7 @@ export async function getContentForCreator(slug: string): Promise<CreatorContent
     ideas,
     words,
     voc,
+    vocCounts,
     audience,
     summary: {
       posts,
