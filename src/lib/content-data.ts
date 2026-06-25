@@ -10,6 +10,8 @@ export interface ContentReel {
   caption: string | null;
   thumbnail_url: string | null;
   video_url: string | null;
+  stored_video_url: string | null;
+  stored_thumb_url: string | null;
   like_count: number | null;
   comment_count: number | null;
   taken_at: string | null;
@@ -87,7 +89,7 @@ export async function getContentForCreator(slug: string): Promise<CreatorContent
     sb
       .from("creator_content")
       .select(
-        "id, ig_media_id, media_type, permalink, caption, thumbnail_url, video_url, like_count, comment_count, taken_at, transcript, transcript_status"
+        "id, ig_media_id, media_type, permalink, caption, thumbnail_url, video_url, stored_video_url, stored_thumb_url, like_count, comment_count, taken_at, transcript, transcript_status"
       )
       .eq("client_key", slug)
       .order("taken_at", { ascending: false, nullsFirst: false }),

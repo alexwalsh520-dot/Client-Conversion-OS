@@ -16,6 +16,26 @@ export function transcriberConfigured(): boolean {
   return !!process.env.GROQ_API_KEY?.trim();
 }
 
+/** Transcribe already-downloaded bytes (so callers can reuse the same download for storage). */
+export async function transcribeBytes(bytes: ArrayBuffer): Promise<TranscribeResult> {
+  const key = process.env.GROQ_API_KEY?.trim();
+  if (!key) return { ok: false, reason: "no_key" };
+  try {
+    if (bytes.byteLength > 24 * 1024 * 1024) return { ok: false, reason: "too_large" };
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: "video/mp4" }), "reel.mp4");
+    form.append("model", MODEL);
+    form.append("response_format", "text");
+    form.append("temperature", "0");
+    form.append("prompt", "Instagram fitness reel. Spoken words only.");
+    const res = await fetch(GROQ_URL, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
+    if (!res.ok) { const t = await res.text().catch(() => ""); return { ok: false, reason: `groq ${res.status}: ${t.slice(0, 160)}` }; }
+    return { ok: true, text: (await res.text()).trim() };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "error" };
+  }
+}
+
 /** Transcribe the audio of a remote video/audio URL. Fetches the file then sends to Groq. */
 export async function transcribeFromUrl(url: string): Promise<TranscribeResult> {
   const key = process.env.GROQ_API_KEY?.trim();

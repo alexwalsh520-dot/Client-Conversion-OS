@@ -14,6 +14,28 @@ const BUCKETS: { key: string; label: string; hint: string }[] = [
 
 interface Msg { role: "user" | "assistant"; content: string }
 
+// Minimal, safe markdown -> HTML so **bold**, *italics*, lists and headers render in the chat.
+function mdToHtml(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) =>
+    esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, "<em>$1</em>");
+  const lines = String(md || "").split("\n");
+  let html = ""; let list: string | null = null;
+  const close = () => { if (list) { html += `</${list}>`; list = null; } };
+  for (const ln of lines) {
+    if (/^\s*$/.test(ln)) { close(); continue; }
+    const h = ln.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { close(); const l = h[1].length; html += `<h${l} style="margin:8px 0 4px;font-size:14px;font-weight:700">${inline(h[2])}</h${l}>`; continue; }
+    const ol = ln.match(/^\s*\d+\.\s+(.*)$/);
+    if (ol) { if (list !== "ol") { close(); list = "ol"; html += '<ol style="margin:4px 0 4px 18px">'; } html += `<li>${inline(ol[1])}</li>`; continue; }
+    const ul = ln.match(/^\s*[-*]\s+(.*)$/);
+    if (ul) { if (list !== "ul") { close(); list = "ul"; html += '<ul style="margin:4px 0 4px 18px">'; } html += `<li>${inline(ul[1])}</li>`; continue; }
+    close(); html += `<p style="margin:6px 0">${inline(ln)}</p>`;
+  }
+  close();
+  return html;
+}
+
 export default function CoachView({
   data, creator, onRegen, regenBusy,
 }: { data: CreatorContent; creator: string; onRegen: () => void; regenBusy: boolean }) {
@@ -129,7 +151,10 @@ export default function CoachView({
               ))}
             </div>
           ) : messages.map((m, i) => (
-            <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", background: m.role === "user" ? "var(--accent)" : "var(--bg-glass)", color: m.role === "user" ? "#1a1a1a" : "var(--text-primary)", border: m.role === "user" ? "none" : "1px solid var(--border-primary)", borderRadius: 12, padding: "10px 13px", fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.content}</div>
+            <div key={i}
+              style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", background: m.role === "user" ? "var(--accent)" : "var(--bg-glass)", color: m.role === "user" ? "#1a1a1a" : "var(--text-primary)", border: m.role === "user" ? "none" : "1px solid var(--border-primary)", borderRadius: 12, padding: "10px 13px", fontSize: 13.5, lineHeight: 1.5, ...(m.role === "user" ? { whiteSpace: "pre-wrap" as const } : {}) }}
+              {...(m.role === "assistant" ? { dangerouslySetInnerHTML: { __html: mdToHtml(m.content) } } : { children: m.content })}
+            />
           ))}
           {busy && <div style={{ alignSelf: "flex-start", color: "var(--text-muted)", fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={14} className="spin" /> thinking…</div>}
         </div>
