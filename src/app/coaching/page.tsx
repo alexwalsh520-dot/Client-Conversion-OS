@@ -83,11 +83,10 @@ async function fetchCheckInSubmissions(): Promise<CheckInSubmissionRow[]> {
 export default function CoachingPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
-  // Coach Performance compares coaches against each other, so it stays admin-only
-  // even though the rest of the coaching team can now see Client Progress.
-  // Ask Ahmad is admin-only while it is still being tested; the coaches and Nicole
-  // get it once it is ready (Phase 4+).
-  const adminOnlyTabs = new Set<CoachingTab>(["performance", "ask-ahmad"]);
+  // Coach Performance compares coaches against each other, so it stays admin-only.
+  // Ask Ahmad is now launched to the whole coaching team; inside it, the admin-only
+  // sections (inbox, logs, identity) are gated within the tab itself.
+  const adminOnlyTabs = new Set<CoachingTab>(["performance"]);
   const visibleTabs = TABS.filter((t) => !adminOnlyTabs.has(t.key) || isAdmin);
 
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
