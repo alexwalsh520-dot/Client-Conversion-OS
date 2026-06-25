@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 
 // Live source for the "Ask Ahmad" coaching tab. Reads the MAS Coaching Brain's
@@ -16,6 +17,13 @@ export async function GET() {
     learning: unknown[];
     error?: string;
   } = { notes: [], queries: [], review: [], learning: [] };
+
+  // The inbox, notes, query log and learning feed are internal to Ahmad (admin).
+  // Coaches use the chat (/api/mas/ask) only; this endpoint returns nothing to them.
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json(out, { headers: { "Cache-Control": "no-store" } });
+  }
 
   try {
     const sb = getServiceSupabase();

@@ -205,6 +205,7 @@ export default function AskAhmadTab() {
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
+    if (!isAdmin) return; // the internal views + data are admin-only
     try {
       const d = await fetch("/api/mas", { cache: "no-store" }).then((r) => r.json());
       setData({
@@ -214,7 +215,7 @@ export default function AskAhmadTab() {
         learning: Array.isArray(d?.learning) ? d.learning : [],
       });
     } catch { /* leave previous data */ }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     let off = false;
@@ -269,7 +270,8 @@ export default function AskAhmadTab() {
         </div>
       </div>
 
-      {/* Sub-nav */}
+      {/* Sub-nav (admin only; coaches get just the Ask chat) */}
+      {isAdmin && (
       <div style={{ display: "flex", gap: 4, marginBottom: 18, flexWrap: "wrap" }}>
         {NAV.map((n) => (
           <button
@@ -290,6 +292,7 @@ export default function AskAhmadTab() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Content */}
       <div style={{ background: "var(--bg-card, var(--bg-glass))", border: "1px solid var(--border)", borderRadius: 12, padding: 22 }}>
