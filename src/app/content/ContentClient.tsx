@@ -46,8 +46,9 @@ export default function ContentClient() {
     return j.reason === "no_key" ? j.message : j.ok ? `Transcribed ${j.transcribed} (failed ${j.failed}). ${j.note || ""}` : `Transcribe: ${j.error || "issue"}`;
   });
   const regenVoc = () => run("voc", async () => {
-    const j = await (await fetch(`/api/content/voc?creator=${active}`, { method: "POST" })).json();
-    return j.ok ? `Audience read refreshed — ${j.quotes} quotes from ${j.sources?.dms || 0} DMs + ${j.sources?.calls || 0} calls` : `VOC: ${j.error || "issue"}`;
+    const j = await (await fetch(`/api/content/mine?creator=${active}`, { method: "POST" })).json();
+    if (!j.ok) return `Mine: ${j.error || "issue"}`;
+    return `Mined ${j.mined} sources (+${j.quotes_added} quotes). ${j.remaining ? `${j.remaining} left — click again.` : "All calls + DMs mined."}`;
   });
   const shareLink = () => run("share", async () => {
     const j = await (await fetch(`/api/content/share-link?creator=${active}`)).json();
