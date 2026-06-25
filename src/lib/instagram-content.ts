@@ -9,7 +9,11 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { getDecryptedTokenForClient } from "@/lib/instagram-connections";
 
-const GRAPH = "https://graph.instagram.com/v21.0";
+// Mirror the app's proven Instagram Graph convention (see resolveInstagramUsernameByIgsid):
+// the configured graph version + graph.instagram.com host. v21.0 was rejecting some
+// valid tokens ("session invalidated"); v24.0 (the app default) accepts them.
+const GRAPH_VERSION = process.env.META_GRAPH_VERSION?.trim() || "v24.0";
+const GRAPH = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 // Active creators only (Alex 2026-06-25: ONLY Tyson + Antwan are clients).
 // Keyed by the short creator key; the IG connection row is looked up by client_slug.
@@ -40,10 +44,11 @@ async function getConnection(slug: string) {
 }
 
 /** Fetch one creator's media list (paginated) from the Instagram Graph API. */
-async function fetchAllMedia(token: string, maxPages = 12): Promise<IgMedia[]> {
+async function fetchAllMedia(token: string, igUserId: string, maxPages = 12): Promise<IgMedia[]> {
   const fields =
     "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count";
-  let url: string | null = `${GRAPH}/me/media?fields=${fields}&limit=50&access_token=${token}`;
+  // Use the numeric IG user id path (proven working convention), not /me.
+  let url: string | null = `${GRAPH}/${igUserId}/media?fields=${fields}&limit=50&access_token=${token}`;
   const out: IgMedia[] = [];
   for (let page = 0; page < maxPages && url; page++) {
     const res: Response = await fetch(url, { cache: "no-store" });
@@ -83,8 +88,9 @@ export async function ingestCreatorContent(slug: ContentCreator): Promise<Ingest
     }
     const token = await getDecryptedTokenForClient(conn.client_key as string);
     if (!token) return { creator: slug, ok: false, pulled: 0, upserted: 0, error: "token decrypt failed" };
+    if (!conn.instagram_user_id) return { creator: slug, ok: false, pulled: 0, upserted: 0, error: "no instagram_user_id on connection" };
 
-    const media = await fetchAllMedia(token);
+    const media = await fetchAllMedia(token, conn.instagram_user_id as string);
     const rows = media.map((m) => ({
       client_key: slug,
       ig_media_id: m.id,
