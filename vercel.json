@@ -50,6 +50,14 @@
     {
       "path": "/api/cron/content-pipeline",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/daily-metrics-midday",
+      "schedule": "0 21,22 * * *"
+    },
+    {
+      "path": "/api/cron/daily-metrics-eod",
+      "schedule": "0 5,6 * * *"
     }
   ]
 }
