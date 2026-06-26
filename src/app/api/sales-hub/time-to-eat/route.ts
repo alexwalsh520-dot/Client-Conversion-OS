@@ -837,7 +837,7 @@ export async function GET(req: NextRequest) {
       if (canAlert && businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES) {
         const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
         if (!flags.warn15) {
-          await postAnswerLeadAlert(lead.leadName, lead.initialSetter);
+          await postAnswerLeadAlert(lead.client, lead.leadName, lead.initialSetter);
           flags.warn15 = Date.now();
           alertLogDirty = true;
         }
@@ -910,11 +910,11 @@ export async function GET(req: NextRequest) {
       if (canAlert) {
         const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
         if (status === "dead_meat" && !flags.deadMeat) {
-          await postDeadMeatAlert(lead.leadName, lead.initialSetter);
+          await postDeadMeatAlert(lead.client, lead.leadName, lead.initialSetter);
           flags.deadMeat = Date.now();
           alertLogDirty = true;
         } else if (status === "time_to_eat" && !flags.tte) {
-          await postTimeToEatAlert(lead.leadName, lead.initialSetter);
+          await postTimeToEatAlert(lead.client, lead.leadName, lead.initialSetter);
           flags.tte = Date.now();
           alertLogDirty = true;
         }

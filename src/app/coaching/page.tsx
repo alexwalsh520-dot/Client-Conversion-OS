@@ -14,6 +14,7 @@ import {
   Receipt,
   UtensilsCrossed,
   ClipboardCheck,
+  Brain,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -48,6 +49,7 @@ import FinancialsTab from "@/components/coaching/FinancialsTab";
 import ExpensesTab from "@/components/coaching/ExpensesTab";
 import NutritionTab from "@/components/coaching/NutritionTab";
 import ClientProgressTab from "@/components/coaching/ClientProgressTab";
+import AskAhmadTab from "@/components/coaching/AskAhmadTab";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
@@ -61,6 +63,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
   { key: "nutrition", label: "Nutrition", icon: <UtensilsCrossed size={14} /> },
   { key: "client-progress", label: "Client Progress", icon: <ClipboardCheck size={14} /> },
+  { key: "ask-ahmad", label: "Ask Ahmad", icon: <Brain size={14} /> },
 ];
 
 // Admin-only fetch — returns [] for non-admins (their API call 403s).
@@ -80,9 +83,11 @@ async function fetchCheckInSubmissions(): Promise<CheckInSubmissionRow[]> {
 export default function CoachingPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
-  // Coach Performance compares coaches against each other, so it stays admin-only
-  // even though the rest of the coaching team can now see Client Progress.
-  const visibleTabs = TABS.filter((t) => t.key !== "performance" || isAdmin);
+  // Coach Performance compares coaches against each other, so it stays admin-only.
+  // Ask Ahmad is now launched to the whole coaching team; inside it, the admin-only
+  // sections (inbox, logs, identity) are gated within the tab itself.
+  const adminOnlyTabs = new Set<CoachingTab>(["performance"]);
+  const visibleTabs = TABS.filter((t) => !adminOnlyTabs.has(t.key) || isAdmin);
 
   const [activeTab, setActiveTab] = useState<CoachingTab>("roster");
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
@@ -366,6 +371,9 @@ export default function CoachingPage() {
         )}
         {activeTab === "client-progress" && (
           <ClientProgressTab submissions={checkInSubmissions} clients={clients} />
+        )}
+        {activeTab === "ask-ahmad" && (
+          <AskAhmadTab />
         )}
       </div>
     </div>

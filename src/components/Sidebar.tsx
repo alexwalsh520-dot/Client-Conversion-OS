@@ -34,6 +34,7 @@ import {
   FlaskConical,
   MessageCircle,
   Factory,
+  Film,
 } from "lucide-react";
 
 const navItems = [
@@ -45,7 +46,7 @@ const navItems = [
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
-  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard, adminOnly: true },
+  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard },
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
   // Private single-owner tabs — gated to ownerEmail in canViewItem (overrides admin).
@@ -57,6 +58,7 @@ const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/dms", label: "DMs", icon: MessageCircle },
+  { href: "/content", label: "Content", icon: Film },
   { href: "/lab", label: "Lab", icon: FlaskConical },
   { href: "/factory", label: "Factory", icon: Factory },
   { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
@@ -115,7 +117,9 @@ export default function Sidebar() {
       !hasPermissions ||
       isAdmin ||
       allowedTabs?.includes(item.href) ||
-      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub"))
+      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub")) ||
+      // Video Testimonials manager rides on Coaching access (view + download).
+      (item.href === "/testimonials/videos" && allowedTabs?.includes("/coaching"))
     );
   };
   const isHidden = (href: string) => hidden.includes(href);
