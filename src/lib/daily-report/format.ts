@@ -62,9 +62,10 @@ function adsHeader(): string {
 }
 
 function adsLine(label: string, a: AdsBlock): string {
+  const spendStr = dollars(a.spend) + (a.approx && a.spend != null ? "~" : "");
   return (
     padR(label, LABEL_W) +
-    padL(dollars(a.spend), SPEND_W) +
+    padL(spendStr, SPEND_W) +
     padL(int(a.leads), LEADS_W) +
     padL(dollars2(a.cpl), COST_W) +
     padL(dollars2(a.cpbc), COST_W)
@@ -86,6 +87,7 @@ export function formatMidday(r: MiddayReport): string {
   ads.push(
     adsLine("Total", {
       spend: totSpend,
+      approx: r.clients.some((c) => c.ads.approx),
       leads: totLeads,
       cpl: totSpend != null && totLeads > 0 ? totSpend / totLeads : null,
       booked: totBooked,
@@ -129,6 +131,9 @@ export function formatMidday(r: MiddayReport): string {
   const body = [...ads, ...sales, ...restLines].join("\n");
   lines.push("```" + body + "```");
   lines.push("_taken · sales · cash come from the sales sheet — they lag until closers log._");
+  if (r.clients.some((c) => c.ads.approx)) {
+    lines.push("_~ spend = full-day-so-far from the ads sync (live 5a–5p slice unavailable)._");
+  }
   if (r.warnings.length) lines.push(`:warning: _${r.warnings.length} source(s) degraded: ${r.warnings.join("; ")}_`);
   return lines.join("\n");
 }

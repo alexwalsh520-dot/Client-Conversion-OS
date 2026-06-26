@@ -43,6 +43,7 @@ const MIDDAY_END_HOUR = 17;
 
 export interface AdsBlock {
   spend: number | null;
+  approx: boolean; // spend came from the daily-table fallback (full-day-so-far), not the live 5a–5p slice
   leads: number;
   cpl: number | null; // cost per lead
   booked: number | null; // appointments booked (created) in the window
@@ -333,7 +334,23 @@ export async function buildMiddayReport(now: Date): Promise<MiddayReport> {
   for (const client of REPORT_CLIENTS) {
     const tz = CREATORS_BY_KEY[client].timezone;
     const rows = await safe(`ads:${client}`, warnings, () => metaHourlyRows(client, dateStr, dateStr), null);
-    const spend = rows ? spendInWindow(rows, tz, win.startMs, win.endMs) : null;
+    let spend = rows ? spendInWindow(rows, tz, win.startMs, win.endMs) : null;
+    let approx = false;
+    if (spend == null) {
+      // Live intraday slice unavailable (e.g. a Meta token issue) → fall back to
+      // the synced daily table's today-so-far total, the SAME source the CCOS ads
+      // tab uses. Slightly wider than 5a–5p (includes overnight) but never blank.
+      const daily = await safe(
+        `ads-fallback:${client}`,
+        warnings,
+        () => fetchDailySpend(dateStr, dateStr),
+        {} as Record<string, Record<string, number>>,
+      );
+      if (daily[client]) {
+        spend = sumDays(daily[client], dateStr, dateStr);
+        approx = true;
+      }
+    }
     const leadCount = sumCounts(leads[client], MIDDAY_START_HOUR, MIDDAY_END_HOUR);
     const booked = await safe(`booked:${client}`, warnings, () => countAppointments(client, "created_at", win.startMs, win.endMs), null);
     const sched = await safe(`sched:${client}`, warnings, () => countAppointments(client, "start_time", win.startMs, win.endMs), null);
@@ -345,6 +362,7 @@ export async function buildMiddayReport(now: Date): Promise<MiddayReport> {
       label: CREATORS_BY_KEY[client].name,
       ads: {
         spend,
+        approx,
         leads: leadCount,
         cpl: ratio(spend, leadCount),
         booked,
