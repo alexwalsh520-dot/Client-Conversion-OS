@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
   const steps: unknown[] = [];
   // 1. Pull newest reels (refreshes video urls so transcription/storage works).
   steps.push(await hit("/api/content/ingest"));
+  // 1b. Tyson's IG Graph token is dead — pull his reels via Apify (public scrape).
+  steps.push(await hit("/api/content/ingest-apify?creator=tyson"));
   // 2. Transcribe + permanently store any reels still missing either.
   steps.push(await hit("/api/content/transcribe?limit=20"));
   // 3. Pull recent Fathom calls (webhook handles real-time; this catches any gaps).

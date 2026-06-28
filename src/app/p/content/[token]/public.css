@@ -1,0 +1,33 @@
+/* Public creator Content share view — strip ALL CCOS app chrome so the creator
+   sees only their own content view, full-bleed, no sidebar into the rest of the app.
+   Mirrors the proven /p/ads pattern: the sidebar is a sibling of .main-content. */
+.app-layout:has(.pub-content-page) .sidebar,
+.app-layout:has(.pub-unavailable) .sidebar {
+  display: none !important;
+}
+.app-layout:has(.pub-content-page) .main-content,
+.app-layout:has(.pub-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.pub-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050505;
+  padding: 24px;
+}
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+.pub-unavailable-card h1 { margin: 0 0 12px; font-size: 20px; color: #fff; }
+.pub-unavailable-card p { margin: 0; font-size: 14px; color: #888; }

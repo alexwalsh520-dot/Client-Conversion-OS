@@ -11,10 +11,19 @@ export const maxDuration = 300;
 
 const MODEL = "claude-sonnet-4-6";
 const ALIASES: Record<string, string[]> = { tyson: ["tyson", "tyson_sonnek"], antwan: ["antwan", "antwan_rarcus"] };
-const BUCKETS = ["pain", "objection", "desire", "avatar"];
+const BUCKETS = ["pain", "objection", "desire", "avatar", "hook", "topic", "transformation", "vocabulary"];
 
 const EXTRACT_SYS =
-  "You mine a fitness coach's real prospect conversation for CONTENT fuel. Pull the PROSPECT's VERBATIM words (not the coach's) that reveal: pain (what hurts / frustrates them), objection (what makes them hesitate to commit), desire (what they actually want), avatar (who they are — life stage, identity, situation). Only real quotes, lightly trimmed, never invented. Return STRICT JSON: {\"quotes\":[{\"bucket\":one of pain|objection|desire|avatar,\"quote\":\"...\",\"attribution\":\"short who/context\"}]}. 4-10 quotes max, the most content-useful ones. No prose outside JSON.";
+  "You mine a fitness coach's real prospect conversation for CONTENT fuel — the raw material for viral reels and ads. Pull the PROSPECT's VERBATIM words (not the coach's), bucketed:\n" +
+  "- pain: what hurts / frustrates them\n" +
+  "- objection: what makes them hesitate to commit\n" +
+  "- desire: the specific outcome they actually want\n" +
+  "- avatar: who they are — life stage, identity, job, situation\n" +
+  "- hook: a line/phrase so striking it could open a reel (their own words, scroll-stopping)\n" +
+  "- topic: a question they ask or thing they're confused about (= a reel idea)\n" +
+  "- transformation: how they describe a win, a before/after, or what 'fixed' looks like\n" +
+  "- vocabulary: a distinctive word or phrase they use that we should mirror in copy\n" +
+  "Only real quotes, lightly trimmed, never invented. Return STRICT JSON: {\"quotes\":[{\"bucket\":one of pain|objection|desire|avatar|hook|topic|transformation|vocabulary,\"quote\":\"...\",\"attribution\":\"short who/context\"}]}. 6-12 quotes max, the most content-useful ones. No prose outside JSON.";
 
 async function authorized(req: NextRequest) {
   const bearer = req.headers.get("authorization") || "";

@@ -7,8 +7,12 @@ import type { CreatorContent } from "@/lib/content-data";
 const BUCKETS: { key: string; label: string; hint: string }[] = [
   { key: "avatar", label: "Who's showing up", hint: "the actual person in the DMs / on calls" },
   { key: "pain", label: "Pain points", hint: "what hurts, in their words" },
-  { key: "objection", label: "Objections", hint: "what stops them buying" },
   { key: "desire", label: "Desires", hint: "what they actually want" },
+  { key: "objection", label: "Objections", hint: "what stops them buying" },
+  { key: "hook", label: "Hooks that land", hint: "their own lines that stop the scroll" },
+  { key: "topic", label: "Topics they ask about", hint: "questions = ready-made reel ideas" },
+  { key: "transformation", label: "Transformation language", hint: "how wins / before-after get described" },
+  { key: "vocabulary", label: "Their exact words", hint: "phrases to mirror in copy" },
   { key: "lead_quality", label: "Lead-quality signals", hint: "strong buyers vs tire-kickers" },
 ];
 

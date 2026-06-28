@@ -15,6 +15,7 @@ export default function ContentClient() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [shareFor, setShareFor] = useState<{ creator: string; url: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -38,7 +39,11 @@ export default function ContentClient() {
 
   const shareLink = () => run("share", async () => {
     const j = await (await fetch(`/api/content/share-link?creator=${active}`)).json();
-    if (j.url) { await navigator.clipboard.writeText(j.url).catch(() => {}); return `Public link copied: ${j.url}`; }
+    if (j.url) {
+      setShareFor({ creator: active, url: j.url });
+      await navigator.clipboard.writeText(j.url).catch(() => {});
+      return `Public link for ${CREATORS.find((c) => c.slug === active)?.name} copied — no login needed.`;
+    }
     return `Share: ${j.error || "issue"}`;
   });
 
@@ -89,6 +94,34 @@ export default function ContentClient() {
       {toast && (
         <div className="glass" style={{ marginBottom: 18, padding: "10px 14px", borderRadius: 10, background: "var(--accent-soft)", border: "1px solid var(--accent)", color: "var(--text-primary)", fontSize: 13, display: "flex", gap: 8, alignItems: "center", wordBreak: "break-all" }}>
           <Check size={15} style={{ color: "var(--accent)", flexShrink: 0 }} /> {toast}
+        </div>
+      )}
+
+      {shareFor && (
+        <div className="glass" style={{ marginBottom: 18, padding: "14px 16px", borderRadius: 12, background: "var(--bg-card)", border: "1px solid var(--accent)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Share2 size={15} style={{ color: "var(--accent)" }} />
+            <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 13.5 }}>
+              Public link for {CREATORS.find((c) => c.slug === shareFor.creator)?.name}
+            </span>
+            <span style={{ fontSize: 11.5, color: "#37d67a" }}>no login needed</span>
+            <button onClick={() => setShareFor(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>dismiss</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input readOnly value={shareFor.url} onFocus={(e) => e.currentTarget.select()}
+              style={{ flex: 1, minWidth: 240, background: "var(--bg-glass)", border: "1px solid var(--border-primary)", borderRadius: 8, padding: "8px 10px", color: "var(--text-secondary)", fontSize: 12.5, fontFamily: "monospace" }} />
+            <button onClick={() => { navigator.clipboard.writeText(shareFor.url).catch(() => {}); flash("Copied."); }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 8, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+              <Check size={14} /> Copy
+            </button>
+            <a href={shareFor.url} target="_blank" rel="noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 12.5, fontWeight: 600, textDecoration: "none" }}>
+              Open
+            </a>
+          </div>
+          <p style={{ margin: "9px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+            Send this to {CREATORS.find((c) => c.slug === shareFor.creator)?.name}. It opens their content view only — no sidebar, no other tabs, no login.
+          </p>
         </div>
       )}
 
