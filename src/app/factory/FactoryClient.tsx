@@ -13,9 +13,11 @@ import {
   History,
   ChevronDown,
   BookOpen,
+  ListTree,
   X,
 } from "lucide-react";
 import "./factory.css";
+import Workspace from "./Workspace";
 
 // ---- Types mirror the /api/factory response ----
 type Stage = "copy_written" | "image_generated" | "revision" | "completed";
@@ -53,6 +55,7 @@ interface Project {
     completed: number;
     total: number;
   };
+  groups?: unknown[];
   items: Item[];
 }
 
@@ -87,7 +90,8 @@ export default function FactoryClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [view, setView] = useState<"board" | "files" | "detail">("board");
+  const [view, setView] = useState<"board" | "files" | "detail" | "workspace">("board");
+  const autoViewedRef = useRef<string | null>(null);
   const [bucketFilter, setBucketFilter] = useState<string>("all");
   const [styleFilter, setStyleFilter] = useState<string>("all");
   const [groupByBucket, setGroupByBucket] = useState(false);
@@ -127,6 +131,17 @@ export default function FactoryClient() {
   useEffect(() => {
     if (!activeProjectId && projects.length) setActiveProjectId(projects[0].id);
   }, [projects, activeProjectId]);
+
+  // Once per project: pick the natural view. Funnel projects (with groups) open
+  // in the nested Workspace; legacy image-only projects open on the Board.
+  useEffect(() => {
+    if (!activeProjectId) return;
+    if (autoViewedRef.current === activeProjectId) return;
+    const p = projects.find((x) => x.id === activeProjectId);
+    if (!p) return;
+    autoViewedRef.current = activeProjectId;
+    setView((p.groups?.length ?? 0) > 0 ? "workspace" : "board");
+  }, [activeProjectId, projects]);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) || null,
@@ -267,6 +282,12 @@ export default function FactoryClient() {
 
             <div className="fc-viewtoggle">
               <button
+                className={`fc-vt-btn ${view === "workspace" ? "fc-vt-active" : ""}`}
+                onClick={() => setView("workspace")}
+              >
+                <ListTree size={14} /> Workspace
+              </button>
+              <button
                 className={`fc-vt-btn ${view === "board" ? "fc-vt-active" : ""}`}
                 onClick={() => setView("board")}
               >
@@ -287,7 +308,8 @@ export default function FactoryClient() {
             </div>
           </div>
 
-          {/* Filter / group bar */}
+          {/* Filter / group bar (image-ad views only) */}
+          {view !== "workspace" && (
           <div className="fc-filterbar">
             <div className="fc-seg">
               {[
@@ -331,8 +353,11 @@ export default function FactoryClient() {
 
             <span className="fc-filtercount">{filteredItems.length} shown</span>
           </div>
+          )}
 
-          {view === "board" ? (
+          {view === "workspace" ? (
+            <Workspace projectId={activeProject.id} />
+          ) : view === "board" ? (
             <BoardView
               items={filteredItems}
               groupByBucket={groupByBucket}

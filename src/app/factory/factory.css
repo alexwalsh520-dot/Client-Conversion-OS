@@ -878,3 +878,99 @@
   color: var(--text-primary);
   white-space: pre-wrap;
 }
+
+/* ===================================================================== */
+/* Funnel Workspace (fcw-) — nested groups, asset cards, doc editor       */
+/* ===================================================================== */
+.fcw { display: flex; flex-direction: column; gap: 14px; }
+.fcw-err { background: #2a1416; border: 1px solid #5b2326; color: #ffb4b4; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+.fcw-toolbar { display: flex; align-items: center; gap: 10px; }
+.fcw-toolbar-busy { color: var(--text-muted); }
+.fcw-addgroup, .fcw-cancel { display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.fcw-addgroup:hover { border-color: var(--border-hover); color: var(--text-primary); }
+.fcw-addgroup-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fcw-addgroup-name { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text-primary); font-size: 13px; min-width: 240px; }
+
+.fcw-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.fcw-group-head { display: flex; align-items: center; gap: 10px; padding: 11px 13px; }
+.fcw-group-toggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; color: var(--text-primary); cursor: pointer; font-size: 14px; font-weight: 600; }
+.fcw-group-icon { color: var(--accent); display: inline-flex; }
+.fcw-group-name { color: var(--text-primary); }
+.fcw-group-name.fcw-ungrouped { color: var(--text-muted); font-weight: 600; padding-left: 13px; }
+.fcw-progress-pill { font-size: 11px; color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.fcw-group-bar { width: 90px; height: 5px; background: var(--bg-secondary); border-radius: 999px; overflow: hidden; }
+.fcw-group-bar span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.fcw-group-spacer { flex: 1; }
+.fcw-group-add { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); padding: 5px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; }
+.fcw-group-add:hover { background: var(--accent); color: #0c0c0e; }
+.fcw-group-empty { color: var(--text-muted); font-size: 13px; padding: 6px 4px; }
+
+.fcw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding: 0 13px 14px; }
+.fcw-card { text-align: left; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 11px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: border-color .15s, transform .1s; }
+.fcw-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.fcw-card-done { opacity: .72; }
+.fcw-card-done:hover { opacity: 1; }
+.fcw-card-top { display: flex; align-items: center; gap: 7px; }
+.fcw-card-kind { color: var(--accent); display: inline-flex; }
+.fcw-card-label { font-size: 13px; font-weight: 600; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fcw-card-status { font-size: 10px; text-transform: capitalize; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.fcw-st-live, .fcw-st-approved, .fcw-st-completed, .fcw-st-done { color: var(--success); border-color: var(--success); background: var(--success-soft); }
+.fcw-card-thumb { width: 100%; border-radius: 7px; object-fit: cover; max-height: 130px; }
+.fcw-card-preview { font-size: 12px; color: var(--text-secondary); line-height: 1.45; margin: 0; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.fcw-card-empty { font-size: 12px; color: var(--text-muted); font-style: italic; margin: 0; }
+.fcw-card-foot { display: flex; gap: 8px; }
+.fcw-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
+
+/* Drawer / doc editor */
+.fcw-drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 60; display: flex; justify-content: flex-end; }
+.fcw-drawer { width: min(960px, 96vw); height: 100%; background: var(--bg-card); border-left: 1px solid var(--border); display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,.4); }
+.fcw-drawer-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.fcw-drawer-title { flex: 0 1 auto; background: none; border: none; color: var(--text-primary); font-size: 16px; font-weight: 700; outline: none; min-width: 120px; }
+.fcw-drawer-title:focus { border-bottom: 1px solid var(--accent); }
+.fcw-kind-pill { font-size: 11px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 9px; }
+.fcw-status-select { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary); font-size: 12px; padding: 5px 8px; text-transform: capitalize; }
+.fcw-drawer-spacer { flex: 1; }
+.fcw-saved { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; }
+.fcw-icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 5px; border-radius: 6px; display: inline-flex; }
+.fcw-icon-btn:hover { color: var(--text-primary); background: var(--bg-secondary); }
+.fcw-icon-btn.fcw-danger:hover { color: #ff6b6b; }
+.fcw-drawer-body { flex: 1; display: grid; grid-template-columns: 1fr 320px; gap: 0; overflow: hidden; }
+.fcw-editor-col { display: flex; flex-direction: column; padding: 14px; gap: 10px; overflow: auto; }
+.fcw-asseturl { display: flex; align-items: center; gap: 7px; color: var(--text-muted); }
+.fcw-asseturl-input { flex: 1; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text-primary); font-size: 12px; }
+.fcw-editor { flex: 1; min-height: 320px; resize: none; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; color: var(--text-primary); font-size: 14px; line-height: 1.6; font-family: ui-monospace, "SF Mono", Menlo, monospace; outline: none; }
+.fcw-editor:focus { border-color: var(--accent); }
+.fcw-assist { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; }
+.fcw-assist-icon { color: var(--accent); }
+.fcw-assist-input { flex: 1; background: none; border: none; color: var(--text-primary); font-size: 13px; outline: none; }
+.fcw-assist-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #0c0c0e; border: none; border-radius: 7px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.fcw-assist-btn:disabled { opacity: .6; cursor: default; }
+
+.fcw-side-col { border-left: 1px solid var(--border); padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 16px; background: var(--bg-secondary); }
+.fcw-side-block { display: flex; flex-direction: column; gap: 8px; }
+.fcw-side-title { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.fcw-muted { font-size: 12px; color: var(--text-muted); font-style: italic; }
+.fcw-comments { display: flex; flex-direction: column; gap: 7px; }
+.fcw-comment { background: var(--bg-card); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 8px; padding: 8px 10px; }
+.fcw-comment.fcw-by-claude { border-left-color: #7aa2ff; }
+.fcw-comment.fcw-resolved { opacity: .5; }
+.fcw-comment-head { display: flex; align-items: center; justify-content: space-between; }
+.fcw-comment-author { font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.fcw-comment-resolve { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; }
+.fcw-comment-resolve:hover { color: var(--success); }
+.fcw-comment-text { font-size: 12.5px; color: var(--text-primary); line-height: 1.45; margin-top: 3px; }
+.fcw-addrow { display: flex; gap: 6px; align-items: flex-end; }
+.fcw-addinput { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; color: var(--text-primary); font-size: 12.5px; resize: none; outline: none; font-family: inherit; }
+.fcw-addbtn { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); border-radius: 7px; padding: 7px 11px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.fcw-addbtn:disabled { opacity: .5; cursor: default; }
+.fcw-checklist { display: flex; flex-direction: column; gap: 5px; }
+.fcw-step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; }
+.fcw-step-done span { text-decoration: line-through; color: var(--text-muted); }
+.fcw-version { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 7px; }
+.fcw-version-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); }
+.fcw-restore { background: none; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+.fcw-restore:hover { border-color: var(--accent); color: var(--accent); }
+.fcw-version-preview { font-size: 11.5px; color: var(--text-secondary); margin-top: 5px; line-height: 1.4; }
+.fcw-spin { animation: fcw-spin 1s linear infinite; }
+@keyframes fcw-spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) { .fcw-drawer-body { grid-template-columns: 1fr; } .fcw-side-col { border-left: none; border-top: 1px solid var(--border); } }
