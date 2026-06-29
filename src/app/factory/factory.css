@@ -1023,3 +1023,23 @@
 .fcw-margin { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }
 .fcw-margin .fcw-comment { margin-bottom: 0; }
 .fcw-margin-anchor { position: static; }  /* retired absolute pinning */
+
+/* Workspace view toggle + Pipeline (kanban) */
+.fcw-toolbar-spacer { flex: 1; }
+.fcw-modeseg { display: inline-flex; background: var(--bg-card); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
+.fcw-modeseg button { display: inline-flex; align-items: center; gap: 6px; border: none; background: transparent; color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+.fcw-modeseg button.on { background: var(--accent-soft); color: var(--accent); }
+
+.fcw-kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 1100px) { .fcw-kanban { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .fcw-kanban { grid-template-columns: 1fr; } }
+.fcw-kcol { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; }
+.fcw-kcol-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: .04em; }
+.fcw-kcount { font-size: 11px; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.fcw-kcol-body { padding: 10px; display: flex; flex-direction: column; gap: 9px; min-height: 40px; }
+.fcw-kcard { text-align: left; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: border-color .15s, transform .1s; }
+.fcw-kcard:hover { border-color: var(--accent); transform: translateY(-1px); }
+.fcw-kcard-top { display: flex; gap: 7px; align-items: flex-start; }
+.fcw-kcard-label { font-size: 12.5px; font-weight: 600; color: var(--text-primary); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.fcw-kcard-foot { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.fcw-kgroup { font-size: 10.5px; color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }

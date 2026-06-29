@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronRight, ChevronDown, Plus, Trash2, MessageSquare, CheckSquare,
-  Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2,
+  Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2, Layers, LayoutGrid,
 } from "lucide-react";
 import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone } from "./types";
 import DocEditor from "./DocEditor";
@@ -14,6 +14,18 @@ const KIND_ICON: Record<string, ReactNode> = {
 };
 
 const POLL_MS = 6000;
+
+// Shared pipeline so every asset kind (with its own statuses) lands in common columns.
+const PIPE: { key: string; label: string; match: string[] }[] = [
+  { key: "todo", label: "To do", match: ["draft", "concept", "copy_written", "script"] },
+  { key: "progress", label: "In progress", match: ["film", "image_generated"] },
+  { key: "review", label: "Review", match: ["review", "revision", "edit"] },
+  { key: "done", label: "Live / Done", match: ["approved", "live", "completed", "done"] },
+];
+function pipeColumn(item: WItem): string {
+  const s = (item.kind === "image_ad" ? item.stage : item.status) || "";
+  return (PIPE.find((c) => c.match.includes(s)) || PIPE[0]).key;
+}
 
 // Card preview: render either HTML or markdown bodies as clean plain text.
 function toPlain(s: string): string {
@@ -47,6 +59,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupKind, setGroupKind] = useState<AssetKind>("email");
+  const [mode, setMode] = useState<"groups" | "pipeline">("groups");
   const [busy, setBusy] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -137,8 +150,14 @@ export default function Workspace({ projectId }: { projectId: string }) {
           </div>
         )}
         {busy && <Loader2 size={14} className="fcw-spin fcw-toolbar-busy" />}
+        <div className="fcw-toolbar-spacer" />
+        <div className="fcw-modeseg">
+          <button className={mode === "groups" ? "on" : ""} onClick={() => setMode("groups")}><Layers size={14} /> Groups</button>
+          <button className={mode === "pipeline" ? "on" : ""} onClick={() => setMode("pipeline")}><LayoutGrid size={14} /> Pipeline</button>
+        </div>
       </div>
 
+      {mode === "groups" && (<>
       {groups.map((g) => {
         const items = (itemsByGroup.get(g.id) || []).slice().sort((a, b) => a.sort_order - b.sort_order);
         const done = items.filter(statusDone).length;
@@ -174,9 +193,53 @@ export default function Workspace({ projectId }: { projectId: string }) {
           </div>
         </section>
       )}
+      </>)}
+
+      {mode === "pipeline" && <PipelineView items={project.items} groups={groups} onOpen={setEditing} />}
 
       {editing && <DocEditor item={editing} onClose={() => setEditing(null)} onChanged={load} />}
     </div>
+  );
+}
+
+function PipelineView({ items, groups, onOpen }: { items: WItem[]; groups: WGroup[]; onOpen: (i: WItem) => void }) {
+  const groupName = new Map(groups.map((g) => [g.id, g.name]));
+  return (
+    <div className="fcw-kanban">
+      {PIPE.map((col) => {
+        const colItems = items.filter((i) => pipeColumn(i) === col.key).sort((a, b) => a.sort_order - b.sort_order);
+        return (
+          <div className="fcw-kcol" key={col.key}>
+            <div className="fcw-kcol-head"><span>{col.label}</span><span className="fcw-kcount">{colItems.length}</span></div>
+            <div className="fcw-kcol-body">
+              {colItems.length === 0 && <div className="fcw-group-empty">Nothing here</div>}
+              {colItems.map((it) => (
+                <KanbanCard key={it.id} item={it} group={it.group_id ? groupName.get(it.group_id) : undefined} onOpen={() => onOpen(it)} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOpen: () => void }) {
+  const meta = KIND_META[item.kind];
+  const status = (item.kind === "image_ad" ? item.stage : item.status) || meta.statuses[0];
+  const comments = (item.comments || []).filter((c) => !c.resolved).length;
+  return (
+    <button className="fcw-kcard" onClick={onOpen}>
+      <div className="fcw-kcard-top">
+        <span className="fcw-card-kind">{KIND_ICON[meta.icon]}</span>
+        <span className="fcw-kcard-label">{item.label}</span>
+      </div>
+      <div className="fcw-kcard-foot">
+        {group && <span className="fcw-kgroup">{group}</span>}
+        <span className={`fcw-card-status fcw-st-${status}`}>{String(status).replace(/_/g, " ")}</span>
+        {comments > 0 && <span className="fcw-chip"><MessageSquare size={11} /> {comments}</span>}
+      </div>
+    </button>
   );
 }
 
