@@ -153,7 +153,7 @@ type MasData = {
   learning: { id: number; content: string; approved: boolean; created_at: string }[];
 };
 
-type Section = "ask" | "brain" | "notes" | "queries" | "review" | "learning";
+type Section = "ask" | "brain" | "notes" | "queries" | "review" | "learning" | "teach";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export default function AskAhmadTab() {
@@ -204,6 +204,13 @@ export default function AskAhmadTab() {
   const [rulingDraft, setRulingDraft] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
 
+  // Teach tab state
+  const [teachText, setTeachText] = useState("");
+  const [teachImages, setTeachImages] = useState<{ media_type: string; data: string; name: string }[]>([]);
+  const [teaching, setTeaching] = useState(false);
+  const [teachResult, setTeachResult] = useState<string | null>(null);
+  const [teachErr, setTeachErr] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     if (!isAdmin) return; // the internal views + data are admin-only
     try {
@@ -241,6 +248,37 @@ export default function AskAhmadTab() {
     }
   }
 
+  function onPickImages(files: FileList | null) {
+    if (!files) return;
+    Array.from(files).forEach((f) => {
+      if (!f.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => setTeachImages((imgs) => (imgs.length >= 6 ? imgs : [...imgs, { media_type: f.type, data: String(reader.result || ""), name: f.name }]));
+      reader.readAsDataURL(f);
+    });
+  }
+
+  async function teach() {
+    if (teaching) return;
+    if (!teachText.trim() && teachImages.length === 0) { setTeachErr("Add a note or a screenshot to teach."); return; }
+    setTeaching(true); setTeachErr(null); setTeachResult(null);
+    try {
+      const res = await fetch("/api/mas/teach", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: teachText, images: teachImages.map((i) => ({ media_type: i.media_type, data: i.data })) }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error || "Teaching failed");
+      setTeachResult(String(d.lesson || ""));
+      setTeachText(""); setTeachImages([]);
+      loadData(); // new lesson shows under Learning
+    } catch (e) {
+      setTeachErr(e instanceof Error ? e.message : "Teaching failed");
+    } finally {
+      setTeaching(false);
+    }
+  }
+
   const brainHtml = useMemo(() => mdToHtml(snap?.brain?.markdown || ""), [snap]);
   const pendingReview = data.review.filter((r) => r.status === "pending").length;
 
@@ -251,6 +289,7 @@ export default function AskAhmadTab() {
     { key: "queries", label: "Questions", count: data.queries.length },
     { key: "review", label: "Review Inbox", count: pendingReview },
     { key: "learning", label: "Learning", count: data.learning.length },
+    { key: "teach", label: "Teach" },
   ];
 
   return (
@@ -456,6 +495,54 @@ export default function AskAhmadTab() {
                   </div>
                 ))}
               </div>
+        )}
+
+        {section === "teach" && (
+          <div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
+              Teach Ahmad how you think or how you handle a scenario. Type it out, attach screenshots, or both. Ahmad reads it, captures the lesson in your voice, and starts applying it to coach questions right away.
+            </div>
+            <textarea
+              value={teachText}
+              onChange={(e) => setTeachText(e.target.value)}
+              placeholder="e.g. When a client goes quiet for two weeks, here is exactly how I re-engage them…"
+              rows={5}
+              style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 14, fontFamily: "inherit" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", fontSize: 12.5 }}>
+                + Attach screenshots
+                <input type="file" accept="image/*" multiple onChange={(e) => { onPickImages(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
+              </label>
+              <span style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>{teachImages.length > 0 ? `${teachImages.length} attached (max 6)` : "PNG, JPG, GIF or WEBP"}</span>
+            </div>
+            {teachImages.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                {teachImages.map((img, i) => (
+                  <div key={i} style={{ position: "relative" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.data} alt={img.name} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }} />
+                    <button onClick={() => setTeachImages((imgs) => imgs.filter((_, j) => j !== i))} aria-label="remove"
+                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--danger, #e0564f)", color: "#fff", fontSize: 12, cursor: "pointer", lineHeight: 1 }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <button onClick={teach} disabled={teaching || (!teachText.trim() && teachImages.length === 0)}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "none", cursor: teaching || (!teachText.trim() && teachImages.length === 0) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, background: "var(--accent)", color: "var(--bg-primary)", opacity: teaching || (!teachText.trim() && teachImages.length === 0) ? 0.55 : 1 }}>
+                {teaching ? "Ahmad is reading…" : "Teach Ahmad"}
+              </button>
+            </div>
+            {teachErr && <div style={{ fontSize: 12.5, color: "var(--danger, #e0564f)", marginTop: 10 }}>{teachErr}</div>}
+            {teachResult && (
+              <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--success, #3fb27f)", background: "var(--bg-glass)" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--success, #3fb27f)", marginBottom: 6 }}>Got it. Here is what I took from that:</div>
+                <div style={{ fontSize: 14, color: "var(--text-primary)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{teachResult}</div>
+                <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 8 }}>It is now part of how I answer. You can refine or remove it under Learning.</div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

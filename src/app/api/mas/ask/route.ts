@@ -226,10 +226,10 @@ async function runTool(name: string, input: Record<string, unknown>, email: stri
   return `Unknown tool: ${name}`;
 }
 
-function systemPrompt(askerName: string | null): string {
+function systemPrompt(askerName: string | null, taught: string): string {
   const today = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   return `${MAS_BRAIN_IDENTITY}
-
+${taught ? `\n---\nWHAT AHMAD HAS TAUGHT YOU\nThese are Ahmad's own lessons and rulings, in his words. Apply them as his explicit, current guidance. When one of these conflicts with a generic reading of an SOP, follow Ahmad's lesson.\n${taught}\n` : ""}
 ---
 RUNTIME CONTEXT
 - Today's date: ${today}.
@@ -260,6 +260,15 @@ export async function POST(req: NextRequest) {
     .slice(-8)
     .map((m) => ({ role: m.role as "user" | "assistant", content: truncate(m.content, 4000) }));
 
+  // Pull Ahmad's approved lessons + rulings so the brain applies what he has taught.
+  let taught = "";
+  try {
+    const { data: learnRows } = await getServiceSupabase()
+      .from("mas_learning_feed").select("content").eq("approved", true)
+      .order("created_at", { ascending: false }).limit(60);
+    taught = (learnRows || []).map((r) => `- ${r.content}`).join("\n").slice(0, 6000);
+  } catch { /* non-fatal: fall back to identity + SOPs only */ }
+
   const anthropic = new Anthropic();
   const messages: Anthropic.MessageParam[] = [...history, { role: "user", content: question }];
   const totals = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -269,7 +278,7 @@ export async function POST(req: NextRequest) {
   try {
     for (let round = 0; round < 8; round++) {
       const resp = await anthropic.messages.create({
-        model: MODEL, max_tokens: 1800, system: systemPrompt(askerName), tools: TOOLS, messages,
+        model: MODEL, max_tokens: 1800, system: systemPrompt(askerName, taught), tools: TOOLS, messages,
       });
       totals.input_tokens += resp.usage?.input_tokens || 0;
       totals.output_tokens += resp.usage?.output_tokens || 0;
