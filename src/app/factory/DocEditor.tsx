@@ -72,6 +72,8 @@ export default function DocEditor({
   const [draftCid, setDraftCid] = useState<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [addBtn, setAddBtn] = useState<{ top: number; left: number } | null>(null);
+  const [pending, setPending] = useState<{ quote: string; range: Range } | null>(null);
+  const [pendingText, setPendingText] = useState("");
 
   const edRef = useRef<HTMLDivElement>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,8 +84,19 @@ export default function DocEditor({
   useEffect(() => {
     if (inited.current === item.id) return;
     inited.current = item.id;
-    if (edRef.current) edRef.current.innerHTML = toHtml(item.body_md || item.copy_text || "");
-    setComments(item.comments || []);
+    const ed = edRef.current;
+    if (ed) ed.innerHTML = toHtml(item.body_md || item.copy_text || "");
+    // Self-heal: drop empty comments and unwrap any orphan/empty highlights left
+    // behind by the old flow (a highlight should only exist with a real comment).
+    const raw = item.comments || [];
+    const clean = raw.filter((c) => (c.text || "").trim());
+    const validCids = new Set(clean.map((c) => c.id));
+    let changed = clean.length !== raw.length;
+    if (ed) ed.querySelectorAll("[data-cid]").forEach((el) => {
+      if (!validCids.has(el.getAttribute("data-cid") || "")) { el.replaceWith(document.createTextNode(el.textContent || "")); changed = true; }
+    });
+    setComments(clean);
+    if (changed && ed) patch({ id: item.id, comments: clean, bodyMd: ed.innerHTML }).then(onChanged).catch(() => {});
     setChecklist(item.checklist || []);
     setLabel(item.label);
     setStatus(item.status || item.stage || meta.statuses[0]);
@@ -132,28 +145,34 @@ export default function DocEditor({
     setAddBtn({ top: rect.top - host.top + (edRef.current.scrollTop || 0) - 30, left: rect.left - host.left });
   };
 
-  const addCommentOnSelection = () => {
+  // Start a comment from the current selection — nothing is highlighted or saved
+  // yet. We hold the range; the highlight + comment only commit if you write one.
+  const startPending = () => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
+    setPending({ quote: sel.toString().slice(0, 200), range: sel.getRangeAt(0).cloneRange() });
+    setPendingText("");
+    setAddBtn(null);
+  };
+
+  const commitPending = () => {
+    if (!pending) return;
+    const text = pendingText.trim();
+    if (!text) { setPending(null); return; } // empty -> no highlight, no comment
     const cid = rid();
-    let quote = sel.toString().slice(0, 200);
-    const range = sel.getRangeAt(0);
+    let quote = pending.quote;
     const span = document.createElement("span");
     span.className = "fcw-hl";
     span.setAttribute("data-cid", cid);
-    let wrapped = false;
-    try { range.surroundContents(span); wrapped = true; } catch { document.execCommand("hiliteColor", false, "#3a3320"); }
-    if (wrapped) quote = (span.textContent || quote).slice(0, 200); // store exactly what got highlighted
-    sel.removeAllRanges();
-    setAddBtn(null);
-    const next = [...comments, { id: cid, author: "alex" as const, text: "", created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
+    try { pending.range.surroundContents(span); quote = (span.textContent || quote).slice(0, 200); } catch { /* range moved; keep the quote, skip the visual wrap */ }
+    const next = [...comments, { id: cid, author: "alex" as const, text, created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
     setComments(next);
-    setDraftCid(cid);
-    setDraftText("");
+    setPending(null);
     saveField({ comments: next, bodyMd: currentHtml() });
   };
 
   const saveComment = (cid: string, text: string) => {
+    if (!text.trim()) { setDraftCid(null); removeComment(cid); return; } // empty edit = remove it
     const next = comments.map((c) => (c.id === cid ? { ...c, text } : c));
     setComments(next);
     setDraftCid(null);
@@ -283,8 +302,8 @@ export default function DocEditor({
                 onMouseUp={onSelect}
                 onKeyUp={onSelect}
               />
-              {addBtn && (
-                <button className="fcw-add-comment-float" style={{ top: addBtn.top, left: addBtn.left }} onMouseDown={(e) => { e.preventDefault(); addCommentOnSelection(); }}>
+              {addBtn && !pending && (
+                <button className="fcw-add-comment-float" style={{ top: addBtn.top, left: addBtn.left }} onMouseDown={(e) => { e.preventDefault(); startPending(); }}>
                   <MessageSquarePlus size={13} /> Comment
                 </button>
               )}
@@ -320,7 +339,19 @@ export default function DocEditor({
               <>
                 <div className="fcw-margin">
                   <div className="fcw-side-title"><MessageSquarePlus size={13} /> Comments</div>
-                  {comments.length === 0 && (
+                  {pending && (
+                    <div className="fcw-comment fcw-by-alex">
+                      <div className="fcw-comment-quote">“{pending.quote}”</div>
+                      <textarea autoFocus className="fcw-addinput" rows={2} placeholder="Your comment…" value={pendingText}
+                        onChange={(e) => setPendingText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitPending(); } if (e.key === "Escape") setPending(null); }} />
+                      <div className="fcw-comment-actions">
+                        <button className="fcw-addbtn" onClick={commitPending} disabled={!pendingText.trim()}>Comment</button>
+                        <button className="fcw-cancel" onClick={() => setPending(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {comments.length === 0 && !pending && (
                     <div className="fcw-muted">Highlight any text in the doc to leave a comment. It shows up here, in the order it appears in the doc.</div>
                   )}
                   {orderedComments.map((c) => (
