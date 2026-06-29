@@ -117,6 +117,10 @@ const DEAD_MEAT_AFTER_MISSES = 2;
 const DEAD_MEAT_AFTER_BUSINESS_MINUTES = 120;
 // Proactive nudge at 4 working minutes — owner is about to miss the 5-min target.
 const RESPONSE_TARGET_WARN_BUSINESS_MINUTES = 4;
+// ...but only within a tight window. The "about to miss 5 min" message is
+// meaningless for a lead that's already been waiting much longer, and the ceiling
+// also stops a backlog burst when this first goes live.
+const RESPONSE_TARGET_WARN_CEILING_BUSINESS_MINUTES = 8;
 // Early "answer your lead" nudge fires at 15 working minutes of no reply.
 const WARN_AFTER_BUSINESS_MINUTES = 15;
 // The earliest alert threshold — used to decide which leads need an exempt check.
@@ -854,7 +858,13 @@ export async function GET(req: NextRequest) {
         new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
 
       // 4-minute proactive nudge — owner is about to miss the 5-min target.
-      if (canAlert && businessMinutesWaiting >= RESPONSE_TARGET_WARN_BUSINESS_MINUTES) {
+      // Only in the [4, 8) working-min window so it never fires for already-stale
+      // leads (or replays the backlog on first launch).
+      if (
+        canAlert &&
+        businessMinutesWaiting >= RESPONSE_TARGET_WARN_BUSINESS_MINUTES &&
+        businessMinutesWaiting < RESPONSE_TARGET_WARN_CEILING_BUSINESS_MINUTES
+      ) {
         const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
         if (!flags.warn4) {
           await postResponseTargetAlert(lead.client, lead.leadName, lead.initialSetter);
