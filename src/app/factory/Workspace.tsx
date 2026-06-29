@@ -18,8 +18,8 @@ const POLL_MS = 6000;
 // Shared pipeline so every asset kind (with its own statuses) lands in common columns.
 const PIPE: { key: string; label: string; match: string[] }[] = [
   { key: "todo", label: "To do", match: ["draft", "concept", "copy_written", "script"] },
-  { key: "progress", label: "In progress", match: ["film", "image_generated"] },
-  { key: "review", label: "Review", match: ["review", "revision", "edit"] },
+  { key: "filmedit", label: "Film / Edit", match: ["film", "edit", "image_generated"] },
+  { key: "review", label: "Review", match: ["review", "revision"] },
   { key: "done", label: "Live / Done", match: ["approved", "live", "completed", "done"] },
 ];
 function pipeColumn(item: WItem): string {

@@ -80,11 +80,11 @@ export const KIND_META: Record<
   { label: string; icon: string; statuses: string[]; isDoc: boolean }
 > = {
   image_ad: { label: "Image Ad", icon: "image", statuses: ["copy_written", "image_generated", "revision", "completed"], isDoc: false },
-  video_ad: { label: "Video Ad", icon: "video", statuses: ["script", "film", "edit", "live"], isDoc: true },
+  video_ad: { label: "Video Ad", icon: "video", statuses: ["script", "film", "edit", "review", "live"], isDoc: true },
   email: { label: "Email", icon: "mail", statuses: ["draft", "review", "approved", "live"], isDoc: true },
   page_copy: { label: "Page Copy", icon: "page", statuses: ["draft", "review", "approved", "live"], isDoc: true },
-  breakout_video: { label: "Breakout Video", icon: "video", statuses: ["script", "film", "edit", "live"], isDoc: true },
-  dm_content: { label: "DM Content", icon: "film", statuses: ["concept", "script", "film", "live"], isDoc: true },
+  breakout_video: { label: "Breakout Video", icon: "video", statuses: ["script", "film", "edit", "review", "live"], isDoc: true },
+  dm_content: { label: "DM Content", icon: "film", statuses: ["concept", "script", "film", "edit", "review", "live"], isDoc: true },
   doc: { label: "Doc", icon: "doc", statuses: ["draft", "review", "done"], isDoc: true },
 };
 
