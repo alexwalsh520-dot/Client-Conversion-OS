@@ -1,7 +1,7 @@
-// Daily metrics engine — composes the numbers for the two Slack reports.
+// Daily recap engine — composes the numbers for the 1am ET previous-day recap.
 //
 // All data comes from existing CCOS sources; nothing new is integrated here:
-//   • Ad spend   → live Meta hourly insights, re-bucketed to ET (per-account tz)
+//   • Ad spend   → ads_meta_insights_daily (synced, ET-bucketed; same as ads tab)
 //   • Leads      → getLeadHours() (ManyChat `new_lead` tag, ET hour buckets)
 //   • Calls      → ghl_appointments table (Strategy Session calendars, by client)
 //   • Sales/cash → sales tracker sheet (outcome=WIN / Cash Collected / Call Taken)
@@ -11,70 +11,29 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { getLeadHours } from "@/lib/sales-hub/lead-hours";
-import {
-  CREATORS_BY_KEY,
-  creatorKeyFromText,
-  firstEnv,
-  normalizeAdAccountId,
-  type CreatorKey,
-} from "@/lib/creators";
+import { CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import {
-  ET,
   addDays,
   etDateStr,
   etDayBoundsUtc,
-  etWindowUtc,
   startOfEtMonth,
   startOfEtWeek,
-  zonedMs,
 } from "./time";
 
 /** Clients shown in the report, in display order. */
 export const REPORT_CLIENTS: CreatorKey[] = ["tyson", "antwan"];
 
-// Eastern window for the midday report: 5:00am → 5:00pm.
-const MIDDAY_START_HOUR = 5;
-const MIDDAY_END_HOUR = 17;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AdsBlock {
-  spend: number | null;
-  approx: boolean; // spend came from the daily-table fallback (full-day-so-far), not the live 5a–5p slice
-  leads: number;
-  cpl: number | null; // cost per lead
-  booked: number | null; // appointments booked (created) in the window
-  cpbc: number | null; // cost per booked call
-}
-
-export interface MiddayClientRow {
-  client: CreatorKey;
-  label: string;
-  ads: AdsBlock;
-  sched: number | null; // sales calls scheduled to occur 5a–5p
-  taken: number; // calls taken (from sheet — lags)
-  sales: number; // wins (from sheet — lags)
-  cash: number; // cash collected (from sheet — lags)
-  callsLeft: number | null; // sales calls still on the calendar 5p–midnight
-}
-
-export interface MiddayReport {
-  kind: "midday";
-  dateStr: string;
-  generatedAt: string;
-  clients: MiddayClientRow[];
-  warnings: string[];
-}
-
 export interface MoneyRow {
   spend: number | null;
   leads: number;
-  cpl: number | null;
-  booked: number | null;
-  cpbc: number | null;
+  cpl: number | null; // cost per lead
+  booked: number | null; // sales calls booked (created) in the period
+  cpbc: number | null; // cost per booked call
 }
 
 export interface EodClient {
@@ -116,9 +75,9 @@ async function safe<T>(
   }
 }
 
-function sumCounts(counts: number[] | undefined, from = 0, to = 24): number {
+function sumCounts(counts: number[] | undefined): number {
   if (!counts) return 0;
-  return counts.slice(from, to).reduce((a, b) => a + b, 0);
+  return counts.reduce((a, b) => a + b, 0);
 }
 
 function ratio(numer: number | null, denom: number | null): number | null {
@@ -142,83 +101,14 @@ async function getLeadCounts(
 }
 
 // ---------------------------------------------------------------------------
-// Ad spend (live Meta hourly, re-bucketed PT/ET via the account's own tz)
+// Ad spend (synced daily table — ET-bucketed, same source as the ads tab)
 // ---------------------------------------------------------------------------
 
-interface HourlySpendRow {
-  date_start: string;
-  hour: number;
-  spend: number;
-}
-
 /**
- * Account-level hourly spend rows for [sinceDay-1, untilDay] in the ad
- * account's reporting timezone. Lightweight (24 × days rows), so it scales to a
- * month-to-date pull. Returns null when the client's Meta env isn't configured.
- */
-async function metaHourlyRows(
-  client: CreatorKey,
-  sinceDay: string,
-  untilDay: string,
-): Promise<HourlySpendRow[] | null> {
-  const creator = CREATORS_BY_KEY[client];
-  const accountRaw = firstEnv(creator.adAccountEnv) ?? creator.defaultAdAccountId;
-  const token = firstEnv(creator.tokenEnv);
-  if (!accountRaw || !token) return null;
-  const account = normalizeAdAccountId(accountRaw);
-
-  // Pad one day earlier so an ET morning that maps to the prior account-day is covered.
-  const timeRange = JSON.stringify({ since: addDays(sinceDay, -1), until: untilDay });
-  let url: string | null =
-    `https://graph.facebook.com/v21.0/${account}/insights?fields=spend&time_increment=1` +
-    `&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&limit=500` +
-    `&time_range=${encodeURIComponent(timeRange)}&access_token=${token}`;
-
-  const rows: HourlySpendRow[] = [];
-  while (url) {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Meta ${res.status} for ${client}`);
-    const json = (await res.json()) as {
-      data: Array<{
-        date_start: string;
-        spend?: string;
-        hourly_stats_aggregated_by_advertiser_time_zone?: string;
-      }>;
-      paging?: { next?: string };
-    };
-    for (const r of json.data || []) {
-      rows.push({
-        date_start: r.date_start,
-        hour: Number((r.hourly_stats_aggregated_by_advertiser_time_zone || "00:00:00").slice(0, 2)),
-        spend: Number(r.spend || 0),
-      });
-    }
-    url = json.paging?.next || null;
-  }
-  return rows;
-}
-
-/** Sum hourly spend whose hour-instant falls in [startMs, endMs). */
-function spendInWindow(
-  rows: HourlySpendRow[],
-  advTz: string,
-  startMs: number,
-  endMs: number,
-): number {
-  let spend = 0;
-  for (const r of rows) {
-    const ms = zonedMs(r.date_start, r.hour, 0, advTz);
-    if (ms >= startMs && ms < endMs) spend += r.spend;
-  }
-  return spend;
-}
-
-/**
- * Per-client spend-by-ET-day for [fromDay, toDay] from the synced
- * `ads_meta_insights_daily` table (already ET-bucketed; verified to match the
- * live hourly re-bucket to the dollar). Used for the EOD recap's complete days —
- * lighter than a month of hourly pulls and works for every client the ads sync
- * covers, with no per-client Meta token needed at report time.
+ * Per-client spend-by-ET-day for [fromDay, toDay] from `ads_meta_insights_daily`
+ * (already ET-bucketed; verified to match a live hourly re-bucket to the dollar).
+ * Covers every client the ads sync handles, with no per-client Meta token needed
+ * at report time.
  */
 async function fetchDailySpend(
   fromDay: string,
@@ -270,16 +160,15 @@ function callPattern(client: CreatorKey): string {
   return "Strategy Session%";
 }
 
-/**
- * Count non-cancelled sales-call appointments where `field` (start_time =
- * scheduled to occur, created_at = booked) falls in [startMs, endMs).
- */
-async function countAppointments(
+/** Count non-cancelled sales-call appointments where `field` is in the ET days [fromDay, toDay]. */
+async function countAppointmentsForDays(
   client: CreatorKey,
   field: "start_time" | "created_at",
-  startMs: number,
-  endMs: number,
+  fromDay: string,
+  toDay: string,
 ): Promise<number> {
+  const startMs = etDayBoundsUtc(fromDay).startMs;
+  const endMs = etDayBoundsUtc(toDay).endMs;
   const db = getServiceSupabase();
   const { count, error } = await db
     .from("ghl_appointments")
@@ -292,18 +181,6 @@ async function countAppointments(
   return count ?? 0;
 }
 
-/** Count sales calls with `field` inside the ET days [fromDay, toDay]. */
-async function countAppointmentsForDays(
-  client: CreatorKey,
-  field: "start_time" | "created_at",
-  fromDay: string,
-  toDay: string,
-): Promise<number> {
-  const startMs = etDayBoundsUtc(fromDay).startMs;
-  const endMs = etDayBoundsUtc(toDay).endMs;
-  return countAppointments(client, field, startMs, endMs);
-}
-
 // ---------------------------------------------------------------------------
 // Sales + cash (sales tracker sheet, per client)
 // ---------------------------------------------------------------------------
@@ -311,6 +188,7 @@ async function countAppointmentsForDays(
 function sheetForClient(rows: SheetRow[], client: CreatorKey) {
   const crows = rows.filter((r) => creatorKeyFromText(r.offer) === client);
   return {
+    // Column F (Call Taken): filled = taken, empty = hasn't happened yet (excluded).
     taken: crows.filter((r) => r.callTaken).length,
     sales: crows.filter((r) => (r.outcome || "").toUpperCase() === "WIN").length,
     cash: crows.reduce((s, r) => s + (r.cashCollected || 0), 0),
@@ -318,71 +196,13 @@ function sheetForClient(rows: SheetRow[], client: CreatorKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Report builders
+// Report builder — previous-day recap (fires 1am ET)
 // ---------------------------------------------------------------------------
-
-export async function buildMiddayReport(now: Date): Promise<MiddayReport> {
-  const warnings: string[] = [];
-  const dateStr = etDateStr(now);
-  const win = etWindowUtc(dateStr, MIDDAY_START_HOUR, MIDDAY_END_HOUR);
-  const dayEndMs = etDayBoundsUtc(dateStr).endMs;
-
-  const leads = await safe("leads", warnings, () => getLeadCounts(dateStr, dateStr), {});
-  const sheet = await safe("sheet", warnings, () => fetchSheetData(dateStr, dateStr), [] as SheetRow[]);
-
-  const clients: MiddayClientRow[] = [];
-  for (const client of REPORT_CLIENTS) {
-    const tz = CREATORS_BY_KEY[client].timezone;
-    const rows = await safe(`ads:${client}`, warnings, () => metaHourlyRows(client, dateStr, dateStr), null);
-    let spend = rows ? spendInWindow(rows, tz, win.startMs, win.endMs) : null;
-    let approx = false;
-    if (spend == null) {
-      // Live intraday slice unavailable (e.g. a Meta token issue) → fall back to
-      // the synced daily table's today-so-far total, the SAME source the CCOS ads
-      // tab uses. Slightly wider than 5a–5p (includes overnight) but never blank.
-      const daily = await safe(
-        `ads-fallback:${client}`,
-        warnings,
-        () => fetchDailySpend(dateStr, dateStr),
-        {} as Record<string, Record<string, number>>,
-      );
-      if (daily[client]) {
-        spend = sumDays(daily[client], dateStr, dateStr);
-        approx = true;
-      }
-    }
-    const leadCount = sumCounts(leads[client], MIDDAY_START_HOUR, MIDDAY_END_HOUR);
-    const booked = await safe(`booked:${client}`, warnings, () => countAppointments(client, "created_at", win.startMs, win.endMs), null);
-    const sched = await safe(`sched:${client}`, warnings, () => countAppointments(client, "start_time", win.startMs, win.endMs), null);
-    const callsLeft = await safe(`left:${client}`, warnings, () => countAppointments(client, "start_time", win.endMs, dayEndMs), null);
-    const s = sheetForClient(sheet, client);
-
-    clients.push({
-      client,
-      label: CREATORS_BY_KEY[client].name,
-      ads: {
-        spend,
-        approx,
-        leads: leadCount,
-        cpl: ratio(spend, leadCount),
-        booked,
-        cpbc: ratio(spend, booked),
-      },
-      sched,
-      taken: s.taken,
-      sales: s.sales,
-      cash: s.cash,
-      callsLeft,
-    });
-  }
-
-  return { kind: "midday", dateStr, generatedAt: now.toISOString(), clients, warnings };
-}
 
 export async function buildEodReport(now: Date): Promise<EodReport> {
   const warnings: string[] = [];
-  const todayStr = etDateStr(now); // e.g. fires 1am Jun 24 → "2026-06-24"
-  const recapDay = addDays(todayStr, -1); // the day that just ended → "2026-06-23"
+  const todayStr = etDateStr(now); // e.g. fires 1am Jun 29 → "2026-06-29"
+  const recapDay = addDays(todayStr, -1); // the day that just ended → "2026-06-28"
   const weekStart = startOfEtWeek(recapDay);
   const monthStart = startOfEtMonth(recapDay);
   const upcomingDay = todayStr; // calls scheduled for the new day
@@ -441,6 +261,3 @@ export async function buildEodReport(now: Date): Promise<EodReport> {
     warnings,
   };
 }
-
-// Re-exported only so the cron routes can reference the ET timezone constant if needed.
-export { ET };
