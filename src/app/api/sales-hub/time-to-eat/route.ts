@@ -4,6 +4,7 @@ import { addBusinessMinutes, businessMinutesBetween } from "@/lib/sales-hub/busi
 import {
   postAnswerLeadAlert,
   postDeadMeatAlert,
+  postResponseTargetAlert,
   postTimeToEatAlert,
 } from "@/lib/sales-hub/time-to-eat-alerts";
 
@@ -114,8 +115,12 @@ const STALE_AFTER_BUSINESS_MINUTES = 60;
 // slip OR crossing 2 working hours makes it Dead Meat.
 const DEAD_MEAT_AFTER_MISSES = 2;
 const DEAD_MEAT_AFTER_BUSINESS_MINUTES = 120;
+// Proactive nudge at 4 working minutes — owner is about to miss the 5-min target.
+const RESPONSE_TARGET_WARN_BUSINESS_MINUTES = 4;
 // Early "answer your lead" nudge fires at 15 working minutes of no reply.
 const WARN_AFTER_BUSINESS_MINUTES = 15;
+// The earliest alert threshold — used to decide which leads need an exempt check.
+const EARLIEST_ALERT_BUSINESS_MINUTES = RESPONSE_TARGET_WARN_BUSINESS_MINUTES;
 const LOOKBACK_DAYS = 90;
 const MEMORY_RETENTION_DAYS = 180;
 const BUSINESS_HOURS_LABEL = "11am-11pm ET";
@@ -125,8 +130,12 @@ const BUSINESS_HOURS_LABEL = "11am-11pm ET";
 // like "Sales - Booked Call", "Subscription - Closed", "AI-CLOSED" also count.)
 const EXEMPT_TAG_SUBSTRINGS = ["booked call", "sold", "closed"];
 // Manychat ids confirmed exempt are cached here so we don't re-hit the API.
-const EXEMPT_CACHE_KEY = "time_to_eat_exempt_v1";
+const EXEMPT_CACHE_KEY = "time_to_eat_exempt_v2";
 const EXEMPT_RETENTION_DAYS = 30;
+// Re-check a lead's ManyChat tags at most this often, so the fast (every-2-min)
+// cron doesn't re-hit the ManyChat API every tick — cost stays bounded by time,
+// not by cron frequency. A newly-booked lead is caught within this window.
+const EXEMPT_CHECK_TTL_MS = 6 * 60 * 1000;
 // The moment this tracker went live. Only prospect replies AFTER this instant
 // count — so there is no historical backlog, just leads moving forward. Past
 // slips before this time are ignored too, giving every lead a clean slate.
@@ -493,7 +502,7 @@ function hoursSince(iso: string) {
 
 // Which Slack alerts have already fired, per stale episode. The values are the
 // fire timestamps (used only for retention pruning).
-type AlertFlags = { warn15?: number; tte?: number; deadMeat?: number };
+type AlertFlags = { warn4?: number; warn15?: number; tte?: number; deadMeat?: number };
 type AlertLog = Record<string, AlertFlags>;
 
 async function loadAlertLog(sb: ReturnType<typeof getServiceSupabase>): Promise<AlertLog> {
@@ -515,7 +524,7 @@ async function loadAlertLog(sb: ReturnType<typeof getServiceSupabase>): Promise<
 async function saveAlertLog(sb: ReturnType<typeof getServiceSupabase>, log: AlertLog) {
   const cutoff = Date.now() - ALERT_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   for (const [key, flags] of Object.entries(log)) {
-    const latest = Math.max(flags.warn15 ?? 0, flags.tte ?? 0, flags.deadMeat ?? 0);
+    const latest = Math.max(flags.warn4 ?? 0, flags.warn15 ?? 0, flags.tte ?? 0, flags.deadMeat ?? 0);
     if (latest && latest < cutoff) delete log[key];
   }
   await sb.from("app_settings").upsert(
@@ -584,7 +593,10 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-type ExemptCache = Record<string, number>; // manychatId -> confirmed-exempt timestamp
+// manychatId -> { whether booked/sold/closed, when we last checked }. Caching the
+// CHECK (not just exempt hits) lets the fast cron skip leads checked recently.
+type ExemptEntry = { exempt: boolean; checkedAt: number };
+type ExemptCache = Record<string, ExemptEntry>;
 
 async function loadExemptCache(sb: ReturnType<typeof getServiceSupabase>): Promise<ExemptCache> {
   try {
@@ -604,8 +616,8 @@ async function loadExemptCache(sb: ReturnType<typeof getServiceSupabase>): Promi
 
 async function saveExemptCache(sb: ReturnType<typeof getServiceSupabase>, cache: ExemptCache) {
   const cutoff = Date.now() - EXEMPT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  for (const [key, at] of Object.entries(cache)) {
-    if (at < cutoff) delete cache[key];
+  for (const [key, entry] of Object.entries(cache)) {
+    if (!entry || entry.checkedAt < cutoff) delete cache[key];
   }
   await sb.from("app_settings").upsert(
     {
@@ -622,8 +634,9 @@ export async function GET(req: NextRequest) {
   const client = normalizeClient(req.nextUrl.searchParams.get("client"));
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   // Messages are only needed recently — enough to see current threads and recent
-  // misses. Keeps the paged read cheap even at high volume.
-  const messagesSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // misses. A 3-day window keeps the paged read cheap, which matters now that the
+  // fast cron hits this every ~2 minutes.
+  const messagesSince = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = new Date().toISOString();
 
   try {
@@ -730,6 +743,7 @@ export async function GET(req: NextRequest) {
     let exemptCacheDirty = false;
 
     if (isSync) {
+      const nowMs = Date.now();
       const toCheck: LeadMeta[] = [];
       const seenManychatIds = new Set<string>();
       for (const [conversationId, messages] of messagesByConversation.entries()) {
@@ -737,24 +751,30 @@ export async function GET(req: NextRequest) {
         const lastMessage = messages.at(-1);
         if (!lead?.manychatId || !lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
         if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
-        if (businessMinutesBetween(lastMessage.sent_at, nowIso) < WARN_AFTER_BUSINESS_MINUTES) continue;
-        if (exemptCache[lead.manychatId] || seenManychatIds.has(lead.manychatId)) continue;
+        // Candidate for any alert once it's past the earliest threshold (4 min).
+        if (businessMinutesBetween(lastMessage.sent_at, nowIso) < EARLIEST_ALERT_BUSINESS_MINUTES) continue;
+        if (seenManychatIds.has(lead.manychatId)) continue;
+        // Skip if we checked this lead's tags recently (TTL) — keeps ManyChat calls
+        // bounded by time, not by how often the cron runs.
+        const cached = exemptCache[lead.manychatId];
+        if (cached && nowMs - cached.checkedAt < EXEMPT_CHECK_TTL_MS) continue;
         seenManychatIds.add(lead.manychatId);
         toCheck.push(lead);
       }
       const results = await mapLimit(toCheck, 5, async (lead) => {
         const tags = await fetchSubscriberTags(lead.client, lead.manychatId as string);
-        return { manychatId: lead.manychatId as string, exempt: tags ? tagsAreExempt(tags) : false };
+        // null tags = API hiccup → treat as not-exempt but DON'T cache, so we retry.
+        return { manychatId: lead.manychatId as string, tags };
       });
       for (const result of results) {
-        if (result.exempt) {
-          exemptCache[result.manychatId] = Date.now();
-          exemptCacheDirty = true;
-        }
+        if (result.tags === null) continue;
+        exemptCache[result.manychatId] = { exempt: tagsAreExempt(result.tags), checkedAt: nowMs };
+        exemptCacheDirty = true;
       }
     }
 
-    const isExempt = (lead: LeadMeta) => Boolean(lead.manychatId && exemptCache[lead.manychatId]);
+    const isExempt = (lead: LeadMeta) =>
+      Boolean(lead.manychatId && exemptCache[lead.manychatId]?.exempt);
 
     const timeToEat: TimeToEatLead[] = [];
     const deadMeat: TimeToEatLead[] = [];
@@ -832,6 +852,16 @@ export async function GET(req: NextRequest) {
         isSync &&
         businessHoursNow &&
         new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
+
+      // 4-minute proactive nudge — owner is about to miss the 5-min target.
+      if (canAlert && businessMinutesWaiting >= RESPONSE_TARGET_WARN_BUSINESS_MINUTES) {
+        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
+        if (!flags.warn4) {
+          await postResponseTargetAlert(lead.client, lead.leadName, lead.initialSetter);
+          flags.warn4 = Date.now();
+          alertLogDirty = true;
+        }
+      }
 
       // 15-minute "answer your lead" nudge — fires once, before the stale line.
       if (canAlert && businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES) {
@@ -967,7 +997,7 @@ export async function GET(req: NextRequest) {
       // show) — organic/spam, or leads whose IGSID hasn't bridged yet.
       unbridgedConversations,
       // How many leads are currently held back because they're Booked/Sold/Closed.
-      exemptLeads: Object.keys(exemptCache).length,
+      exemptLeads: Object.values(exemptCache).filter((e) => e?.exempt).length,
       timeToEat: timeToEat.sort(byAge),
       deadMeat: deadMeat.sort(byAge),
     });

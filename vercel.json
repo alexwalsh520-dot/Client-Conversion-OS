@@ -48,6 +48,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/time-to-eat-tick",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/cron/content-pipeline",
       "schedule": "0 */2 * * *"
     },

@@ -67,6 +67,14 @@ function prospect(leadName?: string | null): string {
   return leadName?.trim() || "Unknown";
 }
 
+/** Proactive nudge at 4 working min — the owner is about to miss the 5-min target. */
+export function postResponseTargetAlert(client: string, leadName: string | null, owner: string | null) {
+  const text =
+    `You're about to miss your response time target of 5 minutes ${ownerMention(client, owner)}!\n` +
+    `Go respond to ${prospect(leadName)}`;
+  return postToSlack(CHANNEL, text);
+}
+
 /** A lead just landed in Time to Eat — rally every other setter to go hunt it. */
 export function postTimeToEatAlert(client: string, leadName: string | null, owner: string | null) {
   const others = otherSetterMentions(client, owner);
