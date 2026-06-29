@@ -15,6 +15,18 @@ const KIND_ICON: Record<string, ReactNode> = {
 
 const POLL_MS = 6000;
 
+// Card preview: render either HTML or markdown bodies as clean plain text.
+function toPlain(s: string): string {
+  return s
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/(p|div|h[1-6]|li|ul|ol)>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/[#*_`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function api(method: string, payload?: Record<string, unknown>, qs?: string) {
   const res = await fetch(`/api/factory${qs || ""}`, {
     method,
@@ -174,7 +186,7 @@ function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
   const steps = item.checklist || [];
   const stepsDone = steps.filter((s) => s.done).length;
   const statusLabel = (item.kind === "image_ad" ? item.stage : item.status) || meta.statuses[0];
-  const preview = (item.body_md || item.copy_text || "").replace(/[#*_>`]/g, "").trim();
+  const preview = toPlain(item.body_md || item.copy_text || "");
 
   return (
     <button className={`fcw-card ${statusDone(item) ? "fcw-card-done" : ""}`} onClick={onOpen}>
