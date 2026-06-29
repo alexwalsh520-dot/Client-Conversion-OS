@@ -1018,3 +1018,8 @@
 .fcw-comment-resolve { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0 4px; }
 .fcw-comment-resolve:hover { color: var(--text-primary); }
 .fcw-steps-block { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+
+/* Comments stack cleanly in the rail (no absolute overlap with Steps) */
+.fcw-margin { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }
+.fcw-margin .fcw-comment { margin-bottom: 0; }
+.fcw-margin-anchor { position: static; }  /* retired absolute pinning */

@@ -136,12 +136,14 @@ export default function DocEditor({
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const cid = rid();
-    const quote = sel.toString().slice(0, 200);
+    let quote = sel.toString().slice(0, 200);
     const range = sel.getRangeAt(0);
     const span = document.createElement("span");
     span.className = "fcw-hl";
     span.setAttribute("data-cid", cid);
-    try { range.surroundContents(span); } catch { document.execCommand("hiliteColor", false, "#3a3320"); }
+    let wrapped = false;
+    try { range.surroundContents(span); wrapped = true; } catch { document.execCommand("hiliteColor", false, "#3a3320"); }
+    if (wrapped) quote = (span.textContent || quote).slice(0, 200); // store exactly what got highlighted
     sel.removeAllRanges();
     setAddBtn(null);
     const next = [...comments, { id: cid, author: "alex" as const, text: "", created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
@@ -210,8 +212,9 @@ export default function DocEditor({
 
   const versions = (item.versions || []).filter((v) => v.body_md).sort((a, b) => b.version - a.version);
   const isVideo = meta.icon === "video" || meta.icon === "film";
-  const anchored = new Set(Array.from(edRef.current?.querySelectorAll("[data-cid]") || []).map((e) => e.getAttribute("data-cid")));
-  const generalComments = comments.filter((c) => !anchored.has(c.id) && c.id !== draftCid && tops[c.id] === undefined);
+  // Comments stack in document order (by where their highlight sits), so they sit
+  // beside the text without ever overlapping the Steps block.
+  const orderedComments = [...comments].sort((a, b) => (tops[a.id] ?? 1e9) - (tops[b.id] ?? 1e9));
 
   return (
     <div className="fcw-drawer-overlay" onClick={onClose}>
@@ -316,21 +319,13 @@ export default function DocEditor({
             ) : (
               <>
                 <div className="fcw-margin">
-                  {generalComments.length === 0 && comments.length === 0 && (
-                    <div className="fcw-muted">Highlight any text in the doc to leave a comment. It pins here, next to the line.</div>
+                  <div className="fcw-side-title"><MessageSquarePlus size={13} /> Comments</div>
+                  {comments.length === 0 && (
+                    <div className="fcw-muted">Highlight any text in the doc to leave a comment. It shows up here, in the order it appears in the doc.</div>
                   )}
-                  {/* General (un-anchored) notes at the top */}
-                  {generalComments.map((c) => (
+                  {orderedComments.map((c) => (
                     <CommentCard key={c.id} c={c} onSave={saveComment} onRemove={removeComment} editing={draftCid === c.id} draftText={draftText} setDraftText={setDraftText} onEdit={() => { setDraftCid(c.id); setDraftText(c.text); }} />
                   ))}
-                  {/* Anchored comments, absolutely positioned to their highlight */}
-                  <div style={{ position: "relative" }}>
-                    {comments.filter((c) => tops[c.id] !== undefined).map((c) => (
-                      <div key={c.id} className="fcw-margin-anchor" style={{ top: tops[c.id] }}>
-                        <CommentCard c={c} onSave={saveComment} onRemove={removeComment} editing={draftCid === c.id} draftText={draftText} setDraftText={setDraftText} onEdit={() => { setDraftCid(c.id); setDraftText(c.text); }} />
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="fcw-side-block fcw-steps-block">
