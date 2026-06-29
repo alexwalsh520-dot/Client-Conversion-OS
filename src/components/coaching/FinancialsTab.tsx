@@ -57,7 +57,18 @@ export default function FinancialsTab() {
     fetchData();
   }, [monthIndex]);
 
-  const totalRefunds = refunds.reduce((s, r) => s + r.amount, 0);
+  // Only "Refund" and "Partial Refund" types count toward the refund
+  // totals. Other values in the Cancel/Refund column ("Handled", blank,
+  // future values like "Chargeback") show up in the table but are NOT
+  // summed into Total Refunded — they represent at-risk scenarios that
+  // were saved, not money that actually went out the door.
+  const isRefundType = (type: string): boolean => {
+    const t = (type || "").toLowerCase().trim();
+    return t === "refund" || t === "partial refund";
+  };
+
+  const actualRefunds = refunds.filter((r) => isRefundType(r.type));
+  const totalRefunds = actualRefunds.reduce((s, r) => s + r.amount, 0);
   const totalRetention = retentions.reduce((s, r) => s + r.paymentTotal, 0);
   const netRevenue = totalRetention - totalRefunds;
 
@@ -68,8 +79,8 @@ export default function FinancialsTab() {
     return acc;
   }, {});
 
-  // Refunds by fault category
-  const faultBreakdown = refunds.reduce<Record<string, { count: number; total: number }>>((acc, r) => {
+  // Refunds by fault category (only includes actual refunds, not Handled)
+  const faultBreakdown = actualRefunds.reduce<Record<string, { count: number; total: number }>>((acc, r) => {
     const fault = r.fault || "Unknown";
     if (!acc[fault]) acc[fault] = { count: 0, total: 0 };
     acc[fault].count++;
@@ -147,7 +158,12 @@ export default function FinancialsTab() {
             </div>
             <div className="glass-static metric-card">
               <div className="metric-card-label">Refund Count</div>
-              <div className="metric-card-value">{refunds.length}</div>
+              <div className="metric-card-value">{actualRefunds.length}</div>
+              {refunds.length > actualRefunds.length && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  + {refunds.length - actualRefunds.length} handled (not refunded)
+                </div>
+              )}
             </div>
           </div>
 
@@ -298,17 +314,37 @@ export default function FinancialsTab() {
                         <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{r.clientName}</td>
                         <td style={{ fontSize: 12 }}>{r.date}</td>
                         <td>
-                          <span style={{
-                            fontSize: 11,
-                            padding: "2px 8px",
-                            borderRadius: 4,
-                            background: r.type === "Refund" ? "rgba(217, 142, 142, 0.15)" : "rgba(201, 169, 110, 0.15)",
-                            color: r.type === "Refund" ? "var(--danger)" : "var(--accent)",
-                          }}>
-                            {r.type}
-                          </span>
+                          {(() => {
+                            // Three visual treatments for the type badge:
+                            //   - Refund / Partial Refund → red (counts as actual refund)
+                            //   - Handled                  → muted gray (saved, not counted)
+                            //   - anything else            → amber (e.g. Cancellation, blank)
+                            const isRefund = isRefundType(r.type);
+                            const isHandled = r.type.toLowerCase().trim() === "handled";
+                            const style = isRefund
+                              ? { bg: "rgba(217, 142, 142, 0.15)", fg: "var(--danger)" }
+                              : isHandled
+                                ? { bg: "rgba(255,255,255,0.06)", fg: "var(--text-muted)" }
+                                : { bg: "rgba(201, 169, 110, 0.15)", fg: "var(--accent)" };
+                            return (
+                              <span style={{
+                                fontSize: 11,
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                background: style.bg,
+                                color: style.fg,
+                              }}>
+                                {r.type || "—"}
+                              </span>
+                            );
+                          })()}
                         </td>
-                        <td style={{ color: "var(--danger)", fontWeight: 600 }}>{fmtMoney(r.amount)}</td>
+                        <td style={{
+                          // Money column also reflects the "not counted" state — gray
+                          // out the amount on Handled rows so it doesn't read as money lost.
+                          color: isRefundType(r.type) ? "var(--danger)" : "var(--text-muted)",
+                          fontWeight: 600,
+                        }}>{fmtMoney(r.amount)}</td>
                         <td style={{ fontSize: 12 }}>{r.fault}</td>
                         <td style={{ fontSize: 12, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.reason}>
                           {r.reason}
