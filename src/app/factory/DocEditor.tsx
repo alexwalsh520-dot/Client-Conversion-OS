@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { X, Sparkles, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
+import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
 import { WItem, WComment, WChecklistStep, KIND_META, rid } from "./types";
 
 async function patch(payload: Record<string, unknown>) {
@@ -63,8 +63,6 @@ export default function DocEditor({
   const [comments, setComments] = useState<WComment[]>(item.comments || []);
   const [checklist, setChecklist] = useState<WChecklistStep[]>(item.checklist || []);
   const [newStep, setNewStep] = useState("");
-  const [instruction, setInstruction] = useState("");
-  const [assisting, setAssisting] = useState(false);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved">("idle");
   const [showHistory, setShowHistory] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -72,7 +70,7 @@ export default function DocEditor({
   const [draftCid, setDraftCid] = useState<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [addBtn, setAddBtn] = useState<{ top: number; left: number } | null>(null);
-  const [pending, setPending] = useState<{ quote: string; range: Range } | null>(null);
+  const [pending, setPending] = useState<{ quote: string; range: Range | null } | null>(null);
   const [pendingText, setPendingText] = useState("");
 
   const edRef = useRef<HTMLDivElement>(null);
@@ -155,16 +153,21 @@ export default function DocEditor({
     setAddBtn(null);
   };
 
+  // A general note on the doc as a whole — no highlight, no quote.
+  const startGeneralComment = () => { setPending({ quote: "", range: null }); setPendingText(""); setAddBtn(null); };
+
   const commitPending = () => {
     if (!pending) return;
     const text = pendingText.trim();
     if (!text) { setPending(null); return; } // empty -> no highlight, no comment
     const cid = rid();
     let quote = pending.quote;
-    const span = document.createElement("span");
-    span.className = "fcw-hl";
-    span.setAttribute("data-cid", cid);
-    try { pending.range.surroundContents(span); quote = (span.textContent || quote).slice(0, 200); } catch { /* range moved; keep the quote, skip the visual wrap */ }
+    if (pending.range) {
+      const span = document.createElement("span");
+      span.className = "fcw-hl";
+      span.setAttribute("data-cid", cid);
+      try { pending.range.surroundContents(span); quote = (span.textContent || quote).slice(0, 200); } catch { /* range moved; keep the quote, skip the visual wrap */ }
+    }
     const next = [...comments, { id: cid, author: "alex" as const, text, created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
     setComments(next);
     setPending(null);
@@ -205,22 +208,6 @@ export default function DocEditor({
   const toggleStep = async (id: string) => {
     const next = checklist.map((s) => (s.id === id ? { ...s, done: !s.done } : s));
     setChecklist(next); await saveField({ checklist: next });
-  };
-
-  const runAssist = async () => {
-    try {
-      setAssisting(true); setErr(null);
-      const res = await fetch("/api/factory/assist", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: item.id, instruction: instruction.trim() || "Improve this draft using the avatar and apply any comments." }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "assist failed");
-      if (edRef.current) edRef.current.innerHTML = toHtml(j.draft);
-      await patch({ id: item.id, bodyMd: currentHtml(), snapshot: true, snapshotNote: "Claude draft" });
-      setInstruction(""); onChanged();
-    } catch (e) { setErr(e instanceof Error ? e.message : "assist failed"); }
-    finally { setAssisting(false); }
   };
 
   const del = async () => {
@@ -309,15 +296,6 @@ export default function DocEditor({
               )}
             </div>
 
-            {/* Claude assist */}
-            <div className="fcw-assist">
-              <Sparkles size={15} className="fcw-assist-icon" />
-              <input className="fcw-assist-input" placeholder="Tell Claude what to do (draft from the avatar, apply my comments, tighten it…)"
-                value={instruction} onChange={(e) => setInstruction(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runAssist(); }} />
-              <button className="fcw-assist-btn" onClick={runAssist} disabled={assisting}>
-                {assisting ? <><Loader2 size={14} className="fcw-spin" /> drafting…</> : "Claude"}
-              </button>
-            </div>
           </div>
 
           {/* Right rail: margin comments (aligned to highlights) OR history */}
@@ -338,10 +316,13 @@ export default function DocEditor({
             ) : (
               <>
                 <div className="fcw-margin">
-                  <div className="fcw-side-title"><MessageSquarePlus size={13} /> Comments</div>
+                  <div className="fcw-side-title">
+                    <MessageSquarePlus size={13} /> Comments
+                    <button className="fcw-side-add" onClick={startGeneralComment} title="Add a comment">+ Add</button>
+                  </div>
                   {pending && (
                     <div className="fcw-comment fcw-by-alex">
-                      <div className="fcw-comment-quote">“{pending.quote}”</div>
+                      {pending.quote && <div className="fcw-comment-quote">“{pending.quote}”</div>}
                       <textarea autoFocus className="fcw-addinput" rows={2} placeholder="Your comment…" value={pendingText}
                         onChange={(e) => setPendingText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitPending(); } if (e.key === "Escape") setPending(null); }} />
@@ -352,7 +333,7 @@ export default function DocEditor({
                     </div>
                   )}
                   {comments.length === 0 && !pending && (
-                    <div className="fcw-muted">Highlight any text in the doc to leave a comment. It shows up here, in the order it appears in the doc.</div>
+                    <div className="fcw-muted">Hit <b>+ Add</b> for a general note, or highlight any text in the doc to comment on a specific line. Comments show up here in document order.</div>
                   )}
                   {orderedComments.map((c) => (
                     <CommentCard key={c.id} c={c} onSave={saveComment} onRemove={removeComment} editing={draftCid === c.id} draftText={draftText} setDraftText={setDraftText} onEdit={() => { setDraftCid(c.id); setDraftText(c.text); }} />
