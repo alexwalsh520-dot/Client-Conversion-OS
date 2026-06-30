@@ -423,6 +423,10 @@ function withinEtBusinessHours(now: Date): boolean {
 }
 
 // PostgREST caps one response at 1000 rows, so page through to get the full set.
+// Fetch PER CLIENT and merge. PostgREST caps a response at 1000 rows, so a single
+// `.in(clients)` query lets a high-volume client (Tyson) fill the cap and starve a
+// lower-volume one (Antwan) — which made "All Clients" silently drop Antwan. Giving
+// each client its own paged budget guarantees "all" is a true superset.
 async function fetchMessages(
   sb: ReturnType<typeof getServiceSupabase>,
   clients: ServerClient[],
@@ -430,18 +434,20 @@ async function fetchMessages(
 ): Promise<MessageRow[]> {
   const out: MessageRow[] = [];
   const PAGE = 1000;
-  for (let page = 0; page < 8; page += 1) {
-    const { data, error } = await sb
-      .from("dm_conversation_messages")
-      .select("client, subscriber_id, conversation_id, direction, body, sent_at")
-      .in("client", clients)
-      .gte("sent_at", since)
-      .order("sent_at", { ascending: false })
-      .range(page * PAGE, page * PAGE + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as MessageRow[];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
+  for (const client of clients) {
+    for (let page = 0; page < 8; page += 1) {
+      const { data, error } = await sb
+        .from("dm_conversation_messages")
+        .select("client, subscriber_id, conversation_id, direction, body, sent_at")
+        .eq("client", client)
+        .gte("sent_at", since)
+        .order("sent_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as MessageRow[];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+    }
   }
   return out;
 }
@@ -453,18 +459,44 @@ async function fetchTagEvents(
 ): Promise<TagEventRow[]> {
   const out: TagEventRow[] = [];
   const PAGE = 1000;
-  for (let page = 0; page < 6; page += 1) {
-    const { data, error } = await sb
-      .from("manychat_tag_events")
-      .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
-      .in("client", clients)
-      .gte("event_at", since)
-      .order("event_at", { ascending: false })
-      .range(page * PAGE, page * PAGE + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as TagEventRow[];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
+  for (const client of clients) {
+    for (let page = 0; page < 6; page += 1) {
+      const { data, error } = await sb
+        .from("manychat_tag_events")
+        .select("client, subscriber_id, subscriber_name, setter_name, tag_name, event_at, raw_payload")
+        .eq("client", client)
+        .gte("event_at", since)
+        .order("event_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as TagEventRow[];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+    }
+  }
+  return out;
+}
+
+// The IGSID↔ManyChat bridge. Same starvation trap as above — and it was the actual
+// "All Clients shows nothing" bug, since this was a single un-paged query.
+async function fetchLeadLinks(
+  sb: ReturnType<typeof getServiceSupabase>,
+  clients: ServerClient[],
+): Promise<LeadLinkRow[]> {
+  const out: LeadLinkRow[] = [];
+  const PAGE = 1000;
+  for (const client of clients) {
+    for (let page = 0; page < 8; page += 1) {
+      const { data, error } = await sb
+        .from("instagram_lead_links")
+        .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
+        .eq("client", client)
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as LeadLinkRow[];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+    }
   }
   return out;
 }
@@ -690,11 +722,7 @@ export async function GET(req: NextRequest) {
     const igToManychat = new Map<string, string>();
     const manychatToHandle = new Map<string, string>();
     try {
-      const { data: linkData } = await sb
-        .from("instagram_lead_links")
-        .select("client, manychat_subscriber_id, instagram_user_id, instagram_handle")
-        .in("client", serverClients);
-      for (const row of (linkData ?? []) as LeadLinkRow[]) {
+      for (const row of await fetchLeadLinks(sb, serverClients)) {
         if (row.instagram_user_id && row.manychat_subscriber_id) {
           igToManychat.set(row.instagram_user_id, row.manychat_subscriber_id);
         }
