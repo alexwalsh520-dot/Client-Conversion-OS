@@ -14,7 +14,7 @@ export const APP_BASE_URL =
 // Shown verbatim on the public recording page so the client knows what to say.
 // Order matters. Keep free of em-dashes (house style).
 export const TESTIMONIAL_GUIDE: string[] = [
-  "Intro: state your name and where you live",
+  "Intro: your name, where you're from, and what you do professionally",
   "How was your situation before? (brief, 1 to 2 short statements)",
   "How did that make you feel?",
   "How did you find us (or find out about) our program?",
