@@ -163,11 +163,14 @@ function rateColor(value: number, good: number, okay: number): string {
 
 function buildPerformanceRow(client: string, newLeads: number, rows: SheetRow[]) {
   const callsBooked = rows.length;
-  const callsTaken = rows.filter((r) => r.callTakenStatus === "yes" || r.callTaken).length;
+  // Cash collected means the call happened and closed — count it as taken even
+  // if the Call Taken column still says No.
+  const isTaken = (r: SheetRow) => r.callTakenStatus === "yes" || r.callTaken || r.cashCollected > 0;
+  const callsTaken = rows.filter(isTaken).length;
   const wins = rows.filter((r) => r.outcome === "WIN").length;
   const noShows = rows.filter((r) => {
     const outcome = (r.outcome || "").toUpperCase();
-    return r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS";
+    return (r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS") && !isTaken(r);
   }).length;
   const cashCollected = rows.reduce((s, r) => s + (r.cashCollected || 0), 0);
   const subsSold = rows.filter((r) =>

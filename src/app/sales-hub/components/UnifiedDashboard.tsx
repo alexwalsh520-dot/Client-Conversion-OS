@@ -50,12 +50,18 @@ async function fetchJSON<T>(url: string): Promise<T> {
 
 /* ── Compute metrics from rows ────────────────────────────────────── */
 
+// Cash collected on a row means the call happened and closed — so treat it as
+// "taken" even if the Call Taken column still says No (it was just never updated).
+function isTaken(r: SheetRow): boolean {
+  return r.callTakenStatus === "yes" || r.cashCollected > 0;
+}
+
 function computeMetrics(rows: SheetRow[], label: string): ClientMetrics {
   const callsBooked = rows.length;
-  const takenRows = rows.filter((r) => r.callTakenStatus === "yes");
+  const takenRows = rows.filter(isTaken);
   const callsTaken = takenRows.length;
-  const noShows = rows.filter((r) => r.callTakenStatus === "no").length;
-  const pending = rows.filter((r) => r.callTakenStatus === "pending").length;
+  const noShows = rows.filter((r) => r.callTakenStatus === "no" && !isTaken(r)).length;
+  const pending = rows.filter((r) => r.callTakenStatus === "pending" && !isTaken(r)).length;
   const showDenominator = callsTaken + noShows;
   const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
 
