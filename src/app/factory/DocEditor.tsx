@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
-import { WItem, WComment, WChecklistStep, KIND_META, rid } from "./types";
+import { WItem, WComment, WChecklistStep, WVersion, KIND_META, rid } from "./types";
 
 async function patch(payload: Record<string, unknown>) {
   const res = await fetch("/api/factory", {
@@ -120,6 +120,20 @@ export default function DocEditor({
   // style history without spamming a version on every keystroke.
   const snapshot = useCallback(async () => {
     try { await patch({ id: item.id, bodyMd: currentHtml(), snapshot: true, snapshotNote: "edit" }); onChanged(); } catch { /* non-fatal */ }
+  }, [item.id, onChanged]);
+
+  // Restore an old version WITHOUT losing the current draft: snapshot what's on
+  // screen right now first, then load the old version (also snapshotted). Nothing
+  // is ever lost, whichever way you move through history.
+  const restore = useCallback(async (v: WVersion) => {
+    try {
+      await patch({ id: item.id, bodyMd: currentHtml(), snapshot: true, snapshotNote: "before restore" });
+      const html = toHtml(v.body_md || "");
+      if (edRef.current) edRef.current.innerHTML = html;
+      await patch({ id: item.id, bodyMd: html, snapshot: true, snapshotNote: `restored v${v.version}` });
+      onChanged();
+      setShowHistory(false);
+    } catch (e) { setErr(e instanceof Error ? e.message : "restore failed"); }
   }, [item.id, onChanged]);
 
   const saveField = async (payload: Record<string, unknown>) => {
@@ -251,7 +265,7 @@ export default function DocEditor({
 
           <div className="fcw-drawer-spacer" />
           <span className="fcw-saved">{saved === "saving" ? <><Loader2 size={12} className="fcw-spin" /> saving</> : saved === "saved" ? "saved" : ""}</span>
-          {versions.length > 0 && <button className="fcw-icon-btn" title="Version history" onClick={() => setShowHistory((v) => !v)}><History size={16} /></button>}
+          <button className={`fcw-icon-btn ${showHistory ? "on" : ""}`} title="Version history" onClick={() => setShowHistory((v) => !v)}><History size={16} /></button>
           <button className="fcw-icon-btn fcw-danger" title="Delete" onClick={del}><Trash2 size={16} /></button>
           <button className="fcw-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
@@ -307,7 +321,7 @@ export default function DocEditor({
                   <div key={v.version} className="fcw-version">
                     <div className="fcw-version-meta">
                       <span>v{v.version} · {new Date(v.created_at).toLocaleString()}</span>
-                      <button className="fcw-restore" onClick={() => { if (edRef.current) edRef.current.innerHTML = toHtml(v.body_md || ""); autosave(); setShowHistory(false); }}>Restore</button>
+                      <button className="fcw-restore" onClick={() => restore(v)}>Restore</button>
                     </div>
                     <div className="fcw-version-preview" dangerouslySetInnerHTML={{ __html: toHtml(v.body_md || "").slice(0, 400) }} />
                   </div>
