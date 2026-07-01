@@ -127,10 +127,18 @@ export default function FactoryClient() {
     };
   }, [load]);
 
-  // Default to the first project once data arrives.
+  // Default to the LAST-OPENED project (remembered across refreshes), else the first.
   useEffect(() => {
-    if (!activeProjectId && projects.length) setActiveProjectId(projects[0].id);
+    if (activeProjectId || !projects.length) return;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("factory:activeProjectId"); } catch {}
+    setActiveProjectId(saved && projects.some((p) => p.id === saved) ? saved : projects[0].id);
   }, [projects, activeProjectId]);
+
+  // Remember the open project so a refresh keeps you where you were.
+  useEffect(() => {
+    if (activeProjectId) { try { localStorage.setItem("factory:activeProjectId", activeProjectId); } catch {} }
+  }, [activeProjectId]);
 
   // Once per project: pick the natural view. Funnel projects (with groups) open
   // in the nested Workspace; legacy image-only projects open on the Board.

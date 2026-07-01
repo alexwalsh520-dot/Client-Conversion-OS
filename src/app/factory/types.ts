@@ -73,19 +73,30 @@ export interface WProject {
   items: WItem[];
 }
 
-// Pipelines per kind — image keeps its original 4 stages; everything else is a
-// simple text/video flow tracked in `status`.
+// ONE consistent Kanban pipeline for every copy/video kind, so the board reads the
+// same everywhere and "done" actually triggers. Approved is the done milestone
+// (turns green, counts on the progress bar); Live means actually shipped/running.
+// Film/edit for videos is tracked as a checklist on the card, not a board stage
+// (producing a video is a task, not a status). Image ads keep their own real
+// generate-pipeline stages.
+export const WORKFLOW: string[] = ["todo", "in_progress", "review", "approved", "live"];
+export const STATUS_LABEL: Record<string, string> = {
+  todo: "To do", in_progress: "In progress", review: "Review", approved: "Approved", live: "Live",
+  // image_ad generate-pipeline stages:
+  copy_written: "Copy written", image_generated: "Image ready", revision: "Revision", completed: "Done",
+};
+
 export const KIND_META: Record<
   AssetKind,
   { label: string; icon: string; statuses: string[]; isDoc: boolean }
 > = {
   image_ad: { label: "Image Ad", icon: "image", statuses: ["copy_written", "image_generated", "revision", "completed"], isDoc: false },
-  video_ad: { label: "Video Ad", icon: "video", statuses: ["script", "review", "film", "edit", "live"], isDoc: true },
-  email: { label: "Email", icon: "mail", statuses: ["draft", "review", "approved", "live"], isDoc: true },
-  page_copy: { label: "Page Copy", icon: "page", statuses: ["draft", "review", "approved", "live"], isDoc: true },
-  breakout_video: { label: "Breakout Video", icon: "video", statuses: ["script", "review", "film", "edit", "live"], isDoc: true },
-  dm_content: { label: "DM Content", icon: "film", statuses: ["concept", "script", "review", "film", "edit", "live"], isDoc: true },
-  doc: { label: "Doc", icon: "doc", statuses: ["draft", "review", "done"], isDoc: true },
+  video_ad: { label: "Video Ad", icon: "video", statuses: WORKFLOW, isDoc: true },
+  email: { label: "Email", icon: "mail", statuses: WORKFLOW, isDoc: true },
+  page_copy: { label: "Page Copy", icon: "page", statuses: WORKFLOW, isDoc: true },
+  breakout_video: { label: "Breakout Video", icon: "video", statuses: WORKFLOW, isDoc: true },
+  dm_content: { label: "DM Content", icon: "film", statuses: WORKFLOW, isDoc: true },
+  doc: { label: "Doc", icon: "doc", statuses: WORKFLOW, isDoc: true },
 };
 
 export const KIND_ORDER: AssetKind[] = [

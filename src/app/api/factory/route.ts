@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
           body_md: (body.bodyMd as string) || null,
           image_direction: (body.imageDirection as string) || null,
           stage: isImage ? "copy_written" : "completed",
-          status: isImage ? null : (body.status as string) || "draft",
+          status: isImage ? null : (body.status as string) || "todo",
           sort_order: nextSort,
         })
         .select(ITEM_COLS)

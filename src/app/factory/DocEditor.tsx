@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
-import { WItem, WComment, WChecklistStep, WVersion, KIND_META, rid } from "./types";
+import { WItem, WComment, WChecklistStep, WVersion, KIND_META, STATUS_LABEL, rid } from "./types";
+
+const stLabel = (s: string) => STATUS_LABEL[s] || s.replace(/_/g, " ");
 
 async function patch(payload: Record<string, unknown>) {
   const res = await fetch("/api/factory", {
@@ -248,7 +250,7 @@ export default function DocEditor({
           {/* Custom status dropdown (not the raw OS select) */}
           <div className="fcw-dd">
             <button className="fcw-dd-btn" onClick={() => setStatusOpen((o) => !o)}>
-              <span className={`fcw-dot fcw-dot-${status}`} />{status.replace(/_/g, " ")}
+              <span className={`fcw-dot fcw-dot-${status}`} />{stLabel(status)}
               <span className="fcw-dd-caret">▾</span>
             </button>
             {statusOpen && (
@@ -256,7 +258,7 @@ export default function DocEditor({
                 {meta.statuses.map((s) => (
                   <button key={s} className={`fcw-dd-item ${s === status ? "on" : ""}`}
                     onClick={() => { setStatus(s); setStatusOpen(false); saveField(item.kind === "image_ad" ? { stage: s } : { status: s }); }}>
-                    <span className={`fcw-dot fcw-dot-${s}`} />{s.replace(/_/g, " ")}
+                    <span className={`fcw-dot fcw-dot-${s}`} />{stLabel(s)}
                   </button>
                 ))}
               </div>

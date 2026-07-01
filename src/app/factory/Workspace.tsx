@@ -5,8 +5,16 @@ import {
   ChevronRight, ChevronDown, Plus, Trash2, MessageSquare, CheckSquare,
   Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2, Layers, LayoutGrid,
 } from "lucide-react";
-import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone } from "./types";
+import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL } from "./types";
 import DocEditor from "./DocEditor";
+
+// Nice status label + which pipeline column a status belongs to.
+function statusOf(item: WItem): string {
+  return (item.kind === "image_ad" ? item.stage : item.status) || KIND_META[item.kind].statuses[0];
+}
+function statusText(s: string): string {
+  return STATUS_LABEL[s] || s.replace(/_/g, " ");
+}
 
 const KIND_ICON: Record<string, ReactNode> = {
   image: <ImageIcon size={14} />, video: <Video size={14} />, mail: <Mail size={14} />,
@@ -15,15 +23,16 @@ const KIND_ICON: Record<string, ReactNode> = {
 
 const POLL_MS = 6000;
 
-// Shared pipeline so every asset kind (with its own statuses) lands in common columns.
+// One consistent pipeline; image-ad generate-stages map into the same columns.
 const PIPE: { key: string; label: string; match: string[] }[] = [
-  { key: "todo", label: "To do", match: ["draft", "concept", "copy_written", "script"] },
-  { key: "review", label: "Review", match: ["review", "revision"] },
-  { key: "filmedit", label: "Film / Edit", match: ["film", "edit", "image_generated"] },
-  { key: "done", label: "Live / Done", match: ["approved", "live", "completed", "done"] },
+  { key: "todo", label: "To do", match: ["todo"] },
+  { key: "in_progress", label: "In progress", match: ["in_progress", "copy_written", "script", "draft", "concept"] },
+  { key: "review", label: "Review", match: ["review", "revision", "image_generated"] },
+  { key: "approved", label: "Approved", match: ["approved"] },
+  { key: "live", label: "Live", match: ["live", "completed", "done"] },
 ];
 function pipeColumn(item: WItem): string {
-  const s = (item.kind === "image_ad" ? item.stage : item.status) || "";
+  const s = statusOf(item);
   return (PIPE.find((c) => c.match.includes(s)) || PIPE[0]).key;
 }
 
@@ -60,6 +69,8 @@ export default function Workspace({ projectId }: { projectId: string }) {
   const [groupName, setGroupName] = useState("");
   const [groupKind, setGroupKind] = useState<AssetKind>("email");
   const [mode, setMode] = useState<"groups" | "pipeline">("groups");
+  useEffect(() => { try { const m = localStorage.getItem("factory:mode"); if (m === "pipeline" || m === "groups") setMode(m); } catch {} }, []);
+  useEffect(() => { try { localStorage.setItem("factory:mode", mode); } catch {} }, [mode]);
   const [busy, setBusy] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -236,7 +247,7 @@ function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOp
       </div>
       <div className="fcw-kcard-foot">
         {group && <span className="fcw-kgroup">{group}</span>}
-        <span className={`fcw-card-status fcw-st-${status}`}>{String(status).replace(/_/g, " ")}</span>
+        <span className={`fcw-card-status fcw-st-${status}`}>{statusText(status)}</span>
         {comments > 0 && <span className="fcw-chip"><MessageSquare size={11} /> {comments}</span>}
       </div>
     </button>
@@ -248,15 +259,15 @@ function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
   const commentCount = (item.comments || []).filter((c) => !c.resolved).length;
   const steps = item.checklist || [];
   const stepsDone = steps.filter((s) => s.done).length;
-  const statusLabel = (item.kind === "image_ad" ? item.stage : item.status) || meta.statuses[0];
+  const status = statusOf(item);
   const preview = toPlain(item.body_md || item.copy_text || "");
 
   return (
-    <button className={`fcw-card ${statusDone(item) ? "fcw-card-done" : ""}`} onClick={onOpen}>
+    <button className={`fcw-card fcw-stripe-${status} ${statusDone(item) ? "fcw-card-done" : ""}`} onClick={onOpen}>
       <div className="fcw-card-top">
         <span className="fcw-card-kind">{KIND_ICON[meta.icon]}</span>
         <span className="fcw-card-label">{item.label}</span>
-        <span className={`fcw-card-status fcw-st-${statusLabel}`}>{String(statusLabel).replace(/_/g, " ")}</span>
+        <span className={`fcw-card-status fcw-st-${status}`}>{statusText(status)}</span>
       </div>
       {item.kind === "image_ad" && item.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element

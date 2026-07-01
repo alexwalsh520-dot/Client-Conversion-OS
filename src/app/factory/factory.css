@@ -915,8 +915,19 @@
 .fcw-card-top { display: flex; align-items: flex-start; gap: 7px; }
 .fcw-card-kind { color: var(--accent); display: inline-flex; flex-shrink: 0; margin-top: 1px; }
 .fcw-card-label { font-size: 13px; font-weight: 600; color: var(--text-primary); flex: 1; min-width: 0; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
-.fcw-card-status { font-size: 10px; text-transform: capitalize; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
-.fcw-st-live, .fcw-st-approved, .fcw-st-completed, .fcw-st-done { color: var(--success); border-color: var(--success); background: var(--success-soft); }
+.fcw-card-status { font-size: 10.5px; font-weight: 600; text-transform: none; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+/* Each workflow stage a clearly different colour so a glance tells you where a card is. */
+.fcw-st-todo { color: #9a9aa2; border-color: #3a3a40; background: rgba(138,138,146,.10); }
+.fcw-st-in_progress, .fcw-st-copy_written, .fcw-st-script, .fcw-st-draft, .fcw-st-concept { color: #5aa8ff; border-color: rgba(74,158,255,.45); background: rgba(74,158,255,.12); }
+.fcw-st-review, .fcw-st-revision, .fcw-st-image_generated { color: #f0b846; border-color: rgba(224,169,58,.5); background: rgba(224,169,58,.13); }
+.fcw-st-approved { color: #37d67a; border-color: rgba(55,214,122,.55); background: rgba(55,214,122,.14); font-weight: 700; }
+.fcw-st-live, .fcw-st-completed, .fcw-st-done { color: #08130c; border-color: #37d67a; background: #37d67a; font-weight: 700; }
+/* Left colour stripe on each card = its stage, for scanning the groups view fast. */
+.fcw-stripe-todo { border-left: 3px solid #7d7d85; }
+.fcw-stripe-in_progress, .fcw-stripe-copy_written, .fcw-stripe-script, .fcw-stripe-draft, .fcw-stripe-concept { border-left: 3px solid #4a9eff; }
+.fcw-stripe-review, .fcw-stripe-revision, .fcw-stripe-image_generated { border-left: 3px solid #e0a93a; }
+.fcw-stripe-approved { border-left: 3px solid #37d67a; }
+.fcw-stripe-live, .fcw-stripe-completed, .fcw-stripe-done { border-left: 3px solid #1fa463; }
 .fcw-card-thumb { width: 100%; border-radius: 7px; object-fit: cover; max-height: 130px; }
 .fcw-card-preview { font-size: 12px; color: var(--text-secondary); line-height: 1.45; margin: 0; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .fcw-card-empty { font-size: 12px; color: var(--text-muted); font-style: italic; margin: 0; }
@@ -989,10 +1000,11 @@
 .fcw-dd-item:hover { background: var(--bg-card-hover, rgba(255,255,255,.05)); color: var(--text-primary); }
 .fcw-dd-item.on { color: var(--text-primary); }
 .fcw-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-.fcw-dot-draft, .fcw-dot-concept, .fcw-dot-copy_written, .fcw-dot-script { background: #8a8a92; }
-.fcw-dot-review, .fcw-dot-film, .fcw-dot-image_generated { background: #e0a93a; }
-.fcw-dot-approved, .fcw-dot-edit, .fcw-dot-revision { background: #4a9eff; }
-.fcw-dot-live, .fcw-dot-done, .fcw-dot-completed { background: #37d67a; }
+.fcw-dot-todo { background: #7d7d85; }
+.fcw-dot-in_progress, .fcw-dot-copy_written, .fcw-dot-script, .fcw-dot-draft, .fcw-dot-concept { background: #4a9eff; }
+.fcw-dot-review, .fcw-dot-revision, .fcw-dot-image_generated { background: #e0a93a; }
+.fcw-dot-approved { background: #37d67a; }
+.fcw-dot-live, .fcw-dot-done, .fcw-dot-completed { background: #1fa463; }
 
 /* Formatting toolbar */
 .fcw-toolbar2 { display: flex; align-items: center; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-secondary); }
