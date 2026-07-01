@@ -45,7 +45,7 @@ function anthropic(): Anthropic {
 export type CreativeCopyResult = {
   adId: string;
   onImageText: string;
-  captionText: string;
+  primaryText: string;
   model: string | null;
   extractedAt: string | null;
   cached: boolean;
@@ -54,7 +54,7 @@ export type CreativeCopyResult = {
 type StoredRow = {
   ad_id: string;
   on_image_text: string | null;
-  caption_text: string | null;
+  primary_text: string | null;
   model: string | null;
   extracted_at: string;
 };
@@ -63,7 +63,7 @@ function shapeStored(row: StoredRow): CreativeCopyResult {
   return {
     adId: row.ad_id,
     onImageText: row.on_image_text || "",
-    captionText: row.caption_text || "",
+    primaryText: row.primary_text || "",
     model: row.model || null,
     extractedAt: row.extracted_at || null,
     cached: true,
@@ -133,7 +133,7 @@ export type ExtractInput = {
   adId: string;
   imageUrl?: string | null;
   clientKey?: string | null;
-  captionText?: string | null;
+  primaryText?: string | null;
 };
 
 // Returns the cached copy if present; otherwise reads the image, stores it, and
@@ -148,12 +148,12 @@ export async function getOrExtractCreativeCopy(
 
   const imageUrl = String(input.imageUrl || "").trim();
   const clientKey = input.clientKey ? String(input.clientKey).trim() : null;
-  const captionText = input.captionText ? String(input.captionText).trim() : "";
+  const primaryText = input.primaryText ? String(input.primaryText).trim() : "";
 
   if (!opts.force) {
     const { data: existing } = await db
       .from("ad_creative_copy")
-      .select("ad_id,on_image_text,caption_text,model,extracted_at")
+      .select("ad_id,on_image_text,primary_text,model,extracted_at")
       .eq("ad_id", adId)
       .maybeSingle();
     if (existing) return shapeStored(existing as StoredRow);
@@ -164,21 +164,21 @@ export async function getOrExtractCreativeCopy(
     await db
       .from("ad_creative_copy")
       .upsert(
-        { ad_id: adId, client_key: clientKey, image_url: null, on_image_text: "", caption_text: captionText, model: null },
+        { ad_id: adId, client_key: clientKey, image_url: null, on_image_text: "", primary_text: primaryText, model: null },
         { onConflict: "ad_id" }
       );
-    return { adId, onImageText: "", captionText, model: null, extractedAt: null, cached: false };
+    return { adId, onImageText: "", primaryText, model: null, extractedAt: null, cached: false };
   }
 
   const onImageText = await readWordsOnImage(imageUrl);
   await db
     .from("ad_creative_copy")
     .upsert(
-      { ad_id: adId, client_key: clientKey, image_url: imageUrl, on_image_text: onImageText, caption_text: captionText, model: MODEL },
+      { ad_id: adId, client_key: clientKey, image_url: imageUrl, on_image_text: onImageText, primary_text: primaryText, model: MODEL },
       { onConflict: "ad_id" }
     );
 
-  return { adId, onImageText, captionText, model: MODEL, extractedAt: new Date().toISOString(), cached: false };
+  return { adId, onImageText, primaryText, model: MODEL, extractedAt: new Date().toISOString(), cached: false };
 }
 
 // Given a roster of ads, returns the ad_ids that have NOT been read yet.

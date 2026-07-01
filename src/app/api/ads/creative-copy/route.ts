@@ -17,7 +17,12 @@ export async function POST(req: NextRequest) {
       adId,
       imageUrl: typeof body.imageUrl === "string" ? body.imageUrl : null,
       clientKey: typeof body.clientKey === "string" ? body.clientKey : null,
-      captionText: typeof body.captionText === "string" ? body.captionText : null,
+      primaryText:
+        typeof body.primaryText === "string"
+          ? body.primaryText
+          : typeof body.captionText === "string"
+            ? body.captionText
+            : null,
     });
 
     return NextResponse.json(result);

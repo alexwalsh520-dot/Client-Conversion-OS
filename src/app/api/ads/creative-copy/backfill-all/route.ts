@@ -12,10 +12,10 @@ export const maxDuration = 60;
 // confused (confusing them caused real, expensive mistakes):
 //   • on_image_text  — the words OCR'd off the still image (or a video's
 //                       thumbnail frame). Empty for videos/plain photos.
-//   • caption_text   — the ad's PRIMARY TEXT (the `body` above the creative).
+//   • primary_text   — the ad's PRIMARY TEXT (the `body` above the creative).
 //                       This is where a video ad's actual copy usually lives.
 // For a story-IMAGE ad the copy is on_image_text; for a VIDEO ad the copy is
-// caption_text. Storing both means we always have the real copy and never
+// primary_text. Storing both means we always have the real copy and never
 // mislabel primary text as on-image text.
 //
 // The old backfill only read ads the dashboard handed an image_url for and
@@ -84,7 +84,7 @@ async function runBackfill(onlyKey: string | null) {
         batch.slice(i, i + CONCURRENCY).map(async (adId) => {
           const { imageUrl, body } = await fetchCreative(adId, token);
           if (!imageUrl && !body) return; // leave unread; retry next run
-          await getOrExtractCreativeCopy({ adId, imageUrl, clientKey: creator.key, captionText: body });
+          await getOrExtractCreativeCopy({ adId, imageUrl, clientKey: creator.key, primaryText: body });
         })
       );
     }
@@ -92,13 +92,13 @@ async function runBackfill(onlyKey: string | null) {
     ocrProcessed += ocrDone;
     remaining += Math.max(0, todo.length - ocrDone);
 
-    // ── Phase 2: fill caption_text on already-read rows that are missing it. ──
+    // ── Phase 2: fill primary_text on already-read rows that are missing it. ──
     if (capProcessed < CAP_CALL) {
       const { data: needCap } = await db
         .from("ad_creative_copy")
         .select("ad_id")
         .eq("client_key", creator.key)
-        .or("caption_text.is.null,caption_text.eq.")
+        .or("primary_text.is.null,primary_text.eq.")
         .limit(Math.max(0, CAP_CALL - capProcessed));
       const capRows = (needCap || []).map((r: { ad_id: string }) => r.ad_id);
       remaining += capRows.length;
@@ -106,7 +106,7 @@ async function runBackfill(onlyKey: string | null) {
         await Promise.allSettled(
           capRows.slice(i, i + CONCURRENCY).map(async (adId) => {
             const { body } = await fetchCreative(adId, token);
-            await db.from("ad_creative_copy").update({ caption_text: body || "" }).eq("ad_id", adId);
+            await db.from("ad_creative_copy").update({ primary_text: body || "" }).eq("ad_id", adId);
           })
         );
       }
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET: the daily cron. Keeps both on_image_text and caption_text complete for
+// GET: the daily cron. Keeps both on_image_text and primary_text complete for
 // every ad, every creator, automatically.
 export async function GET() {
   try {
