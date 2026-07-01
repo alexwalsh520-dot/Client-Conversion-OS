@@ -67,12 +67,18 @@ function formatSeconds(totalSeconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+// Cash collected on a row means the call happened and closed — count it as
+// "taken" even if the Call Taken column still says No (just never updated).
+function isTaken(r: SheetRow): boolean {
+  return r.callTakenStatus === "yes" || r.cashCollected > 0;
+}
+
 function statsFromRows(rows: SheetRow[]): Omit<CloserStats, "name"> {
   const closerRows = rows;
 
   const callsBooked = closerRows.length;
-  const takenRows = closerRows.filter((r) => r.callTakenStatus === "yes");
-  const noShowRows = closerRows.filter((r) => r.callTakenStatus === "no");
+  const takenRows = closerRows.filter(isTaken);
+  const noShowRows = closerRows.filter((r) => r.callTakenStatus === "no" && !isTaken(r));
   const callsTaken = takenRows.length;
   const showDenominator = callsTaken + noShowRows.length;
   const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
@@ -209,9 +215,9 @@ export default function CloserPerformance({
   const aggregated = useMemo(() => {
     if (!sheetData) return null;
     const callsBooked = sheetData.length;
-    const takenRows = sheetData.filter((r) => r.callTakenStatus === "yes");
+    const takenRows = sheetData.filter(isTaken);
     const callsTaken = takenRows.length;
-    const noShows = sheetData.filter((r) => r.callTakenStatus === "no").length;
+    const noShows = sheetData.filter((r) => r.callTakenStatus === "no" && !isTaken(r)).length;
     const showDenominator = callsTaken + noShows;
     const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
     const winRows = takenRows.filter((r) => r.outcome === "WIN");
