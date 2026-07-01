@@ -186,6 +186,11 @@ export const CLOSER_PCT = 10;
 export const MANAGER_OVERRIDE_PCT = 2.5;
 export const MANAGER_BASE = 2000; // per run (½ of $4k/mo)
 export const MRR_PCT = 20;
+// Self-set: when the same person both SET and CLOSED a sale, they earn their
+// 10% close + a 2.5% self-set bonus (= 12.5% on that sale). The 2.5% REPLACES
+// the normal 5%/3% setter cut for that sale, and is paid with the closer comp
+// (1st/15th), not on the setter run.
+export const SELF_SET_PCT = 2.5;
 const SETTER_RATES: Array<{ match: string; pct: number }> = [
   { match: "amara", pct: 5 },
   { match: "erin", pct: 5 },
@@ -201,6 +206,12 @@ export function setterRatePct(name: string): number {
 }
 function isWill(closer: string): boolean {
   return (closer || "").trim().toUpperCase() === "WILL";
+}
+// A self-set sale: the same person is both the closer and the setter.
+function isSelfSet(row: { closer: string; setter: string }): boolean {
+  const c = (row.closer || "").trim().toUpperCase();
+  const s = (row.setter || "").trim().toUpperCase();
+  return c !== "" && c === s;
 }
 
 // ---------- window run-rate ----------
@@ -274,13 +285,22 @@ export function computePayoutRun(opts: {
   const warnings = [...(opts.warnings || [])];
   const lines: PayoutLine[] = [];
 
-  // ----- 1) Closers: 10% of own cash collected over the closer window -----
+  // ----- 1) Closers: 10% of own cash + 2.5% self-set bonus on sales they set -----
   const closers = Array.from(new Set(opts.mainRows.map((r) => r.closer).filter((c) => c && c.trim())));
   for (const closer of closers) {
-    const rows = opts.mainRows.filter((r) => r.closer === closer).map((r) => ({ date: r.date, amt: r.cash }));
-    const calc = windowCalc(rows, w.closer.start, w.closer.end, opts.asOf);
-    if (calc.confirmedBasis === 0 && calc.forecastBasis === 0) continue;
-    lines.push(line(titleCaseCloser(closer), "closer", "Closer commission (10%)", w.closer.start, w.closer.end, CLOSER_PCT, calc));
+    const closerRows = opts.mainRows.filter((r) => r.closer === closer);
+    const calc = windowCalc(closerRows.map((r) => ({ date: r.date, amt: r.cash })), w.closer.start, w.closer.end, opts.asOf);
+    if (calc.confirmedBasis !== 0 || calc.forecastBasis !== 0) {
+      lines.push(line(titleCaseCloser(closer), "closer", "Closer commission (10%)", w.closer.start, w.closer.end, CLOSER_PCT, calc));
+    }
+    // Self-set bonus: +2.5% on the subset this person also set themselves.
+    const selfRows = closerRows.filter(isSelfSet).map((r) => ({ date: r.date, amt: r.cash }));
+    if (selfRows.length) {
+      const selfCalc = windowCalc(selfRows, w.closer.start, w.closer.end, opts.asOf);
+      if (selfCalc.confirmedBasis !== 0 || selfCalc.forecastBasis !== 0) {
+        lines.push(line(titleCaseCloser(closer), "closer", "Self-set bonus (2.5%)", w.closer.start, w.closer.end, SELF_SET_PCT, selfCalc));
+      }
+    }
   }
 
   // ----- 2) Will: base + 2.5% override (non-Will cash + ALL New MRR) -----
@@ -309,7 +329,7 @@ export function computePayoutRun(opts: {
     line(
       "Will",
       "manager",
-      "Manager override (2.5% of all non-Will cash + New MRR)",
+      "Manager pay (2.5% of everyone else's cash + New MRR)",
       w.closer.start,
       w.closer.end,
       MANAGER_OVERRIDE_PCT,
@@ -322,7 +342,11 @@ export function computePayoutRun(opts: {
     const setters = Array.from(new Set(opts.mainRows.map((r) => r.setter).filter((s) => s && s.trim())));
     for (const setter of setters) {
       const rate = setterRatePct(setter);
-      const rows = opts.mainRows.filter((r) => r.setter === setter).map((r) => ({ date: r.date, amt: r.cash }));
+      // Exclude self-set sales — those earn the 2.5% self-set bonus on the closer
+      // side instead of the normal 5%/3% setter cut.
+      const rows = opts.mainRows
+        .filter((r) => r.setter === setter && !isSelfSet(r))
+        .map((r) => ({ date: r.date, amt: r.cash }));
       const calc = windowCalc(rows, w.setter.start, w.setter.end, opts.asOf);
       if (calc.confirmedBasis === 0 && calc.forecastBasis === 0) continue;
       if (rate === 0) {

@@ -94,7 +94,7 @@ export default function TeamPayouts({ endpoint = "/api/payouts" }: { endpoint?: 
       <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: -6, marginBottom: 18, lineHeight: 1.55 }}>
         Closers are paid the <strong>1st &amp; 15th</strong> on the prior month&apos;s matching half (10% of cash collected).
         Setters are paid on the <strong>1st</strong> for the whole prior month (5% Amara/Erin · 3% Gideon/Kelechi/Debbie, plus 20% of New MRR).
-        Will adds a $2,000 base each run + a 2.5% override on everyone else&apos;s cash and New MRR. All dates America/New_York.
+        Will adds a $2,000 base each run + 2.5% manager pay on everyone else&apos;s cash and New MRR. All dates America/New_York.
       </p>
 
       {/* ===================== UPCOMING ===================== */}
