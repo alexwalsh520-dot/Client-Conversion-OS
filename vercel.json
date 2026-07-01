@@ -20,6 +20,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/ads/creative-copy/backfill-all",
+      "schedule": "0 */2 * * *"
+    },
+    {
       "path": "/api/cron/monthly-financials",
       "schedule": "0 9 1 * *"
     },

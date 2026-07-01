@@ -34,7 +34,7 @@ const MEDIA_TYPES: Record<string, "image/jpeg" | "image/png" | "image/gif" | "im
   "image/webp": "image/webp",
 };
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-6";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
