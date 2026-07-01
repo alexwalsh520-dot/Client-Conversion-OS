@@ -94,13 +94,14 @@ async function runBackfill(onlyKey: string | null) {
 
     // ── Phase 2: fill primary_text on already-read rows that are missing it. ──
     if (capProcessed < CAP_CALL) {
-      const { data: needCap } = await db
+      const { data: allRows } = await db
         .from("ad_creative_copy")
-        .select("ad_id")
-        .eq("client_key", creator.key)
-        .or("primary_text.is.null,primary_text.eq.")
-        .limit(Math.max(0, CAP_CALL - capProcessed));
-      const capRows = (needCap || []).map((r: { ad_id: string }) => r.ad_id);
+        .select("ad_id,primary_text")
+        .eq("client_key", creator.key);
+      const capRows = (allRows || [])
+        .filter((r: { primary_text: string | null }) => !r.primary_text || !String(r.primary_text).trim())
+        .map((r: { ad_id: string }) => r.ad_id)
+        .slice(0, Math.max(0, CAP_CALL - capProcessed));
       remaining += capRows.length;
       for (let i = 0; i < capRows.length; i += CONCURRENCY) {
         await Promise.allSettled(
