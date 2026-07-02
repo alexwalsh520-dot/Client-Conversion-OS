@@ -19,6 +19,10 @@ export interface OutreachChannelMetrics {
   notInterestedRepliesInRange: number;
   notInterestedReplyRateInRange: number;
   avgFollowUpsToReplyInRange: number | null;
+  // Opens — email only (Smartlead open tracking). DM leaves these at 0.
+  opensInRange: number;
+  openRateInRange: number;
+  opensAllTime: number;
 }
 
 export interface OutreachCombinedMetrics {
@@ -36,6 +40,7 @@ export interface OutreachChartPoint {
   date: string;
   label: string;
   emailMessages: number;
+  emailOpens: number;
   dmMessages: number;
   emailReplies: number;
   dmReplies: number;

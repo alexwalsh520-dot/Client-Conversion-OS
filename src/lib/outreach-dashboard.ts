@@ -380,6 +380,94 @@ async function getEmailDataset() {
   return emailDatasetPromise;
 }
 
+// Per-activity statistics: one row per email sent, with real sent/open/reply
+// timestamps and lead identity. This is the authoritative source (all rows),
+// unlike leads-statistics which silently returns only a subset and carries no
+// open events. leads-statistics is retained only for best-effort reply intent.
+interface SmartleadStatisticsRow {
+  lead_email?: string;
+  sent_time?: string | null;
+  open_time?: string | null;
+  reply_time?: string | null;
+  sequence_number?: number;
+}
+
+let emailStatsCache:
+  | { expiresAt: number; data: SmartleadStatisticsRow[] }
+  | null = null;
+let emailStatsPromise: Promise<SmartleadStatisticsRow[]> | null = null;
+
+async function fetchSmartleadStatisticsPage(offset: number, limit: number) {
+  const apiKey = getSmartleadApiKey();
+  const campaignId = getSmartleadCampaignId();
+  const res = await fetch(
+    `${SMARTLEAD_BASE}/campaigns/${campaignId}/statistics?api_key=${apiKey}&offset=${offset}&limit=${limit}`,
+    { cache: "no-store" },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Smartlead statistics failed (${res.status}): ${text}`);
+  }
+
+  return res.json() as Promise<{
+    total_stats?: number;
+    data?: SmartleadStatisticsRow[];
+  }>;
+}
+
+async function getEmailStatisticsDataset() {
+  if (emailStatsCache && emailStatsCache.expiresAt > Date.now()) {
+    return emailStatsCache.data;
+  }
+  if (emailStatsPromise) return emailStatsPromise;
+
+  emailStatsPromise = (async () => {
+    try {
+      const limit = 500;
+      let offset = 0;
+      const rows: SmartleadStatisticsRow[] = [];
+
+      // Hard page cap as a runaway-loop backstop (30k activities).
+      for (let page = 0; page < 60; page++) {
+        const res = await fetchSmartleadStatisticsPage(offset, limit);
+        const pageRows = res.data || [];
+        rows.push(...pageRows);
+        if (pageRows.length < limit) break;
+        offset += limit;
+      }
+
+      emailStatsCache = {
+        expiresAt: Date.now() + EMAIL_CACHE_TTL_MS,
+        data: rows,
+      };
+      return rows;
+    } finally {
+      emailStatsPromise = null;
+    }
+  })();
+
+  return emailStatsPromise;
+}
+
+// Best-effort reply intent (interested / not_interested) keyed by email.
+// Sourced from leads-statistics (which carries reply bodies); reply COUNTS and
+// rates come from the authoritative statistics dataset above.
+async function buildEmailReplyClassificationMap(): Promise<Map<string, ReplyIntent>> {
+  try {
+    const leads = await buildEmailSummaries();
+    const map = new Map<string, ReplyIntent>();
+    for (const lead of leads) {
+      if (lead.humanReplyTimes.length > 0) {
+        map.set(lead.email, lead.classification);
+      }
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 async function ghlFetchJson<T>(path: string): Promise<T> {
   const apiKey = process.env.GHL_API_KEY;
   if (!apiKey) throw new Error("GHL_API_KEY not configured");
@@ -762,15 +850,17 @@ function buildDateSeries(startDate: string, endDate: string) {
 export async function getOutreachDashboard(range: OutreachRange): Promise<OutreachDashboardResponse> {
   const dmSource = getDmSourceConfig();
   const notes = [
-    "Email reply rate skips bounce notices and auto-replies.",
+    "Emails sent, opened, and replied come live from Smartlead per-email statistics.",
+    "Open rate is unique people who opened divided by unique people emailed in range.",
     "Interested email replies are best-effort from Smartlead reply text.",
     "DM numbers come live from GHL Instagram conversations on the CC-Clients sub-account.",
     "Positive DM replies are best-effort from reply text matching.",
   ];
 
   let dmError: string | null = null;
-  const [emailLeads, dmResult] = await Promise.all([
-    buildEmailSummaries(),
+  const [emailStatsRows, emailClassification, dmResult] = await Promise.all([
+    getEmailStatisticsDataset(),
+    buildEmailReplyClassificationMap(),
     buildDmSummaries(dmSource, range).catch((err: unknown) => {
       dmError = err instanceof Error ? err.message : "Failed to load DM data";
       return {
@@ -793,6 +883,7 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
     date,
     label: dateLabelFromKey(date, range.timeZone),
     emailMessages: 0,
+    emailOpens: 0,
     dmMessages: 0,
     emailReplies: 0,
     dmReplies: 0,
@@ -801,41 +892,55 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
 
   const emailReachedInRange = new Set<string>();
   const emailReachedAllTime = new Set<string>();
+  const emailOpenedInRange = new Set<string>();
+  const emailOpenedAllTime = new Set<string>();
   const emailRepliedInRange = new Set<string>();
   const emailInterestedInRange = new Set<string>();
   const emailNotInterestedInRange = new Set<string>();
   const emailFollowUpsToReply: number[] = [];
+  let emailMessagesAllTime = 0;
 
-  for (const lead of emailLeads) {
-    for (const sentTime of lead.sentTimes) {
-      const dateKey = dateKeyFromTimestamp(sentTime, range.timeZone);
-      emailReachedAllTime.add(lead.personId);
+  for (const row of emailStatsRows) {
+    const email = row.lead_email?.trim().toLowerCase();
+    if (!email) continue;
+    const personId = `email:${email}`;
+
+    // Sent — one statistics row per email activity (includes follow-ups).
+    if (row.sent_time) {
+      emailMessagesAllTime += 1;
+      emailReachedAllTime.add(personId);
+      const dateKey = dateKeyFromTimestamp(row.sent_time, range.timeZone);
       if (isDateKeyInRange(dateKey, range.startDate, range.endDate)) {
-        emailReachedInRange.add(lead.personId);
+        emailReachedInRange.add(personId);
         const chartPoint = chartByDate.get(dateKey);
         if (chartPoint) chartPoint.emailMessages += 1;
       }
     }
 
-    for (const replyTime of lead.humanReplyTimes) {
-      const dateKey = dateKeyFromTimestamp(replyTime, range.timeZone);
-      if (!isDateKeyInRange(dateKey, range.startDate, range.endDate)) continue;
-
-      emailRepliedInRange.add(lead.personId);
-      if (lead.classification === "interested") {
-        emailInterestedInRange.add(lead.personId);
+    // Opens — real open_time per activity (Smartlead open pixel).
+    if (row.open_time) {
+      emailOpenedAllTime.add(personId);
+      const dateKey = dateKeyFromTimestamp(row.open_time, range.timeZone);
+      if (isDateKeyInRange(dateKey, range.startDate, range.endDate)) {
+        emailOpenedInRange.add(personId);
+        const chartPoint = chartByDate.get(dateKey);
+        if (chartPoint) chartPoint.emailOpens += 1;
       }
-      if (lead.classification === "not_interested") {
-        emailNotInterestedInRange.add(lead.personId);
-      }
-      const chartPoint = chartByDate.get(dateKey);
-      if (chartPoint) chartPoint.emailReplies += 1;
     }
 
-    if (lead.firstHumanReplyAt && lead.followUpsToFirstReply !== null) {
-      const dateKey = dateKeyFromTimestamp(lead.firstHumanReplyAt, range.timeZone);
+    // Replies — authoritative reply_time; intent is best-effort overlay.
+    if (row.reply_time) {
+      const dateKey = dateKeyFromTimestamp(row.reply_time, range.timeZone);
       if (isDateKeyInRange(dateKey, range.startDate, range.endDate)) {
-        emailFollowUpsToReply.push(lead.followUpsToFirstReply);
+        emailRepliedInRange.add(personId);
+        const classification = emailClassification.get(email);
+        if (classification === "interested") emailInterestedInRange.add(personId);
+        if (classification === "not_interested") emailNotInterestedInRange.add(personId);
+        if (typeof row.sequence_number === "number") {
+          emailFollowUpsToReply.push(Math.max(0, row.sequence_number - 1));
+        }
+        const chartPoint = chartByDate.get(dateKey);
+        if (chartPoint) chartPoint.emailReplies += 1;
       }
     }
   }
@@ -895,7 +1000,10 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
       reachedInRange: emailReachedInRange.size,
       reachedAllTime: emailReachedAllTime.size,
       messagesInRange: chart.reduce((sum, point) => sum + point.emailMessages, 0),
-      messagesAllTime: emailLeads.reduce((sum, lead) => sum + lead.sentTimes.length, 0),
+      messagesAllTime: emailMessagesAllTime,
+      opensInRange: emailOpenedInRange.size,
+      openRateInRange: toPercent(emailOpenedInRange.size, emailReachedInRange.size),
+      opensAllTime: emailOpenedAllTime.size,
       repliesInRange: emailRepliedInRange.size,
       replyRateInRange: toPercent(emailRepliedInRange.size, emailReachedInRange.size),
       interestedRepliesInRange: emailInterestedInRange.size,
@@ -909,6 +1017,9 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
       reachedAllTime: Math.max(dmDatasetAllTime, dmReachedAllTime.size),
       messagesInRange: chart.reduce((sum, point) => sum + point.dmMessages, 0),
       messagesAllTime: dmThreads.reduce((sum, thread) => sum + thread.outboundTimes.length, 0),
+      opensInRange: 0,
+      openRateInRange: 0,
+      opensAllTime: 0,
       repliesInRange: dmRepliedInRange.size,
       replyRateInRange: toPercent(dmRepliedInRange.size, dmReachedInRange.size),
       interestedRepliesInRange: dmInterestedInRange.size,
