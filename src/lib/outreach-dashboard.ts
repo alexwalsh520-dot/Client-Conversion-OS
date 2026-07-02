@@ -12,6 +12,37 @@ const DM_CACHE_TTL_MS = 2 * 60 * 1000;
 const DM_MESSAGE_FETCH_CONCURRENCY = 8;
 const DM_CONV_PAGE_SIZE = 100;
 const DM_MAX_CONVERSATIONS_IN_RANGE = 1500;
+const DM_FETCH_BUDGET_MS = 20_000;
+const CLASSIFY_FETCH_BUDGET_MS = 15_000;
+
+// Resolve to `fallback` if `promise` hasn't settled within `ms`. Keeps a slow
+// secondary source (GHL DMs, reply intent) from timing out the whole endpoint.
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise
+      .then((value) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallback);
+        }
+      });
+  });
+}
 
 type ReplyIntent = "interested" | "not_interested" | "neutral" | "system";
 
@@ -858,23 +889,35 @@ export async function getOutreachDashboard(range: OutreachRange): Promise<Outrea
   ];
 
   let dmError: string | null = null;
+  const emptyDmResult = {
+    threads: [] as DmThreadSummary[],
+    dataset: {
+      conversations: [],
+      messagesByConversation: new Map(),
+      totalConversationsAllTime: 0,
+      rangeStartMs: 0,
+      rangeEndMs: 0,
+    } as DmDataset,
+  };
+
+  // The GHL Instagram DM fetch can walk up to ~1,500 conversations and was
+  // timing the whole endpoint out (504). Time-box the secondary sources so the
+  // essential email metrics always render; DM/intent degrade to empty on slow.
   const [emailStatsRows, emailClassification, dmResult] = await Promise.all([
     getEmailStatisticsDataset(),
-    buildEmailReplyClassificationMap(),
-    buildDmSummaries(dmSource, range).catch((err: unknown) => {
-      dmError = err instanceof Error ? err.message : "Failed to load DM data";
-      return {
-        threads: [] as DmThreadSummary[],
-        dataset: {
-          conversations: [],
-          messagesByConversation: new Map(),
-          totalConversationsAllTime: 0,
-          rangeStartMs: 0,
-          rangeEndMs: 0,
-        } as DmDataset,
-      };
-    }),
+    withTimeout(buildEmailReplyClassificationMap(), CLASSIFY_FETCH_BUDGET_MS, new Map<string, ReplyIntent>()),
+    withTimeout(
+      buildDmSummaries(dmSource, range).catch((err: unknown) => {
+        dmError = err instanceof Error ? err.message : "Failed to load DM data";
+        return emptyDmResult;
+      }),
+      DM_FETCH_BUDGET_MS,
+      emptyDmResult,
+    ),
   ]);
+  if (dmResult === emptyDmResult && !dmError && dmSource.enabled) {
+    dmError = "DM data timed out and was skipped this load.";
+  }
   const dmThreads = dmResult.threads;
   const dmDatasetAllTime = dmResult.dataset.totalConversationsAllTime;
 

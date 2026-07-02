@@ -262,11 +262,27 @@ export default function OutreachDashboard() {
           cache: "no-store",
           signal: controller.signal,
         });
-        const body = await res.json();
-        if (!res.ok) {
-          throw new Error(body.error || "Failed to load outreach dashboard");
+        // The endpoint can return a non-JSON body on infra errors (e.g. a 504
+        // timeout page). Read as text first so we surface a clean message
+        // instead of an "Unexpected token" JSON-parse error.
+        const raw = await res.text();
+        let body: OutreachDashboardResponse | { error?: string };
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(
+            res.status === 504
+              ? "The outreach dashboard timed out. Refresh, or try a narrower date range."
+              : `Couldn't load outreach data (HTTP ${res.status}). Please retry.`,
+          );
         }
-        setData(body);
+        if (!res.ok) {
+          throw new Error(
+            ("error" in body && body.error) ||
+              `Failed to load outreach dashboard (HTTP ${res.status})`,
+          );
+        }
+        setData(body as OutreachDashboardResponse);
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : "Failed to load outreach dashboard");
