@@ -9,8 +9,16 @@ function getApiKey() {
 }
 
 function getCampaignId() {
-  const id = process.env.SMARTLEAD_CAMPAIGN_ID;
-  if (!id) throw new Error("SMARTLEAD_CAMPAIGN_ID not configured");
+  // Default outreach sends now target the influencer (Matthew) campaign.
+  // Falls back to the legacy campaign if the influencer var isn't set.
+  const id =
+    process.env.SMARTLEAD_INFLUENCER_CAMPAIGN_ID ||
+    process.env.SMARTLEAD_CAMPAIGN_ID;
+  if (!id) {
+    throw new Error(
+      "SMARTLEAD_INFLUENCER_CAMPAIGN_ID or SMARTLEAD_CAMPAIGN_ID not configured",
+    );
+  }
   return id;
 }
 

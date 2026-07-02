@@ -9,6 +9,7 @@ import {
   searchContactOpportunities,
 } from "@/lib/ghl";
 import { addLeadsToCampaign } from "@/lib/smartlead";
+import { buildTrackedDocUrl } from "@/lib/outreach-link";
 import {
   buildColdDmsCsv,
   buildColdDmsRow,
@@ -121,8 +122,20 @@ interface ProcessedContact {
   coldDmsRow?: ColdDmsRow | null;
 }
 
+function getBaseUrl(req: NextRequest): string {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  const proto =
+    req.headers.get("x-forwarded-proto") ||
+    (host?.includes("localhost") ? "http" : "https");
+  if (host) return `${proto}://${host}`;
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL || "https://client-conversion-os.vercel.app"
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const baseUrl = getBaseUrl(req);
     let body: RunRequestBody = {};
     try {
       body = await req.json();
@@ -265,12 +278,17 @@ export async function POST(req: NextRequest) {
                   campaignName: campaignName || undefined,
                   segment,
                   segment_key: segmentKey,
-                  custom_fields: shouldUseSegmentRouting
-                    ? {
-                        segment,
-                        segment_key: segmentKey,
-                      }
-                    : undefined,
+                  custom_fields: {
+                    custom_doc_link: buildTrackedDocUrl(baseUrl, {
+                      email: email.trim(),
+                      firstName,
+                      lastName,
+                      instagram: igUsername || "",
+                    }),
+                    ...(shouldUseSegmentRouting
+                      ? { segment, segment_key: segmentKey }
+                      : {}),
+                  },
                 }
               : undefined,
             unmappedSegment:
