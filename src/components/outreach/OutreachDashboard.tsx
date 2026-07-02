@@ -24,7 +24,12 @@ import type {
   OutreachChartPoint,
 } from "@/lib/outreach-dashboard-types";
 
-type ChartKey = "emailMessages" | "emailReplies" | "dmMessages" | "dmReplies";
+type ChartKey =
+  | "emailMessages"
+  | "emailOpens"
+  | "emailReplies"
+  | "dmMessages"
+  | "dmReplies";
 
 interface LocalDmTotals {
   reachedInRange: number;
@@ -212,6 +217,7 @@ function MetricCard({
 
 const CHART_TITLES: Record<ChartKey, string> = {
   emailMessages: "Emails sent per day",
+  emailOpens: "Emails opened per day",
   emailReplies: "Email replies per day",
   dmMessages: "DMs sent per day",
   dmReplies: "DM replies per day",
@@ -513,6 +519,15 @@ export default function OutreachDashboard() {
                 detail="Includes follow-ups"
                 channel="email"
                 chartKey="emailMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+              />
+              <MetricCard
+                label="Open rate"
+                value={fmtPercent(data.email.openRateInRange)}
+                detail={`${fmtNumber(data.email.opensInRange)} opened`}
+                channel="email"
+                chartKey="emailOpens"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
               />
