@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ExternalLink, UserPlus, Clock, CheckCircle, AlertTriangle, Calendar, UserX, RefreshCw } from "lucide-react";
 import type { Client } from "@/lib/types";
+import OnboardingBacklogTable from "./OnboardingBacklogTable";
 
 interface CalendarEvent {
   id: string;
@@ -189,6 +190,10 @@ export default function OnboardingTab({ clients, onClientClick }: Props) {
           ))}
         </div>
       )}
+
+      {/* Nicole's onboarding backlog tracker — standalone table, mirrors her
+          Google Sheet. Nicole + admins edit, others read-only. */}
+      <OnboardingBacklogTable />
 
       {/* Upcoming Onboardings from Calendar */}
       {(upcomingFromCalendar.length > 0 || upcomingFromTracker.length > 0) && (
