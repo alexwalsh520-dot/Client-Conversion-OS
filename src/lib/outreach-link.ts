@@ -3,7 +3,7 @@ import { postToSlack } from "./slack";
 // The real destination every tracked link redirects to — the shared
 // "Your Super Doc" Gamma page. Override per environment if the doc moves.
 const DEFAULT_GAMMA_DOC_URL =
-  "https://gamma.app/docs/YOUR-SUPER-DOC-ob9pqkhvctlyj9s";
+  "https://gamma.app/docs/YOUR-SUPER-DOC-ob9pqkhvctlyj9s?mode=doc";
 
 // #cc-call-updates — also the super-doc default channel. Bot posts here.
 const DEFAULT_OUTREACH_SLACK_CHANNEL = "C0AFKJUQ2UT";
