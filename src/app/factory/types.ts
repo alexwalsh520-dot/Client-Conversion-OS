@@ -109,6 +109,12 @@ export const KIND_ORDER: AssetKind[] = [
   "doc",
 ];
 
+// Safe metadata lookup. A legacy or unknown `kind` (e.g. a bad row) must NEVER
+// crash the whole board by dereferencing undefined.icon — fall back to a doc.
+export function kindMeta(kind: string) {
+  return KIND_META[kind as AssetKind] || KIND_META.doc;
+}
+
 export function statusDone(item: WItem): boolean {
   if (item.kind === "image_ad") return item.stage === "completed";
   const st = item.status || "";

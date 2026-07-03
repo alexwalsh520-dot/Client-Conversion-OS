@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
-import { WItem, WComment, WChecklistStep, WVersion, KIND_META, STATUS_LABEL, rid } from "./types";
+import { WItem, WComment, WChecklistStep, WVersion, STATUS_LABEL, kindMeta, rid } from "./types";
 
 const stLabel = (s: string) => STATUS_LABEL[s] || s.replace(/_/g, " ");
 
@@ -57,7 +57,7 @@ export default function DocEditor({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const meta = KIND_META[item.kind];
+  const meta = kindMeta(item.kind);
   const [label, setLabel] = useState(item.label);
   const [status, setStatus] = useState(item.status || item.stage || meta.statuses[0]);
   const [statusOpen, setStatusOpen] = useState(false);

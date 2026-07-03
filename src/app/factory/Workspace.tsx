@@ -5,12 +5,12 @@ import {
   ChevronRight, ChevronDown, Plus, Trash2, MessageSquare, CheckSquare,
   Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2, Layers, LayoutGrid,
 } from "lucide-react";
-import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL } from "./types";
+import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL, kindMeta } from "./types";
 import DocEditor from "./DocEditor";
 
 // Nice status label + which pipeline column a status belongs to.
 function statusOf(item: WItem): string {
-  return (item.kind === "image_ad" ? item.stage : item.status) || KIND_META[item.kind].statuses[0];
+  return (item.kind === "image_ad" ? item.stage : item.status) || kindMeta(item.kind).statuses[0];
 }
 function statusText(s: string): string {
   return STATUS_LABEL[s] || s.replace(/_/g, " ");
@@ -122,7 +122,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
     setBusy(true);
     try {
       const n = (itemsByGroup.get(g.id)?.length || 0) + 1;
-      await api("POST", { action: "createItem", projectId, groupId: g.id, kind: g.kind, label: `${KIND_META[g.kind].label} ${n}` });
+      await api("POST", { action: "createItem", projectId, groupId: g.id, kind: g.kind, label: `${kindMeta(g.kind).label} ${n}` });
       await load();
     } catch (e) { setErr(e instanceof Error ? e.message : "create failed"); } finally { setBusy(false); }
   };
@@ -177,13 +177,13 @@ export default function Workspace({ projectId }: { projectId: string }) {
             <header className="fcw-group-head">
               <button className="fcw-group-toggle" onClick={() => toggleCollapse(g)}>
                 {g.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                <span className="fcw-group-icon">{KIND_ICON[KIND_META[g.kind].icon]}</span>
+                <span className="fcw-group-icon">{KIND_ICON[kindMeta(g.kind).icon]}</span>
                 <span className="fcw-group-name">{g.name}</span>
               </button>
               <span className="fcw-progress-pill">{done}/{items.length} done</span>
               <div className="fcw-group-bar"><span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} /></div>
               <div className="fcw-group-spacer" />
-              <button className="fcw-group-add" onClick={() => addAsset(g)}><Plus size={13} /> {KIND_META[g.kind].label}</button>
+              <button className="fcw-group-add" onClick={() => addAsset(g)}><Plus size={13} /> {kindMeta(g.kind).label}</button>
               <button className="fcw-icon-btn fcw-danger" title="Delete group" onClick={() => deleteGroup(g)}><Trash2 size={14} /></button>
             </header>
             {!g.collapsed && (
@@ -236,7 +236,7 @@ function PipelineView({ items, groups, onOpen }: { items: WItem[]; groups: WGrou
 }
 
 function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOpen: () => void }) {
-  const meta = KIND_META[item.kind];
+  const meta = kindMeta(item.kind);
   const status = (item.kind === "image_ad" ? item.stage : item.status) || meta.statuses[0];
   const comments = (item.comments || []).filter((c) => !c.resolved).length;
   return (
@@ -255,7 +255,7 @@ function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOp
 }
 
 function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
-  const meta = KIND_META[item.kind];
+  const meta = kindMeta(item.kind);
   const commentCount = (item.comments || []).filter((c) => !c.resolved).length;
   const steps = item.checklist || [];
   const stepsDone = steps.filter((s) => s.done).length;
