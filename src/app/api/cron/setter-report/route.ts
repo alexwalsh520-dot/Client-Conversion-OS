@@ -365,13 +365,13 @@ export async function GET(req: NextRequest) {
   try {
     const actionContext = buildActionContext(data);
     const msg = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 3500,
       system: ACTION_ITEMS_PROMPT,
       messages: [{ role: "user", content: actionContext }],
     });
 
-    logAiUsage({ feature: "cron-setter-report", model: "claude-sonnet-4-20250514", usage: msg.usage });
+    logAiUsage({ feature: "cron-setter-report", model: "claude-sonnet-4-5-20250929", usage: msg.usage });
 
     const text = msg.content
       .filter((block) => block.type === "text")

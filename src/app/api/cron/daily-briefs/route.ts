@@ -450,11 +450,11 @@ ${mtdSummary}`;
 
     try {
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514", max_tokens: 5000,
+        model: "claude-sonnet-4-5-20250929", max_tokens: 5000,
         system: CLOSER_BRIEF_PROMPT,
         messages: [{ role: "user", content: `Generate the daily brief for ${closer.name}:\n\n${context}` }],
       });
-      logAiUsage({ feature: "cron-daily-briefs", model: "claude-sonnet-4-20250514", usage: msg.usage });
+      logAiUsage({ feature: "cron-daily-briefs", model: "claude-sonnet-4-5-20250929", usage: msg.usage });
       const brief = msg.content.filter((b) => b.type === "text").map((b) => b.type === "text" ? b.text : "").join("\n");
       const pdf = generatePDF(`Daily Brief — ${closer.name} (${briefDate})`, brief);
       await uploadFileAsCso(pdf, `brief-${closer.sheetKey.toLowerCase()}-${briefDate}.pdf`,
@@ -490,11 +490,11 @@ CLIENT BREAKDOWN:
 ${["Tyson", "Keith"].map((cl) => { const cr = allRows.filter((r) => (r.offer || "").toLowerCase().includes(cl.toLowerCase())); const ct = cr.filter((r) => r.callTaken); const cw = cr.filter((r) => r.outcome === "WIN"); const cc = cr.reduce((s, r) => s + (r.cashCollected || 0), 0); return `${cl}: ${cr.length} booked | ${ct.length} taken | ${cw.length} wins | $${cc.toLocaleString()} | CR=${ct.length > 0 ? (cw.length / ct.length * 100).toFixed(1) : 0}%`; }).join("\n")}`;
 
     const msg = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514", max_tokens: 6000,
+      model: "claude-sonnet-4-5-20250929", max_tokens: 6000,
       system: CEO_RECAP_PROMPT,
       messages: [{ role: "user", content: `Generate the CEO Daily Sales Recap:\n\n${ceoContext}` }],
     });
-    logAiUsage({ feature: "cron-ceo-recap", model: "claude-sonnet-4-20250514", usage: msg.usage });
+    logAiUsage({ feature: "cron-ceo-recap", model: "claude-sonnet-4-5-20250929", usage: msg.usage });
     const recap = msg.content.filter((b) => b.type === "text").map((b) => b.type === "text" ? b.text : "").join("\n");
     const pdf = generatePDF(`CEO Daily Sales Recap (${todayStr})`, recap);
     await uploadFileAsCso(pdf, `ceo-recap-${todayStr}.pdf`,

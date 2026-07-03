@@ -7,7 +7,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5-20250929";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours — insights move with the data, not the minute.
 const MIN_SPEND_FOR_RELIABLE = 100; // mirror MIN_SPEND_FOR_RELIABLE_ROAS — don't draw lessons from noise.
 // Bump when the prompt changes so cached insights regenerate against the new

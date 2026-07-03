@@ -617,7 +617,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
 
   // Agentic loop â keep going until we have a final text response
   let response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5-20250929",
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     tools: AGENT_TOOLS.map(t => ({
@@ -627,7 +627,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
     })),
     messages
   });
-  logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-20250514", usage: response.usage });
+  logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-5-20250929", usage: response.usage });
 
   // Process tool calls in a loop
   while (response.stop_reason === "tool_use") {
@@ -651,7 +651,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
 
     // Continue the conversation
     response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: AGENT_TOOLS.map(t => ({
@@ -661,7 +661,7 @@ export async function runSalesAgent(userMessage: string, conversationHistory?: A
       })),
       messages
     });
-    logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-20250514", usage: response.usage });
+    logAiUsage({ feature: "sales-agent", model: "claude-sonnet-4-5-20250929", usage: response.usage });
   }
 
   // Extract the final text response

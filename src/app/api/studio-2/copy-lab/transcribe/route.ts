@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     const image = await fetchImageAsBase64(imageUrl);
     const response = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 900,
       system: [
         "You transcribe visible ad copy from Meta ad creative images.",
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "studio2-copy-lab-transcribe", model: "claude-sonnet-4-20250514", usage: response.usage });
+    logAiUsage({ feature: "studio2-copy-lab-transcribe", model: "claude-sonnet-4-5-20250929", usage: response.usage });
 
     const text = response.content.find((part) => part.type === "text")?.text?.trim() || "";
     const transcription = {

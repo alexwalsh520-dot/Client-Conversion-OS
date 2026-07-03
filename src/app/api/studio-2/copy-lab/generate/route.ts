@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       .join("\n\n---\n\n");
 
     const response = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "studio2-copy-lab-generate", model: "claude-sonnet-4-20250514", usage: response.usage });
+    logAiUsage({ feature: "studio2-copy-lab-generate", model: "claude-sonnet-4-5-20250929", usage: response.usage });
 
     const text = response.content.find((part) => part.type === "text")?.text?.trim() || "";
     return NextResponse.json({ copy: text }, { headers: NO_STORE_HEADERS });

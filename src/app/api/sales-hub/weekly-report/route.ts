@@ -333,7 +333,7 @@ export async function POST(req: NextRequest) {
     // Generate report with Claude
     const anthropic = new Anthropic({ apiKey });
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 8000,
       system: WEEKLY_REPORT_SYSTEM_PROMPT,
       messages: [
@@ -344,7 +344,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "sales-hub-weekly-report", model: "claude-sonnet-4-20250514", usage: message.usage });
+    logAiUsage({ feature: "sales-hub-weekly-report", model: "claude-sonnet-4-5-20250929", usage: message.usage });
 
     const report = message.content
       .filter((block) => block.type === "text")

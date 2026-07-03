@@ -487,13 +487,13 @@ export async function POST(req: NextRequest) {
 
       try {
         const message = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5-20250929",
           max_tokens: 4000,
           system: DAILY_BRIEF_SYSTEM_PROMPT,
           messages: [{ role: "user", content: `Generate the daily brief for ${closerName} with these ${closerProspectList.length} prospects:\n\n${contextParts.join("\n")}` }],
         });
 
-        logAiUsage({ feature: "sales-hub-daily-brief", model: "claude-sonnet-4-20250514", usage: message.usage });
+        logAiUsage({ feature: "sales-hub-daily-brief", model: "claude-sonnet-4-5-20250929", usage: message.usage });
 
         const brief = message.content
           .filter((block) => block.type === "text")

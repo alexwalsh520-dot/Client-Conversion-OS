@@ -27,9 +27,7 @@ const MILLION = 1_000_000;
 // Per-model pricing table. Easy to extend: add a new model id with its four
 // per-MTok rates. Anthropic publishes these on the pricing page.
 const PRICING: Record<string, ModelPricing> = {
-  // Claude Sonnet 4 (the model the ads-tracker vision OCR + messaging insights use)
-  "claude-sonnet-4-20250514": { input: 3.0, output: 15.0, cacheWrite: 3.75, cacheRead: 0.3 },
-  // Claude Sonnet 4.5 — same headline pricing as Sonnet 4; used by sales-hub / coacher.
+  // Claude Sonnet 4.5 — ads-tracker OCR, messaging insights, sales-hub, crons, webhooks.
   "claude-sonnet-4-5-20250929": { input: 3.0, output: 15.0, cacheWrite: 3.75, cacheRead: 0.3 },
   // Claude Haiku 4.5
   "claude-haiku-4-5": { input: 1.0, output: 5.0, cacheWrite: 1.25, cacheRead: 0.1 },

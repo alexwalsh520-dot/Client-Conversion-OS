@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const base64Data = match[2];
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 512,
       system: SYSTEM_PROMPT,
       messages: [
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "ads-analyze-photo", model: "claude-sonnet-4-20250514", usage: response.usage });
+    logAiUsage({ feature: "ads-analyze-photo", model: "claude-sonnet-4-5-20250929", usage: response.usage });
 
     // Extract the text content from the response
     const textContent = response.content.find((c) => c.type === "text");

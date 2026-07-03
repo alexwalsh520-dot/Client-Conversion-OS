@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const anthropic = new Anthropic({ apiKey });
 
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 2000,
       system: PRE_CALL_BRIEF_SYSTEM_PROMPT,
       messages: [
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "sales-hub-pre-call-brief", model: "claude-sonnet-4-20250514", usage: message.usage });
+    logAiUsage({ feature: "sales-hub-pre-call-brief", model: "claude-sonnet-4-5-20250929", usage: message.usage });
 
     const brief = message.content
       .filter((block) => block.type === "text")

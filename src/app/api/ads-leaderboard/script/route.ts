@@ -14,7 +14,7 @@ import {
 
 export const runtime = "nodejs";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5-20250929";
 const client = new Anthropic();
 
 export async function POST(req: NextRequest) {

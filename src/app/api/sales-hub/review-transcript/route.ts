@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     const client = new Anthropic({ apiKey });
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    logAiUsage({ feature: "sales-hub-review-transcript", model: "claude-sonnet-4-20250514", usage: message.usage });
+    logAiUsage({ feature: "sales-hub-review-transcript", model: "claude-sonnet-4-5-20250929", usage: message.usage });
 
     // Extract text from response
     const text = message.content

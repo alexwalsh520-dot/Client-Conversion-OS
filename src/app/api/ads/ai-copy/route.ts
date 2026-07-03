@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 
     // Stream the response
     const stream = await client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: messages.map((m: { role: string; content: string }) => ({
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
           // complete usage. Log spend against the AI budget; never blocks/breaks.
           try {
             const finalMessage = await stream.finalMessage();
-            logAiUsage({ feature: "ads-ai-copy", model: "claude-sonnet-4-20250514", usage: finalMessage.usage });
+            logAiUsage({ feature: "ads-ai-copy", model: "claude-sonnet-4-5-20250929", usage: finalMessage.usage });
           } catch (usageErr) {
             console.error("[ai-usage] ai-copy stream usage capture failed (non-fatal):", usageErr);
           }
