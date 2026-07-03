@@ -28,7 +28,7 @@ const STAGES = ["copy_written", "image_generated", "revision", "completed"] as c
 type Stage = (typeof STAGES)[number];
 
 const ITEM_COLS =
-  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, body_md, comments, checklist, revision_note, sort_order, created_at, updated_at";
+  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, body_md, comments, checklist, revision_note, sort_order, created_at, updated_at, tags";
 
 interface FactoryItem {
   id: string;
@@ -51,6 +51,7 @@ interface FactoryItem {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  tags: string[] | null;
 }
 
 interface FactoryProject {
@@ -160,6 +161,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Group-level batches (full card snapshots), newest first.
+    const batchesByProject = new Map<string, Array<Record<string, unknown>>>();
+    if (projectIds.length) {
+      const { data: bRows, error: bErr } = await sb
+        .from("factory_batches")
+        .select("id, project_id, group_id, label, note, card_count, cards, created_at")
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false });
+      if (bErr) throw bErr;
+      for (const b of bRows ?? []) {
+        const arr = batchesByProject.get(b.project_id as string) ?? [];
+        arr.push(b);
+        batchesByProject.set(b.project_id as string, arr);
+      }
+    }
+
     const byProject = new Map<string, FactoryItem[]>();
     for (const it of items) {
       if (!byProject.has(it.project_id)) byProject.set(it.project_id, []);
@@ -179,6 +196,7 @@ export async function GET(req: NextRequest) {
         ...p,
         counts,
         groups: groupsByProject.get(p.id) ?? [],
+        batches: batchesByProject.get(p.id) ?? [],
         items: its.map((i) => ({ ...i, versions: versionsByItem.get(i.id) ?? [] })),
       };
     });
@@ -275,6 +293,70 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ item: data });
     }
 
+    // ---- Snapshot the whole group's current cards as a named batch ----
+    if (action === "createBatch") {
+      const projectId = body.projectId as string;
+      const groupId = (body.groupId as string) || null;
+      if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+      let q = sb.from("factory_items").select("label, kind, status, body_md, tags, sort_order").eq("project_id", projectId);
+      q = groupId ? q.eq("group_id", groupId) : q.is("group_id", null);
+      const { data: cur, error: cErr } = await q.order("sort_order", { ascending: true });
+      if (cErr) throw cErr;
+      const cards = (cur ?? []).map((c) => ({ label: c.label, kind: c.kind, status: c.status, body_md: c.body_md, tags: c.tags ?? [] }));
+      const { data, error } = await sb.from("factory_batches").insert({
+        project_id: projectId, group_id: groupId,
+        label: (body.label as string)?.trim() || `Batch ${new Date().toISOString().slice(0, 10)}`,
+        note: (body.note as string) || null,
+        cards, card_count: cards.length,
+      }).select("id, label, card_count, created_at").single();
+      if (error) throw error;
+      return NextResponse.json({ batch: data });
+    }
+
+    // ---- Restore a batch: archive current cards, then replace with the batch ----
+    if (action === "restoreBatch") {
+      const batchId = body.batchId as string;
+      if (!batchId) return NextResponse.json({ error: "batchId required" }, { status: 400 });
+      const { data: batch, error: bErr } = await sb.from("factory_batches").select("*").eq("id", batchId).single();
+      if (bErr) throw bErr;
+      if (!batch) return NextResponse.json({ error: "batch not found" }, { status: 404 });
+      const projectId = batch.project_id as string;
+      const groupId = (batch.group_id as string) || null;
+      // archive what's live now so a restore is itself reversible
+      let curQ = sb.from("factory_items").select("id, label, kind, status, body_md, tags, sort_order").eq("project_id", projectId);
+      curQ = groupId ? curQ.eq("group_id", groupId) : curQ.is("group_id", null);
+      const { data: cur } = await curQ.order("sort_order", { ascending: true });
+      const curCards = (cur ?? []).map((c) => ({ label: c.label, kind: c.kind, status: c.status, body_md: c.body_md, tags: c.tags ?? [] }));
+      await sb.from("factory_batches").insert({
+        project_id: projectId, group_id: groupId,
+        label: `Auto-saved before restore (${new Date().toISOString().slice(0, 10)})`,
+        cards: curCards, card_count: curCards.length,
+      });
+      const idList = (cur ?? []).map((r) => r.id as string);
+      if (idList.length) {
+        await sb.from("factory_item_versions").delete().in("item_id", idList);
+        await sb.from("factory_items").delete().in("id", idList);
+      }
+      const cards = (batch.cards as Array<Record<string, unknown>>) ?? [];
+      if (cards.length) {
+        const rows = cards.map((c, i) => ({
+          project_id: projectId, group_id: groupId,
+          kind: (c.kind as string) || "doc",
+          label: (c.label as string) || "Untitled",
+          bucket: "keeper",
+          stage: (c.kind as string) === "image_ad" ? "copy_written" : "completed",
+          status: (c.status as string) || "todo",
+          body_md: (c.body_md as string) || null,
+          tags: (c.tags as string[]) ?? [],
+          comments: [], checklist: [],
+          sort_order: i,
+        }));
+        const { error: insErr } = await sb.from("factory_items").insert(rows);
+        if (insErr) throw insErr;
+      }
+      return NextResponse.json({ ok: true, restored: cards.length });
+    }
+
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err) {
     console.error("[/api/factory POST] error", err);
@@ -345,6 +427,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof body.sortOrder === "number") update.sort_order = body.sortOrder;
     if (Array.isArray(body.comments)) update.comments = body.comments;
     if (Array.isArray(body.checklist)) update.checklist = body.checklist;
+    if (Array.isArray(body.tags)) update.tags = body.tags;
 
     if (Object.keys(update).length === 1) {
       return NextResponse.json({ error: "No actionable field" }, { status: 400 });

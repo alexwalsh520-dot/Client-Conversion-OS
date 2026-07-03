@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus } from "lucide-react";
+import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus, Tag } from "lucide-react";
 import { WItem, WComment, WChecklistStep, WVersion, STATUS_LABEL, kindMeta, rid } from "./types";
 
 const stLabel = (s: string) => STATUS_LABEL[s] || s.replace(/_/g, " ");
@@ -64,6 +64,8 @@ export default function DocEditor({
   const [assetUrl, setAssetUrl] = useState(item.asset_url || "");
   const [comments, setComments] = useState<WComment[]>(item.comments || []);
   const [checklist, setChecklist] = useState<WChecklistStep[]>(item.checklist || []);
+  const [tags, setTags] = useState<string[]>(item.tags || []);
+  const [tagDraft, setTagDraft] = useState("");
   const [newStep, setNewStep] = useState("");
   const [saved, setSaved] = useState<"idle" | "saving" | "saved">("idle");
   const [showHistory, setShowHistory] = useState(false);
@@ -98,6 +100,7 @@ export default function DocEditor({
     setComments(clean);
     if (changed && ed) patch({ id: item.id, comments: clean, bodyMd: ed.innerHTML }).then(onChanged).catch(() => {});
     setChecklist(item.checklist || []);
+    setTags(item.tags || []);
     setLabel(item.label);
     setStatus(item.status || item.stage || meta.statuses[0]);
   }, [item.id, item.body_md, item.copy_text, item.comments, item.checklist, item.label, item.status, item.stage, meta.statuses]);
@@ -141,6 +144,15 @@ export default function DocEditor({
   const saveField = async (payload: Record<string, unknown>) => {
     try { await patch({ id: item.id, ...payload }); onChanged(); }
     catch (e) { setErr(e instanceof Error ? e.message : "save failed"); }
+  };
+
+  const addTag = (t: string) => {
+    const v = t.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!v || tags.includes(v)) return;
+    const next = [...tags, v]; setTags(next); saveField({ tags: next });
+  };
+  const removeTag = (t: string) => {
+    const next = tags.filter((x) => x !== t); setTags(next); saveField({ tags: next });
   };
 
   const fmt = (cmd: string, val?: string) => {
@@ -270,6 +282,18 @@ export default function DocEditor({
           <button className={`fcw-icon-btn ${showHistory ? "on" : ""}`} title="Version history" onClick={() => setShowHistory((v) => !v)}><History size={16} /></button>
           <button className="fcw-icon-btn fcw-danger" title="Delete" onClick={del}><Trash2 size={16} /></button>
           <button className="fcw-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+
+        <div className="fcw-tagbar">
+          <Tag size={12} className="fcw-tagbar-icon" />
+          {tags.map((t) => (
+            <span key={t} className="fcw-tag fcw-tag-edit">{t}
+              <button className="fcw-tag-x" onClick={() => removeTag(t)} aria-label={`Remove ${t}`}>×</button>
+            </span>
+          ))}
+          <input className="fcw-tag-input" placeholder="add tag…" value={tagDraft}
+            onChange={(e) => setTagDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { addTag(tagDraft); setTagDraft(""); } if (e.key === "Backspace" && !tagDraft && tags.length) removeTag(tags[tags.length - 1]); }} />
         </div>
 
         {err && <div className="fcw-err">{err}</div>}

@@ -51,7 +51,26 @@ export interface WItem {
   checklist: WChecklistStep[] | null;
   revision_note: string | null;
   sort_order: number;
+  tags: string[] | null;
   versions?: WVersion[];
+}
+
+export interface WBatchCard {
+  label: string;
+  kind: string;
+  status: string | null;
+  body_md: string | null;
+  tags?: string[];
+}
+
+export interface WBatch {
+  id: string;
+  group_id: string | null;
+  label: string;
+  note: string | null;
+  card_count: number;
+  cards: WBatchCard[];
+  created_at: string;
 }
 
 export interface WGroup {
@@ -70,6 +89,7 @@ export interface WProject {
   client: string | null;
   context_md?: string | null;
   groups?: WGroup[];
+  batches?: WBatch[];
   items: WItem[];
 }
 

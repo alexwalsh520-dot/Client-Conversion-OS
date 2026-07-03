@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   ChevronRight, ChevronDown, Plus, Trash2, MessageSquare, CheckSquare,
   Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2, Layers, LayoutGrid,
+  History, RotateCcw, Save, X, Tag,
 } from "lucide-react";
-import { WProject, WItem, WGroup, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL, kindMeta } from "./types";
+import { WProject, WItem, WGroup, WBatch, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL, kindMeta } from "./types";
 import DocEditor from "./DocEditor";
 
 // Nice status label + which pipeline column a status belongs to.
@@ -72,6 +73,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
   useEffect(() => { try { const m = localStorage.getItem("factory:mode"); if (m === "pipeline" || m === "groups") setMode(m); } catch {} }, []);
   useEffect(() => { try { localStorage.setItem("factory:mode", mode); } catch {} }, [mode]);
   const [busy, setBusy] = useState(false);
+  const [batchGroup, setBatchGroup] = useState<WGroup | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -138,6 +140,18 @@ export default function Workspace({ projectId }: { projectId: string }) {
     await load();
   };
 
+  // Batch version history: snapshot / restore the WHOLE group's card set.
+  const saveBatch = async (g: WGroup, label: string) => {
+    setBusy(true);
+    try { await api("POST", { action: "createBatch", projectId, groupId: g.id, label }); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "batch save failed"); } finally { setBusy(false); }
+  };
+  const restoreBatch = async (batchId: string) => {
+    setBusy(true);
+    try { await api("POST", { action: "restoreBatch", batchId }); await load(); setBatchGroup(null); }
+    catch (e) { setErr(e instanceof Error ? e.message : "restore failed"); } finally { setBusy(false); }
+  };
+
   if (!project) return <div className="fc-empty">{err ? `Error: ${err}` : "Loading workspace…"}</div>;
 
   const ungrouped = itemsByGroup.get("__ungrouped__") || [];
@@ -184,6 +198,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
               <div className="fcw-group-bar"><span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} /></div>
               <div className="fcw-group-spacer" />
               <button className="fcw-group-add" onClick={() => addAsset(g)}><Plus size={13} /> {kindMeta(g.kind).label}</button>
+              <button className="fcw-icon-btn" title="Batch version history" onClick={() => setBatchGroup(g)}><History size={14} /></button>
               <button className="fcw-icon-btn fcw-danger" title="Delete group" onClick={() => deleteGroup(g)}><Trash2 size={14} /></button>
             </header>
             {!g.collapsed && (
@@ -209,6 +224,71 @@ export default function Workspace({ projectId }: { projectId: string }) {
       {mode === "pipeline" && <PipelineView items={project.items} groups={groups} onOpen={setEditing} />}
 
       {editing && <DocEditor item={editing} onClose={() => setEditing(null)} onChanged={load} />}
+      {batchGroup && (
+        <BatchPanel
+          group={batchGroup}
+          batches={(project.batches || []).filter((b) => b.group_id === batchGroup.id)}
+          liveCount={(itemsByGroup.get(batchGroup.id) || []).length}
+          busy={busy}
+          onClose={() => setBatchGroup(null)}
+          onSave={saveBatch}
+          onRestore={restoreBatch}
+        />
+      )}
+    </div>
+  );
+}
+
+function BatchPanel({ group, batches, liveCount, busy, onClose, onSave, onRestore }: {
+  group: WGroup; batches: WBatch[]; liveCount: number; busy: boolean;
+  onClose: () => void; onSave: (g: WGroup, label: string) => void; onRestore: (batchId: string) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <div className="fcw-drawer-overlay" onClick={onClose}>
+      <div className="fcw-batch" onClick={(e) => e.stopPropagation()}>
+        <div className="fcw-batch-head">
+          <div><History size={15} /> <b>{group.name}</b> — batch history</div>
+          <button className="fcw-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="fcw-batch-save">
+          <input className="fcw-addgroup-name" placeholder={`Save the current ${liveCount} cards as a batch…`}
+            value={label} onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && label.trim()) { onSave(group, label.trim()); setLabel(""); } }} />
+          <button className="fcw-addbtn" disabled={busy || !label.trim()} onClick={() => { onSave(group, label.trim()); setLabel(""); }}>
+            <Save size={13} /> Save current as batch
+          </button>
+        </div>
+        <div className="fcw-batch-list">
+          {batches.length === 0 && <div className="fcw-muted" style={{ padding: "10px 2px" }}>No saved batches yet.</div>}
+          {batches.map((b) => (
+            <div key={b.id} className="fcw-batch-row">
+              <div className="fcw-batch-row-top">
+                <button className="fcw-batch-name" onClick={() => setOpen(open === b.id ? null : b.id)}>
+                  {open === b.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <span>{b.label}</span>
+                  <span className="fcw-batch-meta">{b.card_count} cards · {new Date(b.created_at).toLocaleString()}</span>
+                </button>
+                <button className="fcw-restore" disabled={busy}
+                  onClick={() => { if (confirm(`Make "${b.label}" the live set? The current ${liveCount} cards are auto-saved as a batch first.`)) onRestore(b.id); }}>
+                  <RotateCcw size={12} /> Make live
+                </button>
+              </div>
+              {open === b.id && (
+                <ul className="fcw-batch-cards">
+                  {(b.cards || []).map((c, i) => (
+                    <li key={i}>
+                      <span className="fcw-batch-card-label">{c.label}</span>
+                      <span className="fcw-batch-card-body">{toPlain(c.body_md || "").slice(0, 160)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -278,6 +358,7 @@ function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
         <p className="fcw-card-empty">Empty — click to write or draft with Claude</p>
       )}
       <div className="fcw-card-foot">
+        {(item.tags || []).map((t) => <span key={t} className="fcw-tag"><Tag size={9} /> {t}</span>)}
         {commentCount > 0 && <span className="fcw-chip"><MessageSquare size={11} /> {commentCount}</span>}
         {steps.length > 0 && <span className="fcw-chip"><CheckSquare size={11} /> {stepsDone}/{steps.length}</span>}
       </div>
