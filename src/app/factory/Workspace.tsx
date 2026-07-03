@@ -43,7 +43,12 @@ function toPlain(s: string): string {
     .replace(/<br\s*\/?>/gi, " ")
     .replace(/<\/(p|div|h[1-6]|li|ul|ol)>/gi, " ")
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    // Decode entities (incl. numeric &#39; and hex &#x27;) BEFORE stripping markdown
+    // chars, so the '#' inside a numeric entity doesn't get mangled into "&x27;".
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(Number(d)))
+    .replace(/&amp;/g, "&")
     .replace(/[#*_`]/g, "")
     .replace(/\s+/g, " ")
     .trim();
