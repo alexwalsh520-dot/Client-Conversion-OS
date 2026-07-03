@@ -27,9 +27,11 @@ const POLL_MS = 6000;
 // One consistent pipeline; image-ad generate-stages map into the same columns.
 const PIPE: { key: string; label: string; match: string[] }[] = [
   { key: "todo", label: "To do", match: ["todo"] },
-  { key: "in_progress", label: "In progress", match: ["in_progress", "copy_written", "script", "draft", "concept"] },
-  { key: "review", label: "Review", match: ["review", "revision", "image_generated"] },
-  { key: "approved", label: "Approved", match: ["approved"] },
+  { key: "writing", label: "Script / Draft", match: ["in_progress", "script", "copy_written", "draft", "concept"] },
+  { key: "record", label: "Record", match: ["ready_to_record", "recording"] },
+  { key: "edit", label: "Edit", match: ["editing", "revisions"] },
+  { key: "review", label: "Review", match: ["review", "edit_review", "revision", "image_generated"] },
+  { key: "ready", label: "Approved / Ready", match: ["approved", "ready_to_launch"] },
   { key: "live", label: "Live", match: ["live", "completed", "done"] },
 ];
 function pipeColumn(item: WItem): string {

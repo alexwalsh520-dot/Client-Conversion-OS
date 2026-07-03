@@ -28,7 +28,7 @@ const STAGES = ["copy_written", "image_generated", "revision", "completed"] as c
 type Stage = (typeof STAGES)[number];
 
 const ITEM_COLS =
-  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, body_md, comments, checklist, revision_note, sort_order, created_at, updated_at, tags";
+  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, raw_url, edit_url, body_md, comments, checklist, revision_note, sort_order, created_at, updated_at, tags";
 
 interface FactoryItem {
   id: string;
@@ -44,6 +44,8 @@ interface FactoryItem {
   status: string | null;
   image_url: string | null;
   asset_url: string | null;
+  raw_url: string | null;
+  edit_url: string | null;
   body_md: string | null;
   comments: unknown;
   checklist: unknown;
@@ -421,6 +423,8 @@ export async function PATCH(req: NextRequest) {
     if (typeof body.status === "string") update.status = body.status;
     if (typeof body.imageDirection === "string") update.image_direction = body.imageDirection;
     if (typeof body.assetUrl === "string") update.asset_url = body.assetUrl.trim() || null;
+    if (typeof body.rawUrl === "string") update.raw_url = body.rawUrl.trim() || null;
+    if (typeof body.editUrl === "string") update.edit_url = body.editUrl.trim() || null;
     if (typeof body.bucket === "string") update.bucket = body.bucket;
     if (typeof body.style === "string") update.style = body.style;
     if (typeof body.groupIdSet !== "undefined") update.group_id = body.groupIdSet || null;

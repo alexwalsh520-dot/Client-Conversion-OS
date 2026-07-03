@@ -62,6 +62,8 @@ export default function DocEditor({
   const [status, setStatus] = useState(item.status || item.stage || meta.statuses[0]);
   const [statusOpen, setStatusOpen] = useState(false);
   const [assetUrl, setAssetUrl] = useState(item.asset_url || "");
+  const [rawUrl, setRawUrl] = useState(item.raw_url || "");
+  const [editUrl, setEditUrl] = useState(item.edit_url || "");
   const [comments, setComments] = useState<WComment[]>(item.comments || []);
   const [checklist, setChecklist] = useState<WChecklistStep[]>(item.checklist || []);
   const [tags, setTags] = useState<string[]>(item.tags || []);
@@ -101,6 +103,9 @@ export default function DocEditor({
     if (changed && ed) patch({ id: item.id, comments: clean, bodyMd: ed.innerHTML }).then(onChanged).catch(() => {});
     setChecklist(item.checklist || []);
     setTags(item.tags || []);
+    setRawUrl(item.raw_url || "");
+    setEditUrl(item.edit_url || "");
+    setAssetUrl(item.asset_url || "");
     setLabel(item.label);
     setStatus(item.status || item.stage || meta.statuses[0]);
   }, [item.id, item.body_md, item.copy_text, item.comments, item.checklist, item.label, item.status, item.stage, meta.statuses]);
@@ -302,11 +307,19 @@ export default function DocEditor({
           {/* Editor */}
           <div className="fcw-editor-col">
             {isVideo && (
-              <div className="fcw-asseturl">
-                <LinkIcon size={13} />
-                <input className="fcw-asseturl-input" placeholder="Final video / file link (R2, Drive, etc.)"
-                  value={assetUrl} onChange={(e) => setAssetUrl(e.target.value)}
-                  onBlur={() => assetUrl !== (item.asset_url || "") && saveField({ assetUrl })} />
+              <div className="fcw-vidlinks">
+                <label className="fcw-vidlink"><span><LinkIcon size={11} /> Raw footage folder (Tyson)</span>
+                  <input placeholder="Paste the Drive folder link of raw recordings…" value={rawUrl}
+                    onChange={(e) => setRawUrl(e.target.value)}
+                    onBlur={() => rawUrl !== (item.raw_url || "") && saveField({ rawUrl })} /></label>
+                <label className="fcw-vidlink"><span><LinkIcon size={11} /> Editor's cut</span>
+                  <input placeholder="Editor pastes their edited version link…" value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    onBlur={() => editUrl !== (item.edit_url || "") && saveField({ editUrl })} /></label>
+                <label className="fcw-vidlink"><span><LinkIcon size={11} /> Final / live ad</span>
+                  <input placeholder="Final approved file / live ad link…" value={assetUrl}
+                    onChange={(e) => setAssetUrl(e.target.value)}
+                    onBlur={() => assetUrl !== (item.asset_url || "") && saveField({ assetUrl })} /></label>
               </div>
             )}
             {/* Formatting toolbar */}
