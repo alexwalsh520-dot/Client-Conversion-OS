@@ -121,8 +121,10 @@ const RESPONSE_TARGET_WARN_BUSINESS_MINUTES = 4;
 // meaningless for a lead that's already been waiting much longer, and the ceiling
 // also stops a backlog burst when this first goes live.
 const RESPONSE_TARGET_WARN_CEILING_BUSINESS_MINUTES = 8;
-// Early "answer your lead" nudge fires at 15 working minutes of no reply.
+// Early "answer your lead" nudge fires at 15 working minutes of no reply — also
+// windowed, so an already-hours-stale lead never gets a stale "15 minutes!" ping.
 const WARN_AFTER_BUSINESS_MINUTES = 15;
+const WARN_CEILING_BUSINESS_MINUTES = 45;
 // The earliest alert threshold — used to decide which leads need an exempt check.
 const EARLIEST_ALERT_BUSINESS_MINUTES = RESPONSE_TARGET_WARN_BUSINESS_MINUTES;
 const LOOKBACK_DAYS = 90;
@@ -147,15 +149,18 @@ const EXEMPT_CHECK_TTL_MS = 6 * 60 * 1000;
 const GO_LIVE_AT = "2026-06-10T03:24:16Z";
 const GO_LIVE_MS = new Date(GO_LIVE_AT).getTime();
 
-// Slack alerts only fire for leads whose last reply is after this instant, so
-// turning the alerts on never replays a burst for leads already sitting stale.
-const ALERTS_GO_LIVE_AT = "2026-06-12T05:45:00Z";
+// Slack alerts only fire for waiting-stretches that STARTED after this instant,
+// so redeploying the alert logic never replays a burst for leads already stale.
+const ALERTS_GO_LIVE_AT = "2026-07-04T08:20:00Z";
 const ALERTS_GO_LIVE_MS = new Date(ALERTS_GO_LIVE_AT).getTime();
 
-// Remembers which Slack alerts already fired for each stale episode so the
-// 10-minute cron never double-posts. Keyed by `${subscriberId}:${lastInboundAt}`.
-const ALERT_LOG_KEY = "time_to_eat_alerts_v1";
-const ALERT_LOG_RETENTION_DAYS = 3;
+// Fired alerts are recorded as one app_settings row per alert (key below), written
+// with a plain INSERT — the primary key makes the claim ATOMIC. Two racing sync
+// runs (Vercel occasionally ghost-retries the cron's request, so the sync can
+// execute twice in the same second) can both pass an in-memory "not yet fired"
+// check, but only ONE insert can succeed, so only one Slack post happens.
+const ALERT_CLAIM_PREFIX = "tte_alert:";
+const ALERT_CLAIM_RETENTION_DAYS = 3;
 
 function normalizeClient(value: string | null): ClientFilter {
   if (value === "tyson" || value === "antwan") return value;
@@ -395,7 +400,7 @@ function resolveConversation(
   const assignment = manychatId ? assignments.get(manychatId) ?? null : null;
   const setter = assignment?.setterKey ?? null;
   const handle = manychatId ? manychatToHandle.get(manychatId) ?? null : null;
-  const leadName = assignment?.leadName ?? (handle ? `@${handle}` : null);
+  const leadName = cleanLeadName(assignment?.leadName ?? null) ?? (handle ? `@${handle}` : null);
   const manychatUrl = assignment?.manychatUrl ?? manychatChatUrl(client, manychatId);
 
   return {
@@ -536,42 +541,57 @@ function hoursSince(iso: string) {
   return Math.max(0, diff / (60 * 60 * 1000));
 }
 
-// Which Slack alerts have already fired, per stale episode. The values are the
-// fire timestamps (used only for retention pruning).
-type AlertFlags = { warn4?: number; warn15?: number; tte?: number; deadMeat?: number };
-type AlertLog = Record<string, AlertFlags>;
-
-async function loadAlertLog(sb: ReturnType<typeof getServiceSupabase>): Promise<AlertLog> {
+// Atomically claim the right to send one alert. INSERT (not upsert) into
+// app_settings — the key's uniqueness guarantees exactly one winner even when two
+// sync runs race. Returns true only for the winner; on ANY error we do NOT post
+// (fail-quiet beats duplicate spam).
+async function claimAlert(
+  sb: ReturnType<typeof getServiceSupabase>,
+  type: "warn4" | "warn15" | "tte" | "deadMeat" | "lock",
+  episodeKey: string,
+): Promise<boolean> {
   try {
-    const { data } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", ALERT_LOG_KEY)
-      .maybeSingle();
-    if (!data?.value) return {};
-    const parsed = JSON.parse(String(data.value));
-    return parsed && typeof parsed === "object" ? (parsed as AlertLog) : {};
-  } catch (error) {
-    console.warn("[sales-hub/time-to-eat] alert log unavailable:", error);
-    return {};
+    const { error } = await sb.from("app_settings").insert({
+      key: `${ALERT_CLAIM_PREFIX}${type}:${episodeKey}`,
+      value: "1",
+      updated_at: new Date().toISOString(),
+      updated_by: "time-to-eat-alerts",
+    });
+    return !error;
+  } catch {
+    return false;
   }
 }
 
-async function saveAlertLog(sb: ReturnType<typeof getServiceSupabase>, log: AlertLog) {
-  const cutoff = Date.now() - ALERT_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  for (const [key, flags] of Object.entries(log)) {
-    const latest = Math.max(flags.warn4 ?? 0, flags.warn15 ?? 0, flags.tte ?? 0, flags.deadMeat ?? 0);
-    if (latest && latest < cutoff) delete log[key];
+// Prune old claim rows so app_settings doesn't accumulate forever.
+async function cleanupAlertClaims(sb: ReturnType<typeof getServiceSupabase>) {
+  const cutoff = new Date(Date.now() - ALERT_CLAIM_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await sb.from("app_settings").delete().like("key", `${ALERT_CLAIM_PREFIX}%`).lt("updated_at", cutoff);
+}
+
+// The start of the CURRENT unanswered stretch: the earliest message in the
+// trailing run of inbound messages. Anchoring episodes here (instead of on the
+// LAST inbound) is what stops a double-texting prospect from resetting the wait
+// clock and re-firing the same alarms over and over — the episode key and the
+// waiting time stay stable until the team actually replies.
+function firstUnansweredInboundAt(messages: MessageRow[]): string | null {
+  let anchor: string | null = null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message.sent_at) continue;
+    if (message.direction !== "inbound") break;
+    anchor = message.sent_at;
   }
-  await sb.from("app_settings").upsert(
-    {
-      key: ALERT_LOG_KEY,
-      value: JSON.stringify(log),
-      updated_at: new Date().toISOString(),
-      updated_by: "time-to-eat-alerts",
-    },
-    { onConflict: "key" },
-  );
+  return anchor;
+}
+
+// Strip unfilled ManyChat merge fields ("{{first_name}} {{last_name}}") out of a
+// lead name; returns null if nothing real remains so callers can fall back to the
+// IG handle instead of posting template garbage into Slack.
+function cleanLeadName(value: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value.replace(/\{\{[^}]*\}\}/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || null;
 }
 
 // ── Exempt leads (Booked Call / Subscription Sold / Closed) ────────────────────
@@ -691,16 +711,37 @@ export async function GET(req: NextRequest) {
     }
 
     const sb = getServiceSupabase();
-    const memoryState = await loadMemory(sb);
-    const memory = memoryState.memory;
-    const warnings = memoryState.warning ? [memoryState.warning] : [];
-    let memoryDirty = false;
 
     // Slack alerts are driven only by the cron (`sync=1`) so they fire exactly
     // once and even when nobody has the tab open — viewer page-loads never post.
     const isSync = req.nextUrl.searchParams.get("sync") === "1";
-    const alertLog: AlertLog = isSync && memoryState.enabled ? await loadAlertLog(sb) : {};
-    let alertLogDirty = false;
+
+    // Ghost-retry guard: Vercel's cron request occasionally gets silently retried,
+    // executing this sync twice in the same second. Claim a per-minute lock — the
+    // duplicate run loses the claim and exits before doing any heavy work (which
+    // also stops it wasting compute). Viewer loads are unaffected.
+    if (isSync) {
+      const minuteBucket = new Date().toISOString().slice(0, 16);
+      const gotLock = await claimAlert(sb, "lock", minuteBucket);
+      if (!gotLock) {
+        return NextResponse.json({
+          status: "ok",
+          skipped: "duplicate sync run this minute",
+          staleAfterBusinessMinutes: STALE_AFTER_BUSINESS_MINUTES,
+          deadMeatAfterMisses: DEAD_MEAT_AFTER_MISSES,
+          businessHours: BUSINESS_HOURS_LABEL,
+          lookbackDays: LOOKBACK_DAYS,
+          memory: { enabled: true, trackedLeads: 0, updatedAt: null },
+          timeToEat: [],
+          deadMeat: [],
+        });
+      }
+    }
+
+    const memoryState = await loadMemory(sb);
+    const memory = memoryState.memory;
+    const warnings = memoryState.warning ? [memoryState.warning] : [];
+    let memoryDirty = false;
 
     // Drop any pre-go-live history so the backlog clears and counts start fresh.
     for (const [key, state] of Object.entries(memory.leads)) {
@@ -783,8 +824,10 @@ export async function GET(req: NextRequest) {
         const lastMessage = messages.at(-1);
         if (!lead?.manychatId || !lastMessage?.sent_at || lastMessage.direction !== "inbound") continue;
         if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
-        // Candidate for any alert once it's past the earliest threshold (4 min).
-        if (businessMinutesBetween(lastMessage.sent_at, nowIso) < EARLIEST_ALERT_BUSINESS_MINUTES) continue;
+        // Candidate for any alert once the CURRENT waiting stretch (anchored at the
+        // first unanswered inbound, not the latest) passes the earliest threshold.
+        const stretchStart = firstUnansweredInboundAt(messages) || lastMessage.sent_at;
+        if (businessMinutesBetween(stretchStart, nowIso) < EARLIEST_ALERT_BUSINESS_MINUTES) continue;
         if (seenManychatIds.has(lead.manychatId)) continue;
         // Skip if we checked this lead's tags recently (TTL) — keeps ManyChat calls
         // bounded by time, not by how often the cron runs.
@@ -843,11 +886,18 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
+      // A NEW waiting stretch started (they replied since the last stale episode)
+      // and it hasn't gone stale yet — back to watching. Anchored on the stretch
+      // start so a double-texting prospect doesn't churn the episode.
+      const watchAnchor =
+        lastMessage.direction === "inbound"
+          ? firstUnansweredInboundAt(messages) || lastMessage.sent_at
+          : null;
       if (
-        lastMessage.direction === "inbound" &&
+        watchAnchor &&
         existing.status !== "watching" &&
-        existing.lastInboundAt !== lastMessage.sent_at &&
-        businessMinutesBetween(lastMessage.sent_at, nowIso) < STALE_AFTER_BUSINESS_MINUTES
+        existing.lastInboundAt !== watchAnchor &&
+        businessMinutesBetween(watchAnchor, nowIso) < STALE_AFTER_BUSINESS_MINUTES
       ) {
         memory.leads[id] = {
           ...existing,
@@ -856,7 +906,7 @@ export async function GET(req: NextRequest) {
           conversationId,
           setters,
           status: "watching",
-          lastInboundAt: lastMessage.sent_at,
+          lastInboundAt: watchAnchor,
           updatedAt: nowIso,
         };
         memoryDirty = true;
@@ -875,50 +925,55 @@ export async function GET(req: NextRequest) {
       // No backlog: only leads whose latest reply is after go-live are tracked.
       if (new Date(lastMessage.sent_at).getTime() < GO_LIVE_MS) continue;
 
-      const businessMinutesWaiting = businessMinutesBetween(lastMessage.sent_at, nowIso);
+      // The wait is measured from the START of the unanswered stretch (first
+      // inbound with no reply after it). A prospect double-texting neither resets
+      // the clock nor creates a "new" episode — so each alarm fires at most once
+      // per stretch, and escalation isn't delayed by follow-up messages.
+      const stretchStart = firstUnansweredInboundAt(messages) || lastMessage.sent_at;
+      const businessMinutesWaiting = businessMinutesBetween(stretchStart, nowIso);
 
-      // Alerts: cron-only, business-hours-only, and only for episodes after the
-      // alert go-live (so turning this on never replays the existing backlog).
-      const episodeKey = `${conversationId}:${lastMessage.sent_at}`;
+      // Alerts: cron-only, business-hours-only, and only for stretches that began
+      // after the alert go-live (so a redeploy never replays the existing backlog).
+      const episodeKey = `${conversationId}:${stretchStart}`;
       const canAlert =
         isSync &&
         businessHoursNow &&
-        new Date(lastMessage.sent_at).getTime() >= ALERTS_GO_LIVE_MS;
+        new Date(stretchStart).getTime() >= ALERTS_GO_LIVE_MS;
 
-      // 4-minute proactive nudge — owner is about to miss the 5-min target.
-      // Only in the [4, 8) working-min window so it never fires for already-stale
-      // leads (or replays the backlog on first launch).
+      // 4-minute proactive nudge — owner is about to miss the 5-min target. Only
+      // in the [4, 8) working-min window so it never nags an already-stale lead.
       if (
         canAlert &&
         businessMinutesWaiting >= RESPONSE_TARGET_WARN_BUSINESS_MINUTES &&
         businessMinutesWaiting < RESPONSE_TARGET_WARN_CEILING_BUSINESS_MINUTES
       ) {
-        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
-        if (!flags.warn4) {
+        if (await claimAlert(sb, "warn4", episodeKey)) {
           await postResponseTargetAlert(lead.client, lead.leadName, lead.initialSetter);
-          flags.warn4 = Date.now();
-          alertLogDirty = true;
         }
       }
 
-      // 15-minute "answer your lead" nudge — fires once, before the stale line.
-      if (canAlert && businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES) {
-        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
-        if (!flags.warn15) {
+      // 15-minute "answer your lead" nudge — also windowed ([15, 45)).
+      if (
+        canAlert &&
+        businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES &&
+        businessMinutesWaiting < WARN_CEILING_BUSINESS_MINUTES
+      ) {
+        if (await claimAlert(sb, "warn15", episodeKey)) {
           await postAnswerLeadAlert(lead.client, lead.leadName, lead.initialSetter);
-          flags.warn15 = Date.now();
-          alertLogDirty = true;
         }
       }
 
       if (businessMinutesWaiting < STALE_AFTER_BUSINESS_MINUTES) continue;
-      const waitingHours = hoursSince(lastMessage.sent_at);
+      const waitingHours = hoursSince(stretchStart);
 
       const pastMisses = countPastMisses(messages, messages.length - 1);
       const id = memoryId(lead.client, conversationId);
       const existing = memory.leads[id];
+      // Compared against the stretch START, so a double-texting prospect can't
+      // inflate the occasion count (which was silently promoting leads to Dead
+      // Meat after every extra message).
       const hasAlreadyCountedCurrentStale =
-        existing?.lastInboundAt === lastMessage.sent_at &&
+        existing?.lastInboundAt === stretchStart &&
         (existing.status === "time_to_eat" || existing.status === "dead_meat");
       const savedStaleEvents = existing?.staleEventCount ?? 0;
       const staleEventCount = hasAlreadyCountedCurrentStale
@@ -926,7 +981,7 @@ export async function GET(req: NextRequest) {
         : Math.max(savedStaleEvents + 1, pastMisses + 1);
       const previousMisses = Math.max(pastMisses, staleEventCount - 1);
       // The instant this lead actually crossed the 1-working-hour mark.
-      const staleStartedAt = addBusinessMinutes(lastMessage.sent_at, STALE_AFTER_BUSINESS_MINUTES);
+      const staleStartedAt = addBusinessMinutes(stretchStart, STALE_AFTER_BUSINESS_MINUTES);
       const totalOccasions = previousMisses + 1;
       // Dead Meat if it slipped twice OR has sat a single 2-working-hour stretch.
       const status: TimeToEatStatus =
@@ -942,7 +997,8 @@ export async function GET(req: NextRequest) {
         leadName: lead.leadName,
         manychatUrl,
         conversationId,
-        lastProspectResponseAt: lastMessage.sent_at,
+        // Start of the unanswered stretch — how long they've truly sat waiting.
+        lastProspectResponseAt: stretchStart,
         hoursSinceProspectResponse: waitingHours,
         initialSetter: titleName(lead.initialSetter),
         setters,
@@ -960,7 +1016,7 @@ export async function GET(req: NextRequest) {
         setters: [...new Set([...(existing?.setters ?? []), ...setters])],
         firstStaleAt: existing?.firstStaleAt || staleStartedAt,
         currentStaleAt: staleStartedAt,
-        lastInboundAt: lastMessage.sent_at,
+        lastInboundAt: stretchStart,
         lastSeenStaleAt: nowIso,
         lastResolvedAt: existing?.lastResolvedAt || null,
         staleEventCount,
@@ -972,19 +1028,16 @@ export async function GET(req: NextRequest) {
       if (status === "dead_meat") deadMeat.push(card);
       else timeToEat.push(card);
 
-      // Entry alerts — fire once per episode when the lead lands in a section.
+      // Entry alerts — fire once per stretch when the lead lands in a section.
       // A first-occasion lead fires Time to Eat at 1h, then Dead Meat at 2h; a
       // straight-to-Dead-Meat lead only fires the Dead Meat one.
       if (canAlert) {
-        const flags = alertLog[episodeKey] || (alertLog[episodeKey] = {});
-        if (status === "dead_meat" && !flags.deadMeat) {
-          await postDeadMeatAlert(lead.client, lead.leadName, lead.initialSetter);
-          flags.deadMeat = Date.now();
-          alertLogDirty = true;
-        } else if (status === "time_to_eat" && !flags.tte) {
+        if (status === "dead_meat") {
+          if (await claimAlert(sb, "deadMeat", episodeKey)) {
+            await postDeadMeatAlert(lead.client, lead.leadName, lead.initialSetter);
+          }
+        } else if (await claimAlert(sb, "tte", episodeKey)) {
           await postTimeToEatAlert(lead.client, lead.leadName, lead.initialSetter);
-          flags.tte = Date.now();
-          alertLogDirty = true;
         }
       }
     }
@@ -998,11 +1051,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (isSync && memoryState.enabled && alertLogDirty) {
+    if (isSync) {
       try {
-        await saveAlertLog(sb, alertLog);
+        await cleanupAlertClaims(sb);
       } catch (error) {
-        console.warn("[sales-hub/time-to-eat] alert log save failed:", error);
+        console.warn("[sales-hub/time-to-eat] alert claim cleanup failed:", error);
       }
     }
 

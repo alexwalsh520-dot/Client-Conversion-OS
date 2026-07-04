@@ -22,6 +22,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Alerts only exist inside the 11am–11pm ET working window, and viewer page
+  // loads recompute the lists live anyway — so overnight ticks would burn compute
+  // for nothing. Skip them entirely (saves ~half the runs each day).
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date()),
+  );
+  if (etHour < 11 || etHour >= 23) {
+    return NextResponse.json({ ok: true, skipped: "outside 11am-11pm ET" });
+  }
+
   const startedAt = Date.now();
   const baseUrl = getBaseUrl(req);
 

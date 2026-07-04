@@ -91,44 +91,16 @@ export async function GET(req: NextRequest) {
     body: JSON.stringify({ dateFrom, dateTo }),
   });
   const body = await res.json().catch(async () => ({ raw: await res.text().catch(() => "") }));
-  let timeToEat: unknown = null;
-  let timeToEatOk = true;
 
-  try {
-    const timeToEatRes = await fetch(`${baseUrl}/api/sales-hub/time-to-eat?client=all&sync=1`, {
-      headers: {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-        "x-cron-secret": process.env.CRON_SECRET ?? "",
-      },
-    });
-    const timeToEatBody = await timeToEatRes
-      .json()
-      .catch(async () => ({ raw: await timeToEatRes.text().catch(() => "") }));
-    const timeToEatStatus =
-      timeToEatBody && typeof timeToEatBody === "object" && "status" in timeToEatBody
-        ? (timeToEatBody as { status?: string }).status
-        : null;
-
-    timeToEatOk = timeToEatRes.ok && timeToEatStatus !== "error";
-    timeToEat = {
-      ok: timeToEatOk,
-      status: timeToEatRes.status,
-      result: timeToEatBody,
-    };
-  } catch (error) {
-    timeToEatOk = false;
-    timeToEat = {
-      ok: false,
-      error: error instanceof Error ? error.message : "Failed to refresh Time to Eat memory",
-    };
-  }
+  // NOTE: this cron no longer touches Time to Eat. The dedicated every-2-min
+  // /api/cron/time-to-eat-tick owns that sync — running it from here too created
+  // a second alert engine racing the first (duplicate Slack posts at :00/:10/...).
 
   return NextResponse.json({
-    ok: res.ok && timeToEatOk,
+    ok: res.ok,
     dateFrom,
     dateTo,
     elapsed_ms: Date.now() - startedAt,
     result: body,
-    timeToEat,
   });
 }
