@@ -24,7 +24,12 @@ import type {
   OutreachChartPoint,
 } from "@/lib/outreach-dashboard-types";
 
-type ChartKey = "emailMessages" | "emailReplies" | "dmMessages" | "dmReplies";
+type ChartKey =
+  | "emailMessages"
+  | "emailOpens"
+  | "emailReplies"
+  | "dmMessages"
+  | "dmReplies";
 
 interface LocalDmTotals {
   reachedInRange: number;
@@ -212,6 +217,7 @@ function MetricCard({
 
 const CHART_TITLES: Record<ChartKey, string> = {
   emailMessages: "Emails sent per day",
+  emailOpens: "Emails opened per day",
   emailReplies: "Email replies per day",
   dmMessages: "DMs sent per day",
   dmReplies: "DM replies per day",
@@ -256,11 +262,27 @@ export default function OutreachDashboard() {
           cache: "no-store",
           signal: controller.signal,
         });
-        const body = await res.json();
-        if (!res.ok) {
-          throw new Error(body.error || "Failed to load outreach dashboard");
+        // The endpoint can return a non-JSON body on infra errors (e.g. a 504
+        // timeout page). Read as text first so we surface a clean message
+        // instead of an "Unexpected token" JSON-parse error.
+        const raw = await res.text();
+        let body: OutreachDashboardResponse | { error?: string };
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(
+            res.status === 504
+              ? "The outreach dashboard timed out. Refresh, or try a narrower date range."
+              : `Couldn't load outreach data (HTTP ${res.status}). Please retry.`,
+          );
         }
-        setData(body);
+        if (!res.ok) {
+          throw new Error(
+            ("error" in body && body.error) ||
+              `Failed to load outreach dashboard (HTTP ${res.status})`,
+          );
+        }
+        setData(body as OutreachDashboardResponse);
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : "Failed to load outreach dashboard");
@@ -513,6 +535,15 @@ export default function OutreachDashboard() {
                 detail="Includes follow-ups"
                 channel="email"
                 chartKey="emailMessages"
+                selectedKey={selectedKey}
+                onSelect={setSelectedKey}
+              />
+              <MetricCard
+                label="Open rate"
+                value={fmtPercent(data.email.openRateInRange)}
+                detail={`${fmtNumber(data.email.opensInRange)} opened`}
+                channel="email"
+                chartKey="emailOpens"
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
               />
