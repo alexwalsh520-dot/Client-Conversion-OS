@@ -54,6 +54,7 @@ interface ParsedLead {
   instagram_username: string;
   instagram_link: string;
   segment: string;
+  company: string;
 }
 
 function normalizeColumnName(col: string): string {
@@ -89,6 +90,14 @@ function parseCSV(text: string): ParsedLead[] {
       colMap.instagram_link = i;
     if (h === "segment" || h === "segments" || h.includes("leadsegment"))
       colMap.segment = i;
+    if (
+      h === "company" ||
+      h === "companyname" ||
+      h === "agency" ||
+      h === "agencyname" ||
+      h === "organization"
+    )
+      colMap.company = i;
   });
 
   if (colMap.first_name === undefined) {
@@ -110,6 +119,7 @@ function parseCSV(text: string): ParsedLead[] {
       instagram_username: vals[colMap.instagram_username] || "",
       instagram_link: vals[colMap.instagram_link] || "",
       segment: vals[colMap.segment] || "",
+      company: vals[colMap.company] || "",
     };
 
     if (lead.instagram_username && !lead.instagram_link) {

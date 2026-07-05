@@ -33,6 +33,7 @@ interface LeadInput {
   instagram_username?: string;
   instagram_link?: string;
   segment?: string;
+  company?: string;
 }
 
 interface PipelineInput {
@@ -180,6 +181,7 @@ export async function POST(req: NextRequest) {
               lastName,
               email: email || undefined,
               tags: [segmentTag],
+              companyName: lead.company?.trim() || undefined,
             });
             contactId = created.contact?.id;
           }

@@ -9,7 +9,10 @@ import {
   searchContactOpportunities,
 } from "@/lib/ghl";
 import { addLeadsToCampaign } from "@/lib/smartlead";
-import { buildTrackedDocUrl } from "@/lib/outreach-link";
+import {
+  buildTrackedDocUrl,
+  type OutreachDocKey,
+} from "@/lib/outreach-link";
 import {
   buildColdDmsCsv,
   buildColdDmsRow,
@@ -26,6 +29,34 @@ export const maxDuration = 300;
 
 const RUN_CONCURRENCY = 8;
 const FALLBACK_CONTACT_LIMIT = 100;
+
+// "3 month TM/Agency Outreach" — where agency-segment leads land by default.
+const DEFAULT_AGENCY_CAMPAIGN_ID = "3392503";
+const AGENCY_SEGMENT_PATTERN = /agenc|talent|manager|\btm\b/i;
+
+function resolveSegmentDefaults(
+  segment: string,
+  segmentKey: string,
+): {
+  isAgency: boolean;
+  campaignId: string | null;
+  campaignName: string | null;
+  docKey: OutreachDocKey;
+} {
+  const isAgency =
+    AGENCY_SEGMENT_PATTERN.test(segment) || AGENCY_SEGMENT_PATTERN.test(segmentKey);
+  if (!isAgency) {
+    // Influencer default lives in addLeadsToCampaign (no override needed).
+    return { isAgency, campaignId: null, campaignName: null, docKey: "influencer" };
+  }
+  return {
+    isAgency,
+    campaignId:
+      process.env.SMARTLEAD_AGENCY_CAMPAIGN_ID || DEFAULT_AGENCY_CAMPAIGN_ID,
+    campaignName: "TM/Agency Outreach",
+    docKey: "agency",
+  };
+}
 
 function parseInstagramFromNotes(
   notes: { body?: string }[]
@@ -228,10 +259,19 @@ export async function POST(req: NextRequest) {
           const route = routeByContactId.get(contactId);
           const segment = route?.segment || "Unmapped";
           const segmentKey = route?.segment_key || "unmapped";
-          const campaignId = route?.campaignId?.trim() || "";
-          const campaignName = route?.campaignName?.trim() || "";
+          // Manual per-segment mapping (if configured in the UI) wins; else
+          // fall back to code defaults: agency-ish segments → the TM/Agency
+          // campaign + agency doc, everything else → influencer defaults.
+          const segmentDefaults = resolveSegmentDefaults(segment, segmentKey);
+          const campaignId =
+            route?.campaignId?.trim() || segmentDefaults.campaignId || "";
+          const campaignName =
+            route?.campaignName?.trim() || segmentDefaults.campaignName || "";
           const shouldUseSegmentRouting = routeByContactId.size > 0;
-          const isSmartleadMapped = !shouldUseSegmentRouting || Boolean(campaignId);
+          const isSmartleadMapped =
+            !shouldUseSegmentRouting ||
+            Boolean(campaignId) ||
+            !segmentDefaults.isAgency; // influencer default campaign always exists
 
           let igUsername: string | null = null;
           try {
@@ -284,6 +324,9 @@ export async function POST(req: NextRequest) {
                       firstName,
                       lastName,
                       instagram: igUsername || "",
+                      company:
+                        contact.companyName || contact.company_name || "",
+                      docKey: segmentDefaults.docKey,
                     }),
                     ...(shouldUseSegmentRouting
                       ? { segment, segment_key: segmentKey }

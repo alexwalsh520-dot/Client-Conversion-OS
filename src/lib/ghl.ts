@@ -174,6 +174,7 @@ export async function createContact(data: {
   lastName?: string;
   email?: string;
   tags?: string[];
+  companyName?: string;
 }) {
   const locationId = getLocationId();
   const res = await fetchGhlWithRetry(`${GHL_BASE}/contacts/`, {
@@ -185,6 +186,7 @@ export async function createContact(data: {
       lastName: data.lastName || "",
       ...(data.email ? { email: data.email } : {}),
       ...(data.tags?.length ? { tags: data.tags } : {}),
+      ...(data.companyName ? { companyName: data.companyName } : {}),
       source: "Dashboard Import",
     }),
   });
