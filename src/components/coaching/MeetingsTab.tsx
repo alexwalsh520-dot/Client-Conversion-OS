@@ -16,8 +16,48 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
   const [coachFilter, setCoachFilter] = useState<string>("all");
   const [formData, setFormData] = useState<Partial<CoachMeeting>>({});
 
+  // Client search combobox state. `clientQuery` is the visible input text;
+  // `formData.clientName` is only set once the user picks a suggestion.
+  const [clientQuery, setClientQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+
   const coaches = [...new Set(meetings.map((m) => m.coachName))];
   const activeClients = clients.filter((c) => c.status === "active");
+
+  const suggestions = (() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return activeClients.slice(0, 10);
+    return activeClients
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, 10);
+  })();
+
+  const pickClient = (client: Client) => {
+    setFormData((prev) => ({
+      ...prev,
+      clientName: client.name,
+      coachName: client.coachName?.trim() || "Unassigned",
+    }));
+    setClientQuery(client.name);
+    setShowSuggestions(false);
+    setHighlightIndex(0);
+  };
+
+  const openForm = () => {
+    setFormData({});
+    setClientQuery("");
+    setShowSuggestions(false);
+    setHighlightIndex(0);
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setFormData({});
+    setClientQuery("");
+    setShowSuggestions(false);
+  };
 
   const filtered = coachFilter === "all"
     ? meetings
@@ -96,7 +136,7 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
-        <button className="btn-primary" onClick={() => setShowForm(true)}>
+        <button className="btn-primary" onClick={openForm}>
           <Plus size={14} /> Log Meeting
         </button>
       </div>
@@ -106,27 +146,99 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
         <div className="glass-static" style={{ padding: 20, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h3 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600 }}>Log New Meeting</h3>
-            <button onClick={() => setShowForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+            <button onClick={closeForm} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
               <X size={16} />
             </button>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <div>
+            <div style={{ position: "relative" }}>
               <label className="field-label">Client *</label>
-              <select className="input-field" value={formData.clientName || ""} onChange={(e) => {
-                const client = activeClients.find((c) => c.name === e.target.value);
-                setFormData({
-                  ...formData,
-                  clientName: e.target.value,
-                  // Coach is auto-set from the client's assignment (read-only below).
-                  coachName: client?.coachName?.trim() || (e.target.value ? "Unassigned" : ""),
-                });
-              }}>
-                <option value="">Select client...</option>
-                {activeClients.map((c) => (
-                  <option key={c.id || c.name} value={c.name}>{c.name} ({c.coachName})</option>
-                ))}
-              </select>
+              <input
+                className="input-field"
+                type="text"
+                autoComplete="off"
+                placeholder="Start typing a client's name..."
+                value={clientQuery}
+                onChange={(e) => {
+                  setClientQuery(e.target.value);
+                  setShowSuggestions(true);
+                  setHighlightIndex(0);
+                  // Typing invalidates any prior confirmed selection until they pick again.
+                  if (formData.clientName) {
+                    setFormData((prev) => ({ ...prev, clientName: "", coachName: "" }));
+                  }
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => {
+                  // Delay so a click on a suggestion registers before the dropdown hides.
+                  setTimeout(() => setShowSuggestions(false), 150);
+                }}
+                onKeyDown={(e) => {
+                  if (!showSuggestions || suggestions.length === 0) return;
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setHighlightIndex((i) => Math.min(i + 1, suggestions.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHighlightIndex((i) => Math.max(i - 1, 0));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    const pick = suggestions[highlightIndex];
+                    if (pick) pickClient(pick);
+                  } else if (e.key === "Escape") {
+                    setShowSuggestions(false);
+                  }
+                }}
+              />
+              {showSuggestions && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    marginTop: 2,
+                    background: "var(--panel-bg, #1a1a1a)",
+                    border: "1px solid var(--border-color, rgba(255,255,255,0.1))",
+                    borderRadius: 6,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                    zIndex: 20,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {suggestions.length === 0 ? (
+                    <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--text-muted)" }}>
+                      No active clients match &ldquo;{clientQuery}&rdquo;
+                    </div>
+                  ) : (
+                    suggestions.map((c, i) => (
+                      <div
+                        key={c.id || c.name}
+                        onMouseDown={(e) => {
+                          // onMouseDown so it fires before the input's onBlur closes the list.
+                          e.preventDefault();
+                          pickClient(c);
+                        }}
+                        onMouseEnter={() => setHighlightIndex(i)}
+                        style={{
+                          padding: "8px 10px",
+                          fontSize: 13,
+                          color: "var(--text-primary)",
+                          cursor: "pointer",
+                          background: i === highlightIndex ? "var(--hover-bg, rgba(255,255,255,0.06))" : "transparent",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <span>{c.name}</span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{c.coachName || "Unassigned"}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <label className="field-label">Coach</label>
@@ -155,7 +267,7 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
           </div>
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <button className="btn-primary" onClick={handleSave}>Save Meeting</button>
-            <button className="btn-secondary" onClick={() => { setShowForm(false); setFormData({}); }}>Cancel</button>
+            <button className="btn-secondary" onClick={closeForm}>Cancel</button>
           </div>
         </div>
       )}
