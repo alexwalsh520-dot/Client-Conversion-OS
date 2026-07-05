@@ -16,9 +16,8 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const destination = getGammaDocUrl();
-
   const lead = decodeLeadToken(token);
+  const destination = getGammaDocUrl(lead?.docKey);
   const userAgent = req.headers.get("user-agent");
 
   if (lead && lead.email && !isLikelyBot(userAgent)) {

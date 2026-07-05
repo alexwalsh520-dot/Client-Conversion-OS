@@ -1,18 +1,24 @@
 import { postToSlack } from "./slack";
 
-// The real destination every tracked link redirects to — the shared
-// "Your Super Doc" Gamma page. Override per environment if the doc moves.
+// The real destinations tracked links redirect to, by audience. Override per
+// environment if a doc moves.
 const DEFAULT_GAMMA_DOC_URL =
   "https://gamma.app/docs/YOUR-SUPER-DOC-ob9pqkhvctlyj9s?mode=doc";
+const DEFAULT_AGENCY_DOC_URL =
+  "https://gamma.app/docs/The-Creator-Affiliate-Program-2kmvgekgmds5h0s?mode=doc";
 
 // #cc-call-updates — also the super-doc default channel. Bot posts here.
 const DEFAULT_OUTREACH_SLACK_CHANNEL = "C0AFKJUQ2UT";
+
+export type OutreachDocKey = "influencer" | "agency";
 
 export interface TrackedLead {
   email: string;
   firstName: string;
   lastName: string;
   instagram: string;
+  company: string;
+  docKey: OutreachDocKey;
 }
 
 interface TrackedTokenPayload {
@@ -20,9 +26,14 @@ interface TrackedTokenPayload {
   f?: string; // first name
   l?: string; // last name
   ig?: string; // instagram handle
+  c?: string; // company / agency name
+  d?: string; // doc key ("agency"; absent = influencer)
 }
 
-export function getGammaDocUrl(): string {
+export function getGammaDocUrl(docKey?: OutreachDocKey): string {
+  if (docKey === "agency") {
+    return (process.env.OUTREACH_AGENCY_DOC_URL || DEFAULT_AGENCY_DOC_URL).trim();
+  }
   return (process.env.OUTREACH_GAMMA_DOC_URL || DEFAULT_GAMMA_DOC_URL).trim();
 }
 
@@ -42,6 +53,8 @@ export function encodeLeadToken(lead: Partial<TrackedLead>): string {
     f: lead.firstName?.trim() || undefined,
     l: lead.lastName?.trim() || undefined,
     ig: lead.instagram?.trim().replace(/^@/, "") || undefined,
+    c: lead.company?.trim() || undefined,
+    d: lead.docKey === "agency" ? "agency" : undefined,
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -56,6 +69,8 @@ export function decodeLeadToken(token: string): TrackedLead | null {
       firstName: payload.f || "",
       lastName: payload.l || "",
       instagram: payload.ig || "",
+      company: payload.c || "",
+      docKey: payload.d === "agency" ? "agency" : "influencer",
     };
   } catch {
     return null;
@@ -82,8 +97,11 @@ export async function notifyGammaOpen(lead: TrackedLead): Promise<boolean> {
 
   const name = `${lead.firstName} ${lead.lastName}`.trim() || "A lead";
   const igHandle = lead.instagram.replace(/^@/, "");
+  const docLabel =
+    lead.docKey === "agency" ? "Opened the AGENCY affiliate doc" : "Opened the Gamma doc";
+  const headline = lead.company ? `${name} (${lead.company})` : name;
   const lines = [
-    `🔗 *Opened the Gamma doc* — ${name}`,
+    `🔗 *${docLabel}* — ${headline}`,
     lead.email ? `*Email:* ${lead.email}` : "",
     igHandle
       ? `*Instagram:* <https://instagram.com/${igHandle}|@${igHandle}>`
