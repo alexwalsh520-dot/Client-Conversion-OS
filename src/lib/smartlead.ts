@@ -14,6 +14,18 @@ function getCampaignId() {
   return id;
 }
 
+// "Influencer — Matthew (Gamma/Loom)" — where all new CSV uploads land.
+// Stats/dashboard keep reading SMARTLEAD_CAMPAIGN_ID (the live legacy
+// campaign) until sending fully switches over.
+const DEFAULT_INFLUENCER_CAMPAIGN_ID = "3584240";
+
+function getInfluencerCampaignId() {
+  return (
+    process.env.SMARTLEAD_INFLUENCER_CAMPAIGN_ID ||
+    DEFAULT_INFLUENCER_CAMPAIGN_ID
+  );
+}
+
 export async function addLeadsToCampaign(
   leads: {
     email: string;
@@ -23,7 +35,7 @@ export async function addLeadsToCampaign(
   campaignIdOverride?: string
 ) {
   const apiKey = getApiKey();
-  const campaignId = campaignIdOverride || getCampaignId();
+  const campaignId = campaignIdOverride || getInfluencerCampaignId();
   const gammaLink = process.env.GAMMA_LINK || "";
   const legacyGammaField = gammaLink ? { gamma_link: gammaLink } : {};
 
