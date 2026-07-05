@@ -43,7 +43,7 @@ import {
   SmartleadSegmentRoute,
 } from "@/lib/outreach-segments";
 import OutreachDashboard from "@/components/outreach/OutreachDashboard";
-import { AgencyBusinessMetrics } from "@/app/components/BusinessMetrics";
+import AgencyAcquisitionMetricsStrip from "@/components/outreach/AgencyAcquisitionMetrics";
 
 // ── CSV Parsing ────────────────────────────────────────────────
 
@@ -649,7 +649,7 @@ export default function OutreachRunsPage() {
         </p>
       </div>
 
-      <AgencyBusinessMetrics />
+      <AgencyAcquisitionMetricsStrip />
 
       <OutreachDashboard />
 
