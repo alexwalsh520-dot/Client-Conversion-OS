@@ -9,17 +9,21 @@ function getApiKey() {
 }
 
 function getCampaignId() {
-  // Default outreach sends now target the influencer (Matthew) campaign.
-  // Falls back to the legacy campaign if the influencer var isn't set.
-  const id =
-    process.env.SMARTLEAD_INFLUENCER_CAMPAIGN_ID ||
-    process.env.SMARTLEAD_CAMPAIGN_ID;
-  if (!id) {
-    throw new Error(
-      "SMARTLEAD_INFLUENCER_CAMPAIGN_ID or SMARTLEAD_CAMPAIGN_ID not configured",
-    );
-  }
+  const id = process.env.SMARTLEAD_CAMPAIGN_ID;
+  if (!id) throw new Error("SMARTLEAD_CAMPAIGN_ID not configured");
   return id;
+}
+
+// "Influencer — Matthew (Gamma/Loom)" — where all new CSV uploads land.
+// Stats/dashboard keep reading SMARTLEAD_CAMPAIGN_ID (the live legacy
+// campaign) until sending fully switches over.
+const DEFAULT_INFLUENCER_CAMPAIGN_ID = "3584240";
+
+function getInfluencerCampaignId() {
+  return (
+    process.env.SMARTLEAD_INFLUENCER_CAMPAIGN_ID ||
+    DEFAULT_INFLUENCER_CAMPAIGN_ID
+  );
 }
 
 export async function addLeadsToCampaign(
@@ -31,7 +35,7 @@ export async function addLeadsToCampaign(
   campaignIdOverride?: string
 ) {
   const apiKey = getApiKey();
-  const campaignId = campaignIdOverride || getCampaignId();
+  const campaignId = campaignIdOverride || getInfluencerCampaignId();
   const gammaLink = process.env.GAMMA_LINK || "";
   const legacyGammaField = gammaLink ? { gamma_link: gammaLink } : {};
 
