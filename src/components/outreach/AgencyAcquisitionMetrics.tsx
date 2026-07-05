@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import type { AgencyAcquisitionMetrics } from "@/lib/agency-acquisition-metrics";
 
 function fmtDollars(cents: number): string {
@@ -45,6 +45,33 @@ export default function AgencyAcquisitionMetricsStrip() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const [syncing, setSyncing] = useState(false);
+
+  // Re-pull CoreShift Mercury (same sync the Accountant tab uses), then reload.
+  const resync = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/accountant/sync", { method: "POST" });
+      if (!res.ok) {
+        const raw = await res.text();
+        let message = `Mercury resync failed (HTTP ${res.status})`;
+        try {
+          message = JSON.parse(raw).error || message;
+        } catch {
+          // keep default message
+        }
+        throw new Error(message);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mercury resync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [load, syncing]);
 
   const newestGp30 = data?.gp30.perClient.find((c) => c.profitCents !== null) ?? null;
 
@@ -93,8 +120,21 @@ export default function AgencyAcquisitionMetricsStrip() {
   return (
     <div className="section">
       <div className="glass-static" style={{ padding: 24 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.4, marginBottom: 16 }}>
-          Agency Economics
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.4 }}>
+            Agency Economics
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={resync}
+            disabled={syncing || loading}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", fontSize: 12, opacity: syncing || loading ? 0.6 : 1 }}
+            title="Re-pull CoreShift Mercury transactions, then recompute"
+          >
+            <RefreshCw size={13} className={syncing ? "spin" : undefined} />
+            {syncing ? "Resyncing Mercury..." : "Resync"}
+          </button>
         </div>
 
         {loading && (

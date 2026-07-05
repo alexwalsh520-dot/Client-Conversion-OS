@@ -23,8 +23,10 @@ const REVENUE_ACCOUNT = "coreshift";
 const OWNER_MATCHES = ["alex walsh", "matthew conder"];
 
 // Acquisition software allowlist (substring match on counterparty+description).
-// Spend counts from BOTH Mercury accounts — it's acquisition cost regardless
-// of which card/account paid it.
+// Scoped to the CoreShift account only, same as revenue/costs — Forge is
+// excluded from these metrics by design. Note: some acquisition tools
+// (Smartlead, Influencers.club) have historically been paid from the Forge
+// account and therefore do NOT count here.
 const ACQUISITION_MATCHES: Array<{ match: string[]; label: string }> = [
   { match: ["apify"], label: "Apify" },
   { match: ["smartlead"], label: "Smartlead" },
@@ -120,7 +122,7 @@ async function loadAllTransactions(): Promise<MercuryTx[]> {
 export async function getAgencyAcquisitionMetrics(): Promise<AgencyAcquisitionMetrics> {
   const txs = await loadAllTransactions();
   const coreshift = txs.filter((tx) => tx.account === REVENUE_ACCOUNT);
-  const dataSince = txs.length > 0 ? txs[0].posted_at.slice(0, 10) : null;
+  const dataSince = coreshift.length > 0 ? coreshift[0].posted_at.slice(0, 10) : null;
 
   // ── LTGP: all money in, minus all costs except owner draws ──
   let revenueCents = 0;
@@ -140,10 +142,10 @@ export async function getAgencyAcquisitionMetrics(): Promise<AgencyAcquisitionMe
     }
   }
 
-  // ── CAC: acquisition software spend (both accounts) ──
+  // ── CAC: acquisition software spend (CoreShift account only) ──
   const cacItems = new Map<string, number>();
   let cacTotalCents = 0;
-  for (const tx of txs) {
+  for (const tx of coreshift) {
     if (tx.amount >= 0) continue;
     for (const spec of ACQUISITION_MATCHES) {
       if (!matchesAny(tx, spec.match)) continue;
