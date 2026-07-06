@@ -66,6 +66,10 @@
     {
       "path": "/api/cron/daily-metrics-team",
       "schedule": "30 4,5 * * *"
+    },
+    {
+      "path": "/api/cron/foundation-sync",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
