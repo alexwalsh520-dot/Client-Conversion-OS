@@ -36,6 +36,10 @@
       "schedule": "0 11 * * 0"
     },
     {
+      "path": "/api/cron/check-in-tough-nutrition-sleep",
+      "schedule": "30 11 * * 0"
+    },
+    {
       "path": "/api/cron/weekly-meetings-report",
       "schedule": "0 20 * * 0"
     },
