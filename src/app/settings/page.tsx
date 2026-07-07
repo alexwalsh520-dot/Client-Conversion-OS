@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -31,7 +31,8 @@ interface AppUser {
   id: string;
   email: string;
   name: string | null;
-  role: "admin" | "client";
+  // "admin" | "client" in practice, but legacy rows carry other values (e.g. "user")
+  role: string;
   allowed_tabs: string[];
   is_active: boolean;
   created_at: string;
@@ -61,6 +62,18 @@ const TAB_LABELS: Record<string, string> = {
   "/intelligence": "Intelligence",
   "/log": "Change Log",
   "/settings": "Settings",
+  "/setter-response-time": "Setter Response Time",
+  "/partner-onboarding": "Client Onboarding",
+  "/testimonials": "Testimonials",
+  "/testimonials/videos": "Video Testimonials",
+  "/accountant": "Accountant",
+  "/sop": "SOPs",
+  "/cmo": "CMO",
+  "/dms": "DMs",
+  "/content": "Content",
+  "/lab": "Lab",
+  "/factory": "Factory",
+  "/ads-leaderboard": "Ads Leaderboard",
 };
 
 export default function SettingsPage() {
@@ -93,7 +106,7 @@ export default function SettingsPage() {
 
   // Edit form state
   const [editTabs, setEditTabs] = useState<string[]>([]);
-  const [editRole, setEditRole] = useState<"admin" | "client">("client");
+  const [editRole, setEditRole] = useState<string>("client");
   const [editName, setEditName] = useState("");
 
   // Add Client / Team Member modals
@@ -595,8 +608,8 @@ export default function SettingsPage() {
                 </thead>
                 <tbody>
                   {users.map((user) => (
-                    <>
-                      <tr key={user.id}>
+                    <Fragment key={user.id}>
+                      <tr>
                         <td>
                           <div>
                             <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
@@ -611,14 +624,15 @@ export default function SettingsPage() {
                           {editingUser === user.id ? (
                             <div style={{ display: "flex", gap: 4 }}>
                               <button
-                                onClick={() => setEditRole("client")}
+                                // Preserve legacy non-admin roles (e.g. "user") instead of rewriting them to "client".
+                                onClick={() => setEditRole(user.role !== "admin" ? user.role : "client")}
                                 style={{
                                   padding: "2px 8px",
                                   borderRadius: 4,
                                   fontSize: 11,
-                                  border: `1px solid ${editRole === "client" ? "var(--accent)" : "var(--border)"}`,
-                                  background: editRole === "client" ? "var(--accent-soft)" : "transparent",
-                                  color: editRole === "client" ? "var(--accent)" : "var(--text-muted)",
+                                  border: `1px solid ${editRole !== "admin" ? "var(--accent)" : "var(--border)"}`,
+                                  background: editRole !== "admin" ? "var(--accent-soft)" : "transparent",
+                                  color: editRole !== "admin" ? "var(--accent)" : "var(--text-muted)",
                                   cursor: "pointer",
                                 }}
                               >
@@ -755,7 +769,8 @@ export default function SettingsPage() {
                       {expandedUser === user.id && (
                         <tr key={`${user.id}-tabs`}>
                           <td colSpan={5} style={{ padding: "12px 16px", background: "var(--hover-bg-subtle)" }}>
-                            {editingUser === user.id && editRole === "client" ? (
+                            {/* Any non-admin role (client, legacy "user", …) gets the tab picker. */}
+                            {editingUser === user.id && editRole !== "admin" ? (
                               <div>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                   <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -877,7 +892,7 @@ export default function SettingsPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
