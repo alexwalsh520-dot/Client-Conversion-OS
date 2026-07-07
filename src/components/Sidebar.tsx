@@ -175,6 +175,9 @@ export default function Sidebar() {
   if (pathname.startsWith("/ads-leaderboard/compete/")) return null;
   // Public front-facing Ads Leaderboard — no CCOS chrome.
   if (pathname === "/ads-leaderboard/board") return null;
+  // Public setter response-times share link — no CCOS chrome (this also kills
+  // the mobile hamburger, which lives outside .sidebar so CSS can't catch it).
+  if (pathname.startsWith("/p/setters/")) return null;
 
   const renderLink = (
     item: { href: string; label: string; icon: React.ComponentType<{ size?: number }> },

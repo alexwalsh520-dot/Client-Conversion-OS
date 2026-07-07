@@ -1,0 +1,343 @@
+/* Public setter share view — strip ALL CCOS app chrome so setters see only
+   their response times, full-bleed, with no sidebar/nav into the rest of the
+   app. Self-contained dark palette (no dependency on the app theme toggle). */
+
+.app-layout:has(.pub-setters-page) .sidebar,
+.app-layout:has(.pub-unavailable) .sidebar {
+  display: none !important;
+}
+
+.app-layout:has(.pub-setters-page) .main-content,
+.app-layout:has(.pub-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+/* Clean "link not available" state — no data, no stack traces. */
+.pub-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050505;
+  padding: 24px;
+}
+
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+
+.pub-unavailable-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.pub-unavailable-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9a9aa2;
+}
+
+/* ── Live view ─────────────────────────────────────────────────────────── */
+
+.pub-setters-page {
+  min-height: 100vh;
+  background: #050505;
+  color: #f5f5f5;
+  padding: 20px 16px 48px;
+  font-size: 14px;
+}
+
+.pub-setters-inner {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.pub-setters-header h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pub-setters-header .pub-date {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #c9c9d1;
+}
+
+.pub-live-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #9a9aa2;
+}
+
+.pub-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+  animation: pub-pulse 2s ease-in-out infinite;
+}
+
+.pub-live-dot.is-stale {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+  animation: none;
+}
+
+@keyframes pub-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.pub-refresh-btn {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #121216;
+  color: #e7e7ee;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pub-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Day switcher (today by default, back up to 30 days). */
+.pub-day-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+
+.pub-day-nav .pub-refresh-btn {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.pub-day-arrow {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #121216;
+  color: #e7e7ee;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.pub-day-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pub-day-nav .pub-day-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e7e7ee;
+  min-width: 150px;
+  text-align: center;
+}
+
+.pub-day-nav .pub-today-chip {
+  font-size: 11px;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+/* Setter picker pills. */
+.pub-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 16px;
+}
+
+.pub-pill {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #101014;
+  color: #c9c9d1;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pub-pill.is-active {
+  background: #f5f5f5;
+  border-color: #f5f5f5;
+  color: #0b0b0e;
+}
+
+/* Stat cards. */
+.pub-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .pub-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pub-stat {
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+}
+
+.pub-stat .pub-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8f8f98;
+  margin: 0 0 6px;
+}
+
+.pub-stat .pub-stat-value {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.pub-stat .pub-stat-sub {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #8f8f98;
+}
+
+.pub-good { color: #34d399; }
+.pub-warn { color: #fbbf24; }
+.pub-bad { color: #f87171; }
+.pub-muted { color: #8f8f98; }
+
+/* Hourly breakdown table. */
+.pub-hourly {
+  margin-top: 18px;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.pub-hourly-title {
+  padding: 12px 14px 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8f8f98;
+}
+
+.pub-hourly-scroll {
+  overflow-x: auto;
+}
+
+.pub-hourly table {
+  width: 100%;
+  min-width: 340px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 420px) {
+  .pub-hourly th,
+  .pub-hourly td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
+
+.pub-hourly th,
+.pub-hourly td {
+  padding: 8px 10px;
+  text-align: right;
+  font-size: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pub-hourly th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8f8f98;
+  border-top: none;
+}
+
+.pub-hourly th:first-child,
+.pub-hourly td:first-child {
+  text-align: left;
+  padding-left: 14px;
+  color: #c9c9d1;
+  white-space: nowrap;
+}
+
+.pub-hourly td:last-child,
+.pub-hourly th:last-child {
+  padding-right: 14px;
+}
+
+.pub-hourly tr.is-now td {
+  background: rgba(52, 211, 153, 0.05);
+}
+
+.pub-hourly tr.is-empty td {
+  color: #55555e;
+}
+
+/* Rules footnote + error/loading states. */
+.pub-rules {
+  margin-top: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8f8f98;
+}
+
+.pub-rules strong {
+  color: #c9c9d1;
+}
+
+.pub-state {
+  padding: 48px 16px;
+  text-align: center;
+  color: #9a9aa2;
+  font-size: 14px;
+}
+
+.pub-state.pub-state-error {
+  color: #f87171;
+}
