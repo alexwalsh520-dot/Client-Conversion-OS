@@ -196,6 +196,8 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const hasAccess = allowedTabs.some((tab) => {
     if (tab === "/") return pathname === "/";
     if (pathname === "/time-to-eat" && tab === "/sales-hub") return true;
+    // Setter Response Time rides on Sales Hub access, same as Time to Eat.
+    if (pathname === "/setter-response-time" && tab === "/sales-hub") return true;
     return pathname === tab || pathname.startsWith(tab + "/");
   });
 
