@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Setter Response Times — Client Conversion",
+  title: "Setter Response Time",
   robots: { index: false, follow: false },
 };
 
