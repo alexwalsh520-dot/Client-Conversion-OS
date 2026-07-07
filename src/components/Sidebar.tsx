@@ -35,6 +35,7 @@ import {
   MessageCircle,
   Factory,
   Film,
+  Timer,
 } from "lucide-react";
 
 const navItems = [
@@ -43,6 +44,7 @@ const navItems = [
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/time-to-eat", label: "Time to Eat", icon: Utensils },
+  { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
@@ -119,6 +121,9 @@ export default function Sidebar() {
       isAdmin ||
       allowedTabs?.includes(item.href) ||
       (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub")) ||
+      // Setter Response Time rides on Sales Hub access (it's the front-facing
+      // cut of the same response-times data).
+      (item.href === "/setter-response-time" && allowedTabs?.includes("/sales-hub")) ||
       // Video Testimonials manager rides on Coaching access (view + download).
       (item.href === "/testimonials/videos" && allowedTabs?.includes("/coaching"))
     );
