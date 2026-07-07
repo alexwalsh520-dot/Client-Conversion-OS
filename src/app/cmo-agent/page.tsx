@@ -23,6 +23,57 @@ type Item = {
   rule: string | null; status: string; alex_comment: string | null; alex_directive: string | null;
 };
 
+const MONO: React.CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" };
+type WinCell = { spend: number; roas: number; ltgp: number; closed: number };
+
+// The proof panel — spend + ROAS + LTGP:CAC across windows, running status, and the funnel.
+// This is what lets Alex trust a verdict without opening Meta.
+function Proof({ ev }: { ev: Record<string, unknown> }) {
+  const w = (ev.windows as Record<string, WinCell | null> | undefined) || {};
+  const rows: [string, WinCell][] = (["d7", "d14", "d30"] as const)
+    .map((k) => [k.replace("d", "") + "d", w[k]] as [string, WinCell | null])
+    .filter((r): r is [string, WinCell] => !!r[1]);
+  const f = ev.funnel14d as { dms: number; costPerDm: number | null; booked: number; taken: number; closed: number } | null;
+  const running = ev.running as boolean | undefined;
+  if (rows.length === 0 && running === undefined) return null;
+  const ltgpColor = (v: number) => (v >= 3 ? "#8ce0ab" : v >= 2 ? "#e4c66a" : "#e0794d");
+  return (
+    <div style={{ background: "#0d0d10", border: `1px solid ${LINE}`, borderRadius: 8, padding: "10px 12px", marginTop: 4 }}>
+      {running !== undefined && (
+        <div style={{ ...MONO, fontSize: 12, marginBottom: rows.length ? 8 : 0, color: running ? "#8ce0ab" : DIM }}>
+          {running ? `● Running — $${String(ev.spendLast3d ?? 0)} spent in the last 3 days` : `○ Stopped — last spend ${String(ev.lastSpend ?? "unknown")}`}
+        </div>
+      )}
+      {rows.length > 0 && (
+        <table style={{ ...MONO, borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+          <thead><tr style={{ color: DIM }}>
+            <th style={{ textAlign: "left", padding: "2px 8px" }}>window</th>
+            <th style={{ textAlign: "right", padding: "2px 8px" }}>spend</th>
+            <th style={{ textAlign: "right", padding: "2px 8px" }}>ROAS</th>
+            <th style={{ textAlign: "right", padding: "2px 8px" }}>LTGP:CAC</th>
+            <th style={{ textAlign: "right", padding: "2px 8px" }}>closed</th>
+          </tr></thead>
+          <tbody>{rows.map(([lbl, x]) => (
+            <tr key={lbl} style={{ borderTop: `1px solid ${LINE}` }}>
+              <td style={{ padding: "3px 8px", color: TEXT }}>{lbl}</td>
+              <td style={{ padding: "3px 8px", textAlign: "right", color: DIM }}>${x.spend}</td>
+              <td style={{ padding: "3px 8px", textAlign: "right", color: DIM }}>{x.roas}×</td>
+              <td style={{ padding: "3px 8px", textAlign: "right", color: ltgpColor(x.ltgp), fontWeight: 700 }}>{x.ltgp}×</td>
+              <td style={{ padding: "3px 8px", textAlign: "right", color: DIM }}>{x.closed}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+      {f && (
+        <div style={{ ...MONO, fontSize: 11.5, color: DIM, marginTop: 8 }}>
+          funnel 14d: {f.dms} DMs{f.costPerDm != null ? ` ($${f.costPerDm}/DM)` : ""} → {f.booked} booked → {f.taken} taken → {f.closed} closed
+          {ev.allTimeCloses != null && <span> · {String(ev.allTimeCloses)} closed all-time</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CmoAgentPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [date, setDate] = useState("");
@@ -94,16 +145,9 @@ export default function CmoAgentPage() {
                   <span style={{ fontSize: 11, color: GOLD, textTransform: "uppercase", letterSpacing: 1 }}>{i.creator}</span>
                   <b style={{ fontSize: 15.5 }}>{i.title}</b>
                 </div>
-                {i.detail && <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>{i.detail}</div>}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontFamily: "ui-monospace, monospace", fontSize: 12, color: DIM, marginBottom: 4 }}>
-                  {typeof ev.spend === "number" && <span>spend ${String(ev.spend)}</span>}
-                  {ev.grossProfitRoi != null && <span>LTGP:CAC <b style={{ color: GOLD }}>{String(ev.grossProfitRoi)}×</b></span>}
-                  {ev.collectedRoi != null && <span>ROAS {String(ev.collectedRoi)}×</span>}
-                  {ev.newClients != null && <span>{String(ev.newClients)} closed</span>}
-                  {ev.costPerMessage != null && <span>${String(ev.costPerMessage)}/DM</span>}
-                  {ev.window != null && <span>{String(ev.window)}</span>}
-                </div>
-                {i.rule && <div style={{ fontSize: 11.5, color: DIM, fontStyle: "italic", marginBottom: 10 }}>rule: {i.rule}</div>}
+                {i.detail && <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>{i.detail}</div>}
+                <Proof ev={ev} />
+                {i.rule && <div style={{ fontSize: 11.5, color: DIM, fontStyle: "italic", margin: "10px 0 0" }}>rule: {i.rule}</div>}
 
                 <textarea
                   value={drafts[i.id] ?? ""}
