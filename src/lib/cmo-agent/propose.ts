@@ -80,15 +80,18 @@ export async function buildProposals(): Promise<ProposalItem[]> {
       rec.set(kw, cur);
     }
 
-    // foundation all-time closes (winner cross-check - cheap)
+    // foundation all-time closes (secondary winner cross-check - cheap)
     const { data: acRows } = await sb.from("ad_context").select("keyword_normalized, closed_count").eq("client_key", creator);
     const foundCloses = new Map<string, number>();
     for (const a of acRows ?? []) foundCloses.set(String(a.keyword_normalized).toLowerCase(), Number(a.closed_count) || 0);
 
-    // canonical money across windows - SEQUENTIAL (concurrent dashboards time out the DB)
+    // canonical money across windows - SEQUENTIAL (concurrent dashboards time out the DB).
+    // dAll is a wide window from the SAME canonical source as the others, so "all time" is
+    // always a superset of d30/d14/d7 and can never read lower than a window shown on the card.
     const d7 = await moneyMap(creator, shiftDays(today, -7), today);
     const d14 = await moneyMap(creator, shiftDays(today, -14), today);
     const d30 = await moneyMap(creator, shiftDays(today, -30), today);
+    const dAll = await moneyMap(creator, shiftDays(today, -400), today);
 
     const kws = new Set<string>();
     for (const [kw, w] of d14) if (w.spend >= FUNDED_14D) kws.add(kw);
@@ -102,7 +105,9 @@ export async function buildProposals(): Promise<ProposalItem[]> {
       const spend14 = w14?.spend ?? 0;
       const ltgp14 = w14?.ltgp ?? 0, ltgp7 = w7?.ltgp ?? 0, ltgp30 = w30?.ltgp ?? 0;
       const reliable = spend14 >= RELIABLE;
-      const allCloses = foundCloses.get(kw) ?? 0;
+      // all-time = the wide canonical window, floored by foundation + d30 so it is never
+      // less than any window shown on the card (that impossible-looking contradiction).
+      const allCloses = Math.max(dAll.get(kw)?.closes ?? 0, foundCloses.get(kw) ?? 0, w30?.closes ?? 0);
       const KW = kw.toUpperCase();
 
       const evidence = {
