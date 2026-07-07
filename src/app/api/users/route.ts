@@ -22,10 +22,22 @@ const ALL_TABS = [
   "/super-doc-editor",
   "/sales-hub",
   "/time-to-eat",
+  "/setter-response-time",
   "/media-buyer",
   "/intelligence",
   "/log",
   "/settings",
+  "/partner-onboarding",
+  "/testimonials",
+  "/testimonials/videos",
+  "/accountant",
+  "/sop",
+  "/cmo",
+  "/dms",
+  "/content",
+  "/lab",
+  "/factory",
+  "/ads-leaderboard",
 ];
 
 async function requireAdmin() {
