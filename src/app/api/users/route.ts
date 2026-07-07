@@ -10,6 +10,7 @@ const ALL_TABS = [
   "/coaching",
   "/onboarding",
   "/ads",
+  "/manager-ads",
   "/live-ads",
   "/studio",
   "/studio-2",
