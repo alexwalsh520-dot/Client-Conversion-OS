@@ -123,6 +123,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // tab (analytics + audience read + verbatim quotes, read-only). Token resolves
     // server-side to ONE creator. No CCOS login.
     pathname.startsWith("/p/content/") ||
+    // /p/setters/<token> is the public, no-login setter share link for LIVE
+    // response times (aggregate numbers only — no lead names or conversations,
+    // enforced by /api/public/setters/<token>). Setters open it at the midday
+    // check-in. No CCOS login.
+    pathname.startsWith("/p/setters/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

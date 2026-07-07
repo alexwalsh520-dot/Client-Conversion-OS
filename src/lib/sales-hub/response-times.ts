@@ -67,6 +67,7 @@ export interface HourlyBucket {
   hour: number; // ET hour, 11..22 (business hours)
   count: number;
   avgSeconds: number | null;
+  medianSeconds: number | null;
   missedCount: number;
 }
 
@@ -178,6 +179,7 @@ function bucketSamplesByHour(samples: ResponseSample[]): HourlyBucket[] {
       hour,
       count: list.length,
       avgSeconds: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
+      medianSeconds: values.length ? medianOf(values) : null,
       missedCount: values.filter((v) => v > MISS_THRESHOLD_SECONDS).length,
     };
   });
