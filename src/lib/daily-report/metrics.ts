@@ -110,7 +110,7 @@ async function getLeadCounts(
  * Covers every client the ads sync handles, with no per-client Meta token needed
  * at report time.
  */
-async function fetchDailySpend(
+export async function fetchDailySpend(
   fromDay: string,
   toDay: string,
 ): Promise<Record<string, Record<string, number>>> {
@@ -161,7 +161,7 @@ function callPattern(client: CreatorKey): string {
 }
 
 /** Count non-cancelled sales-call appointments where `field` is in the ET days [fromDay, toDay]. */
-async function countAppointmentsForDays(
+export async function countAppointmentsForDays(
   client: CreatorKey,
   field: "start_time" | "created_at",
   fromDay: string,

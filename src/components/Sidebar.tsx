@@ -57,6 +57,7 @@ const navItems = [
 const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/manager-ads", label: "Manager Ads View", icon: BarChart3 },
   { href: "/dms", label: "DMs", icon: MessageCircle },
   { href: "/content", label: "Content", icon: Film },
   { href: "/lab", label: "Lab", icon: FlaskConical },
