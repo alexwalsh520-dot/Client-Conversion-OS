@@ -1,5 +1,5 @@
-// CMO Agent — the proposal brain. Every proposal SHOWS ITS WORK: spend + ROAS across
-// 7d/14d/30d, when the money was spent, whether the ad is still running, and the funnel —
+// CMO Agent - the proposal brain. Every proposal SHOWS ITS WORK: spend + ROAS across
+// 7d/14d/30d, when the money was spent, whether the ad is still running, and the funnel -
 // so Alex can trust it without opening Meta. The verdict reads the TREND across windows,
 // never a single window (that's how you kill a winner that just had a slow week).
 // Money comes only from canonical getAdsTrackerDashboard; all-time closes cross-check
@@ -26,7 +26,6 @@ export type ProposalItem = {
 
 const r0 = (n: unknown) => Math.round(Number(n) || 0);
 const r2 = (n: unknown) => Number((Number(n) || 0).toFixed(2));
-const xx = (w: Win | null | undefined) => (w && Number.isFinite(w.ltgp) ? `${w.ltgp.toFixed(1)}×` : "—");
 function todayET() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
@@ -81,12 +80,12 @@ export async function buildProposals(): Promise<ProposalItem[]> {
       rec.set(kw, cur);
     }
 
-    // foundation all-time closes (winner cross-check — cheap)
+    // foundation all-time closes (winner cross-check - cheap)
     const { data: acRows } = await sb.from("ad_context").select("keyword_normalized, closed_count").eq("client_key", creator);
     const foundCloses = new Map<string, number>();
     for (const a of acRows ?? []) foundCloses.set(String(a.keyword_normalized).toLowerCase(), Number(a.closed_count) || 0);
 
-    // canonical money across windows — SEQUENTIAL (concurrent dashboards time out the DB)
+    // canonical money across windows - SEQUENTIAL (concurrent dashboards time out the DB)
     const d7 = await moneyMap(creator, shiftDays(today, -7), today);
     const d14 = await moneyMap(creator, shiftDays(today, -14), today);
     const d30 = await moneyMap(creator, shiftDays(today, -30), today);
@@ -117,42 +116,39 @@ export async function buildProposals(): Promise<ProposalItem[]> {
         allTimeCloses: allCloses,
       };
 
-      const trend = `7d ${xx(w7)} · 14d ${xx(w14)} · 30d ${xx(w30)}`;
-      const spendLine = running ? `Still running ($${r0(R.d3 / 100)} in the last 3d).` : `Stopped — last spend ${R.lastSpend ?? "unknown"}.`;
-      const closed30 = w30?.closes ?? 0;
-
+      // Plain-English "why" only - the numbers live in the hero, the bars, and the table.
       if (running && reliable && ltgp14 >= SCALE_LTGP && ltgp7 >= 2) {
         items.push({
           creator, kind: "scale", target: kw,
           title: `Scale ${KW} +$50/day`,
-          detail: `${KW} is winning and holding — LTGP:CAC ${trend}. $${r0(spend14)} spent (14d), ${w14?.closes ?? 0} closed. ${spendLine} Clear to step up, small (+$50) not a jump.`,
+          detail: `${KW} is winning and it is holding steady, not just one hot week. Clear to step it up. Go small, +$50 a day, not a jump.`,
           suggestion: "Scale +$50/day, re-grade in 7 days.",
-          evidence, rule: "LTGP:CAC ≥3× (14d) AND ≥2× (7d) — holding, not one hot week → scale +$50", priority: 10,
+          evidence, rule: "LTGP:CAC is 3x or better on 14 days and 2x or better on 7 days, so it is holding, not a one-week spike. Scale a proven winner by +$50.", priority: 10,
         });
         if (!topWinner || ltgp14 > topWinner.ltgp) topWinner = { kw, ltgp: ltgp14, closes: allCloses };
       } else if (allCloses >= 2 && ltgp14 < KILL_LTGP) {
         items.push({
           creator, kind: "watch", target: kw,
-          title: `Watch ${KW} — proven, cold lately`,
-          detail: `${KW} has closed ${allCloses} all-time — a real winner. But it's gone cold: LTGP:CAC ${trend}, ${closed30} closed in the last 30d, $${r0(spend14)} spent (14d). ${spendLine} Don't kill a proven ad on a cold streak — watch it; if it doesn't turn in a week, then cut. (This is why "2 closes all-time" and "0× this window" both look true — different time windows.)`,
-          suggestion: "Hold and watch — proven ad, slow now. Re-check in a week before any kill.",
-          evidence, rule: "≥2 all-time closes but soft window → watch (protect proven ads)", priority: 25,
+          title: `Watch ${KW}, proven but cold`,
+          detail: `${KW} is a proven winner that has gone quiet. It has closed real deals before, but nothing lately. Do not kill a proven ad on a cold streak. Give it a week, and if it does not turn around, then cut it.`,
+          suggestion: "Hold and watch. Proven ad, just slow right now. Re-check in a week before any kill.",
+          evidence, rule: "It has 2 or more closes all-time but the recent window is soft, so watch it. Never kill a proven ad on one slow window.", priority: 25,
         });
       } else if (running && reliable && spend14 >= KILL_FLOOR && ltgp14 < KILL_LTGP && ltgp30 < KILL_LTGP && allCloses <= 1) {
         items.push({
           creator, kind: "kill", target: kw,
           title: `Kill ${KW}`,
-          detail: `${KW} is a money pit — LTGP:CAC ${trend}, ${allCloses} close all-time, $${r0(spend14)} spent (14d)${evidence.funnel14d?.costPerDm != null ? ` at $${evidence.funnel14d.costPerDm}/DM` : ""}: ${w14?.dms ?? 0} DMs → ${w14?.booked ?? 0} booked → ${w14?.taken ?? 0} taken → ${w14?.closes ?? 0} closed. ${spendLine} Weak on every window and never really closed — cut it.`,
+          detail: `${KW} is a money pit. It has spent real money and barely closed anyone, and it is weak no matter which window you look at. Cut it.`,
           suggestion: "Turn it off.",
-          evidence, rule: "Weak on 14d AND 30d, ≤1 all-time close, real spend, still running → kill", priority: 20,
+          evidence, rule: "Weak on both the 14-day and 30-day windows, one or fewer closes ever, real money spent, still running. Kill it.", priority: 20,
         });
       } else if (reliable && ltgp14 >= KILL_LTGP && ltgp14 < SCALE_LTGP) {
         items.push({
           creator, kind: "watch", target: kw,
-          title: `Watch ${KW} — on the line`,
-          detail: `${KW} is on the KPI line — LTGP:CAC ${trend}, ${w14?.closes ?? 0} closed on $${r0(spend14)} (14d). ${spendLine} Not a scale, not a kill — let it prove itself.`,
+          title: `Watch ${KW}, on the line`,
+          detail: `${KW} is sitting right on the line. Not strong enough to scale, not weak enough to kill. Let it prove itself.`,
           suggestion: "Hold and re-check in a few days.",
-          evidence, rule: "~2×-3× LTGP:CAC = KPI line, hold", priority: 40,
+          evidence, rule: "LTGP:CAC is between 2x and 3x, right on the KPI line. Hold.", priority: 40,
         });
       }
     }
@@ -161,10 +157,10 @@ export async function buildProposals(): Promise<ProposalItem[]> {
       items.push({
         creator, kind: "make_variations", target: topWinner.kw,
         title: `Make variations of ${topWinner.kw.toUpperCase()}`,
-        detail: `${topWinner.kw.toUpperCase()} is ${creator}'s top ad (${topWinner.ltgp.toFixed(1)}× LTGP:CAC 14d, ${topWinner.closes} closed all-time). Clone the winning creative into fresh angles now, before it fatigues, so the winner line keeps producing.`,
+        detail: `${topWinner.kw.toUpperCase()} is ${creator}'s top ad right now. Clone the winning creative into fresh angles before it fatigues, so the winner line keeps producing.`,
         suggestion: "Generate 3 Higgsfield variations off the winning image.",
         evidence: { basis: "top LTGP:CAC winner", ltgp14d: r2(topWinner.ltgp), allTimeCloses: topWinner.closes },
-        rule: "Keep the winner line producing", priority: 30,
+        rule: "Keep the winner line producing.", priority: 30,
       });
     }
   }

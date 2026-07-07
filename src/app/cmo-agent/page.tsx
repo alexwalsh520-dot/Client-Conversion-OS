@@ -45,16 +45,18 @@ function heroOf(ev: Ev): { value: number | null; label: string; closed: number |
 
 function TrendBars({ w }: { w: Ev["windows"] }) {
   if (!w) return null;
-  const bars: [string, WinCell | null][] = [["7d", w.d7], ["14d", w.d14], ["30d", w.d30]];
+  const bars: [string, WinCell | null][] = [["7 days", w.d7], ["14 days", w.d14], ["30 days", w.d30]];
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
       {bars.map(([lbl, c]) => {
         const v = c ? c.ltgp : null;
-        const h = v == null ? 6 : Math.max(6, (Math.min(v, 4) / 4) * 44);
+        const h = v == null ? 8 : Math.max(8, (Math.min(v, 4) / 4) * 52);
+        const on = lbl === "14 days";
         return (
-          <div key={lbl} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 14, height: h, borderRadius: 3, background: v == null ? LINE : ltgpColor(v), opacity: lbl === "14d" ? 1 : 0.6 }} />
-            <span style={{ fontSize: 10, color: DIM, ...num }}>{lbl}</span>
+          <div key={lbl} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: v == null ? DIM : ltgpColor(v), ...num }}>{v == null ? "n/a" : `${v.toFixed(1)}x`}</span>
+            <div style={{ width: 24, height: h, borderRadius: 4, background: v == null ? LINE : ltgpColor(v), opacity: on ? 1 : 0.5 }} />
+            <span style={{ fontSize: 10.5, color: on ? TEXT : DIM, fontWeight: on ? 700 : 400 }}>{lbl}</span>
           </div>
         );
       })}
@@ -144,7 +146,7 @@ export default function CmoAgentPage() {
                     )}
                     {ev.windows && <TrendBars w={ev.windows} />}
                     {hero.closed != null && (
-                      <span style={{ ...num, fontSize: 12, padding: "4px 10px", borderRadius: 999, border: `1px solid ${LINE}`, color: hero.closed > 0 ? TEXT : DIM, marginBottom: 2 }}>{hero.closed} closed · 14d</span>
+                      <span style={{ ...num, fontSize: 12, padding: "4px 10px", borderRadius: 999, border: `1px solid ${LINE}`, color: hero.closed > 0 ? TEXT : DIM, marginBottom: 2 }}>{hero.closed} {hero.closed === 1 ? "client" : "clients"} in 14 days</span>
                     )}
                   </div>
                 )}
@@ -229,7 +231,7 @@ function Numbers({ ev, rule }: { ev: Ev; rule: string | null }) {
       {rows.length > 0 && (
         <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 12 }}>
           <thead><tr>
-            <th style={{ ...head, textAlign: "left" }}>window</th><th style={head}>spend</th><th style={head}>ROAS</th><th style={head}>LTGP:CAC</th><th style={head}>closed</th>
+            <th style={{ ...head, textAlign: "left" }}>window</th><th style={head}>spend</th><th style={head}>ROAS</th><th style={head}>LTGP:CAC</th><th style={head}>clients</th>
           </tr></thead>
           <tbody>{rows.map(([lbl, c]) => (
             <tr key={lbl} style={{ borderTop: `1px solid ${LINE}` }}>
@@ -243,22 +245,26 @@ function Numbers({ ev, rule }: { ev: Ev; rule: string | null }) {
         </table>
       )}
       {f && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", color: DIM, marginBottom: 8 }}>Where the last 14 days went</div>
+          <div style={{ display: "grid", gap: 6 }}>
             {[
-              { v: f.dms, l: f.costPerDm != null ? `DMs · $${f.costPerDm}/DM` : "DMs" },
-              { v: f.booked, l: "booked" }, { v: f.taken, l: "taken" }, { v: f.closed, l: "closed" },
-            ].map((s, idx) => (
-              <div key={s.l} style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-                {idx > 0 && <span style={{ fontSize: 13, color: DIM, marginBottom: 4 }}>→</span>}
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{s.v}</div>
-                  <div style={{ fontSize: 11, color: DIM }}>{s.l}</div>
-                </div>
+              { n: f.dms, l: `people DM'd${f.costPerDm != null ? ` (about $${f.costPerDm} per DM)` : ""}` },
+              { n: f.booked, l: "booked a call" },
+              { n: f.taken, l: "showed up to the call" },
+              { n: f.closed, l: "became clients" },
+            ].map((s) => (
+              <div key={s.l} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <span style={{ fontSize: 16, fontWeight: 700, minWidth: 34, fontVariantNumeric: "tabular-nums" }}>{s.n}</span>
+                <span style={{ fontSize: 13.5, color: BODY }}>{s.l}</span>
               </div>
             ))}
           </div>
-          {ev.allTimeCloses != null && <div style={{ fontSize: 12, color: DIM, marginTop: 10 }}>All-time closes: {ev.allTimeCloses}</div>}
+          {ev.allTimeCloses != null && (
+            <div style={{ fontSize: 12.5, color: BODY, marginTop: 12 }}>
+              All time, this ad has made <b style={{ color: TEXT }}>{ev.allTimeCloses}</b> {ev.allTimeCloses === 1 ? "client" : "clients"}.
+            </div>
+          )}
         </div>
       )}
       {rule && <div style={{ fontSize: 12, color: DIM, marginTop: 14 }}>Rule: {rule}</div>}
