@@ -135,7 +135,7 @@ export async function generateDerivedIcp(
 
   const resp = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 2000,
+    max_tokens: 4000,
     system: SYS,
     messages: [{ role: "user", content: `Buyers who paid $${Math.round(thresholdCents / 100)}+:\n\n${briefs.join("\n\n").slice(0, 120000)}` }],
   });
