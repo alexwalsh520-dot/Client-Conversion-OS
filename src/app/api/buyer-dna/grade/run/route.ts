@@ -39,10 +39,14 @@ export async function POST(req: NextRequest) {
     .order("taken_at", { ascending: false })
     .limit(400);
 
+  // Grade on real content only. Reels are video-first: the message is in the transcript, so a post
+  // with an empty caption and no transcript yet gets skipped (grading it would unfairly score the
+  // silence, not the content). Grade once the transcript exists, or when the caption is substantial.
   const gradable = (posts || []).filter((p) => {
     const cap = String((p as { caption: string }).caption || "");
     const tr = String((p as { transcript: string }).transcript || "");
-    return cap.length > 30 || tr.length > 80;
+    const status = String((p as { transcript_status: string }).transcript_status || "");
+    return (status === "done" && tr.length > 120) || cap.length > 220;
   });
 
   const { data: graded } = await sb

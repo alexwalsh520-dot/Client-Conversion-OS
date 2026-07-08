@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Film, Share2, Loader2, Check, BarChart3, Sparkles } from "lucide-react";
+import { Film, Share2, Loader2, Check, BarChart3, Sparkles, Users } from "lucide-react";
 import AnalyticsView from "@/components/content/AnalyticsView";
 import CoachView from "@/components/content/CoachView";
+import BuyersView from "@/components/content/BuyersView";
 import type { CreatorContent } from "@/lib/content-data";
 
 const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Antwan" }];
@@ -11,7 +12,7 @@ const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Ant
 export default function ContentClient() {
   const [data, setData] = useState<Record<string, CreatorContent>>({});
   const [active, setActive] = useState("antwan");
-  const [mode, setMode] = useState<"analytics" | "coach">("analytics");
+  const [mode, setMode] = useState<"analytics" | "coach" | "buyers">("analytics");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export default function ContentClient() {
 
       {/* Mode switch — the two surfaces */}
       <div style={{ display: "inline-flex", gap: 4, background: "var(--bg-glass)", borderRadius: 12, padding: 4, border: "1px solid var(--border-primary)", marginBottom: 22 }}>
-        {([["analytics", "Analytics", BarChart3], ["coach", "Coach", Sparkles]] as const).map(([k, label, Icon]) => (
+        {([["analytics", "Analytics", BarChart3], ["coach", "Coach", Sparkles], ["buyers", "Buyers", Users]] as const).map(([k, label, Icon]) => (
           <button key={k} onClick={() => setMode(k)}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, background: mode === k ? "var(--bg-card)" : "transparent", color: mode === k ? "var(--accent)" : "var(--text-muted)", boxShadow: mode === k ? "0 1px 0 var(--border-hover)" : "none" }}>
             <Icon size={15} /> {label}
@@ -125,7 +126,9 @@ export default function ContentClient() {
         </div>
       )}
 
-      {loading ? (
+      {mode === "buyers" ? (
+        <BuyersView creator={active} />
+      ) : loading ? (
         <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading…</div>
       ) : !current ? (
         <div style={{ color: "var(--text-muted)", padding: 40 }}>No data.</div>

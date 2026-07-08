@@ -37,16 +37,29 @@ export async function GET(req: NextRequest) {
   const dossiers = (dossiersRes.data || []) as Array<{ research?: Record<string, unknown> }>;
   const withResearch = dossiers.filter((d) => d.research && Object.keys(d.research).length > 0);
 
+  // Enrich each grade with its post so the UI can show which reel it is.
+  let grades = (gradesRes.data || []) as Array<{ ig_media_id: string } & Record<string, unknown>>;
+  if (grades.length) {
+    const ids = grades.map((g) => g.ig_media_id);
+    const { data: posts } = await sb
+      .from("creator_content")
+      .select("ig_media_id, caption, permalink, thumbnail_url, stored_thumb_url, like_count, comment_count")
+      .eq("client_key", slug)
+      .in("ig_media_id", ids);
+    const pm = new Map((posts || []).map((p) => [(p as { ig_media_id: string }).ig_media_id, p]));
+    grades = grades.map((g) => ({ ...g, post: pm.get(g.ig_media_id) || null }));
+  }
+
   return NextResponse.json({
     creator: slug,
     icp: current || null,
     counts: {
       dossiers: dossiers.length,
       researched: withResearch.length,
-      graded: (gradesRes.data || []).length,
+      graded: grades.length,
     },
     dossiers,
     angles: anglesRes.data || [],
-    grades: gradesRes.data || [],
+    grades,
   });
 }
