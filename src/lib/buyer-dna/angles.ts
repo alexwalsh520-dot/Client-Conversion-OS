@@ -10,11 +10,11 @@ import type { Icp } from "./icp";
 const MODEL = "claude-sonnet-4-6";
 
 const SYS =
-  "You turn a fitness coach's REAL paying-buyer research into content and ad angles the team can film. Ground every angle in the buyers' own pains, beliefs, triggers, and words. The angle should make the ideal buyer feel seen, not be a generic fitness tip. Return STRICT JSON:\n" +
-  '{"angles":[{"type":"organic|ad","title":"the idea in a few words","hook":"a spoken opening line in the buyer\'s world (no hard call-out, let them recognize themselves)","pain":"the specific pain or belief it speaks to","grounded_in":"which buyer insight this came from"}]}\n' +
-  "12 to 16 angles, a mix of organic and ad. Concrete and specific to THIS buyer, never generic. No prose outside the JSON.";
+  "You turn a fitness creator's REAL buyer research into ORGANIC content ideas the creator can film. Ground every idea in the buyers' own pains, beliefs, triggers, and words. The idea should make the ideal buyer feel seen, not be a generic fitness tip. Return STRICT JSON:\n" +
+  '{"angles":[{"title":"the idea in a few words","hook":"a spoken opening line in the buyer\'s world (no hard call-out, let them recognize themselves)","pain":"the specific pain or belief it speaks to","grounded_in":"which buyer insight this came from"}]}\n' +
+  "12 to 16 ideas. Concrete and specific to THIS buyer, never generic. No prose outside the JSON.";
 
-type Angle = { type?: string; title?: string; hook?: string; pain?: string; grounded_in?: string };
+type Angle = { title?: string; hook?: string; pain?: string; grounded_in?: string };
 
 function parse(text: string): Angle[] {
   const raw = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -82,7 +82,7 @@ export async function generateAngles(sb: SupabaseClient, client: string, anthrop
     angles.slice(0, 16).map((a, i) => ({
       client_key: client,
       batch_id: batchId,
-      angle_type: a.type === "ad" ? "ad" : "organic",
+      angle_type: "organic",
       title: String(a.title || "").slice(0, 200),
       hook: a.hook ? String(a.hook).slice(0, 400) : null,
       rationale: a.pain ? String(a.pain).slice(0, 400) : null,

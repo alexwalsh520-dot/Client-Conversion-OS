@@ -42,6 +42,8 @@ export async function GET(req: NextRequest) {
   steps.push(await hit("/api/buyer-dna/dossiers/run?creator=antwan&limit=15"));
   steps.push(await hit("/api/buyer-dna/grade/run?creator=antwan&limit=15"));
   steps.push(await hit("/api/buyer-dna/grade/run?creator=tyson&limit=15"));
+  // 6. Account snapshot: record today's follower count so the trend curve grows from here.
+  steps.push(await hit("/api/content/snapshot-account"));
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), steps });
 }

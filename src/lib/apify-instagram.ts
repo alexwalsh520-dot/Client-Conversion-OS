@@ -30,6 +30,7 @@ interface ApifyPost {
   commentsCount?: number;
   likesCount?: number;
   videoViewCount?: number;
+  videoPlayCount?: number;
   timestamp?: string;
   displayUrl?: string;
   videoUrl?: string;
@@ -88,6 +89,8 @@ export async function ingestViaApify(
         video_url: isVideo ? m.videoUrl || null : null,
         like_count: typeof m.likesCount === "number" ? m.likesCount : null,
         comment_count: typeof m.commentsCount === "number" ? m.commentsCount : null,
+        view_count: m.videoViewCount ?? null,
+        play_count: m.videoPlayCount ?? null,
         taken_at: m.timestamp || null,
         transcript_words: m.caption ? countWords(m.caption) : 0,
         raw: m as unknown as Record<string, unknown>,

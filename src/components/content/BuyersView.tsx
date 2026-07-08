@@ -113,7 +113,7 @@ export default function BuyersView({ creator }: { creator: string }) {
     ["icp", "The buyer", 0],
     ["angles", "Content angles", d.angles?.length || 0],
     ["buyers", "Who bought", withResearch.length],
-    ["grades", "Post grades", d.grades?.length || 0],
+    ["grades", "Scores", d.grades?.length || 0],
   ];
 
   return (
@@ -166,9 +166,8 @@ export default function BuyersView({ creator }: { creator: string }) {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
             {d.angles.map((a, i) => (
-              <div key={i} style={{ ...card, padding: 18, borderLeft: `3px solid ${a.angle_type === "ad" ? "var(--accent)" : "#7aa2f7"}` }}>
-                <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: a.angle_type === "ad" ? "var(--accent)" : "#7aa2f7" }}>{a.angle_type === "ad" ? "Ad" : "Organic"}</span>
-                <div style={{ fontSize: 15.5, fontWeight: 700, color: "var(--text-primary)", margin: "6px 0 8px", lineHeight: 1.4 }}>{a.title}</div>
+              <div key={i} style={{ ...card, padding: 18, borderLeft: "3px solid var(--accent)" }}>
+                <div style={{ fontSize: 15.5, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px", lineHeight: 1.4 }}>{a.title}</div>
                 {a.hook && <div style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 8 }}>&ldquo;{a.hook}&rdquo;</div>}
                 {a.rationale && <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Speaks to: {a.rationale}</div>}
               </div>
@@ -240,7 +239,7 @@ export default function BuyersView({ creator }: { creator: string }) {
         !d.grades?.length ? (
           <div style={card}>
             <div style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.6 }}>
-              No posts graded yet for {creator}. Grading runs automatically against the locked buyer profile as content comes in.
+              No posts scored yet for {creator}. Scoring runs automatically against your buyer as content comes in.
             </div>
           </div>
         ) : (
@@ -249,12 +248,12 @@ export default function BuyersView({ creator }: { creator: string }) {
               <div style={{ ...card, display: "flex", gap: 26, alignItems: "center", flexWrap: "wrap" }}>
                 <div>
                   <div style={{ fontSize: 30, fontWeight: 800, color: scoreColor(gradeStats.avg), lineHeight: 1 }}>{gradeStats.avg}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>average fit, {gradeStats.total} posts</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>average score, {gradeStats.total} posts</div>
                 </div>
                 <div style={{ display: "flex", gap: 18, fontSize: 13 }}>
-                  <span style={{ color: "#37d67a" }}>{gradeStats.on} on target</span>
-                  <span style={{ color: "#e4c66a" }}>{gradeStats.partial} partial</span>
-                  <span style={{ color: "#e0794d" }}>{gradeStats.off} off</span>
+                  <span style={{ color: "#8ce0ab" }}>{gradeStats.on} ON TARGET</span>
+                  <span style={{ color: "#e4c66a" }}>{gradeStats.partial} CLOSE</span>
+                  <span style={{ color: "#e0794d" }}>{gradeStats.off} DRIFT</span>
                 </div>
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Weakest first, so you know what to fix.</div>

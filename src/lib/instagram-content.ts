@@ -124,6 +124,40 @@ export async function ingestCreatorContent(slug: ContentCreator): Promise<Ingest
   }
 }
 
+export interface AccountStats {
+  followers_count: number;
+  follows_count: number;
+  media_count: number;
+}
+
+/** Fetch one creator's account-level stats (followers/follows/media). Returns null on any error. */
+export async function fetchAccountStats(slug: string): Promise<AccountStats | null> {
+  try {
+    const conn = await getConnection(slug);
+    if (!conn || conn.status !== "connected" || !conn.instagram_user_id) return null;
+    const token = await getDecryptedTokenForClient(conn.client_key as string);
+    if (!token) return null;
+
+    const url = `${GRAPH}/${conn.instagram_user_id}?fields=followers_count,follows_count,media_count&access_token=${token}`;
+    const res = await fetch(url, { cache: "no-store" });
+    const json: {
+      followers_count?: number;
+      follows_count?: number;
+      media_count?: number;
+      error?: { message?: string };
+    } = await res.json();
+    if (json.error) return null;
+
+    return {
+      followers_count: typeof json.followers_count === "number" ? json.followers_count : 0,
+      follows_count: typeof json.follows_count === "number" ? json.follows_count : 0,
+      media_count: typeof json.media_count === "number" ? json.media_count : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Ingest every active creator. */
 export async function ingestAllContent(): Promise<IngestResult[]> {
   const results: IngestResult[] = [];
