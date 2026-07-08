@@ -36,6 +36,12 @@ export async function GET(req: NextRequest) {
   // 4. Mine new calls + DMs into the content store (compute-once) + refresh audience read.
   steps.push(await hit("/api/content/mine?creator=tyson&limit=8"));
   steps.push(await hit("/api/content/mine?creator=antwan&limit=8"));
+  // 5. Buyer DNA: research any newly-closed buyers (compute-once) and grade new posts vs the
+  //    locked ICP. Bounded per run. The ICP + angles themselves regenerate on a weekly cron.
+  steps.push(await hit("/api/buyer-dna/dossiers/run?creator=tyson&limit=15"));
+  steps.push(await hit("/api/buyer-dna/dossiers/run?creator=antwan&limit=15"));
+  steps.push(await hit("/api/buyer-dna/grade/run?creator=antwan&limit=15"));
+  steps.push(await hit("/api/buyer-dna/grade/run?creator=tyson&limit=15"));
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), steps });
 }
