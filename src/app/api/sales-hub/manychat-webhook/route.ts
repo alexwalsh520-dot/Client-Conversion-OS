@@ -121,6 +121,12 @@ export async function POST(req: NextRequest) {
     const clientKey = normalizeClientKey(client);
     const adsClientKey = adsClientKeyFromDmClient(clientKey);
     const setterKey = normalizeSetterKey(setter_name);
+    // ManyChat sometimes sends unrendered merge fields (literal "{{last_name}}") instead of the
+    // real name. Strip them so name-based attribution fallbacks never match on template strings.
+    const stripTemplates = (v: unknown) =>
+      typeof v === "string" ? v.replace(/\{\{[^}]*\}\}/g, "").replace(/\s+/g, " ").trim() : "";
+    const cleanSubscriberName =
+      [stripTemplates(first_name), stripTemplates(last_name)].filter(Boolean).join(" ") || "Unknown";
     const keywordNormalized = normalizeKeyword(keyword);
     const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
     const keywordSourceEventId = sourceEventId({
@@ -133,7 +139,7 @@ export async function POST(req: NextRequest) {
 
     const tagEventPayload = {
       subscriber_id,
-      subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+      subscriber_name: cleanSubscriberName,
       tag_name: tag_name.toLowerCase().trim(),
       client: clientKey,
       setter_name: setterKey,
@@ -175,7 +181,7 @@ export async function POST(req: NextRequest) {
         keyword_raw: keywordRaw,
         keyword_normalized: keywordNormalized,
         subscriber_id,
-        subscriber_name: [first_name, last_name].filter(Boolean).join(" ") || "Unknown",
+        subscriber_name: cleanSubscriberName,
         setter_name: setterKey,
         event_at: normalizedEventAt,
         raw_payload: body,
@@ -218,7 +224,7 @@ export async function POST(req: NextRequest) {
         client: clientKey,
         manychatSubscriberId: subscriber_id,
         instagramHandle: instagram_handle,
-        leadName: [first_name, last_name].filter(Boolean).join(" ") || null,
+        leadName: cleanSubscriberName === "Unknown" ? null : cleanSubscriberName,
         eventAt: normalizedEventAt,
       });
     } catch (identityError) {
