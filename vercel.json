@@ -78,6 +78,10 @@
     {
       "path": "/api/cron/buyer-dna-weekly",
       "schedule": "0 13 * * 1"
+    },
+    {
+      "path": "/api/cron/morning-cmo-report",
+      "schedule": "15 2 * * *"
     }
   ]
 }
