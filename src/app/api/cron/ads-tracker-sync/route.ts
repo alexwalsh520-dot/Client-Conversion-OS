@@ -108,6 +108,13 @@ export async function GET(req: NextRequest) {
   // serves one fast, identical, labeled result. Never blocks the core sync.
   const snapshots = await refreshStandardWindows().catch(() => ({ computed: 0, failed: 0, ms: 0 }));
 
+  // Incrementally stamp recent sales into the attribution facts layer. Nothing reads it for display
+  // yet; this just keeps the (dollar-for-dollar reconciled) stamps current for when the fast read
+  // path is switched on. Never blocks the sync.
+  try {
+    await fetch(`${baseUrl}/api/ads-tracker/reconcile-facts?store=1`, { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } });
+  } catch { /* tolerate */ }
+
   return NextResponse.json({
     ok: salesRows.ok && adsTracker.ok,
     dateFrom,
