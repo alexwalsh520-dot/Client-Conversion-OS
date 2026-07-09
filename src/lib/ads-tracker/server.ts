@@ -1003,9 +1003,11 @@ async function fetchFreshSalesRows(
   }
 }
 
-// The synced copy counts as "fresh" if it was synced within this window. A
-// background cron refreshes it ~every 10 min; 20 min tolerates one missed run.
-const SALES_COPY_FRESH_MS = 20 * 60 * 1000;
+// The synced copy counts as "fresh" if it was synced within this window. A background cron
+// refreshes it ~every 10 min. We keep a wide tolerance (6h) on purpose: dashboard requests must
+// serve ONE labeled source and never trigger the slow live Google Sheet mid-request. If the copy
+// is genuinely older than this, the payload carries a staleness flag rather than switching sources.
+const SALES_COPY_FRESH_MS = 6 * 60 * 60 * 1000;
 
 async function salesCopyLatestSyncedAt(
   db: ReturnType<typeof getServiceSupabase>

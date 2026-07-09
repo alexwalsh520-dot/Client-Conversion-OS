@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refreshStandardWindows } from "@/lib/ads-tracker/snapshot";
+
+export const maxDuration = 300;
 
 // Lookback is a SAFETY FLOOR, not the whole story. The real rule (below) is
 // "always re-read from the 1st of last month through today" so the full current
@@ -101,11 +104,16 @@ export async function GET(req: NextRequest) {
   // here must never block the core sync, so it is awaited separately.
   const manychatOrigin = await callSyncRoute(baseUrl, "/api/sync/manychat-origin", body);
 
+  // Now that the underlying data is fresh, recompute the dashboard snapshots so the Ads tab
+  // serves one fast, identical, labeled result. Never blocks the core sync.
+  const snapshots = await refreshStandardWindows().catch(() => ({ computed: 0, failed: 0, ms: 0 }));
+
   return NextResponse.json({
     ok: salesRows.ok && adsTracker.ok,
     dateFrom,
     dateTo,
     elapsed_ms: Date.now() - startedAt,
+    snapshots,
     results: {
       "/api/sync/sales-tracker-rows": salesRows,
       "/api/sync/ads-tracker": adsTracker,
