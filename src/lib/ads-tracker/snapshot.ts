@@ -96,22 +96,18 @@ export async function serveDashboard(q: SnapQuery): Promise<Record<string, unkno
 export async function refreshStandardWindows(): Promise<{ computed: number; failed: number; ms: number }> {
   const today = todayEt();
   const monthStart = today.slice(0, 7) + "-01";
-  const windows: [string, string][] = [
-    [shift(today, -6), today],   // 7d
-    [monthStart, today],         // month to date
+  // Lean, reliable set that finishes well inside a single request/cron window. Everything else
+  // (other windows, ad level, per-creator month) fills in lazily on first request, then caches.
+  const jobs: SnapQuery[] = [
+    { account: "all", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
+    { account: "all", status: "active", level: "campaign", dateFrom: monthStart, dateTo: today },
+    { account: "tyson", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
+    { account: "antwan", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
   ];
-  const accounts: AdsTrackerAccount[] = ["all", "tyson", "antwan"];
   const start = Date.now();
   let computed = 0, failed = 0;
-  for (const account of accounts) {
-    for (const [dateFrom, dateTo] of windows) {
-      try {
-        await computeAndStore({ account, status: "active", level: "campaign", dateFrom, dateTo });
-        computed++;
-      } catch { failed++; }
-    }
+  for (const q of jobs) {
+    try { await computeAndStore(q); computed++; } catch { failed++; }
   }
-  // The most-used ad-level view for the whole account, 7d.
-  try { await computeAndStore({ account: "all", status: "active", level: "ad", dateFrom: shift(today, -6), dateTo: today }); computed++; } catch { failed++; }
   return { computed, failed, ms: Date.now() - start };
 }
