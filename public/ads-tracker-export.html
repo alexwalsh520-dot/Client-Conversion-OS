@@ -3016,9 +3016,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                         <tr key={c.id+":ad:"+ad.adId} className="ad-row">
                           <td>
                             <span style={{paddingLeft:30,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
-                              <span className="ad-id mono">{ad.adId}</span>
-                              <span style={{color:'var(--text-3)'}}>·</span>
-                              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                              <span title={ad.adId} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
                             </span>
                           </td>
                           {cols.slice(1).map(col=>{
@@ -3078,9 +3076,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                               <tr key={asKey+":"+ad.adId} className="ad-row">
                                 <td>
                                   <span style={{paddingLeft:56,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
-                                    <span className="ad-id mono">{ad.adId}</span>
-                                    <span style={{color:'var(--text-3)'}}>·</span>
-                                    <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                                    <span title={ad.adId} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
                                   </span>
                                 </td>
                                 {cols.slice(1).map(col=>{
@@ -3141,9 +3137,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                               <tr key={c.id+r.date+ad.adId} className="ad-row">
                                 <td>
                                   <span style={{paddingLeft:56,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:8,fontSize:12}}>
-                                    <span className="ad-id mono">{ad.adId}</span>
-                                    <span style={{color:'var(--text-3)'}}>·</span>
-                                    <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
+                                    <span title={ad.adId} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ad.adName}</span>
                                   </span>
                                 </td>
                                 {cols.slice(1).map(col=>{
@@ -3198,8 +3192,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                       )}
                       <span className="flat-camp">{ad.campaignName}</span>
                       <span className="flat-sep">·</span>
-                      <span className="ad-id mono">{ad.adId}</span>
-                      <span className="flat-name">{ad.adName}</span>
+                      <span className="flat-name" title={ad.adId}>{ad.adName}</span>
                     </span>
                   </td>
                   {cols.slice(1).map(col=>{ const cls=(col.cls?col.cls(m):"")+(col.calc?" calc":""); let v; try{v=col.fmt(m);}catch(e){v="—";} return <td key={col.k} className={cls}>{v}</td>; })}
@@ -10624,6 +10617,23 @@ function writeSnapshot(account, range, payload){
 }
 function clearSnapshots(){ try{ window.localStorage.removeItem(SNAP_NS); }catch(_){} }
 
+// Format an ISO string or ms timestamp as a New-York wall-clock time (h:mm AM/PM).
+// A null/blank/unparseable value shows as "unknown" so the freshness line never
+// renders a broken date.
+function fmtEtTime(val){
+  if(val==null || val==="") return "unknown";
+  try{
+    const t = new Date(val).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'});
+    return t || "unknown";
+  }catch(_){ return "unknown"; }
+}
+// Read the saved-at timestamp (ms) for a snapshot without pulling the payload, so
+// the stale banner can say when the device's saved copy was captured.
+function snapSavedAt(account, range){
+  try{ const e = snapReadAll()[snapKey(account, range)]; return (e && e.savedAt) ? e.savedAt : null; }
+  catch(_){ return null; }
+}
+
 function App(){
   // In public share-link mode the account is hard-locked to the token's creator
   // (the server enforces it too; this just keeps the UI honest and the selector
@@ -10651,6 +10661,8 @@ function App(){
   const [toast, setToast] = useState(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  const [freshness, setFreshness] = useState(null); // _freshness object from the last successful load (drives the freshness caption)
+  const [staleBanner, setStaleBanner] = useState(null); // {savedAt} set only when a live fetch FAILED and we fell back to the device's saved copy
   const [revalidating, setRevalidating] = useState(false); // background refresh in flight → shows the "Updating…" pill
 
   // ----- "All accounts" pager -----
@@ -10723,7 +10735,7 @@ function App(){
     const includesToday = dateRange.dateTo >= today;
     // Show the saved copy of this exact range INSTANTLY — no blank, no spinner.
     const cached = !force ? readSnapshot(effectiveAccount, dateRange) : null;
-    if(cached){ setDashboard(cached); setLoadError(null); setFromCache(true); }
+    if(cached){ setDashboard(cached); setLoadError(null); setFromCache(true); setStaleBanner(null); if(cached._freshness) setFreshness(cached._freshness); }
     // A fully-past range never changes → show the locked snapshot and stop, so
     // payroll-grade numbers don't re-roll. Only ranges that include today get a
     // background refresh, where new data can actually land.
@@ -10751,6 +10763,8 @@ function App(){
       setDashboard(json);
       writeSnapshot(effectiveAccount, dateRange, json);
       setFromCache(false);
+      setFreshness(json && json._freshness ? json._freshness : null);
+      setStaleBanner(null); // a live/successful load clears any stale warning
     }catch(err){
       console.error(err);
       // Live fetch failed — fall back to the last saved copy rather than wiping
@@ -10760,6 +10774,10 @@ function App(){
         setDashboard(stale);
         setLoadError(null);
         setFromCache(true);
+        // NEVER show the saved copy silently — raise the loud amber banner with
+        // the time that copy was captured on this device.
+        setStaleBanner({ savedAt: snapSavedAt(effectiveAccount, dateRange) });
+        if(stale._freshness) setFreshness(stale._freshness);
         if(!haveData) showToast("Showing saved data · live unavailable");
       }else if(!haveData){
         setDashboard({error:true, rows:[], dailyRows:[], recentEvents:[], eventsHistory:[]});
@@ -10862,6 +10880,9 @@ function App(){
       const adsOk = ads.ok;
       if(!salesOk && !adsOk) throw new Error("Sync failed");
       clearSnapshots();
+      // Force the server to recompute its cached snapshots with the rows we just
+      // synced, so the reload below reads fresh numbers, not a stale snapshot.
+      try{ await fetch("/api/ads-tracker?refresh=1", {cache:"no-store"}); }catch(_){ /* tolerate: reload still runs */ }
       await loadDashboard({silent:true, force:true});
       if(salesOk && adsOk) showToast("Synced · live data refreshed");
       else if(adsOk) showToast("Meta synced · sales sync needs setup");
@@ -10904,6 +10925,13 @@ function App(){
     <div className="app">
         {revalidating && <div className="swr-pill" role="status" aria-live="polite"><span className="swr-dot"></span>Updating live data…</div>}
         <div className="page">
+          {/* Loud stale warning: only shows when a live fetch failed and we fell
+              back to the device's saved copy. Never render the saved copy silent. */}
+          {staleBanner && (
+            <div style={{width:"100%",boxSizing:"border-box",background:"rgba(212,178,122,.12)",border:"1px solid #c9a96e",color:"#e4c66a",padding:"12px 14px",borderRadius:8,marginBottom:14,fontSize:13,lineHeight:1.4}}>
+              Live data failed to load. Showing your device's saved copy from {staleBanner.savedAt ? fmtEtTime(staleBanner.savedAt) : "an earlier time"}. Numbers may be old.
+            </div>
+          )}
           {/* Header */}
           <div className="page-head">
             <div>
@@ -10927,6 +10955,14 @@ function App(){
             </div>
             )}
           </div>
+
+          {/* Always-on freshness caption: when data is present, say exactly how
+              current it is (New-York wall-clock). Null timestamps show "unknown". */}
+          {dashboard && freshness && (
+            <div style={{color:"var(--text-4)",fontSize:11,opacity:.75,margin:"0 0 12px"}}>
+              Data as of {fmtEtTime(freshness.computedAt)} ET · sales synced {fmtEtTime(freshness.salesSyncedAt)} · Meta synced {fmtEtTime(freshness.metaSyncedAt)}
+            </div>
+          )}
 
           {/* Filter bar */}
           <div className="filter-bar">
