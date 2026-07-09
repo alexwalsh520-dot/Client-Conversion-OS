@@ -196,7 +196,23 @@ interface SalesAttributionOptions {
   manychatEvents?: KeywordEvent[];
   // Optional accumulator: counts how each sale was matched (link/name/none).
   matchStats?: SalesMatchStats;
+  // Optional per-sale attribution sink (the stamp-once layer). Emitted ONLY for attributed sales,
+  // carrying the exact keyword + collected cash the engine credits, so a stored copy is faithful by
+  // construction. Opt-in: existing callers are unaffected when this is omitted.
+  emitSaleFact?: (fact: SaleFact) => void;
 }
+
+export type SaleFact = {
+  sale_key: string;
+  client_key: string;
+  keyword_normalized: string;
+  method: string;
+  collected_cents: number;
+  contracted_cents: number;
+  occurred_day: string;
+  prospect_name: string;
+  subscriber_id: string | null;
+};
 
 interface Group {
   id: string;
@@ -1274,6 +1290,17 @@ function applySalesToGroups(
       group.contractedRevenue += row.revenue || 0;
       group.collectedRevenue += row.cashCollected || 0;
       group.grossProfit += saleGrossProfit(row);
+      options.emitSaleFact?.({
+        sale_key: `${row.date}|${name}|${row.manychatSubscriberId || ""}|${Math.round((row.cashCollected || 0) * 100)}`,
+        client_key: match.client_key,
+        keyword_normalized: match.keyword_normalized,
+        method,
+        collected_cents: Math.round((row.cashCollected || 0) * 100),
+        contracted_cents: Math.round((row.revenue || 0) * 100),
+        occurred_day: row.date,
+        prospect_name: row.name,
+        subscriber_id: row.manychatSubscriberId,
+      });
     }
   }
 
@@ -3778,7 +3805,7 @@ function syncedMetaDateAccounts(
   return synced;
 }
 
-export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
+export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { onSaleFact?: (fact: SaleFact) => void }) {
   const db = getServiceSupabase();
 
   const clientFilter =
@@ -4147,6 +4174,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery) {
     includeUnmatchedSales,
     manychatEvents,
     matchStats: salesMatchStats,
+    emitSaleFact: opts?.onSaleFact,
   });
   const alertBookings = [
     ...alertManualStandaloneResolutionEvents,
