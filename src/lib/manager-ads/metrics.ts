@@ -10,7 +10,8 @@
 
 import { getLeadHours } from "@/lib/sales-hub/lead-hours";
 import { CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
-import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
+import { type SheetRow } from "@/lib/google-sheets";
+import { getServiceSupabase } from "@/lib/supabase";
 import {
   REPORT_CLIENTS,
   countAppointmentsForDays,
@@ -83,13 +84,35 @@ function sheetForClient(rows: SheetRow[], client: CreatorKey) {
   };
 }
 
+// Read the SAME synced sales copy the canonical Ads tab uses (sales_tracker_rows), NOT the live
+// Google Sheet. This is the fix for the Manager view disagreeing with the Ads tab: before, one read
+// the live sheet and the other a cached snapshot, so they drifted. Now both read one synced source,
+// so they agree to the same sync. Only the source changes; the metrics are computed exactly as before.
+async function fetchSyncedSales(from: string, to: string): Promise<SheetRow[]> {
+  const sb = getServiceSupabase();
+  const { data } = await sb
+    .from("sales_tracker_rows")
+    .select("offer, call_taken, outcome, collected_revenue_cents, date")
+    .gte("date", from)
+    .lte("date", to);
+  return (data || []).map((r) => {
+    const row = r as { offer: string; call_taken: boolean; outcome: string; collected_revenue_cents: number };
+    return {
+      offer: row.offer,
+      callTaken: !!row.call_taken,
+      outcome: row.outcome,
+      cashCollected: (Number(row.collected_revenue_cents) || 0) / 100,
+    } as unknown as SheetRow;
+  });
+}
+
 export async function buildManagerAdsReport(from: string, to: string): Promise<ManagerAdsReport> {
   const warnings: string[] = [];
 
   const [dailySpend, leadHours, sheet] = await Promise.all([
     safe("spend", warnings, () => fetchDailySpend(from, to), {} as Record<string, Record<string, number>>),
     safe("messages", warnings, () => getLeadHours({ client: "all", dateFrom: from, dateTo: to }), null),
-    safe("sheet", warnings, () => fetchSheetData(from, to), [] as SheetRow[]),
+    safe("sheet", warnings, () => fetchSyncedSales(from, to), [] as SheetRow[]),
   ]);
 
   const messagesByClient: Record<string, number> = {};
