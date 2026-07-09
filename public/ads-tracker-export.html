@@ -2860,11 +2860,12 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
   const flatAdsAll = flatScope
     .flatMap(c => aggregateAdRowsForCampaign(c).map(ad => ({...ad, campaignId:c.id, campaignName:c.name, campaignShort:c.short, dot:c.dot})))
     .sort((a,b)=>(b.collected-a.collected)||(b.spend-a.spend));
-  // Ads-Manager model (one level deeper than the campaign filter): checked ad sets
-  // narrow the Ad-set / Ad views. None checked = all (display filter only, no re-aggregation).
-  const flatAdSets = selectedAdsetIds.size
-    ? flatAdSetsAll.filter(as => selectedAdsetIds.has(adsetSelectId(as.adsetId, as.adsetName)))
-    : flatAdSetsAll;
+  // Ads-Manager model (one level deeper than the campaign filter): the Ad-set view is
+  // the PICKER, so it always lists every ad set (flatAdSetsAll) and unselected ones stay
+  // visible and checkable, the same way the campaign view keeps every campaign visible.
+  // Checked ad sets narrow only the deeper Ad view to the union of their ads.
+  // None checked = all (display filter only, no re-aggregation).
+  const allAdsetSelectIds = flatAdSetsAll.map(as => adsetSelectId(as.adsetId, as.adsetName));
   const flatAds = selectedAdsetIds.size
     ? flatAdsAll.filter(ad => selectedAdsetIds.has(adsetSelectId(ad.adsetId, ad.adsetName)))
     : flatAdsAll;
@@ -2919,6 +2920,12 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
           </button>
         </div>
         <div className="tbl-toolbar-meta">
+          {view==="adset" && flatAdSetsAll.length > 0 && (
+            <span className="tx-actions" style={{marginLeft:0}}>
+              <button className="tx-mini" onClick={()=>setSelectedAdsetIds(new Set(allAdsetSelectIds))}>Select all</button>
+              <button className="tx-mini" onClick={()=>setSelectedAdsetIds(new Set())}>Clear</button>
+            </span>
+          )}
           {selectedAdsetIds.size > 0 && (
             <span className="tbl-sel-chip">
               {selectedAdsetIds.size} ad set{selectedAdsetIds.size>1?"s":""} selected
@@ -3155,7 +3162,7 @@ function CampaignTable({account, status, loggedTotals, campaigns=CAMPAIGNS}){
                 </React.Fragment>
               );
             })}
-            {view==="adset" && (flatAdSets.length ? flatAdSets.map(as => {
+            {view==="adset" && (flatAdSetsAll.length ? flatAdSetsAll.map(as => {
               const m = deriveRow({date:as.adsetName, spend:as.spend, imp:as.imp, clicks:as.clicks, msgs:as.msgs, calls:as.calls, clients:as.clients, taken:as.taken, collected:as.collected});
               return (
                 <tr key={as.campaignId+":adset:"+(as.adsetId||as.adsetName)} className="flat-row">
