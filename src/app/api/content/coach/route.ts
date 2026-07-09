@@ -28,15 +28,25 @@ ${ctx}`;
 interface Msg { role: "user" | "assistant"; content: string }
 
 export async function POST(req: NextRequest) {
-  const s = await auth();
-  if (!s?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => null);
-  const slug = (body?.creator || "").toLowerCase();
   const messages: Msg[] = Array.isArray(body?.messages) ? body.messages : [];
-  if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   if (!messages.length) return NextResponse.json({ error: "No messages" }, { status: 400 });
 
   const sb = getServiceSupabase();
+  // Access: a valid content share token (public creator) OR an operator session. With a token, the
+  // creator is derived from the token; never trust a client-sent slug in that case.
+  let slug = "";
+  const token = body?.token ? String(body.token) : "";
+  if (token) {
+    const { data: link } = await sb.from("public_share_links").select("client_key, revoked, kind").eq("token", token).maybeSingle();
+    if (!link || (link as { revoked: boolean }).revoked || (link as { kind: string }).kind !== "content") return NextResponse.json({ error: "Invalid link" }, { status: 403 });
+    slug = String((link as { client_key: string }).client_key).toLowerCase();
+  } else {
+    const s = await auth();
+    if (!s?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    slug = (body?.creator || "").toLowerCase();
+  }
+  if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   const [{ data: audience }, { data: voc }, { data: reels }] = await Promise.all([
     sb.from("content_audience_read").select("summary, metrics").eq("client_key", slug).maybeSingle(),
     sb.from("content_voc").select("bucket, quote, attribution").eq("client_key", slug).order("sort_order").limit(40),

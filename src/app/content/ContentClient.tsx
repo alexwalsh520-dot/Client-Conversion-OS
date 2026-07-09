@@ -1,143 +1,90 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Film, Share2, Loader2, Check, BarChart3, Sparkles, Users } from "lucide-react";
-import AnalyticsView from "@/components/content/AnalyticsView";
-import CoachView from "@/components/content/CoachView";
-import BuyersView from "@/components/content/BuyersView";
-import type { CreatorContent } from "@/lib/content-data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Film, Loader2, LayoutGrid, TrendingUp, Sparkles, Settings } from "lucide-react";
+import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
+import TrendsView from "@/components/content/TrendsView";
+import CoachStudioView from "@/components/content/CoachStudioView";
+import ShareSettings from "@/components/content/ShareSettings";
+import type { DateRange } from "@/components/content/CalendarRange";
 
 const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Antwan" }];
 
-export default function ContentClient() {
-  const [data, setData] = useState<Record<string, CreatorContent>>({});
-  const [active, setActive] = useState("antwan");
-  const [mode, setMode] = useState<"analytics" | "coach" | "buyers">("analytics");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [shareFor, setShareFor] = useState<{ creator: string; url: string } | null>(null);
+type Studio = {
+  creator: string;
+  icp: Record<string, unknown> | null;
+  posts: StudioPost[];
+  snapshots: { date: string; followers: number }[];
+  angles: { title: string; hook: string | null; rationale: string | null }[];
+  dossiers: { name: string; keyword?: string | null; research: Record<string, unknown> }[];
+  voc: Record<string, string[]>;
+  scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
+};
 
-  const load = useCallback(async () => {
+function defaultRange(): DateRange {
+  const to = new Date();
+  const from = new Date(to.getTime() - 89 * 86_400_000);
+  const f = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: f(from), to: f(to) };
+}
+
+export default function ContentClient() {
+  const [active, setActive] = useState("tyson");
+  const [page, setPage] = useState<"content" | "trends" | "coach">("content");
+  const [data, setData] = useState<Studio | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<DateRange>(defaultRange);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const load = useCallback(async (creator: string) => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/content", { cache: "no-store" });
-      const json = await res.json();
-      const map: Record<string, CreatorContent> = {};
-      for (const c of json.creators || []) map[c.creator] = c;
-      setData(map);
+      const res = await fetch(`/api/content/studio?creator=${creator}`, { cache: "no-store" });
+      setData(await res.json());
     } finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(active); }, [active, load]);
 
-  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 5000); };
-
-  const run = async (key: string, fn: () => Promise<string>) => {
-    setBusy(key);
-    try { flash(await fn()); await load(); }
-    catch (e) { flash(`Error: ${e instanceof Error ? e.message : "failed"}`); }
-    finally { setBusy(null); }
-  };
-
-  const shareLink = () => run("share", async () => {
-    const j = await (await fetch(`/api/content/share-link?creator=${active}`)).json();
-    if (j.url) {
-      setShareFor({ creator: active, url: j.url });
-      await navigator.clipboard.writeText(j.url).catch(() => {});
-      return `Public link for ${CREATORS.find((c) => c.slug === active)?.name} copied — no login needed.`;
-    }
-    return `Share: ${j.error || "issue"}`;
-  });
-
-  const actionBtn = (key: string, fn: () => void, Icon: typeof Share2, label: string) => (
-    <button onClick={fn} disabled={!!busy}
-      style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 13px", borderRadius: 10, border: "1px solid var(--border-hover)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 12.5, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy && busy !== key ? 0.45 : 1 }}>
-      {busy === key ? <Loader2 size={14} className="spin" /> : <Icon size={14} />} {label}
-    </button>
-  );
-
-  const current = data[active];
+  const tabs = useMemo(() => ([
+    ["content", "My Content", LayoutGrid],
+    ["trends", "Trends", TrendingUp],
+    ["coach", "Coach", Sparkles],
+  ] as const), []);
 
   return (
-    <div style={{ padding: "26px 30px", maxWidth: 1320, margin: "0 auto" }}>
+    <div style={{ padding: "26px 30px", maxWidth: 1120, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 4 }}>
         <Film size={23} style={{ color: "var(--accent)" }} />
         <h1 style={{ fontSize: 25, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Content</h1>
-      </div>
-      <p style={{ color: "var(--text-muted)", margin: "0 0 20px", fontSize: 13.5 }}>
-        Turn {current?.name || "the creator"}&apos;s content into a flywheel — see what performs, hear who&apos;s actually showing up, and shape new reels that pull in better buyers to retarget.
-      </p>
-
-      {/* Creator toggle + mode switch + actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <span style={{ flex: 1 }} />
         <div style={{ display: "inline-flex", background: "var(--bg-glass)", borderRadius: 10, padding: 3, border: "1px solid var(--border-primary)" }}>
           {CREATORS.map((c) => (
-            <button key={c.slug} onClick={() => setActive(c.slug)}
-              style={{ padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: active === c.slug ? "var(--accent)" : "transparent", color: active === c.slug ? "#1a1a1a" : "var(--text-secondary)" }}>{c.name}</button>
+            <button key={c.slug} onClick={() => setActive(c.slug)} style={{ padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: active === c.slug ? "var(--accent)" : "transparent", color: active === c.slug ? "#1a1a1a" : "var(--text-secondary)" }}>{c.name}</button>
           ))}
         </div>
-        <div style={{ flex: 1 }} />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#37d67a", boxShadow: "0 0 6px #37d67a" }} /> Always up to date
-        </span>
-        {actionBtn("share", shareLink, Share2, "Share link")}
+        <button onClick={() => setSettingsOpen(true)} title="Share links" style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", display: "grid", placeItems: "center" }}><Settings size={17} /></button>
       </div>
+      <p style={{ color: "var(--text-muted)", margin: "0 0 20px", fontSize: 13.5 }}>See which content pulls the people who actually buy, and make more of it.</p>
 
-      {/* Mode switch — the two surfaces */}
       <div style={{ display: "inline-flex", gap: 4, background: "var(--bg-glass)", borderRadius: 12, padding: 4, border: "1px solid var(--border-primary)", marginBottom: 22 }}>
-        {([["analytics", "Analytics", BarChart3], ["coach", "Coach", Sparkles], ["buyers", "Buyers", Users]] as const).map(([k, label, Icon]) => (
-          <button key={k} onClick={() => setMode(k)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, background: mode === k ? "var(--bg-card)" : "transparent", color: mode === k ? "var(--accent)" : "var(--text-muted)", boxShadow: mode === k ? "0 1px 0 var(--border-hover)" : "none" }}>
+        {tabs.map(([k, label, Icon]) => (
+          <button key={k} onClick={() => setPage(k)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, background: page === k ? "var(--bg-card)" : "transparent", color: page === k ? "var(--accent)" : "var(--text-muted)" }}>
             <Icon size={15} /> {label}
           </button>
         ))}
       </div>
 
-      {toast && (
-        <div className="glass" style={{ marginBottom: 18, padding: "10px 14px", borderRadius: 10, background: "var(--accent-soft)", border: "1px solid var(--accent)", color: "var(--text-primary)", fontSize: 13, display: "flex", gap: 8, alignItems: "center", wordBreak: "break-all" }}>
-          <Check size={15} style={{ color: "var(--accent)", flexShrink: 0 }} /> {toast}
-        </div>
-      )}
-
-      {shareFor && (
-        <div className="glass" style={{ marginBottom: 18, padding: "14px 16px", borderRadius: 12, background: "var(--bg-card)", border: "1px solid var(--accent)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <Share2 size={15} style={{ color: "var(--accent)" }} />
-            <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 13.5 }}>
-              Public link for {CREATORS.find((c) => c.slug === shareFor.creator)?.name}
-            </span>
-            <span style={{ fontSize: 11.5, color: "#37d67a" }}>no login needed</span>
-            <button onClick={() => setShareFor(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>dismiss</button>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input readOnly value={shareFor.url} onFocus={(e) => e.currentTarget.select()}
-              style={{ flex: 1, minWidth: 240, background: "var(--bg-glass)", border: "1px solid var(--border-primary)", borderRadius: 8, padding: "8px 10px", color: "var(--text-secondary)", fontSize: 12.5, fontFamily: "monospace" }} />
-            <button onClick={() => { navigator.clipboard.writeText(shareFor.url).catch(() => {}); flash("Copied."); }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 8, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-              <Check size={14} /> Copy
-            </button>
-            <a href={shareFor.url} target="_blank" rel="noreferrer"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 12.5, fontWeight: 600, textDecoration: "none" }}>
-              Open
-            </a>
-          </div>
-          <p style={{ margin: "9px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
-            Send this to {CREATORS.find((c) => c.slug === shareFor.creator)?.name}. It opens their content view only — no sidebar, no other tabs, no login.
-          </p>
-        </div>
-      )}
-
-      {mode === "buyers" ? (
-        <BuyersView creator={active} />
-      ) : loading ? (
-        <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading…</div>
-      ) : !current ? (
-        <div style={{ color: "var(--text-muted)", padding: 40 }}>No data.</div>
-      ) : mode === "analytics" ? (
-        <AnalyticsView data={current} />
+      {loading || !data ? (
+        <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading...</div>
+      ) : page === "content" ? (
+        <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
+      ) : page === "trends" ? (
+        <TrendsView posts={data.posts} snapshots={data.snapshots} range={range} />
       ) : (
-        <CoachView data={current} creator={active} />
+        <CoachStudioView data={{ icp: data.icp, angles: data.angles, dossiers: data.dossiers, voc: data.voc }} creator={active} />
       )}
 
+      {settingsOpen && <ShareSettings creators={CREATORS} onClose={() => setSettingsOpen(false)} />}
       <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
