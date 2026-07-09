@@ -36,11 +36,35 @@ export async function GET(req: NextRequest) {
   const payload = (await getAdsTrackerDashboard(
     { account: "all", status: "all", level: "ad", dateFrom, dateTo },
     { onSaleFact: (f) => facts.set(f.sale_key, f) },
-  )) as { summary?: { paidAttributedRevenue?: number } };
+  )) as { summary?: { paidAttributedRevenue?: number }; adRoas?: Array<{ label?: string; collectedRevenue?: number }> };
 
   const emittedCents = [...facts.values()].reduce((s, f) => s + (f.collected_cents || 0), 0);
   const engineAttributedCents = Math.round((payload.summary?.paidAttributedRevenue || 0) * 100);
   const diffCents = emittedCents - engineAttributedCents;
+
+  // Per-keyword reconciliation: sum the stamps by keyword and compare to the engine's per-keyword
+  // collected. Catches offsetting errors that a matching grand total could hide.
+  const emitByKw = new Map<string, number>();
+  for (const f of facts.values()) {
+    const k = (f.keyword_normalized || "").toLowerCase();
+    emitByKw.set(k, (emitByKw.get(k) || 0) + (f.collected_cents || 0));
+  }
+  const engineByKw = new Map<string, number>();
+  for (const r of payload.adRoas || []) {
+    const k = String(r.label || "").toLowerCase();
+    engineByKw.set(k, (engineByKw.get(k) || 0) + Math.round((r.collectedRevenue || 0) * 100));
+  }
+  let worstKwDiffCents = 0;
+  let mismatchedKeywords = 0;
+  const worst: { keyword: string; diff: string }[] = [];
+  for (const k of new Set([...emitByKw.keys(), ...engineByKw.keys()])) {
+    const d = (emitByKw.get(k) || 0) - (engineByKw.get(k) || 0);
+    if (d !== 0) {
+      mismatchedKeywords++;
+      if (Math.abs(d) > Math.abs(worstKwDiffCents)) worstKwDiffCents = d;
+      if (worst.length < 6) worst.push({ keyword: k, diff: `$${(d / 100).toFixed(2)}` });
+    }
+  }
 
   let stored = 0;
   if (store && facts.size) {
@@ -60,6 +84,12 @@ export async function GET(req: NextRequest) {
     engineAttributed: `$${Math.round(engineAttributedCents / 100).toLocaleString()}`,
     diff: `$${(diffCents / 100).toFixed(2)}`,
     reconciles: diffCents === 0,
+    perKeyword: {
+      mismatchedKeywords,
+      worstDiff: `$${(worstKwDiffCents / 100).toFixed(2)}`,
+      reconciles: mismatchedKeywords === 0,
+      worst,
+    },
     stored,
   });
 }
