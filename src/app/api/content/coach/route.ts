@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { redactMoneyDeep } from "@/lib/redact-money";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,16 +63,22 @@ export async function POST(req: NextRequest) {
     .map((r) => `• (${r.like_count || 0} likes) ${(r.caption || "").replace(/\n/g, " ").slice(0, 140)}${r.transcript ? ` | said: ${r.transcript.slice(0, 200)}` : ""}`)
     .join("\n");
 
+  // Public (token) sessions: money-redact the buyer-derived grounding (audience read + VOC) so no
+  // dollar figure enters the model's context. The creator's own reel captions/transcripts are left as-is.
+  const audienceSummary = audience?.summary ? (token ? redactMoneyDeep(audience.summary) : audience.summary) : "";
+  const vocSafe = token ? redactMoneyDeep(vocText) : vocText;
+
   const ctx = [
-    audience?.summary ? `WHO'S SHOWING UP / LEAD QUALITY:\n${audience.summary}` : "WHO'S SHOWING UP: (not analyzed yet — tell the user to run the audience read)",
-    vocText ? `VERBATIM PROSPECT QUOTES:\n${vocText}` : "VERBATIM QUOTES: (none yet)",
+    audienceSummary ? `WHO'S SHOWING UP / LEAD QUALITY:\n${audienceSummary}` : "WHO'S SHOWING UP: (not analyzed yet — tell the user to run the audience read)",
+    vocSafe ? `VERBATIM PROSPECT QUOTES:\n${vocSafe}` : "VERBATIM QUOTES: (none yet)",
     topReels ? `TOP-PERFORMING CONTENT (by likes):\n${topReels}` : "TOP CONTENT: (no reels pulled yet)",
   ].join("\n\n");
 
   try {
     const client = new Anthropic();
     const resp = await client.messages.create({
-      model: MODEL, max_tokens: 1500, system: COACH_SYSTEM(NAMES[slug] || slug, ctx),
+      model: MODEL, max_tokens: 1500,
+      system: COACH_SYSTEM(NAMES[slug] || slug, ctx) + (token ? "\n\nNever state specific dollar figures about buyers or revenue." : ""),
       messages: messages.slice(-12).map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
     });
     logAiUsage({ feature: "content-coach", model: MODEL, usage: resp.usage });

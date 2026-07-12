@@ -12,7 +12,8 @@ const MODEL = "claude-sonnet-4-6";
 const SYS =
   "You turn a fitness creator's REAL buyer research into ORGANIC content ideas the creator can film. Ground every idea in the buyers' own pains, beliefs, triggers, and words. The idea should make the ideal buyer feel seen, not be a generic fitness tip. Return STRICT JSON:\n" +
   '{"angles":[{"title":"the idea in a few words","hook":"a spoken opening line in the buyer\'s world (no hard call-out, let them recognize themselves)","pain":"the specific pain or belief it speaks to","grounded_in":"which buyer insight this came from"}]}\n' +
-  "12 to 16 ideas. Concrete and specific to THIS buyer, never generic. No prose outside the JSON.";
+  "12 to 16 ideas. Concrete and specific to THIS buyer, never generic. No prose outside the JSON." +
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'deep in debt', 'tight monthly budget').";
 
 type Angle = { title?: string; hook?: string; pain?: string; grounded_in?: string };
 

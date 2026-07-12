@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
 import type { Icp } from "./icp";
+import { extractJson } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -20,18 +21,12 @@ export type TrendBrief = {
 const SYS =
   "You research what short-form content (Instagram Reels, TikTok) is CURRENTLY working for fitness coaches to attract a specific type of premium buyer. Use web search to find what is performing in the last 60-90 days: formats, hook styles, delivery styles, pacing. You care about what attracts BUYERS of high-ticket coaching, not what farms empty views. Return STRICT JSON:\n" +
   '{"summary":"2-3 sentences on what is working right now for this buyer type","formats":[{"name":"format in a few words","why":"why it works for this buyer right now","signal":"the evidence you saw"}],"hooks":["a hook STYLE that is landing right now"],"do":["specific things to do in content right now"],"avoid":["things that are burned out or repel this buyer"]}\n' +
-  "5 to 8 formats, 4 to 8 items in the other lists. Specific and current, never generic evergreen advice. No prose outside the JSON.";
+  "5 to 8 formats, 4 to 8 items in the other lists. Specific and current, never generic evergreen advice. No prose outside the JSON." +
+  "\nDo not use double-quote characters inside JSON string values. Keep every string field to at most 2 sentences." +
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'deep in debt', 'tight monthly budget').";
 
 function parse(text: string): TrendBrief | null {
-  const raw = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  const a = raw.indexOf("{");
-  const b = raw.lastIndexOf("}");
-  if (a < 0 || b < 0) return null;
-  try {
-    return JSON.parse(raw.slice(a, b + 1)) as TrendBrief;
-  } catch {
-    return null;
-  }
+  return extractJson<TrendBrief>(text);
 }
 
 export async function getCurrentTrendBrief(sb: SupabaseClient, client: string) {
@@ -81,42 +76,53 @@ export async function refreshTrendBrief(
 
   const userMsg = `THE BUYER THIS CREATOR NEEDS TO ATTRACT:\n${buyerDigest}\n\nToday is ${new Date().toISOString().slice(0, 10)}. Research what is working on Instagram Reels and TikTok RIGHT NOW to attract this kind of person to a fitness coach, then return the JSON.`;
 
-  let text = "";
-  let searched = true;
-  try {
-    const resp = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 3000,
-      system: SYS,
-      // Server-side web search tool; the API runs the searches itself.
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 } as unknown as Anthropic.Tool],
-      messages: [{ role: "user", content: userMsg }],
-    });
-    logAiUsage({ feature: "buyer-dna-trends", model: MODEL, usage: resp.usage });
-    text = resp.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-  } catch {
-    // Web search not available on this key/org — fall back to model knowledge, flagged as such.
-    searched = false;
+  // One generation attempt: live web search, falling back to model knowledge if the search tool is
+  // unavailable on this key/org. Returns null text only if the API call itself throws.
+  const gen = async (): Promise<{ text: string; searched: boolean } | null> => {
     try {
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 3000,
-        system: SYS.replace("Use web search to find", "From your knowledge, describe"),
+        system: SYS,
+        // Server-side web search tool; the API runs the searches itself.
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 } as unknown as Anthropic.Tool],
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-trends", model: MODEL, usage: resp.usage });
-      const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-      text = tb?.text || "";
+      return {
+        text: resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n"),
+        searched: true,
+      };
     } catch {
-      return { ok: false, reason: "Trend research failed." };
+      try {
+        const resp = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 3000,
+          system: SYS.replace("Use web search to find", "From your knowledge, describe"),
+          messages: [{ role: "user", content: userMsg }],
+        });
+        logAiUsage({ feature: "buyer-dna-trends", model: MODEL, usage: resp.usage });
+        const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
+        return { text: tb?.text || "", searched: false };
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  let res = await gen();
+  if (!res) return { ok: false, reason: "Trend research failed." };
+  let brief = parse(res.text);
+  // Retry the generation once if the model's JSON did not parse into a usable brief.
+  if (!brief || !(brief.formats || []).length) {
+    const retry = await gen();
+    if (retry) {
+      res = retry;
+      brief = parse(retry.text);
     }
   }
-
-  const brief = parse(text);
   if (!brief || !(brief.formats || []).length) return { ok: false, reason: "Could not parse a trend brief from the model." };
+  const searched = res.searched;
 
   const current = await getCurrentTrendBrief(sb, client);
   const version = current ? Number(current.version) + 1 : 1;

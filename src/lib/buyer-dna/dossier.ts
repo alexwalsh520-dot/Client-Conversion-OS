@@ -11,7 +11,8 @@ const MODEL = "claude-sonnet-4-6";
 const SYS =
   "You are researching ONE person who PAID for a fitness coaching program, using their real sales call transcript and their DM conversation. Find what actually made this person buy, in THEIR terms, so the coach can make content that attracts more people like them. Use only what the material supports. Never invent. Return STRICT JSON:\n" +
   '{"summary":"2-3 plain sentences on who they are and why they bought","what_brought_them_in":"the trigger or what was going on in their life when they reached out","pains":["specific pain in their words"],"limiting_beliefs":["a belief that was holding them back"],"objections":["what made them hesitate before buying"],"deciding_moment":"what tipped them into buying","their_words":["short verbatim quotes worth mirroring in content"]}\n' +
-  "3 to 6 items max per list. If something is genuinely not in the material, use an empty array or a short 'unclear'. No prose outside the JSON.";
+  "3 to 6 items max per list. If something is genuinely not in the material, use an empty array or a short 'unclear'. No prose outside the JSON." +
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'deep in debt', 'tight monthly budget').";
 
 export type Research = {
   summary?: string;
