@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Grade idea sets that are behind the current trend brief (includes the ICP-wide set).
-  let graded = 0;
+  let graded = 0, staleCount = 0;
   const brief = await getCurrentTrendBrief(sb, slug);
   if (brief) {
     const { data: stale } = await sb
@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
     for (const r of (stale || []) as { person_key: string | null; trend_version: number | null }[]) {
       if ((r.trend_version || 0) < brief.version) staleKeys.add(r.person_key === null ? " icp" : r.person_key);
     }
+    staleCount = staleKeys.size;
     for (const key of [...staleKeys].slice(0, gradeLimit)) {
       if (!canProceed()) { budgetExhausted = true; break; }
       const res = await gradeIdeaSet(sb, slug, key === " icp" ? null : key, brief.brief, brief.version, anthropic, { canProceed });
@@ -104,6 +105,8 @@ export async function POST(req: NextRequest) {
     trend_version: brief?.version ?? null,
     remaining,
     budget_exhausted: budgetExhausted,
+    // Sets still behind the current trend brief after this run (0 = fully converged; no brief → 0).
+    stale_grades_remaining: Math.max(0, staleCount - graded),
     note: remaining ? `Run again, ${remaining} buyers still need idea sets.` : "All researched buyers have idea sets.",
   });
 }
