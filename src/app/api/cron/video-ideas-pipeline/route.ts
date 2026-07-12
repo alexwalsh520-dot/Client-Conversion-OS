@@ -4,11 +4,10 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-// Weekly refresh of the LEARNED parts: re-derive Tyson's ICP from all qualifying buyers (it evolves
-// as new $1200+ buyers close), regenerate the buyer-grounded content angles for both creators, then
-// refresh the "what is working on social right now" trend brief (live web search) and rebuild the
-// ICP-wide 10-video playbook graded against it. Buyer idea sets are re-graded against the new brief
-// by the recurring video-ideas cron. Antwan's ICP is fixed, so it is not re-derived here.
+// Keeps the Buyers tab full on its own: every researched $1,200+ buyer gets a 10-video idea set
+// (compute-once, a few buyers per run), and any idea set behind the current trend brief gets
+// re-graded. Runs on the odd hours so it never overlaps the content-pipeline cron (even hours).
+// Also seeds the trend brief + ICP playbook on first run if the weekly cron has not fired yet.
 export async function GET(req: NextRequest) {
   const secret = req.headers.get("authorization")?.replace("Bearer ", "");
   if (secret !== process.env.CRON_SECRET) {
@@ -26,13 +25,16 @@ export async function GET(req: NextRequest) {
   };
 
   const steps: unknown[] = [];
-  steps.push(await hit("/api/buyer-dna/icp/generate?creator=tyson"));
-  steps.push(await hit("/api/buyer-dna/angles/run?creator=tyson"));
-  steps.push(await hit("/api/buyer-dna/angles/run?creator=antwan"));
-  steps.push(await hit("/api/buyer-dna/trends/run?creator=tyson"));
-  steps.push(await hit("/api/buyer-dna/trends/run?creator=antwan"));
-  steps.push(await hit("/api/buyer-dna/icp-ideas/run?creator=tyson"));
-  steps.push(await hit("/api/buyer-dna/icp-ideas/run?creator=antwan"));
+  for (const creator of ["tyson", "antwan"]) {
+    // Seed the trend brief + ICP playbook if they do not exist yet (no-ops once seeded weekly).
+    const ideas = await hit(`/api/buyer-dna/video-ideas/run?creator=${creator}&limit=3&gradeLimit=4`);
+    steps.push(ideas);
+    const body = (ideas as { body?: { trend_version?: number | null } }).body;
+    if (body && body.trend_version === null) {
+      steps.push(await hit(`/api/buyer-dna/trends/run?creator=${creator}`));
+      steps.push(await hit(`/api/buyer-dna/icp-ideas/run?creator=${creator}`));
+    }
+  }
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), steps });
 }

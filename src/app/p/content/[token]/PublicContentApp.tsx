@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, LayoutGrid, TrendingUp, Sparkles } from "lucide-react";
+import { Loader2, LayoutGrid, TrendingUp, Sparkles, Users, Clapperboard } from "lucide-react";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
 import TrendsView from "@/components/content/TrendsView";
 import CoachStudioView from "@/components/content/CoachStudioView";
+import BuyerIdeasView, { type BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
+import IcpIdeasView, { type TrendBriefView } from "@/components/content/IcpIdeasView";
+import type { VideoIdea } from "@/components/content/VideoIdeaCard";
 import type { DateRange } from "@/components/content/CalendarRange";
 
 type Studio = {
@@ -14,6 +17,9 @@ type Studio = {
   snapshots: { date: string; followers: number }[];
   angles: { title: string; hook: string | null; rationale: string | null }[];
   dossiers: { name: string; keyword?: string | null; research: Record<string, unknown> }[];
+  buyerIdeas: BuyerIdeaSet[];
+  icpIdeas: VideoIdea[];
+  trendBrief: TrendBriefView | null;
   voc: Record<string, string[]>;
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
@@ -26,7 +32,7 @@ function defaultRange(): DateRange {
 }
 
 export default function PublicContentApp({ token, name }: { token: string; name: string }) {
-  const [page, setPage] = useState<"content" | "trends" | "coach">("content");
+  const [page, setPage] = useState<"content" | "trends" | "buyers" | "playbook" | "coach">("content");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -38,7 +44,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  const tabs = [["content", "My Content", LayoutGrid], ["trends", "Trends", TrendingUp], ["coach", "Coach", Sparkles]] as const;
+  const tabs = [["content", "My Content", LayoutGrid], ["trends", "Trends", TrendingUp], ["buyers", "Buyers", Users], ["playbook", "Playbook", Clapperboard], ["coach", "Coach", Sparkles]] as const;
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg, #09090b)", padding: "22px 18px 60px" }}>
@@ -61,6 +67,10 @@ export default function PublicContentApp({ token, name }: { token: string; name:
           <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
         ) : page === "trends" ? (
           <TrendsView posts={data.posts} snapshots={data.snapshots} range={range} />
+        ) : page === "buyers" ? (
+          <BuyerIdeasView buyers={data.buyerIdeas || []} />
+        ) : page === "playbook" ? (
+          <IcpIdeasView icp={data.icp} ideas={data.icpIdeas || []} trend={data.trendBrief} />
         ) : (
           <CoachStudioView data={{ icp: data.icp, angles: data.angles, dossiers: data.dossiers, voc: data.voc }} creator={data.creator} token={token} />
         )}
