@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { redactMoneyDeep } from "@/lib/redact-money";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // One payload that powers the whole Creator Content Studio (My Content, Trends, Coach).
 // Access: operator session (?creator=) OR a valid share token (?token=). Never trust a client
-// creator slug when a token is used; the creator is derived from the token. No dollar amounts ever.
+// creator slug when a token is used; the creator is derived from the token. Dollar figures: the buyer
+// pipeline grounds its text in real sales calls, so LLM-written summaries/ideas can quote prices and
+// buyers' personal finances. For token/creator viewers every buyer-text field is run through
+// redactMoneyDeep before returning, so no amount reaches the public share page. Posts (the creator's
+// own captions/transcripts) and operator sessions are left unredacted.
 type PostRow = {
   ig_media_id: string; permalink: string | null; media_type: string | null; caption: string | null;
   transcript: string | null; thumbnail_url: string | null; stored_thumb_url: string | null;
@@ -138,18 +143,23 @@ export async function GET(req: NextRequest) {
     .filter(Boolean);
   const trendRow = trendRes.data && trendRes.data[0] ? (trendRes.data[0] as { brief: Record<string, unknown>; version: number; searched: boolean; searched_at: string }) : null;
 
+  // Token/creator viewers get every buyer-derived text field money-redacted; operators see it raw.
+  // Posts (the creator's own captions/transcripts) and the numeric scoreboard are never touched.
+  const redact = viewer === "creator";
+  const R = <T>(v: T): T => (redact ? redactMoneyDeep(v) : v);
+
   return NextResponse.json({
     creator,
     viewer,
-    icp: icpRow ? { ...icpRow.icp, mode: icpRow.mode } : null,
+    icp: R(icpRow ? { ...icpRow.icp, mode: icpRow.mode } : null),
     posts,
     snapshots: (snapsRes.data || []).map((s) => ({ date: (s as { snapshot_date: string }).snapshot_date, followers: Number((s as { followers_count: number }).followers_count) || 0 })),
-    angles: anglesRes.data || [],
-    dossiers,
-    buyerIdeas,
-    icpIdeas,
-    trendBrief: trendRow ? { ...trendRow.brief, searched: trendRow.searched, asOf: trendRow.searched_at } : null,
-    voc,
+    angles: R(anglesRes.data || []),
+    dossiers: R(dossiers),
+    buyerIdeas: R(buyerIdeas),
+    icpIdeas: R(icpIdeas),
+    trendBrief: R(trendRow ? { ...trendRow.brief, searched: trendRow.searched, asOf: trendRow.searched_at } : null),
+    voc: R(voc),
     scoreboard: {
       streak,
       avg30: avg(last30),

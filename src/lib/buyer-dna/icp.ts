@@ -25,7 +25,8 @@ export type Icp = {
 const SYS =
   "You are building the Ideal Customer Profile for a fitness coach, learned only from REAL people who paid a premium price. You get short research briefs on each buyer. Find the patterns that REPEAT across them, ranked by how often they show up. This becomes the standard the coach's content is graded against, so be precise and grounded, never generic. Return STRICT JSON:\n" +
   '{"one_line":"who the ideal buyer is, one sentence","who_they_are":"2-4 sentences on life stage, identity, situation","top_pains":["pains that show up again and again"],"limiting_beliefs":["recurring beliefs holding them back"],"desires":["what they actually want"],"objections":["what they hesitate on before buying"],"triggers":["what was going on when they reached out"],"language":["distinctive words or phrases they use, to mirror in content"],"disqualifiers":["signs someone is NOT this buyer"]}\n' +
-  "4 to 8 items per list, ordered by how common they are across the buyers. Ground everything in the briefs. No invented traits. No prose outside the JSON.";
+  "4 to 8 items per list, ordered by how common they are across the buyers. Ground everything in the briefs. No invented traits. No prose outside the JSON." +
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'deep in debt', 'tight monthly budget').";
 
 function parseIcp(text: string): Icp | null {
   const raw = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();

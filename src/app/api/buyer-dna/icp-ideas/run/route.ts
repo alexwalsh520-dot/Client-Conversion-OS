@@ -33,13 +33,17 @@ export async function POST(req: NextRequest) {
   const icp = (current as { icp: Icp }).icp;
   const icpVersion = Number((current as { version: number }).version);
 
+  // Keep the build (+ its one retry) and the grade within the 300s ceiling; ~100s headroom per op.
+  const start = Date.now();
+  const canProceed = () => Date.now() - start + 100_000 < 290_000;
+
   const anthropic = new Anthropic();
-  const res = await generateIcpIdeas(sb, slug, icp, icpVersion, anthropic);
+  const res = await generateIcpIdeas(sb, slug, icp, icpVersion, anthropic, { canProceed });
   if (res !== "built") return NextResponse.json({ ok: false, creator: slug, reason: "Idea generation failed (is the migration applied?)." });
 
   let graded = false;
   const brief = await getCurrentTrendBrief(sb, slug);
-  if (brief) graded = (await gradeIdeaSet(sb, slug, null, brief.brief, brief.version, anthropic)) === "graded";
+  if (brief && canProceed()) graded = (await gradeIdeaSet(sb, slug, null, brief.brief, brief.version, anthropic, { canProceed })) === "graded";
 
   return NextResponse.json({ ok: true, creator: slug, icp_version: icpVersion, graded });
 }

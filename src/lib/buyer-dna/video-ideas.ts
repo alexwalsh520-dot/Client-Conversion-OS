@@ -10,6 +10,16 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { gatherBuyerData, normName, type QualifiedBuyer } from "./core";
 import { compactTrendBrief, type TrendBrief } from "./trends";
+import { extractJson, salvageObjects } from "./json";
+
+// Appended to JSON-returning prompts: the model's grade/idea output occasionally breaks a full
+// JSON.parse via an unescaped quote or an over-long field. Discouraging both raises the clean-parse
+// rate (salvageObjects recovers the rest).
+const JSON_HYGIENE =
+  "\nDo not use double-quote characters inside JSON string values. Keep every string field to at most 2 sentences.";
+// Appended to buyer-describing prompts: keep concrete dollar figures out of the content entirely.
+const NO_DOLLARS =
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'deep in debt', 'tight monthly budget').";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -31,29 +41,26 @@ const IDEA_SHAPE =
 const BUYER_SYS =
   "You design ORGANIC short-form video ideas for a fitness creator, reverse-engineered from ONE real person who paid $1,200+ for coaching. You have their sales call transcript and DM conversation. Your job: 10 video ideas that would attract MORE PEOPLE LIKE THIS ONE. Every idea must be filmable this week, grounded in this buyer's real pains, beliefs, trigger moment, and exact words. Make the buyer type feel seen; never a generic fitness tip, never a hard call-out. Return STRICT JSON:\n" +
   IDEA_SHAPE +
-  "\nExactly 10 ideas. No prose outside the JSON.";
+  "\nExactly 10 ideas. No prose outside the JSON." + JSON_HYGIENE + NO_DOLLARS;
 
 const ICP_SYS =
   "You design ORGANIC short-form video ideas for a fitness creator, built from their Ideal Customer Profile (learned from everyone who paid $1,200+) and research briefs on those real buyers. Your job: 10 video ideas that attract MORE of that ideal buyer. Every idea must be filmable this week, grounded in the buyers' recurring pains, beliefs, triggers, and exact words. Make the ideal buyer feel seen; never a generic fitness tip. Return STRICT JSON:\n" +
   IDEA_SHAPE +
-  "\nExactly 10 ideas. No prose outside the JSON.";
+  "\nExactly 10 ideas. No prose outside the JSON." + JSON_HYGIENE + NO_DOLLARS;
 
 const GRADE_SYS =
   "You grade a fitness creator's UNFILMED video ideas against what is currently working on Instagram Reels and TikTok to attract premium coaching buyers. Be a tough, specific grader. High scores only for ideas that ride what is working right now; low scores for burned-out or algorithm-invisible formats. Return STRICT JSON:\n" +
   '{"grades":[{"i":0,"trend_score":0-100,"trend_take":"one or two sentences: why it does or does not fit the current moment, and the single adjustment that would make it land harder"}]}\n' +
-  "One grade per idea, matched by index i. No prose outside the JSON.";
+  "One grade per idea, matched by index i. No prose outside the JSON." + JSON_HYGIENE;
 
 function parseIdeas(text: string): VideoIdea[] {
-  const raw = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  const a = raw.indexOf("{");
-  const b = raw.lastIndexOf("}");
-  if (a < 0 || b < 0) return [];
-  try {
-    const p = JSON.parse(raw.slice(a, b + 1)) as { ideas?: VideoIdea[] };
-    return Array.isArray(p.ideas) ? p.ideas : [];
-  } catch {
-    return [];
-  }
+  const p = extractJson<{ ideas?: VideoIdea[] }>(text);
+  const clean = p && Array.isArray(p.ideas) ? p.ideas : [];
+  if (clean.length >= 5) return clean;
+  // Clean parse missing or short (broken JSON tail / unescaped quote) — recover whatever idea
+  // objects parse individually.
+  const salvaged = salvageObjects<VideoIdea>(text, ["title", "hook"]);
+  return salvaged.length > clean.length ? salvaged : clean;
 }
 
 function compactIcp(icp: Icp): string {
@@ -114,6 +121,7 @@ export async function generateBuyerIdeas(
   dossier: DossierRow,
   icpVersion: number | null,
   anthropic: Anthropic,
+  opts: { canProceed?: () => boolean } = {},
 ): Promise<"built" | "error"> {
   // Re-pull the raw material so the ideas carry the buyer's actual voice, not just the summary.
   const buyer: QualifiedBuyer = {
@@ -143,19 +151,27 @@ export async function generateBuyerIdeas(
   if (d.callTranscript) parts.push(`\nSALES CALL TRANSCRIPT:\n${d.callTranscript.slice(0, 30000)}`);
   if (d.dmText) parts.push(`\nDM CONVERSATION:\n${d.dmText.slice(0, 10000)}`);
 
-  let ideas: VideoIdea[] = [];
-  try {
-    const resp = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      system: BUYER_SYS,
-      messages: [{ role: "user", content: parts.join("\n") }],
-    });
-    logAiUsage({ feature: "buyer-dna-video-ideas", model: MODEL, usage: resp.usage });
-    const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-    ideas = parseIdeas(tb?.text || "");
-  } catch {
-    return "error";
+  const userContent = parts.join("\n");
+  const genOnce = async (): Promise<VideoIdea[]> => {
+    try {
+      const resp = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8000,
+        system: BUYER_SYS,
+        messages: [{ role: "user", content: userContent }],
+      });
+      logAiUsage({ feature: "buyer-dna-video-ideas", model: MODEL, usage: resp.usage });
+      const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
+      return parseIdeas(tb?.text || "");
+    } catch {
+      return [];
+    }
+  };
+  let ideas = await genOnce();
+  // One retry on parse-failure, but only if the caller's time budget still allows it.
+  if (ideas.length < 5 && (opts.canProceed?.() ?? true)) {
+    const retry = await genOnce();
+    if (retry.length > ideas.length) ideas = retry;
   }
   if (ideas.length < 5) return "error";
 
@@ -172,6 +188,7 @@ export async function generateIcpIdeas(
   icp: Icp,
   icpVersion: number,
   anthropic: Anthropic,
+  opts: { canProceed?: () => boolean } = {},
 ): Promise<"built" | "error"> {
   const { data: dossiers } = await sb
     .from("buyer_dossiers")
@@ -195,24 +212,27 @@ export async function generateIcpIdeas(
     })
     .filter(Boolean);
 
-  let ideas: VideoIdea[] = [];
-  try {
-    const resp = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      system: ICP_SYS,
-      messages: [
-        {
-          role: "user",
-          content: `IDEAL BUYER:\n${compactIcp(icp)}\n\nREAL BUYER NOTES:\n${briefs.slice(0, 60).join("\n").slice(0, 40000)}`,
-        },
-      ],
-    });
-    logAiUsage({ feature: "buyer-dna-icp-ideas", model: MODEL, usage: resp.usage });
-    const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-    ideas = parseIdeas(tb?.text || "");
-  } catch {
-    return "error";
+  const userContent = `IDEAL BUYER:\n${compactIcp(icp)}\n\nREAL BUYER NOTES:\n${briefs.slice(0, 60).join("\n").slice(0, 40000)}`;
+  const genOnce = async (): Promise<VideoIdea[]> => {
+    try {
+      const resp = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8000,
+        system: ICP_SYS,
+        messages: [{ role: "user", content: userContent }],
+      });
+      logAiUsage({ feature: "buyer-dna-icp-ideas", model: MODEL, usage: resp.usage });
+      const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
+      return parseIdeas(tb?.text || "");
+    } catch {
+      return [];
+    }
+  };
+  let ideas = await genOnce();
+  // One retry on parse-failure, but only if the caller's time budget still allows it.
+  if (ideas.length < 5 && (opts.canProceed?.() ?? true)) {
+    const retry = await genOnce();
+    if (retry.length > ideas.length) ideas = retry;
   }
   if (ideas.length < 5) return "error";
 
@@ -231,6 +251,7 @@ export async function gradeIdeaSet(
   trendBrief: TrendBrief,
   trendVersion: number,
   anthropic: Anthropic,
+  opts: { canProceed?: () => boolean } = {},
 ): Promise<"graded" | "empty" | "error"> {
   const q = sb
     .from("content_video_ideas")
@@ -244,30 +265,31 @@ export async function gradeIdeaSet(
     .map((x, i) => `${i}. [${x.format || "?"}] ${x.title} — hook: "${x.hook || ""}" — filmed: ${x.environment || "?"} — delivery: ${x.expression || "?"}`)
     .join("\n");
 
-  let grades: { i?: number; trend_score?: number; trend_take?: string }[] = [];
-  try {
-    const resp = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 2500,
-      system: GRADE_SYS,
-      messages: [
-        {
-          role: "user",
-          content: `WHAT IS WORKING ON SOCIAL RIGHT NOW:\n${compactTrendBrief(trendBrief)}\n\nTHE IDEAS:\n${listing}`,
-        },
-      ],
-    });
-    logAiUsage({ feature: "buyer-dna-idea-grade", model: MODEL, usage: resp.usage });
-    const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-    const raw = (tb?.text || "").replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-    const a = raw.indexOf("{");
-    const b = raw.lastIndexOf("}");
-    if (a < 0 || b < 0) return "error";
-    const p = JSON.parse(raw.slice(a, b + 1)) as { grades?: typeof grades };
-    grades = Array.isArray(p.grades) ? p.grades : [];
-  } catch {
-    return "error";
-  }
+  const userContent = `WHAT IS WORKING ON SOCIAL RIGHT NOW:\n${compactTrendBrief(trendBrief)}\n\nTHE IDEAS:\n${listing}`;
+  type Grade = { i?: number; trend_score?: number; trend_take?: string };
+  const gradeOnce = async (): Promise<Grade[]> => {
+    try {
+      const resp = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 2500,
+        system: GRADE_SYS,
+        messages: [{ role: "user", content: userContent }],
+      });
+      logAiUsage({ feature: "buyer-dna-idea-grade", model: MODEL, usage: resp.usage });
+      const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
+      const text = tb?.text || "";
+      const p = extractJson<{ grades?: Grade[] }>(text);
+      if (p && Array.isArray(p.grades) && p.grades.length) return p.grades;
+      // Broken JSON tail / unescaped quote — recover whatever grade objects parse individually.
+      return salvageObjects<Grade>(text, ["i", "trend_score"]);
+    } catch {
+      return [];
+    }
+  };
+  let grades = await gradeOnce();
+  // One retry if nothing parsed, gated by the caller's time budget. Partial grades are applied as-is;
+  // any idea left ungraded keeps its old trend_version and gets picked up on the next run.
+  if (!grades.length && (opts.canProceed?.() ?? true)) grades = await gradeOnce();
   if (!grades.length) return "error";
 
   for (const g of grades) {
