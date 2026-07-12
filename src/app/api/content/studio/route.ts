@@ -44,16 +44,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   }
 
-  const [postsRes, gradesRes, snapsRes, anglesRes, dossiersRes, vocRes, icpRes] = await Promise.all([
+  const [postsRes, gradesRes, snapsRes, anglesRes, dossiersRes, vocRes, icpRes, ideasRes, trendRes] = await Promise.all([
     sb.from("creator_content")
       .select("ig_media_id, permalink, media_type, caption, transcript, thumbnail_url, stored_thumb_url, video_url, stored_video_url, taken_at, like_count, comment_count, view_count")
       .eq("client_key", creator).order("taken_at", { ascending: false }).limit(700),
     sb.from("content_grades").select("ig_media_id, score, band, hits, misses, feedback, verdict").eq("client_key", creator),
     sb.from("creator_account_snapshots").select("snapshot_date, followers_count").eq("client_key", creator).order("snapshot_date", { ascending: true }).limit(400),
     sb.from("buyer_content_angles").select("title, hook, rationale").eq("client_key", creator).order("sort_order", { ascending: true }).limit(30),
-    sb.from("buyer_dossiers").select("display_name, close_date, first_keyword, research, data_completeness").eq("client_key", creator).order("close_date", { ascending: false }).limit(120),
+    sb.from("buyer_dossiers").select("person_key, display_name, close_date, first_keyword, research, data_completeness").eq("client_key", creator).order("close_date", { ascending: false }).limit(120),
     sb.from("content_voc").select("bucket, quote").eq("client_key", creator).limit(400),
     sb.from("creator_icp").select("icp, mode, version").eq("client_key", creator).eq("locked", true).order("version", { ascending: false }).limit(1),
+    // Both idea tables may not exist until the migration runs; `data || []` degrades cleanly.
+    sb.from("content_video_ideas").select("person_key, sort_order, title, format, hook, environment, attire, expression, word_choice, rationale, grounded_in, trend_score, trend_take").eq("client_key", creator).order("sort_order", { ascending: true }).limit(1200),
+    sb.from("content_trend_briefs").select("brief, version, searched, searched_at").eq("client_key", creator).order("version", { ascending: false }).limit(1),
   ]);
 
   const gradeMap = new Map((gradesRes.data || []).map((g) => [(g as { ig_media_id: string }).ig_media_id, g]));
@@ -108,6 +111,33 @@ export async function GET(req: NextRequest) {
       research: (d as { research: Record<string, unknown> }).research, // no amount fields are selected
     }));
 
+  // Video ideas: person_key null = the ICP-wide set; otherwise group per buyer and attach the
+  // buyer's persona (dossier research). No amounts anywhere.
+  type IdeaRow = { person_key: string | null } & Record<string, unknown>;
+  const ideaRows = (ideasRes.data || []) as IdeaRow[];
+  const stripKey = (r: IdeaRow) => {
+    const rest = { ...r } as Record<string, unknown>;
+    delete rest.person_key;
+    return rest;
+  };
+  const icpIdeas = ideaRows.filter((r) => r.person_key === null).map(stripKey);
+  const byBuyer = new Map<string, Record<string, unknown>[]>();
+  for (const r of ideaRows) {
+    if (r.person_key === null) continue;
+    const arr = byBuyer.get(r.person_key) || [];
+    arr.push(stripKey(r));
+    byBuyer.set(r.person_key, arr);
+  }
+  const buyerIdeas = (dossiersRes.data || [])
+    .map((d) => {
+      const row = d as { person_key: string; display_name: string; close_date: string | null; first_keyword: string | null; research: Record<string, unknown> };
+      const ideas = byBuyer.get(row.person_key);
+      if (!ideas || !ideas.length) return null;
+      return { name: row.display_name, keyword: row.first_keyword, closeDate: row.close_date, research: row.research || {}, ideas };
+    })
+    .filter(Boolean);
+  const trendRow = trendRes.data && trendRes.data[0] ? (trendRes.data[0] as { brief: Record<string, unknown>; version: number; searched: boolean; searched_at: string }) : null;
+
   return NextResponse.json({
     creator,
     viewer,
@@ -116,6 +146,9 @@ export async function GET(req: NextRequest) {
     snapshots: (snapsRes.data || []).map((s) => ({ date: (s as { snapshot_date: string }).snapshot_date, followers: Number((s as { followers_count: number }).followers_count) || 0 })),
     angles: anglesRes.data || [],
     dossiers,
+    buyerIdeas,
+    icpIdeas,
+    trendBrief: trendRow ? { ...trendRow.brief, searched: trendRow.searched, asOf: trendRow.searched_at } : null,
     voc,
     scoreboard: {
       streak,

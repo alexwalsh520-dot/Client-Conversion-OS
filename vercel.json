@@ -60,6 +60,10 @@
       "schedule": "0 */2 * * *"
     },
     {
+      "path": "/api/cron/video-ideas-pipeline",
+      "schedule": "0 1-23/2 * * *"
+    },
+    {
       "path": "/api/cron/daily-metrics-eod",
       "schedule": "30 4,5 * * *"
     },
