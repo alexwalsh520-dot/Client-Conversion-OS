@@ -68,8 +68,10 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/icp-ideas/run?creator=${creator}`));
     }
 
-    // 3. One bounded pass of per-buyer builds + trend-brief re-grades.
-    steps.push(await hit(`/api/buyer-dna/video-ideas/run?creator=${creator}&limit=3&gradeLimit=4&budgetMs=120000`));
+    // 3. One bounded pass of per-buyer builds + trend-brief re-grades. budgetMs=210000 (~2 grade ops
+    //    at ~40s each) mainly drains the weekly re-grade backlog faster — 51 sets converge in ~13h
+    //    instead of ~2 days — while steady-state runs stay near-instant no-ops.
+    steps.push(await hit(`/api/buyer-dna/video-ideas/run?creator=${creator}&limit=3&gradeLimit=4&budgetMs=210000`));
   }
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), steps });
