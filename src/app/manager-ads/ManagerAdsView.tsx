@@ -6,7 +6,8 @@
 // → cash, with cost-per-X at every step and potential ROAS at the end.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarDays, Loader2, Megaphone } from "lucide-react";
+import { BarChart3, Loader2, Megaphone } from "lucide-react";
+import AdsDateDropdown, { rangeForPreset, type DateRange } from "./AdsDateDropdown";
 
 interface Row {
   client: string;
@@ -32,60 +33,6 @@ interface Report {
   warnings: string[];
 }
 
-// ── ET date helpers (mirror src/lib/daily-report/time.ts, client-side) ──────
-
-function etToday(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d) + days * 86400000);
-  return dt.toISOString().slice(0, 10);
-}
-
-function startOfWeek(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return addDays(dateStr, -((dow + 6) % 7)); // Monday
-}
-
-type PresetKey = "today" | "wtd" | "last7" | "mtd" | "lastMonth" | "custom";
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "wtd", label: "This Week" },
-  { key: "last7", label: "Last 7 Days" },
-  { key: "mtd", label: "Month to Date" },
-  { key: "lastMonth", label: "Last Month" },
-  { key: "custom", label: "Custom" },
-];
-
-function presetRange(key: PresetKey): { from: string; to: string } {
-  const today = etToday();
-  switch (key) {
-    case "today":
-      return { from: today, to: today };
-    case "wtd":
-      return { from: startOfWeek(today), to: today };
-    case "last7":
-      return { from: addDays(today, -6), to: today };
-    case "mtd":
-      return { from: today.slice(0, 8) + "01", to: today };
-    case "lastMonth": {
-      const lastMonthEnd = addDays(today.slice(0, 8) + "01", -1);
-      return { from: lastMonthEnd.slice(0, 8) + "01", to: lastMonthEnd };
-    }
-    default:
-      return { from: today.slice(0, 8) + "01", to: today };
-  }
-}
-
 // ── Formatting ───────────────────────────────────────────────────────────────
 
 const usd = (n: number | null, cents = false) =>
@@ -101,25 +48,18 @@ const num = (n: number | null) => (n == null ? "—" : n.toLocaleString("en-US",
 const roasFmt = (n: number | null) => (n == null ? "—" : `${n.toFixed(2)}x`);
 
 export default function ManagerAdsView() {
-  const [preset, setPreset] = useState<PresetKey>("mtd");
-  const [customFrom, setCustomFrom] = useState(() => presetRange("mtd").from);
-  const [customTo, setCustomTo] = useState(() => etToday());
+  const [range, setRange] = useState<DateRange>(() => rangeForPreset("mtd"));
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>("total");
 
-  const range = useMemo(
-    () => (preset === "custom" ? { from: customFrom, to: customTo } : presetRange(preset)),
-    [preset, customFrom, customTo],
-  );
-
   const load = useCallback(async () => {
-    if (!range.from || !range.to || range.from > range.to) return;
+    if (!range.dateFrom || !range.dateTo || range.dateFrom > range.dateTo) return;
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/manager-ads?from=${range.from}&to=${range.to}`);
+      const res = await fetch(`/api/manager-ads?from=${range.dateFrom}&to=${range.dateTo}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load ads data");
       setReport(data);
@@ -128,7 +68,7 @@ export default function ManagerAdsView() {
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to]);
+  }, [range.dateFrom, range.dateTo]);
 
   useEffect(() => {
     load();
@@ -164,35 +104,9 @@ export default function ManagerAdsView() {
         </p>
       </div>
 
-      {/* ── Date range ── */}
+      {/* ── Date range — same Meta-style dropdown as the /ads tab ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
-        <CalendarDays size={15} style={{ color: "var(--text-muted)" }} />
-        {PRESETS.map((p) => (
-          <button key={p.key} style={chip(preset === p.key)} onClick={() => setPreset(p.key)}>
-            {p.label}
-          </button>
-        ))}
-        {preset === "custom" && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="date"
-              className="input-field"
-              value={customFrom}
-              max={customTo}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              style={{ width: 150, padding: "6px 10px", fontSize: 13 }}
-            />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>to</span>
-            <input
-              type="date"
-              className="input-field"
-              value={customTo}
-              min={customFrom}
-              onChange={(e) => setCustomTo(e.target.value)}
-              style={{ width: 150, padding: "6px 10px", fontSize: 13 }}
-            />
-          </span>
-        )}
+        <AdsDateDropdown value={range} onChange={setRange} />
       </div>
 
       {loading ? (
