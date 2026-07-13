@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   }
 
-  const [postsRes, gradesRes, snapsRes, anglesRes, dossiersRes, vocRes, icpRes, ideasRes, trendRes] = await Promise.all([
+  const [postsRes, gradesRes, snapsRes, anglesRes, dossiersRes, vocRes, icpRes, ideasRes, trendRes, shiftRes] = await Promise.all([
     sb.from("creator_content")
       .select("ig_media_id, permalink, media_type, caption, transcript, thumbnail_url, stored_thumb_url, video_url, stored_video_url, taken_at, like_count, comment_count, view_count")
       .eq("client_key", creator).order("taken_at", { ascending: false }).limit(700),
@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
     // Both idea tables may not exist until the migration runs; `data || []` degrades cleanly.
     sb.from("content_video_ideas").select("person_key, sort_order, title, format, hook, environment, attire, expression, word_choice, rationale, grounded_in, trend_score, trend_take").eq("client_key", creator).order("sort_order", { ascending: true }).limit(1200),
     sb.from("content_trend_briefs").select("brief, version, searched, searched_at").eq("client_key", creator).order("version", { ascending: false }).limit(1),
+    // Shift brief table may not exist until its migration runs; a query error degrades to null below.
+    sb.from("content_shift_briefs").select("brief, version, generated_at").eq("client_key", creator).order("version", { ascending: false }).limit(1),
   ]);
 
   const gradeMap = new Map((gradesRes.data || []).map((g) => [(g as { ig_media_id: string }).ig_media_id, g]));
@@ -142,6 +144,7 @@ export async function GET(req: NextRequest) {
     })
     .filter(Boolean);
   const trendRow = trendRes.data && trendRes.data[0] ? (trendRes.data[0] as { brief: Record<string, unknown>; version: number; searched: boolean; searched_at: string }) : null;
+  const shiftRow = shiftRes.data && shiftRes.data[0] ? (shiftRes.data[0] as { brief: Record<string, unknown>; version: number; generated_at: string }) : null;
 
   // Token/creator viewers get every buyer-derived text field money-redacted; operators see it raw.
   // Posts (the creator's own captions/transcripts) and the numeric scoreboard are never touched.
@@ -159,6 +162,7 @@ export async function GET(req: NextRequest) {
     buyerIdeas: R(buyerIdeas),
     icpIdeas: R(icpIdeas),
     trendBrief: R(trendRow ? { ...trendRow.brief, searched: trendRow.searched, asOf: trendRow.searched_at } : null),
+    shiftBrief: R(shiftRow ? shiftRow.brief : null),
     voc: R(voc),
     scoreboard: {
       streak,
