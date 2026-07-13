@@ -6,8 +6,11 @@ import MyContentView, { type StudioPost } from "@/components/content/MyContentVi
 import TrendsView from "@/components/content/TrendsView";
 import CoachStudioView from "@/components/content/CoachStudioView";
 import BuyerIdeasView, { type BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
-import IcpIdeasView, { type TrendBriefView } from "@/components/content/IcpIdeasView";
+import { type TrendBriefView } from "@/components/content/IcpIdeasView";
+import PlaybookView from "@/components/content/PlaybookView";
 import type { VideoIdea } from "@/components/content/VideoIdeaCard";
+import type { ShiftBrief } from "@/lib/buyer-dna/shift";
+import type { Playbook } from "@/lib/buyer-dna/playbook";
 import ShareSettings from "@/components/content/ShareSettings";
 import type { DateRange } from "@/components/content/CalendarRange";
 
@@ -23,6 +26,8 @@ type Studio = {
   buyerIdeas: BuyerIdeaSet[];
   icpIdeas: VideoIdea[];
   trendBrief: TrendBriefView | null;
+  shiftBrief: ShiftBrief | null;
+  playbook: Playbook | null;
   voc: Record<string, string[]>;
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
@@ -91,7 +96,7 @@ export default function ContentClient() {
       ) : page === "buyers" ? (
         <BuyerIdeasView buyers={data.buyerIdeas || []} />
       ) : page === "playbook" ? (
-        <IcpIdeasView icp={data.icp} ideas={data.icpIdeas || []} trend={data.trendBrief} />
+        <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
       ) : (
         <CoachStudioView data={{ icp: data.icp, angles: data.angles, dossiers: data.dossiers, voc: data.voc }} creator={active} />
       )}

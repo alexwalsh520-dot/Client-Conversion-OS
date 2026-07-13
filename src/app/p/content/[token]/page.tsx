@@ -28,5 +28,13 @@ export default async function PublicContentPage({ params }: { params: Promise<{ 
     );
   }
   const name = slug.charAt(0).toUpperCase() + slug.slice(1);
-  return <PublicContentApp token={token} name={name} />;
+  return (
+    <>
+      {/* Force LIGHT theme for the creator share page, before paint, regardless of system/last-used
+          preference. Scoped to this page: it only sets the class (never writes localStorage), so a
+          full load of the operator app re-runs its own theme script and is unaffected. */}
+      <script dangerouslySetInnerHTML={{ __html: "try{var c=document.documentElement.classList;c.remove('dark');c.add('light');}catch(e){}" }} />
+      <PublicContentApp token={token} name={name} />
+    </>
+  );
 }

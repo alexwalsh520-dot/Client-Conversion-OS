@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/trends/run?creator=${creator}`));
     }
 
-    // 2. ICP-wide idea set — rebuild if missing or built against an older locked ICP version.
+    // 2. Locked ICP version — used to detect when the playbook + shift brief need rebuilding.
     const { data: icpRows } = await sb
       .from("creator_icp")
       .select("version")
@@ -56,16 +56,20 @@ export async function GET(req: NextRequest) {
       .order("version", { ascending: false })
       .limit(1);
     const lockedIcpVersion = icpRows && icpRows[0] ? Number((icpRows[0] as { version: number }).version) : null;
-    const { data: icpIdeaRows } = await sb
-      .from("content_video_ideas")
-      .select("icp_version")
+
+    // 2a. Playbook filming sheet (20 hooks + topics) — rebuild if missing, older than ~a week, or built
+    //     against an older locked ICP. (The old ICP-wide idea set is no longer maintained here.)
+    const { data: pbRows } = await sb
+      .from("content_playbooks")
+      .select("icp_version, generated_at")
       .eq("client_key", creator)
-      .is("person_key", null)
+      .order("version", { ascending: false })
       .limit(1);
-    const icpIdea = icpIdeaRows && icpIdeaRows[0] ? (icpIdeaRows[0] as { icp_version: number | null }) : null;
-    const icpStale = !icpIdea || (lockedIcpVersion != null && (icpIdea.icp_version ?? 0) < lockedIcpVersion);
-    if (lockedIcpVersion != null && icpStale) {
-      steps.push(await hit(`/api/buyer-dna/icp-ideas/run?creator=${creator}`));
+    const pb = pbRows && pbRows[0] ? (pbRows[0] as { icp_version: number | null; generated_at: string | null }) : null;
+    const pbAge = pb?.generated_at ? Date.now() - new Date(pb.generated_at).getTime() : Infinity;
+    const pbStale = !pb || pbAge > TREND_MAX_AGE_MS || (lockedIcpVersion != null && (pb.icp_version ?? 0) < lockedIcpVersion);
+    if (pbStale) {
+      steps.push(await hit(`/api/buyer-dna/playbook/run?creator=${creator}`));
     }
 
     // 2b. Playbook shift brief — refresh if missing, older than ~a week, or built against an older ICP.

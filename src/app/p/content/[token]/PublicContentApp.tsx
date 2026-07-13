@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, LayoutGrid, Users, Clapperboard } from "lucide-react";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
-import CreatorPlaybookView from "@/components/content/CreatorPlaybookView";
+import PlaybookView from "@/components/content/PlaybookView";
 import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
-import type { VideoIdea } from "@/components/content/VideoIdeaCard";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
+import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { DateRange } from "@/components/content/CalendarRange";
 
 type Studio = {
   creator: string;
   posts: StudioPost[];
   buyerIdeas: BuyerIdeaSet[];
-  icpIdeas: VideoIdea[];
   shiftBrief: ShiftBrief | null;
+  playbook: Playbook | null;
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
 
@@ -39,14 +39,22 @@ export default function PublicContentApp({ token, name }: { token: string; name:
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
+  // Force light theme on this creator page (belt-and-suspenders alongside the pre-paint script in
+  // page.tsx). Only sets the class; never writes localStorage, so the operator app is unaffected.
+  useEffect(() => {
+    const c = document.documentElement.classList;
+    c.remove("dark");
+    c.add("light");
+  }, []);
+
   const tabs = [["playbook", "Playbook", Clapperboard], ["buyers", "Buyers", Users], ["content", "My Content", LayoutGrid]] as const;
 
   return (
-    <main style={{ minHeight: "100vh", background: "var(--bg, #09090b)", padding: "22px 18px 60px" }}>
+    <main style={{ minHeight: "100vh", background: "var(--bg, #f6f6f4)", padding: "22px 18px 60px" }}>
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--accent, #c9a96e)" }}>Content Studio</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary, #fff)", margin: "3px 0 0" }}>{name}</h1>
+          <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--accent, #a9823f)" }}>Content Studio</div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary, #18181b)", margin: "3px 0 0" }}>{name}</h1>
         </div>
         <div style={{ display: "inline-flex", gap: 4, background: "var(--bg-glass)", borderRadius: 12, padding: 4, border: "1px solid var(--border-primary)", marginBottom: 22 }}>
           {tabs.map(([k, label, Icon]) => (
@@ -59,7 +67,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
         {loading || !data ? (
           <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading...</div>
         ) : page === "playbook" ? (
-          <CreatorPlaybookView shiftBrief={data.shiftBrief} ideas={data.icpIdeas || []} />
+          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
         ) : page === "buyers" ? (
           <CreatorBuyersView buyers={data.buyerIdeas || []} />
         ) : (
