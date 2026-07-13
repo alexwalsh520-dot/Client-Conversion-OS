@@ -68,6 +68,20 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/icp-ideas/run?creator=${creator}`));
     }
 
+    // 2b. Playbook shift brief — refresh if missing, older than ~a week, or built against an older ICP.
+    const { data: shiftRows } = await sb
+      .from("content_shift_briefs")
+      .select("icp_version, generated_at")
+      .eq("client_key", creator)
+      .order("version", { ascending: false })
+      .limit(1);
+    const shift = shiftRows && shiftRows[0] ? (shiftRows[0] as { icp_version: number | null; generated_at: string | null }) : null;
+    const shiftAge = shift?.generated_at ? Date.now() - new Date(shift.generated_at).getTime() : Infinity;
+    const shiftStale = !shift || shiftAge > TREND_MAX_AGE_MS || (lockedIcpVersion != null && (shift.icp_version ?? 0) < lockedIcpVersion);
+    if (shiftStale) {
+      steps.push(await hit(`/api/buyer-dna/shift/run?creator=${creator}`));
+    }
+
     // 3. One bounded pass of per-buyer builds + trend-brief re-grades. budgetMs=210000 (~2 grade ops
     //    at ~40s each) mainly drains the weekly re-grade backlog faster — 51 sets converge in ~13h
     //    instead of ~2 days — while steady-state runs stay near-instant no-ops.
