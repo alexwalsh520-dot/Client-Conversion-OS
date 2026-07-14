@@ -135,13 +135,20 @@ const BUSINESS_HOURS_LABEL = "11am-11pm ET";
 // (Booked Call / Subscription Sold / Closed — matched loosely so prefixed variants
 // like "Sales - Booked Call", "Subscription - Closed", "AI-CLOSED" also count.)
 const EXEMPT_TAG_SUBSTRINGS = ["booked call", "sold", "closed"];
-// Manychat ids confirmed exempt are cached here so we don't re-hit the API.
-const EXEMPT_CACHE_KEY = "time_to_eat_exempt_v2";
+// Per-lead live-tag snapshot (exempt? current setter_* owner?) cached here so we
+// don't re-hit the ManyChat API every tick. v3: entries now also carry the OWNER
+// read from the contact's live setter_* tag — the only source that stays correct
+// when leads are reassigned (the webhook-event history goes stale).
+const EXEMPT_CACHE_KEY = "time_to_eat_exempt_v3";
 const EXEMPT_RETENTION_DAYS = 30;
 // Re-check a lead's ManyChat tags at most this often, so the fast (every-2-min)
 // cron doesn't re-hit the ManyChat API every tick — cost stays bounded by time,
 // not by cron frequency. A newly-booked lead is caught within this window.
 const EXEMPT_CHECK_TTL_MS = 6 * 60 * 1000;
+// Right before POSTING any alert, tag state older than this is re-fetched once.
+// Alerts are rare, so this adds ~one API call per real alert and closes the
+// "tag was added a few minutes ago but the cache hadn't expired" gap.
+const ALERT_RECHECK_MS = 90 * 1000;
 // The moment this tracker went live. Only prospect replies AFTER this instant
 // count — so there is no historical backlog, just leads moving forward. Past
 // slips before this time are ignored too, giving every lead a clean slate.
@@ -357,6 +364,8 @@ function manychatChatUrl(client: ServerClient, manychatSubscriberId: string | nu
 }
 
 // Latest setter + name per ManyChat subscriber, derived from their tag events.
+// Keyed by `${client}:${subscriberId}` so one client's contact can never pick up
+// another client's assignment (a prospect can DM two creators).
 function buildAssignments(events: TagEventRow[]): Map<string, Assignment> {
   const byId = new Map<string, Assignment>();
   const sorted = [...events].sort(
@@ -366,7 +375,8 @@ function buildAssignments(events: TagEventRow[]): Map<string, Assignment> {
   for (const event of sorted) {
     const setter = normalizeSetter(event.setter_name);
     const url = extractManychatUrl(event.raw_payload);
-    const current = byId.get(event.subscriber_id) || {
+    const key = `${event.client}:${event.subscriber_id}`;
+    const current = byId.get(key) || {
       setterKey: null,
       leadName: null,
       manychatUrl: null,
@@ -376,14 +386,15 @@ function buildAssignments(events: TagEventRow[]): Map<string, Assignment> {
       current.leadName = event.subscriber_name.trim();
     }
     if (!current.manychatUrl && url) current.manychatUrl = url;
-    byId.set(event.subscriber_id, current);
+    byId.set(key, current);
   }
 
   return byId;
 }
 
 // Resolve a conversation's prospect identity through the IGSID↔ManyChat bridge.
-// Best-effort: where the IGSID isn't bridged yet, the owner is unknown.
+// Best-effort: where the IGSID isn't bridged yet, the owner is unknown. All maps
+// are client-scoped.
 function resolveConversation(
   client: ServerClient,
   igsid: string | null,
@@ -392,14 +403,14 @@ function resolveConversation(
   manychatToHandle: Map<string, string>,
 ): LeadMeta {
   const manychatId =
-    igsid && assignments.has(igsid)
+    igsid && assignments.has(`${client}:${igsid}`)
       ? igsid
       : igsid
-        ? igToManychat.get(igsid) ?? null
+        ? igToManychat.get(`${client}:${igsid}`) ?? null
         : null;
-  const assignment = manychatId ? assignments.get(manychatId) ?? null : null;
+  const assignment = manychatId ? assignments.get(`${client}:${manychatId}`) ?? null : null;
   const setter = assignment?.setterKey ?? null;
-  const handle = manychatId ? manychatToHandle.get(manychatId) ?? null : null;
+  const handle = manychatId ? manychatToHandle.get(`${client}:${manychatId}`) ?? null : null;
   const leadName = cleanLeadName(assignment?.leadName ?? null) ?? (handle ? `@${handle}` : null);
   const manychatUrl = assignment?.manychatUrl ?? manychatChatUrl(client, manychatId);
 
@@ -611,26 +622,50 @@ function tagsAreExempt(tags: string[]): boolean {
   });
 }
 
-// A subscriber's current ManyChat tag names, or null if the call failed (which we
-// treat as "not exempt" so we never hide a real lead on a transient error).
+// The lead's CURRENT owner, read from the contact's live setter_* tag. This is
+// the only source that stays correct when a lead is reassigned — the webhook
+// event history keeps whatever setter was attached back when the events fired
+// (which is how alerts were tagging the wrong setter). If the contact carries
+// several setter_ tags, the last one listed wins. No setter_ tag => null =>
+// "Unassigned" (never guess an owner).
+function setterFromTags(tags: string[]): string | null {
+  let owner: string | null = null;
+  for (const tag of tags) {
+    const name = tag.trim().toLowerCase();
+    if (name.startsWith("setter_") || name.startsWith("setter:")) {
+      owner = name.slice(7).trim() || null;
+    }
+  }
+  return owner === "kelz" ? "kelechi" : owner;
+}
+
+// A subscriber's current ManyChat tag names, or null if the call failed. One
+// retry with a short backoff, because ManyChat rate-limits bursts — a failed
+// check must NOT be treated as "not exempt" (that fired alerts at leads whose
+// Booked/Sold/Closed tag was sitting right there); callers fall back to the
+// last-known cache entry, or hold the alert until a check succeeds.
 async function fetchSubscriberTags(client: ServerClient, manychatId: string): Promise<string[] | null> {
   const key = manychatApiKey(client);
   if (!key) return null;
-  try {
-    const res = await fetch(
-      `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(manychatId)}`,
-      { headers: { Authorization: `Bearer ${key}` } },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as
-      | { data?: { tags?: Array<{ name?: unknown }> } }
-      | null;
-    const tags = body?.data?.tags;
-    if (!Array.isArray(tags)) return null;
-    return tags.map((t) => (typeof t?.name === "string" ? t.name : "")).filter(Boolean);
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 800));
+      const res = await fetch(
+        `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(manychatId)}`,
+        { headers: { Authorization: `Bearer ${key}` } },
+      );
+      if (!res.ok) continue;
+      const body = (await res.json().catch(() => null)) as
+        | { data?: { tags?: Array<{ name?: unknown }> } }
+        | null;
+      const tags = body?.data?.tags;
+      if (!Array.isArray(tags)) continue;
+      return tags.map((t) => (typeof t?.name === "string" ? t.name : "")).filter(Boolean);
+    } catch {
+      // fall through to retry
+    }
   }
+  return null;
 }
 
 // Run an async fn over items with bounded concurrency (keeps us under ManyChat's
@@ -649,9 +684,11 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-// manychatId -> { whether booked/sold/closed, when we last checked }. Caching the
-// CHECK (not just exempt hits) lets the fast cron skip leads checked recently.
-type ExemptEntry = { exempt: boolean; checkedAt: number };
+// manychatId -> { booked/sold/closed?, live setter_* owner, when checked }.
+// Caching the CHECK (not just exempt hits) lets the fast cron skip leads checked
+// recently. setterKey: string = live owner; null = checked, no setter tag
+// (truly unassigned); absent entry = never successfully checked.
+type ExemptEntry = { exempt: boolean; setterKey?: string | null; checkedAt: number };
 type ExemptCache = Record<string, ExemptEntry>;
 
 async function loadExemptCache(sb: ReturnType<typeof getServiceSupabase>): Promise<ExemptCache> {
@@ -765,10 +802,10 @@ export async function GET(req: NextRequest) {
     try {
       for (const row of await fetchLeadLinks(sb, serverClients)) {
         if (row.instagram_user_id && row.manychat_subscriber_id) {
-          igToManychat.set(row.instagram_user_id, row.manychat_subscriber_id);
+          igToManychat.set(`${row.client}:${row.instagram_user_id}`, row.manychat_subscriber_id);
         }
         if (row.manychat_subscriber_id && row.instagram_handle) {
-          manychatToHandle.set(row.manychat_subscriber_id, row.instagram_handle);
+          manychatToHandle.set(`${row.client}:${row.manychat_subscriber_id}`, row.instagram_handle);
         }
       }
     } catch (error) {
@@ -836,20 +873,58 @@ export async function GET(req: NextRequest) {
         seenManychatIds.add(lead.manychatId);
         toCheck.push(lead);
       }
-      const results = await mapLimit(toCheck, 5, async (lead) => {
+      // Concurrency 2: ManyChat rate-limits bursts, and a rate-limited check used
+      // to read as "not exempt" — the main way tagged leads still got alerts.
+      const results = await mapLimit(toCheck, 2, async (lead) => {
         const tags = await fetchSubscriberTags(lead.client, lead.manychatId as string);
-        // null tags = API hiccup → treat as not-exempt but DON'T cache, so we retry.
+        // null tags = API failed even after retry → keep the old entry (stale
+        // beats wrong) and try again next tick.
         return { manychatId: lead.manychatId as string, tags };
       });
       for (const result of results) {
         if (result.tags === null) continue;
-        exemptCache[result.manychatId] = { exempt: tagsAreExempt(result.tags), checkedAt: nowMs };
+        exemptCache[result.manychatId] = {
+          exempt: tagsAreExempt(result.tags),
+          setterKey: setterFromTags(result.tags),
+          checkedAt: nowMs,
+        };
         exemptCacheDirty = true;
       }
     }
 
     const isExempt = (lead: LeadMeta) =>
       Boolean(lead.manychatId && exemptCache[lead.manychatId]?.exempt);
+
+    // The lead's owner for alerts/cards: live setter_* tag when we have it (it
+    // follows reassignments), else the webhook-event assignment as a fallback.
+    const ownerFor = (lead: LeadMeta): string | null => {
+      const entry = lead.manychatId ? exemptCache[lead.manychatId] : undefined;
+      return entry && entry.setterKey !== undefined ? entry.setterKey : lead.initialSetter;
+    };
+
+    // Just-in-time guard before POSTING an alert: if the cached tag state is
+    // older than ~90s, re-fetch once. Closes the "tag was added after the last
+    // TTL check" gap for ~one extra API call per actual alert. Returns true if
+    // the alert should be SKIPPED (lead is exempt / state unknowable).
+    const skipAlertAfterFreshCheck = async (lead: LeadMeta): Promise<boolean> => {
+      if (!lead.manychatId) return true;
+      const entry = exemptCache[lead.manychatId];
+      if (entry && Date.now() - entry.checkedAt < ALERT_RECHECK_MS) return entry.exempt;
+      const tags = await fetchSubscriberTags(lead.client, lead.manychatId);
+      if (tags === null) {
+        // Can't verify: fall back to last-known state; if we've NEVER checked
+        // this lead, hold the alert — it fires next tick once a check succeeds.
+        return entry ? entry.exempt : true;
+      }
+      const fresh: ExemptEntry = {
+        exempt: tagsAreExempt(tags),
+        setterKey: setterFromTags(tags),
+        checkedAt: Date.now(),
+      };
+      exemptCache[lead.manychatId] = fresh;
+      exemptCacheDirty = true;
+      return fresh.exempt;
+    };
 
     const timeToEat: TimeToEatLead[] = [];
     const deadMeat: TimeToEatLead[] = [];
@@ -942,13 +1017,14 @@ export async function GET(req: NextRequest) {
 
       // 4-minute proactive nudge — owner is about to miss the 5-min target. Only
       // in the [4, 8) working-min window so it never nags an already-stale lead.
+      // Every post is preceded by a fresh tag check (exempt? current owner?).
       if (
         canAlert &&
         businessMinutesWaiting >= RESPONSE_TARGET_WARN_BUSINESS_MINUTES &&
         businessMinutesWaiting < RESPONSE_TARGET_WARN_CEILING_BUSINESS_MINUTES
       ) {
-        if (await claimAlert(sb, "warn4", episodeKey)) {
-          await postResponseTargetAlert(lead.client, lead.leadName, lead.initialSetter);
+        if (!(await skipAlertAfterFreshCheck(lead)) && (await claimAlert(sb, "warn4", episodeKey))) {
+          await postResponseTargetAlert(lead.client, lead.leadName, ownerFor(lead));
         }
       }
 
@@ -958,8 +1034,8 @@ export async function GET(req: NextRequest) {
         businessMinutesWaiting >= WARN_AFTER_BUSINESS_MINUTES &&
         businessMinutesWaiting < WARN_CEILING_BUSINESS_MINUTES
       ) {
-        if (await claimAlert(sb, "warn15", episodeKey)) {
-          await postAnswerLeadAlert(lead.client, lead.leadName, lead.initialSetter);
+        if (!(await skipAlertAfterFreshCheck(lead)) && (await claimAlert(sb, "warn15", episodeKey))) {
+          await postAnswerLeadAlert(lead.client, lead.leadName, ownerFor(lead));
         }
       }
 
@@ -1000,7 +1076,7 @@ export async function GET(req: NextRequest) {
         // Start of the unanswered stretch — how long they've truly sat waiting.
         lastProspectResponseAt: stretchStart,
         hoursSinceProspectResponse: waitingHours,
-        initialSetter: titleName(lead.initialSetter),
+        initialSetter: titleName(ownerFor(lead)),
         setters,
         previousMisses,
         preview: lastMessage.body?.slice(0, 120) || null,
@@ -1012,7 +1088,7 @@ export async function GET(req: NextRequest) {
         leadName: lead.leadName || existing?.leadName || null,
         manychatUrl,
         conversationId,
-        initialSetter: titleName(lead.initialSetter) || existing?.initialSetter || null,
+        initialSetter: titleName(ownerFor(lead)) || existing?.initialSetter || null,
         setters: [...new Set([...(existing?.setters ?? []), ...setters])],
         firstStaleAt: existing?.firstStaleAt || staleStartedAt,
         currentStaleAt: staleStartedAt,
@@ -1031,13 +1107,13 @@ export async function GET(req: NextRequest) {
       // Entry alerts — fire once per stretch when the lead lands in a section.
       // A first-occasion lead fires Time to Eat at 1h, then Dead Meat at 2h; a
       // straight-to-Dead-Meat lead only fires the Dead Meat one.
-      if (canAlert) {
+      if (canAlert && !(await skipAlertAfterFreshCheck(lead))) {
         if (status === "dead_meat") {
           if (await claimAlert(sb, "deadMeat", episodeKey)) {
-            await postDeadMeatAlert(lead.client, lead.leadName, lead.initialSetter);
+            await postDeadMeatAlert(lead.client, lead.leadName, ownerFor(lead));
           }
         } else if (await claimAlert(sb, "tte", episodeKey)) {
-          await postTimeToEatAlert(lead.client, lead.leadName, lead.initialSetter);
+          await postTimeToEatAlert(lead.client, lead.leadName, ownerFor(lead));
         }
       }
     }
