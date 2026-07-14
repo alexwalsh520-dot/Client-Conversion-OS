@@ -48,6 +48,24 @@ async function syncTimes(): Promise<{ sales: string | null; meta: string | null 
   };
 }
 
+// Read the freshest stored AD-LEVEL snapshot for an account, whatever window it covers.
+// Snapshot-only (never computes), so callers like the UTARI MCP get the real, reconciled
+// Ads-Dashboard per-ad funnel without ever triggering the heavy live recompute (which blows
+// the Postgres statement timeout on wide windows). Returns the payload + the window it represents.
+export async function readLatestAdSnapshot(
+  account: AdsTrackerAccount,
+): Promise<{ payload: Record<string, unknown>; dateFrom: string; dateTo: string; computedAt: string } | null> {
+  const sb = getServiceSupabase();
+  const { data } = await sb
+    .from("ads_dashboard_snapshots")
+    .select("payload, date_from, date_to, computed_at")
+    .eq("account", account).eq("level", "ad").eq("status", "all")
+    .order("computed_at", { ascending: false }).limit(1).maybeSingle();
+  if (!data) return null;
+  const d = data as { payload: Record<string, unknown>; date_from: string; date_to: string; computed_at: string };
+  return { payload: d.payload || {}, dateFrom: d.date_from, dateTo: d.date_to, computedAt: d.computed_at };
+}
+
 // Read a stored snapshot (fast path). Returns the payload with freshness, or null on a miss.
 export async function readSnapshot(q: SnapQuery): Promise<Record<string, unknown> | null> {
   const sb = getServiceSupabase();
@@ -66,8 +84,9 @@ export async function readSnapshot(q: SnapQuery): Promise<Record<string, unknown
 // serves the synced copy given the raised freshness tolerance).
 export async function computeAndStore(q: SnapQuery): Promise<Record<string, unknown>> {
   const start = Date.now();
+  const stages: Record<string, number> = {};
   const [payload, moneyModel, times] = await Promise.all([
-    getAdsTrackerDashboard(q),
+    getAdsTrackerDashboard(q, { stages }),
     computeMoneyModel().catch(() => null),
     syncTimes(),
   ]);
@@ -77,7 +96,7 @@ export async function computeAndStore(q: SnapQuery): Promise<Record<string, unkn
 
   const sb = getServiceSupabase();
   await sb.from("ads_dashboard_snapshots").upsert(
-    { account: q.account, date_from: q.dateFrom, date_to: q.dateTo, level: q.level, status: q.status, payload: full, computed_at: _freshness.computedAt, compute_ms: computeMs },
+    { account: q.account, date_from: q.dateFrom, date_to: q.dateTo, level: q.level, status: q.status, payload: full, computed_at: _freshness.computedAt, compute_ms: computeMs, stages },
     { onConflict: "account,date_from,date_to,level,status" },
   );
   return full;
@@ -103,6 +122,11 @@ export async function refreshStandardWindows(): Promise<{ computed: number; fail
     { account: "all", status: "active", level: "campaign", dateFrom: monthStart, dateTo: today },
     { account: "tyson", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
     { account: "antwan", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
+    // Keep a trailing-7 AD-LEVEL snapshot warm per creator so the UTARI MCP always has a fresh,
+    // canonical per-ad funnel to read (status "all" so paused ads are included). Bounded window
+    // keeps compute well under the DB statement timeout.
+    { account: "tyson", status: "all", level: "ad", dateFrom: shift(today, -6), dateTo: today },
+    { account: "antwan", status: "all", level: "ad", dateFrom: shift(today, -6), dateTo: today },
   ];
   const start = Date.now();
   let computed = 0, failed = 0;

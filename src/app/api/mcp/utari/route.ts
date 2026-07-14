@@ -3,7 +3,7 @@
 // Deploys with the app at https://<domain>/api/mcp/utari. Auth: Authorization: Bearer $UTARI_MCP_TOKEN.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { serveDashboard } from "@/lib/ads-tracker/snapshot";
+import { readLatestAdSnapshot } from "@/lib/ads-tracker/snapshot";
 import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
 
 export const runtime = "nodejs";
@@ -12,17 +12,21 @@ export const maxDuration = 120;
 
 const TOKEN = process.env.UTARI_MCP_TOKEN;
 const DM_CLIENT: Record<string, string> = { tyson: "tyson_sonnek", antwan: "antwan_rarcus" };
-const todayET = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
-// The CANONICAL per-ad funnel from the Ads Dashboard (getAdsTrackerDashboard via serveDashboard),
-// merged with status/CPM/impressions/targeting/copy from ad_state. This is the source-of-truth money.
-async function canonicalAds(client: string, dateFrom: string, dateTo: string) {
+// The CANONICAL per-ad funnel — the exact numbers on the Ads Dashboard. We read the freshest stored
+// AD-LEVEL snapshot (computed by getAdsTrackerDashboard, kept warm by the snapshot cron) instead of
+// re-deriving anything, so DMs/booked/shown/closes/collected/ROAS are the reconciled dashboard figures.
+// Snapshot-only on purpose: the live recompute of a wide window blows the DB statement timeout, and the
+// dashboard itself is fast for the same reason (it serves these bounded snapshots). We merge in the
+// live ad_state extras (status/CPM/impressions/targeting/on-image copy) by keyword.
+async function canonicalAds(client: string) {
   const sb = getServiceSupabase();
-  const dash = (await serveDashboard({ account: client as AdsTrackerAccount, status: "all", level: "ad", dateFrom, dateTo })) as { adRoas?: Record<string, unknown>[] };
+  const snap = await readLatestAdSnapshot(client as AdsTrackerAccount);
+  const adRoas = (snap?.payload?.adRoas as Record<string, unknown>[] | undefined) || [];
   const { data: state } = await sb.from("ad_state").select("keyword,status,impressions,cpm,last_status_day,audience_type,is_advantage,age_min,age_max,has_lookalike,on_image_text").eq("client_key", client);
   const byKw: Record<string, Record<string, unknown>> = {};
   for (const s of state || []) byKw[String((s as { keyword: string }).keyword)] = s;
-  return (dash.adRoas || []).map((r) => {
+  const ads = adRoas.map((r) => {
     const st = byKw[String(r.label).toLowerCase()] || {};
     return {
       keyword: r.label, status: st.status ?? null,
@@ -35,6 +39,7 @@ async function canonicalAds(client: string, dateFrom: string, dateTo: string) {
       age: st.age_min ? `${st.age_min}-${st.age_max}` : null, on_image_text: st.on_image_text ?? null,
     };
   });
+  return { ads, window: snap ? { dateFrom: snap.dateFrom, dateTo: snap.dateTo, computedAt: snap.computedAt } : null };
 }
 
 function authed(req: NextRequest): boolean {
@@ -76,19 +81,15 @@ async function callTool(name: string, a: Record<string, unknown>): Promise<unkno
   const client = a.client as string;
   switch (name) {
     case "list_ads": {
-      const dateTo = (a.dateTo as string) || todayET();
-      const dateFrom = (a.dateFrom as string) || "2026-04-01";
-      const ads = await canonicalAds(client, dateFrom, dateTo);
-      ads.sort((x, y) => (y.spend as number) - (x.spend as number));
-      return { note: "CANONICAL Ads Dashboard attribution: spend, DMs, booked, shown (calls_shown), closes, collected, ROAS, per ad, funnel ad->DM->booked->shown->closed. Source of truth. Merged with status/CPM/impressions/targeting/copy.", window: { dateFrom, dateTo }, ads };
+      const { ads, window } = await canonicalAds(client);
+      ads.sort((x, y) => ((y.spend as number) || 0) - ((x.spend as number) || 0));
+      return { note: "CANONICAL Ads Dashboard attribution: spend, DMs, booked, shown (calls_shown), closes, collected, ROAS per ad, funnel ad->DM->booked->shown->closed. The exact reconciled dashboard numbers. Merged with live status/CPM/impressions/targeting/copy. `window` is the period these funnel numbers cover.", window, ads };
     }
     case "get_ad": {
       const kw = (a.keyword as string).toLowerCase();
-      const dateTo = (a.dateTo as string) || todayET();
-      const dateFrom = (a.dateFrom as string) || "2026-04-01";
-      const ads = await canonicalAds(client, dateFrom, dateTo);
+      const { ads, window } = await canonicalAds(client);
       const dms = await dmsForAd(client, kw, (a.dm_limit as number) || 5);
-      return { ad: ads.find((x) => String(x.keyword).toLowerCase() === kw) || null, sample_dms: dms };
+      return { ad: ads.find((x) => String(x.keyword).toLowerCase() === kw) || null, window, sample_dms: dms };
     }
     case "get_dms_for_ad":
       return { keyword: a.keyword, conversations: await dmsForAd(client, a.keyword as string, (a.limit as number) || 20) };
