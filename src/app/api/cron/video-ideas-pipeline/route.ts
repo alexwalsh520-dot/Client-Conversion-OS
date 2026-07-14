@@ -86,6 +86,21 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/shift/run?creator=${creator}`));
     }
 
+    // 2c. Buyer-voice overview — refresh if missing, older than ~a week, or built against an older ICP.
+    //     (Self-skips inside the route when there aren't enough researched buyers yet.)
+    const { data: voiceRows } = await sb
+      .from("content_buyer_voice")
+      .select("icp_version, generated_at")
+      .eq("client_key", creator)
+      .order("version", { ascending: false })
+      .limit(1);
+    const voice = voiceRows && voiceRows[0] ? (voiceRows[0] as { icp_version: number | null; generated_at: string | null }) : null;
+    const voiceAge = voice?.generated_at ? Date.now() - new Date(voice.generated_at).getTime() : Infinity;
+    const voiceStale = !voice || voiceAge > TREND_MAX_AGE_MS || (lockedIcpVersion != null && (voice.icp_version ?? 0) < lockedIcpVersion);
+    if (voiceStale) {
+      steps.push(await hit(`/api/buyer-dna/voice/run?creator=${creator}`));
+    }
+
     // 3. One bounded pass of per-buyer builds + trend-brief re-grades. budgetMs=210000 (~2 grade ops
     //    at ~40s each) mainly drains the weekly re-grade backlog faster — 51 sets converge in ~13h
     //    instead of ~2 days — while steady-state runs stay near-instant no-ops.
