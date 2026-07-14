@@ -42,6 +42,24 @@ async function canonicalAds(client: string) {
   return { ads, window: snap ? { dateFrom: snap.dateFrom, dateTo: snap.dateTo, computedAt: snap.computedAt } : null };
 }
 
+// Factory (the /factory tab) is a copy/content workspace: projects -> groups -> items
+// (ad copy, image direction, docs) -> named batch snapshots. We proxy to the SAME /api/factory
+// route the tab uses (in-process, same origin) so behaviour never drifts from the UI. Read + write.
+// No money, Meta, or publishing surface here — worst case is messy drafts, and batches snapshot
+// before a restore replaces cards.
+async function factoryProxy(origin: string, method: "GET" | "POST" | "PATCH", opts: { query?: Record<string, string>; body?: unknown }) {
+  const qs = opts.query ? "?" + new URLSearchParams(opts.query).toString() : "";
+  const res = await fetch(`${origin}/api/factory${qs}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: method === "GET" ? undefined : JSON.stringify(opts.body ?? {}),
+  });
+  const text = await res.text();
+  let json: unknown; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  if (!res.ok) return { error: (json as { error?: string })?.error || `factory ${method} failed (${res.status})` };
+  return json;
+}
+
 function authed(req: NextRequest): boolean {
   if (!TOKEN) return false; // no token configured = locked shut
   const h = req.headers.get("authorization") || "";
@@ -62,6 +80,15 @@ const TOOLS = [
   { name: "get_sales_with_ad", description: "The wins ledger, each resolved to the ad it came from where deterministically possible (ad_keyword null when unresolved, never guessed).",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] } }, required: ["client"] } },
   { name: "freshness", description: "Minutes since each data source last synced.", inputSchema: { type: "object", properties: {} } },
+  // ---- Factory (the /factory content workspace): full read + write ----
+  { name: "factory_list_projects", description: "List every Factory project (id, name, client). Factory = the copy/content workspace where ad copy, image directions, and docs are drafted, organized into groups, and snapshotted as batches.",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "factory_get_project", description: "One Factory project's full tree: its groups, all items (each with kind, label, copy_text, body_md, image_direction, stage, status, image_url, tags, comments, checklist), batch snapshots, and per-stage counts.",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] } },
+  { name: "factory_create", description: "Create Factory content. action=createProject{name,client?} | createGroup{projectId,name,kind?,description?} | createItem{projectId,groupId?,kind?(doc|image_ad),label?,copyText?,bodyMd?,imageDirection?,bucket?,style?,status?} | createBatch{projectId,groupId?,label?,note?} (snapshots current cards) | restoreBatch{batchId} (auto-saves current cards first, then replaces them with the batch).",
+    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["createProject", "createGroup", "createItem", "createBatch", "restoreBatch"] }, projectId: { type: "string" }, groupId: { type: "string" }, batchId: { type: "string" }, name: { type: "string" }, client: { type: "string" }, kind: { type: "string" }, label: { type: "string" }, copyText: { type: "string" }, bodyMd: { type: "string" }, imageDirection: { type: "string" }, bucket: { type: "string" }, style: { type: "string" }, status: { type: "string" }, description: { type: "string" }, note: { type: "string" } }, required: ["action"] } },
+  { name: "factory_update", description: "Update one Factory item (pass id) or one group (pass groupId). Item fields: label, bodyMd, copyText, imageDirection, status, stage(copy_written|image_generated|revision|completed), imageUrl, bucket, style, tags[], approve(true=>completed), revisionNote, groupIdSet(move to a group), sortOrder. Group fields: name, collapsed, sortOrder, kind, description. This is how you write a rewritten draft back.",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, groupId: { type: "string" }, label: { type: "string" }, bodyMd: { type: "string" }, copyText: { type: "string" }, imageDirection: { type: "string" }, status: { type: "string" }, stage: { type: "string" }, imageUrl: { type: "string" }, bucket: { type: "string" }, style: { type: "string" }, tags: { type: "array", items: { type: "string" } }, approve: { type: "boolean" }, revisionNote: { type: "string" }, groupIdSet: { type: "string" }, sortOrder: { type: "number" }, name: { type: "string" }, collapsed: { type: "boolean" }, kind: { type: "string" }, description: { type: "string" } }, required: [] } },
 ];
 
 async function dmsForAd(client: string, keyword: string, limit: number) {
@@ -76,10 +103,18 @@ async function dmsForAd(client: string, keyword: string, limit: number) {
   return out;
 }
 
-async function callTool(name: string, a: Record<string, unknown>): Promise<unknown> {
+async function callTool(name: string, a: Record<string, unknown>, origin: string): Promise<unknown> {
   const sb = getServiceSupabase();
   const client = a.client as string;
   switch (name) {
+    case "factory_list_projects":
+      return factoryProxy(origin, "GET", {});
+    case "factory_get_project":
+      return factoryProxy(origin, "GET", { query: { projectId: a.projectId as string } });
+    case "factory_create":
+      return factoryProxy(origin, "POST", { body: a });
+    case "factory_update":
+      return factoryProxy(origin, "PATCH", { body: a });
     case "list_ads": {
       const { ads, window } = await canonicalAds(client);
       ads.sort((x, y) => ((y.spend as number) || 0) - ((x.spend as number) || 0));
@@ -120,7 +155,7 @@ async function callTool(name: string, a: Record<string, unknown>): Promise<unkno
   }
 }
 
-async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }) {
+async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, origin: string) {
   const { id, method, params } = msg;
   if (method === "initialize")
     return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "1.0.0" } } };
@@ -129,7 +164,7 @@ async function handle(msg: { id?: unknown; method?: string; params?: Record<stri
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (method === "tools/call") {
     try {
-      const result = await callTool((params?.name as string) || "", (params?.arguments as Record<string, unknown>) || {});
+      const result = await callTool((params?.name as string) || "", (params?.arguments as Record<string, unknown>) || {}, origin);
       return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } };
     } catch (e) {
       return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify({ error: e instanceof Error ? e.message : "failed" }) }], isError: true } };
@@ -142,11 +177,12 @@ export async function POST(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "unauthorized" } }, { status: 401 });
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, { status: 400 });
+  const origin = req.nextUrl.origin;
   if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map(handle))).filter(Boolean);
+    const out = (await Promise.all(body.map((m) => handle(m, origin)))).filter(Boolean);
     return NextResponse.json(out);
   }
-  const res = await handle(body);
+  const res = await handle(body, origin);
   if (res === null) return new NextResponse(null, { status: 202 });
   return NextResponse.json(res);
 }
