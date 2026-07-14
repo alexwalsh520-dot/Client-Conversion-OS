@@ -2453,26 +2453,39 @@ async function fetchKeywordBackfillRows(
   }));
 }
 
+// Every MetaRow column EXCEPT raw_payload. raw_payload is a ~1.6KB jsonb per row (84% of the row's
+// bytes) that only the display-window fetch needs, to pull an ad's creative preview. The wide
+// (120-day) attribution + alert fetches use meta rows purely for keyword→ad identity, hints, and
+// spend, so selecting the light set slashes the transfer that dominated compute time.
+const META_ROW_LIGHT_COLUMNS =
+  "client_key,client_name,ad_account_id,account_timezone,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,keyword_raw,keyword_normalized,date,spend_cents,impressions,link_clicks,synced_at,ad_effective_status,ad_configured_status,campaign_effective_status,campaign_configured_status";
+
 async function fetchMetaRows(
   db: ReturnType<typeof getServiceSupabase>,
   query: AdsTrackerQuery,
   clientFilter: string[]
 ): Promise<MetaRow[]> {
-  return fetchMetaRowsForDateRange(db, clientFilter, query.dateFrom, query.dateTo);
+  // Display window: keep raw_payload so ad-level rows can show a creative preview (the durable
+  // stored image, when present, still overrides it later in attachStoredImages).
+  return fetchMetaRowsForDateRange(db, clientFilter, query.dateFrom, query.dateTo, {
+    includeRawPayload: true,
+  });
 }
 
 async function fetchMetaRowsForDateRange(
   db: ReturnType<typeof getServiceSupabase>,
   clientFilter: string[],
   dateFrom: string,
-  dateTo: string
+  dateTo: string,
+  opts?: { includeRawPayload?: boolean }
 ): Promise<MetaRow[]> {
   const rows: MetaRow[] = [];
+  const columns = opts?.includeRawPayload ? "*" : META_ROW_LIGHT_COLUMNS;
 
   for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
     const { data, error } = await db
       .from("ads_meta_insights_daily")
-      .select("*")
+      .select(columns)
       .in("client_key", clientFilter)
       .gte("date", dateFrom)
       .lte("date", dateTo)
@@ -2481,7 +2494,9 @@ async function fetchMetaRowsForDateRange(
 
     if (error) throw new Error(`Meta insights query failed: ${error.message}`);
 
-    const page = (data || []) as MetaRow[];
+    // `.select(columns)` uses a runtime string, so the client's select-parser yields a ParserError
+    // type here; cast through unknown (the row shape is guaranteed by META_ROW_LIGHT_COLUMNS / "*").
+    const page = (data || []) as unknown as MetaRow[];
     rows.push(...page);
     if (page.length < SUPABASE_PAGE_SIZE) break;
   }
@@ -3805,8 +3820,21 @@ function syncedMetaDateAccounts(
   return synced;
 }
 
-export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { onSaleFact?: (fact: SaleFact) => void }) {
+export async function getAdsTrackerDashboard(
+  query: AdsTrackerQuery,
+  opts?: { onSaleFact?: (fact: SaleFact) => void; stages?: Record<string, number> }
+) {
   const db = getServiceSupabase();
+
+  // Stage timings, so a slow compute is never a mystery. `mark(label)` records the ms elapsed
+  // since the previous mark into opts.stages (a no-op when no sink is passed).
+  let stageLast = Date.now();
+  const mark = (label: string) => {
+    if (!opts?.stages) return;
+    const now = Date.now();
+    opts.stages[label] = (opts.stages[label] || 0) + (now - stageLast);
+    stageLast = now;
+  };
 
   const clientFilter =
     query.account === "all" ? ALL_CREATOR_KEYS : [query.account];
@@ -3828,6 +3856,10 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
     dateTo: alertDateTo,
   };
 
+  const _ft = <T>(label: string, p: PromiseLike<T>): Promise<T> => {
+    const s = Date.now();
+    return Promise.resolve(p).then((r) => { if (process.env.ADS_FETCH_TIMING) console.log("[fetchtime]", label, Date.now() - s + "ms"); return r; });
+  };
   const [
     metaRows,
     attributionMetaRows,
@@ -3843,12 +3875,16 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
     alertBackfillRows,
     alertMissingManychatKeywordEvents,
     alertSalesRows,
+    originAdEvents,
   ] = await Promise.all([
-      fetchMetaRows(db, query, clientFilter),
-      fetchMetaRowsForDateRange(db, clientFilter, attributionDateFrom, query.dateTo),
-      fetchKeywordEvents(db, clientFilter, eventQueryFrom, eventQueryTo),
-      fetchGhlAppointments(db, eventQueryFrom, eventQueryTo),
-      db
+      _ft("metaRows", fetchMetaRows(db, query, clientFilter)),
+      // Attribution + alert meta rows only need keyword→ad identity, hints, and spend, never
+      // raw_payload, so fetch them with the light column set (raw_payload is ~84% of each row's
+      // bytes). Kept as two separate queries so row order matches the pre-change behavior exactly.
+      _ft("attrMetaRows", fetchMetaRowsForDateRange(db, clientFilter, attributionDateFrom, query.dateTo)),
+      _ft("keywordEvents", fetchKeywordEvents(db, clientFilter, eventQueryFrom, eventQueryTo)),
+      _ft("ghlAppts", fetchGhlAppointments(db, eventQueryFrom, eventQueryTo)),
+      _ft("syncRuns", db
         .from("ads_sync_runs")
         .select("date_from,date_to,completed_at,accounts")
         .eq("source", "meta_ads")
@@ -3856,41 +3892,52 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
         .lte("date_from", query.dateTo)
         .gte("date_to", query.dateFrom)
         .order("completed_at", { ascending: false })
-        .limit(20),
-      fetchKeywordBackfillRows(db, query, clientFilter),
-      fetchAttributionResolutions(db),
-      fetchSalesRowsFast(db, query, clientFilter),
-      fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo),
-      fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo),
-      fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo),
-      fetchKeywordBackfillRows(db, alertQuery, alertClientFilter),
-      fetchManychatMissingKeywordEvents(
+        .limit(20)),
+      _ft("backfill", fetchKeywordBackfillRows(db, query, clientFilter)),
+      _ft("attrResolutions", fetchAttributionResolutions(db)),
+      _ft("salesRows", fetchSalesRowsFast(db, query, clientFilter)),
+      _ft("alertMetaRows", fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo)),
+      _ft("alertKeywordEvents", fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo)),
+      _ft("alertGhlAppts", fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo)),
+      _ft("alertBackfill", fetchKeywordBackfillRows(db, alertQuery, alertClientFilter)),
+      _ft("alertMissingManychat", fetchManychatMissingKeywordEvents(
         db,
         alertClientFilter,
         alertDashboardEventQueryFrom,
         alertEventQueryTo
-      ),
-      fetchSalesRowsFast(db, alertQuery, alertClientFilter),
+      )),
+      _ft("alertSalesRows", fetchSalesRowsFast(db, alertQuery, alertClientFilter)),
+      // Ground-truth ad origins confirmed straight from ManyChat — rescue sales whose
+      // ad click never produced a normal keyword event on our side. Fetched once with
+      // the full client set; each merge filters to the client(s) it needs. Runs in the
+      // main fan-out (was a sequential await that stalled the pipeline).
+      _ft("originAdEvents", fetchManychatOriginAdEvents(db, alertClientFilter)),
     ]);
+  mark("fetch");
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
-
-  // Ground-truth ad origins confirmed straight from ManyChat — rescue sales whose
-  // ad click never produced a normal keyword event on our side. Fetched once with
-  // the full client set; each merge filters to the client(s) it needs.
-  const originAdEvents = await fetchManychatOriginAdEvents(db, alertClientFilter);
 
   const groups = new Map<string, Group>();
   const rows = metaRows;
   const attributionRows = attributionMetaRows.length ? attributionMetaRows : rows;
   const backfill = backfillRows as KeywordBackfillRow[];
   const baseKeywordEvents = normalizeGhlKeywordEventDates(keywordEvents, ghlAppointments);
-  const supplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
-    db,
-    ghlAppointments,
-    baseKeywordEvents,
-    clientFilter
+  const alertBaseKeywordEvents = normalizeGhlKeywordEventDates(
+    alertKeywordEvents,
+    alertGhlAppointments
   );
+  // Both supplemental-GHL builds are independent DB reads; run them concurrently instead of
+  // one after the other (they used to be two serial awaits).
+  const [supplementalGhlEvents, alertSupplementalGhlEvents] = await Promise.all([
+    buildSupplementalGhlKeywordEvents(db, ghlAppointments, baseKeywordEvents, clientFilter),
+    buildSupplementalGhlKeywordEvents(
+      db,
+      alertGhlAppointments,
+      alertBaseKeywordEvents,
+      alertClientFilter
+    ),
+  ]);
+  mark("supplemental_ghl");
   const backfilledDateKeys = new Set(
     backfill.map((row) => `${row.client_key}:${row.date}`)
   );
@@ -3979,16 +4026,6 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
   const alertBackfilledDateKeys = new Set(
     alertBackfill.map((row) => `${row.client_key}:${row.date}`)
   );
-  const alertBaseKeywordEvents = normalizeGhlKeywordEventDates(
-    alertKeywordEvents,
-    alertGhlAppointments
-  );
-  const alertSupplementalGhlEvents = await buildSupplementalGhlKeywordEvents(
-    db,
-    alertGhlAppointments,
-    alertBaseKeywordEvents,
-    alertClientFilter
-  );
   const rawAlertAttributionEvents = [
     ...alertBaseKeywordEvents,
     ...alertSupplementalGhlEvents,
@@ -4025,6 +4062,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
     attributionRows: alertAttributionRows,
     adAttributionGroupId: alertPeriodAdAttributionGroupId,
   });
+  mark("auto_attribution");
   const allAttributionResolutions = [
     ...attributionResolutions,
     ...automaticAttributionResolutions,
@@ -4228,6 +4266,7 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
       a.eventAt || `${a.date}T12:00:00.000Z`
     )
   );
+  mark("attribution_join");
 
   const dailyGroups = new Map<string, Group>();
   addMetaRowsToGroups(
@@ -4467,21 +4506,22 @@ export async function getAdsTrackerDashboard(query: AdsTrackerQuery, opts?: { on
     calendarEvents,
     salesMatchStats,
   });
+  mark("aggregate");
 
-  // Attach the words the software has already read off each ad's image, so the
-  // payload carries the messaging next to the money. Never blocks the dashboard
-  // if the copy store is empty or unavailable.
-  await attachCreativeCopy(db, payload);
-
-  // Swap each ad's expiring Facebook preview URL for the durable copy we stored in
-  // our own bucket at sync time, so the real creative shows on any date range.
-  // Best-effort — leaves the live Facebook URL in place when nothing is stored.
-  await attachStoredImages(db, payload);
-
-  // Attach the audience each ad ran against (age range, # interests, placements,
-  // broad vs lookalike …) so targeting becomes a correlatable variable next to
-  // copy and cost. Best-effort — never blocks the dashboard.
-  await attachTargeting(db, payload);
+  // Three independent best-effort enrichments, run concurrently (were three serial awaits):
+  //  - attachCreativeCopy: the words the software has already read off each ad's image, so the
+  //    payload carries the messaging next to the money.
+  //  - attachStoredImages: swap each ad's expiring Facebook preview URL for the durable copy we
+  //    stored in our own bucket at sync time, so the real creative shows on any date range.
+  //  - attachTargeting: the audience each ad ran against (age range, # interests, placements,
+  //    broad vs lookalike …) so targeting becomes a correlatable variable next to copy and cost.
+  // Each mutates a different field on the payload and never blocks the dashboard.
+  await Promise.all([
+    attachCreativeCopy(db, payload),
+    attachStoredImages(db, payload),
+    attachTargeting(db, payload),
+  ]);
+  mark("attach");
 
   return payload;
 }
