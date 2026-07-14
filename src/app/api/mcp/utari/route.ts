@@ -3,12 +3,39 @@
 // Deploys with the app at https://<domain>/api/mcp/utari. Auth: Authorization: Bearer $UTARI_MCP_TOKEN.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { serveDashboard } from "@/lib/ads-tracker/snapshot";
+import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 const TOKEN = process.env.UTARI_MCP_TOKEN;
 const DM_CLIENT: Record<string, string> = { tyson: "tyson_sonnek", antwan: "antwan_rarcus" };
+const todayET = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
+// The CANONICAL per-ad funnel from the Ads Dashboard (getAdsTrackerDashboard via serveDashboard),
+// merged with status/CPM/impressions/targeting/copy from ad_state. This is the source-of-truth money.
+async function canonicalAds(client: string, dateFrom: string, dateTo: string) {
+  const sb = getServiceSupabase();
+  const dash = (await serveDashboard({ account: client as AdsTrackerAccount, status: "all", level: "ad", dateFrom, dateTo })) as { adRoas?: Record<string, unknown>[] };
+  const { data: state } = await sb.from("ad_state").select("keyword,status,impressions,cpm,last_status_day,audience_type,is_advantage,age_min,age_max,has_lookalike,on_image_text").eq("client_key", client);
+  const byKw: Record<string, Record<string, unknown>> = {};
+  for (const s of state || []) byKw[String((s as { keyword: string }).keyword)] = s;
+  return (dash.adRoas || []).map((r) => {
+    const st = byKw[String(r.label).toLowerCase()] || {};
+    return {
+      keyword: r.label, status: st.status ?? null,
+      spend: r.adSpend, dms: r.messages, booked_calls: r.bookedCalls, calls_shown: r.callsTaken,
+      closes: r.newClients, collected: r.collectedRevenue, gross_profit: r.grossProfit,
+      roas: r.collectedRoi, gross_profit_roi: r.grossProfitRoi,
+      cost_per_dm: r.costPerMessage, cost_per_booked: r.costPerBookedCall,
+      impressions: st.impressions ?? null, cpm: st.cpm ?? null, last_status_day: st.last_status_day ?? null,
+      audience_type: st.audience_type ?? null, is_advantage: st.is_advantage ?? null,
+      age: st.age_min ? `${st.age_min}-${st.age_max}` : null, on_image_text: st.on_image_text ?? null,
+    };
+  });
+}
 
 function authed(req: NextRequest): boolean {
   if (!TOKEN) return false; // no token configured = locked shut
@@ -49,14 +76,19 @@ async function callTool(name: string, a: Record<string, unknown>): Promise<unkno
   const client = a.client as string;
   switch (name) {
     case "list_ads": {
-      const { data } = await sb.from("ad_state").select("*").eq("client_key", client).order("spend", { ascending: false });
-      return { note: "roas = collected cash / meta spend, all-time per ad.", ads: data };
+      const dateTo = (a.dateTo as string) || todayET();
+      const dateFrom = (a.dateFrom as string) || "2026-04-01";
+      const ads = await canonicalAds(client, dateFrom, dateTo);
+      ads.sort((x, y) => (y.spend as number) - (x.spend as number));
+      return { note: "CANONICAL Ads Dashboard attribution: spend, DMs, booked, shown (calls_shown), closes, collected, ROAS, per ad, funnel ad->DM->booked->shown->closed. Source of truth. Merged with status/CPM/impressions/targeting/copy.", window: { dateFrom, dateTo }, ads };
     }
     case "get_ad": {
       const kw = (a.keyword as string).toLowerCase();
-      const { data } = await sb.from("ad_state").select("*").eq("client_key", client).eq("keyword", kw);
+      const dateTo = (a.dateTo as string) || todayET();
+      const dateFrom = (a.dateFrom as string) || "2026-04-01";
+      const ads = await canonicalAds(client, dateFrom, dateTo);
       const dms = await dmsForAd(client, kw, (a.dm_limit as number) || 5);
-      return { ad: data?.[0] || null, sample_dms: dms };
+      return { ad: ads.find((x) => String(x.keyword).toLowerCase() === kw) || null, sample_dms: dms };
     }
     case "get_dms_for_ad":
       return { keyword: a.keyword, conversations: await dmsForAd(client, a.keyword as string, (a.limit as number) || 20) };
