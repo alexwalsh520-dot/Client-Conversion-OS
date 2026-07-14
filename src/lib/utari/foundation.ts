@@ -434,7 +434,7 @@ export const SCHEMA_DOC = {
     "fathom_calls carry no ManyChat subscriber or ad keyword, so call->ad/DM linkage is always linkage_status 'unlinked' (correlate on prospect_name only, non-authoritative).",
     "Per-ad Meta on/off status is not in the stored snapshot; get_ad_full reports keyword-level status from ad_state and per_ad_status not_tracked.",
     "Per-thread 'booked' is not stored on a hard key, so thread digests report booked not_tracked (became_sale IS available via subscriber_id hard key).",
-    "business_snapshot prior_window is the most recent non-overlapping earlier stored snapshot (rolling ~7-day windows, not calendar weeks); both windows are echoed.",
+    "business_snapshot prior_window is the most recent non-overlapping earlier stored snapshot (rolling ~7-day windows, not calendar weeks); both windows are echoed. The warm cron now keeps a prior-week snapshot warm, so prior_window populates within ~a day; until a prior-week snapshot exists it returns not_tracked.",
   ],
   tools: {
     list_ads: "Per-ad canonical funnel + live targeting/copy for a creator (v2 field names).",

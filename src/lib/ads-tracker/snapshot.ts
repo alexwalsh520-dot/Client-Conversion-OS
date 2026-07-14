@@ -146,7 +146,11 @@ export async function refreshStandardWindows(
     { account: "all", status: "all", level: "ad", dateFrom: d14, dateTo: today },
     { account: "all", status: "all", level: "ad", dateFrom: monthStart, dateTo: today },
   );
-  // Tier 3: today + per-creator month-to-date + campaign/all.
+  // Tier 3: today + per-creator month-to-date + campaign/all + the PRIOR week (a non-overlapping
+  // trailing-7 ending 7 days ago) so business_snapshot can populate prior_window comparisons.
+  const priorFrom = shift(today, -13), priorTo = shift(today, -7);
+  for (const account of CREATORS)
+    jobs.push({ account, status: "all", level: "ad", dateFrom: priorFrom, dateTo: priorTo });
   for (const account of CREATORS)
     jobs.push({ account, status: "all", level: "ad", dateFrom: monthStart, dateTo: today });
   jobs.push(

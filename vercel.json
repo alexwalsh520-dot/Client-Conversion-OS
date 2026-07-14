@@ -12,6 +12,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/attribution-reconcile",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/cron/mozi-sync",
       "schedule": "0 6 * * *"
     },
