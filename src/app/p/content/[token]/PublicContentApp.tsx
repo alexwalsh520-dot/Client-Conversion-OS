@@ -8,12 +8,14 @@ import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
+import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import type { DateRange } from "@/components/content/CalendarRange";
 
 type Studio = {
   creator: string;
   posts: StudioPost[];
   buyerIdeas: BuyerIdeaSet[];
+  buyerVoice: (BuyerVoice & { buyer_count?: number | null }) | null;
   shiftBrief: ShiftBrief | null;
   playbook: Playbook | null;
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
@@ -69,7 +71,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
         ) : page === "playbook" ? (
           <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
         ) : page === "buyers" ? (
-          <CreatorBuyersView buyers={data.buyerIdeas || []} />
+          <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
         ) : (
           <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
         )}
