@@ -9,8 +9,10 @@ import {
   type AdsTrackerAccount,
   type AdsTrackerLevel,
   type AdsTrackerStatus,
+  type SaleFact,
 } from "./server";
 import { computeMoneyModel } from "./money-model";
+import { persistSaleFacts, persistAttributionSummary } from "./sale-facts";
 
 export type SnapQuery = {
   account: AdsTrackerAccount;
@@ -84,11 +86,20 @@ export async function readSnapshot(q: SnapQuery): Promise<Record<string, unknown
 // serves the synced copy given the raised freshness tolerance).
 export async function computeAndStore(q: SnapQuery): Promise<Record<string, unknown>> {
   const start = Date.now();
+  const saleFacts: SaleFact[] = [];
   const [payload, moneyModel, times] = await Promise.all([
-    getAdsTrackerDashboard(q),
+    getAdsTrackerDashboard(q, { onSaleFact: (f) => saleFacts.push(f) }),
     computeMoneyModel().catch(() => null),
     syncTimes(),
   ]);
+  // Stamp the canonical per-sale attribution into sale_attribution_facts (upsert by sale_key), and
+  // the reconciled per-creator revenue buckets into attribution_summary. Non-fatal: a facts-write
+  // hiccup must never fail the snapshot.
+  await persistSaleFacts(saleFacts).catch(() => {});
+  if (q.account === "tyson" || q.account === "antwan") {
+    const attribution = (payload as { attribution?: Record<string, unknown> }).attribution;
+    await persistAttributionSummary(q.account, attribution, q.dateFrom, q.dateTo).catch(() => {});
+  }
   const computeMs = Date.now() - start;
   const _freshness: Freshness = { computedAt: new Date().toISOString(), salesSyncedAt: times.sales, metaSyncedAt: times.meta, fromSnapshot: false };
   const full = { ...payload, moneyModel, _freshness };

@@ -77,8 +77,8 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string" } }, required: ["client"] } },
   { name: "list_sales", description: "The sales ledger: date, prospect, collected, closer, setter, objection, call notes.",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, wins_only: { type: "boolean" } }, required: ["client"] } },
-  { name: "get_sales_with_ad", description: "The wins ledger, each resolved to the ad it came from where deterministically possible (ad_keyword null when unresolved, never guessed).",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] } }, required: ["client"] } },
+  { name: "get_sales_with_ad", description: "Every attributed sale tied to its ad keyword (the Ads Dashboard's own canonical per-sale attribution), each labeled with the method used (link_dm = tied to a real DM thread; name = name-matched). Returns `coverage` (the reconciled paid/organic/unattributed revenue split) + `facts_summary` (counts, DM-linked count). Optional `since` (ISO date) filters the sales list.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, since: { type: "string" } }, required: ["client"] } },
   { name: "freshness", description: "Minutes since each data source last synced.", inputSchema: { type: "object", properties: {} } },
   // ---- Factory (the /factory content workspace): full read + write ----
   { name: "factory_list_projects", description: "List every Factory project (id, name, client). Factory = the copy/content workspace where ad copy, image directions, and docs are drafted, organized into groups, and snapshotted as batches.",
@@ -142,8 +142,41 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       return { sales: rows };
     }
     case "get_sales_with_ad": {
-      const { data } = await sb.from("sale_attribution").select("*").ilike("offer", `%${client}%`).order("date");
-      return { note: "ad_keyword null = not deterministically resolvable to an ad (never guessed).", sales: data };
+      // Canonical per-sale attribution: the exact sale->ad-keyword links the Ads Dashboard computes
+      // (via getAdsTrackerDashboard's onSaleFact sink), persisted to sale_attribution_facts. method
+      // tells HOW each was tied: link_dm = deterministic ManyChat/DM keyword match (an actual DM
+      // thread), name = matched by prospect name, link_booking = via the booking record.
+      let fq = sb.from("sale_attribution_facts")
+        .select("occurred_day,prospect_name,keyword_normalized,method,collected_cents,subscriber_id")
+        .eq("client_key", client).order("occurred_day", { ascending: false });
+      if (a.since) fq = fq.gte("occurred_day", a.since as string);
+      const { data: facts } = await fq.limit(5000);
+      const rows = (facts || []).map((f: Record<string, unknown>) => ({
+        date: f.occurred_day, name: f.prospect_name, ad_keyword: f.keyword_normalized,
+        method: (f.method as string) || "unknown", dm_linked: f.method === "link_dm",
+        collected: Math.round(((f.collected_cents as number) || 0) / 100),
+        subscriber_id: f.subscriber_id,
+      }));
+      const attributedCollected = rows.reduce((s, r) => s + r.collected, 0);
+      const byMethod: Record<string, { sales: number; collected: number }> = {};
+      for (const r of rows) { const m = r.method || "unknown"; byMethod[m] = byMethod[m] || { sales: 0, collected: 0 }; byMethod[m].sales++; byMethod[m].collected += r.collected; }
+      // Authoritative coverage = the Dashboard's own reconciled buckets (dollars). These INCLUDE
+      // manual Attribution Workspace resolutions, so they're the truth to cite (not facts/ledger).
+      const { data: sum } = await sb.from("attribution_summary").select("*").eq("client_key", client).maybeSingle();
+      const s = (sum as Record<string, number> | null) || null;
+      return {
+        note: "CANONICAL sale->ad attribution: the Dashboard's own per-sale links, method-labeled. link_dm = tied to a real DM thread via a ManyChat keyword (237/393 for Tyson); name = matched by prospect name; link_booking = via the booking record. `sales` lists every attributed sale. `coverage` is the Dashboard's reconciled revenue split (all_time_unattributed is the only genuinely un-sourced money).",
+        coverage: s ? {
+          paid_attributed_revenue: Math.round(s.paid_attributed),
+          organic_revenue: Math.round(s.organic),
+          unattributed_revenue: Math.round(s.unattributed),
+          total_collected_revenue: Math.round(s.total_collected),
+          all_time_unattributed_revenue: Math.round(s.all_time_unattributed),
+          window: { from: s.window_from, to: s.window_to },
+        } : "not yet computed",
+        facts_summary: { attributed_sales: rows.length, dm_linked: rows.filter((r) => r.dm_linked).length, attributed_cash_collected: attributedCollected, by_method: byMethod },
+        sales: rows,
+      };
     }
     case "freshness": {
       const { data } = await sb.from("feed_watermarks").select("source,last_run_at");
