@@ -15481,6 +15481,49 @@ function App() {
     loadDashboard();
   }, [effectiveAccount, dateRange.dateFrom, dateRange.dateTo]);
 
+  // Background prefetch: after the current view settles, quietly warm the device cache for the
+  // account's other common presets and the OTHER accounts' current range, so switching creator or
+  // preset paints instantly from cache. Best-effort and throttled: never blocks, never surfaces an
+  // error, and skips any combo already cached fresh. Same snapshot store loadDashboard reads.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const accounts = ["all", ...activeCreators];
+      const presetIds = ["today", "last7", "last30", "mtd"];
+      const jobs = [];
+      for (const pid of presetIds) {
+        const r = rangeForPreset(pid, todayEt());
+        if (r.dateFrom === dateRange.dateFrom && r.dateTo === dateRange.dateTo) continue;
+        jobs.push({ account: effectiveAccount, range: r });
+      }
+      for (const a of accounts) {
+        if (a === effectiveAccount) continue;
+        jobs.push({ account: a, range: dateRange });
+      }
+      for (const j of jobs) {
+        if (cancelled) return;
+        if (readSnapshot(j.account, j.range)) continue; // already warm on this device
+        try {
+          const params = new URLSearchParams({
+            account: j.account,
+            status: "all",
+            level: "ad",
+            dateFrom: j.range.dateFrom,
+            dateTo: j.range.dateTo
+          });
+          const res = await fetch(ADS_DATA_URL + params.toString(), { cache: "no-store" });
+          const json = await res.json();
+          if (!cancelled && res.ok && json && !json.error) writeSnapshot(j.account, j.range, json);
+        } catch (_) {/* prefetch is best-effort */}
+        await new Promise(r => setTimeout(r, 400)); // throttle so prefetch never competes with the live view
+      }
+    }, 1500); // let the primary load settle first
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [effectiveAccount, dateRange.dateFrom, dateRange.dateTo]);
+
   // Fixed trailing-window fetch for the decision cards (Deep Dive only). Keyed on
   // the account, NOT the date picker — so changing the displayed range never
   // shifts what the Turn-off/Scale cards judge. Quiet: failures just leave the
