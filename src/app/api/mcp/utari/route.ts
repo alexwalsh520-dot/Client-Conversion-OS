@@ -5,13 +5,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { readLatestAdSnapshot } from "@/lib/ads-tracker/snapshot";
 import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
+import {
+  DM_CLIENT,
+  dataFreshness,
+  coverageFor,
+  businessSnapshot,
+  getAdFull,
+  getCallTranscripts,
+  getOrganicContent,
+  SCHEMA_DOC,
+} from "@/lib/utari/foundation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const TOKEN = process.env.UTARI_MCP_TOKEN;
-const DM_CLIENT: Record<string, string> = { tyson: "tyson_sonnek", antwan: "antwan_rarcus" };
+
+// Tools that get the standard response envelope (data_freshness + coverage). Excludes the
+// static describe_schema and the factory proxy tools (drafts, not business reads).
+const ENVELOPE_TOOLS = new Set([
+  "list_ads", "get_ad", "get_dms_for_ad", "get_ad_day", "list_sales", "get_sales_with_ad",
+  "freshness", "business_snapshot", "get_ad_full", "get_call_transcripts", "get_organic_content",
+]);
 
 // The CANONICAL per-ad funnel — the exact numbers on the Ads Dashboard. We read the freshest stored
 // AD-LEVEL snapshot (computed by getAdsTrackerDashboard, kept warm by the snapshot cron) instead of
@@ -28,12 +44,16 @@ async function canonicalAds(client: string) {
   for (const s of state || []) byKw[String((s as { keyword: string }).keyword)] = s;
   const ads = adRoas.map((r) => {
     const st = byKw[String(r.label).toLowerCase()] || {};
+    const booked = (r.bookedCalls as number) || 0;
+    const calls = (r.callsTaken as number) || 0;
     return {
       keyword: r.label, status: st.status ?? null,
-      spend: r.adSpend, dms: r.messages, booked_calls: r.bookedCalls, calls_shown: r.callsTaken,
-      closes: r.newClients, collected: r.collectedRevenue, gross_profit: r.grossProfit,
-      roas: r.collectedRoi, gross_profit_roi: r.grossProfitRoi,
-      cost_per_dm: r.costPerMessage, cost_per_booked: r.costPerBookedCall,
+      spend: r.adSpend, dms: r.messages, booked_calls: r.bookedCalls, calls_taken: r.callsTaken,
+      show_rate: booked > 0 ? Math.round(((calls / booked) as number) * 1000) / 1000 : null,
+      closes: r.newClients, close_rate: calls > 0 ? Math.round(((((r.newClients as number) || 0) / calls) as number) * 1000) / 1000 : null,
+      cash_collected: r.collectedRevenue, gross_profit: r.grossProfit,
+      roas: r.collectedRoi, gross_profit_roas: r.grossProfitRoi,
+      cost_per_dm: r.costPerMessage, cost_per_booked_call: r.costPerBookedCall,
       impressions: st.impressions ?? null, cpm: st.cpm ?? null, last_status_day: st.last_status_day ?? null,
       audience_type: st.audience_type ?? null, is_advantage: st.is_advantage ?? null,
       age: st.age_min ? `${st.age_min}-${st.age_max}` : null, on_image_text: st.on_image_text ?? null,
@@ -80,6 +100,16 @@ const TOOLS = [
   { name: "get_sales_with_ad", description: "Every attributed sale tied to its ad keyword (the Ads Dashboard's own canonical per-sale attribution), each labeled with the method used (link_dm = tied to a real DM thread; name = name-matched). Returns `coverage` (the reconciled paid/organic/unattributed revenue split) + `facts_summary` (counts, DM-linked count). Optional `since` (ISO date) filters the sales list.",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, since: { type: "string" } }, required: ["client"] } },
   { name: "freshness", description: "Minutes since each data source last synced.", inputSchema: { type: "object", properties: {} } },
+  { name: "business_snapshot", description: "Per creator (Tyson, Antwan) + combined: current-week and prior-week canonical funnel (spend, dms, cost_per_dm, booked_calls, cost_per_booked_call, calls_taken, show_rate, closes, close_rate, cash_collected, roas), top 3 and bottom 3 funded ads, and the count of funded zero-DM ads. Sourced from the Ads Dashboard snapshot; matches the Ads tab to the dollar for the same stored window.",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "get_ad_full", description: "Everything about ONE ad in a single call: canonical funnel row, placement lineage (every ad_id/campaign/adset/spend/status), on-image + primary copy, per-day spend/DM series, and thread digests (subscriber, first DM, message count, became_sale, 2-line excerpt). Full verbatim threads: use get_dms_for_ad.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; filters the per-day series + thread digests (default = snapshot window start)" } }, required: ["client", "keyword"] } },
+  { name: "get_call_transcripts", description: "Fathom call transcripts. List mode (no id) = summaries + fathom ids for a creator; single-id mode = the full transcript. Calls carry no hard key to an ad or DM thread, so linkage_status is always 'unlinked' (correlate on prospect_name only, non-authoritative).",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string", description: "fathom_id for the full transcript" }, since: { type: "string" }, limit: { type: "number" } }, required: ["client"] } },
+  { name: "get_organic_content", description: "Organic Instagram posts for a creator with their buyer-fit grade. List mode = date, type, caption excerpt, engagement, permalink, grade (score/band/top miss). Single-post mode (pass id = ig_media_id) = full caption + transcript + full grade. Optional band filter.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string" }, since: { type: "string" }, until: { type: "string" }, band: { type: "string", description: "grade band filter, e.g. off/weak/strong" }, limit: { type: "number" } }, required: ["client"] } },
+  { name: "describe_schema", description: "Static, versioned documentation of every tool, field semantics, the three attribution_status meanings, the DM-count definition, and the known accuracy ceilings. No DB call. Read this first to understand what every number means.",
+    inputSchema: { type: "object", properties: {} } },
   // ---- Factory (the /factory content workspace): full read + write ----
   { name: "factory_list_projects", description: "List every Factory project (id, name, client). Factory = the copy/content workspace where ad copy, image directions, and docs are drafted, organized into groups, and snapshotted as batches.",
     inputSchema: { type: "object", properties: {} } },
@@ -118,7 +148,7 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
     case "list_ads": {
       const { ads, window } = await canonicalAds(client);
       ads.sort((x, y) => ((y.spend as number) || 0) - ((x.spend as number) || 0));
-      return { note: "CANONICAL Ads Dashboard attribution: spend, DMs, booked, shown (calls_shown), closes, collected, ROAS per ad, funnel ad->DM->booked->shown->closed. The exact reconciled dashboard numbers. Merged with live status/CPM/impressions/targeting/copy. `window` is the period these funnel numbers cover.", window, ads };
+      return { note: "CANONICAL Ads Dashboard attribution per ad (v2 field names): spend, dms, booked_calls, calls_taken, closes, cash_collected, roas, funnel ad->DM->booked->taken->closed. The exact reconciled dashboard numbers. Merged with live status/CPM/impressions/targeting/copy. `window` is the period these funnel numbers cover; spend uses the ad account's day (Pacific).", window, ads };
     }
     case "get_ad": {
       const kw = (a.keyword as string).toLowerCase();
@@ -136,10 +166,29 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       return { note: "one row per ad per day", days: data };
     }
     case "list_sales": {
-      const { data } = await sb.from("sales_tracker_rows").select("date,prospect_name,collected_revenue_cents,closer,setter,objection,call_notes,program_length").ilike("offer", `%${client}%`).order("date");
-      let rows = (data || []).map((s: Record<string, unknown>) => ({ date: s.date, name: s.prospect_name, collected: Math.round(((s.collected_revenue_cents as number) || 0) / 100), closer: s.closer, setter: s.setter, objection: s.objection, program: s.program_length, notes: s.call_notes }));
-      if (a.wins_only !== false) rows = rows.filter((r) => r.collected > 0);
-      return { sales: rows };
+      const { data } = await sb.from("sales_tracker_rows").select("date,prospect_name,prospect_name_normalized,collected_revenue_cents,closer,setter,objection,call_notes,program_length").ilike("offer", `%${client}%`).order("date");
+      // Stamp attribution_status per sale from the canonical facts (hard/deterministic links only).
+      // A sale present in sale_attribution_facts = machine_attributed (with its ad_keyword + method);
+      // absent = unresolved. resolved_organic is aggregate-only (see describe_schema).
+      const { data: facts } = await sb.from("sale_attribution_facts").select("occurred_day,prospect_name,keyword_normalized,method").eq("client_key", client);
+      const factByKey: Record<string, { keyword: string; method: string }> = {};
+      for (const f of (facts as Record<string, unknown>[]) || []) {
+        const key = `${String(f.prospect_name || "").toLowerCase().trim()}|${String(f.occurred_day || "").slice(0, 10)}`;
+        factByKey[key] = { keyword: String(f.keyword_normalized || ""), method: String(f.method || "") };
+      }
+      let rows = (data || []).map((s: Record<string, unknown>) => {
+        const norm = String(s.prospect_name_normalized || s.prospect_name || "").toLowerCase().trim();
+        const hit = factByKey[`${norm}|${String(s.date || "").slice(0, 10)}`];
+        return {
+          date: s.date, name: s.prospect_name, cash_collected: Math.round(((s.collected_revenue_cents as number) || 0) / 100),
+          closer: s.closer, setter: s.setter, objection: s.objection, program: s.program_length, notes: s.call_notes,
+          attribution_status: hit ? "machine_attributed" : "unresolved",
+          ad_keyword: hit ? hit.keyword : null,
+          attribution_method: hit ? hit.method : null,
+        };
+      });
+      if (a.wins_only !== false) rows = rows.filter((r) => r.cash_collected > 0);
+      return { note: "Sales ledger (v2). Each sale carries attribution_status: machine_attributed (linked in sale_attribution_facts) or unresolved (no ad keyword). resolved_organic is aggregate-only; see coverage + describe_schema.", sales: rows };
     }
     case "get_sales_with_ad": {
       // Canonical per-sale attribution: the exact sale->ad-keyword links the Ads Dashboard computes
@@ -153,51 +202,62 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       const { data: facts } = await fq.limit(5000);
       const rows = (facts || []).map((f: Record<string, unknown>) => ({
         date: f.occurred_day, name: f.prospect_name, ad_keyword: f.keyword_normalized,
+        attribution_status: "machine_attributed" as const,
         method: (f.method as string) || "unknown", dm_linked: f.method === "link_dm",
-        collected: Math.round(((f.collected_cents as number) || 0) / 100),
+        cash_collected: Math.round(((f.collected_cents as number) || 0) / 100),
         subscriber_id: f.subscriber_id,
       }));
-      const attributedCollected = rows.reduce((s, r) => s + r.collected, 0);
-      const byMethod: Record<string, { sales: number; collected: number }> = {};
-      for (const r of rows) { const m = r.method || "unknown"; byMethod[m] = byMethod[m] || { sales: 0, collected: 0 }; byMethod[m].sales++; byMethod[m].collected += r.collected; }
-      // Authoritative coverage = the Dashboard's own reconciled buckets (dollars). These INCLUDE
-      // manual Attribution Workspace resolutions, so they're the truth to cite (not facts/ledger).
-      const { data: sum } = await sb.from("attribution_summary").select("*").eq("client_key", client).maybeSingle();
-      const s = (sum as Record<string, number> | null) || null;
+      const attributedCollected = rows.reduce((s, r) => s + r.cash_collected, 0);
+      const byMethod: Record<string, { sales: number; cash_collected: number }> = {};
+      for (const r of rows) { const m = r.method || "unknown"; byMethod[m] = byMethod[m] || { sales: 0, cash_collected: 0 }; byMethod[m].sales++; byMethod[m].cash_collected += r.cash_collected; }
       return {
-        note: "CANONICAL sale->ad attribution: the Dashboard's own per-sale links, method-labeled. link_dm = tied to a real DM thread via a ManyChat keyword (237/393 for Tyson); name = matched by prospect name; link_booking = via the booking record. `sales` lists every attributed sale. `coverage` is the Dashboard's reconciled revenue split (all_time_unattributed is the only genuinely un-sourced money).",
-        coverage: s ? {
-          paid_attributed_revenue: Math.round(s.paid_attributed),
-          organic_revenue: Math.round(s.organic),
-          unattributed_revenue: Math.round(s.unattributed),
-          total_collected_revenue: Math.round(s.total_collected),
-          all_time_unattributed_revenue: Math.round(s.all_time_unattributed),
-          window: { from: s.window_from, to: s.window_to },
-        } : "not yet computed",
+        note: "CANONICAL sale->ad attribution (v2): the Dashboard's own per-sale links. Every row is attribution_status machine_attributed; method tells HOW - link_dm = real DM thread via a ManyChat keyword (hard key); link_booking = booking record (hard key); name = deterministic prospect-name match. `sales` lists every attributed sale. Reconciled revenue split is in the response `coverage` block. Sales with no ad keyword are unresolved - see list_sales.",
         facts_summary: { attributed_sales: rows.length, dm_linked: rows.filter((r) => r.dm_linked).length, attributed_cash_collected: attributedCollected, by_method: byMethod },
         sales: rows,
       };
     }
-    case "freshness": {
-      const { data } = await sb.from("feed_watermarks").select("source,last_run_at");
-      const now = Date.now();
-      return { sources: (data || []).map((w: { source: string; last_run_at?: string }) => ({ source: w.source, minutes_since_sync: w.last_run_at ? Math.round((now - new Date(w.last_run_at).getTime()) / 60000) : null })) };
-    }
+    case "freshness":
+      return dataFreshness(sb);
+    case "business_snapshot":
+      return businessSnapshot();
+    case "get_ad_full":
+      return getAdFull(client, a.keyword as string, a.since as string | undefined);
+    case "get_call_transcripts":
+      return getCallTranscripts(client, a.id as string | undefined, a.since as string | undefined, a.limit as number | undefined);
+    case "get_organic_content":
+      return getOrganicContent(client, { id: a.id as string | undefined, since: a.since as string | undefined, until: a.until as string | undefined, band: a.band as string | undefined, limit: a.limit as number | undefined });
+    case "describe_schema":
+      return SCHEMA_DOC;
     default:
       throw new Error("unknown tool: " + name);
   }
 }
 
+// Attach the standard response envelope (data_freshness + coverage) to business-data tools.
+// describe_schema and factory tools are excluded (static / drafts). coverage needs a single
+// creator in scope; multi-creator tools (business_snapshot) embed coverage per creator instead.
+async function withEnvelope(name: string, args: Record<string, unknown>, result: unknown): Promise<unknown> {
+  if (!ENVELOPE_TOOLS.has(name) || result === null || typeof result !== "object") return result;
+  const sb = getServiceSupabase();
+  const client = args.client as string | undefined;
+  const envelope: Record<string, unknown> = { data_freshness: await dataFreshness(sb) };
+  if (client === "tyson" || client === "antwan") envelope.coverage = await coverageFor(sb, client);
+  return { ...(result as Record<string, unknown>), ...envelope };
+}
+
 async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, origin: string) {
   const { id, method, params } = msg;
   if (method === "initialize")
-    return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "1.0.0" } } };
+    return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "2.0.0" } } };
   if (method === "notifications/initialized" || method === "notifications/cancelled") return null;
   if (method === "ping") return { jsonrpc: "2.0", id, result: {} };
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (method === "tools/call") {
     try {
-      const result = await callTool((params?.name as string) || "", (params?.arguments as Record<string, unknown>) || {}, origin);
+      const toolName = (params?.name as string) || "";
+      const toolArgs = (params?.arguments as Record<string, unknown>) || {};
+      const raw = await callTool(toolName, toolArgs, origin);
+      const result = await withEnvelope(toolName, toolArgs, raw);
       return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } };
     } catch (e) {
       return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify({ error: e instanceof Error ? e.message : "failed" }) }], isError: true } };
