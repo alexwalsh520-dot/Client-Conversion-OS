@@ -105,8 +105,10 @@ export async function GET(req: NextRequest) {
   const manychatOrigin = await callSyncRoute(baseUrl, "/api/sync/manychat-origin", body);
 
   // Now that the underlying data is fresh, recompute the dashboard snapshots so the Ads tab
-  // serves one fast, identical, labeled result. Never blocks the core sync.
-  const snapshots = await refreshStandardWindows().catch(() => ({ computed: 0, failed: 0, ms: 0 }));
+  // serves one fast, identical, labeled result. Give it whatever time is left under the 300s
+  // route budget (minus ~30s headroom for the stamp write + response). Never blocks the core sync.
+  const warmBudgetMs = Math.max(60000, 270000 - (Date.now() - startedAt));
+  const snapshots = await refreshStandardWindows(warmBudgetMs).catch(() => ({ computed: 0, failed: 0, skipped: 0, ms: 0 }));
 
   // Incrementally stamp recent sales into the attribution facts layer. Nothing reads it for display
   // yet; this just keeps the (dollar-for-dollar reconciled) stamps current for when the fast read

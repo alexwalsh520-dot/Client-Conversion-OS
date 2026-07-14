@@ -119,29 +119,51 @@ export async function serveDashboard(q: SnapQuery): Promise<Record<string, unkno
   return computeAndStore(q);
 }
 
-// The standard windows the tab loads. Bounded so the cron finishes well inside its limit;
-// everything else is filled lazily on first request. Runs sequentially (concurrent dashboards
-// contend on the DB).
-export async function refreshStandardWindows(): Promise<{ computed: number; failed: number; ms: number }> {
+// The matrix the tab can request, warmed in priority order (the views a user hits first come first)
+// under a wall-clock budget so a slow run stops cleanly BEFORE the platform kills it, rather than
+// dying mid-way and leaving the tail permanently cold. Whatever the budget skips fills in lazily on
+// first request and then caches. Active roster only (all, tyson, antwan); keith/lucy are near-empty
+// and fill lazily. Never silently caps: returns computed/failed/skipped and logs the skipped tail.
+export async function refreshStandardWindows(
+  budgetMs = 90000,
+): Promise<{ computed: number; failed: number; skipped: number; ms: number }> {
   const today = todayEt();
   const monthStart = today.slice(0, 7) + "-01";
-  // Lean, reliable set that finishes well inside a single request/cron window. Everything else
-  // (other windows, ad level, per-creator month) fills in lazily on first request, then caches.
-  const jobs: SnapQuery[] = [
-    { account: "all", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
+  const d7 = shift(today, -6), d14 = shift(today, -13), d30 = shift(today, -29);
+  const CREATORS: AdsTrackerAccount[] = ["all", "tyson", "antwan"];
+  const jobs: SnapQuery[] = [];
+  // Tier 1: the ad-level, status=all default the UI opens with, per account, at the common presets.
+  for (const account of CREATORS)
+    for (const [from] of [[d7], [d30]] as const)
+      jobs.push({ account, status: "all", level: "ad", dateFrom: from, dateTo: today });
+  // Tier 2: the campaign/active defaults + month-to-date.
+  jobs.push(
+    { account: "all", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
+    { account: "all", status: "active", level: "campaign", dateFrom: d30, dateTo: today },
     { account: "all", status: "active", level: "campaign", dateFrom: monthStart, dateTo: today },
-    { account: "tyson", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
-    { account: "antwan", status: "active", level: "campaign", dateFrom: shift(today, -6), dateTo: today },
-    // Keep a trailing-7 AD-LEVEL snapshot warm per creator so the UTARI MCP always has a fresh,
-    // canonical per-ad funnel to read (status "all" so paused ads are included). Bounded window
-    // keeps compute well under the DB statement timeout.
-    { account: "tyson", status: "all", level: "ad", dateFrom: shift(today, -6), dateTo: today },
-    { account: "antwan", status: "all", level: "ad", dateFrom: shift(today, -6), dateTo: today },
-  ];
+    { account: "tyson", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
+    { account: "antwan", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
+    { account: "all", status: "all", level: "ad", dateFrom: d14, dateTo: today },
+    { account: "all", status: "all", level: "ad", dateFrom: monthStart, dateTo: today },
+  );
+  // Tier 3: today + per-creator month-to-date + campaign/all.
+  for (const account of CREATORS)
+    jobs.push({ account, status: "all", level: "ad", dateFrom: monthStart, dateTo: today });
+  jobs.push(
+    { account: "all", status: "all", level: "ad", dateFrom: today, dateTo: today },
+    { account: "all", status: "all", level: "campaign", dateFrom: d7, dateTo: today },
+    { account: "all", status: "all", level: "campaign", dateFrom: d30, dateTo: today },
+  );
+
   const start = Date.now();
-  let computed = 0, failed = 0;
-  for (const q of jobs) {
-    try { await computeAndStore(q); computed++; } catch { failed++; }
+  let computed = 0, failed = 0, skipped = 0;
+  for (let i = 0; i < jobs.length; i++) {
+    if (Date.now() - start > budgetMs) { skipped = jobs.length - i; break; }
+    try { await computeAndStore(jobs[i]); computed++; } catch { failed++; }
   }
-  return { computed, failed, ms: Date.now() - start };
+  if (skipped) {
+    const dropped = jobs.slice(jobs.length - skipped).map((q) => `${q.account}/${q.level}/${q.status}/${q.dateFrom}`);
+    console.log(`[refreshStandardWindows] budget ${budgetMs}ms hit; ${skipped} windows deferred to lazy load:`, dropped.join(", "));
+  }
+  return { computed, failed, skipped, ms: Date.now() - start };
 }
