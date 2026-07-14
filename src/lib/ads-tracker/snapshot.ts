@@ -84,9 +84,8 @@ export async function readSnapshot(q: SnapQuery): Promise<Record<string, unknown
 // serves the synced copy given the raised freshness tolerance).
 export async function computeAndStore(q: SnapQuery): Promise<Record<string, unknown>> {
   const start = Date.now();
-  const stages: Record<string, number> = {};
   const [payload, moneyModel, times] = await Promise.all([
-    getAdsTrackerDashboard(q, { stages }),
+    getAdsTrackerDashboard(q),
     computeMoneyModel().catch(() => null),
     syncTimes(),
   ]);
@@ -96,7 +95,7 @@ export async function computeAndStore(q: SnapQuery): Promise<Record<string, unkn
 
   const sb = getServiceSupabase();
   await sb.from("ads_dashboard_snapshots").upsert(
-    { account: q.account, date_from: q.dateFrom, date_to: q.dateTo, level: q.level, status: q.status, payload: full, computed_at: _freshness.computedAt, compute_ms: computeMs, stages },
+    { account: q.account, date_from: q.dateFrom, date_to: q.dateTo, level: q.level, status: q.status, payload: full, computed_at: _freshness.computedAt, compute_ms: computeMs },
     { onConflict: "account,date_from,date_to,level,status" },
   );
   return full;
