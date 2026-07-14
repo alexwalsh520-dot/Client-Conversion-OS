@@ -3822,9 +3822,16 @@ function syncedMetaDateAccounts(
 
 export async function getAdsTrackerDashboard(
   query: AdsTrackerQuery,
-  opts?: { onSaleFact?: (fact: SaleFact) => void; stages?: Record<string, number> }
+  opts?: { onSaleFact?: (fact: SaleFact) => void; stages?: Record<string, number>; fast?: boolean }
 ) {
   const db = getServiceSupabase();
+  // FAST mode skips the wide, all-accounts attribution-ALERT fan-out (the alert* fetches +
+  // the alert supplemental-GHL build), which is the dominant cost (measured 8-12s of a ~12s
+  // fetch) and feeds ONLY the Attribution Workspace (unmatchedSales list, all-time trust
+  // figures, picker options) - never the per-ad funnel or the window coverage, which derive
+  // from salesCollectedRevenue. The main Ads tab uses fast; the Workspace uses the full engine.
+  // Reconciled dollar-for-dollar against legacy before it was switched on (see reconcile route).
+  const fast = opts?.fast === true;
 
   // Stage timings, so a slow compute is never a mystery. `mark(label)` records the ms elapsed
   // since the previous mark into opts.stages (a no-op when no sink is passed).
@@ -3896,17 +3903,19 @@ export async function getAdsTrackerDashboard(
       _ft("backfill", fetchKeywordBackfillRows(db, query, clientFilter)),
       _ft("attrResolutions", fetchAttributionResolutions(db)),
       _ft("salesRows", fetchSalesRowsFast(db, query, clientFilter)),
-      _ft("alertMetaRows", fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo)),
-      _ft("alertKeywordEvents", fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo)),
-      _ft("alertGhlAppts", fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo)),
-      _ft("alertBackfill", fetchKeywordBackfillRows(db, alertQuery, alertClientFilter)),
-      _ft("alertMissingManychat", fetchManychatMissingKeywordEvents(
+      // Alert fan-out: the wide, all-accounts attribution-workspace fetches. Skipped in fast mode
+      // (empty inputs make the downstream alert assembly produce empty alerts at ~zero cost).
+      fast ? Promise.resolve([]) : _ft("alertMetaRows", fetchMetaRowsForDateRange(db, alertClientFilter, alertAttributionDateFrom, alertDateTo)),
+      fast ? Promise.resolve([]) : _ft("alertKeywordEvents", fetchKeywordEvents(db, alertClientFilter, alertEventQueryFrom, alertEventQueryTo)),
+      fast ? Promise.resolve([]) : _ft("alertGhlAppts", fetchGhlAppointments(db, alertEventQueryFrom, alertEventQueryTo)),
+      fast ? Promise.resolve([]) : _ft("alertBackfill", fetchKeywordBackfillRows(db, alertQuery, alertClientFilter)),
+      fast ? Promise.resolve([]) : _ft("alertMissingManychat", fetchManychatMissingKeywordEvents(
         db,
         alertClientFilter,
         alertDashboardEventQueryFrom,
         alertEventQueryTo
       )),
-      _ft("alertSalesRows", fetchSalesRowsFast(db, alertQuery, alertClientFilter)),
+      fast ? Promise.resolve([]) : _ft("alertSalesRows", fetchSalesRowsFast(db, alertQuery, alertClientFilter)),
       // Ground-truth ad origins confirmed straight from ManyChat — rescue sales whose
       // ad click never produced a normal keyword event on our side. Fetched once with
       // the full client set; each merge filters to the client(s) it needs. Runs in the
@@ -3927,16 +3936,19 @@ export async function getAdsTrackerDashboard(
     alertGhlAppointments
   );
   // Both supplemental-GHL builds are independent DB reads; run them concurrently instead of
-  // one after the other (they used to be two serial awaits).
-  const [supplementalGhlEvents, alertSupplementalGhlEvents] = await Promise.all([
-    buildSupplementalGhlKeywordEvents(db, ghlAppointments, baseKeywordEvents, clientFilter),
-    buildSupplementalGhlKeywordEvents(
-      db,
-      alertGhlAppointments,
-      alertBaseKeywordEvents,
-      alertClientFilter
-    ),
-  ]);
+  // one after the other (they used to be two serial awaits). Fast mode skips the alert one
+  // (its appointments are empty and it feeds only the workspace).
+  const [supplementalGhlEvents, alertSupplementalGhlEvents] = fast
+    ? [await buildSupplementalGhlKeywordEvents(db, ghlAppointments, baseKeywordEvents, clientFilter), []]
+    : await Promise.all([
+        buildSupplementalGhlKeywordEvents(db, ghlAppointments, baseKeywordEvents, clientFilter),
+        buildSupplementalGhlKeywordEvents(
+          db,
+          alertGhlAppointments,
+          alertBaseKeywordEvents,
+          alertClientFilter
+        ),
+      ]);
   mark("supplemental_ghl");
   const backfilledDateKeys = new Set(
     backfill.map((row) => `${row.client_key}:${row.date}`)
