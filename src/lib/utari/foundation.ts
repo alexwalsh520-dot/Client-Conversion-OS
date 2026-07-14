@@ -42,7 +42,7 @@ function excerpt(text: unknown, max = 160): string {
 // closes, close_rate, cash_collected, roas. Spend uses the ad account's day (Pacific).
 export function funnelFromSummary(s: Row | undefined | null) {
   s = s || {};
-  const spend = round(s.adSpend);
+  const spend = round2(s.adSpend); // dollar-and-cents exact, to match the Ads tab
   const dms = round(s.messages);
   const booked = round(s.bookedCalls);
   const calls = round(s.callsTaken);
@@ -67,7 +67,7 @@ export function funnelFromSummary(s: Row | undefined | null) {
 }
 
 export function funnelFromAdRoas(r: Row) {
-  const spend = round(r.adSpend);
+  const spend = round2(r.adSpend);
   const dms = round(r.messages);
   const booked = round(r.bookedCalls);
   const calls = round(r.callsTaken);
