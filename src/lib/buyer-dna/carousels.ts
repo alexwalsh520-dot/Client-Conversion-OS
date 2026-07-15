@@ -72,10 +72,11 @@ async function dossierBriefs(sb: SupabaseClient, client: string): Promise<string
   return briefs.slice(0, 40).join("\n").slice(0, 24000);
 }
 
-// Topics + slide-1 texts from the creator's last 3 days, so the model does not repeat itself.
+// Topics + slide-1 texts from the creator's last 14 days (newest first, capped), so the model does
+// not repeat itself over a fortnight.
 async function recentToAvoid(sb: SupabaseClient, client: string, forDate: string): Promise<string> {
   const from = new Date(`${forDate}T00:00:00Z`);
-  from.setUTCDate(from.getUTCDate() - 3);
+  from.setUTCDate(from.getUTCDate() - 14);
   const fromStr = from.toISOString().slice(0, 10);
   const { data } = await sb
     .from("content_carousels")
@@ -83,7 +84,9 @@ async function recentToAvoid(sb: SupabaseClient, client: string, forDate: string
     .eq("client_key", client)
     .gte("for_date", fromStr)
     .lt("for_date", forDate)
-    .limit(30);
+    .order("for_date", { ascending: false })
+    .order("slot", { ascending: false })
+    .limit(80);
   const items = ((data || []) as { topic: string | null; slides: CarouselSlide[] }[]).map((r) => {
     const s1 = Array.isArray(r.slides) && r.slides[0] && typeof r.slides[0].text === "string" ? r.slides[0].text.replace(/\s+/g, " ").slice(0, 120) : "";
     return [r.topic ? `topic: ${r.topic}` : "", s1 ? `opener: ${s1}` : ""].filter(Boolean).join(" | ");
