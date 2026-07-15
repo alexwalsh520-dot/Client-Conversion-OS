@@ -16,6 +16,10 @@
       "schedule": "30 */2 * * *"
     },
     {
+      "path": "/api/cron/transcribe-blitz",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/attribution-reconcile",
       "schedule": "0 7 * * *"
     },
