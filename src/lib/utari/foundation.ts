@@ -555,7 +555,7 @@ export const SCHEMA_DOC = {
       "get_sales_with_ad understated the attributed total vs the canonical figure: it now reports canonical_all_time_paid_attributed (attribution_summary) and the manual_resolution_remainder so the total reconciles.",
     ],
     real_ceilings_not_bugs: [
-      "Call->ad linkage is now HARD-keyed where a closer pasted the call's Fathom link into the sale row (exact share-token / recording-id match, fathom_call_links). Calls without that pasted link stay linkage_status 'unlinked' - Fathom itself carries no ManyChat/keyword, and NO name matching is ever done. So coverage of call->ad linkage is bounded by how often closers paste the share link (currently a minority of calls).",
+      "Call->ad linkage is HARD-keyed by two exact keys (fathom_call_links): (1) a closer pasted the call's Fathom link into the sale row (share-token / recording-id match), or (2) a Fathom external attendee email EXACTLY equals a ghl_appointments.contact_email, whose booking carries the ad keyword. linkage_method names which. Calls with neither key stay 'unlinked' - NO name matching is ever done. So linkage coverage is bounded by pasted links + booking emails on file.",
       "Some collected cash is genuinely unresolved (no ad keyword captured) - a normal, accepted state, not an error. Coverage % below 100 is expected.",
       "Funded zero-DM ads in a test pool are deliberately starved by Meta (small budgets, cold audiences); zero DMs on spend alone is NOT a kill signal. The auditor's inflated 'zero-DM funded ad' count was partly the per-day series bug (now fixed) plus this misread.",
       "resolved_organic is reconciled only at the summary level, not tagged per individual sale.",
