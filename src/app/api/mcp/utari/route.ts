@@ -5,6 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { readLatestAdSnapshot } from "@/lib/ads-tracker/snapshot";
 import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
+import { dedupeSalesRows, type DedupableSaleRow } from "@/lib/ads-tracker/dedupe-sales";
+
+// Attribution certainty from the stamp method. HARD keys only are machine_attributed; a prospect-name
+// match is its own explicitly-at-risk status (name_matched), never machine certainty; no fact = unresolved.
+const methodRank = (m: string) => (m === "link_dm" ? 3 : m === "link_booking" ? 2 : m === "name" ? 1 : 0);
+function statusForMethod(method: string | undefined | null): "machine_attributed" | "name_matched" | "unresolved" {
+  if (method === "link_dm" || method === "link_booking") return "machine_attributed";
+  if (method === "name") return "name_matched";
+  return "unresolved";
+}
 import {
   DM_CLIENT,
   dataFreshness,
@@ -97,7 +107,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string" } }, required: ["client"] } },
   { name: "list_sales", description: "The sales ledger: date, prospect, collected, closer, setter, objection, call notes.",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, wins_only: { type: "boolean" } }, required: ["client"] } },
-  { name: "get_sales_with_ad", description: "Every attributed sale tied to its ad keyword (the Ads Dashboard's own canonical per-sale attribution), each labeled with the method used (link_dm = tied to a real DM thread; name = name-matched). Returns `coverage` (the reconciled paid/organic/unattributed revenue split) + `facts_summary` (counts, DM-linked count). Optional `since` (ISO date) filters the sales list.",
+  { name: "get_sales_with_ad", description: "The DEDUPED sales ledger, each win annotated with its canonical ad attribution and an honest certainty: attribution_status machine_attributed (hard key: link_dm DM thread or link_booking), name_matched (prospect-name match, at risk, NOT a hard key), or unresolved (no ad keyword). Returns `counts`, a `reconciliation` block (itemized vs the canonical all-time attributed figure), and `coverage`. Close counts match the dashboard. Optional `since` (ISO date).",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, since: { type: "string" } }, required: ["client"] } },
   { name: "freshness", description: "Minutes since each data source last synced.", inputSchema: { type: "object", properties: {} } },
   { name: "business_snapshot", description: "Per creator (Tyson, Antwan) + combined: current-week and prior-week canonical funnel (spend, dms, cost_per_dm, booked_calls, cost_per_booked_call, calls_taken, show_rate, closes, close_rate, cash_collected, roas), top 3 and bottom 3 funded ads, and the count of funded zero-DM ads. Sourced from the Ads Dashboard snapshot; matches the Ads tab to the dollar for the same stored window.",
@@ -166,53 +176,81 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       return { note: "one row per ad per day", days: data };
     }
     case "list_sales": {
-      const { data } = await sb.from("sales_tracker_rows").select("date,prospect_name,prospect_name_normalized,collected_revenue_cents,closer,setter,objection,call_notes,program_length").ilike("offer", `%${client}%`).order("date");
-      // Stamp attribution_status per sale from the canonical facts (hard/deterministic links only).
-      // A sale present in sale_attribution_facts = machine_attributed (with its ad_keyword + method);
-      // absent = unresolved. resolved_organic is aggregate-only (see describe_schema).
+      const { data } = await sb.from("sales_tracker_rows").select("date,prospect_name,prospect_name_normalized,call_number,collected_revenue_cents,contracted_revenue_cents,offer,synced_at,closer,setter,objection,call_notes,program_length").ilike("offer", `%${client}%`).order("date");
+      // Dedupe the ledger the SAME way the Ads tab does, so a sync-created duplicate never appears twice.
+      const ledger = dedupeSalesRows((data as unknown as DedupableSaleRow[]) || []) as unknown as Record<string, unknown>[];
+      // Stamp attribution_status per sale from the canonical facts. HARD keys (link_dm/link_booking) =
+      // machine_attributed; a prospect-name match = name_matched (at risk, not certainty); absent = unresolved.
       const { data: facts } = await sb.from("sale_attribution_facts").select("occurred_day,prospect_name,keyword_normalized,method").eq("client_key", client);
       const factByKey: Record<string, { keyword: string; method: string }> = {};
       for (const f of (facts as Record<string, unknown>[]) || []) {
         const key = `${String(f.prospect_name || "").toLowerCase().trim()}|${String(f.occurred_day || "").slice(0, 10)}`;
-        factByKey[key] = { keyword: String(f.keyword_normalized || ""), method: String(f.method || "") };
+        const cur = factByKey[key];
+        if (!cur || methodRank(String(f.method || "")) > methodRank(cur.method)) factByKey[key] = { keyword: String(f.keyword_normalized || ""), method: String(f.method || "") };
       }
-      let rows = (data || []).map((s: Record<string, unknown>) => {
+      let rows = ledger.map((s: Record<string, unknown>) => {
         const norm = String(s.prospect_name_normalized || s.prospect_name || "").toLowerCase().trim();
         const hit = factByKey[`${norm}|${String(s.date || "").slice(0, 10)}`];
         return {
           date: s.date, name: s.prospect_name, cash_collected: Math.round(((s.collected_revenue_cents as number) || 0) / 100),
           closer: s.closer, setter: s.setter, objection: s.objection, program: s.program_length, notes: s.call_notes,
-          attribution_status: hit ? "machine_attributed" : "unresolved",
+          attribution_status: statusForMethod(hit?.method),
           ad_keyword: hit ? hit.keyword : null,
           attribution_method: hit ? hit.method : null,
         };
       });
       if (a.wins_only !== false) rows = rows.filter((r) => r.cash_collected > 0);
-      return { note: "Sales ledger (v2). Each sale carries attribution_status: machine_attributed (linked in sale_attribution_facts) or unresolved (no ad keyword). resolved_organic is aggregate-only; see coverage + describe_schema.", sales: rows };
+      return { note: "Deduped sales ledger (v2). attribution_status per sale: machine_attributed (hard key link_dm/link_booking), name_matched (prospect-name match, at risk, not a hard key), or unresolved (no ad keyword). resolved_organic is aggregate-only; see coverage + describe_schema.", sales: rows };
     }
     case "get_sales_with_ad": {
-      // Canonical per-sale attribution: the exact sale->ad-keyword links the Ads Dashboard computes
-      // (via getAdsTrackerDashboard's onSaleFact sink), persisted to sale_attribution_facts. method
-      // tells HOW each was tied: link_dm = deterministic ManyChat/DM keyword match (an actual DM
-      // thread), name = matched by prospect name, link_booking = via the booking record.
-      let fq = sb.from("sale_attribution_facts")
-        .select("occurred_day,prospect_name,keyword_normalized,method,collected_cents,subscriber_id")
-        .eq("client_key", client).order("occurred_day", { ascending: false });
-      if (a.since) fq = fq.gte("occurred_day", a.since as string);
-      const { data: facts } = await fq.limit(5000);
-      const rows = (facts || []).map((f: Record<string, unknown>) => ({
-        date: f.occurred_day, name: f.prospect_name, ad_keyword: f.keyword_normalized,
-        attribution_status: "machine_attributed" as const,
-        method: (f.method as string) || "unknown", dm_linked: f.method === "link_dm",
-        cash_collected: Math.round(((f.collected_cents as number) || 0) / 100),
-        subscriber_id: f.subscriber_id,
-      }));
-      const attributedCollected = rows.reduce((s, r) => s + r.cash_collected, 0);
-      const byMethod: Record<string, { sales: number; cash_collected: number }> = {};
-      for (const r of rows) { const m = r.method || "unknown"; byMethod[m] = byMethod[m] || { sales: 0, cash_collected: 0 }; byMethod[m].sales++; byMethod[m].cash_collected += r.cash_collected; }
+      // Drive off the DEDUPED sales ledger (same dedupe the Ads tab uses) so close counts match the
+      // dashboard and stale/superseded facts (e.g. an old amount for the same person+day) can't inflate
+      // the count. Each win is annotated with its canonical attribution + honest certainty status.
+      const { data: ledgerRaw } = await sb.from("sales_tracker_rows")
+        .select("date,prospect_name,prospect_name_normalized,call_number,collected_revenue_cents,contracted_revenue_cents,offer,synced_at")
+        .ilike("offer", `%${client}%`).order("date");
+      const ledger = dedupeSalesRows((ledgerRaw as unknown as DedupableSaleRow[]) || []) as unknown as Record<string, unknown>[];
+      let wins = ledger.filter((r) => ((r.collected_revenue_cents as number) || 0) > 0);
+      if (a.since) wins = wins.filter((r) => String(r.date || "") >= String(a.since));
+      const { data: facts } = await sb.from("sale_attribution_facts").select("occurred_day,prospect_name,keyword_normalized,method,subscriber_id").eq("client_key", client);
+      const factByKey: Record<string, { keyword: string; method: string; subscriber_id: unknown }> = {};
+      for (const f of (facts as Record<string, unknown>[]) || []) {
+        const key = `${String(f.prospect_name || "").toLowerCase().trim()}|${String(f.occurred_day || "").slice(0, 10)}`;
+        const cur = factByKey[key];
+        if (!cur || methodRank(String(f.method || "")) > methodRank(cur.method)) factByKey[key] = { keyword: String(f.keyword_normalized || ""), method: String(f.method || ""), subscriber_id: f.subscriber_id };
+      }
+      const rows = wins.map((s: Record<string, unknown>) => {
+        const norm = String(s.prospect_name_normalized || s.prospect_name || "").toLowerCase().trim();
+        const hit = factByKey[`${norm}|${String(s.date || "").slice(0, 10)}`];
+        return {
+          date: s.date, name: s.prospect_name, cash_collected: Math.round(((s.collected_revenue_cents as number) || 0) / 100),
+          ad_keyword: hit ? hit.keyword : null,
+          attribution_status: statusForMethod(hit?.method),
+          attribution_method: hit ? hit.method : null,
+          dm_linked: hit?.method === "link_dm",
+          subscriber_id: hit?.subscriber_id ?? null,
+        };
+      });
+      const byStatus: Record<string, { sales: number; cash: number }> = {};
+      for (const r of rows) { const k = r.attribution_status; byStatus[k] = byStatus[k] || { sales: 0, cash: 0 }; byStatus[k].sales++; byStatus[k].cash += r.cash_collected; }
+      const hardKeyCash = byStatus.machine_attributed?.cash || 0;
+      const nameMatchedCash = byStatus.name_matched?.cash || 0;
+      const itemizedAttributedCash = hardKeyCash + nameMatchedCash;
+      // Canonical reconciliation: the Dashboard's own all-time attributed figure (attribution_summary).
+      const { data: sum } = await sb.from("attribution_summary").select("all_time_paid_attributed,computed_at").eq("client_key", client).maybeSingle();
+      const canonicalAllTimePaid = sum ? Math.round((sum as Record<string, number>).all_time_paid_attributed) : null;
       return {
-        note: "CANONICAL sale->ad attribution (v2): the Dashboard's own per-sale links. Every row is attribution_status machine_attributed; method tells HOW - link_dm = real DM thread via a ManyChat keyword (hard key); link_booking = booking record (hard key); name = deterministic prospect-name match. `sales` lists every attributed sale. Reconciled revenue split is in the response `coverage` block. Sales with no ad keyword are unresolved - see list_sales.",
-        facts_summary: { attributed_sales: rows.length, dm_linked: rows.filter((r) => r.dm_linked).length, attributed_cash_collected: attributedCollected, by_method: byMethod },
+        note: "Deduped sales ledger annotated with canonical per-sale ad attribution. attribution_status: machine_attributed (HARD key: link_dm ManyChat/DM thread, or link_booking booking record), name_matched (deterministic prospect-name match, AT RISK, not a hard key), unresolved (no ad keyword). Close counts match the dashboard (same dedupe). Totals reconcile to the canonical figure below.",
+        counts: { wins: rows.length, machine_attributed: byStatus.machine_attributed?.sales || 0, name_matched: byStatus.name_matched?.sales || 0, unresolved: byStatus.unresolved?.sales || 0 },
+        reconciliation: {
+          itemized_attributed_cash: itemizedAttributedCash,
+          hard_key_linked_cash: hardKeyCash,
+          name_matched_cash: nameMatchedCash,
+          canonical_all_time_paid_attributed: canonicalAllTimePaid,
+          manual_resolution_remainder: canonicalAllTimePaid != null ? canonicalAllTimePaid - itemizedAttributedCash : null,
+          computed_at: sum ? (sum as Record<string, unknown>).computed_at : null,
+          note: "canonical_all_time_paid_attributed is the Dashboard's own reconciled attributed total (attribution_summary) and is authoritative. itemized_attributed_cash is the per-sale sum here; manual_resolution_remainder is cash attributed via manual Attribution Workspace verdicts that are not itemized per sale. name_matched_cash is counted in itemized but is NOT a hard key.",
+        },
         sales: rows,
       };
     }

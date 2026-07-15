@@ -36,6 +36,18 @@ function excerpt(text: unknown, max = 160): string {
   const s = String(text ?? "").replace(/\s+/g, " ").trim();
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
+// Fathom call duration in seconds. Prefer the structured column; when it was never populated fall
+// back to the raw recording window (raw.recording_start_time / recording_end_time, selected via the
+// json arrows below). Only not_tracked when neither exists.
+function durationSec(durCol: unknown, recStart: unknown, recEnd: unknown): number | typeof NOT_TRACKED {
+  const dc = Number(durCol);
+  if (durCol != null && Number.isFinite(dc) && dc > 0) return Math.round(dc);
+  if (recStart && recEnd) {
+    const d = Math.round((new Date(String(recEnd)).getTime() - new Date(String(recStart)).getTime()) / 1000);
+    if (Number.isFinite(d) && d > 0) return d;
+  }
+  return NOT_TRACKED;
+}
 
 // ---- Canonical funnel, one name per concept (schema contract) ----
 // spend, dms, cost_per_dm, booked_calls, cost_per_booked_call, calls_taken, show_rate,
@@ -89,17 +101,47 @@ export function funnelFromAdRoas(r: Row) {
   };
 }
 
-// ---- Response envelope: data_freshness (feed_watermarks) + coverage (attribution_summary) ----
+// ---- Response envelope: data_freshness (LIVE max sync per source) + coverage (attribution_summary) ----
+// Reads the real recency straight from each source table's max(synced_at / event_at / sent_at /
+// recorded_at). It deliberately does NOT read feed_watermarks: that is a dead cursor table frozen at
+// an old run, which made every source read ~9 days stale even though the data was current. Includes a
+// self-test: on a healthy system sales + meta sync at least daily, so > 24h stale is flagged.
 export async function dataFreshness(sb: Sb) {
-  const { data } = await sb.from("feed_watermarks").select("source,last_run_at");
   const now = Date.now();
+  const top = (p: PromiseLike<{ data: Row[] | null }>) =>
+    Promise.resolve(p).then((r) => (r.data && r.data[0] ? r.data[0] : null));
+  const [sales, meta, kw, dm, fathom] = await Promise.all([
+    top(sb.from("sales_tracker_rows").select("synced_at").order("synced_at", { ascending: false }).limit(1)),
+    top(sb.from("ads_meta_insights_daily").select("synced_at").order("synced_at", { ascending: false }).limit(1)),
+    top(sb.from("ads_keyword_events").select("event_at").order("event_at", { ascending: false }).limit(1)),
+    top(sb.from("dm_conversation_messages").select("sent_at").order("sent_at", { ascending: false }).limit(1)),
+    top(sb.from("fathom_calls").select("recorded_at").order("recorded_at", { ascending: false }).limit(1)),
+  ]);
+  const mk = (source: string, ts: unknown) => {
+    const iso = ts ? String(ts) : null;
+    const mins = iso ? Math.round((now - new Date(iso).getTime()) / 60000) : null;
+    return { source, last_sync: iso, minutes_since_sync: mins, hours_since_sync: mins != null ? Math.round(mins / 6) / 10 : null };
+  };
+  const sources = [
+    mk("sales_tracker_rows", sales?.synced_at),
+    mk("ads_meta_insights_daily", meta?.synced_at),
+    mk("ads_keyword_events", kw?.event_at),
+    mk("dm_conversation_messages", dm?.sent_at),
+    mk("fathom_calls", fathom?.recorded_at),
+  ];
+  const within24 = (s: { minutes_since_sync: number | null }) => s.minutes_since_sync != null && s.minutes_since_sync <= 24 * 60;
+  const salesOk = within24(sources[0]);
+  const metaOk = within24(sources[1]);
+  const healthy = salesOk && metaOk;
   return {
-    as_of: new Date().toISOString(),
-    sources: (data || []).map((w: Row) => ({
-      source: w.source,
-      last_sync: (w.last_run_at as string) ?? null,
-      minutes_since_sync: w.last_run_at ? Math.round((now - new Date(w.last_run_at as string).getTime()) / 60000) : null,
-    })),
+    as_of: new Date(now).toISOString(),
+    healthy,
+    self_test: {
+      sales_within_24h: salesOk,
+      meta_within_24h: metaOk,
+      note: healthy ? "sales + meta synced within 24h" : "sales or meta is more than 24h stale - investigate the sync",
+    },
+    sources,
   };
 }
 
@@ -222,13 +264,25 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     : NOT_TRACKED;
 
   const adIds = placements.map((p) => String(p.adId)).filter(Boolean);
+  // Per-ad Meta effective status DOES exist (ads_meta_insights_daily.ad_effective_status); take the
+  // latest row per ad_id. Not in the snapshot payload, but it is a real column, so map it.
+  const statusByAd: Record<string, string> = {};
+  if (adIds.length) {
+    const { data: statusRows } = await sb.from("ads_meta_insights_daily")
+      .select("ad_id,ad_effective_status,date").eq("client_key", client).in("ad_id", adIds)
+      .order("date", { ascending: false }).limit(3000);
+    for (const s of (statusRows as Row[]) || []) {
+      const id = String(s.ad_id);
+      if (!statusByAd[id] && s.ad_effective_status) statusByAd[id] = String(s.ad_effective_status); // desc order → first seen is latest
+    }
+  }
   const lineage = placements.map((p) => ({
     ad_id: p.adId ?? null, ad_name: p.adName ?? null,
     campaign_id: p.campaignId ?? null, campaign_name: p.campaignName ?? null,
     adset_id: p.adsetId ?? null, adset_name: p.adsetName ?? null,
     spend: round(p.adSpend), impressions: round(p.impressions),
     is_advantage: p.isAdvantage ?? null, audience_type: p.audienceType ?? null,
-    per_ad_status: NOT_TRACKED, // Meta per-ad on/off is not in the stored snapshot; see keyword_state.status
+    per_ad_status: statusByAd[String(p.adId)] ?? NOT_TRACKED, // Meta effective status from ads_meta_insights_daily
   }));
 
   // Copy from ad_creative_copy (on-image + primary), deduped.
@@ -244,8 +298,12 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     }
   }
 
-  // Per-day spend (ad_day) + per-day DMs (dm_ad_links first_seen_at), merged by date.
+  // Per-day spend (ad_day) + per-day DMs. DMs come from ads_keyword_events (the SAME source the
+  // canonical funnel counts), NOT dm_ad_links.first_seen_at - that bridge is static/stale and was
+  // reporting zero DMs on recent days even though the keyword events existed. One DM = one unique
+  // ManyChat subscriber that day.
   const seriesFrom = since || snap.dateFrom;
+  const eventsFrom = seriesFrom < snap.dateFrom ? seriesFrom : snap.dateFrom; // reach back far enough to reconcile the window
   let dq = sb.from("ad_day").select("date,spend,impressions,cpm,status").eq("client_key", client).eq("keyword", kw);
   if (seriesFrom) dq = dq.gte("date", seriesFrom);
   const { data: days } = await dq.order("date").limit(370);
@@ -254,13 +312,38 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     const date = String(d.date);
     byDate[date] = { date, spend: round2(d.spend), impressions: round(d.impressions), cpm: d.cpm != null ? round2(d.cpm) : null, status: d.status ?? null, dms: 0 };
   }
-  const { data: linkDays } = await sb.from("dm_ad_links").select("first_seen_at").eq("client_key", client).eq("keyword_normalized", kw).gte("first_seen_at", `${seriesFrom}T00:00:00Z`).limit(5000);
-  for (const l of (linkDays as Row[]) || []) {
-    const date = String(l.first_seen_at).slice(0, 10);
+  const { data: kwEvents } = await sb.from("ads_keyword_events")
+    .select("subscriber_id,event_at")
+    .eq("client_key", client).eq("keyword_normalized", kw).eq("event_type", "dm_keyword")
+    .gte("event_at", `${eventsFrom}T00:00:00Z`).limit(20000);
+  const subsByDate: Record<string, Set<string>> = {};
+  const windowSubs = new Set<string>();
+  for (const e of (kwEvents as Row[]) || []) {
+    const date = String(e.event_at).slice(0, 10);
+    const sub = String(e.subscriber_id ?? "");
+    if (!sub) continue;
+    (subsByDate[date] = subsByDate[date] || new Set()).add(sub);
+    if (date >= snap.dateFrom && date <= snap.dateTo) windowSubs.add(sub);
+  }
+  for (const [date, set] of Object.entries(subsByDate)) {
+    if (date < seriesFrom) continue; // events before the requested series start are only used for reconciliation
     if (!byDate[date]) byDate[date] = { date, spend: 0, impressions: 0, cpm: null, status: null, dms: 0 };
-    byDate[date].dms += 1;
+    byDate[date].dms = set.size;
   }
   const per_day_series = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+  // Reconciliation assert: unique DMs over the funnel window (same events) must equal the funnel row's
+  // dms. Divergence means the daily DM counts are suspect - surface it as an error field, never silently.
+  const window_unique_dms = windowSubs.size;
+  const dm_reconciliation: Record<string, unknown> = {
+    funnel_dms: funnel.dms,
+    window_unique_dms,
+    per_day_dm_sum: per_day_series.reduce((s, d) => s + d.dms, 0),
+    matches: Math.abs(window_unique_dms - funnel.dms) <= 1,
+    note: "window_unique_dms = distinct ManyChat subscribers over the funnel window from ads_keyword_events; must equal funnel_dms. per_day_dm_sum can exceed it when a subscriber DMs on more than one day.",
+  };
+  if (!dm_reconciliation.matches) {
+    dm_reconciliation.error = "per-day DM series does not reconcile to the funnel dms (source or window mismatch); treat the daily DM counts as suspect until fixed";
+  }
 
   // Thread digests (capped). subscriber, first DM, msg count, became_sale, 2-line excerpt.
   const DIGEST_CAP = 40;
@@ -280,6 +363,14 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     const { data: facts } = await sb.from("sale_attribution_facts").select("subscriber_id").eq("client_key", client).in("subscriber_id", digestSubs);
     for (const f of (facts as Row[]) || []) if (f.subscriber_id) saleSubs.add(String(f.subscriber_id));
   }
+  // booked via hard key: a booked_call (or manual_booked_calls) event in ads_keyword_events for this
+  // exact subscriber. Hard-keyed, so booked is a real true/false here, not not_tracked.
+  const bookedSubs = new Set<string>();
+  if (digestSubs.length) {
+    const { data: bk } = await sb.from("ads_keyword_events").select("subscriber_id")
+      .eq("client_key", client).in("event_type", ["booked_call", "manual_booked_calls"]).in("subscriber_id", digestSubs);
+    for (const b of (bk as Row[]) || []) if (b.subscriber_id) bookedSubs.add(String(b.subscriber_id));
+  }
   const thread_digests = linkRows.slice(0, DIGEST_CAP).map((l) => {
     const sub = String(l.ig_subscriber_id);
     return {
@@ -288,7 +379,7 @@ export async function getAdFull(client: string, keyword: string, since?: string)
       first_message_excerpt: excerpt(l.first_message, 160),
       message_count: msgCount[sub] ?? 0,
       became_sale: saleSubs.has(sub),
-      booked: NOT_TRACKED, // no stored per-thread booking flag on a hard key
+      booked: bookedSubs.has(sub), // hard-keyed booked_call event for this subscriber
     };
   });
 
@@ -302,9 +393,10 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     placements: lineage,
     copy,
     per_day_series,
+    dm_reconciliation,
     thread_digests,
     truncated_threads,
-    note: "One-call ad view: canonical funnel + placement lineage + copy + per-day spend/DM series + thread digests. Full verbatim threads: call get_dms_for_ad. per_ad_status and booked are not stored on a hard key (not_tracked).",
+    note: "One-call ad view: canonical funnel + placement lineage (with per_ad_status from ads_meta_insights_daily) + copy + per-day spend/DM series (DMs from ads_keyword_events, same source as the funnel) + thread digests (booked hard-keyed from booked_call events). Full verbatim threads: call get_dms_for_ad. dm_reconciliation asserts the daily DMs match the funnel.",
   };
 }
 
@@ -312,13 +404,13 @@ export async function getAdFull(client: string, keyword: string, since?: string)
 export async function getCallTranscripts(client: string, id?: string, since?: string, limit?: number) {
   const sb = getServiceSupabase();
   if (id) {
-    const { data } = await sb.from("fathom_calls").select("fathom_id,title,recorded_at,duration_sec,prospect_name,client_key,summary,transcript").eq("fathom_id", id).maybeSingle();
+    const { data } = await sb.from("fathom_calls").select("fathom_id,title,recorded_at,duration_sec,prospect_name,client_key,summary,transcript,rec_start:raw->>recording_start_time,rec_end:raw->>recording_end_time").eq("fathom_id", id).maybeSingle();
     if (!data) return { found: false, id };
     const c = data as Row;
     return {
       found: true,
       call: {
-        fathom_id: c.fathom_id, title: c.title, recorded_at: c.recorded_at, duration_sec: c.duration_sec ?? NOT_TRACKED,
+        fathom_id: c.fathom_id, title: c.title, recorded_at: c.recorded_at, duration_sec: durationSec(c.duration_sec, c.rec_start, c.rec_end),
         prospect_name: c.prospect_name ?? null, client_key: c.client_key ?? null,
         summary: c.summary ?? null, transcript: c.transcript ?? null,
       },
@@ -327,7 +419,7 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
     };
   }
   const cap = Math.min(Math.max(num(limit) || 25, 1), 100);
-  let q = sb.from("fathom_calls").select("fathom_id,title,recorded_at,duration_sec,prospect_name,summary,transcript").eq("client_key", client).order("recorded_at", { ascending: false });
+  let q = sb.from("fathom_calls").select("fathom_id,title,recorded_at,duration_sec,prospect_name,summary,transcript,rec_start:raw->>recording_start_time,rec_end:raw->>recording_end_time").eq("client_key", client).order("recorded_at", { ascending: false });
   if (since) q = q.gte("recorded_at", since);
   const { data } = await q.limit(cap + 1);
   const rows = (data as Row[]) || [];
@@ -335,7 +427,7 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
   return {
     calls: rows.slice(0, cap).map((c) => ({
       fathom_id: c.fathom_id, title: c.title, recorded_at: c.recorded_at,
-      duration_sec: c.duration_sec ?? NOT_TRACKED, prospect_name: c.prospect_name ?? null,
+      duration_sec: durationSec(c.duration_sec, c.rec_start, c.rec_end), prospect_name: c.prospect_name ?? null,
       summary: c.summary ? excerpt(c.summary, 500) : null,
       summary_truncated: !!(c.summary && String(c.summary).length > 500),
       has_transcript: !!c.transcript,
@@ -399,7 +491,7 @@ export async function getOrganicContent(client: string, opts: { id?: string; sin
 
 // ---- New tool: describe_schema (static, no DB) ----
 export const SCHEMA_DOC = {
-  version: "2.0.0",
+  version: "2.1.0",
   server: "utari-ccos-foundation",
   generated_for: "UTARI MCP v2",
   hard_rules: [
@@ -424,26 +516,44 @@ export const SCHEMA_DOC = {
     total_collected_all_sources: "All collected cash in the window incl organic + unattributed (context, not the ad funnel).",
   },
   attribution_status: {
-    machine_attributed: "Sale linked to an ad keyword by the Dashboard's deterministic logic and stored in sale_attribution_facts. method = link_dm (ManyChat/DM hard key) or link_booking (booking record hard key) or name (deterministic prospect-name match; softer than a hard key but still machine-derived).",
-    resolved_organic: "Reserved/aggregate only: organic cash is reconciled at the summary level (attribution_summary.organic); it is NOT tagged per individual sale in the current data, so it is not emitted as a per-sale status.",
-    unresolved: "Ledger sale with no entry in sale_attribution_facts (no ad keyword). Emitted per sale by list_sales.",
+    machine_attributed: "Sale linked to an ad by a HARD key: method link_dm (ManyChat/DM subscriber key) or link_booking (booking record key). This is machine certainty.",
+    name_matched: "Sale linked by a deterministic prospect-name match only (method = name). NOT a hard key, so explicitly at risk of a wrong or coincidental match; never treat as machine certainty. Counted in itemized attributed cash but reported separately.",
+    resolved_organic: "Reserved/aggregate only: organic cash is reconciled at the summary level (attribution_summary.organic); it is NOT tagged per individual sale, so it is not emitted as a per-sale status.",
+    unresolved: "Ledger sale with no entry in sale_attribution_facts (no ad keyword).",
   },
   dm_count_definition: "A DM is one unique ManyChat subscriber tied to a keyword via dm_ad_links (ig_subscriber_id + keyword_normalized). Message volume within a thread is separate (dm_conversation_messages).",
+  audit_2026_07_15: {
+    note: "An external agent audited this MCP; several of its readings were MCP bugs, not business reality. Fixed here (read-path only, no business logic or ad actions changed):",
+    fixed_mcp_bugs: [
+      "freshness reported all sources ~9 days stale: it read feed_watermarks, a dead cursor table frozen at an old run. Now reads live max(synced_at/event_at/sent_at/recorded_at) per source, with a self_test that flags sales/meta > 24h.",
+      "get_ad_full per-day DM series showed 0 on recent days: it rolled up dm_ad_links.first_seen_at (a static/stale bridge). Now rolls up ads_keyword_events (the same source the funnel counts) and asserts the window unique DMs reconcile to the funnel dms (dm_reconciliation).",
+      "get_sales_with_ad double-counted (e.g. a person appearing twice from a superseded amount): now drives off the DEDUPED ledger (same dedupe as the Ads tab), so close counts match the dashboard.",
+      "name matches were mislabeled machine_attributed: name matches are now their own name_matched status (at risk, not a hard key).",
+      "call duration_sec, per-ad status in placements, and thread booked flags were reported not_tracked though the data exists: duration_sec now falls back to raw.recording_start/end_time; per_ad_status maps ads_meta_insights_daily.ad_effective_status; thread booked is hard-keyed from booked_call events.",
+      "get_sales_with_ad understated the attributed total vs the canonical figure: it now reports canonical_all_time_paid_attributed (attribution_summary) and the manual_resolution_remainder so the total reconciles.",
+    ],
+    real_ceilings_not_bugs: [
+      "fathom_calls carry no ManyChat subscriber or ad keyword, so call->ad/DM linkage stays linkage_status 'unlinked'. No name-based linkage is added (would be fuzzy certainty).",
+      "Some collected cash is genuinely unresolved (no ad keyword captured) - a normal, accepted state, not an error. Coverage % below 100 is expected.",
+      "Funded zero-DM ads in a test pool are deliberately starved by Meta (small budgets, cold audiences); zero DMs on spend alone is NOT a kill signal. The auditor's inflated 'zero-DM funded ad' count was partly the per-day series bug (now fixed) plus this misread.",
+      "resolved_organic is reconciled only at the summary level, not tagged per individual sale.",
+    ],
+  },
   accuracy_ceilings: [
-    "Historical DM-to-sale stitch is partial: only sales whose DM thread carried a ManyChat keyword link_dm cleanly (263 link_dm vs 155 name matches across creators). Forward capture is improving as keyword capture tightens.",
-    "fathom_calls carry no ManyChat subscriber or ad keyword, so call->ad/DM linkage is always linkage_status 'unlinked' (correlate on prospect_name only, non-authoritative).",
-    "Per-ad Meta on/off status is not in the stored snapshot; get_ad_full reports keyword-level status from ad_state and per_ad_status not_tracked.",
-    "Per-thread 'booked' is not stored on a hard key, so thread digests report booked not_tracked (became_sale IS available via subscriber_id hard key).",
-    "business_snapshot prior_window is the most recent non-overlapping earlier stored snapshot (rolling ~7-day windows, not calendar weeks); both windows are echoed. The warm cron now keeps a prior-week snapshot warm, so prior_window populates within ~a day; until a prior-week snapshot exists it returns not_tracked.",
+    "Historical DM-to-sale stitch is partial: hard-key link_dm covers most, name_matched fills more but is at risk; forward capture improves as keyword capture tightens.",
+    "fathom_calls carry no ManyChat subscriber or ad keyword, so call->ad/DM linkage is always linkage_status 'unlinked' (correlate on prospect_name only, non-authoritative; no name-based machine link).",
+    "Per-ad Meta on/off status now comes from ads_meta_insights_daily.ad_effective_status (get_ad_full placements.per_ad_status); keyword-level status is in keyword_state.",
+    "Thread 'booked' is now hard-keyed from booked_call events per subscriber; became_sale from subscriber_id in sale_attribution_facts.",
+    "business_snapshot prior_window is the most recent non-overlapping earlier stored snapshot (rolling ~7-day windows). The warm cron keeps a prior-week snapshot warm, so it populates within ~a day; until then it returns not_tracked.",
   ],
   tools: {
     list_ads: "Per-ad canonical funnel + live targeting/copy for a creator (v2 field names).",
     get_ad: "One ad's funnel + a sample of its DM threads.",
     get_dms_for_ad: "Every DM thread for an ad, full verbatim.",
     get_ad_day: "Per-ad-per-day spend/impressions/clicks/cpm/status.",
-    list_sales: "Sales ledger; each sale carries attribution_status (machine_attributed | unresolved).",
-    get_sales_with_ad: "Canonical per-sale ad attribution (facts). Each row is machine_attributed with its method + dm_linked.",
-    freshness: "Per-source sync recency (feed_watermarks).",
+    list_sales: "Deduped sales ledger; each sale carries attribution_status (machine_attributed | name_matched | unresolved).",
+    get_sales_with_ad: "Deduped ledger annotated with canonical per-sale ad attribution + honest certainty (machine_attributed hard key vs name_matched at-risk), counts, and a reconciliation block against the canonical all-time attributed figure.",
+    freshness: "Per-source LIVE sync recency (max synced_at/event_at per source table) + a self_test flagging sales/meta > 24h. Does not read feed_watermarks.",
     business_snapshot: "Per creator + combined current/prior week funnel, top/bottom 3 funded ads, funded zero-DM ad count.",
     get_ad_full: "One-call full ad object: funnel + placement lineage + copy + per-day series + thread digests.",
     get_call_transcripts: "List mode = fathom summaries + ids; single-id mode = full transcript. linkage_status unlinked.",
