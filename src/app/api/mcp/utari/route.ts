@@ -202,7 +202,7 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
     }
     case "get_dms_for_ad": {
       const { conversations, coverage } = await dmsForAd(client, a.keyword as string, (a.limit as number) || 20, a.since as string | undefined);
-      return { keyword: a.keyword, conversations, coverage, note: "Verbatim DM threads for the ad keyword, resolved live (ManyChat->Instagram bridge). coverage.threads_resolved vs keyword_subscribers shows how many of the keyword's unique DMs have a linked thread." };
+      return { keyword: a.keyword, conversations, thread_coverage: coverage, note: "Verbatim DM threads for the ad keyword, resolved live (ManyChat->Instagram bridge). thread_coverage.threads_resolved vs keyword_subscribers shows how many of the keyword's unique DMs have a linked thread. (The envelope's separate `coverage` is the window cash attribution %, a different metric.)" };
     }
     case "get_ad_day": {
       let q = sb.from("ad_day").select("*").eq("client_key", client).order("date", { ascending: false });
