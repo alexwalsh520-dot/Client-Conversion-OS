@@ -101,6 +101,18 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/voice/run?creator=${creator}`));
     }
 
+    // 2d. Daily carousels — generate today's 5 if they don't exist yet. The generate route is a no-op
+    //     (no LLM call) once the day's rows exist, so this fires exactly one LLM op/day/creator.
+    const todayET = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const { count: carCount } = await sb
+      .from("content_carousels")
+      .select("id", { count: "exact", head: true })
+      .eq("client_key", creator)
+      .eq("for_date", todayET);
+    if ((carCount ?? 0) < 5) {
+      steps.push(await hit(`/api/content/carousels/generate?creator=${creator}&date=${todayET}`));
+    }
+
     // 3. One bounded pass of per-buyer builds + trend-brief re-grades. budgetMs=210000 (~2 grade ops
     //    at ~40s each) mainly drains the weekly re-grade backlog faster — 51 sets converge in ~13h
     //    instead of ~2 days — while steady-state runs stay near-instant no-ops.
