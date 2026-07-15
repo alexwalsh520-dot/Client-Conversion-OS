@@ -36,6 +36,73 @@ function excerpt(text: unknown, max = 160): string {
   const s = String(text ?? "").replace(/\s+/g, " ").trim();
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
+// LIVE DM-thread resolution for one ad keyword. The old dm_ad_links bridge is STATIC (built once,
+// never refreshed) and its ig id is a different scoping than dm_conversation_messages, so it returned
+// zero threads. We derive threads at query time on the live path:
+//   ads_keyword_events (ManyChat subscriber, event_type dm_keyword)
+//     -> instagram_lead_links (manychat_subscriber_id -> instagram_user_id, refreshed by the DM sync)
+//     -> dm_conversation_messages (subscriber_id = instagram_user_id, client = the creator's DM handle)
+// Returns resolved threads + coverage vs the keyword's unique DM subscribers (some subscribers have no
+// linked Instagram thread yet, so threads_resolved <= keyword_subscribers - reported, never hidden).
+export async function dmThreadsForKeyword(
+  sb: Sb,
+  client: string,
+  keyword: string,
+  opts: { limit?: number; since?: string; messagesPerThread?: number } = {},
+) {
+  const kw = keyword.toLowerCase();
+  const dmClient = DM_CLIENT[client] || client;
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 200);
+  const msgCap = opts.messagesPerThread ?? 80;
+
+  // 1. unique ManyChat subscribers for the keyword (newest DM first), windowed if since is given.
+  let sq = sb.from("ads_keyword_events").select("subscriber_id,event_at").eq("client_key", client).eq("keyword_normalized", kw).eq("event_type", "dm_keyword");
+  if (opts.since) sq = sq.gte("event_at", `${opts.since}T00:00:00Z`);
+  const { data: subRows } = await sq.limit(6000);
+  const seen = new Set<string>();
+  const mcSubs: string[] = [];
+  for (const r of ((subRows as Row[]) || []).sort((a, b) => String(b.event_at).localeCompare(String(a.event_at)))) {
+    const s = String(r.subscriber_id ?? "");
+    if (s && !seen.has(s)) { seen.add(s); mcSubs.push(s); }
+  }
+  const keyword_subscribers = mcSubs.length;
+  if (!keyword_subscribers) return { threads: [] as Row[], coverage: { keyword_subscribers: 0, threads_resolved: 0 } };
+
+  // 2. bridge ManyChat -> instagram_user_id (batched .in to bound query size).
+  const igByMc: Record<string, string> = {};
+  for (let i = 0; i < mcSubs.length; i += 500) {
+    const chunk = mcSubs.slice(i, i + 500);
+    const { data: links } = await sb.from("instagram_lead_links").select("manychat_subscriber_id,instagram_user_id").eq("client", dmClient).in("manychat_subscriber_id", chunk);
+    for (const l of (links as Row[]) || []) if (l.instagram_user_id) igByMc[String(l.manychat_subscriber_id)] = String(l.instagram_user_id);
+  }
+  const resolvable = mcSubs.filter((s) => igByMc[s]).slice(0, limit);
+  if (!resolvable.length) return { threads: [] as Row[], coverage: { keyword_subscribers, threads_resolved: 0 } };
+  const igIds = resolvable.map((s) => igByMc[s]);
+
+  // 3. verbatim messages for those Instagram ids.
+  const { data: msgs } = await sb.from("dm_conversation_messages").select("subscriber_id,direction,body,sent_at").eq("client", dmClient).in("subscriber_id", igIds).order("sent_at").limit(20000);
+  const byIg: Record<string, Array<{ who: string; text: unknown; at: unknown }>> = {};
+  for (const m of (msgs as Row[]) || []) {
+    const ig = String(m.subscriber_id);
+    (byIg[ig] = byIg[ig] || []).push({ who: String(m.direction || "").toLowerCase().startsWith("in") ? "lead" : "creator", text: m.body, at: m.sent_at });
+  }
+  const threads = resolvable
+    .map((mc) => {
+      const ig = igByMc[mc];
+      const messages = (byIg[ig] || []).slice(0, msgCap);
+      return { subscriber_manychat: mc, ig_subscriber_id: ig, first_dm_at: messages[0]?.at ?? null, message_count: messages.length, first_message: messages[0]?.text ?? null, messages };
+    })
+    .filter((t) => t.message_count > 0);
+  return {
+    threads,
+    coverage: {
+      keyword_subscribers,
+      threads_resolved: threads.length,
+      note: "Threads resolved via the LIVE ManyChat->Instagram bridge (instagram_lead_links -> dm_conversation_messages). A subscriber with no linked Instagram thread yet is not returned, so threads_resolved can be below keyword_subscribers.",
+    },
+  };
+}
+
 // Fathom call duration in seconds. Prefer the structured column; when it was never populated fall
 // back to the raw recording window (raw.recording_start_time / recording_end_time, selected via the
 // json arrows below). Only not_tracked when neither exists.
@@ -67,6 +134,7 @@ export function funnelFromSummary(s: Row | undefined | null) {
     cost_per_booked_call: ratio(spend, booked),
     calls_taken: calls,
     show_rate: ratio(calls, booked),
+    ...(calls > booked ? { show_rate_note: "calls taken in this window include calls booked in a prior window (period-counting carryover), so show_rate can exceed 1. Raw counts are shown, never clamped." } : {}),
     closes,
     close_rate: ratio(closes, calls),
     cash_collected: round(s.collectedRevenue), // paid ad-attributed collected in the window
@@ -92,6 +160,7 @@ export function funnelFromAdRoas(r: Row) {
     cost_per_booked_call: ratio(spend, booked),
     calls_taken: calls,
     show_rate: ratio(calls, booked),
+    ...(calls > booked ? { show_rate_note: "calls taken in this window include calls booked in a prior window (period-counting carryover), so show_rate can exceed 1. Raw counts are shown, never clamped." } : {}),
     closes,
     close_rate: ratio(closes, calls),
     cash_collected: round(r.collectedRevenue),
@@ -335,53 +404,57 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     byDate[date].dms = set.size;
   }
   const per_day_series = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-  // Reconciliation assert: unique DMs over the funnel window (same events) must equal the funnel row's
-  // dms. Divergence means the daily DM counts are suspect - surface it as an error field, never silently.
+  // Series reconciliation, covering BOTH DMs and spend against the keyword-level funnel over the same
+  // window. window_unique_dms = distinct ManyChat subscribers who hit the keyword in-window (raw
+  // ads_keyword_events); funnel.dms = DMs the canonical engine ATTRIBUTES to this ad in-window. These
+  // match for active ads. When window_unique_dms > funnel.dms it is a documented definition gap (raw
+  // keyword events include DMs the engine did not attribute to this ad - common for a keyword whose ad
+  // was paused, or whose keyword mapping moved). funnel.dms > window_unique_dms would be impossible
+  // (canonical cannot exceed raw), so THAT is flagged as a real error.
   const window_unique_dms = windowSubs.size;
+  const window_series_spend = Math.round(per_day_series.filter((d) => d.date >= snap.dateFrom && d.date <= snap.dateTo).reduce((s, d) => s + d.spend, 0) * 100) / 100;
+  const dmGap = window_unique_dms - funnel.dms;
+  const spendGap = Math.round((window_series_spend - funnel.spend) * 100) / 100;
   const dm_reconciliation: Record<string, unknown> = {
     funnel_dms: funnel.dms,
     window_unique_dms,
     per_day_dm_sum: per_day_series.reduce((s, d) => s + d.dms, 0),
-    matches: Math.abs(window_unique_dms - funnel.dms) <= 1,
-    note: "window_unique_dms = distinct ManyChat subscribers over the funnel window from ads_keyword_events; must equal funnel_dms. per_day_dm_sum can exceed it when a subscriber DMs on more than one day.",
+    dm_status: Math.abs(dmGap) <= 1 ? "match" : dmGap > 0 ? "definition_gap_raw_exceeds_attributed" : "ERROR_attributed_exceeds_raw",
+    funnel_spend: funnel.spend,
+    window_series_spend,
+    spend_status: Math.abs(spendGap) <= 1 ? "match" : "mismatch",
+    note: "dm_status match = daily DMs reconcile to the funnel; definition_gap = raw keyword events exceed canonically-attributed DMs (paused ad / moved keyword mapping), expected; ERROR = attributed exceeds raw (impossible, investigate). spend_status compares the in-window daily spend (ad_day) to the funnel spend.",
   };
-  if (!dm_reconciliation.matches) {
-    dm_reconciliation.error = "per-day DM series does not reconcile to the funnel dms (source or window mismatch); treat the daily DM counts as suspect until fixed";
+  if (dm_reconciliation.dm_status === "ERROR_attributed_exceeds_raw" || dm_reconciliation.spend_status === "mismatch") {
+    dm_reconciliation.error = "series does not reconcile to the funnel (see dm_status / spend_status); treat the daily numbers as suspect until fixed";
   }
 
-  // Thread digests (capped). subscriber, first DM, msg count, became_sale, 2-line excerpt.
+  // Thread digests via the LIVE ManyChat->Instagram bridge (dmThreadsForKeyword). The old dm_ad_links
+  // path used a stale, wrong-scoped id and returned zero; its subscriber id also broke the became_sale /
+  // booked hard keys (those are ManyChat-keyed). subscriber = ManyChat id now, so the hard keys work.
   const DIGEST_CAP = 40;
-  const { data: links } = await sb.from("dm_ad_links").select("ig_subscriber_id,first_message,first_seen_at").eq("client_key", client).eq("keyword_normalized", kw).order("first_seen_at", { ascending: false }).limit(DIGEST_CAP + 1);
-  const linkRows = (links as Row[]) || [];
-  const truncated_threads = linkRows.length > DIGEST_CAP;
-  const digestSubs = linkRows.slice(0, DIGEST_CAP).map((l) => String(l.ig_subscriber_id));
-  // one bounded query for message counts of these subscribers
-  const msgCount: Record<string, number> = {};
-  if (digestSubs.length) {
-    const { data: msgs } = await sb.from("dm_conversation_messages").select("subscriber_id").eq("client", DM_CLIENT[client] || client).in("subscriber_id", digestSubs).limit(6000);
-    for (const m of (msgs as Row[]) || []) { const s = String(m.subscriber_id); msgCount[s] = (msgCount[s] || 0) + 1; }
-  }
-  // became_sale via hard key (subscriber_id) in sale_attribution_facts
+  const { threads: digestThreads, coverage: dm_coverage } = await dmThreadsForKeyword(sb, client, kw, { limit: DIGEST_CAP, since: seriesFrom, messagesPerThread: 4 });
+  const digestManychat = digestThreads.map((t) => String(t.subscriber_manychat));
+  const truncated_threads = dm_coverage.threads_resolved >= DIGEST_CAP;
   const saleSubs = new Set<string>();
-  if (digestSubs.length) {
-    const { data: facts } = await sb.from("sale_attribution_facts").select("subscriber_id").eq("client_key", client).in("subscriber_id", digestSubs);
+  if (digestManychat.length) {
+    const { data: facts } = await sb.from("sale_attribution_facts").select("subscriber_id").eq("client_key", client).in("subscriber_id", digestManychat);
     for (const f of (facts as Row[]) || []) if (f.subscriber_id) saleSubs.add(String(f.subscriber_id));
   }
-  // booked via hard key: a booked_call (or manual_booked_calls) event in ads_keyword_events for this
-  // exact subscriber. Hard-keyed, so booked is a real true/false here, not not_tracked.
   const bookedSubs = new Set<string>();
-  if (digestSubs.length) {
+  if (digestManychat.length) {
     const { data: bk } = await sb.from("ads_keyword_events").select("subscriber_id")
-      .eq("client_key", client).in("event_type", ["booked_call", "manual_booked_calls"]).in("subscriber_id", digestSubs);
+      .eq("client_key", client).in("event_type", ["booked_call", "manual_booked_calls"]).in("subscriber_id", digestManychat);
     for (const b of (bk as Row[]) || []) if (b.subscriber_id) bookedSubs.add(String(b.subscriber_id));
   }
-  const thread_digests = linkRows.slice(0, DIGEST_CAP).map((l) => {
-    const sub = String(l.ig_subscriber_id);
+  const thread_digests = digestThreads.map((t) => {
+    const sub = String(t.subscriber_manychat);
     return {
       subscriber: sub,
-      first_dm_at: l.first_seen_at ?? null,
-      first_message_excerpt: excerpt(l.first_message, 160),
-      message_count: msgCount[sub] ?? 0,
+      ig_subscriber_id: t.ig_subscriber_id,
+      first_dm_at: t.first_dm_at ?? null,
+      first_message_excerpt: excerpt(t.first_message, 160),
+      message_count: t.message_count,
       became_sale: saleSubs.has(sub),
       booked: bookedSubs.has(sub), // hard-keyed booked_call event for this subscriber
     };
@@ -399,8 +472,9 @@ export async function getAdFull(client: string, keyword: string, since?: string)
     per_day_series,
     dm_reconciliation,
     thread_digests,
+    dm_coverage,
     truncated_threads,
-    note: "One-call ad view: canonical funnel + placement lineage (with per_ad_status from ads_meta_insights_daily) + copy + per-day spend/DM series (DMs from ads_keyword_events, same source as the funnel) + thread digests (booked hard-keyed from booked_call events). Full verbatim threads: call get_dms_for_ad. dm_reconciliation asserts the daily DMs match the funnel.",
+    note: "One-call ad view: canonical funnel + placement lineage (with per_ad_status from ads_meta_insights_daily) + copy + per-day spend/DM series (DMs from ads_keyword_events, same source as the funnel) + thread digests (live ManyChat->Instagram bridge; booked/became_sale hard-keyed). dm_coverage shows resolved threads vs keyword subscribers. Full verbatim threads: call get_dms_for_ad.",
   };
 }
 
@@ -460,27 +534,36 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
   };
 }
 
-// ---- New tool: get_organic_content ----
-export async function getOrganicContent(client: string, opts: { id?: string; since?: string; until?: string; band?: string; limit?: number }) {
+// ---- New tool: get_organic_content (RAW-FIRST) ----
+// Default response carries NO grading (verdict/band/hits/misses) - raw content + engagement + transcript
+// availability only. The AI grading layer is opt-in via include_grades:true (namespaced under
+// internal_grading), because the owner distrusts it for the external agent. Counts absent from IG are
+// "not_tracked", never 0.
+const val = (x: unknown) => (x === null || x === undefined ? NOT_TRACKED : x);
+export async function getOrganicContent(client: string, opts: { id?: string; since?: string; until?: string; band?: string; limit?: number; include_grades?: boolean }) {
   const sb = getServiceSupabase();
   if (opts.id) {
-    const { data: content } = await sb.from("creator_content").select("ig_media_id,media_type,permalink,caption,taken_at,view_count,play_count,like_count,comment_count,transcript").eq("client_key", client).eq("ig_media_id", opts.id).maybeSingle();
+    const { data: content } = await sb.from("creator_content").select("ig_media_id,media_type,permalink,caption,taken_at,view_count,play_count,like_count,comment_count,transcript,transcript_status,transcript_words").eq("client_key", client).eq("ig_media_id", opts.id).maybeSingle();
     if (!content) return { found: false, id: opts.id };
     const c = content as Row;
-    const { data: grade } = await sb.from("content_grades").select("score,band,verdict,hits,misses,feedback,icp_version").eq("client_key", client).eq("ig_media_id", opts.id).order("graded_at", { ascending: false }).limit(1).maybeSingle();
-    const g = grade as Row | null;
-    return {
-      found: true,
-      post: {
-        media_id: c.ig_media_id, media_type: c.media_type, taken_at: c.taken_at, permalink: c.permalink ?? null, caption: c.caption ?? null,
-        engagement: { views: c.view_count ?? NOT_TRACKED, plays: c.play_count ?? NOT_TRACKED, likes: c.like_count ?? NOT_TRACKED, comments: c.comment_count ?? NOT_TRACKED },
-        grade: g ? { score: g.score, band: g.band, verdict: g.verdict ?? null, hits: g.hits ?? [], misses: g.misses ?? [], feedback: g.feedback ?? null, icp_version: g.icp_version ?? null } : NOT_TRACKED,
-        transcript: c.transcript ?? null,
-      },
+    const post: Row = {
+      media_id: c.ig_media_id, media_type: c.media_type, taken_at: c.taken_at, permalink: val(c.permalink),
+      caption: c.caption ?? null,
+      transcript_available: !!(c.transcript && String(c.transcript).trim().length > 0),
+      transcript_words: c.transcript_words ?? 0,
+      transcript_status: c.transcript_status ?? null,
+      transcript: c.transcript ?? null,
+      engagement: { views: val(c.view_count), plays: val(c.play_count), likes: val(c.like_count), comments: val(c.comment_count) },
     };
+    if (opts.include_grades) {
+      const { data: grade } = await sb.from("content_grades").select("score,band,verdict,hits,misses,feedback,icp_version").eq("client_key", client).eq("ig_media_id", opts.id).order("graded_at", { ascending: false }).limit(1).maybeSingle();
+      const g = grade as Row | null;
+      post.internal_grading = g ? { score: g.score, band: g.band, verdict: g.verdict ?? null, hits: g.hits ?? [], misses: g.misses ?? [], feedback: g.feedback ?? null, icp_version: g.icp_version ?? null } : NOT_TRACKED;
+    }
+    return { found: true, post };
   }
   const cap = Math.min(Math.max(num(opts.limit) || 25, 1), 100);
-  let q = sb.from("creator_content").select("ig_media_id,media_type,permalink,caption,taken_at,view_count,like_count,comment_count").eq("client_key", client).order("taken_at", { ascending: false });
+  let q = sb.from("creator_content").select("ig_media_id,media_type,permalink,caption,taken_at,view_count,play_count,like_count,comment_count,transcript_status,transcript_words,video_url,stored_video_url").eq("client_key", client).order("taken_at", { ascending: false });
   if (opts.since) q = q.gte("taken_at", opts.since);
   if (opts.until) q = q.lte("taken_at", opts.until);
   const { data: content } = await q.limit(cap + 1);
@@ -489,40 +572,87 @@ export async function getOrganicContent(client: string, opts: { id?: string; sin
   const page = rows.slice(0, cap);
   const ids = page.map((r) => String(r.ig_media_id));
   const gradeByMedia: Record<string, Row> = {};
-  if (ids.length) {
+  if (opts.include_grades && ids.length) {
     const { data: grades } = await sb.from("content_grades").select("ig_media_id,score,band,misses").eq("client_key", client).in("ig_media_id", ids);
-    for (const g of (grades as Row[]) || []) gradeByMedia[String(g.ig_media_id)] = g; // one grade per media assumed; last wins
+    for (const g of (grades as Row[]) || []) gradeByMedia[String(g.ig_media_id)] = g;
   }
   let posts = page.map((c) => {
-    const g = gradeByMedia[String(c.ig_media_id)];
-    const misses = (g?.misses as unknown[]) || [];
-    return {
-      media_id: c.ig_media_id, taken_at: c.taken_at, media_type: c.media_type, permalink: c.permalink ?? null,
-      caption_excerpt: excerpt(c.caption, 160),
-      engagement: { views: c.view_count ?? NOT_TRACKED, likes: c.like_count ?? NOT_TRACKED, comments: c.comment_count ?? NOT_TRACKED },
-      grade: g ? { score: g.score, band: g.band, top_miss: misses.length ? misses[0] : null } : NOT_TRACKED,
+    const words = num(c.transcript_words);
+    const post: Row = {
+      media_id: c.ig_media_id, taken_at: c.taken_at, media_type: c.media_type, permalink: val(c.permalink),
+      caption_excerpt: excerpt(c.caption, 200),
+      transcript_available: words > 0,
+      transcript_words: words,
+      transcript_status: c.transcript_status ?? null,
+      has_stored_media: !!(c.stored_video_url || c.video_url),
+      engagement: { views: val(c.view_count), plays: val(c.play_count), likes: val(c.like_count), comments: val(c.comment_count) },
     };
+    if (opts.include_grades) {
+      const g = gradeByMedia[String(c.ig_media_id)];
+      const misses = (g?.misses as unknown[]) || [];
+      post.internal_grading = g ? { score: g.score, band: g.band, top_miss: misses.length ? misses[0] : null } : NOT_TRACKED;
+    }
+    return post;
   });
-  if (opts.band) posts = posts.filter((p) => p.grade !== NOT_TRACKED && (p.grade as Row).band === opts.band);
+  if (opts.band && opts.include_grades) posts = posts.filter((p) => p.internal_grading !== NOT_TRACKED && (p.internal_grading as Row).band === opts.band);
+  // Follower history (raw), if the snapshot table has rows for this creator.
+  let follower_history: unknown = NOT_TRACKED;
+  const { data: snaps } = await sb.from("creator_account_snapshots").select("snapshot_date,followers_count,following_count,media_count").eq("client_key", client).order("snapshot_date", { ascending: false }).limit(60);
+  if (snaps && snaps.length) follower_history = (snaps as Row[]).map((s) => ({ date: s.snapshot_date, followers: val(s.followers_count), following: val(s.following_count), media_count: val(s.media_count) }));
   return {
     posts,
     truncated,
-    note: "Per-post buyer-fit grade from content_grades (only graded posts carry a grade; the rest show grade not_tracked). Full caption + transcript only in single-post mode (pass id). band filter is optional.",
+    follower_history,
+    transcript_coverage: await transcriptCoverage(sb, client),
+    note: "RAW organic content: taken_at, media_type, caption excerpt, transcript availability/words/status, has_stored_media, engagement counts (not_tracked when IG did not return them, never 0), permalink. NO grading by default. Pass include_grades:true to append the internal AI grade under internal_grading (opt-in; treat as advisory). Single-post mode (pass id) returns full caption + full transcript. transcript_coverage summarizes how much of the library is transcribed.",
+  };
+}
+
+// Transcript coverage for a creator: how much of the video library is really transcribed, how much is
+// still queued, how much was ruled no-speech (silent/music video), and how many posts have no stored
+// media at all. transcribed = a real transcript of MIN 20+ words; anything less is not counted as covered.
+async function transcriptCoverage(sb: ReturnType<typeof getServiceSupabase>, client: string) {
+  const MIN = 20;
+  const base = () => sb.from("creator_content").select("id", { count: "exact", head: true }).eq("client_key", client);
+  const n = (r: { count: number | null }) => r.count || 0;
+  const [total, eligible_video, transcribed, pending, no_speech, no_stored_media] = await Promise.all([
+    base(),
+    base().not("video_url", "is", null),
+    base().eq("transcript_status", "done").gte("transcript_words", MIN),
+    base().in("transcript_status", ["pending", "failed"]),
+    base().eq("transcript_status", "no_speech"),
+    base().is("video_url", null).is("stored_video_url", null),
+  ].map((p) => p.then(n)) as Promise<number>[]);
+  const pct = eligible_video > 0 ? Math.round((transcribed / eligible_video) * 1000) / 10 : null;
+  return {
+    total_posts: total,
+    eligible_video_posts: eligible_video,
+    transcribed_20plus_words: transcribed,
+    transcribed_pct_of_video: pct,
+    still_queued: pending,
+    ruled_no_speech: no_speech,
+    posts_with_no_stored_media: no_stored_media,
+    note: `transcribed = a real transcript of ${MIN}+ words. still_queued resumes on the content-pipeline-heavy cron (batched, never starves the fast pipeline). ruled_no_speech = silent/music video Whisper could not transcribe after retries (terminal). posts_with_no_stored_media have neither a live nor a durable video url, so they can never be transcribed until re-ingested.`,
   };
 }
 
 // ---- New tool: describe_schema (static, no DB) ----
 export const SCHEMA_DOC = {
-  version: "2.1.0",
+  version: "2.2.0",
   server: "utari-ccos-foundation",
   generated_for: "UTARI MCP v2",
   hard_rules: [
     "Read STORED layers only; attribution is never live-recomputed and wide raw scans are never run.",
     "Money comes only from the canonical Ads Dashboard snapshot payload (ads_dashboard_snapshots) or attribution_summary / sale_attribution_facts.",
-    "DM counts are unique ManyChat subscribers (dm_ad_links), never Meta messaging_conversations_started.",
+    "DM counts are unique ManyChat subscribers who fired the keyword (ads_keyword_events), never Meta messaging_conversations_started.",
     "No fuzzy identity matching: links are made on hard keys (subscriber_id, ad_id, ig_media_id) or emit linkage_status 'unlinked'.",
     "Read-only on business tables. Responses are capped ~100KB with limit/cursor style caps and explicit truncation flags.",
   ],
+  keyword_vs_placement_model: {
+    principle: "A keyword IS the ad's identity. The same keyword can run as several placements (ad_id / campaign / adset). Money and funnel counts (dms, booked, taken, closes, cash, roas) are KEYWORD-LEVEL truths; spend is the one field that splits at the PLACEMENT level.",
+    get_ad: "returns funnel = the keyword-level canonical aggregate across every placement, plus placements[] (each ad_id/campaign/adset/status/spend). Never silently returns just the first placement. Pass ad_id to scope the funnel/spend to one placement.",
+    duplicate_keywords: "When a keyword appears more than once (e.g. GYM/PRO ran twice on tyson), the placements[] array holds all of them; placement_scope = 'all' unless an ad_id was passed.",
+  },
   vocabulary: {
     spend: "Ad spend in USD. Uses the ad account's calendar day (America/Los_Angeles / Pacific).",
     dms: "Unique ManyChat subscribers who DMed the ad's keyword (dm_ad_links). Never a Meta messaging metric.",
@@ -543,7 +673,16 @@ export const SCHEMA_DOC = {
     resolved_organic: "Reserved/aggregate only: organic cash is reconciled at the summary level (attribution_summary.organic); it is NOT tagged per individual sale, so it is not emitted as a per-sale status.",
     unresolved: "Ledger sale with no entry in sale_attribution_facts (no ad keyword).",
   },
-  dm_count_definition: "A DM is one unique ManyChat subscriber tied to a keyword via dm_ad_links (ig_subscriber_id + keyword_normalized). Message volume within a thread is separate (dm_conversation_messages).",
+  dm_count_definition: "A DM is one unique ManyChat subscriber who fired a keyword (ads_keyword_events, event_type dm_keyword). Message volume within a thread is separate (dm_conversation_messages).",
+  dm_thread_derivation: {
+    note: "get_dms_for_ad and get_ad_full thread_digests resolve verbatim threads LIVE, not from a prebuilt table. The old dm_ad_links bridge was built once (2026-07-09) and never refreshed, and its id-space (16-digit) did not match dm_conversation_messages (9-digit Instagram id), so threads returned zero. Replaced.",
+    path: "keyword subscribers (ManyChat id, ads_keyword_events) -> instagram_lead_links (manychat_subscriber_id -> instagram_user_id, refreshed daily) -> dm_conversation_messages (subscriber_id = that Instagram id). The thread's subscriber is reported as the ManyChat id so became_sale/booked hard keys still resolve.",
+    coverage: "Each thread response carries coverage {keyword_subscribers, threads_resolved, note}. threads_resolved tracks the funnel's unique-DM count for the window; any gap is subscribers whose Instagram thread is not yet bridged (bridge tightens daily), never a silent drop.",
+  },
+  dm_reconciliation_definition: {
+    note: "get_ad_full.dm_reconciliation compares two counts for the SAME keyword and window. funnel_dms = the canonical keyword-level unique DMs; window_series_dms = the same count summed from the per-day series. dm_status is 'match' when equal, 'definition_gap_raw_exceeds_attributed' when the raw keyword-subscriber count exceeds the canonically-attributed funnel dms (an accepted definition gap, not an error), and 'ERROR_attributed_exceeds_raw' only when the attributed count exceeds the raw one (a real bug flag). Same treatment for spend (funnel_spend vs window_series_spend).",
+  },
+  show_rate_carryover: "show_rate = calls_taken / booked_calls can exceed 1.0 and is NEVER clamped. Calls taken in a window include calls that were BOOKED in a prior window (period-counting carryover), so taken can exceed booked for the same window. When this happens the response carries a show_rate_note saying so; the raw counts are always shown.",
   audit_2026_07_15: {
     note: "An external agent audited this MCP; several of its readings were MCP bugs, not business reality. Fixed here (read-path only, no business logic or ad actions changed):",
     fixed_mcp_bugs: [
@@ -553,6 +692,11 @@ export const SCHEMA_DOC = {
       "name matches were mislabeled machine_attributed: name matches are now their own name_matched status (at risk, not a hard key).",
       "call duration_sec, per-ad status in placements, and thread booked flags were reported not_tracked though the data exists: duration_sec now falls back to raw.recording_start/end_time; per_ad_status maps ads_meta_insights_daily.ad_effective_status; thread booked is hard-keyed from booked_call events.",
       "get_sales_with_ad understated the attributed total vs the canonical figure: it now reports canonical_all_time_paid_attributed (attribution_summary) and the manual_resolution_remainder so the total reconciles.",
+      "SECOND PASS (2026-07-15): DM threads returned zero everywhere (get_dms_for_ad, get_ad, get_ad_full digests). Root cause was two layered defects: the dm_ad_links bridge was static (built once 2026-07-09, never refreshed) AND its 16-digit id-space did not match dm_conversation_messages' 9-digit Instagram id, so even bridged keywords joined to nothing. Replaced with a live derivation: keyword subscribers -> instagram_lead_links -> dm_conversation_messages. Threads now track the funnel's unique-DM count with a coverage block.",
+      "SECOND PASS: get_ad returned only the FIRST placement when a keyword ran more than once. Now returns the keyword-level canonical aggregate plus placements[] (spend per ad_id); optional ad_id scopes it. See keyword_vs_placement_model.",
+      "SECOND PASS: dm_reconciliation raised a false error when raw keyword subscribers exceeded canonically-attributed funnel dms. That is a definition gap, not a bug: classified as definition_gap_raw_exceeds_attributed; a real error only fires when attributed exceeds raw. spend reconciliation added alongside.",
+      "SECOND PASS: business_snapshot show_rate could read > 1.0 (e.g. 16 taken / 14 booked). NOT clamped (clamping would hide true data). Raw counts kept; a show_rate_note explains prior-window booking carryover. See show_rate_carryover.",
+      "SECOND PASS: get_organic_content led with an AI grade. Reworked raw-first: default response is factual (caption/transcript/engagement/permalink) with grading behind include_grades:true.",
     ],
     real_ceilings_not_bugs: [
       "Call->ad linkage is HARD-keyed by three exact keys (fathom_call_links), in precedence order: (1) a closer pasted the call's Fathom link into the sale row (share-token / recording-id), (2) a Fathom external attendee email EXACTLY equals a ghl_appointments.contact_email, (3) the Fathom meeting URL EXACTLY equals the booking's meeting link (calendar.address). The matched booking carries the ad keyword; linkage_method names which key. Calls matching none stay 'unlinked' - NO name matching is ever done. Coverage is bounded by what closers paste + what bookings capture (email / meeting link).",
@@ -570,8 +714,8 @@ export const SCHEMA_DOC = {
   ],
   tools: {
     list_ads: "Per-ad canonical funnel + live targeting/copy for a creator (v2 field names).",
-    get_ad: "One ad's funnel + a sample of its DM threads.",
-    get_dms_for_ad: "Every DM thread for an ad, full verbatim.",
+    get_ad: "One keyword's canonical funnel aggregate + placements[] (spend per ad_id) + a sample of its DM threads. Keyword is the identity; pass ad_id to scope spend to one placement.",
+    get_dms_for_ad: "Every DM thread a keyword started, full verbatim, resolved live via the ManyChat->Instagram bridge, with a coverage block.",
     get_ad_day: "Per-ad-per-day spend/impressions/clicks/cpm/status.",
     list_sales: "Deduped sales ledger; each sale carries attribution_status (machine_attributed | name_matched | unresolved).",
     get_sales_with_ad: "Deduped ledger annotated with canonical per-sale ad attribution + honest certainty (machine_attributed hard key vs name_matched at-risk), counts, and a reconciliation block against the canonical all-time attributed figure.",
@@ -579,7 +723,7 @@ export const SCHEMA_DOC = {
     business_snapshot: "Per creator + combined current/prior week funnel, top/bottom 3 funded ads, funded zero-DM ad count.",
     get_ad_full: "One-call full ad object: funnel + placement lineage + copy + per-day series + thread digests.",
     get_call_transcripts: "List mode = fathom summaries + ids; single-id mode = full transcript + duration. linkage_status 'linked' (hard share-token/recording-id match to a sale, with ad_keyword + subscriber) or 'unlinked'.",
-    get_organic_content: "Per-post buyer-fit grade (content_grades) + engagement; single-post mode returns full caption + transcript.",
+    get_organic_content: "RAW-FIRST by default: per post taken_at, media_type, caption excerpt (200 chars), transcript_available + transcript_words + transcript_status, engagement counts (not_tracked when Instagram omits the field, never 0), permalink. NO grading/verdict/band/hits/misses unless include_grades:true (which appends internal_grading, advisory). Single-post mode (id = ig_media_id) returns full caption + full transcript. Also returns follower_history from creator_account_snapshots when present.",
     describe_schema: "This document.",
     "factory_*": "Read + write on the /factory content workspace (unchanged).",
   },

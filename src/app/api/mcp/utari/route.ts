@@ -16,13 +16,13 @@ function statusForMethod(method: string | undefined | null): "machine_attributed
   return "unresolved";
 }
 import {
-  DM_CLIENT,
   dataFreshness,
   coverageFor,
   businessSnapshot,
   getAdFull,
   getCallTranscripts,
   getOrganicContent,
+  dmThreadsForKeyword,
   SCHEMA_DOC,
 } from "@/lib/utari/foundation";
 
@@ -58,6 +58,7 @@ async function canonicalAds(client: string) {
     const calls = (r.callsTaken as number) || 0;
     return {
       keyword: r.label, status: st.status ?? null,
+      ad_id: r.adId ?? null, campaign_name: r.campaignName ?? null, adset_name: r.adsetName ?? null,
       spend: r.adSpend, dms: r.messages, booked_calls: r.bookedCalls, calls_taken: r.callsTaken,
       show_rate: booked > 0 ? Math.round(((calls / booked) as number) * 1000) / 1000 : null,
       closes: r.newClients, close_rate: calls > 0 ? Math.round(((((r.newClients as number) || 0) / calls) as number) * 1000) / 1000 : null,
@@ -99,10 +100,10 @@ function authed(req: NextRequest): boolean {
 const TOOLS = [
   { name: "list_ads", description: "Complete per-ad state for a creator: status, spend, 7-day spend, impressions, clicks, CPM, DMs, leads, closes, cash, ROAS, targeting (audience type, Advantage on/off, age, lookalike), and on-image copy. One row per ad. The trustworthy per-ad read.",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] } }, required: ["client"] } },
-  { name: "get_ad", description: "One ad's full state plus a sample of the DM conversations it started.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, dm_limit: { type: "number" } }, required: ["client", "keyword"] } },
-  { name: "get_dms_for_ad", description: "Every DM conversation tied to a given ad, full thread.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, limit: { type: "number" } }, required: ["client", "keyword"] } },
+  { name: "get_ad", description: "One ad by its KEYWORD (the keyword is the ad's identity). Returns a keyword-level canonical funnel aggregate (money + funnel are keyword-level truths), a placements[] array of every ad_id/campaign/adset/status/spend that ran that keyword (spend is placement-level), and a sample of the DM conversations the keyword started. When a keyword ran as more than one placement this never silently returns just the first; it aggregates and lists all. Pass ad_id to scope the spend fields to one placement.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, ad_id: { type: "string", description: "optional: scope the placement/spend fields to one ad_id" }, dm_limit: { type: "number" } }, required: ["client", "keyword"] } },
+  { name: "get_dms_for_ad", description: "Every DM conversation a keyword started, full verbatim thread. Threads are derived live from the keyword's ManyChat subscribers bridged to their Instagram threads (instagram_lead_links), so the count tracks the funnel's unique-DM count for the window, not a stale prebuilt table. Includes a coverage block (keyword_subscribers vs threads_resolved). Optional since (ISO date) windows the subscribers.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; only subscribers whose first keyword DM is on/after this" }, limit: { type: "number" } }, required: ["client", "keyword"] } },
   { name: "get_ad_day", description: "Per-day metrics for ads: spend, impressions, clicks, CPM, status. One row per ad per day.",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string" } }, required: ["client"] } },
   { name: "list_sales", description: "The sales ledger: date, prospect, collected, closer, setter, objection, call notes.",
@@ -116,8 +117,8 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; filters the per-day series + thread digests (default = snapshot window start)" } }, required: ["client", "keyword"] } },
   { name: "get_call_transcripts", description: "Fathom call transcripts. List mode (no id) = summaries + fathom ids for a creator; single-id mode = the full transcript. Calls carry no hard key to an ad or DM thread, so linkage_status is always 'unlinked' (correlate on prospect_name only, non-authoritative).",
     inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string", description: "fathom_id for the full transcript" }, since: { type: "string" }, limit: { type: "number" } }, required: ["client"] } },
-  { name: "get_organic_content", description: "Organic Instagram posts for a creator with their buyer-fit grade. List mode = date, type, caption excerpt, engagement, permalink, grade (score/band/top miss). Single-post mode (pass id = ig_media_id) = full caption + transcript + full grade. Optional band filter.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string" }, since: { type: "string" }, until: { type: "string" }, band: { type: "string", description: "grade band filter, e.g. off/weak/strong" }, limit: { type: "number" } }, required: ["client"] } },
+  { name: "get_organic_content", description: "RAW organic Instagram posts for a creator (no AI grading by default). List mode per post: taken_at, media_type, caption excerpt, transcript_available + transcript_words, engagement (views/plays/likes/comments; not_tracked when IG omits them), permalink. Single-post mode (pass id = ig_media_id) = full caption + full transcript. Pass include_grades:true to append the internal AI grade (opt-in, advisory). Also returns follower_history. Optional since/until/band/limit.",
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string" }, since: { type: "string" }, until: { type: "string" }, band: { type: "string", description: "grade band filter (only applies with include_grades)" }, limit: { type: "number" }, include_grades: { type: "boolean", description: "opt in to the internal AI grade (advisory)" } }, required: ["client"] } },
   { name: "describe_schema", description: "Static, versioned documentation of every tool, field semantics, the three attribution_status meanings, the DM-count definition, and the known accuracy ceilings. No DB call. Read this first to understand what every number means.",
     inputSchema: { type: "object", properties: {} } },
   // ---- Factory (the /factory content workspace): full read + write ----
@@ -131,16 +132,33 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" }, groupId: { type: "string" }, label: { type: "string" }, bodyMd: { type: "string" }, copyText: { type: "string" }, imageDirection: { type: "string" }, status: { type: "string" }, stage: { type: "string" }, imageUrl: { type: "string" }, bucket: { type: "string" }, style: { type: "string" }, tags: { type: "array", items: { type: "string" } }, approve: { type: "boolean" }, revisionNote: { type: "string" }, groupIdSet: { type: "string" }, sortOrder: { type: "number" }, name: { type: "string" }, collapsed: { type: "boolean" }, kind: { type: "string" }, description: { type: "string" } }, required: [] } },
 ];
 
-async function dmsForAd(client: string, keyword: string, limit: number) {
+// Keyword-level funnel = sum of its placements' primitives, ratios recomputed from the sums (a keyword
+// is one ad identity across placements). Spend/dms/closes/cash are keyword truths; ratios never averaged.
+function aggregateKeywordFunnel(rows: Array<Record<string, unknown>>) {
+  const n = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+  const sum = (k: string) => rows.reduce((s, r) => s + n(r[k]), 0);
+  const spend = Math.round(sum("spend") * 100) / 100;
+  const dms = sum("dms"), booked = sum("booked_calls"), calls = sum("calls_taken"), closes = sum("closes");
+  const cash = sum("cash_collected"), gp = sum("gross_profit");
+  const ratio = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 1000 : null);
+  return {
+    placements_count: rows.length,
+    spend, dms, cost_per_dm: ratio(spend, dms),
+    booked_calls: booked, cost_per_booked_call: ratio(spend, booked),
+    calls_taken: calls, show_rate: ratio(calls, booked),
+    closes, close_rate: ratio(closes, calls),
+    cash_collected: cash, roas: spend > 0 ? Math.round((cash / spend) * 100) / 100 : null,
+    gross_profit: gp, gross_profit_roas: spend > 0 ? Math.round((gp / spend) * 100) / 100 : null,
+  };
+}
+
+// DM threads for an ad keyword, via the LIVE ManyChat->Instagram bridge (dmThreadsForKeyword). The
+// old static dm_ad_links path returned zero because its id scoping diverged from the messages table.
+async function dmsForAd(client: string, keyword: string, limit: number, since?: string) {
   const sb = getServiceSupabase();
-  const dmClient = DM_CLIENT[client];
-  const { data: links } = await sb.from("dm_ad_links").select("ig_subscriber_id").eq("client_key", client).eq("keyword_normalized", keyword.toLowerCase()).limit(limit);
-  const out: unknown[] = [];
-  for (const l of links || []) {
-    const { data: msgs } = await sb.from("dm_conversation_messages").select("direction,body,sent_at").eq("client", dmClient).eq("subscriber_id", (l as { ig_subscriber_id: string }).ig_subscriber_id).order("sent_at").limit(60);
-    out.push({ subscriber: (l as { ig_subscriber_id: string }).ig_subscriber_id, messages: (msgs || []).map((m: { direction?: string; body?: string; sent_at?: string }) => ({ who: (m.direction || "").toLowerCase().startsWith("in") ? "lead" : "creator", text: m.body, at: m.sent_at })) });
-  }
-  return out;
+  const { threads, coverage } = await dmThreadsForKeyword(sb, client, keyword, { limit, since });
+  const conversations = threads.map((t) => ({ subscriber: t.subscriber_manychat, ig_subscriber_id: t.ig_subscriber_id, message_count: t.message_count, messages: t.messages }));
+  return { conversations, coverage };
 }
 
 async function callTool(name: string, a: Record<string, unknown>, origin: string): Promise<unknown> {
@@ -162,12 +180,30 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
     }
     case "get_ad": {
       const kw = (a.keyword as string).toLowerCase();
+      const adId = a.ad_id ? String(a.ad_id) : null;
       const { ads, window } = await canonicalAds(client);
-      const dms = await dmsForAd(client, kw, (a.dm_limit as number) || 5);
-      return { ad: ads.find((x) => String(x.keyword).toLowerCase() === kw) || null, window, sample_dms: dms };
+      // Bug 3: a keyword IS the ad's identity across placements. Return the keyword-level canonical
+      // aggregate (money + funnel are keyword-level truths) PLUS every placement (spend is placement-
+      // level). Never silently pick the first match. Optional ad_id scopes the placement view.
+      const placements = ads.filter((x) => String(x.keyword).toLowerCase() === kw);
+      if (!placements.length) return { found: false, keyword: kw, window, note: "keyword not present in the latest snapshot" };
+      const scoped = adId ? placements.filter((p) => String(p.ad_id ?? "") === adId) : placements;
+      const funnel = aggregateKeywordFunnel(scoped.length ? scoped : placements);
+      const dms = await dmsForAd(client, kw, (a.dm_limit as number) || 5, a.since as string | undefined);
+      return {
+        found: true, keyword: kw, window,
+        funnel,
+        placements: placements.map((p) => ({ ad_id: p.ad_id ?? null, campaign_name: p.campaign_name ?? null, adset_name: p.adset_name ?? null, status: p.status ?? null, spend: p.spend ?? 0 })),
+        placement_scope: adId || "all",
+        sample_dms: dms.conversations,
+        dm_coverage: dms.coverage,
+        note: "funnel = keyword-level canonical aggregate across placements (spend/dms/closes/cash are keyword truths). placements[] splits spend per ad_id. Pass ad_id to scope the funnel to one placement. sample_dms is a live sample; full threads via get_dms_for_ad.",
+      };
     }
-    case "get_dms_for_ad":
-      return { keyword: a.keyword, conversations: await dmsForAd(client, a.keyword as string, (a.limit as number) || 20) };
+    case "get_dms_for_ad": {
+      const { conversations, coverage } = await dmsForAd(client, a.keyword as string, (a.limit as number) || 20, a.since as string | undefined);
+      return { keyword: a.keyword, conversations, coverage, note: "Verbatim DM threads for the ad keyword, resolved live (ManyChat->Instagram bridge). coverage.threads_resolved vs keyword_subscribers shows how many of the keyword's unique DMs have a linked thread." };
+    }
     case "get_ad_day": {
       let q = sb.from("ad_day").select("*").eq("client_key", client).order("date", { ascending: false });
       if (a.keyword) q = q.eq("keyword", (a.keyword as string).toLowerCase());
@@ -263,7 +299,7 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
     case "get_call_transcripts":
       return getCallTranscripts(client, a.id as string | undefined, a.since as string | undefined, a.limit as number | undefined);
     case "get_organic_content":
-      return getOrganicContent(client, { id: a.id as string | undefined, since: a.since as string | undefined, until: a.until as string | undefined, band: a.band as string | undefined, limit: a.limit as number | undefined });
+      return getOrganicContent(client, { id: a.id as string | undefined, since: a.since as string | undefined, until: a.until as string | undefined, band: a.band as string | undefined, limit: a.limit as number | undefined, include_grades: a.include_grades === true });
     case "describe_schema":
       return SCHEMA_DOC;
     default:
@@ -286,7 +322,7 @@ async function withEnvelope(name: string, args: Record<string, unknown>, result:
 async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, origin: string) {
   const { id, method, params } = msg;
   if (method === "initialize")
-    return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "2.0.0" } } };
+    return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "2.2.0" } } };
   if (method === "notifications/initialized" || method === "notifications/cancelled") return null;
   if (method === "ping") return { jsonrpc: "2.0", id, result: {} };
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
