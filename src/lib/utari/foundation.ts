@@ -110,24 +110,28 @@ export async function dataFreshness(sb: Sb) {
   const now = Date.now();
   const top = (p: PromiseLike<{ data: Row[] | null }>) =>
     Promise.resolve(p).then((r) => (r.data && r.data[0] ? r.data[0] : null));
-  const [sales, meta, kw, dm, fathom] = await Promise.all([
+  const [sales, meta, kw, dm, fathom, fathomIngest, content] = await Promise.all([
     top(sb.from("sales_tracker_rows").select("synced_at").order("synced_at", { ascending: false }).limit(1)),
     top(sb.from("ads_meta_insights_daily").select("synced_at").order("synced_at", { ascending: false }).limit(1)),
     top(sb.from("ads_keyword_events").select("event_at").order("event_at", { ascending: false }).limit(1)),
     top(sb.from("dm_conversation_messages").select("sent_at").order("sent_at", { ascending: false }).limit(1)),
     top(sb.from("fathom_calls").select("recorded_at").order("recorded_at", { ascending: false }).limit(1)),
+    top(sb.from("fathom_calls").select("created_at").order("created_at", { ascending: false }).limit(1)),
+    top(sb.from("creator_content").select("created_at").order("created_at", { ascending: false }).limit(1)),
   ]);
-  const mk = (source: string, ts: unknown) => {
+  const mk = (source: string, ts: unknown, kind = "sync") => {
     const iso = ts ? String(ts) : null;
     const mins = iso ? Math.round((now - new Date(iso).getTime()) / 60000) : null;
-    return { source, last_sync: iso, minutes_since_sync: mins, hours_since_sync: mins != null ? Math.round(mins / 6) / 10 : null };
+    return { source, [`last_${kind}`]: iso, minutes_since_sync: mins, hours_since_sync: mins != null ? Math.round(mins / 6) / 10 : null };
   };
   const sources = [
     mk("sales_tracker_rows", sales?.synced_at),
     mk("ads_meta_insights_daily", meta?.synced_at),
-    mk("ads_keyword_events", kw?.event_at),
-    mk("dm_conversation_messages", dm?.sent_at),
-    mk("fathom_calls", fathom?.recorded_at),
+    mk("ads_keyword_events", kw?.event_at, "event"),
+    mk("dm_conversation_messages", dm?.sent_at, "message"),
+    mk("fathom_calls_recorded", fathom?.recorded_at, "recorded"), // newest CALL date (real calls can lag)
+    mk("fathom_calls_ingested", fathomIngest?.created_at, "ingest"), // newest INGEST write (poller health)
+    mk("creator_content", content?.created_at, "ingest"), // reels/content ingest (poller health)
   ];
   const within24 = (s: { minutes_since_sync: number | null }) => s.minutes_since_sync != null && s.minutes_since_sync <= 24 * 60;
   const salesOk = within24(sources[0]);
@@ -407,6 +411,8 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
     const { data } = await sb.from("fathom_calls").select("fathom_id,title,recorded_at,duration_sec,prospect_name,client_key,summary,transcript,rec_start:raw->>recording_start_time,rec_end:raw->>recording_end_time").eq("fathom_id", id).maybeSingle();
     if (!data) return { found: false, id };
     const c = data as Row;
+    const { data: link } = await sb.from("fathom_call_links").select("linkage_method,matched_value,sale_date,prospect_name,subscriber_id,keyword_normalized").eq("fathom_id", String(c.fathom_id)).maybeSingle();
+    const lk = link as Row | null;
     return {
       found: true,
       call: {
@@ -414,8 +420,11 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
         prospect_name: c.prospect_name ?? null, client_key: c.client_key ?? null,
         summary: c.summary ?? null, transcript: c.transcript ?? null,
       },
-      linkage_status: "unlinked",
-      linkage_note: "fathom_calls has no ManyChat subscriber or ad keyword, so there is no hard key to a specific ad or DM thread. prospect_name is exposed for the caller to correlate; it is not a machine link.",
+      linkage_status: lk ? "linked" : "unlinked",
+      link: lk ? { method: lk.linkage_method, ad_keyword: lk.keyword_normalized ?? null, subscriber_id: lk.subscriber_id ?? null, sale_date: lk.sale_date ?? null } : null,
+      linkage_note: lk
+        ? "HARD-key link: the closer pasted this call's Fathom link into the sale row; matched by exact share token / recording id (linkage_method). ad_keyword/subscriber come from that sale."
+        : "No hard key: this call's Fathom link is not in any sale row (and fathom_calls carries no ManyChat/keyword). Not linked. No name matching is done.",
     };
   }
   const cap = Math.min(Math.max(num(limit) || 25, 1), 100);
@@ -424,17 +433,30 @@ export async function getCallTranscripts(client: string, id?: string, since?: st
   const { data } = await q.limit(cap + 1);
   const rows = (data as Row[]) || [];
   const truncated = rows.length > cap;
+  const page = rows.slice(0, cap);
+  const ids = page.map((c) => String(c.fathom_id)).filter(Boolean);
+  const linkByFathom: Record<string, Row> = {};
+  if (ids.length) {
+    const { data: links } = await sb.from("fathom_call_links").select("fathom_id,linkage_method,keyword_normalized,subscriber_id,sale_date").in("fathom_id", ids);
+    for (const l of (links as Row[]) || []) linkByFathom[String(l.fathom_id)] = l;
+  }
+  const linkedCount = Object.keys(linkByFathom).length;
   return {
-    calls: rows.slice(0, cap).map((c) => ({
-      fathom_id: c.fathom_id, title: c.title, recorded_at: c.recorded_at,
-      duration_sec: durationSec(c.duration_sec, c.rec_start, c.rec_end), prospect_name: c.prospect_name ?? null,
-      summary: c.summary ? excerpt(c.summary, 500) : null,
-      summary_truncated: !!(c.summary && String(c.summary).length > 500),
-      has_transcript: !!c.transcript,
-      linkage_status: "unlinked",
-    })),
+    calls: page.map((c) => {
+      const lk = linkByFathom[String(c.fathom_id)];
+      return {
+        fathom_id: c.fathom_id, title: c.title, recorded_at: c.recorded_at,
+        duration_sec: durationSec(c.duration_sec, c.rec_start, c.rec_end), prospect_name: c.prospect_name ?? null,
+        summary: c.summary ? excerpt(c.summary, 500) : null,
+        summary_truncated: !!(c.summary && String(c.summary).length > 500),
+        has_transcript: !!c.transcript,
+        linkage_status: lk ? "linked" : "unlinked",
+        link: lk ? { method: lk.linkage_method, ad_keyword: lk.keyword_normalized ?? null, subscriber_id: lk.subscriber_id ?? null, sale_date: lk.sale_date ?? null } : null,
+      };
+    }),
     truncated,
-    note: "List mode = summaries + fathom ids. Call again with an id for the full transcript. Calls carry no hard key to an ad/sale (linkage_status unlinked); correlate on prospect_name at your own risk.",
+    linked_on_page: linkedCount,
+    note: "List mode = summaries + fathom ids. Call again with an id for the full transcript. linkage_status is 'linked' ONLY when a closer pasted this call's Fathom link into the sale row (exact share-token / recording-id match); otherwise 'unlinked'. No name matching.",
   };
 }
 
@@ -533,7 +555,7 @@ export const SCHEMA_DOC = {
       "get_sales_with_ad understated the attributed total vs the canonical figure: it now reports canonical_all_time_paid_attributed (attribution_summary) and the manual_resolution_remainder so the total reconciles.",
     ],
     real_ceilings_not_bugs: [
-      "fathom_calls carry no ManyChat subscriber or ad keyword, so call->ad/DM linkage stays linkage_status 'unlinked'. No name-based linkage is added (would be fuzzy certainty).",
+      "Call->ad linkage is now HARD-keyed where a closer pasted the call's Fathom link into the sale row (exact share-token / recording-id match, fathom_call_links). Calls without that pasted link stay linkage_status 'unlinked' - Fathom itself carries no ManyChat/keyword, and NO name matching is ever done. So coverage of call->ad linkage is bounded by how often closers paste the share link (currently a minority of calls).",
       "Some collected cash is genuinely unresolved (no ad keyword captured) - a normal, accepted state, not an error. Coverage % below 100 is expected.",
       "Funded zero-DM ads in a test pool are deliberately starved by Meta (small budgets, cold audiences); zero DMs on spend alone is NOT a kill signal. The auditor's inflated 'zero-DM funded ad' count was partly the per-day series bug (now fixed) plus this misread.",
       "resolved_organic is reconciled only at the summary level, not tagged per individual sale.",
@@ -556,7 +578,7 @@ export const SCHEMA_DOC = {
     freshness: "Per-source LIVE sync recency (max synced_at/event_at per source table) + a self_test flagging sales/meta > 24h. Does not read feed_watermarks.",
     business_snapshot: "Per creator + combined current/prior week funnel, top/bottom 3 funded ads, funded zero-DM ad count.",
     get_ad_full: "One-call full ad object: funnel + placement lineage + copy + per-day series + thread digests.",
-    get_call_transcripts: "List mode = fathom summaries + ids; single-id mode = full transcript. linkage_status unlinked.",
+    get_call_transcripts: "List mode = fathom summaries + ids; single-id mode = full transcript + duration. linkage_status 'linked' (hard share-token/recording-id match to a sale, with ad_keyword + subscriber) or 'unlinked'.",
     get_organic_content: "Per-post buyer-fit grade (content_grades) + engagement; single-post mode returns full caption + transcript.",
     describe_schema: "This document.",
     "factory_*": "Read + write on the /factory content workspace (unchanged).",

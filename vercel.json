@@ -12,6 +12,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/content-pipeline-heavy",
+      "schedule": "30 */2 * * *"
+    },
+    {
       "path": "/api/cron/attribution-reconcile",
       "schedule": "0 7 * * *"
     },

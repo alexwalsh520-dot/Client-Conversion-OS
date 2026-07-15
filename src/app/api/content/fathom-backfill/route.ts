@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { creatorKeyFromText } from "@/lib/creators";
+import { linkFathomCalls, fathomDurationSec } from "@/lib/content-pipeline/fathom-links";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
         fathom_id: String(it.recording_id || ""),
         title,
         recorded_at: (it.recording_start_time || it.scheduled_start_time || it.created_at) as string | null,
+        duration_sec: fathomDurationSec(it.recording_start_time, it.recording_end_time), // API has no duration field; derive from the recording window
         attendees: (it.calendar_invitees as unknown) ?? null,
         prospect_name: prospectFromTitle(title),
         client_key: creator,
@@ -88,5 +90,7 @@ export async function POST(req: NextRequest) {
     if (!cursor) break;
   }
 
-  return NextResponse.json({ ok: true, stored, mapped_to_creator: mapped, byCreator, pages, more: !!cursor, cursor });
+  // Hard-key link calls to sales via the Fathom share token / recording id (best-effort, never fatal).
+  const links = await linkFathomCalls(sb).catch(() => null);
+  return NextResponse.json({ ok: true, stored, mapped_to_creator: mapped, byCreator, pages, more: !!cursor, cursor, links });
 }
