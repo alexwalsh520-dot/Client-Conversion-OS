@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Film, Loader2, LayoutGrid, TrendingUp, Sparkles, Settings, Users, Clapperboard } from "lucide-react";
+import { Film, Loader2, LayoutGrid, TrendingUp, Sparkles, Settings, Users, Clapperboard, GalleryHorizontal } from "lucide-react";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
 import TrendsView from "@/components/content/TrendsView";
 import CoachStudioView from "@/components/content/CoachStudioView";
 import BuyerIdeasView, { type BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import { type TrendBriefView } from "@/components/content/IcpIdeasView";
 import PlaybookView from "@/components/content/PlaybookView";
+import CarouselsView from "@/components/content/CarouselsView";
 import type { VideoIdea } from "@/components/content/VideoIdeaCard";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
@@ -41,7 +42,7 @@ function defaultRange(): DateRange {
 
 export default function ContentClient() {
   const [active, setActive] = useState("tyson");
-  const [page, setPage] = useState<"content" | "trends" | "buyers" | "playbook" | "coach">("content");
+  const [page, setPage] = useState<"content" | "trends" | "buyers" | "playbook" | "coach" | "carousels">("content");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -61,6 +62,7 @@ export default function ContentClient() {
     ["trends", "Trends", TrendingUp],
     ["buyers", "Buyers", Users],
     ["playbook", "Playbook", Clapperboard],
+    ["carousels", "Carousels", GalleryHorizontal],
     ["coach", "Coach", Sparkles],
   ] as const), []);
 
@@ -97,6 +99,8 @@ export default function ContentClient() {
         <BuyerIdeasView buyers={data.buyerIdeas || []} />
       ) : page === "playbook" ? (
         <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
+      ) : page === "carousels" ? (
+        <CarouselsView creator={active} />
       ) : (
         <CoachStudioView data={{ icp: data.icp, angles: data.angles, dossiers: data.dossiers, voc: data.voc }} creator={active} />
       )}
