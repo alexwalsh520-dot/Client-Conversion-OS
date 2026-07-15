@@ -70,9 +70,9 @@ export async function notifyAdminOfNewReferral(
         },
         {
           type: "button",
-          text: { type: "plain_text", text: "Open CCOS Referrals", emoji: true },
-          url: `${APP_BASE_URL}/referrals`,
-          action_id: "open_ccos_referrals",
+          text: { type: "plain_text", text: "Open Coaching Hub", emoji: true },
+          url: `${APP_BASE_URL}/coaching`,
+          action_id: "open_coaching_hub_referrals",
         },
       ],
     },

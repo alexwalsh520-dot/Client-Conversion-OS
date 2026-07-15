@@ -50,6 +50,7 @@ import ExpensesTab from "@/components/coaching/ExpensesTab";
 import NutritionTab from "@/components/coaching/NutritionTab";
 import ClientProgressTab from "@/components/coaching/ClientProgressTab";
 import AskAhmadTab from "@/components/coaching/AskAhmadTab";
+import ReferralsTab from "@/components/coaching/ReferralsTab";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
@@ -64,6 +65,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "nutrition", label: "Nutrition", icon: <UtensilsCrossed size={14} /> },
   { key: "client-progress", label: "Client Progress", icon: <ClipboardCheck size={14} /> },
   { key: "ask-ahmad", label: "Ask Ahmad", icon: <Brain size={14} /> },
+  { key: "referrals", label: "Referrals", icon: <UserPlus size={14} /> },
 ];
 
 // Admin-only fetch — returns [] for non-admins (their API call 403s).
@@ -374,6 +376,9 @@ export default function CoachingPage() {
         )}
         {activeTab === "ask-ahmad" && (
           <AskAhmadTab />
+        )}
+        {activeTab === "referrals" && (
+          <ReferralsTab clients={clients} />
         )}
       </div>
     </div>
