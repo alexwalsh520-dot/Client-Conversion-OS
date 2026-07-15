@@ -97,8 +97,9 @@ export async function dmThreadsForKeyword(
     threads,
     coverage: {
       keyword_subscribers,
+      subscribers_bridged_to_instagram: resolvable.length,
       threads_resolved: threads.length,
-      note: "Threads resolved via the LIVE ManyChat->Instagram bridge (instagram_lead_links -> dm_conversation_messages). A subscriber with no linked Instagram thread yet is not returned, so threads_resolved can be below keyword_subscribers.",
+      note: "Threads resolve in two hops: (1) ManyChat subscriber -> Instagram id via instagram_lead_links (bridge), (2) stored verbatim messages in dm_conversation_messages. threads_resolved counts subscribers that clear BOTH. The bridge covers most subscribers; the binding ceiling is stored messages: the DM webhook captures recent threads, so older subscribers are bridged but have no stored thread. This is a real capture ceiling (tightens forward), never a silent drop. Pass a recent `since` for the highest coverage.",
     },
   };
 }
