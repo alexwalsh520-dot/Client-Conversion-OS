@@ -19,15 +19,14 @@ export async function GET(req: NextRequest) {
   const origin = new URL(req.url).origin;
   const result = await runPipelineSteps("content-pipeline", origin, [
     // 1. Fathom calls FIRST (webhook handles real time; this catches gaps). Was step 4, behind the slow
-    //    transcription that starved it.
+    //    transcription that starved it. Now fast + first, so call ingestion can never be blocked.
     { path: "/api/content/fathom-backfill?pages=6", timeoutMs: 90000 },
-    // 2. Mine new calls + DMs into the content store (compute-once) + refresh audience read.
-    { path: "/api/content/mine?creator=tyson&limit=8", timeoutMs: 60000 },
-    { path: "/api/content/mine?creator=antwan&limit=8", timeoutMs: 60000 },
-    // 3. Pull newest reels metadata (cheap; refreshes urls so the heavy transcription step has work).
+    // 2. Pull newest reels metadata (cheap; refreshes urls so the heavy transcription step has work).
     { path: "/api/content/ingest", timeoutMs: 45000 },
-    // 4. Account snapshot: record today's follower count so the trend curve grows.
+    // 3. Account snapshot: record today's follower count so the trend curve grows.
     { path: "/api/content/snapshot-account", timeoutMs: 20000 },
+    // NOTE: call/DM VOC mining (slow LLM work) + transcription + buyer-DNA moved to
+    // /api/cron/content-pipeline-heavy so they get their own budget and can never starve Fathom.
   ], { budgetMs: 250000 });
 
   const stale = await checkPolledFreshness().catch(() => []);

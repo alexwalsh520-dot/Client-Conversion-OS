@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
   }
   const origin = new URL(req.url).origin;
   const result = await runPipelineSteps("content-pipeline-heavy", origin, [
+    // Mine new calls + DMs into the content store (compute-once) + refresh audience read. LLM work,
+    // > 60s, so it lives here (it starved the fast cron). First, so VOC stays current.
+    { path: "/api/content/mine?creator=tyson&limit=8", timeoutMs: 110000 },
+    { path: "/api/content/mine?creator=antwan&limit=8", timeoutMs: 110000 },
     // Tyson's IG Graph token is dead - pull his reels via Apify (public scrape). Slow, so it is here.
     { path: "/api/content/ingest-apify?creator=tyson", timeoutMs: 70000 },
     // Transcribe + permanently store reels still missing either. The single slowest step.
