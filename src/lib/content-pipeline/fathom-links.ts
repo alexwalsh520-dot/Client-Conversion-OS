@@ -26,7 +26,7 @@ export function fathomDurationSec(recStart: unknown, recEnd: unknown): number | 
 }
 
 export async function linkFathomCalls(sb: Sb): Promise<{ linked: number; calls: number; sales_with_link: number; method_counts: Record<string, number> }> {
-  const { data: calls } = await sb.from("fathom_calls").select("fathom_id,client_key,prospect_name,recorded_at,attendees,share_url:raw->>share_url,call_url:raw->>url");
+  const { data: calls } = await sb.from("fathom_calls").select("fathom_id,client_key,prospect_name,recorded_at,attendees,share_url:raw->>share_url,call_url:raw->>url,meeting_url:raw->>meeting_url");
   const byShare: Record<string, Row> = {};
   const byCall: Record<string, Row> = {};
   for (const c of (calls as Row[]) || []) {
@@ -88,17 +88,19 @@ export async function linkFathomCalls(sb: Sb): Promise<{ linked: number; calls: 
   // booking + the GHL contact id. Email string equality is an exact key, not a name guess. When a call's
   // prospect has several appointments, we take the one whose start_time is nearest the call (deterministic).
   const { data: appts } = await sb.from("ghl_appointments")
-    .select("contact_email,contact_id,keyword_normalized,start_time")
-    .not("contact_email", "is", null);
+    .select("contact_email,contact_id,keyword_normalized,start_time,meet_url:raw_payload->calendar->>address");
   const apptsByEmail: Record<string, Array<{ contact_id: unknown; keyword: string; start: number }>> = {};
+  const apptsByMeetUrl: Record<string, Array<{ contact_id: unknown; keyword: string; start: number }>> = {};
   for (const g of (appts as Row[]) || []) {
-    const em = String(g.contact_email || "").toLowerCase().trim();
-    if (!em) continue;
-    (apptsByEmail[em] = apptsByEmail[em] || []).push({
+    const appt = {
       contact_id: g.contact_id ?? null,
       keyword: String(g.keyword_normalized || ""),
       start: g.start_time ? new Date(String(g.start_time)).getTime() : 0,
-    });
+    };
+    const em = String(g.contact_email || "").toLowerCase().trim();
+    if (em) (apptsByEmail[em] = apptsByEmail[em] || []).push(appt);
+    const mu = String(g.meet_url || "").trim();
+    if (/meet\.google\.com|zoom\.us/i.test(mu)) (apptsByMeetUrl[mu] = apptsByMeetUrl[mu] || []).push(appt);
   }
   // ManyChat subscriber for a GHL contact, so an email-linked call can still carry the subscriber hard key.
   const { data: mcLinks } = await sb.from("manychat_contact_links").select("ghl_contact_id,subscriber_id");
@@ -133,6 +135,37 @@ export async function linkFathomCalls(sb: Sb): Promise<{ linked: number; calls: 
       keyword_normalized: best.keyword || null,
       linkage_method: "attendee_email_ghl",
       matched_value: best.email,
+      linked_at: new Date().toISOString(),
+    });
+  }
+
+  // THIRD hard key (lowest precedence): the Fathom recorded meeting URL (Google Meet / Zoom) EXACTLY
+  // equals a ghl_appointments booking's meeting link (raw_payload.calendar.address). Catches calls whose
+  // attendee email differed from the booking email but whose meeting link is the same exact instance.
+  // When a meeting room repeats, the appointment nearest the call time wins. Exact string, not a guess.
+  for (const c of (calls as Row[]) || []) {
+    const fid = String(c.fathom_id);
+    if (!fid || seen.has(fid)) continue;
+    const mu = String(c.meeting_url || "").trim();
+    if (!/meet\.google\.com|zoom\.us/i.test(mu)) continue;
+    const cands = apptsByMeetUrl[mu];
+    if (!cands || !cands.length) continue;
+    const callTime = c.recorded_at ? new Date(String(c.recorded_at)).getTime() : 0;
+    let best = cands[0];
+    for (const ap of cands) {
+      if (Math.abs(ap.start - callTime) < Math.abs(best.start - callTime) || (Math.abs(ap.start - callTime) === Math.abs(best.start - callTime) && ap.keyword && !best.keyword)) best = ap;
+    }
+    seen.add(fid);
+    method_counts["meeting_url_ghl"] = (method_counts["meeting_url_ghl"] || 0) + 1;
+    rows.push({
+      fathom_id: fid,
+      client_key: (c.client_key as string) ?? null,
+      sale_date: null,
+      prospect_name: c.prospect_name ?? null,
+      subscriber_id: best.contact_id != null ? (subByContact[String(best.contact_id)] || null) : null,
+      keyword_normalized: best.keyword || null,
+      linkage_method: "meeting_url_ghl",
+      matched_value: mu,
       linked_at: new Date().toISOString(),
     });
   }
