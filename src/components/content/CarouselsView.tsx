@@ -81,10 +81,11 @@ export default function CarouselsView({ creator }: { creator: string }) {
     wheelLock.current = now;
     if (e.deltaX > 0) next(); else prev();
   };
-  // Touch / pointer drag swipe.
+  // Drag swipe — mouse (trackpad/click-drag) + touch (phone). Horizontal move past the threshold moves
+  // one slide; small movements (taps on Edit/download) do nothing.
   const drag = useRef<number | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => { drag.current = e.clientX; };
-  const onPointerUp = (e: React.PointerEvent) => { const x = drag.current; drag.current = null; if (x == null) return; const dx = e.clientX - x; if (dx < -45) next(); else if (dx > 45) prev(); };
+  const startAt = (x: number) => { drag.current = x; };
+  const endAt = (x: number) => { const s = drag.current; drag.current = null; if (s == null) return; const dx = x - s; if (dx < -45) next(); else if (dx > 45) prev(); };
 
   const generate = async () => {
     setGenerating(true);
@@ -179,7 +180,9 @@ export default function CarouselsView({ creator }: { creator: string }) {
           {/* Slide + chevrons */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
             <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
-            <div style={{ position: "relative", width: "100%", maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+            <div style={{ position: "relative", width: "100%", maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
+              onMouseDown={(e) => startAt(e.clientX)} onMouseUp={(e) => endAt(e.clientX)}
+              onTouchStart={(e) => startAt(e.touches[0].clientX)} onTouchEnd={(e) => endAt(e.changedTouches[0].clientX)}>
               <BigSlide blocks={blocksForSlide(curSlide)} creator={creator} />
               {/* Two actions, minimal chrome */}
               <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8 }}>
