@@ -12,6 +12,7 @@ const SHEET_IDS = {
   tysonAds: "1r7UXESjrCvqg3Uf0sm0GGlzKuKlkpUR1Z5RjHbcYmAY",
   keithAds: "1DomGcRLp4NBV-nlXVq-zfq9vg8jPPNa1Wq4aalVr_Xk",
   nutritionIntake: "1gt8afnAHmiECqoUJOmbnzETxrUJQS5Y5Vr6wv24SqAo",
+  referrals: "1pETDqpj6nFzWVmj1vuFmZs70NG9rUScTiavU9q7ERtY",
 };
 
 // Row types matching Supabase table columns (snake_case)
@@ -1343,3 +1344,55 @@ export async function fetchNutritionIntake(): Promise<NutritionIntakeRow[]> {
 
 // Export sheet IDs for reference
 export { SHEET_IDS };
+
+// ---- Write-back: Append new referral to Google Sheets ----
+
+export interface NewReferralSheet {
+  existingClientName: string;
+  existingClientEmail: string;
+  refereeName: string;
+  refereePhone: string;
+}
+
+/**
+ * Append a new referral row to the Fitness Referral Tracker sheet.
+ *
+ * Header row is at row 6 in Sheet1; existing data starts at row 7 and
+ * grows downward. Google Sheets `append` with a range of B7:G finds the
+ * next empty row automatically, so no row math is needed here.
+ *
+ * Column layout (matches the tracker as of Jul 2026):
+ *   A empty | B Existing Client Name | C Existing Client Email |
+ *   D Referred Client Name | E Referred Client Number |
+ *   F Referral Date (MM/DD/YYYY) | G Status (default "Pending")
+ *
+ * Throws on failure so the API route can surface an error to the coach,
+ * since the sheet is the source of truth for the closers.
+ */
+export async function appendReferralToSheet(referral: NewReferralSheet): Promise<void> {
+  const sheets = getSheets();
+  const today = new Date();
+  const mm = String(today.getMonth() + 1).padStart(1, "0");
+  const dd = String(today.getDate()).padStart(1, "0");
+  const yyyy = today.getFullYear();
+  const referralDate = `${mm}/${dd}/${yyyy}`;
+
+  const row = [
+    referral.existingClientName,
+    referral.existingClientEmail,
+    referral.refereeName,
+    referral.refereePhone,
+    referralDate,
+    "Pending",
+  ];
+
+  // Whole-column range so Google Sheets locates the last used row
+  // reliably even with pre-styled empty rows below the data.
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_IDS.referrals,
+    range: "Sheet1!B:G",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [row] },
+  });
+}
