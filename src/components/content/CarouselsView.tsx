@@ -4,6 +4,10 @@
 // readable without zooming. Swipe / arrows / chevrons move through slides and flow across the day's 5
 // carousels; pills jump straight to any carousel. Edit + per-slide download stay one tap away; the
 // studio editor + PNG rendering are unchanged.
+//
+// Downloads are per carousel, never per day — a carousel is one post, so it comes down as one group.
+// The top-bar button always names the carousel in view, and every pill can grab its own carousel
+// without swiping to it first.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Pencil, Download, GalleryHorizontal, Sparkles } from "lucide-react";
@@ -33,6 +37,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState<{ carIdx: number; slideIdx: number } | null>(null);
   const [pos, setPos] = useState(0); // flat index across the day's slides
+  const [dling, setDling] = useState<number | null>(null); // slot currently being zipped
 
   useEffect(() => { ensureFonts(); }, []);
 
@@ -103,21 +108,29 @@ export default function CarouselsView({ creator }: { creator: string }) {
   };
 
   const dlSlide = (row: Row, slideIdx: number) => downloadSlide(blocksForSlide(row.slides[slideIdx]), creator, `${creator}-${date}-c${row.slot + 1}-s${slideIdx + 1}.png`);
+
+  // One carousel = one post, so it downloads as one group: every slide rendered through the same
+  // canvas renderer (edited blocks when present, defaults otherwise) and zipped in posting order.
+  // The zip name carries the creator/date/carousel, so the slides inside are just s1..sN.
   const dlCarousel = async (row: Row) => {
-    await ensureFonts();
-    const JSZip = (await import("jszip")).default;
-    const zip = new JSZip();
-    const avatar = await loadAvatar(creator);
-    for (let i = 0; i < row.slides.length; i++) {
-      const canvas = document.createElement("canvas");
-      renderSlide(canvas, blocksForSlide(row.slides[i]), creator, avatar);
-      const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/png"));
-      zip.file(`${creator}-${date}-c${row.slot + 1}-s${i + 1}.png`, blob);
-    }
-    const out = await zip.generateAsync({ type: "blob" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(out); a.download = `${creator}-${date}-carousel-${row.slot + 1}.zip`; a.click();
-    URL.revokeObjectURL(a.href);
+    if (dling !== null) return;
+    setDling(row.slot);
+    try {
+      await ensureFonts();
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const avatar = await loadAvatar(creator);
+      for (let i = 0; i < row.slides.length; i++) {
+        const canvas = document.createElement("canvas");
+        renderSlide(canvas, blocksForSlide(row.slides[i]), creator, avatar);
+        const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/png"));
+        zip.file(`s${i + 1}.png`, blob);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(out); a.download = `${creator}-${date}-c${row.slot + 1}.zip`; a.click();
+      URL.revokeObjectURL(a.href);
+    } finally { setDling(null); }
   };
 
   const curRow = rows && cur ? rows[cur.carIdx] : null;
@@ -127,14 +140,17 @@ export default function CarouselsView({ creator }: { creator: string }) {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {/* Top bar: date nav + Download all (current carousel) */}
+      {/* Top bar: date nav + download the carousel currently in view (never the whole day) */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <button onClick={() => setDate((d) => shiftDate(d, -1))} style={navBtn}><ChevronLeft size={16} /></button>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", minWidth: 140, textAlign: "center" }}>{prettyDate(date)}{date === todayET() ? " · Today" : ""}</div>
         <button onClick={() => setDate((d) => shiftDate(d, 1))} disabled={date >= todayET()} style={{ ...navBtn, opacity: date >= todayET() ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <span style={{ flex: 1 }} />
-        {curRow && (
-          <button onClick={() => dlCarousel(curRow)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}><Download size={14} /> Download all</button>
+        {curRow && cur && (
+          <button onClick={() => dlCarousel(curRow)} disabled={dling !== null} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", fontSize: 12.5, fontWeight: 700, cursor: dling !== null ? "default" : "pointer", opacity: dling !== null && dling !== curRow.slot ? 0.5 : 1 }}>
+            {dling === curRow.slot ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+            {dling === curRow.slot ? "Zipping…" : `Download carousel ${cur.carIdx + 1} (${curRow.slides.length} slides)`}
+          </button>
         )}
       </div>
 
@@ -151,20 +167,32 @@ export default function CarouselsView({ creator }: { creator: string }) {
         </div>
       ) : curRow && curSlide && cur ? (
         <div style={{ display: "grid", gap: 12 }}>
-          {/* Topic pills — jump to any carousel */}
+          {/* Topic pills — jump to any carousel, or grab it whole without swiping to it first */}
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
             {rows.map((row, ci) => {
               const activeCar = ci === cur.carIdx;
+              const tint = activeCar ? "var(--accent)" : "var(--text-muted)";
               return (
-                <button key={row.id} onClick={() => jumpToCar(ci)} title={row.topic || `Carousel ${ci + 1}`} style={{
-                  flexShrink: 0, maxWidth: 220, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, cursor: "pointer",
+                <div key={row.id} style={{
+                  flexShrink: 0, maxWidth: 240, display: "inline-flex", alignItems: "center", borderRadius: 999, overflow: "hidden",
                   border: `1px solid ${activeCar ? "var(--accent)" : "var(--border-primary)"}`, background: activeCar ? "var(--accent-soft)" : "var(--bg-glass)",
-                  color: activeCar ? "var(--accent)" : "var(--text-muted)", fontSize: 12, fontWeight: 700,
                 }}>
-                  <span style={{ opacity: 0.8 }}>{ci + 1}</span>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(row.topic || "Carousel").replace(/^[a-z ]+:\s*/i, "")}</span>
-                  {row.edited && <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />}
-                </button>
+                  <button onClick={() => jumpToCar(ci)} title={row.topic || `Carousel ${ci + 1}`} style={{
+                    minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 4px 6px 11px", cursor: "pointer",
+                    background: "none", border: "none", color: tint, fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+                  }}>
+                    <span style={{ opacity: 0.8 }}>{ci + 1}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(row.topic || "Carousel").replace(/^[a-z ]+:\s*/i, "")}</span>
+                    {row.edited && <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />}
+                  </button>
+                  <button onClick={() => dlCarousel(row)} disabled={dling !== null} title={`Download carousel ${ci + 1} (${row.slides.length} slides)`} aria-label={`Download carousel ${ci + 1}`} style={{
+                    flexShrink: 0, display: "grid", placeItems: "center", width: 24, height: 24, marginRight: 5, borderRadius: 999,
+                    background: "none", border: "none", color: tint, cursor: dling !== null ? "default" : "pointer", padding: 0,
+                    opacity: dling !== null && dling !== row.slot ? 0.4 : 0.75,
+                  }}>
+                    {dling === row.slot ? <Loader2 size={12} className="spin" /> : <Download size={12} />}
+                  </button>
+                </div>
               );
             })}
           </div>
