@@ -199,6 +199,7 @@ export async function serveDashboard(q: SnapQuery, view: "paint" | "full" = "ful
 // and fill lazily. Never silently caps: returns computed/failed/skipped and logs the skipped tail.
 export async function refreshStandardWindows(
   budgetMs = 90000,
+  startOffset = 0,
 ): Promise<{ computed: number; failed: number; skipped: number; ms: number; jobs: number }> {
   const today = todayEt();
   const monthStart = today.slice(0, 7) + "-01";
@@ -224,15 +225,23 @@ export async function refreshStandardWindows(
   for (const account of CREATORS)
     jobs.push({ account, status: "all", level: "ad", dateFrom: priorFrom, dateTo: priorTo });
 
+  // These wide ad-level windows are genuinely slow to compute against Supabase (~15-27s each in prod),
+  // so a single run may not finish all of them under its budget. Rotating the start point by an offset
+  // the caller varies each run (e.g. the clock hour) means a window that gets deferred this run is at
+  // the FRONT next run - so no preset is ever perpetually cold, instead of the first-N always warming
+  // and the tail always deferring. Whatever a run does not reach still fills in fast on first hit.
+  const off = jobs.length ? ((startOffset % jobs.length) + jobs.length) % jobs.length : 0;
+  const ordered = off ? jobs.slice(off).concat(jobs.slice(0, off)) : jobs;
+
   const start = Date.now();
   let computed = 0, failed = 0, skipped = 0;
-  for (let i = 0; i < jobs.length; i++) {
-    if (Date.now() - start > budgetMs) { skipped = jobs.length - i; break; }
-    try { await computeAndStore(jobs[i]); computed++; } catch { failed++; }
+  for (let i = 0; i < ordered.length; i++) {
+    if (Date.now() - start > budgetMs) { skipped = ordered.length - i; break; }
+    try { await computeAndStore(ordered[i]); computed++; } catch { failed++; }
   }
   if (skipped) {
-    const dropped = jobs.slice(jobs.length - skipped).map((q) => `${q.account}/${q.level}/${q.status}/${q.dateFrom}`);
-    console.log(`[refreshStandardWindows] budget ${budgetMs}ms hit; ${skipped} of ${jobs.length} windows deferred to lazy load:`, dropped.join(", "));
+    const dropped = ordered.slice(ordered.length - skipped).map((q) => `${q.account}/${q.level}/${q.status}/${q.dateFrom}`);
+    console.log(`[refreshStandardWindows] budget ${budgetMs}ms hit; ${skipped} of ${jobs.length} windows deferred (rotate offset ${off}); fill fast on first hit:`, dropped.join(", "));
   } else {
     console.log(`[refreshStandardWindows] warmed all ${jobs.length} windows in ${Date.now() - start}ms, zero deferrals`);
   }

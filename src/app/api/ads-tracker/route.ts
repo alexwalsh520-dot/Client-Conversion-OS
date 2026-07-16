@@ -8,9 +8,13 @@ import { serveDashboard, refreshStandardWindows } from "@/lib/ads-tracker/snapsh
 import { isCreatorKey } from "@/lib/creators";
 
 export const dynamic = "force-dynamic";
-// Snapshot cache serves in well under a second; a cache miss computes once then stores, so give
-// headroom for that first custom-window compute (which surfaced before as "live data unavailable").
-export const maxDuration = 120;
+// A warm snapshot serves in ~1s; the paint projection is tiny. A COLD miss must compute a wide
+// ad-level window, which is ~15s (fast-engine paint) to ~27s (legacy full) against Supabase - the
+// inherent cost of these scans. maxDuration is set well above that worst case so a cold miss always
+// finishes and returns real data instead of being cut off as "live data unavailable" (the exact
+// symptom users saw). The client also paints the fast view first, so it shows numbers around the
+// 15s mark even when the full view is still computing behind it.
+export const maxDuration = 300;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -44,9 +48,11 @@ function isLevel(value: string | null): value is AdsTrackerLevel {
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
 
-  // Sync Now / cron: recompute the standard windows into the snapshot cache, then return.
+  // Sync Now / cron: recompute the standard windows into the snapshot cache, then return. Give it most
+  // of the 300s route budget (these windows are slow), and rotate the start point by the clock hour so
+  // repeated refreshes cover different windows rather than always warming the same head of the list.
   if (params.get("refresh") === "1") {
-    const result = await refreshStandardWindows();
+    const result = await refreshStandardWindows(270000, new Date().getUTCHours());
     return NextResponse.json({ refreshed: true, ...result }, { headers: NO_STORE_HEADERS });
   }
 
