@@ -163,12 +163,33 @@ export function projectPaint(full: Record<string, unknown>): Record<string, unkn
   return slim;
 }
 
-// Serve: snapshot first, compute-once-and-store on a miss. `view: "paint"` returns the slim projection
-// (fast first paint); the client then requests the full view behind it. Default is the full payload.
+// Compute the fast engine for the PAINT view only. Fast skips the wide attribution-alert fan-out (the
+// measured 8-12s bottleneck), which feeds only the Attribution Workspace's unmatched-sales list and the
+// all-time trust figures. Every funnel/money number, the per-day rows, adRoas and the summary are
+// identical to legacy (the daily attribution-reconcile cron guards this dollar-for-dollar). The paint
+// projection drops the attribution block entirely, so fast is exactly right here — and we deliberately
+// do NOT persist it, because the canonical snapshot + attribution_summary must carry the full engine's
+// all-time figures. So a cold PAINT is ~3-4s instead of 12-18s, and the full view fills in behind it.
+async function computeFastPaint(q: SnapQuery): Promise<Record<string, unknown>> {
+  const [payload, moneyModel, times] = await Promise.all([
+    getAdsTrackerDashboard(q, { fast: true }),
+    computeMoneyModel().catch(() => null),
+    syncTimes(),
+  ]);
+  const _freshness: Freshness = { computedAt: new Date().toISOString(), salesSyncedAt: times.sales, metaSyncedAt: times.meta, fromSnapshot: false };
+  return projectPaint({ ...payload, moneyModel, _freshness });
+}
+
+// Serve: snapshot first. `view: "paint"` returns the slim projection (fast first paint); the client then
+// requests the full view behind it. On a WARM hit both views project from the same stored full snapshot,
+// so their numbers are identical. On a cold MISS the paint view computes the FAST engine (quick, not
+// persisted) so the user sees live totals in a few seconds, while the full view computes and stores the
+// canonical legacy snapshot (drilldown + Workspace + the persisted attribution summary).
 export async function serveDashboard(q: SnapQuery, view: "paint" | "full" = "full"): Promise<Record<string, unknown>> {
   const hit = await readSnapshot(q);
-  const full = hit ?? (await computeAndStore(q));
-  return view === "paint" ? projectPaint(full) : full;
+  if (hit) return view === "paint" ? projectPaint(hit) : hit;
+  if (view === "paint") return computeFastPaint(q);
+  return computeAndStore(q);
 }
 
 // The matrix the tab can request, warmed in priority order (the views a user hits first come first)
