@@ -15380,6 +15380,25 @@ function App() {
     force = false
   } = {}) => {
     const today = todayEt();
+    const loadStart = Date.now();
+    // Fire-and-forget failure beacon: only sent when a live fetch fails AND the tab has to show the
+    // amber "saved / unavailable" state. Writes one ads_client_failures row so a breakage is a number
+    // in the daily reconcile log, not a mystery. Skipped on the public share view.
+    const reportFailure = err => {
+      if (PUBLIC_MODE) return;
+      try {
+        const body = JSON.stringify({
+          account: effectiveAccount,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+          error: (err && err.message) || String(err || "unknown"),
+          durationMs: Date.now() - loadStart,
+          view: "ad"
+        });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/ads-tracker/client-failure", new Blob([body], { type: "application/json" }));
+        else fetch("/api/ads-tracker/client-failure", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+      } catch (e) { /* never let telemetry throw */ }
+    };
     const includesToday = dateRange.dateTo >= today;
     // Show the saved copy of this exact range INSTANTLY — no blank, no spinner.
     const cached = !force ? readSnapshot(effectiveAccount, dateRange) : null;
@@ -15475,6 +15494,7 @@ function App() {
           });
           if (stale._freshness) setFreshness(stale._freshness);
           if (!haveData) showToast("Showing saved data · live unavailable");
+          reportFailure(err);
         } else if (!haveData) {
           setDashboard({
             error: true,
@@ -15485,6 +15505,7 @@ function App() {
           });
           setLoadError(err?.message || "Live data unavailable");
           showToast("Live data unavailable");
+          reportFailure(err);
         } else {
           showToast("Couldn't refresh · showing last numbers");
         }

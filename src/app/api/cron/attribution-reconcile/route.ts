@@ -82,8 +82,17 @@ export async function GET(req: NextRequest) {
 
   const ok = mismatches === 0 && errors === 0;
   const sb = getServiceSupabase();
+  // Client health: how many times in the last 24h the Ads tab fell back to the amber "live data
+  // unavailable" state (ads_client_failures beacons). Zero = healthy. Surfaced here so the daily
+  // reconcile log answers both "are the numbers right" and "did the tab break" in one place.
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { count: clientFailures24h } = await sb
+    .from("ads_client_failures")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", since);
   await sb.from("attribution_reconcile_runs").insert({
     ok, combos, mismatches, errors, worst_diff: worstDiffCents / 100, details,
+    client_failures_24h: clientFailures24h ?? 0,
   });
-  return NextResponse.json({ ok, combos, mismatches, errors, worstDiff: `$${(worstDiffCents / 100).toFixed(2)}`, details });
+  return NextResponse.json({ ok, combos, mismatches, errors, worstDiff: `$${(worstDiffCents / 100).toFixed(2)}`, clientFailures24h: clientFailures24h ?? 0, details });
 }
