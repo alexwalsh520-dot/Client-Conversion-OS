@@ -15409,52 +15409,85 @@ function App() {
       setLoading(true);
     }
     setLoadError(null);
-    const params = new URLSearchParams({
+    const baseParams = {
       account: effectiveAccount,
       status: "all",
       level: "ad",
       dateFrom: dateRange.dateFrom,
       dateTo: dateRange.dateTo
-    });
-    try {
-      const res = await fetch(ADS_DATA_URL + params.toString(), {
-        cache: "no-store"
-      });
+    };
+    const fetchView = async view => {
+      const params = new URLSearchParams(view ? { ...baseParams, view } : baseParams);
+      const res = await fetch(ADS_DATA_URL + params.toString(), { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Ads Tracker API failed");
-      setDashboard(json);
-      writeSnapshot(effectiveAccount, dateRange, json);
+      return json;
+    };
+    // Two-step load. The slim "paint" view (drops the heavy per-day / Workspace / history / calendar
+    // detail) returns ~10x faster and paints the collapsed table + funnel with FINAL numbers. The full
+    // view then loads behind it and fills the drilldown, Attribution Workspace, history, and calendar.
+    // The paint rollup is recomputed from the same daily rows the full view carries, so no rendered
+    // number changes when the full payload swaps in — only detail becomes available.
+    let paintedLive = false;
+    try {
+      // Only paint from the slim view when there is nothing already on screen (a cache hit already
+      // painted instantly, and would be a downgrade to replace with the detail-less paint).
+      if (!haveData) {
+        try {
+          const paint = await fetchView("paint");
+          setDashboard(paint);
+          setFromCache(false);
+          setFreshness(paint && paint._freshness ? paint._freshness : null);
+          setStaleBanner(null);
+          setLoading(false);
+          setRevalidating(true);
+          paintedLive = true;
+        } catch (paintErr) {
+          console.error("paint view failed", paintErr);
+          // fall through to the full fetch, which owns the offline / stale fallback
+        }
+      }
+      const full = await fetchView();
+      setDashboard(full);
+      writeSnapshot(effectiveAccount, dateRange, full);
       setFromCache(false);
-      setFreshness(json && json._freshness ? json._freshness : null);
+      setFreshness(full && full._freshness ? full._freshness : null);
       setStaleBanner(null); // a live/successful load clears any stale warning
     } catch (err) {
       console.error(err);
-      // Live fetch failed — fall back to the last saved copy rather than wiping
-      // the screen. If we were already showing data, just keep it and say so.
-      const stale = readSnapshot(effectiveAccount, dateRange, true);
-      if (stale) {
-        setDashboard(stale);
-        setLoadError(null);
-        setFromCache(true);
-        // NEVER show the saved copy silently — raise the loud amber banner with
-        // the time that copy was captured on this device.
-        setStaleBanner({
-          savedAt: snapSavedAt(effectiveAccount, dateRange)
-        });
-        if (stale._freshness) setFreshness(stale._freshness);
-        if (!haveData) showToast("Showing saved data · live unavailable");
-      } else if (!haveData) {
-        setDashboard({
-          error: true,
-          rows: [],
-          dailyRows: [],
-          recentEvents: [],
-          eventsHistory: []
-        });
-        setLoadError(err?.message || "Live data unavailable");
-        showToast("Live data unavailable");
+      // If the slim paint already put LIVE numbers on screen, a failed detail fetch must NOT downgrade
+      // to a stale copy or the amber banner — the totals showing are live and correct. Keep them; the
+      // only thing missing is drilldown / Workspace detail, which the next refresh will fill.
+      if (paintedLive) {
+        showToast("Live totals loaded · detail will fill on next refresh");
       } else {
-        showToast("Couldn't refresh · showing last numbers");
+        // Live fetch failed with nothing live on screen — fall back to the last saved copy rather than
+        // wiping the screen. If we were already showing data, just keep it and say so.
+        const stale = readSnapshot(effectiveAccount, dateRange, true);
+        if (stale) {
+          setDashboard(stale);
+          setLoadError(null);
+          setFromCache(true);
+          // NEVER show the saved copy silently — raise the loud amber banner with
+          // the time that copy was captured on this device.
+          setStaleBanner({
+            savedAt: snapSavedAt(effectiveAccount, dateRange)
+          });
+          if (stale._freshness) setFreshness(stale._freshness);
+          if (!haveData) showToast("Showing saved data · live unavailable");
+        } else if (!haveData) {
+          setDashboard({
+            error: true,
+            rows: [],
+            dailyRows: [],
+            recentEvents: [],
+            eventsHistory: []
+          });
+          setLoadError(err?.message || "Live data unavailable");
+          showToast("Live data unavailable");
+        } else {
+          showToast("Couldn't refresh · showing last numbers");
+        }
       }
     } finally {
       setLoading(false);

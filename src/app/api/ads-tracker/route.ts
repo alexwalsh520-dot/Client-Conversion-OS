@@ -56,6 +56,9 @@ export async function GET(req: NextRequest) {
   const accountParam = params.get("account");
   const statusParam = params.get("status");
   const levelParam = params.get("level");
+  // view=paint serves the slim first-paint projection (drops the heavy detail fields the initial
+  // render never shows); the client requests the full view behind it. Default = full (back-compat).
+  const view = params.get("view") === "paint" ? "paint" : "full";
 
   try {
     const payload = await serveDashboard({
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
       level: isLevel(levelParam) ? levelParam : "campaign",
       dateFrom,
       dateTo,
-    });
+    }, view);
     return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[ads-tracker] Dashboard load failed", error);

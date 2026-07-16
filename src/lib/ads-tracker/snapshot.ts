@@ -112,11 +112,63 @@ export async function computeAndStore(q: SnapQuery): Promise<Record<string, unkn
   return full;
 }
 
-// Serve: snapshot first, compute-once-and-store on a miss.
-export async function serveDashboard(q: SnapQuery): Promise<Record<string, unknown>> {
+// The heavy detail fields that the initial Dashboard paint never renders: dailyRows (per-day
+// drilldown), attribution (the Workspace), eventsHistory (the full history feed), calendarEvents
+// (the calendar). Together they are 90%+ of the ad-level payload. The paint view drops them and the
+// client lazy-loads the full payload behind the paint (see loadDashboard). Kept OUT here so this
+// list is the single source of truth for what "paint" means.
+const PAINT_DROP_FIELDS = ["dailyRows", "attribution", "eventsHistory", "calendarEvents"] as const;
+
+// The raw additive fields the client sums per row (metricRowFromApi/addMetric); every ratio the table
+// shows (CPM, ROI, cost-per-*) is recomputed client-side from these, so the derived fields in a row are
+// redundant weight. The identity/label fields the table groups by are carried through verbatim.
+const ROLLUP_SUM_FIELDS = ["adSpend", "impressions", "linkClicks", "messages", "bookedCalls", "callsTaken", "newClients", "mainOfferClients", "subscriptionClients", "collectedRevenue", "contractedRevenue", "grossProfit"] as const;
+const ROLLUP_KEEP_FIELDS = ["clientKey", "campaignId", "campaignName", "adId", "adName", "adsetId", "adsetName", "keyword", "previewImageUrl", "previewThumbnailUrl", "attributionOnly", "id"] as const;
+
+// Collapse dailyRows (one row per ad per day) into one row per ad for the whole window, summing the raw
+// additive fields. The point: the paint table renders from THIS, and the full table renders from the
+// same dailyRows, so their collapsed totals are identical by construction (no number flickers to a
+// different value when the full payload swaps in). Grouping key is the ad identity the client groups by.
+function rollupRowsFromDaily(dailyRows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const r of dailyRows) {
+    const key = `${r.clientKey ?? ""}::${r.campaignId ?? ""}::${r.adId ?? ""}::${r.keyword ?? ""}`;
+    let out = map.get(key);
+    if (!out) {
+      out = { dateLabel: null };
+      for (const f of ROLLUP_KEEP_FIELDS) out[f] = r[f] ?? null;
+      for (const f of ROLLUP_SUM_FIELDS) out[f] = 0;
+      out.status = "finished";
+      map.set(key, out);
+    }
+    for (const f of ROLLUP_SUM_FIELDS) out[f] = (Number(out[f]) || 0) + (Number(r[f]) || 0);
+    // Active wins: if the ad ran on any day in the window, the collapsed row is active.
+    if (r.status !== "finished") out.status = "active";
+    // Keep a preview/name if the first row lacked one.
+    for (const f of ["previewImageUrl", "previewThumbnailUrl", "adName", "campaignName", "adsetName"] as const)
+      if (!out[f] && r[f]) out[f] = r[f];
+  }
+  return Array.from(map.values());
+}
+
+// Slim the stored payload down to what the first paint needs. Recomputes `rows` from `dailyRows` so the
+// collapsed table matches the full load to the number, then drops the heavy detail fields. If a payload
+// has no dailyRows (an older or already-slim snapshot) the existing rows are kept as-is.
+export function projectPaint(full: Record<string, unknown>): Record<string, unknown> {
+  const daily = full.dailyRows;
+  const slim: Record<string, unknown> = { ...full };
+  if (Array.isArray(daily) && daily.length) slim.rows = rollupRowsFromDaily(daily as Array<Record<string, unknown>>);
+  for (const f of PAINT_DROP_FIELDS) delete slim[f];
+  slim._paint = true;
+  return slim;
+}
+
+// Serve: snapshot first, compute-once-and-store on a miss. `view: "paint"` returns the slim projection
+// (fast first paint); the client then requests the full view behind it. Default is the full payload.
+export async function serveDashboard(q: SnapQuery, view: "paint" | "full" = "full"): Promise<Record<string, unknown>> {
   const hit = await readSnapshot(q);
-  if (hit) return hit;
-  return computeAndStore(q);
+  const full = hit ?? (await computeAndStore(q));
+  return view === "paint" ? projectPaint(full) : full;
 }
 
 // The matrix the tab can request, warmed in priority order (the views a user hits first come first)
