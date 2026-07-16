@@ -199,38 +199,30 @@ export async function serveDashboard(q: SnapQuery, view: "paint" | "full" = "ful
 // and fill lazily. Never silently caps: returns computed/failed/skipped and logs the skipped tail.
 export async function refreshStandardWindows(
   budgetMs = 90000,
-): Promise<{ computed: number; failed: number; skipped: number; ms: number }> {
+): Promise<{ computed: number; failed: number; skipped: number; ms: number; jobs: number }> {
   const today = todayEt();
   const monthStart = today.slice(0, 7) + "-01";
-  const d7 = shift(today, -6), d14 = shift(today, -13), d30 = shift(today, -29);
+  const d7 = shift(today, -6), d30 = shift(today, -29);
   const CREATORS: AdsTrackerAccount[] = ["all", "tyson", "antwan"];
   const jobs: SnapQuery[] = [];
-  // Tier 1: the ad-level, status=all default the UI opens with, per account, at the common presets.
-  for (const account of CREATORS)
-    for (const [from] of [[d7], [d30]] as const)
-      jobs.push({ account, status: "all", level: "ad", dateFrom: from, dateTo: today });
-  // Tier 2: the campaign/active defaults + month-to-date.
-  jobs.push(
-    { account: "all", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
-    { account: "all", status: "active", level: "campaign", dateFrom: d30, dateTo: today },
-    { account: "all", status: "active", level: "campaign", dateFrom: monthStart, dateTo: today },
-    { account: "tyson", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
-    { account: "antwan", status: "active", level: "campaign", dateFrom: d7, dateTo: today },
-    { account: "all", status: "all", level: "ad", dateFrom: d14, dateTo: today },
-    { account: "all", status: "all", level: "ad", dateFrom: monthStart, dateTo: today },
-  );
-  // Tier 3: today + per-creator month-to-date + campaign/all + the PRIOR week (a non-overlapping
-  // trailing-7 ending 7 days ago) so business_snapshot can populate prior_window comparisons.
+  // The tab only ever requests level=ad, status=all (loadDashboard + the prefetch both hardcode it;
+  // the campaign / ad-set views are derived client-side from the ad rows). So the warm matrix is
+  // EXACTLY that surface and nothing else: the campaign/active windows the old matrix warmed were never
+  // requested and only burned budget - dropping them removes the deferral tail (and the ~75s
+  // campaign/active outlier) from the warm path. A bare campaign request (route default) or a custom
+  // range is rare and computes fast on-miss (fast-engine paint) instead of being pre-warmed.
+  // Presets the UI exposes: today, last 7, last 30, month-to-date - the exact ranges rangeForPreset
+  // produces - per account, most-hit first so an early budget cut never drops a common view.
+  const preset = (from: string, to: string = today) => ({ from, to });
+  const PRESETS = [preset(d7), preset(d30), preset(monthStart), preset(today, today)];
+  for (const p of PRESETS)
+    for (const account of CREATORS)
+      jobs.push({ account, status: "all", level: "ad", dateFrom: p.from, dateTo: p.to });
+  // The PRIOR week (non-overlapping trailing-7 ending 7 days ago) so business_snapshot can populate its
+  // prior_window comparison. Ad-level, status=all, same as everything else UTARI / business_snapshot read.
   const priorFrom = shift(today, -13), priorTo = shift(today, -7);
   for (const account of CREATORS)
     jobs.push({ account, status: "all", level: "ad", dateFrom: priorFrom, dateTo: priorTo });
-  for (const account of CREATORS)
-    jobs.push({ account, status: "all", level: "ad", dateFrom: monthStart, dateTo: today });
-  jobs.push(
-    { account: "all", status: "all", level: "ad", dateFrom: today, dateTo: today },
-    { account: "all", status: "all", level: "campaign", dateFrom: d7, dateTo: today },
-    { account: "all", status: "all", level: "campaign", dateFrom: d30, dateTo: today },
-  );
 
   const start = Date.now();
   let computed = 0, failed = 0, skipped = 0;
@@ -240,7 +232,9 @@ export async function refreshStandardWindows(
   }
   if (skipped) {
     const dropped = jobs.slice(jobs.length - skipped).map((q) => `${q.account}/${q.level}/${q.status}/${q.dateFrom}`);
-    console.log(`[refreshStandardWindows] budget ${budgetMs}ms hit; ${skipped} windows deferred to lazy load:`, dropped.join(", "));
+    console.log(`[refreshStandardWindows] budget ${budgetMs}ms hit; ${skipped} of ${jobs.length} windows deferred to lazy load:`, dropped.join(", "));
+  } else {
+    console.log(`[refreshStandardWindows] warmed all ${jobs.length} windows in ${Date.now() - start}ms, zero deferrals`);
   }
-  return { computed, failed, skipped, ms: Date.now() - start };
+  return { computed, failed, skipped, ms: Date.now() - start, jobs: jobs.length };
 }
