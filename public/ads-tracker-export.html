@@ -15507,7 +15507,12 @@ function App() {
           showToast("Live data unavailable");
           reportFailure(err);
         } else {
+          // We have older data on screen and the live refresh failed. This is the "Couldn't refresh,
+          // showing last data" pill the operator actually sees most often, so it MUST beacon too -
+          // previously only the no-data and stale-copy branches did, which is why ads_client_failures
+          // stayed empty despite visible failures.
           showToast("Couldn't refresh · showing last numbers");
+          reportFailure(err);
         }
       }
     } finally {

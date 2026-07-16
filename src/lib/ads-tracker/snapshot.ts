@@ -82,19 +82,27 @@ export async function readSnapshot(q: SnapQuery): Promise<Record<string, unknown
   return { ...payload, _freshness: fresh ? { ...fresh, fromSnapshot: true } : { computedAt: (data as { computed_at: string }).computed_at, salesSyncedAt: null, metaSyncedAt: null, fromSnapshot: true } };
 }
 
-// Compute a window fresh, store it, return it. Never touches the live Google Sheet (server.ts
-// serves the synced copy given the raised freshness tolerance).
+// Compute a window with the FAST engine, store it, return it. This is the canonical user-facing
+// snapshot: it skips the wide, all-accounts, since-inception attribution-alert fan-out (the 8-12s+
+// query set that was timing out and 500ing every non-warmed load). Every funnel/money number, the
+// per-day rows, adRoas and the funnel's own attributed/unattributed figures are identical to the
+// legacy engine (the daily attribution-reconcile cron guards this dollar-for-dollar). What fast omits
+// is ONLY the Attribution Workspace's unmatched-sales list + its all-time trust figures, which now
+// load on demand via computeWorkspaceLegacy (engine=legacy). So a cold user-facing miss is ~1s here
+// instead of 19-70s, and no user-facing request ever runs the wide fan-out again.
 export async function computeAndStore(q: SnapQuery): Promise<Record<string, unknown>> {
   const start = Date.now();
   const saleFacts: SaleFact[] = [];
   const [payload, moneyModel, times] = await Promise.all([
-    getAdsTrackerDashboard(q, { onSaleFact: (f) => saleFacts.push(f) }),
+    getAdsTrackerDashboard(q, { fast: true, onSaleFact: (f) => saleFacts.push(f) }),
     computeMoneyModel().catch(() => null),
     syncTimes(),
   ]);
-  // Stamp the canonical per-sale attribution into sale_attribution_facts (upsert by sale_key), and
-  // the reconciled per-creator revenue buckets into attribution_summary. Non-fatal: a facts-write
-  // hiccup must never fail the snapshot.
+  // Sale facts fire in fast mode too (the onSaleFact sink is independent of the alert fan-out). The
+  // per-creator attribution_summary is safe to write from fast: fast computes the window buckets AND the
+  // all-time trust figures (paid/organic/unattributed) cheaply from the stored facts - it is ONLY the
+  // wide alert fan-out (the unmatched-sales LIST) that fast skips, and the summary does not use that.
+  // Verified fast == legacy on these buckets (the daily reconcile cron guards it dollar-for-dollar).
   await persistSaleFacts(saleFacts).catch(() => {});
   if (q.account === "tyson" || q.account === "antwan") {
     const attribution = (payload as { attribution?: Record<string, unknown> }).attribution;
@@ -111,6 +119,7 @@ export async function computeAndStore(q: SnapQuery): Promise<Record<string, unkn
   );
   return full;
 }
+
 
 // The heavy detail fields that the initial Dashboard paint never renders: dailyRows (per-day
 // drilldown), attribution (the Workspace), eventsHistory (the full history feed), calendarEvents
@@ -163,33 +172,37 @@ export function projectPaint(full: Record<string, unknown>): Record<string, unkn
   return slim;
 }
 
-// Compute the fast engine for the PAINT view only. Fast skips the wide attribution-alert fan-out (the
-// measured 8-12s bottleneck), which feeds only the Attribution Workspace's unmatched-sales list and the
-// all-time trust figures. Every funnel/money number, the per-day rows, adRoas and the summary are
-// identical to legacy (the daily attribution-reconcile cron guards this dollar-for-dollar). The paint
-// projection drops the attribution block entirely, so fast is exactly right here — and we deliberately
-// do NOT persist it, because the canonical snapshot + attribution_summary must carry the full engine's
-// all-time figures. So a cold PAINT is ~3-4s instead of 12-18s, and the full view fills in behind it.
-async function computeFastPaint(q: SnapQuery): Promise<Record<string, unknown>> {
-  const [payload, moneyModel, times] = await Promise.all([
-    getAdsTrackerDashboard(q, { fast: true }),
-    computeMoneyModel().catch(() => null),
-    syncTimes(),
-  ]);
-  const _freshness: Freshness = { computedAt: new Date().toISOString(), salesSyncedAt: times.sales, metaSyncedAt: times.meta, fromSnapshot: false };
-  return projectPaint({ ...payload, moneyModel, _freshness });
+// Serve. ONE engine, always the fast one: snapshot-first, and on a miss compute fast (~1s) and store.
+// No user-facing request ever runs the wide, all-accounts, since-inception attribution-alert fan-out
+// that was 500ing on statement timeout - the fast engine already produces the funnel money, the
+// per-day rows, the all-time trust figures AND the request-scoped unmatched-sales list the Attribution
+// Workspace shows (verified identical to the legacy engine, which is retained only for the daily
+// reconcile guard). `view: "paint"` returns the slim first-paint projection; the client loads the full
+// view behind it. Warm hit and cold miss both project from the same fast payload, so numbers match.
+// In-flight de-duplication: the client fires paint + full for the same window back-to-back (and dev
+// StrictMode doubles that), so a cold window could kick off 2-4 identical heavy computes at once that
+// pile onto the same DB pool and time each other out. Coalescing them onto ONE compute (per server
+// instance) removes that self-inflicted contention - the first request computes+stores, the rest await
+// the same promise and then read the fresh payload.
+const inFlightComputes = new Map<string, Promise<Record<string, unknown>>>();
+function snapKey(q: SnapQuery): string {
+  return `${q.account}|${q.dateFrom}|${q.dateTo}|${q.level}|${q.status}`;
 }
 
-// Serve: snapshot first. `view: "paint"` returns the slim projection (fast first paint); the client then
-// requests the full view behind it. On a WARM hit both views project from the same stored full snapshot,
-// so their numbers are identical. On a cold MISS the paint view computes the FAST engine (quick, not
-// persisted) so the user sees live totals in a few seconds, while the full view computes and stores the
-// canonical legacy snapshot (drilldown + Workspace + the persisted attribution summary).
-export async function serveDashboard(q: SnapQuery, view: "paint" | "full" = "full"): Promise<Record<string, unknown>> {
+export async function serveDashboard(
+  q: SnapQuery,
+  view: "paint" | "full" = "full",
+): Promise<Record<string, unknown>> {
   const hit = await readSnapshot(q);
   if (hit) return view === "paint" ? projectPaint(hit) : hit;
-  if (view === "paint") return computeFastPaint(q);
-  return computeAndStore(q);
+  const key = snapKey(q);
+  let pending = inFlightComputes.get(key);
+  if (!pending) {
+    pending = computeAndStore(q).finally(() => inFlightComputes.delete(key));
+    inFlightComputes.set(key, pending);
+  }
+  const full = await pending;
+  return view === "paint" ? projectPaint(full) : full;
 }
 
 // The matrix the tab can request, warmed in priority order (the views a user hits first come first)

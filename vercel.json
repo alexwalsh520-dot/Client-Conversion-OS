@@ -17,7 +17,7 @@
     },
     {
       "path": "/api/cron/transcribe-blitz",
-      "schedule": "*/15 * * * *"
+      "schedule": "8,23,38,53 * * * *"
     },
     {
       "path": "/api/cron/attribution-reconcile",
@@ -29,11 +29,11 @@
     },
     {
       "path": "/api/cron/ads-tracker-sync",
-      "schedule": "0 * * * *"
+      "schedule": "5 * * * *"
     },
     {
       "path": "/api/ads/creative-copy/backfill-all",
-      "schedule": "0 */2 * * *"
+      "schedule": "20 */2 * * *"
     },
     {
       "path": "/api/cron/monthly-financials",
@@ -69,7 +69,7 @@
     },
     {
       "path": "/api/cron/content-pipeline",
-      "schedule": "0 */2 * * *"
+      "schedule": "12 */2 * * *"
     },
     {
       "path": "/api/cron/video-ideas-pipeline",
@@ -85,7 +85,7 @@
     },
     {
       "path": "/api/cron/foundation-sync",
-      "schedule": "*/15 * * * *"
+      "schedule": "3,18,33,48 * * * *"
     },
     {
       "path": "/api/cron/cmo-agent",

@@ -64,6 +64,8 @@ export async function GET(req: NextRequest) {
   const levelParam = params.get("level");
   // view=paint serves the slim first-paint projection (drops the heavy detail fields the initial
   // render never shows); the client requests the full view behind it. Default = full (back-compat).
+  // (An `engine` param is intentionally ignored: there is one fast engine now, and it never runs the
+  // wide attribution fan-out that used to 500 on statement timeout.)
   const view = params.get("view") === "paint" ? "paint" : "full";
 
   try {
