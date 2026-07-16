@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, LayoutGrid, Users, Clapperboard } from "lucide-react";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
 import PlaybookView from "@/components/content/PlaybookView";
 import CreatorBuyersView from "@/components/content/CreatorBuyersView";
@@ -10,9 +9,11 @@ import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import type { DateRange } from "@/components/content/CalendarRange";
+import { Column, PAPER, INK, MUTED, RULE } from "@/components/content/creator-ui";
 
 type Studio = {
   creator: string;
+  icp: { one_line?: string | null } | null;
   posts: StudioPost[];
   buyerIdeas: BuyerIdeaSet[];
   buyerVoice: (BuyerVoice & { buyer_count?: number | null }) | null;
@@ -49,34 +50,37 @@ export default function PublicContentApp({ token, name }: { token: string; name:
     c.add("light");
   }, []);
 
-  const tabs = [["playbook", "Playbook", Clapperboard], ["buyers", "Buyers", Users], ["content", "My Content", LayoutGrid]] as const;
+  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
 
   return (
-    <main style={{ minHeight: "100vh", background: "var(--bg, #f6f6f4)", padding: "22px 18px 60px" }}>
-      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--accent, #a9823f)" }}>Content Studio</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary, #18181b)", margin: "3px 0 0" }}>{name}</h1>
-        </div>
-        <div style={{ display: "inline-flex", gap: 4, background: "var(--bg-glass)", borderRadius: 12, padding: 4, border: "1px solid var(--border-primary)", marginBottom: 22 }}>
-          {tabs.map(([k, label, Icon]) => (
-            <button key={k} onClick={() => setPage(k)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, background: page === k ? "var(--bg-card)" : "transparent", color: page === k ? "var(--accent)" : "var(--text-muted)" }}>
-              <Icon size={15} /> {label}
+    <main style={{ minHeight: "100vh", background: PAPER, padding: "40px 22px 100px" }}>
+      <Column>
+        <h1 style={{ fontSize: 17, fontWeight: 500, color: INK, margin: 0 }}>{name}</h1>
+
+        <nav style={{ display: "flex", gap: 22, margin: "26px 0 0", paddingBottom: 22, borderBottom: `1px solid ${RULE}` }}>
+          {tabs.map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setPage(k)}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 15, fontFamily: "inherit", color: page === k ? INK : MUTED, fontWeight: page === k ? 500 : 400 }}
+            >
+              {label}
             </button>
           ))}
-        </div>
+        </nav>
 
-        {loading || !data ? (
-          <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading...</div>
-        ) : page === "playbook" ? (
-          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
-        ) : page === "buyers" ? (
-          <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
-        ) : (
-          <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
-        )}
-      </div>
-      <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{ paddingTop: 44 }}>
+          {loading || !data ? (
+            <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
+          ) : page === "playbook" ? (
+            <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
+          ) : page === "buyers" ? (
+            <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
+          ) : (
+            <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
+          )}
+        </div>
+      </Column>
     </main>
   );
 }

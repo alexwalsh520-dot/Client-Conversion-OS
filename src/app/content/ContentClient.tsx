@@ -1,35 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Film, Loader2, LayoutGrid, TrendingUp, Sparkles, Settings, Users, Clapperboard, GalleryHorizontal } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Settings } from "lucide-react";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
-import TrendsView from "@/components/content/TrendsView";
-import CoachStudioView from "@/components/content/CoachStudioView";
-import BuyerIdeasView, { type BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
-import { type TrendBriefView } from "@/components/content/IcpIdeasView";
+import CreatorBuyersView from "@/components/content/CreatorBuyersView";
+import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import PlaybookView from "@/components/content/PlaybookView";
 import CarouselsView from "@/components/content/CarouselsView";
-import type { VideoIdea } from "@/components/content/VideoIdeaCard";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
+import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import ShareSettings from "@/components/content/ShareSettings";
 import type { DateRange } from "@/components/content/CalendarRange";
+import { Column, PAPER, INK, MUTED, RULE } from "@/components/content/creator-ui";
 
 const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Antwan" }];
 
+// The operator /content view is the creator view — identical components, same white content area — plus
+// three operator-only pieces of chrome: the creator toggle, the share-settings gear, and a fourth
+// "Carousels" tab the creators never see. Trends and Coach were removed from the operator surface (the
+// component files stay in the tree, just unused). The studio payload is money-redacted for everyone now,
+// so this shared screen is safe.
 type Studio = {
   creator: string;
-  icp: Record<string, unknown> | null;
+  icp: { one_line?: string | null } | null;
   posts: StudioPost[];
-  snapshots: { date: string; followers: number }[];
-  angles: { title: string; hook: string | null; rationale: string | null }[];
-  dossiers: { name: string; keyword?: string | null; research: Record<string, unknown> }[];
   buyerIdeas: BuyerIdeaSet[];
-  icpIdeas: VideoIdea[];
-  trendBrief: TrendBriefView | null;
+  buyerVoice: (BuyerVoice & { buyer_count?: number | null }) | null;
   shiftBrief: ShiftBrief | null;
   playbook: Playbook | null;
-  voc: Record<string, string[]>;
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
 
@@ -42,7 +41,7 @@ function defaultRange(): DateRange {
 
 export default function ContentClient() {
   const [active, setActive] = useState("tyson");
-  const [page, setPage] = useState<"content" | "trends" | "buyers" | "playbook" | "coach" | "carousels">("content");
+  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels">("playbook");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -57,56 +56,64 @@ export default function ContentClient() {
   }, []);
   useEffect(() => { load(active); }, [active, load]);
 
-  const tabs = useMemo(() => ([
-    ["content", "My Content", LayoutGrid],
-    ["trends", "Trends", TrendingUp],
-    ["buyers", "Buyers", Users],
-    ["playbook", "Playbook", Clapperboard],
-    ["carousels", "Carousels", GalleryHorizontal],
-    ["coach", "Coach", Sparkles],
-  ] as const), []);
+  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"], ["carousels", "Carousels"]] as const;
+
+  const toggleBtn = (activeState: boolean): React.CSSProperties => ({
+    background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
+    color: activeState ? INK : MUTED, fontWeight: activeState ? 500 : 400,
+  });
 
   return (
-    <div style={{ padding: "26px 30px", maxWidth: 1120, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 4 }}>
-        <Film size={23} style={{ color: "var(--accent)" }} />
-        <h1 style={{ fontSize: 25, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Content</h1>
-        <span style={{ flex: 1 }} />
-        <div style={{ display: "inline-flex", background: "var(--bg-glass)", borderRadius: 10, padding: 3, border: "1px solid var(--border-primary)" }}>
-          {CREATORS.map((c) => (
-            <button key={c.slug} onClick={() => setActive(c.slug)} style={{ padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: active === c.slug ? "var(--accent)" : "transparent", color: active === c.slug ? "#1a1a1a" : "var(--text-secondary)" }}>{c.name}</button>
-          ))}
-        </div>
-        <button onClick={() => setSettingsOpen(true)} title="Share links" style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", display: "grid", placeItems: "center" }}><Settings size={17} /></button>
-      </div>
-      <p style={{ color: "var(--text-muted)", margin: "0 0 20px", fontSize: 13.5 }}>See which content pulls the people who actually buy, and make more of it.</p>
-
-      <div style={{ display: "inline-flex", gap: 4, background: "var(--bg-glass)", borderRadius: 12, padding: 4, border: "1px solid var(--border-primary)", marginBottom: 22 }}>
-        {tabs.map(([k, label, Icon]) => (
-          <button key={k} onClick={() => setPage(k)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, background: page === k ? "var(--bg-card)" : "transparent", color: page === k ? "var(--accent)" : "var(--text-muted)" }}>
-            <Icon size={15} /> {label}
+    <main style={{ minHeight: "100vh", background: PAPER, padding: "40px 22px 100px" }}>
+      <Column>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <h1 style={{ fontSize: 17, fontWeight: 500, color: INK, margin: 0 }}>Content</h1>
+          <span style={{ flex: 1 }} />
+          {/* operator-only: which creator */}
+          <div style={{ display: "inline-flex", gap: 14 }}>
+            {CREATORS.map((c) => (
+              <button key={c.slug} onClick={() => setActive(c.slug)} style={toggleBtn(active === c.slug)}>{c.name}</button>
+            ))}
+          </div>
+          {/* operator-only: share links */}
+          <button onClick={() => setSettingsOpen(true)} title="Share links" aria-label="Share links" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: MUTED, display: "grid", placeItems: "center" }}>
+            <Settings size={17} />
           </button>
-        ))}
-      </div>
+        </div>
 
-      {loading || !data ? (
-        <div style={{ color: "var(--text-muted)", padding: 50, textAlign: "center" }}><Loader2 className="spin" /> Loading...</div>
-      ) : page === "content" ? (
-        <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
-      ) : page === "trends" ? (
-        <TrendsView posts={data.posts} snapshots={data.snapshots} range={range} />
-      ) : page === "buyers" ? (
-        <BuyerIdeasView buyers={data.buyerIdeas || []} />
-      ) : page === "playbook" ? (
-        <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} />
-      ) : page === "carousels" ? (
-        <CarouselsView creator={active} />
-      ) : (
-        <CoachStudioView data={{ icp: data.icp, angles: data.angles, dossiers: data.dossiers, voc: data.voc }} creator={active} />
+        <nav style={{ display: "flex", gap: 22, margin: "26px 0 0", paddingBottom: 22, borderBottom: `1px solid ${RULE}` }}>
+          {tabs.map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setPage(k)}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 15, fontFamily: "inherit", color: page === k ? INK : MUTED, fontWeight: page === k ? 500 : 400 }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div style={{ paddingTop: 44 }}>
+          {loading || !data ? (
+            <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
+          ) : page === "playbook" ? (
+            <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
+          ) : page === "buyers" ? (
+            <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
+          ) : page === "content" ? (
+            <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
+          ) : (
+            <CarouselsView creator={active} />
+          )}
+        </div>
+      </Column>
+
+      {settingsOpen && (
+        <div style={{ colorScheme: "light" }}>
+          <ShareSettings creators={CREATORS} onClose={() => setSettingsOpen(false)} />
+        </div>
       )}
-
-      {settingsOpen && <ShareSettings creators={CREATORS} onClose={() => setSettingsOpen(false)} />}
       <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
+    </main>
   );
 }
