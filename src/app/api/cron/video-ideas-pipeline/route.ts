@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { cronBaseUrl } from "@/lib/cron-base-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -20,14 +21,17 @@ export async function GET(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const origin = new URL(req.url).origin;
+  const origin = cronBaseUrl(req);
   const sb = getServiceSupabase();
   const H = { Authorization: `Bearer ${process.env.CRON_SECRET}`, "Content-Type": "application/json" };
+  let failed = 0;
   const hit = async (path: string) => {
     try {
       const r = await fetch(`${origin}${path}`, { method: "POST", headers: H });
+      if (!r.ok) failed++;
       return { path, status: r.status, body: await r.json().catch(() => null) };
     } catch (e) {
+      failed++;
       return { path, error: e instanceof Error ? e.message : "failed" };
     }
   };
@@ -119,5 +123,8 @@ export async function GET(req: NextRequest) {
     steps.push(await hit(`/api/buyer-dna/video-ideas/run?creator=${creator}&limit=3&gradeLimit=4&budgetMs=210000`));
   }
 
-  return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), steps });
+  // ok reflects the children, not just "the loop finished" — a cron that reports green while every
+  // child 401s is how this went unnoticed for days.
+  if (failed) console.error(`[video-ideas-pipeline] ${failed} child call(s) failed via ${origin}`);
+  return NextResponse.json({ ok: failed === 0, ranAt: new Date().toISOString(), failed, steps });
 }

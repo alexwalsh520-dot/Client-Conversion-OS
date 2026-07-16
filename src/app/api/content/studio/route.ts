@@ -7,13 +7,13 @@ import { redactMoneyDeep } from "@/lib/redact-money";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// One payload that powers the whole Creator Content Studio (My Content, Trends, Coach).
+// One payload that powers the whole Creator Content Studio (My Content, Buyers, Playbook, Carousels).
 // Access: operator session (?creator=) OR a valid share token (?token=). Never trust a client
 // creator slug when a token is used; the creator is derived from the token. Dollar figures: the buyer
 // pipeline grounds its text in real sales calls, so LLM-written summaries/ideas can quote prices and
-// buyers' personal finances. For token/creator viewers every buyer-text field is run through
-// redactMoneyDeep before returning, so no amount reaches the public share page. Posts (the creator's
-// own captions/transcripts) and operator sessions are left unredacted.
+// buyers' personal finances. Every buyer-text field is run through redactMoneyDeep before returning —
+// for operators as well as token viewers, since the operator view now shows the same components, so
+// no amount reaches any screen. Posts (the creator's own captions/transcripts) are left unredacted.
 type PostRow = {
   ig_media_id: string; permalink: string | null; media_type: string | null; caption: string | null;
   transcript: string | null; thumbnail_url: string | null; stored_thumb_url: string | null;
@@ -152,10 +152,10 @@ export async function GET(req: NextRequest) {
   const playbookRow = playbookRes.data && playbookRes.data[0] ? (playbookRes.data[0] as { playbook: Record<string, unknown>; version: number; generated_at: string }) : null;
   const voiceRow = voiceRes.data && voiceRes.data[0] ? (voiceRes.data[0] as { voice: Record<string, unknown>; buyer_count: number | null; version: number; generated_at: string }) : null;
 
-  // Token/creator viewers get every buyer-derived text field money-redacted; operators see it raw.
+  // Every buyer-derived text field is money-redacted for ALL viewers — the operator /content view now
+  // renders the same components as the public page, so it must be as safe to show on a shared screen.
   // Posts (the creator's own captions/transcripts) and the numeric scoreboard are never touched.
-  const redact = viewer === "creator";
-  const R = <T>(v: T): T => (redact ? redactMoneyDeep(v) : v);
+  const R = <T>(v: T): T => redactMoneyDeep(v);
 
   return NextResponse.json({
     creator,

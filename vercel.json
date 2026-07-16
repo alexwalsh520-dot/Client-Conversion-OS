@@ -76,6 +76,10 @@
       "schedule": "30 * * * *"
     },
     {
+      "path": "/api/cron/carousels-daily",
+      "schedule": "35 4,5 * * *"
+    },
+    {
       "path": "/api/cron/daily-metrics-eod",
       "schedule": "30 4,5 * * *"
     },

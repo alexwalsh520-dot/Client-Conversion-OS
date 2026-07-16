@@ -1,12 +1,11 @@
 "use client";
 
-// Creator-facing idea card. The HOOK is the star — shown prominently while collapsed; tap to expand
-// the full filming recipe. No trend badge, no score, no format-color chips, no "right now on social"
-// note — those are operator-only signals (grading still runs, it just silently orders these cards).
+// One idea, creator-facing: the hook is the line you read; tap it for the filming recipe. No trend
+// badge, no score, no chips — grading still runs, it just silently orders these.
 
 import { useState } from "react";
-import { ChevronDown, Copy, Check } from "lucide-react";
 import type { VideoIdea } from "./VideoIdeaCard";
+import { CopyButton, INK, BODY, MUTED, RULE } from "./creator-ui";
 
 function briefText(idea: VideoIdea): string {
   return [
@@ -22,55 +21,37 @@ function briefText(idea: VideoIdea): string {
     .join("\n");
 }
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function Line({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
-    <div>
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>{value}</div>
-    </div>
+    <p style={{ fontSize: 15, color: BODY, lineHeight: 1.65, margin: 0 }}>
+      <span style={{ color: MUTED }}>{label} </span>
+      {value}
+    </p>
   );
 }
 
 export function CreatorIdeaCard({ idea }: { idea: VideoIdea }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(briefText(idea));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable */ }
-  };
-
   const hook = idea.hook || idea.title || "";
   return (
-    <div style={{ border: "1px solid var(--border-primary)", borderRadius: 12, background: "var(--bg-glass)", overflow: "hidden" }}>
-      <button onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          {idea.title && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, color: "var(--text-muted)", marginBottom: 3 }}>{idea.title}</span>}
-          <span style={{ display: "block", fontSize: 15, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.5 }}>&ldquo;{hook}&rdquo;</span>
-        </span>
-        <ChevronDown size={16} style={{ color: "var(--text-muted)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
-      </button>
+    <li style={{ borderTop: `1px solid ${RULE}`, padding: "14px 0" }}>
+      <div onClick={() => setOpen((v) => !v)} style={{ cursor: "pointer" }}>
+        <span style={{ fontSize: 16, color: INK, lineHeight: 1.5 }}>{hook}</span>
+      </div>
       {open && (
-        <div style={{ padding: "0 15px 16px", display: "grid", gap: 13 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 13 }}>
-            <Field label="Where to film" value={idea.environment} />
-            <Field label="What to wear" value={idea.attire} />
-            <Field label="Delivery" value={idea.expression} />
-            <Field label="Word choice" value={idea.word_choice} />
-          </div>
-          <Field label="Why this pulls your buyer" value={idea.rationale} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={copy} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "none", border: "1px solid var(--accent)", borderRadius: 999, padding: "5px 12px", cursor: "pointer" }}>
-              {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy the brief"}
-            </button>
+        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+          <Line label="Where to film:" value={idea.environment} />
+          <Line label="What to wear:" value={idea.attire} />
+          <Line label="Delivery:" value={idea.expression} />
+          <Line label="Word choice:" value={idea.word_choice} />
+          <Line label="Why it works:" value={idea.rationale} />
+          <div style={{ marginTop: 4 }}>
+            <CopyButton text={briefText(idea)} label="Copy the brief" />
           </div>
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
