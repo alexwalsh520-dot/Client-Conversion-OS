@@ -1,4 +1,5 @@
-export type Client = "tyson" | "antwan" | "all";
+/** "all" or a client registry key (e.g. "tyson") — options come from /api/clients. */
+export type Client = string;
 export type DatePreset = "mtd" | "last7" | "last30" | "custom";
 
 export interface Filters {

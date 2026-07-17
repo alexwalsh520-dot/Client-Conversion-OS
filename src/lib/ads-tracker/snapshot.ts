@@ -4,6 +4,7 @@
 // refresh, and the tab never silently swaps to a stale device copy. One source per render, labeled.
 
 import { getServiceSupabase } from "@/lib/supabase";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 import {
   getAdsTrackerDashboard,
   type AdsTrackerAccount,
@@ -208,8 +209,8 @@ export async function serveDashboard(
 // The matrix the tab can request, warmed in priority order (the views a user hits first come first)
 // under a wall-clock budget so a slow run stops cleanly BEFORE the platform kills it, rather than
 // dying mid-way and leaving the tail permanently cold. Whatever the budget skips fills in lazily on
-// first request and then caches. Active roster only (all, tyson, antwan); keith/lucy are near-empty
-// and fill lazily. Never silently caps: returns computed/failed/skipped and logs the skipped tail.
+// first request and then caches. Active roster only ("all" + ACTIVE_CREATORS); retired creators are
+// near-empty and fill lazily. Never silently caps: returns computed/failed/skipped and logs the tail.
 export async function refreshStandardWindows(
   budgetMs = 90000,
   startOffset = 0,
@@ -217,7 +218,7 @@ export async function refreshStandardWindows(
   const today = todayEt();
   const monthStart = today.slice(0, 7) + "-01";
   const d7 = shift(today, -6), d30 = shift(today, -29);
-  const CREATORS: AdsTrackerAccount[] = ["all", "tyson", "antwan"];
+  const CREATORS: AdsTrackerAccount[] = ["all", ...ACTIVE_CREATORS.map((c) => c.key)];
   const jobs: SnapQuery[] = [];
   // The tab only ever requests level=ad, status=all (loadDashboard + the prefetch both hardcode it;
   // the campaign / ad-set views are derived client-side from the ad rows). So the warm matrix is

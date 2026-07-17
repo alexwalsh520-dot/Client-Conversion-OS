@@ -11,7 +11,7 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { getLeadHours } from "@/lib/sales-hub/lead-hours";
-import { CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
+import { ACTIVE_CREATORS, CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import {
   addDays,
@@ -21,8 +21,8 @@ import {
   startOfEtWeek,
 } from "./time";
 
-/** Clients shown in the report, in display order. */
-export const REPORT_CLIENTS: CreatorKey[] = ["tyson", "antwan"];
+/** Clients shown in the report — the creators we currently work with. */
+export const REPORT_CLIENTS: CreatorKey[] = ACTIVE_CREATORS.map((c) => c.key);
 
 // ---------------------------------------------------------------------------
 // Types

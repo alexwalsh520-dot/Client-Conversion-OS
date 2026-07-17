@@ -4,8 +4,10 @@ import {
   type SlackAppointmentBooking,
 } from "@/lib/slack-appointments";
 import { getServiceSupabase } from "@/lib/supabase";
+import { getActiveClients, getTeamMembers } from "@/lib/registry";
 
-type ClientKey = "tyson_sonnek" | "antwan_rarcus";
+/** Long-form ManyChat client key (e.g. "tyson_sonnek"). */
+type ClientKey = string;
 
 interface SetterDef {
   key: string;
@@ -151,7 +153,9 @@ export interface SetterReportData {
   };
 }
 
-const SETTERS: SetterDef[] = [
+// Static fallback — the live roster loads from the team registry at the top
+// of getSetterReportData, so setters added in Settings appear automatically.
+const FALLBACK_SETTERS: SetterDef[] = [
   {
     key: "amara",
     name: "Amara",
@@ -188,6 +192,31 @@ const SETTERS: SetterDef[] = [
     sheetKeys: ["ERIN"],
   },
 ];
+
+let SETTERS: SetterDef[] = FALLBACK_SETTERS;
+
+async function refreshSettersFromRegistry(): Promise<void> {
+  try {
+    const [members, clients] = await Promise.all([
+      getTeamMembers("setter"),
+      getActiveClients(),
+    ]);
+    if (members.length === 0) return;
+    const clientByKey = new Map(clients.map((c) => [c.key, c]));
+    SETTERS = members.map((m) => {
+      const client = clientByKey.get(m.clientKey);
+      return {
+        key: m.name.toLowerCase(),
+        name: m.name,
+        clientKey: client?.manychatKey ?? "tyson_sonnek",
+        clientLabel: client?.name ?? "Tyson Sonnek",
+        sheetKeys: [...new Set([m.name, ...m.aliases])].map((a) => a.toUpperCase()),
+      };
+    });
+  } catch {
+    // keep fallback
+  }
+}
 
 const ET_TIMEZONE = "America/New_York";
 const ET_PARTS = new Intl.DateTimeFormat("en-US", {
@@ -789,6 +818,7 @@ function buildPeriodMetrics(params: {
 }
 
 export async function getSetterReportData(reportDate: string): Promise<SetterReportData> {
+  await refreshSettersFromRegistry();
   const sb = getServiceSupabase();
   const weekStart = weekStartOf(reportDate);
   const monthStart = monthStartOf(reportDate);

@@ -1,7 +1,8 @@
 import {
-  CREATORS_BY_KEY,
+  ACTIVE_CREATORS,
   firstEnv,
   normalizeAdAccountId,
+  type Creator,
   type CreatorKey,
 } from "@/lib/creators";
 
@@ -120,7 +121,10 @@ export interface LiveAdsPayload {
   accounts: LiveAdsAccountGroup[];
 }
 
-const ACCOUNTS = CREATORS_BY_KEY;
+// Live ads only polls the creators we currently work with.
+const ACCOUNTS = Object.fromEntries(
+  ACTIVE_CREATORS.map((c) => [c.key, c]),
+) as Record<CreatorKey, Creator>;
 
 async function metaFetch<T>(url: string, accessToken: string): Promise<T> {
   const separator = url.includes("?") ? "&" : "?";

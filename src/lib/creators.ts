@@ -19,6 +19,12 @@ export interface Creator {
   key: CreatorKey;
   /** Display name shown in the UI. */
   name: string;
+  /**
+   * Whether we still work with this creator. Retired creators stay in the
+   * list so historical data keeps its labels and attribution, but they are
+   * excluded from every picker, sync, and live view (use ACTIVE_CREATORS).
+   */
+  active: boolean;
   /** The ad account's reporting timezone (controls day-boundary bucketing). */
   timezone: string;
   /** Env var names that may hold the Meta ad account id, in priority order. */
@@ -41,6 +47,7 @@ export const CREATORS: readonly Creator[] = [
   {
     key: "tyson",
     name: "Tyson",
+    active: true,
     timezone: "America/Los_Angeles",
     adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
     tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
@@ -50,6 +57,7 @@ export const CREATORS: readonly Creator[] = [
   {
     key: "keith",
     name: "Keith",
+    active: false, // no longer a client (Jul 2026)
     timezone: "America/New_York",
     adAccountEnv: ["META_AD_ACCOUNT_KEITH", "META_ADS_ACCOUNT_KEITH"],
     tokenEnv: ["META_ACCESS_TOKEN_KEITH", "META_ADS_TOKEN_KEITH", "META_ACCESS_TOKEN"],
@@ -59,7 +67,7 @@ export const CREATORS: readonly Creator[] = [
   {
     key: "lucy",
     name: "Lucy",
-    // Default to the reporting timezone until Lucy's ad account timezone is confirmed.
+    active: false, // no longer a client (Jul 2026)
     timezone: "America/New_York",
     adAccountEnv: ["META_AD_ACCOUNT_LUCY_HUBBARD", "META_AD_ACCOUNT_LUCY", "META_ADS_ACCOUNT_LUCY"],
     tokenEnv: ["META_ACCESS_TOKEN_LUCY_HUBBARD", "META_ACCESS_TOKEN_LUCY", "META_ACCESS_TOKEN"],
@@ -69,7 +77,7 @@ export const CREATORS: readonly Creator[] = [
   {
     key: "antwan",
     name: "Antwan",
-    // Default until Antwan's ad-account timezone is confirmed.
+    active: false, // no longer a client (Jul 2026)
     timezone: "America/New_York",
     adAccountEnv: ["META_AD_ACCOUNT_ANTWAN_RARCUS", "META_AD_ACCOUNT_ANTWAN"],
     tokenEnv: ["META_ACCESS_TOKEN_ANTWAN_RARCUS", "META_ACCESS_TOKEN_ANTWAN", "META_ACCESS_TOKEN"],
@@ -77,6 +85,13 @@ export const CREATORS: readonly Creator[] = [
     matchTokens: ["antwan", "rarcus", "against all odds", "(ar)"],
   },
 ];
+
+/**
+ * The creators we currently work with — what every picker, sync, and live
+ * view should iterate. CREATORS (the full list) is only for labelling and
+ * attributing historical data.
+ */
+export const ACTIVE_CREATORS: readonly Creator[] = CREATORS.filter((c) => c.active);
 
 export const CREATORS_BY_KEY: Record<CreatorKey, Creator> = Object.fromEntries(
   CREATORS.map((creator) => [creator.key, creator]),

@@ -15,7 +15,8 @@ import { useSession } from "next-auth/react";
 // Time to Eat tracks its own client list, separate from the rest of Sales Hub.
 // Tyson is live; Antwan is shown as a placeholder until his Instagram is
 // connected. Keith and Lucy were removed — we no longer work with them.
-export type TimeToEatClient = "all" | "tyson" | "antwan";
+/** "all" or a client registry key (e.g. "tyson"). */
+export type TimeToEatClient = string;
 
 interface TimeToEatLead {
   id: string;
@@ -60,8 +61,7 @@ function formatWait(hours: number) {
 
 function clientLabel(client: TimeToEatClient) {
   if (client === "all") return "All clients";
-  if (client === "tyson") return "Tyson";
-  return "Antwan";
+  return client.charAt(0).toUpperCase() + client.slice(1);
 }
 
 function setterList(lead: TimeToEatLead, mode: "initial" | "all") {

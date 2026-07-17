@@ -8,6 +8,7 @@
 // counts need `instagram_business_manage_insights` (a re-auth) and are fetched best-effort.
 import { getServiceSupabase } from "@/lib/supabase";
 import { getDecryptedTokenForClient } from "@/lib/instagram-connections";
+import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
 
 // Mirror the app's proven Instagram Graph convention (see resolveInstagramUsernameByIgsid):
 // the configured graph version + graph.instagram.com host. v21.0 was rejecting some
@@ -15,10 +16,10 @@ import { getDecryptedTokenForClient } from "@/lib/instagram-connections";
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION?.trim() || "v24.0";
 const GRAPH = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
-// Active creators only (Alex 2026-06-25: ONLY Tyson + Antwan are clients).
+// Active creators only, straight from the shared registry.
 // Keyed by the short creator key; the IG connection row is looked up by client_slug.
-export const CONTENT_CREATORS = ["tyson", "antwan"] as const;
-export type ContentCreator = (typeof CONTENT_CREATORS)[number];
+export const CONTENT_CREATORS: readonly CreatorKey[] = ACTIVE_CREATORS.map((c) => c.key);
+export type ContentCreator = CreatorKey;
 
 interface IgMedia {
   id: string;

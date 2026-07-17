@@ -13,6 +13,7 @@ import {
   FileText,
 } from "lucide-react";
 import type { Filters } from "../types";
+import { useCloserNames } from "./useTeamRoster";
 import { getEffectiveDates } from "./FilterBar";
 import { ReviewMarkdown } from "./ReviewMarkdown";
 
@@ -29,10 +30,6 @@ interface ReviewHistoryEntry {
   timestamp: string;
 }
 
-/* ── Constants ────────────────────────────────────────────────────── */
-
-const CLOSERS = ["Broz", "Will", "Austin"];
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {
@@ -46,6 +43,7 @@ function formatDate(iso: string): string {
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function CallReview({ filters }: CallReviewProps) {
+  const CLOSERS = useCloserNames(["Broz", "Will", "Austin"]);
   // Per-closer call counts
   const [callCounts, setCallCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(false);
@@ -87,7 +85,7 @@ export default function CallReview({ filters }: CallReviewProps) {
     } finally {
       setCountsLoading(false);
     }
-  }, [filters]);
+  }, [filters, CLOSERS]);
 
   useEffect(() => {
     fetchCallCounts();

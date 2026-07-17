@@ -4,6 +4,7 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { encryptSecret, decryptSecret } from "@/lib/onboarding/crypto";
+import { clearRegistryCache } from "@/lib/registry";
 import type {
   OnboardingPartner,
   OnboardingStep,
@@ -261,7 +262,93 @@ export async function submitPublic(
     .update({ status: newStatus, updated_at: new Date().toISOString() })
     .eq("id", partner.id);
 
+  // A finished form makes them a live client everywhere.
+  if (newStatus === "submitted") {
+    await activateClientFromPartner({ ...partner, status: newStatus });
+  }
+
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Client registry propagation — a finished onboarding becomes a live client
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge an onboarded partner into the ccos_clients registry so they appear
+ * across every tab (Sales Hub, Setter Response Time, Ads pickers, …).
+ *
+ * Runs when the client finishes their welcome form (status → submitted) and
+ * when an admin flips status to submitted/complete. Idempotent: re-activates
+ * and refreshes contact info on repeat calls. Best-effort — if the registry
+ * table doesn't exist yet (migration 052 not applied) this is a silent no-op
+ * so onboarding itself never breaks.
+ */
+export async function activateClientFromPartner(partner: OnboardingPartner): Promise<void> {
+  const db = getServiceSupabase();
+  const slug = partner.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/);
+  if (slug.length === 0 || !slug[0]) return;
+
+  // Keys follow the existing convention: short key = first name ("tyson"),
+  // manychat key = full name snake_case ("tyson_sonnek"). If another client
+  // already owns the first-name key, fall back to the full slug.
+  const manychatKey = slug.join("_");
+  let key = slug[0];
+  try {
+    const { data: existing } = await db
+      .from("ccos_clients")
+      .select("key, onboarding_partner_id")
+      .eq("key", key)
+      .maybeSingle();
+    if (existing && existing.onboarding_partner_id !== partner.id && slug.length > 1) {
+      key = slug.join("-");
+    }
+
+    // If this partner already has a registry row (under any key), update it
+    // instead of minting a second one.
+    const { data: byPartner } = await db
+      .from("ccos_clients")
+      .select("key")
+      .eq("onboarding_partner_id", partner.id)
+      .maybeSingle();
+    if (byPartner?.key) key = byPartner.key as string;
+
+    const { error } = await db.from("ccos_clients").upsert(
+      {
+        key,
+        name: partner.name,
+        manychat_key: manychatKey,
+        ig_handle: partner.handle,
+        email: partner.email,
+        status: "active",
+        onboarding_partner_id: partner.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" },
+    );
+    if (error) throw error;
+    clearRegistryCache();
+  } catch (err) {
+    console.error("[onboarding] client registry merge skipped:", err);
+  }
+}
+
+/** Retire the registry entry when its onboarding record is deleted. */
+async function retireClientForPartner(partnerId: string): Promise<void> {
+  try {
+    const db = getServiceSupabase();
+    await db
+      .from("ccos_clients")
+      .update({ status: "retired", updated_at: new Date().toISOString() })
+      .eq("onboarding_partner_id", partnerId);
+    clearRegistryCache();
+  } catch {
+    // Registry table missing — nothing to retire.
+  }
 }
 
 async function markProgress(
@@ -338,10 +425,21 @@ export async function updatePartner(
   }
   const { error } = await db.from("onboarding_partners").update(allowed).eq("id", id);
   if (error) throw error;
+
+  // Admin moving them to submitted/complete also makes them a live client.
+  if (patch.status === "submitted" || patch.status === "complete") {
+    const { data } = await db
+      .from("onboarding_partners")
+      .select(PARTNER_COLS)
+      .eq("id", id)
+      .maybeSingle();
+    if (data) await activateClientFromPartner(data as OnboardingPartner);
+  }
 }
 
 export async function deletePartner(id: string): Promise<void> {
   const db = getServiceSupabase();
   const { error } = await db.from("onboarding_partners").delete().eq("id", id);
   if (error) throw error;
+  await retireClientForPartner(id);
 }

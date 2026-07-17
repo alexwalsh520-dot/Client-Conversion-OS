@@ -4,11 +4,33 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { getSalesManagerChannel, postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { listMeetings, FathomMeeting } from "@/lib/fathom";
+import { getTeamMembers } from "@/lib/registry";
 
 /* ── Config ─────────────────────────────────────────────────────── */
 
 const GHL_V2_BASE = "https://services.leadconnectorhq.com";
-const CLOSERS = ["Broz", "Will", "Jacob"];
+
+// Static fallback — the live roster loads from the team registry per request.
+const FALLBACK_CLOSER_DEFS = [
+  { name: "Broz", tokens: ["broz"] },
+  { name: "Will", tokens: ["will"] },
+  { name: "Jacob", tokens: ["jacob"] },
+];
+let CLOSER_DEFS = FALLBACK_CLOSER_DEFS;
+
+async function refreshClosers(): Promise<void> {
+  try {
+    const members = await getTeamMembers("closer");
+    if (members.length > 0) {
+      CLOSER_DEFS = members.map((m) => ({
+        name: m.name,
+        tokens: [...new Set([m.name.toLowerCase(), ...m.aliases.map((a) => a.toLowerCase())])],
+      }));
+    }
+  } catch {
+    // keep fallback
+  }
+}
 
 const TEAM_EMAILS = new Set([
   "matthew@clientconversion.io", "alex@clientconversion.io", "alexwalsh520@gmail.com",
@@ -291,20 +313,19 @@ function matchCloser(
     const user = userMap.get(assignedUserId)!;
     const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
     const userName = user.name.toLowerCase();
-    for (const c of CLOSERS) {
-      const cl = c.toLowerCase();
-      if (fullName.includes(cl) || userName.includes(cl) || user.email.toLowerCase().includes(cl)) {
-        return c;
+    for (const c of CLOSER_DEFS) {
+      if (c.tokens.some((t) => fullName.includes(t) || userName.includes(t) || user.email.toLowerCase().includes(t))) {
+        return c.name;
       }
     }
-    // Return user's first name if not in CLOSERS list
+    // Return user's first name if not in the closer roster
     return user.firstName || user.name || "Unassigned";
   }
 
   // Second try: match by calendar name or event title
   const combined = `${calendarName} ${title}`.toLowerCase();
-  for (const c of CLOSERS) {
-    if (combined.includes(c.toLowerCase())) return c;
+  for (const c of CLOSER_DEFS) {
+    if (c.tokens.some((t) => combined.includes(t))) return c.name;
   }
 
   return "Unassigned";
@@ -322,6 +343,7 @@ function identifyClient(calendarName: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    await refreshClosers();
     const body = await req.json().catch(() => ({}));
     const { closer: requestedCloser, sendToSlack: shouldSlack = true } = body as {
       closer?: string;
