@@ -39,12 +39,15 @@ export async function POST(req: NextRequest) {
   const url = new URL(req.url);
   const creator = (url.searchParams.get("creator") || "").toLowerCase();
   const limit = Math.min(Number(url.searchParams.get("limit") || 12), 25);
+  // Transcribe ONE specific reel on demand (e.g. from the canvas), bypassing the batch priority queue.
+  const targetId = url.searchParams.get("id");
   const slugs = (CONTENT_CREATORS as readonly string[]).includes(creator) ? [creator] : [...CONTENT_CREATORS];
 
   const sb = getServiceSupabase();
   let transcribed = 0, stored = 0, failed = 0, requeued_junk = 0, gave_up = 0;
 
-  for (const slug of slugs) {
+  const SEL = "id, client_key, ig_media_id, video_url, thumbnail_url, transcript_status, transcript_words, transcript_attempts, stored_video_url";
+  for (const slug of (targetId ? ["__target__"] : slugs)) {
     // Work list, in priority order (never-transcribed first, then re-queued junk):
     //  - pending / failed  = never got a good transcript yet
     //  - stored_video_url null = still needs a durable copy
@@ -52,19 +55,23 @@ export async function POST(req: NextRequest) {
     //    genuinely silent video can never loop forever; it becomes no_speech after MAX attempts)
     // no_speech / na are terminal and never selected. transcript_words asc nullsFirst puts posts that
     // were never transcribed (null words) ahead of the low-word junk, so fresh coverage is never starved.
-    const { data: rows } = await sb
-      .from("creator_content")
-      .select("id, ig_media_id, video_url, thumbnail_url, transcript_status, transcript_words, transcript_attempts, stored_video_url")
-      .eq("client_key", slug)
-      .not("video_url", "is", null)
-      .or(`transcript_status.eq.pending,transcript_status.eq.failed,stored_video_url.is.null,and(transcript_status.eq.done,transcript_words.lt.${MIN_WORDS},transcript_attempts.lt.${MAX_ATTEMPTS})`)
-      .order("transcript_words", { ascending: true, nullsFirst: true })
-      .order("taken_at", { ascending: false, nullsFirst: false })
-      .limit(limit);
+    const { data: rows } = targetId
+      ? await sb.from("creator_content").select(SEL).eq("id", targetId).not("video_url", "is", null).limit(1)
+      : await sb
+          .from("creator_content")
+          .select(SEL)
+          .eq("client_key", slug)
+          .not("video_url", "is", null)
+          .or(`transcript_status.eq.pending,transcript_status.eq.failed,stored_video_url.is.null,and(transcript_status.eq.done,transcript_words.lt.${MIN_WORDS},transcript_attempts.lt.${MAX_ATTEMPTS})`)
+          .order("transcript_words", { ascending: true, nullsFirst: true })
+          .order("taken_at", { ascending: false, nullsFirst: false })
+          .limit(limit);
 
     for (const r of rows || []) {
+      const pathSlug = (r.client_key as string) || slug;
       const isJunk = r.transcript_status === "done" && (r.transcript_words ?? 0) < MIN_WORDS;
-      const needTranscript = canTranscribe && (r.transcript_status === "pending" || r.transcript_status === "failed" || isJunk);
+      // Targeted mode always (re)transcribes the requested reel; batch mode uses the status rules.
+      const needTranscript = canTranscribe && (!!targetId || r.transcript_status === "pending" || r.transcript_status === "failed" || isJunk);
       const needStore = !r.stored_video_url && canStore;
       if (!needTranscript && !needStore) continue;
 
@@ -78,9 +85,9 @@ export async function POST(req: NextRequest) {
       const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
       if (needStore) {
-        const vurl = await putToR2(`content/${slug}/${r.ig_media_id}.mp4`, bytes, "video/mp4");
+        const vurl = await putToR2(`content/${pathSlug}/${r.ig_media_id}.mp4`, bytes, "video/mp4");
         if (vurl) { update.stored_video_url = vurl; stored++; }
-        const turl = await storeThumb(slug, r.ig_media_id as string, r.thumbnail_url as string | null);
+        const turl = await storeThumb(pathSlug, r.ig_media_id as string, r.thumbnail_url as string | null);
         if (turl) update.stored_thumb_url = turl;
       }
       if (needTranscript) {
@@ -99,7 +106,19 @@ export async function POST(req: NextRequest) {
         }
       }
       await sb.from("creator_content").update(update).eq("id", r.id);
+      // Targeted mode: hand the transcript straight back to the caller.
+      if (targetId) {
+        return NextResponse.json({
+          ok: true,
+          id: r.id,
+          transcribed: transcribed > 0 || requeued_junk > 0,
+          words: (update.transcript_words as number) ?? null,
+          status: update.transcript_status ?? null,
+          transcript: (update.transcript as string) ?? null,
+        });
+      }
     }
+    if (targetId) return NextResponse.json({ ok: false, error: "reel not found, no video, or download failed" }, { status: 200 });
   }
   return NextResponse.json({ ok: true, transcribed, requeued_junk, gave_up_no_speech: gave_up, stored, failed, note: `Batch of ${limit}; resumable, run again to continue. Priority: never-transcribed first, then junk under ${MIN_WORDS} words (capped at ${MAX_ATTEMPTS} attempts).` });
 }
