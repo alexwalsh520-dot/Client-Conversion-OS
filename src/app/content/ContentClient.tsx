@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Settings } from "lucide-react";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
 import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
@@ -14,7 +15,7 @@ import ShareSettings from "@/components/content/ShareSettings";
 import type { DateRange } from "@/components/content/CalendarRange";
 import { Column, PAPER, INK, MUTED, PageHeader, Tabs } from "@/components/content/creator-ui";
 
-const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Antwan" }];
+const CREATORS = ACTIVE_CREATORS.map((c) => ({ slug: c.key, name: c.name }));
 
 // The operator /content view is the creator view — identical components, same white content area — plus
 // three operator-only pieces of chrome: the creator toggle, the share-settings gear, and a fourth

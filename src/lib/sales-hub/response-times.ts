@@ -1,8 +1,10 @@
 import { getServiceSupabase } from "@/lib/supabase";
+import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
 
-export type SalesHubClient = "tyson" | "antwan" | "all";
+/** "all" or a client registry key (e.g. "tyson"). */
+export type SalesHubClient = string;
 
-type ClientId = Exclude<SalesHubClient, "all">;
+type ClientId = string;
 
 interface ClientDef {
   id: ClientId;
@@ -129,12 +131,14 @@ export interface ResponseTimeMetrics {
   };
 }
 
-const CLIENTS: ClientDef[] = [
+// Static fallbacks — replaced with the live registry (ccos_clients /
+// team_members) at the top of getResponseTimeMetrics. Kept so the tab still
+// renders if the registry is unreachable.
+const FALLBACK_CLIENTS: ClientDef[] = [
   { id: "tyson", key: "tyson_sonnek", label: "Tyson" },
-  { id: "antwan", key: "antwan_rarcus", label: "Antwan Rarcus" },
 ];
 
-const SETTER_LABELS: Record<string, string> = {
+const FALLBACK_SETTER_LABELS: Record<string, string> = {
   amara: "Amara",
   kelechi: "Kelechi",
   kelchi: "Kelechi",
@@ -144,6 +148,25 @@ const SETTER_LABELS: Record<string, string> = {
   chidiebere: "Debbie",
   erin: "Erin",
 };
+
+let CLIENTS: ClientDef[] = FALLBACK_CLIENTS;
+let SETTER_LABELS: Record<string, string> = FALLBACK_SETTER_LABELS;
+
+/** Pull the current clients + setter aliases from the registry. */
+async function refreshFromRegistry(): Promise<void> {
+  try {
+    const [actives, setterMap] = await Promise.all([
+      getActiveClients(),
+      getSetterLabelMap(),
+    ]);
+    if (actives.length > 0) {
+      CLIENTS = actives.map((c) => ({ id: c.key, key: c.manychatKey, label: c.name }));
+    }
+    SETTER_LABELS = { ...FALLBACK_SETTER_LABELS, ...setterMap };
+  } catch {
+    // keep fallbacks
+  }
+}
 
 const ET_TIMEZONE = "America/New_York";
 const BUSINESS_START_SECOND = 11 * 3600;
@@ -437,6 +460,7 @@ export async function getResponseTimeMetrics(params: {
 }): Promise<ResponseTimeMetrics> {
   const { client, dateFrom, dateTo } = params;
   const sb = getServiceSupabase();
+  await refreshFromRegistry();
   const visibleClients = getVisibleClients(client);
   const clientKeys = visibleClients.map((item) => item.key);
   const messageEndDate = addDays(dateTo, 3);

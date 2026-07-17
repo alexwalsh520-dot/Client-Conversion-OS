@@ -5,16 +5,48 @@ import { uploadFileAsCso } from "@/lib/slack";
 import { generatePDF } from "@/lib/pdf";
 import { fetchSheetData as fetchSheetRows, type SheetRow } from "@/lib/google-sheets";
 import { fetchSubscriptionsSold } from "@/lib/google-sheets";
+import { getTeamMembers, getActiveClients } from "@/lib/registry";
 
 /* ── Config ─────────────────────────────────────────────────────── */
 
-const CLOSERS = [
+// Static fallbacks — the live roster comes from the team registry at the top
+// of the handler, so members added in Settings get briefs automatically.
+const FALLBACK_CLOSERS = [
   { name: "Will Rincan", sheetKey: "WILL", alias: ["WILL", "RINCAN"] },
   { name: "Jacob Broz", sheetKey: "BROZ", alias: ["BROZ", "JACOB"] },
   { name: "Austin Richard", sheetKey: "AUSTIN", alias: ["AUSTIN"] },
 ];
 
-const SETTERS = ["AMARA", "KELECHI", "KELCHI", "DEBBIE", "GIDEON"];
+const FALLBACK_SETTERS = [
+  { name: "Amara", alias: ["AMARA"] },
+  { name: "Kelechi", alias: ["KELECHI", "KELCHI"] },
+  { name: "Debbie", alias: ["DEBBIE"] },
+  { name: "Gideon", alias: ["GIDEON"] },
+];
+
+async function loadTeamRoster() {
+  try {
+    const [closerMembers, setterMembers, activeClients] = await Promise.all([
+      getTeamMembers("closer"),
+      getTeamMembers("setter"),
+      getActiveClients(),
+    ]);
+    return {
+      closers: closerMembers.map((m) => ({
+        name: m.name,
+        sheetKey: (m.aliases[0] || m.name).toUpperCase(),
+        alias: [...new Set([m.name, ...m.aliases])].map((a) => a.toUpperCase()),
+      })),
+      setters: setterMembers.map((m) => ({
+        name: m.name,
+        alias: [...new Set([m.name, ...m.aliases])].map((a) => a.toUpperCase()),
+      })),
+      clientNames: activeClients.map((c) => c.name),
+    };
+  } catch {
+    return { closers: FALLBACK_CLOSERS, setters: FALLBACK_SETTERS, clientNames: ["Tyson"] };
+  }
+}
 
 /* ── System Prompts ─────────────────────────────────────────────── */
 
@@ -184,8 +216,11 @@ function getCloserMTD(allRows: SheetRow[], alias: string[]) {
     sr: cr.length > 0 ? (ct.length / cr.length * 100).toFixed(1) : "0" };
 }
 
-function getSetterMTD(allRows: SheetRow[], setter: string) {
-  const sr = allRows.filter((r) => (r.setter || "").toUpperCase().includes(setter));
+function getSetterMTD(allRows: SheetRow[], alias: string[]) {
+  const sr = allRows.filter((r) => {
+    const v = (r.setter || "").toUpperCase();
+    return alias.some((a) => v.includes(a));
+  });
   const st = sr.filter((r) => r.callTaken);
   const sw = sr.filter((r) => r.outcome === "WIN");
   const sns = sr.filter((r) => ["NS/RS", "NS"].includes(r.outcome));
@@ -303,6 +338,9 @@ export async function GET(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
   const anthropic = new Anthropic({ apiKey });
+
+  // Live roster — members added in Settings get briefs without a code change.
+  const { closers: CLOSERS, setters: SETTERS, clientNames: CLIENT_NAMES } = await loadTeamRoster();
 
   // Type param: "closer" (11 PM cron, briefs for TOMORROW), "ceo" (5 AM cron), or both
   const briefType = req.nextUrl.searchParams.get("type") || "all"; // "closer" | "ceo" | "all"
@@ -484,10 +522,10 @@ CLOSER BREAKDOWN:
 ${CLOSERS.map((c) => { const m = getCloserMTD(allRows, c.alias); return `${c.name}: ${m.booked} booked | ${m.taken} taken | ${m.wins} wins | $${m.cash.toLocaleString()} | CR=${m.cr}% | SR=${m.sr}% | NS=${m.noShows}`; }).join("\n")}
 
 SETTER BREAKDOWN:
-${SETTERS.map((s) => { const d = getSetterMTD(allRows, s); return `${s} (${d.clients.join("/")}): ${d.booked} booked | ${d.taken} taken | ${d.wins} wins | ${d.noShows} NS | SR=${d.sr}%`; }).join("\n")}
+${SETTERS.map((s) => { const d = getSetterMTD(allRows, s.alias); return `${s.name} (${d.clients.join("/")}): ${d.booked} booked | ${d.taken} taken | ${d.wins} wins | ${d.noShows} NS | SR=${d.sr}%`; }).join("\n")}
 
 CLIENT BREAKDOWN:
-${["Tyson", "Keith"].map((cl) => { const cr = allRows.filter((r) => (r.offer || "").toLowerCase().includes(cl.toLowerCase())); const ct = cr.filter((r) => r.callTaken); const cw = cr.filter((r) => r.outcome === "WIN"); const cc = cr.reduce((s, r) => s + (r.cashCollected || 0), 0); return `${cl}: ${cr.length} booked | ${ct.length} taken | ${cw.length} wins | $${cc.toLocaleString()} | CR=${ct.length > 0 ? (cw.length / ct.length * 100).toFixed(1) : 0}%`; }).join("\n")}`;
+${CLIENT_NAMES.map((cl) => { const cr = allRows.filter((r) => (r.offer || "").toLowerCase().includes(cl.toLowerCase())); const ct = cr.filter((r) => r.callTaken); const cw = cr.filter((r) => r.outcome === "WIN"); const cc = cr.reduce((s, r) => s + (r.cashCollected || 0), 0); return `${cl}: ${cr.length} booked | ${ct.length} taken | ${cw.length} wins | $${cc.toLocaleString()} | CR=${ct.length > 0 ? (cw.length / ct.length * 100).toFixed(1) : 0}%`; }).join("\n")}`;
 
     const msg = await anthropic.messages.create({
       model: "claude-sonnet-4-5-20250929", max_tokens: 6000,

@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Calendar, Users } from "lucide-react";
 import type { Filters, Client, DatePreset } from "../types";
+
+/** Client options come from the registry; Tyson is the safe fallback. */
+const FALLBACK_CLIENT_OPTIONS = [{ key: "tyson", name: "Tyson Sonnek" }];
 
 /* ── Date helpers ─────────────────────────────────────────────────── */
 
@@ -66,6 +69,23 @@ const DATE_PRESETS: { key: DatePreset; label: string }[] = [
 ];
 
 export default function FilterBar({ filters, onChange }: FilterBarProps) {
+  const [clientOptions, setClientOptions] = useState(FALLBACK_CLIENT_OPTIONS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/clients", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && Array.isArray(d?.clients) && d.clients.length > 0) {
+          setClientOptions(d.clients);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleClientChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       onChange({ ...filters, client: e.target.value as Client });
@@ -132,8 +152,9 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
             style={{ width: "auto", minWidth: 160, padding: "8px 12px" }}
           >
             <option value="all">All Clients</option>
-            <option value="tyson">Tyson Sonnek</option>
-            <option value="antwan">Antwan Rarcus</option>
+            {clientOptions.map((c) => (
+              <option key={c.key} value={c.key}>{c.name}</option>
+            ))}
           </select>
         </div>
 

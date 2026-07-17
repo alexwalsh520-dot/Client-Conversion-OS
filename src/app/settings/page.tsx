@@ -9,8 +9,6 @@ import OrganicKeywordsPanel from "@/components/OrganicKeywordsPanel";
 import {
   Settings,
   Users,
-  MessageSquare,
-  Dumbbell,
   FileSpreadsheet,
   RefreshCw,
   CheckCircle,
@@ -31,13 +29,23 @@ interface AppUser {
   id: string;
   email: string;
   name: string | null;
-  // "admin" | "client" in practice, but legacy rows carry other values (e.g. "user")
+  // "admin" | "user" | "client"
   role: string;
   allowed_tabs: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
 }
+
+// The three access levels. Admin sees everything; user (team) and client see
+// only their allowed tabs — the split is a label for who the person is.
+const ROLES = ["client", "user", "admin"] as const;
+type Role = (typeof ROLES)[number];
+const ROLE_LABELS: Record<Role, string> = {
+  client: "Client",
+  user: "User",
+  admin: "Admin",
+};
 
 const TAB_LABELS: Record<string, string> = {
   "/": "Home",
@@ -100,7 +108,7 @@ export default function SettingsPage() {
   // Add form state
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState<"admin" | "client">("client");
+  const [newRole, setNewRole] = useState<Role>("client");
   const [newTabs, setNewTabs] = useState<string[]>(["/"]);
   const [addLoading, setAddLoading] = useState(false);
 
@@ -109,14 +117,16 @@ export default function SettingsPage() {
   const [editRole, setEditRole] = useState<string>("client");
   const [editName, setEditName] = useState("");
 
-  // Add Client / Team Member modals
-  const [showAddClient, setShowAddClient] = useState(false);
+  // Add Team Member modal
   const [showAddMember, setShowAddMember] = useState(false);
-  const [clientName, setClientName] = useState("");
-  const [clientStep, setClientStep] = useState(1);
   const [memberName, setMemberName] = useState("");
-  const [memberRole, setMemberRole] = useState<"setter" | "closer">("setter");
-  const [memberStep, setMemberStep] = useState(1);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberJobRole, setMemberJobRole] = useState<"setter" | "closer" | "coach">("setter");
+  const [memberAccess, setMemberAccess] = useState<Role>("user");
+  const [memberTabs, setMemberTabs] = useState<string[]>(["/"]);
+  const [memberBusy, setMemberBusy] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
+  const [memberDone, setMemberDone] = useState<string | null>(null);
 
   // Fetch last sync on mount
   useEffect(() => {
@@ -289,6 +299,50 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleAddMember() {
+    if (!memberName.trim() || memberBusy) return;
+    setMemberBusy(true);
+    setMemberError(null);
+    try {
+      const res = await fetch("/api/team-members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: memberName.trim(),
+          jobRole: memberJobRole,
+          email: memberEmail.trim() || null,
+          accessRole: memberEmail.trim() ? memberAccess : null,
+          allowedTabs: memberAccess === "admin" ? allTabs : memberTabs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMemberError(data.error || "Failed to add team member");
+      } else {
+        setMemberDone(
+          `${memberName.trim()} added as a ${memberJobRole}. They now show up across CCOS — Sales Hub, Setter Response Time, and team reports pick them up automatically.` +
+            (data.warning ? ` Note: ${data.warning}` : ""),
+        );
+        fetchUsers();
+      }
+    } catch {
+      setMemberError("Network error");
+    } finally {
+      setMemberBusy(false);
+    }
+  }
+
+  function resetMemberForm() {
+    setShowAddMember(false);
+    setMemberName("");
+    setMemberEmail("");
+    setMemberJobRole("setter");
+    setMemberAccess("user");
+    setMemberTabs(["/"]);
+    setMemberError(null);
+    setMemberDone(null);
+  }
+
   function startEdit(user: AppUser) {
     setEditingUser(user.id);
     setEditName(user.name || "");
@@ -348,35 +402,6 @@ export default function SettingsPage() {
           </div>
         </div>
         <ThemeToggle />
-      </div>
-
-      <div
-        className="glass-static"
-        style={{
-          padding: 20,
-          marginBottom: 20,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 16,
-          borderLeft: "3px solid var(--tyson)",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
-            Voice Notes
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            Set up Tyson once, then let setters make custom ElevenLabs voice notes.
-          </div>
-        </div>
-        <Link
-          href="/settings/voice-notes"
-          className="btn-secondary"
-          style={{ whiteSpace: "nowrap" }}
-        >
-          Open Voice Notes
-        </Link>
       </div>
 
       {/* Subtle month-to-date AI spend against the $50 budget. */}
@@ -492,40 +517,28 @@ export default function SettingsPage() {
                   Role
                 </label>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => setNewRole("client")}
-                    style={{
-                      padding: "6px 16px",
-                      borderRadius: 6,
-                      border: `1px solid ${newRole === "client" ? "var(--accent)" : "var(--border)"}`,
-                      background: newRole === "client" ? "var(--accent-soft)" : "transparent",
-                      color: newRole === "client" ? "var(--accent)" : "var(--text-secondary)",
-                      fontSize: 13,
-                      cursor: "pointer",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Client
-                  </button>
-                  <button
-                    onClick={() => setNewRole("admin")}
-                    style={{
-                      padding: "6px 16px",
-                      borderRadius: 6,
-                      border: `1px solid ${newRole === "admin" ? "var(--accent)" : "var(--border)"}`,
-                      background: newRole === "admin" ? "var(--accent-soft)" : "transparent",
-                      color: newRole === "admin" ? "var(--accent)" : "var(--text-secondary)",
-                      fontSize: 13,
-                      cursor: "pointer",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Admin
-                  </button>
+                  {ROLES.map((role) => (
+                    <button
+                      key={role}
+                      onClick={() => setNewRole(role)}
+                      style={{
+                        padding: "6px 16px",
+                        borderRadius: 6,
+                        border: `1px solid ${newRole === role ? "var(--accent)" : "var(--border)"}`,
+                        background: newRole === role ? "var(--accent-soft)" : "transparent",
+                        color: newRole === role ? "var(--accent)" : "var(--text-secondary)",
+                        fontSize: 13,
+                        cursor: "pointer",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {ROLE_LABELS[role]}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {newRole === "client" && (
+              {newRole !== "admin" && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -623,35 +636,23 @@ export default function SettingsPage() {
                         <td>
                           {editingUser === user.id ? (
                             <div style={{ display: "flex", gap: 4 }}>
-                              <button
-                                // Preserve legacy non-admin roles (e.g. "user") instead of rewriting them to "client".
-                                onClick={() => setEditRole(user.role !== "admin" ? user.role : "client")}
-                                style={{
-                                  padding: "2px 8px",
-                                  borderRadius: 4,
-                                  fontSize: 11,
-                                  border: `1px solid ${editRole !== "admin" ? "var(--accent)" : "var(--border)"}`,
-                                  background: editRole !== "admin" ? "var(--accent-soft)" : "transparent",
-                                  color: editRole !== "admin" ? "var(--accent)" : "var(--text-muted)",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Client
-                              </button>
-                              <button
-                                onClick={() => setEditRole("admin")}
-                                style={{
-                                  padding: "2px 8px",
-                                  borderRadius: 4,
-                                  fontSize: 11,
-                                  border: `1px solid ${editRole === "admin" ? "var(--accent)" : "var(--border)"}`,
-                                  background: editRole === "admin" ? "var(--accent-soft)" : "transparent",
-                                  color: editRole === "admin" ? "var(--accent)" : "var(--text-muted)",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Admin
-                              </button>
+                              {ROLES.map((role) => (
+                                <button
+                                  key={role}
+                                  onClick={() => setEditRole(role)}
+                                  style={{
+                                    padding: "2px 8px",
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    border: `1px solid ${editRole === role ? "var(--accent)" : "var(--border)"}`,
+                                    background: editRole === role ? "var(--accent-soft)" : "transparent",
+                                    color: editRole === role ? "var(--accent)" : "var(--text-muted)",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {ROLE_LABELS[role]}
+                                </button>
+                              ))}
                             </div>
                           ) : (
                             <span
@@ -931,11 +932,13 @@ export default function SettingsPage() {
       {isAdmin && (
         <div className="section">
           <h2 className="section-title" style={{ margin: 0, marginBottom: 16 }}>
-            <UserPlus size={16} />
-            Onboarding
+            <Link href="/partner-onboarding" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "inherit", textDecoration: "none" }}>
+              <UserPlus size={16} />
+              Onboarding
+            </Link>
           </h2>
           <div className="metric-grid metric-grid-2">
-            <div className="glass-static" style={{ padding: 24 }}>
+            <Link href="/partner-onboarding" className="glass-static" style={{ padding: 24, display: "block", textDecoration: "none", cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div className="action-card-icon" style={{ background: "var(--accent-soft)" }}>
                   <Briefcase size={18} style={{ color: "var(--accent)" }} />
@@ -943,17 +946,17 @@ export default function SettingsPage() {
                 <div className="action-card-title">Add Client</div>
               </div>
               <div className="action-card-desc" style={{ marginBottom: 16 }}>
-                Set up a new coaching client with all required data source connections.
+                Runs through the Client Onboarding tab — create the client, send their welcome
+                link, and their info flows into every tab once they submit.
               </div>
-              <button
+              <span
                 className="btn-primary"
-                onClick={() => { setShowAddClient(true); setClientStep(1); setClientName(""); }}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "8px 16px" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, padding: "8px 16px" }}
               >
                 <Plus size={14} />
                 Add Client
-              </button>
-            </div>
+              </span>
+            </Link>
             <div className="glass-static" style={{ padding: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div className="action-card-icon" style={{ background: "var(--accent-soft)" }}>
@@ -962,11 +965,12 @@ export default function SettingsPage() {
                 <div className="action-card-title">Add Team Member</div>
               </div>
               <div className="action-card-desc" style={{ marginBottom: 16 }}>
-                Add a setter or closer and connect their data sources for tracking.
+                Add a closer, setter, or coach — they appear across Sales Hub, Setter Response
+                Time, and every other view automatically.
               </div>
               <button
                 className="btn-primary"
-                onClick={() => { setShowAddMember(true); setMemberStep(1); setMemberName(""); }}
+                onClick={() => { resetMemberForm(); setShowAddMember(true); }}
                 style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "8px 16px" }}
               >
                 <Plus size={14} />
@@ -977,141 +981,173 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Add Client Modal */}
-      {showAddClient && (
-        <div className="modal-overlay" onClick={() => setShowAddClient(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Add New Client</h3>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Step {clientStep} of 2</span>
-            </div>
-            {clientStep === 1 && (
-              <>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Enter the client&apos;s name. This will appear across all tabs.
-                </p>
-                <input
-                  autoFocus
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="Client name"
-                  className="form-input"
-                  style={{ width: "100%", marginBottom: 16 }}
-                  onKeyDown={(e) => e.key === "Enter" && clientName.trim() && setClientStep(2)}
-                />
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button className="btn-secondary" onClick={() => setShowAddClient(false)}>Cancel</button>
-                  <button className="btn-primary" onClick={() => clientName.trim() && setClientStep(2)} disabled={!clientName.trim()}>Next</button>
-                </div>
-              </>
-            )}
-            {clientStep === 2 && (
-              <>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  To pull accurate metrics for <strong style={{ color: "var(--text-primary)" }}>{clientName}</strong>, connect these data sources:
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-                  {[
-                    { name: "Sales Tracker (Google Sheet)", desc: "Add a column in the 'Offer' field matching the client name so revenue and call data can be attributed." },
-                    { name: "GHL Sub-Account", desc: "Create or link a GHL sub-account with calendar and contact scopes for call tracking." },
-                    { name: "GHL Calendar", desc: "Set up a booking calendar so calls booked, show rates, and no-shows are tracked." },
-                    { name: "ManyChat", desc: "Configure ManyChat flows with tags matching the client name for lead and DM metrics." },
-                    { name: "Ad Platform", desc: "Connect the ad account (Meta, Google, etc.) so ad spend, CPL, and ROAS data flows in." },
-                  ].map((item) => (
-                    <div key={item.name} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-primary)", borderRadius: 8 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--warning)", marginTop: 6, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{item.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{item.desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 16 }}>
-                  The client will appear in all views once added. Metrics populate as data flows in from each source.
-                </p>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <button className="btn-secondary" onClick={() => setClientStep(1)}>&larr; Back</button>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-secondary" onClick={() => setShowAddClient(false)}>Cancel</button>
-                    <button className="btn-primary" onClick={() => setShowAddClient(false)}>Add Client</button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Add Team Member Modal */}
       {showAddMember && (
-        <div className="modal-overlay" onClick={() => setShowAddMember(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+        <div className="modal-overlay" onClick={resetMemberForm}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Add Team Member</h3>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Step {memberStep} of 2</span>
+              <button onClick={resetMemberForm} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+                <X size={16} />
+              </button>
             </div>
-            {memberStep === 1 && (
+
+            {memberDone ? (
               <>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Enter the team member&apos;s name and role. They&apos;ll appear across all client views.
-                </p>
-                <input
-                  autoFocus
-                  value={memberName}
-                  onChange={(e) => setMemberName(e.target.value)}
-                  placeholder="Name"
-                  className="form-input"
-                  style={{ width: "100%", marginBottom: 12 }}
-                />
-                <select
-                  value={memberRole}
-                  onChange={(e) => setMemberRole(e.target.value as "setter" | "closer")}
-                  className="form-input"
-                  style={{ width: "100%", marginBottom: 16 }}
-                >
-                  <option value="setter">Setter</option>
-                  <option value="closer">Closer</option>
-                </select>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button className="btn-secondary" onClick={() => setShowAddMember(false)}>Cancel</button>
-                  <button className="btn-primary" onClick={() => memberName.trim() && setMemberStep(2)} disabled={!memberName.trim()}>Next</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: "var(--success)", marginBottom: 16 }}>
+                  <CheckCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>{memberDone}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button className="btn-primary" onClick={resetMemberForm}>Done</button>
                 </div>
               </>
-            )}
-            {memberStep === 2 && (
+            ) : (
               <>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  After adding, set up the following for <strong style={{ color: "var(--text-primary)" }}>{memberName}</strong> ({memberRole}):
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-                  {(memberRole === "setter" ? [
-                    { name: "Sales Tracker Column", desc: "Add the setter's name to the 'Setter' column in the Google Sheet." },
-                    { name: "GHL User Account", desc: "Create a GHL user so calls and leads can be attributed." },
-                    { name: "ManyChat Assignment", desc: "Set up lead routing and assignment rules in ManyChat." },
-                  ] : [
-                    { name: "Sales Tracker Column", desc: "Add the closer's name to the 'Closer' column in the Google Sheet." },
-                    { name: "GHL Calendar", desc: "Create a booking calendar in GHL for this closer." },
-                    { name: "GHL User Account", desc: "Create a GHL user so calls and outcomes are tracked." },
-                  ]).map((item) => (
-                    <div key={item.name} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--bg-surface)", border: "1px solid var(--border-primary)", borderRadius: 8 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--warning)", marginTop: 6, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{item.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{item.desc}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Name *</label>
+                    <input
+                      autoFocus
+                      value={memberName}
+                      onChange={(e) => setMemberName(e.target.value)}
+                      placeholder="Name"
+                      className="form-input"
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      Email (for sign-in)
+                    </label>
+                    <input
+                      type="email"
+                      value={memberEmail}
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      placeholder="them@gmail.com"
+                      className="form-input"
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Job role *</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {(["closer", "setter", "coach"] as const).map((jr) => (
+                      <button
+                        key={jr}
+                        onClick={() => setMemberJobRole(jr)}
+                        style={{
+                          padding: "6px 16px",
+                          borderRadius: 6,
+                          border: `1px solid ${memberJobRole === jr ? "var(--accent)" : "var(--border)"}`,
+                          background: memberJobRole === jr ? "var(--accent-soft)" : "transparent",
+                          color: memberJobRole === jr ? "var(--accent)" : "var(--text-secondary)",
+                          fontSize: 13,
+                          cursor: "pointer",
+                          fontWeight: 500,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {jr}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {memberEmail.trim() && (
+                  <>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Access</label>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {ROLES.map((role) => (
+                          <button
+                            key={role}
+                            onClick={() => setMemberAccess(role)}
+                            style={{
+                              padding: "6px 16px",
+                              borderRadius: 6,
+                              border: `1px solid ${memberAccess === role ? "var(--accent)" : "var(--border)"}`,
+                              background: memberAccess === role ? "var(--accent-soft)" : "transparent",
+                              color: memberAccess === role ? "var(--accent)" : "var(--text-secondary)",
+                              fontSize: 13,
+                              cursor: "pointer",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {ROLE_LABELS[role]}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 16 }}>
-                  The team member will show up in all views once added. Metrics populate as data flows in.
-                </p>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <button className="btn-secondary" onClick={() => setMemberStep(1)}>&larr; Back</button>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-secondary" onClick={() => setShowAddMember(false)}>Cancel</button>
-                    <button className="btn-primary" onClick={() => setShowAddMember(false)}>Add Member</button>
+
+                    {memberAccess !== "admin" && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Tabs they can access</label>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              onClick={() => selectAllTabs(setMemberTabs)}
+                              style={{ fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer" }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              onClick={() => clearAllTabs(setMemberTabs)}
+                              style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+                          {allTabs.map((tab) => (
+                            <button
+                              key={tab}
+                              onClick={() => toggleTab(tab, setMemberTabs, memberTabs)}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                border: `1px solid ${memberTabs.includes(tab) ? "var(--accent)" : "var(--border)"}`,
+                                background: memberTabs.includes(tab) ? "var(--accent-soft)" : "transparent",
+                                color: memberTabs.includes(tab) ? "var(--accent)" : "var(--text-muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {TAB_LABELS[tab] || tab}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {!memberEmail.trim() && (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginBottom: 12 }}>
+                    No email — they&apos;ll show up in team views but won&apos;t get a CCOS login.
+                  </p>
+                )}
+
+                {memberError && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 12, color: "var(--danger)" }}>
+                    <XCircle size={14} />
+                    {memberError}
                   </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button className="btn-secondary" onClick={resetMemberForm}>Cancel</button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleAddMember}
+                    disabled={memberBusy || !memberName.trim()}
+                    style={{ opacity: memberBusy || !memberName.trim() ? 0.6 : 1 }}
+                  >
+                    {memberBusy ? "Adding…" : "Add Team Member"}
+                  </button>
                 </div>
               </>
             )}
@@ -1217,63 +1253,6 @@ export default function SettingsPage() {
               />
               {syncing ? "Syncing..." : "Sync Now"}
             </button>
-          </div>
-
-          {/* Slack Integration — Coming Soon */}
-          <div className="glass-static" style={{ padding: 24 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div
-                  className="action-card-icon"
-                  style={{ background: "var(--tyson-soft)" }}
-                >
-                  <MessageSquare
-                    size={18}
-                    style={{ color: "var(--tyson)" }}
-                  />
-                </div>
-                <div className="action-card-title">Slack Integration</div>
-              </div>
-              <span className="coming-soon-badge">Coming Soon</span>
-            </div>
-            <div className="action-card-desc">
-              Connect Slack for automated EOD reports, AI alerts, and daily
-              briefings delivered to your channels.
-            </div>
-          </div>
-
-          {/* EverFit Sync — Coming Soon */}
-          <div className="glass-static" style={{ padding: 24 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div
-                  className="action-card-icon"
-                  style={{ background: "var(--success-soft)" }}
-                >
-                  <Dumbbell size={18} style={{ color: "var(--success)" }} />
-                </div>
-                <div className="action-card-title">EverFit Sync</div>
-              </div>
-              <span className="coming-soon-badge">Coming Soon</span>
-            </div>
-            <div className="action-card-desc">
-              Sync client workout completion, check-in data, and coach metrics
-              directly from EverFit.
-            </div>
           </div>
         </div>
       </div>

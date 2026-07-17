@@ -40,6 +40,10 @@ const ALL_TABS = [
   "/ads-leaderboard",
 ];
 
+// The three access levels: admins see everything; users (team) and clients
+// see only their allowed tabs.
+const VALID_ROLES = new Set(["admin", "user", "client"]);
+
 async function requireAdmin() {
   const session = await auth();
   if (!session?.user?.email) return null;
@@ -89,6 +93,12 @@ export async function POST(req: NextRequest) {
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
+  if (role !== undefined && !VALID_ROLES.has(role)) {
+    return NextResponse.json(
+      { error: "Role must be admin, user, or client" },
+      { status: 400 }
+    );
+  }
 
   const sb = getServiceSupabase();
   const { data, error } = await sb
@@ -133,7 +143,15 @@ export async function PATCH(req: NextRequest) {
   // Sanitize updates
   const allowed: Record<string, unknown> = {};
   if (updates.name !== undefined) allowed.name = updates.name;
-  if (updates.role !== undefined) allowed.role = updates.role;
+  if (updates.role !== undefined) {
+    if (!VALID_ROLES.has(updates.role)) {
+      return NextResponse.json(
+        { error: "Role must be admin, user, or client" },
+        { status: 400 }
+      );
+    }
+    allowed.role = updates.role;
+  }
   if (updates.allowed_tabs !== undefined) allowed.allowed_tabs = updates.allowed_tabs;
   if (updates.is_active !== undefined) allowed.is_active = updates.is_active;
   allowed.updated_at = new Date().toISOString();

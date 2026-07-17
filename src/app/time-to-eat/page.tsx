@@ -1,17 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Utensils } from "lucide-react";
 import TimeToEat, { type TimeToEatClient } from "@/app/sales-hub/components/TimeToEat";
 
-const CLIENTS: Array<{ value: TimeToEatClient; label: string }> = [
+const FALLBACK_CLIENTS: Array<{ value: TimeToEatClient; label: string }> = [
   { value: "all", label: "All Clients" },
   { value: "tyson", label: "Tyson" },
-  { value: "antwan", label: "Antwan" },
 ];
 
 export default function TimeToEatPage() {
   const [client, setClient] = useState<TimeToEatClient>("all");
+  const [clients, setClients] = useState(FALLBACK_CLIENTS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/clients", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && Array.isArray(d?.clients) && d.clients.length > 0) {
+          setClients([
+            { value: "all", label: "All Clients" },
+            ...d.clients.map((c: { key: string; name: string }) => ({ value: c.key, label: c.name })),
+          ]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <main className="fade-in" style={{ maxWidth: 1240, margin: "0 auto", padding: "48px 24px 80px" }}>
@@ -53,7 +71,7 @@ export default function TimeToEatPage() {
           background: "var(--bg-card)",
         }}
       >
-        {CLIENTS.map((option) => {
+        {clients.map((option) => {
           const active = option.value === client;
           return (
             <button

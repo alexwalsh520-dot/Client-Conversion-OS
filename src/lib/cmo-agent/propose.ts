@@ -7,9 +7,9 @@
 
 import { getAdsTrackerDashboard } from "@/lib/ads-tracker/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import type { CreatorKey } from "@/lib/creators";
+import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
 
-const CREATORS: CreatorKey[] = ["tyson", "antwan"];
+const CREATORS: CreatorKey[] = ACTIVE_CREATORS.map((c) => c.key);
 const FUNDED_14D = 40;
 const RELIABLE = 100;
 const KILL_FLOOR = 150;

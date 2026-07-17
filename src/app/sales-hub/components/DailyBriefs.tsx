@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { Filters } from "../types";
 import { ReviewMarkdown } from "./ReviewMarkdown";
+import { useCloserNames } from "./useTeamRoster";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -24,13 +25,10 @@ interface BriefResult {
   pdfBase64: string | null;
 }
 
-/* ── Constants ────────────────────────────────────────────────────── */
-
-const CLOSERS = ["Broz", "Will", "Jacob"];
-
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function DailyBriefs({ filters }: DailyBriefsProps) {
+  const CLOSERS = useCloserNames(["Broz", "Will", "Jacob"]);
   const [generatingCloser, setGeneratingCloser] = useState<string | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
   const [results, setResults] = useState<Record<string, BriefResult>>({});

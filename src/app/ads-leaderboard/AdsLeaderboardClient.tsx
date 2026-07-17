@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trophy, Plus, Copy, Check, Link2, ExternalLink, Eye } from "lucide-react";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 
 interface AdMetrics {
   spend: number;
@@ -33,7 +34,7 @@ interface Entry {
   metrics: AdMetrics | null;
 }
 
-const CREATORS = ["tyson", "lucy", "keith", "antwan"];
+const CREATORS = ACTIVE_CREATORS.map((c) => c.key);
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Started",

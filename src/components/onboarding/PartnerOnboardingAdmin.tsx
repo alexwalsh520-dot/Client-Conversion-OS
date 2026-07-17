@@ -37,16 +37,33 @@ export default function PartnerOnboardingAdmin() {
 // Main content (after gate)
 // ---------------------------------------------------------------------------
 
+interface ActiveClient {
+  key: string;
+  name: string;
+  manychatKey: string;
+  igHandle: string | null;
+  status: string;
+  onboardingPartnerId: string | null;
+}
+
 function AdminContent() {
   const [tab, setTab] = useState<"partners" | "steps">("partners");
   const [partners, setPartners] = useState<PartnerListItem[]>([]);
+  const [activeClients, setActiveClients] = useState<ActiveClient[]>([]);
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadPartners = useCallback(async () => {
-    const res = await fetch("/api/onboarding/admin", { cache: "no-store" });
-    const json = await res.json();
+    const [pRes, cRes] = await Promise.all([
+      fetch("/api/onboarding/admin", { cache: "no-store" }),
+      fetch("/api/clients", { cache: "no-store" }).catch(() => null),
+    ]);
+    const json = await pRes.json();
     setPartners(json.partners ?? []);
+    if (cRes?.ok) {
+      const cJson = await cRes.json();
+      setActiveClients(Array.isArray(cJson.clients) ? cJson.clients : []);
+    }
   }, []);
 
   const loadSteps = useCallback(async () => {
@@ -85,7 +102,7 @@ function AdminContent() {
       {loading ? (
         <Centered><Loader2 size={24} className="onb-spin" style={{ color: "var(--accent)" }} /></Centered>
       ) : tab === "partners" ? (
-        <PartnersTab partners={partners} onChanged={loadPartners} />
+        <PartnersTab partners={partners} activeClients={activeClients} onChanged={loadPartners} />
       ) : (
         <StepsTab steps={steps} onChanged={loadSteps} />
       )}
@@ -99,9 +116,11 @@ function AdminContent() {
 
 function PartnersTab({
   partners,
+  activeClients,
   onChanged,
 }: {
   partners: PartnerListItem[];
+  activeClients: ActiveClient[];
   onChanged: () => Promise<void>;
 }) {
   const router = useRouter();
@@ -111,6 +130,7 @@ function PartnersTab({
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   async function create() {
     if (!name.trim()) return;
@@ -139,6 +159,68 @@ function PartnersTab({
     window.setTimeout(() => setCopiedToken(null), 1800);
   }
 
+  async function removePartner(p: PartnerListItem, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm(`Remove ${p.name} and everything they submitted? This can't be undone.`)) return;
+    setRemovingId(p.id);
+    try {
+      await fetch(`/api/onboarding/admin/${p.id}`, { method: "DELETE" });
+      await onChanged();
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  // A partner is "active" once their form is in (submitted/complete) — those
+  // are live clients. Everything else is still onboarding.
+  const partnerById = new Map(partners.map((p) => [p.id, p]));
+  const activePartnerIds = new Set(
+    activeClients.map((c) => c.onboardingPartnerId).filter(Boolean) as string[],
+  );
+  const pendingPartners = partners.filter(
+    (p) => !activePartnerIds.has(p.id) && p.status !== "submitted" && p.status !== "complete",
+  );
+  // Submitted/complete partners that never made it into the registry (e.g.
+  // registry table not migrated yet) still belong with the active clients.
+  const activeUnlinked = partners.filter(
+    (p) =>
+      !activePartnerIds.has(p.id) &&
+      (p.status === "submitted" || p.status === "complete") &&
+      !activeClients.some((c) => c.name.toLowerCase() === p.name.toLowerCase()),
+  );
+
+  const partnerRow = (p: PartnerListItem) => (
+    <div
+      key={p.id}
+      onClick={() => router.push(`/partner-onboarding/${p.id}`)}
+      className="glass-static"
+      style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}
+    >
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
+          {p.name}
+          {p.handle && <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 13 }}> · {p.handle}</span>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
+          Their steps: {p.clientStepsDone}/{p.clientStepsTotal} · Our steps: {p.internalStepsDone}/{p.internalStepsTotal}
+        </div>
+      </div>
+      <StatusPill status={p.status} />
+      <button onClick={(e) => copyLink(p.token, e)} style={ghostBtn} title="Copy welcome link">
+        {copiedToken === p.token ? <Check size={15} style={{ color: "var(--success)" }} /> : <Copy size={15} />}
+        {copiedToken === p.token ? "Copied" : "Copy link"}
+      </button>
+      <button
+        onClick={(e) => removePartner(p, e)}
+        style={{ ...iconBtn, color: "var(--danger)", opacity: removingId === p.id ? 0.5 : 1 }}
+        title="Remove"
+      >
+        <Trash2 size={15} />
+      </button>
+      <ChevronRight size={18} style={{ color: "var(--text-muted)" }} />
+    </div>
+  );
+
   return (
     <div>
       <button onClick={() => setAdding((a) => !a)} className="glow-accent" style={{ ...primaryBtn, width: "auto", marginBottom: 18, display: "inline-flex", alignItems: "center", gap: 7 }}>
@@ -156,38 +238,57 @@ function PartnersTab({
         </div>
       )}
 
-      {partners.length === 0 ? (
-        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-          No clients yet. Add one to generate their personal welcome link.
-        </p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {partners.map((p) => (
-            <div
-              key={p.id}
-              onClick={() => router.push(`/partner-onboarding/${p.id}`)}
-              className="glass-static"
-              style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}
-            >
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
-                  {p.name}
-                  {p.handle && <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 13 }}> · {p.handle}</span>}
+      {/* Active clients — the people we're actually working with */}
+      <div style={{ marginBottom: 26 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--accent)", margin: "0 0 10px" }}>
+          Active clients
+        </h3>
+        {activeClients.length === 0 && activeUnlinked.length === 0 ? (
+          <p style={{ color: "var(--text-muted)", fontSize: 14 }}>No active clients yet.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {activeUnlinked.map(partnerRow)}
+            {activeClients.map((c) => {
+              const p = c.onboardingPartnerId ? partnerById.get(c.onboardingPartnerId) : undefined;
+              if (p) return partnerRow(p);
+              return (
+                <div
+                  key={c.key}
+                  className="glass-static"
+                  style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}
+                >
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
+                      {c.name}
+                      {c.igHandle && <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 13 }}> · {c.igHandle}</span>}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
+                      Added before onboarding forms existed — no submission on file.
+                    </div>
+                  </div>
+                  <StatusPill status="complete" />
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
-                  Their steps: {p.clientStepsDone}/{p.clientStepsTotal} · Our steps: {p.internalStepsDone}/{p.internalStepsTotal}
-                </div>
-              </div>
-              <StatusPill status={p.status} />
-              <button onClick={(e) => copyLink(p.token, e)} style={ghostBtn} title="Copy welcome link">
-                {copiedToken === p.token ? <Check size={15} style={{ color: "var(--success)" }} /> : <Copy size={15} />}
-                {copiedToken === p.token ? "Copied" : "Copy link"}
-              </button>
-              <ChevronRight size={18} style={{ color: "var(--text-muted)" }} />
-            </div>
-          ))}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Still onboarding — invited / in-progress, removable */}
+      <div>
+        <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)", margin: "0 0 10px" }}>
+          Still onboarding
+        </h3>
+        {pendingPartners.length === 0 ? (
+          <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+            Nobody mid-onboarding. Add a client to generate their welcome link.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {pendingPartners.map(partnerRow)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

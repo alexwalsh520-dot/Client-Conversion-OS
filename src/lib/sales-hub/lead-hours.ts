@@ -1,5 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import type { SalesHubClient } from "@/lib/sales-hub/response-times";
+import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
 
 /**
  * New-lead volume by ET hour of day (midnight→midnight), from ManyChat
@@ -26,12 +27,13 @@ interface TagEventRow {
   event_at: string;
 }
 
-const CLIENTS = [
+// Static fallbacks — replaced with the live registry at the top of
+// getLeadHours; kept so the tab still renders if the registry is unreachable.
+const FALLBACK_CLIENTS = [
   { id: "tyson", key: "tyson_sonnek", label: "Tyson" },
-  { id: "antwan", key: "antwan_rarcus", label: "Antwan Rarcus" },
 ];
 
-const SETTER_LABELS: Record<string, string> = {
+const FALLBACK_SETTER_LABELS: Record<string, string> = {
   amara: "Amara",
   kelechi: "Kelechi",
   kelchi: "Kelechi",
@@ -41,6 +43,24 @@ const SETTER_LABELS: Record<string, string> = {
   chidiebere: "Debbie",
   erin: "Erin",
 };
+
+let CLIENTS = FALLBACK_CLIENTS;
+let SETTER_LABELS: Record<string, string> = FALLBACK_SETTER_LABELS;
+
+async function refreshFromRegistry(): Promise<void> {
+  try {
+    const [actives, setterMap] = await Promise.all([
+      getActiveClients(),
+      getSetterLabelMap(),
+    ]);
+    if (actives.length > 0) {
+      CLIENTS = actives.map((c) => ({ id: c.key, key: c.manychatKey, label: c.name }));
+    }
+    SETTER_LABELS = { ...FALLBACK_SETTER_LABELS, ...setterMap };
+  } catch {
+    // keep fallbacks
+  }
+}
 
 const ET_TIMEZONE = "America/New_York";
 
@@ -77,6 +97,7 @@ export async function getLeadHours(params: {
 }): Promise<LeadHoursResult> {
   const { client, dateFrom, dateTo } = params;
   const sb = getServiceSupabase();
+  await refreshFromRegistry();
   const visibleClients = client === "all" ? CLIENTS : CLIENTS.filter((c) => c.id === client);
   const clientKeys = visibleClients.map((c) => c.key);
 

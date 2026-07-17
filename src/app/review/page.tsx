@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MessageSquareText, Loader2, AlertCircle, Check, Plus } from "lucide-react";
 
-const SETTERS = ["Amara", "Kelechi", "Gideon", "Debbie"];
+const FALLBACK_SETTERS = ["Amara", "Kelechi", "Gideon", "Debbie"];
 
 export default function SetterSubmitPage() {
-  const [setter, setSetter] = useState(SETTERS[0]);
+  const [setters, setSetters] = useState<string[]>(FALLBACK_SETTERS);
+  const [setter, setSetter] = useState(FALLBACK_SETTERS[0]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/public/team-names", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && Array.isArray(d?.setters) && d.setters.length > 0) {
+          setSetters(d.setters);
+          setSetter((prev) => (d.setters.includes(prev) ? prev : d.setters[0]));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [transcript, setTranscript] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -106,7 +123,7 @@ export default function SetterSubmitPage() {
                 onChange={(e) => setSetter(e.target.value)}
                 style={{ width: "auto", minWidth: 140, padding: "8px 12px" }}
               >
-                {SETTERS.map((s) => (
+                {setters.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>

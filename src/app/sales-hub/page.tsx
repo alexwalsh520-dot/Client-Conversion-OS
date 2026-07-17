@@ -286,13 +286,11 @@ export default function SalesHubPage() {
     setSheetLoading(true);
     setSheetError("");
     try {
-      const clientNames: Record<string, string> = {
-        tyson: "Tyson Sonnek",
-        antwan: "Antwan Rarcus",
-      };
+      // sheet-data matches the client key/name against the Offer column
+      // (fuzzy contains), so the registry key works for any client.
       const clientParam =
-        filters.client !== "all" && clientNames[filters.client]
-          ? `&client=${encodeURIComponent(clientNames[filters.client])}`
+        filters.client !== "all"
+          ? `&client=${encodeURIComponent(filters.client)}`
           : "";
       const res = await fetch(
         `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`

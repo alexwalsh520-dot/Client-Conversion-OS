@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { creatorKeyFromText, isCreatorKey, CREATORS } from "./creators";
+import { creatorKeyFromText, isCreatorKey, CREATORS, ACTIVE_CREATORS } from "./creators";
 
 // These guard the bug class that silently dropped Lucy's data: a creator's
 // various name forms MUST all resolve to their one canonical key, and unknown /
@@ -43,4 +43,14 @@ test("every creator key is unique and lowercase (assumed across the pipeline)", 
   const keys = CREATORS.map((c) => c.key);
   assert.equal(new Set(keys).size, keys.length, "duplicate creator key");
   for (const k of keys) assert.equal(k, k.toLowerCase());
+});
+
+test("retired creators stay attributable but are excluded from the active roster", () => {
+  const activeKeys: string[] = ACTIVE_CREATORS.map((c) => c.key);
+  for (const retired of ["keith", "lucy", "antwan"]) {
+    assert.equal(activeKeys.includes(retired), false, `${retired} should be retired`);
+    // History must still label/attribute correctly.
+    assert.equal(isCreatorKey(retired), true);
+  }
+  assert.equal(activeKeys.includes("tyson"), true);
 });
