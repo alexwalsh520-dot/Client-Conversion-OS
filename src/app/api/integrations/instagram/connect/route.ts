@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import {
   buildAuthorizeUrl,
   buildConnectState,
-  getInstagramClient,
+  resolveInstagramClient,
   getMetaOAuthConfig,
 } from "@/lib/instagram-connections";
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json().catch(() => ({}))) as { client?: string };
-  const client = getInstagramClient(body.client);
+  const client = await resolveInstagramClient(body.client);
   if (!client) {
     return NextResponse.json({ error: "Invalid client" }, { status: 400 });
   }

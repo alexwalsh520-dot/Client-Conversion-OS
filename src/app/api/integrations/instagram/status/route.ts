@@ -5,7 +5,9 @@ import {
   getInstagramClients,
   getMetaOAuthConfig,
   listInstagramConnections,
+  type InstagramClientDef,
 } from "@/lib/instagram-connections";
+import { getRegistryClients } from "@/lib/registry";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -28,7 +30,22 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const origin = `${url.protocol}//${url.host}`;
   const rowByClient = new Map(rows.map((row) => [row.client_key, row]));
-  const clients = getInstagramClients().map((client) => {
+
+  // Static defs + clients added via onboarding (active or mid-onboarding),
+  // deduped by slug — retired creators keep showing only if a row exists.
+  const defs: InstagramClientDef[] = [...getInstagramClients()];
+  try {
+    for (const rc of await getRegistryClients()) {
+      if (rc.status === "retired") continue;
+      if (!defs.some((d) => d.slug === rc.key)) {
+        defs.push({ slug: rc.key, clientKey: rc.manychatKey, label: rc.name });
+      }
+    }
+  } catch {
+    // registry unavailable — static list is fine
+  }
+
+  const clients = defs.map((client) => {
     const row = rowByClient.get(client.clientKey);
     const setupUrl = new URL(`/connect/instagram/${client.slug}`, origin);
     setupUrl.searchParams.set("token", buildInstagramSetupToken({ client: client.slug }));

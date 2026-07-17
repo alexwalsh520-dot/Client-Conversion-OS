@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildAuthorizeUrl,
   buildConnectState,
-  getInstagramClient,
+  resolveInstagramClient,
   getMetaOAuthConfig,
   readInstagramSetupToken,
 } from "@/lib/instagram-connections";
@@ -10,7 +10,7 @@ import {
 export async function GET(req: NextRequest) {
   const clientSlug = req.nextUrl.searchParams.get("client");
   const setupToken = req.nextUrl.searchParams.get("token");
-  const client = getInstagramClient(clientSlug);
+  const client = await resolveInstagramClient(clientSlug);
 
   if (!client) {
     return NextResponse.redirect(new URL("/connect/instagram/error?message=Unknown%20client", req.url));

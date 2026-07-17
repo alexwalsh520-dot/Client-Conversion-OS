@@ -4,7 +4,7 @@ import {
   discoverInstagramAccount,
   exchangeCodeForToken,
   exchangeForLongLivedInstagramToken,
-  getInstagramClient,
+  resolveInstagramClient,
   getMetaOAuthConfig,
   readConnectState,
   saveInstagramConnection,
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const client = getInstagramClient(state.client);
+  const client = await resolveInstagramClient(state.client);
   if (!client) {
     return salesHubRedirect(req, { instagramConnect: "error", message: "Unknown Instagram client" });
   }

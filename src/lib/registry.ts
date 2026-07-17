@@ -27,9 +27,34 @@ export interface RegistryClient {
   igHandle: string | null;
   email: string | null;
   timezone: string;
-  status: "active" | "retired";
+  /** onboarding = invited but not yet submitted; hidden from tabs until active. */
+  status: "active" | "retired" | "onboarding";
   /** The onboarding record that created this client, if any. */
   onboardingPartnerId: string | null;
+}
+
+/**
+ * Canonical slugging for a client name, shared by the onboarding flow and the
+ * Instagram connect resolver so both derive the same keys from "Antwan Rarcus":
+ * shortKey "antwan", fullKey "antwan-rarcus", manychatKey "antwan_rarcus".
+ */
+export function slugifyClientName(name: string): {
+  shortKey: string;
+  fullKey: string;
+  manychatKey: string;
+} | null {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return null;
+  return {
+    shortKey: words[0],
+    fullKey: words.join("-"),
+    manychatKey: words.join("_"),
+  };
 }
 
 export interface TeamMember {
@@ -115,7 +140,10 @@ export async function getRegistryClients(): Promise<RegistryClient[]> {
       igHandle: (r.ig_handle as string) ?? null,
       email: (r.email as string) ?? null,
       timezone: (r.timezone as string) || "America/New_York",
-      status: r.status === "retired" ? "retired" : "active",
+      status:
+        r.status === "retired" || r.status === "onboarding"
+          ? (r.status as "retired" | "onboarding")
+          : "active",
       onboardingPartnerId: (r.onboarding_partner_id as string) ?? null,
     }));
     clientsCache = { at: Date.now(), value };

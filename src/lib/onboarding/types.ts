@@ -1,7 +1,16 @@
 // Shared types for the partner (creator/influencer) onboarding feature.
 
 export type StepAudience = "client" | "internal";
-export type StepKind = "task" | "login" | "twofa" | "link" | "text" | "bank";
+// "ig_connect" is a virtual step the portal injects as step 1 (the client's
+// personal Instagram-connect link) — it never exists as an onboarding_steps row.
+export type StepKind = "task" | "login" | "twofa" | "link" | "text" | "bank" | "ig_connect";
+
+/** The partner's personal Instagram-connect link + live status. */
+export interface PartnerIgConnect {
+  url: string;
+  connected: boolean;
+  username: string | null;
+}
 export type PartnerStatus = "invited" | "in_progress" | "submitted" | "complete";
 
 export interface OnboardingStep {
@@ -54,12 +63,15 @@ export interface PublicPartnerView {
   progress: StepProgress[];
   /** Which platforms already have a saved login (so the form can show "saved"). */
   savedCredentialPlatforms: string[];
+  /** Their personal IG-connect link — rendered as step 1 of the flow. */
+  igConnect: PartnerIgConnect | null;
 }
 
 /** Full partner detail for the back office. */
 export interface PartnerDetail extends OnboardingPartner {
   progress: StepProgress[];
   credentials: PartnerCredential[];
+  igConnect: PartnerIgConnect | null;
 }
 
 /** Row in the back-office partner list. */

@@ -1,7 +1,13 @@
 import crypto from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase";
+import { slugifyClientName } from "@/lib/registry";
 
-export type InstagramClientSlug = "tyson" | "keith" | "lucy" | "antwan";
+/**
+ * A client slug ("tyson", or a derived slug for clients added via onboarding).
+ * Static slugs live in CLIENTS below; dynamic ones resolve through
+ * resolveInstagramClient (ccos_clients registry → onboarding_partners).
+ */
+export type InstagramClientSlug = string;
 
 export interface InstagramClientDef {
   slug: InstagramClientSlug;
@@ -205,6 +211,58 @@ export function getInstagramClient(slug: string | null | undefined) {
   return CLIENTS.find((client) => client.slug === slug);
 }
 
+/**
+ * Resolve a client slug to its Instagram client def, including clients that
+ * only exist in the DB: the static list first, then the ccos_clients registry
+ * (any status — onboarding clients connect their IG before they're active),
+ * then onboarding_partners by derived name slug (covers the window before the
+ * registry migration is applied). Returns undefined for unknown slugs.
+ */
+export async function resolveInstagramClient(
+  slug: string | null | undefined,
+): Promise<InstagramClientDef | undefined> {
+  if (!slug) return undefined;
+  const fixed = getInstagramClient(slug);
+  if (fixed) return fixed;
+
+  try {
+    const db = getServiceSupabase();
+    const { data } = await db
+      .from("ccos_clients")
+      .select("key, name, manychat_key")
+      .eq("key", slug)
+      .maybeSingle();
+    if (data) {
+      return {
+        slug,
+        clientKey: (data.manychat_key as string) || (data.key as string),
+        label: data.name as string,
+      };
+    }
+  } catch {
+    // registry table missing — fall through to onboarding partners
+  }
+
+  try {
+    const db = getServiceSupabase();
+    const { data } = await db
+      .from("onboarding_partners")
+      .select("id, name")
+      .limit(500);
+    for (const partner of data ?? []) {
+      const slugs = slugifyClientName((partner.name as string) || "");
+      if (!slugs) continue;
+      if (slugs.shortKey === slug || slugs.fullKey === slug) {
+        return { slug, clientKey: slugs.manychatKey, label: partner.name as string };
+      }
+    }
+  } catch {
+    // no partners table / unreachable
+  }
+
+  return undefined;
+}
+
 export function normalizeInstagramHandle(value: string | null | undefined) {
   const cleaned = value?.trim().replace(/^@/, "").toLowerCase() || "";
   return cleaned || null;
@@ -288,7 +346,9 @@ export function readConnectState(state: string | null) {
   }
 
   const payload = JSON.parse(fromBase64url(encoded)) as OAuthStatePayload;
-  if (!getInstagramClient(payload.client)) throw new Error("Invalid Instagram client in state");
+  // The HMAC above proves we minted this state (incl. for dynamic clients that
+  // aren't in the static list) — callers resolve the client def themselves.
+  if (!payload.client) throw new Error("Invalid Instagram client in state");
   if (!payload.exp || payload.exp < Date.now()) throw new Error("Instagram connect state expired");
   return payload;
 }
@@ -317,7 +377,8 @@ export function readInstagramSetupToken(clientSlug: string, token: string | null
   const payload = JSON.parse(fromBase64url(encoded)) as InstagramSetupTokenPayload;
   if (payload.purpose !== "instagram_setup") throw new Error("Invalid setup link");
   if (payload.client !== clientSlug) throw new Error("Setup link does not match this client");
-  if (!getInstagramClient(payload.client)) throw new Error("Unknown client");
+  // Signature verified above — dynamic (registry/onboarding) clients are valid
+  // even though they aren't in the static list; callers resolve the def.
   if (!payload.exp || payload.exp < Date.now()) throw new Error("Setup link expired");
   return payload;
 }
