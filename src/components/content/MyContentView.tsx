@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import CalendarRange, { type DateRange } from "./CalendarRange";
-import { INK, BODY, MUTED, RULE, ACCENT, PAPER } from "./creator-ui";
+import { H, Section, INK, BODY, MUTED, RULE, ACCENT, CARD } from "./creator-ui";
 
 export type StudioPost = {
   id: string; permalink: string | null; media_type: string | null; caption: string | null;
@@ -114,16 +114,20 @@ export default function MyContentView({ data, range, setRange }: { data: { posts
 
   return (
     <div>
-      {/* Scoreboard — plain numbers, no tiles */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 24, paddingBottom: 28, borderBottom: `1px solid ${RULE}` }}>
-        {stat(String(sb.streak), "on target streak", sb.streak > 0 ? GREEN : undefined)}
-        {stat(sb.avg30 != null ? String(sb.avg30) : "n/a", trend != null ? `30-day avg (${trend >= 0 ? "+" : ""}${trend})` : "30-day avg", sb.avg30 != null ? bandOf(sb.avg30).color : undefined)}
-        {stat(sb.best != null ? String(sb.best) : "n/a", "personal best", sb.best != null ? bandOf(sb.best).color : undefined)}
-        {stat(String(sb.onTargetMonth), "on target this month", GREEN)}
-      </div>
+      {/* Scoreboard — plain numbers in a card, no tiles-inside-tiles */}
+      <Section>
+        <H>Your numbers</H>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 24 }}>
+          {stat(String(sb.streak), "on target streak", sb.streak > 0 ? GREEN : undefined)}
+          {stat(sb.avg30 != null ? String(sb.avg30) : "n/a", trend != null ? `30-day avg (${trend >= 0 ? "+" : ""}${trend})` : "30-day avg", sb.avg30 != null ? bandOf(sb.avg30).color : undefined)}
+          {stat(sb.best != null ? String(sb.best) : "n/a", "personal best", sb.best != null ? bandOf(sb.best).color : undefined)}
+          {stat(String(sb.onTargetMonth), "on target this month", GREEN)}
+        </div>
+      </Section>
 
+      <Section>
       {/* Controls — plain text links */}
-      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", padding: "20px 0 24px" }}>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", paddingBottom: 20, marginBottom: 20, borderBottom: `1px solid ${RULE}` }}>
         {(["all", "on", "close", "drift"] as const).map((b) => (
           <button key={b} onClick={() => setBand(b)} style={link(band === b)}>
             {b === "all" ? "All" : b === "on" ? "On target" : b === "close" ? "Close" : "Drift"}
@@ -167,11 +171,12 @@ export default function MyContentView({ data, range, setRange }: { data: { posts
           })}
         </div>
       )}
+      </Section>
 
       {/* Detail overlay */}
       {open && (
         <div onClick={closePost} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(20,20,20,.4)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "5vh 16px" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 540, background: PAPER, borderRadius: 6, overflow: "hidden" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 540, background: CARD, backdropFilter: "blur(8px)", borderRadius: 16, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
             <div style={{ position: "relative", background: "#f2f2ef" }}>
               {open.video ? (
                 <video src={open.video} poster={open.thumb || undefined} controls playsInline style={{ width: "100%", maxHeight: 420, objectFit: "contain", background: "#000" }} />

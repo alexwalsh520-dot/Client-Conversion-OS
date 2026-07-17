@@ -2,10 +2,10 @@
 
 // Buyers — what everyone who paid sounds like, then the people themselves.
 //
-// The aggregate reads first: a synopsis, the sentences they keep saying, what hurts, what stops them.
+// The aggregate reads first: a synopsis, the sentences they keep saying, what hurts, what stops them,
+// and the telling absence — what you'd expect this buyer to talk about but which barely comes up.
 // Below it every real buyer is one line; tap for the hooks built to pull in more like them, tap a hook
-// for the recipe. The voice analysis also produces a "what they're NOT saying" read — useful to the
-// team, noise to a creator holding a camera, so it isn't shown here.
+// for the recipe.
 
 import { useState } from "react";
 import { CreatorIdeaCard, byTrendScoreDesc } from "./CreatorIdeaCard";
@@ -42,15 +42,17 @@ export default function CreatorBuyersView({ buyers, buyerVoice }: { buyers: Buye
     .slice(0, 4);
   const pains = (buyerVoice?.top_pains || []).filter((p) => p && p.pain).slice(0, 4);
   const objections = (buyerVoice?.top_objections || []).filter((o) => o && o.objection).slice(0, 3);
+  const notSaying = (buyerVoice?.not_saying || []).filter((n) => n && n.absence);
 
   return (
     <div>
-      <Section first>
+      <Section>
+        <H>Your buyers</H>
         {buyerVoice?.synopsis ? (
           <>
-            <p style={{ fontSize: 21, color: INK, lineHeight: 1.5, margin: 0 }}>{buyerVoice.synopsis}</p>
+            <p style={{ fontSize: 18, color: INK, lineHeight: 1.6, margin: 0 }}>{buyerVoice.synopsis}</p>
             {buyerVoice.buyer_count ? (
-              <p style={{ fontSize: 14, color: MUTED, margin: "12px 0 0" }}>from {buyerVoice.buyer_count} buyers</p>
+              <p style={{ fontSize: 13.5, color: MUTED, margin: "12px 0 0" }}>from {buyerVoice.buyer_count} buyers</p>
             ) : null}
           </>
         ) : (
@@ -91,6 +93,20 @@ export default function CreatorBuyersView({ buyers, buyerVoice }: { buyers: Buye
               <li key={i} style={{ fontSize: 16, color: BODY, lineHeight: 1.55 }}>
                 {o.objection}
                 {o.how_common && <span style={{ color: MUTED }}> — {o.how_common}</span>}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {notSaying.length > 0 && (
+        <Section>
+          <H>What they&rsquo;re not saying</H>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 14 }}>
+            {notSaying.map((n, i) => (
+              <li key={i}>
+                <div style={{ fontSize: 16, color: INK, lineHeight: 1.55 }}>{n.absence}</div>
+                {n.meaning && <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.6, marginTop: 3 }}>{n.meaning}</div>}
               </li>
             ))}
           </ul>

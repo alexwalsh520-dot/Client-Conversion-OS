@@ -2,35 +2,51 @@
 
 // The Playbook — the filming sheet, shared by the operator (/content) and creator (/p/content) views.
 //
-// Four things, in order: who you're talking to, the shift to make, the hooks to film, the topics to
-// film them about. Everything the analysis produces behind these (the pulling-now/gap write-up, the
-// why behind each shift, keep/stop lists, attraction/connection tags) still runs — it just isn't shown.
-// A hook you can read in one glance gets filmed; a hook buried in a card doesn't.
+// Top to bottom: what they're actually saying (ranked), who you're talking to, the shift to make, the
+// hooks to film, the topics to film them about. The tier list leads because it's the raw material —
+// the creator's own prospects' words, ranked by how often they really come up.
 
 import { useState } from "react";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
-import type { Playbook, PlaybookHook, PlaybookTopic } from "@/lib/buyer-dna/playbook";
-import { H, Section, Empty, CopyButton, INK, BODY, MUTED, RULE } from "./creator-ui";
+import type { Playbook, PlaybookHook, PlaybookTopic, PlaybookSaying } from "@/lib/buyer-dna/playbook";
+import { H, Section, Empty, CopyButton, INK, BODY, MUTED, RULE, ACCENT } from "./creator-ui";
 
 // The hook is the whole line. Tapping it reveals how to present it, and lets you take it with you.
 function Hook({ n, hook }: { n: number; hook: PlaybookHook }) {
   const [open, setOpen] = useState(false);
   const text = [hook.hook || "", hook.present ? `Present: ${hook.present}` : ""].filter(Boolean).join("\n");
   return (
-    <li style={{ borderTop: n === 1 ? "none" : `1px solid ${RULE}`, padding: "16px 0" }}>
-      <div
-        onClick={() => setOpen((v) => !v)}
-        style={{ display: "flex", gap: 16, cursor: "pointer", alignItems: "baseline" }}
-      >
-        <span style={{ flexShrink: 0, width: 20, fontSize: 14, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{n}</span>
-        <span style={{ fontSize: 17, color: INK, lineHeight: 1.5 }}>{hook.hook}</span>
+    <li style={{ borderTop: n === 1 ? "none" : `1px solid ${RULE}`, padding: "14px 0" }}>
+      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", gap: 14, cursor: "pointer", alignItems: "baseline" }}>
+        <span style={{ flexShrink: 0, width: 18, fontSize: 13, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{n}</span>
+        <span style={{ fontSize: 16, color: INK, lineHeight: 1.55 }}>{hook.hook}</span>
       </div>
       {open && (
-        <div style={{ paddingLeft: 36, marginTop: 10 }}>
-          {hook.present && <p style={{ fontSize: 15, color: BODY, lineHeight: 1.65, margin: "0 0 10px" }}>{hook.present}</p>}
+        <div style={{ paddingLeft: 32, marginTop: 9 }}>
+          {hook.present && <p style={{ fontSize: 14, color: BODY, lineHeight: 1.65, margin: "0 0 8px" }}>{hook.present}</p>}
           <CopyButton text={text} />
         </div>
       )}
+    </li>
+  );
+}
+
+// One ranked thing they keep saying: the theme, their own words under it, then how often + from where.
+function Saying({ item }: { item: PlaybookSaying }) {
+  const quotes = (item.quotes || []).filter(Boolean);
+  const meta = [item.how_common, item.source].filter(Boolean).join(" · ");
+  return (
+    <li style={{ display: "flex", gap: 14, alignItems: "baseline" }}>
+      <span style={{ flexShrink: 0, width: 20, fontSize: 13, fontWeight: 700, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{item.rank}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 16, color: INK, lineHeight: 1.5, fontWeight: 500 }}>{item.theme}</div>
+        {quotes.map((q, i) => (
+          <p key={i} style={{ fontSize: 14.5, color: BODY, lineHeight: 1.6, margin: "6px 0 0", paddingLeft: 12, borderLeft: `2px solid ${RULE}`, fontStyle: "italic" }}>
+            &ldquo;{q}&rdquo;
+          </p>
+        ))}
+        {meta && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{meta}</div>}
+      </div>
     </li>
   );
 }
@@ -46,25 +62,40 @@ export default function PlaybookView({
 }) {
   const hooks: PlaybookHook[] = playbook?.hooks || [];
   const topics: PlaybookTopic[] = playbook?.topics || [];
+  // Playbooks generated before the tier list existed simply have no `saying` — hide the section
+  // entirely until the next weekly regen rather than showing an empty shell.
+  const saying: PlaybookSaying[] = (playbook?.saying || []).filter((s) => s && s.theme);
   const moves = (Array.isArray(shiftBrief?.shifts) ? shiftBrief!.shifts : [])
-    .map((s) => s?.move)
-    .filter((m): m is string => Boolean(m))
+    .filter((s) => s && s.move)
     .slice(0, 3);
 
   return (
     <div>
-      {buyerLine && (
-        <Section first>
-          <p style={{ fontSize: 21, color: INK, lineHeight: 1.5, margin: 0, fontWeight: 400 }}>{buyerLine}</p>
+      {saying.length > 0 && (
+        <Section>
+          <H>What they&rsquo;re saying</H>
+          <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 18 }}>
+            {saying.map((s, i) => <Saying key={i} item={s} />)}
+          </ol>
         </Section>
       )}
 
-      <Section first={!buyerLine}>
+      {buyerLine && (
+        <Section>
+          <H>Your buyer</H>
+          <p style={{ fontSize: 18, color: INK, lineHeight: 1.55, margin: 0 }}>{buyerLine}</p>
+        </Section>
+      )}
+
+      <Section>
         <H>The shift</H>
         {moves.length ? (
-          <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 14 }}>
+          <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 16 }}>
             {moves.map((m, i) => (
-              <li key={i} style={{ fontSize: 17, color: INK, lineHeight: 1.55 }}>{m}</li>
+              <li key={i}>
+                <div style={{ fontSize: 16.5, color: INK, lineHeight: 1.55 }}>{m.move}</div>
+                {m.why && <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.6, marginTop: 4 }}>{m.why}</div>}
+              </li>
             ))}
           </ol>
         ) : (
@@ -86,9 +117,9 @@ export default function PlaybookView({
       <Section>
         <H>Topics</H>
         {topics.length ? (
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 14 }}>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 13 }}>
             {topics.map((t: PlaybookTopic, i: number) => (
-              <li key={i} style={{ fontSize: 17, color: INK, lineHeight: 1.55 }}>{t.topic}</li>
+              <li key={i} style={{ fontSize: 16, color: INK, lineHeight: 1.55 }}>{t.topic}</li>
             ))}
           </ul>
         ) : (

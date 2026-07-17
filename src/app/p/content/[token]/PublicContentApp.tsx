@@ -9,7 +9,7 @@ import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import type { DateRange } from "@/components/content/CalendarRange";
-import { Column, PAPER, INK, MUTED, RULE } from "@/components/content/creator-ui";
+import { Column, PAPER, MUTED, PageHeader, Tabs } from "@/components/content/creator-ui";
 
 type Studio = {
   creator: string;
@@ -53,33 +53,20 @@ export default function PublicContentApp({ token, name }: { token: string; name:
   const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
 
   return (
-    <main style={{ minHeight: "100vh", background: PAPER, padding: "40px 22px 100px" }}>
+    <main style={{ minHeight: "100vh", background: PAPER, padding: "32px 18px 100px" }}>
       <Column>
-        <h1 style={{ fontSize: 17, fontWeight: 500, color: INK, margin: 0 }}>{name}</h1>
+        <PageHeader title={name} />
+        <Tabs tabs={tabs} active={page} onPick={setPage} />
 
-        <nav style={{ display: "flex", gap: 22, margin: "26px 0 0", paddingBottom: 22, borderBottom: `1px solid ${RULE}` }}>
-          {tabs.map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setPage(k)}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 15, fontFamily: "inherit", color: page === k ? INK : MUTED, fontWeight: page === k ? 500 : 400 }}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div style={{ paddingTop: 44 }}>
-          {loading || !data ? (
-            <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
-          ) : page === "playbook" ? (
-            <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
-          ) : page === "buyers" ? (
-            <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
-          ) : (
-            <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
-          )}
-        </div>
+        {loading || !data ? (
+          <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
+        ) : page === "playbook" ? (
+          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
+        ) : page === "buyers" ? (
+          <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
+        ) : (
+          <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
+        )}
       </Column>
     </main>
   );
