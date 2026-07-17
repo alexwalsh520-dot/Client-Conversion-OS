@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import "./factory.css";
 import Workspace from "./Workspace";
+import CanvasBoard from "./CanvasBoard";
 
 // ---- Types mirror the /api/factory response ----
 type Stage = "copy_written" | "image_generated" | "revision" | "completed";
@@ -48,6 +49,8 @@ interface Project {
   id: string;
   name: string;
   client: string | null;
+  kind?: string;
+  canvas?: { nodes?: unknown[]; edges?: unknown[]; viewport?: unknown } | null;
   counts: {
     copy_written: number;
     image_generated: number;
@@ -117,6 +120,25 @@ export default function FactoryClient() {
       setLoading(false);
     }
   }, []);
+
+  const createProject = useCallback(async (kind: "funnel" | "canvas") => {
+    const name = window.prompt(kind === "canvas" ? "Name your canvas board" : "Name your project");
+    if (!name || !name.trim()) return;
+    try {
+      const res = await fetch("/api/factory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "createProject", name: name.trim(), kind }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.project) throw new Error(j.error || "Failed to create");
+      await load();
+      setActiveProjectId(j.project.id);
+      setProjMenuOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create project");
+    }
+  }, [load]);
 
   // Initial load + live polling (no redeploy needed).
   useEffect(() => {
@@ -283,11 +305,18 @@ export default function FactoryClient() {
                       <span className="fc-projmenu-count">{p.counts.total}</span>
                     </button>
                   ))}
-                  <div className="fc-projmenu-hint">More projects show up here as you add creative sprints.</div>
+                  <div className="fc-projmenu-new">
+                    <button className="fc-projmenu-newbtn" onClick={() => createProject("funnel")}>＋ New project</button>
+                    <button className="fc-projmenu-newbtn canvas" onClick={() => createProject("canvas")}>＋ New canvas</button>
+                  </div>
+                  <div className="fc-projmenu-hint">Canvas boards are freeform whiteboards for planning content and ad sets.</div>
                 </div>
               )}
             </div>
 
+            {activeProject.kind === "canvas" ? (
+              <span className="fc-canvas-badge">Canvas board</span>
+            ) : (
             <div className="fc-viewtoggle">
               <button
                 className={`fc-vt-btn ${view === "workspace" ? "fc-vt-active" : ""}`}
@@ -314,10 +343,11 @@ export default function FactoryClient() {
                 <BookOpen size={14} /> Read all
               </button>
             </div>
+            )}
           </div>
 
           {/* Filter / group bar (image-ad views only) */}
-          {view !== "workspace" && (
+          {activeProject.kind !== "canvas" && view !== "workspace" && (
           <div className="fc-filterbar">
             <div className="fc-seg">
               {[
@@ -363,7 +393,9 @@ export default function FactoryClient() {
           </div>
           )}
 
-          {view === "workspace" ? (
+          {activeProject.kind === "canvas" ? (
+            <CanvasBoard projectId={activeProject.id} initial={activeProject.canvas ?? null} />
+          ) : view === "workspace" ? (
             <Workspace projectId={activeProject.id} />
           ) : view === "board" ? (
             <BoardView

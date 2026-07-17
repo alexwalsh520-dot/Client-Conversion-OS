@@ -1114,3 +1114,110 @@
 .fcw-kcard-label { font-size: 12.5px; font-weight: 600; color: var(--text-primary); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .fcw-kcard-foot { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .fcw-kgroup { font-size: 10.5px; color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+
+/* ============================================================= *
+   Canvas / Whiteboard view — dot-grid infinite board for planning
+   content cycle bins + ad sets. Theme-aware (CCOS vars only).
+ * ============================================================= */
+.cnv-wrap {
+  position: relative;
+  height: calc(100vh - 210px);
+  min-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.cnv-surface {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+  background-image: radial-gradient(circle, rgba(127, 127, 140, 0.24) 1.3px, transparent 1.4px);
+}
+.cnv-surface:active { cursor: grabbing; }
+.cnv-world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+
+/* toolbar */
+.cnv-toolbar {
+  position: absolute; top: 12px; left: 12px; z-index: 6;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 11px; padding: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.34);
+}
+.cnv-tool {
+  font-size: 12px; font-weight: 700; color: var(--text-primary);
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap;
+}
+.cnv-tool:hover { border-color: var(--accent); color: var(--accent); }
+.cnv-tool.ghost { background: transparent; min-width: 34px; }
+.cnv-sep { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+.cnv-save { font-size: 11px; color: var(--text-muted); min-width: 46px; }
+.cnv-save.saved { color: var(--success); }
+
+/* edges */
+.cnv-edges { position: absolute; top: 0; left: 0; width: 1px; height: 1px; pointer-events: none; z-index: 1; }
+.cnv-edge path:first-child { fill: none; stroke: var(--accent); stroke-width: 2; opacity: .65; }
+.cnv-edge:hover path:first-child { opacity: 1; }
+.cnv-edge-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+.cnv-edge-temp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; opacity: .6; }
+
+/* frames (groups) */
+.cnv-frame {
+  position: absolute; z-index: 2;
+  border: 1.5px dashed var(--fc, var(--accent));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--fc, var(--accent)) 8%, transparent);
+}
+.cnv-frame-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: grab; }
+.cnv-frame-title {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--fc, var(--accent)); font-weight: 800; font-size: 13px; letter-spacing: .3px;
+}
+.cnv-frame-resize {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, var(--fc, var(--accent)) 50%); opacity: .5; border-bottom-right-radius: 14px;
+}
+
+/* cards */
+.cnv-card {
+  position: absolute; z-index: 3;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 8px 26px rgba(0,0,0,.38);
+}
+.cnv-card-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: grab; border-bottom: 1px solid var(--border); }
+.cnv-card-kind { font-size: 9px; font-weight: 800; letter-spacing: 1.2px; color: var(--accent); }
+.cnv-chip { font-size: 10px; font-weight: 700; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 20px; padding: 1px 7px; }
+.cnv-chip.cap { text-transform: capitalize; }
+.cnv-x { margin-left: auto; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 6px; }
+.cnv-x:hover { color: #ff6b6b; background: var(--bg-secondary); }
+.cnv-card-body { padding: 8px 9px 10px; display: flex; flex-direction: column; gap: 7px; }
+.cnv-url { width: 100%; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; color: var(--text-primary); font-size: 12px; outline: none; }
+.cnv-url:focus { border-color: var(--accent); }
+.cnv-thumb-link { position: relative; display: block; border-radius: 9px; overflow: hidden; }
+.cnv-thumb { width: 100%; height: 150px; display: block; object-fit: cover; }
+.cnv-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.6); pointer-events: none; }
+.cnv-embed { width: 100%; height: 360px; border: 0; border-radius: 9px; background: #000; }
+.cnv-caption { font-size: 12px; color: var(--text-secondary); line-height: 1.35; }
+.cnv-tx-toggle { align-self: flex-start; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--accent); font-size: 11px; font-weight: 700; border-radius: 7px; padding: 4px 8px; cursor: pointer; }
+.cnv-transcript { font-size: 11px; color: var(--text-muted); line-height: 1.4; max-height: 130px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; }
+.cnv-relink { font-size: 11px; color: var(--accent); text-decoration: none; }
+.cnv-relink:hover { text-decoration: underline; }
+.cnv-note-title { background: transparent; border: none; outline: none; color: var(--text-primary); font-weight: 700; font-size: 13px; }
+.cnv-note-text { width: 100%; min-height: 74px; resize: vertical; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; color: var(--text-primary); font-size: 12px; line-height: 1.4; outline: none; font-family: inherit; }
+.cnv-note-text.sm { min-height: 48px; }
+.cnv-note-text:focus { border-color: var(--accent); }
+.cnv-handle { position: absolute; right: -7px; top: 28px; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-card); cursor: crosshair; z-index: 4; }
+.cnv-handle:hover { transform: scale(1.25); }
+
+.cnv-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; pointer-events: none; color: var(--text-muted); }
+.cnv-empty-title { font-size: 15px; font-weight: 700; color: var(--text-secondary); }
+.cnv-empty-sub { font-size: 12px; margin-top: 4px; max-width: 320px; }
+
+/* project menu: new-project buttons + canvas badge */
+.fc-projmenu-new { display: flex; gap: 6px; padding: 8px 6px 4px; }
+.fc-projmenu-newbtn { flex: 1; font-size: 12px; font-weight: 700; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 7px; cursor: pointer; }
+.fc-projmenu-newbtn:hover { border-color: var(--accent); color: var(--accent); }
+.fc-projmenu-newbtn.canvas { color: var(--accent); border-color: var(--accent-soft); }
+.fc-canvas-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 6px 12px; }

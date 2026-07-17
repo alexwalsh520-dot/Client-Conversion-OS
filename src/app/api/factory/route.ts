@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
     // ---- Projects ----
     let projQuery = sb
       .from("factory_projects")
-      .select("id, name, client, created_at, updated_at")
+      .select("id, name, client, kind, canvas, created_at, updated_at")
       .order("created_at", { ascending: true });
     if (projectId) projQuery = projQuery.eq("id", projectId);
     const { data: projects, error: projErr } = await projQuery;
@@ -224,10 +224,11 @@ export async function POST(req: NextRequest) {
     if (action === "createProject") {
       const name = (body.name as string)?.trim();
       if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+      const kind = body.kind === "canvas" ? "canvas" : "funnel";
       const { data, error } = await sb
         .from("factory_projects")
-        .insert({ name, client: (body.client as string) || null })
-        .select("id, name, client")
+        .insert({ name, client: (body.client as string) || null, kind })
+        .select("id, name, client, kind, canvas")
         .single();
       if (error) throw error;
       return NextResponse.json({ project: data });
@@ -375,6 +376,25 @@ export async function PATCH(req: NextRequest) {
     const sb = getServiceSupabase();
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+
+    // ---- Canvas (whiteboard) save: whole nodes/edges/viewport blob per project ----
+    if (typeof body.projectId === "string" && typeof body.canvas === "object" && body.canvas !== null) {
+      const { error } = await sb
+        .from("factory_projects")
+        .update({ canvas: body.canvas, updated_at: new Date().toISOString() })
+        .eq("id", body.projectId);
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+    // ---- Project rename (canvas or funnel) ----
+    if (typeof body.projectId === "string" && typeof body.name === "string" && !body.groupId) {
+      const { error } = await sb
+        .from("factory_projects")
+        .update({ name: body.name.trim() || "Untitled", updated_at: new Date().toISOString() })
+        .eq("id", body.projectId);
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
 
     // ---- Group update (rename / collapse / reorder / kind) ----
     if (typeof body.groupId === "string") {
