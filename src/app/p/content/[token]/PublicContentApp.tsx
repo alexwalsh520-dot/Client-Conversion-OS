@@ -13,7 +13,14 @@ import { Column, PAPER, MUTED, PageHeader, Tabs } from "@/components/content/cre
 
 type Studio = {
   creator: string;
-  icp: { one_line?: string | null } | null;
+  icp: {
+    one_line?: string | null;
+    top_pains?: string[];
+    desires?: string[];
+    triggers?: string[];
+    language?: string[];
+    disqualifiers?: string[];
+  } | null;
   posts: StudioPost[];
   buyerIdeas: BuyerIdeaSet[];
   buyerVoice: (BuyerVoice & { buyer_count?: number | null }) | null;
@@ -61,7 +68,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
         {loading || !data ? (
           <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
         ) : page === "playbook" ? (
-          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
+          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} icp={data.icp} buyerVoice={data.buyerVoice} />
         ) : page === "buyers" ? (
           <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
         ) : (
