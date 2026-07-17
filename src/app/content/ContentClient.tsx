@@ -12,7 +12,7 @@ import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import ShareSettings from "@/components/content/ShareSettings";
 import type { DateRange } from "@/components/content/CalendarRange";
-import { Column, PAPER, INK, MUTED, RULE } from "@/components/content/creator-ui";
+import { Column, PAPER, INK, MUTED, PageHeader, Tabs } from "@/components/content/creator-ui";
 
 const CREATORS = [{ slug: "tyson", name: "Tyson" }, { slug: "antwan", name: "Antwan" }];
 
@@ -63,49 +63,39 @@ export default function ContentClient() {
     color: activeState ? INK : MUTED, fontWeight: activeState ? 500 : 400,
   });
 
+  const creatorName = CREATORS.find((c) => c.slug === active)?.name || "";
+
   return (
-    <main style={{ minHeight: "100vh", background: PAPER, padding: "40px 22px 100px" }}>
+    <main style={{ minHeight: "100vh", background: PAPER, padding: "32px 18px 100px" }}>
       <Column>
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <h1 style={{ fontSize: 17, fontWeight: 500, color: INK, margin: 0 }}>Content</h1>
-          <span style={{ flex: 1 }} />
-          {/* operator-only: which creator */}
-          <div style={{ display: "inline-flex", gap: 14 }}>
-            {CREATORS.map((c) => (
-              <button key={c.slug} onClick={() => setActive(c.slug)} style={toggleBtn(active === c.slug)}>{c.name}</button>
-            ))}
-          </div>
-          {/* operator-only: share links */}
-          <button onClick={() => setSettingsOpen(true)} title="Share links" aria-label="Share links" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: MUTED, display: "grid", placeItems: "center" }}>
-            <Settings size={17} />
-          </button>
-        </div>
+        <PageHeader
+          title={creatorName}
+          right={
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 16 }}>
+              {/* operator-only: which creator */}
+              {CREATORS.map((c) => (
+                <button key={c.slug} onClick={() => setActive(c.slug)} style={toggleBtn(active === c.slug)}>{c.name}</button>
+              ))}
+              {/* operator-only: share links */}
+              <button onClick={() => setSettingsOpen(true)} title="Share links" aria-label="Share links" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: MUTED, display: "grid", placeItems: "center" }}>
+                <Settings size={17} />
+              </button>
+            </div>
+          }
+        />
+        <Tabs tabs={tabs} active={page} onPick={setPage} />
 
-        <nav style={{ display: "flex", gap: 22, margin: "26px 0 0", paddingBottom: 22, borderBottom: `1px solid ${RULE}` }}>
-          {tabs.map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setPage(k)}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 15, fontFamily: "inherit", color: page === k ? INK : MUTED, fontWeight: page === k ? 500 : 400 }}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div style={{ paddingTop: 44 }}>
-          {loading || !data ? (
-            <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
-          ) : page === "playbook" ? (
-            <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
-          ) : page === "buyers" ? (
-            <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
-          ) : page === "content" ? (
-            <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
-          ) : (
-            <CarouselsView creator={active} />
-          )}
-        </div>
+        {loading || !data ? (
+          <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
+        ) : page === "playbook" ? (
+          <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} />
+        ) : page === "buyers" ? (
+          <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
+        ) : page === "content" ? (
+          <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
+        ) : (
+          <CarouselsView creator={active} />
+        )}
       </Column>
 
       {settingsOpen && (

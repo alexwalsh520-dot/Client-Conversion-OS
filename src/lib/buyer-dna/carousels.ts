@@ -36,7 +36,8 @@ const VOICE =
 
 const BANNED_TELLS =
   "\n\nBANNED — every one of these is an AI tell. Never use any of them, in any slide:\n" +
-  "- The phrases: 'Here's the thing', 'Let that sink in', 'Read that again', 'The truth is', 'game-changer', 'unlock', 'journey', 'dive in'.\n" +
+  "- Opening a sentence with the discourse marker 'Here's the thing,' or 'Here's the thing:' (a literal mid-sentence use, as in 'here's the thing you do next', is fine).\n" +
+  "- The phrases: 'Let that sink in', 'Read that again', 'The truth is', 'game-changer', 'unlock', 'journey', 'dive in'.\n" +
   "- 'It's not about X, it's about Y' constructions.\n" +
   "- Perfectly parallel three-item lists.\n" +
   "- A rhetorical question immediately followed by its own answer.\n" +
