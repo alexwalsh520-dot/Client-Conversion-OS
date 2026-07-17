@@ -12,6 +12,7 @@
 // render this content light (the token page forces html.light), so the light values are what apply.
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 
 export const PAPER = "var(--bg, #f6f6f4)";
 export const CARD = "var(--bg-card)";
@@ -24,9 +25,91 @@ export const ACCENT = "var(--accent)";
 export const ACCENT_SOFT = "var(--accent-soft)";
 export const COLUMN = 700;
 export const CARD_SHADOW = "0 1px 2px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.05)";
+// Long-form text stops widening past a comfortable measure even when the column doesn't.
+export const MEASURE = "75ch";
+
+// The column breathes on a desktop screen and stays exactly as it was on phone/tablet. Inline styles
+// can't express a breakpoint, so the width lives in one class rendered alongside it.
+const COLUMN_CSS = `
+.ccos-col{max-width:${COLUMN}px;margin:0 auto}
+@media (min-width:1024px){.ccos-col{max-width:1000px}}
+.ccos-2col{display:grid;grid-template-columns:1fr;gap:13px}
+@media (min-width:1024px){.ccos-2col{grid-template-columns:1fr 1fr;column-gap:36px}}
+`;
 
 export function Column({ children }: { children: React.ReactNode }) {
-  return <div style={{ maxWidth: COLUMN, margin: "0 auto" }}>{children}</div>;
+  return (
+    <div className="ccos-col">
+      <style>{COLUMN_CSS}</style>
+      {children}
+    </div>
+  );
+}
+
+// One collapsed row — the whole Playbook is built from these. Collapsed it shows a single line and
+// nothing else (no muted metadata bleeding through); the detail only exists once you open it.
+export function Row({
+  lead,
+  summary,
+  detail,
+  truncate,
+}: {
+  lead?: React.ReactNode;
+  summary: React.ReactNode;
+  detail?: React.ReactNode;
+  truncate?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const expandable = Boolean(detail);
+  return (
+    <li style={{ borderTop: `1px solid ${RULE}` }}>
+      <div
+        onClick={() => expandable && setOpen((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minHeight: 48,
+          padding: "4px 0",
+          cursor: expandable ? "pointer" : "default",
+        }}
+      >
+        {lead != null && (
+          <span style={{ flexShrink: 0, width: 20, fontSize: 13, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{lead}</span>
+        )}
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 15.5,
+            color: INK,
+            lineHeight: 1.45,
+            ...(truncate && !open ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } : null),
+          }}
+        >
+          {summary}
+        </span>
+        {expandable && (
+          <ChevronDown
+            size={15}
+            style={{ flexShrink: 0, color: MUTED, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+          />
+        )}
+      </div>
+      {open && expandable && (
+        <div style={{ padding: "0 0 16px", paddingLeft: lead != null ? 32 : 0, maxWidth: MEASURE }}>{detail}</div>
+      )}
+    </li>
+  );
+}
+
+// A small muted label used to group things inside an expansion.
+export function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: MUTED, margin: "0 0 6px" }}>
+      {children}
+    </div>
+  );
 }
 
 // The CCOS kicker: small, accent, uppercase, tracked. One to three plain words.

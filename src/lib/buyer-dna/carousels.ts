@@ -9,6 +9,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
+import { getCurrentPlaybook } from "./playbook";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -156,14 +157,28 @@ export async function generateCarouselSet(
   icp: Icp | null,
   anthropic: Anthropic,
 ): Promise<{ ok: true; carousels: Carousel[] } | { ok: false; reason: string }> {
-  const [voiceRow, briefs, avoid] = await Promise.all([
+  const [voiceRow, briefs, avoid, playbookRow] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
     recentToAvoid(sb, client, forDate),
+    getCurrentPlaybook(sb, client),
   ]);
+
+  // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
+  // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
+  const ranked = (playbookRow?.playbook?.saying || [])
+    .filter((s) => s && s.theme)
+    .map((s) => {
+      const quote = (s.quotes || []).find(Boolean);
+      return `${s.rank}. ${s.theme}${quote ? ` — they say it like: ${quote}` : ""}`;
+    })
+    .join("\n");
 
   const userMsg = [
     `THE BUYER (write every carousel for this one person):\n${compactIcp(icp)}`,
+    ranked
+      ? `WHAT THEY ACTUALLY SAY, RANKED BY HOW OFTEN THEY SAY IT (anchor the carousels in the highest-ranked pains — the top of this list is what most of them are living):\n${ranked}`
+      : "",
     voiceRow ? `HOW THIS BUYER TYPE ACTUALLY TALKS (the core material):\n${compactVoice(voiceRow.voice)}` : "",
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
