@@ -94,7 +94,11 @@ async function factoryProxy(origin: string, method: "GET" | "POST" | "PATCH", op
 function authed(req: NextRequest): boolean {
   if (!TOKEN) return false; // no token configured = locked shut
   const h = req.headers.get("authorization") || "";
-  return h === `Bearer ${TOKEN}`;
+  if (h === `Bearer ${TOKEN}` || h === TOKEN) return true;
+  // Some MCP connectors pass the token in the URL query instead of a header (e.g. ?k=<token>).
+  const q = req.nextUrl.searchParams;
+  const qk = q.get("k") || q.get("token") || q.get("key") || q.get("apiKey") || "";
+  return qk === TOKEN || qk === `Bearer ${TOKEN}`;
 }
 
 const TOOLS = [
@@ -321,8 +325,11 @@ async function withEnvelope(name: string, args: Record<string, unknown>, result:
 
 async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, origin: string) {
   const { id, method, params } = msg;
-  if (method === "initialize")
-    return { jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "utari-ccos-foundation", version: "2.2.0" } } };
+  if (method === "initialize") {
+    // Echo the client's requested protocol version (it knows what it supports); fall back to a recent one.
+    const pv = (params?.protocolVersion as string) || "2025-06-18";
+    return { jsonrpc: "2.0", id, result: { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "utari-ccos-foundation", version: "2.2.0" } } };
+  }
   if (method === "notifications/initialized" || method === "notifications/cancelled") return null;
   if (method === "ping") return { jsonrpc: "2.0", id, result: {} };
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
@@ -340,20 +347,58 @@ async function handle(msg: { id?: unknown; method?: string; params?: Record<stri
   return { jsonrpc: "2.0", id, error: { code: -32601, message: "method not found: " + method } };
 }
 
-export async function POST(req: NextRequest) {
-  if (!authed(req)) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "unauthorized" } }, { status: 401 });
-  const body = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, { status: 400 });
-  const origin = req.nextUrl.origin;
-  if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map((m) => handle(m, origin)))).filter(Boolean);
-    return NextResponse.json(out);
-  }
-  const res = await handle(body, origin);
-  if (res === null) return new NextResponse(null, { status: 202 });
-  return NextResponse.json(res);
+// MCP clients connect cross-origin (a hosted agent builder like Utari) and follow the Streamable HTTP
+// transport: they may run in a browser (so CORS + an OPTIONS preflight are required) and they advertise
+// Accept: application/json, text/event-stream (so a compliant server must be able to reply as SSE, not
+// only JSON). Missing either of these is why a client sees "no tools found" even with the right token.
+const CORS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, mcp-session-id, mcp-protocol-version",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id",
+  "Access-Control-Max-Age": "86400",
+};
+
+function wantsSse(req: NextRequest): boolean {
+  return (req.headers.get("accept") || "").includes("text/event-stream");
 }
 
-export async function GET() {
-  return NextResponse.json({ server: "utari-ccos-foundation", transport: "http-jsonrpc", auth: "Bearer token required", tools: TOOLS.map((t) => t.name) });
+// Frame one or more JSON-RPC messages as a Streamable-HTTP SSE response (event name "message", per spec).
+function sse(payload: unknown): NextResponse {
+  const arr = Array.isArray(payload) ? payload : [payload];
+  const body = arr.map((m) => `event: message\ndata: ${JSON.stringify(m)}\n\n`).join("");
+  return new NextResponse(body, {
+    status: 200,
+    headers: { ...CORS, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform" },
+  });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS });
+}
+
+export async function POST(req: NextRequest) {
+  if (!authed(req)) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "unauthorized" } }, { status: 401, headers: CORS });
+  const body = await req.json().catch(() => null);
+  if (!body) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, { status: 400, headers: CORS });
+  const origin = req.nextUrl.origin;
+  const useSse = wantsSse(req);
+  if (Array.isArray(body)) {
+    const out = (await Promise.all(body.map((m) => handle(m, origin)))).filter(Boolean);
+    if (!out.length) return new NextResponse(null, { status: 202, headers: CORS });
+    return useSse ? sse(out) : NextResponse.json(out, { headers: CORS });
+  }
+  const res = await handle(body, origin);
+  if (res === null) return new NextResponse(null, { status: 202, headers: CORS }); // notification, no reply
+  return useSse ? sse(res) : NextResponse.json(res, { headers: CORS });
+}
+
+export async function GET(req: NextRequest) {
+  // A GET with Accept: text/event-stream is a client trying to open a server->client stream. We don't
+  // push server-initiated messages, so return 405 (per the Streamable HTTP spec) telling it to use POST.
+  if (wantsSse(req)) return new NextResponse(null, { status: 405, headers: { ...CORS, Allow: "POST, OPTIONS" } });
+  return NextResponse.json(
+    { server: "utari-ccos-foundation", transport: "streamable-http", auth: "Bearer token required", tools: TOOLS.map((t) => t.name) },
+    { headers: CORS },
+  );
 }
