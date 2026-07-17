@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { AlertTriangle, CheckCircle2, Instagram } from "lucide-react";
 import {
-  getInstagramClient,
+  resolveInstagramClient,
   readInstagramSetupToken,
 } from "@/lib/instagram-connections";
 
@@ -58,7 +58,7 @@ export default async function InstagramConnectPage({
   const token = firstString(query.token) || "";
   const status = firstString(query.status);
   const message = firstString(query.message);
-  const client = getInstagramClient(clientSlug);
+  const client = await resolveInstagramClient(clientSlug);
 
   let tokenError = "";
   if (client && status !== "success") {

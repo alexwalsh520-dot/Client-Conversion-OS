@@ -11,6 +11,7 @@ import {
   Loader2,
   ListChecks,
   KeyRound,
+  Instagram,
 } from "lucide-react";
 import type {
   PartnerDetail,
@@ -42,6 +43,7 @@ function ClientDetailContent({ partnerId }: { partnerId: string }) {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [copiedIg, setCopiedIg] = useState(false);
 
   const load = useCallback(async () => {
     const [detailRes, stepsRes] = await Promise.all([
@@ -106,6 +108,13 @@ function ClientDetailContent({ partnerId }: { partnerId: string }) {
     navigator.clipboard.writeText(`${window.location.origin}/welcome/${detail.token}`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  function copyIgLink() {
+    if (!detail?.igConnect) return;
+    navigator.clipboard.writeText(`${window.location.origin}${detail.igConnect.url}`);
+    setCopiedIg(true);
+    window.setTimeout(() => setCopiedIg(false), 1600);
   }
 
   if (loading || !detail) {
@@ -178,6 +187,32 @@ function ClientDetailContent({ partnerId }: { partnerId: string }) {
           {copied ? <Check size={14} style={{ color: "var(--success)" }} /> : <Copy size={14} />}
           {copied ? "Copied" : "Copy welcome link"}
         </button>
+        {detail.igConnect && (
+          <>
+            <button onClick={copyIgLink} style={ghostBtn} title="Their personal Instagram-connect link (step 1 of their onboarding)">
+              {copiedIg ? <Check size={14} style={{ color: "var(--success)" }} /> : <Instagram size={14} />}
+              {copiedIg ? "Copied" : "Copy IG connect link"}
+            </button>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: "5px 11px",
+                borderRadius: 999,
+                color: detail.igConnect.connected ? "var(--success)" : "var(--text-muted)",
+                background: detail.igConnect.connected ? "rgba(126,201,160,0.12)" : "rgba(255,255,255,0.05)",
+              }}
+            >
+              <Instagram size={12} />
+              {detail.igConnect.connected
+                ? `Connected${detail.igConnect.username ? ` · @${detail.igConnect.username}` : ""}`
+                : "IG not connected"}
+            </span>
+          </>
+        )}
         <select value={detail.status} onChange={(e) => setStatus(e.target.value)} style={{ ...ghostBtn, cursor: "pointer" }}>
           <option value="invited">Invited</option>
           <option value="in_progress">In progress</option>

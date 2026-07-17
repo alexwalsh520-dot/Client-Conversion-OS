@@ -4,7 +4,8 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { encryptSecret, decryptSecret } from "@/lib/onboarding/crypto";
-import { clearRegistryCache } from "@/lib/registry";
+import { clearRegistryCache, slugifyClientName } from "@/lib/registry";
+import { buildInstagramSetupToken } from "@/lib/instagram-connections";
 import type {
   OnboardingPartner,
   OnboardingStep,
@@ -117,7 +118,13 @@ export async function createPartner(input: {
     .select(PARTNER_COLS)
     .single();
   if (error) throw error;
-  return data as OnboardingPartner;
+  const partner = data as OnboardingPartner;
+
+  // Reserve their registry slot right away (status "onboarding" — hidden from
+  // tabs) so their client key / IG-connect slug is stable from day one.
+  await upsertRegistryClient(partner, "onboarding");
+
+  return partner;
 }
 
 export async function listPartners(): Promise<PartnerListItem[]> {
@@ -183,13 +190,14 @@ export async function getPublicView(token: string): Promise<PublicPartnerView | 
   const partner = await getPartnerByToken(token);
   if (!partner) return null;
   const db = getServiceSupabase();
-  const [steps, progress, { data: creds }] = await Promise.all([
+  const [steps, progress, { data: creds }, igConnect] = await Promise.all([
     getSteps("client"),
     getProgress(partner.id),
     db
       .from("onboarding_credentials")
       .select("platform")
       .eq("partner_id", partner.id),
+    getPartnerIgConnect(partner),
   ]);
   return {
     name: partner.name,
@@ -197,6 +205,7 @@ export async function getPublicView(token: string): Promise<PublicPartnerView | 
     steps,
     progress,
     savedCredentialPlatforms: (creds ?? []).map((c) => c.platform as string),
+    igConnect,
   };
 }
 
@@ -284,47 +293,69 @@ export async function submitPublic(
  * table doesn't exist yet (migration 052 not applied) this is a silent no-op
  * so onboarding itself never breaks.
  */
-export async function activateClientFromPartner(partner: OnboardingPartner): Promise<void> {
-  const db = getServiceSupabase();
-  const slug = partner.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/);
-  if (slug.length === 0 || !slug[0]) return;
+/**
+ * The registry key this partner uses. Keys follow the existing convention:
+ * short key = first name ("tyson"); if another client already owns it, the
+ * full slug ("antwan-rarcus"). An existing registry row for this partner
+ * always wins so the key stays stable. Works without the registry table too
+ * (pure derivation) — needed for IG-connect links pre-migration.
+ */
+export async function resolvePartnerClientKey(
+  partner: Pick<OnboardingPartner, "id" | "name">,
+): Promise<{ key: string; manychatKey: string } | null> {
+  const slugs = slugifyClientName(partner.name);
+  if (!slugs) return null;
 
-  // Keys follow the existing convention: short key = first name ("tyson"),
-  // manychat key = full name snake_case ("tyson_sonnek"). If another client
-  // already owns the first-name key, fall back to the full slug.
-  const manychatKey = slug.join("_");
-  let key = slug[0];
+  let key = slugs.shortKey;
   try {
+    const db = getServiceSupabase();
+    const { data: byPartner } = await db
+      .from("ccos_clients")
+      .select("key, manychat_key")
+      .eq("onboarding_partner_id", partner.id)
+      .maybeSingle();
+    if (byPartner?.key) {
+      return {
+        key: byPartner.key as string,
+        manychatKey: (byPartner.manychat_key as string) || slugs.manychatKey,
+      };
+    }
+
     const { data: existing } = await db
       .from("ccos_clients")
       .select("key, onboarding_partner_id")
       .eq("key", key)
       .maybeSingle();
-    if (existing && existing.onboarding_partner_id !== partner.id && slug.length > 1) {
-      key = slug.join("-");
+    if (existing && existing.onboarding_partner_id !== partner.id && slugs.fullKey !== key) {
+      key = slugs.fullKey;
     }
+  } catch {
+    // registry table missing — derived keys are still deterministic
+  }
+  return { key, manychatKey: slugs.manychatKey };
+}
 
-    // If this partner already has a registry row (under any key), update it
-    // instead of minting a second one.
-    const { data: byPartner } = await db
-      .from("ccos_clients")
-      .select("key")
-      .eq("onboarding_partner_id", partner.id)
-      .maybeSingle();
-    if (byPartner?.key) key = byPartner.key as string;
-
+/**
+ * Upsert this partner into the client registry with the given status.
+ * Best-effort — if the registry table doesn't exist yet (migration 052 not
+ * applied) this is a silent no-op so onboarding itself never breaks.
+ */
+async function upsertRegistryClient(
+  partner: OnboardingPartner,
+  status: "active" | "onboarding",
+): Promise<void> {
+  try {
+    const resolved = await resolvePartnerClientKey(partner);
+    if (!resolved) return;
+    const db = getServiceSupabase();
     const { error } = await db.from("ccos_clients").upsert(
       {
-        key,
+        key: resolved.key,
         name: partner.name,
-        manychat_key: manychatKey,
+        manychat_key: resolved.manychatKey,
         ig_handle: partner.handle,
         email: partner.email,
-        status: "active",
+        status,
         onboarding_partner_id: partner.id,
         updated_at: new Date().toISOString(),
       },
@@ -337,10 +368,59 @@ export async function activateClientFromPartner(partner: OnboardingPartner): Pro
   }
 }
 
-/** Retire the registry entry when its onboarding record is deleted. */
+export async function activateClientFromPartner(partner: OnboardingPartner): Promise<void> {
+  await upsertRegistryClient(partner, "active");
+}
+
+/**
+ * The partner's personal Instagram-connect info: their tokenized setup link
+ * (same flow as the Tyson/Antwan links) + live connection status. Null only
+ * if the name can't be slugged or the signing secret is missing.
+ */
+export async function getPartnerIgConnect(
+  partner: Pick<OnboardingPartner, "id" | "name">,
+): Promise<{ url: string; connected: boolean; username: string | null } | null> {
+  try {
+    const resolved = await resolvePartnerClientKey(partner);
+    if (!resolved) return null;
+    const token = buildInstagramSetupToken({ client: resolved.key, daysValid: 60 });
+    const url = `/connect/instagram/${resolved.key}?token=${encodeURIComponent(token)}`;
+
+    let connected = false;
+    let username: string | null = null;
+    try {
+      const db = getServiceSupabase();
+      const { data } = await db
+        .from("instagram_connections")
+        .select("status, instagram_username, instagram_user_id")
+        .eq("client_slug", resolved.key)
+        .limit(1);
+      const row = data?.[0];
+      connected = row?.status === "connected" && Boolean(row?.instagram_user_id);
+      username = (row?.instagram_username as string) ?? null;
+    } catch {
+      // connections table unreachable — link still works
+    }
+    return { url, connected, username };
+  } catch (err) {
+    console.error("[onboarding] IG connect link unavailable:", err);
+    return null;
+  }
+}
+
+/**
+ * Clean up the registry entry when its onboarding record is deleted:
+ * a client who was live gets retired (history stays labelled); a stub that
+ * never got past onboarding is removed entirely.
+ */
 async function retireClientForPartner(partnerId: string): Promise<void> {
   try {
     const db = getServiceSupabase();
+    await db
+      .from("ccos_clients")
+      .delete()
+      .eq("onboarding_partner_id", partnerId)
+      .eq("status", "onboarding");
     await db
       .from("ccos_clients")
       .update({ status: "retired", updated_at: new Date().toISOString() })
@@ -384,12 +464,13 @@ export async function getPartnerDetail(id: string): Promise<PartnerDetail | null
     .maybeSingle();
   if (!partner) return null;
 
-  const [progress, { data: credRows }] = await Promise.all([
+  const [progress, { data: credRows }, igConnect] = await Promise.all([
     getProgress(id),
     db
       .from("onboarding_credentials")
       .select("id, step_id, platform, username, secret_encrypted, twofa_encrypted, notes")
       .eq("partner_id", id),
+    getPartnerIgConnect(partner as OnboardingPartner),
   ]);
 
   const credentials: PartnerCredential[] = (credRows ?? []).map((c) => ({
@@ -402,7 +483,7 @@ export async function getPartnerDetail(id: string): Promise<PartnerDetail | null
     notes: (c.notes as string) ?? null,
   }));
 
-  return { ...(partner as OnboardingPartner), progress, credentials };
+  return { ...(partner as OnboardingPartner), progress, credentials, igConnect };
 }
 
 /** Admin toggles an internal checklist step for a partner. */

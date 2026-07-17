@@ -31,9 +31,10 @@ CREATE TABLE IF NOT EXISTS public.ccos_clients (
   ig_handle TEXT,
   email TEXT,
   timezone TEXT NOT NULL DEFAULT 'America/New_York',
-  -- 'active' clients appear in every tab; 'retired' keeps history labelled
-  -- but disappears from all pickers and live views.
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired')),
+  -- 'active' clients appear in every tab; 'onboarding' = invited but not yet
+  -- submitted (hidden from tabs); 'retired' keeps history labelled but
+  -- disappears from all pickers and live views.
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired', 'onboarding')),
   -- Link back to the onboarding record that created this client (if any).
   onboarding_partner_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

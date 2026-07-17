@@ -10,11 +10,13 @@ import {
   Lock,
   Loader2,
   ShieldCheck,
+  Instagram,
 } from "lucide-react";
 import type {
   PublicPartnerView,
   OnboardingStep,
   PublicStepSubmission,
+  PartnerIgConnect,
 } from "@/lib/onboarding/types";
 
 interface Props {
@@ -25,6 +27,28 @@ type Phase = "intro" | "steps" | "done";
 
 function platformOf(step: OnboardingStep): string {
   return (step.meta?.platform as string | undefined) || step.title;
+}
+
+// Virtual step 1 — the client's personal Instagram-connect link. Injected
+// client-side whenever the server hands us an igConnect payload; completion
+// is the live connection status, not a saved answer.
+const IG_STEP_ID = "__ig_connect";
+
+function igStepFor(view: PublicPartnerView): OnboardingStep | null {
+  if (!view.igConnect) return null;
+  return {
+    id: IG_STEP_ID,
+    title: "Connect your Instagram",
+    description:
+      "This is the engine behind everything we do for you — it lets the team see and respond to your DMs, track response times, and attribute leads. It takes under a minute and never gives us your password.",
+    audience: "client",
+    kind: "ig_connect",
+    sort_order: -1,
+    sop_slug: null,
+    sop_url: null,
+    meta: null,
+    active: true,
+  };
 }
 
 export default function WelcomePortal({ token }: Props) {
@@ -87,10 +111,16 @@ export default function WelcomePortal({ token }: Props) {
     view?.progress.forEach((p) => {
       if (p.completed) set.add(p.step_id);
     });
+    // The IG step completes when the connection is actually live.
+    if (view?.igConnect?.connected) set.add(IG_STEP_ID);
     return set;
   }, [view]);
 
-  const steps = view?.steps ?? [];
+  const steps = useMemo(() => {
+    if (!view) return [] as OnboardingStep[];
+    const ig = igStepFor(view);
+    return ig ? [ig, ...view.steps] : view.steps;
+  }, [view]);
   const total = steps.length;
   const done = steps.filter((s) => completedIds.has(s.id)).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -326,6 +356,7 @@ export default function WelcomePortal({ token }: Props) {
             key={step.id}
             step={step}
             token={token}
+            igConnect={view.igConnect}
             completed={completedIds.has(step.id)}
             savedCredential={view.savedCredentialPlatforms.includes(platformOf(step))}
             existingValue={view.progress.find((p) => p.step_id === step.id)?.value ?? ""}
@@ -350,6 +381,7 @@ export default function WelcomePortal({ token }: Props) {
 function StepStage({
   step,
   token,
+  igConnect,
   completed,
   savedCredential,
   existingValue,
@@ -359,6 +391,7 @@ function StepStage({
 }: {
   step: OnboardingStep;
   token: string;
+  igConnect: PartnerIgConnect | null;
   completed: boolean;
   savedCredential: boolean;
   existingValue: string;
@@ -432,6 +465,58 @@ function StepStage({
         )}
 
         {/* Per-kind input */}
+        {step.kind === "ig_connect" && igConnect && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {igConnect.connected ? (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14.5, fontWeight: 600, color: "var(--success)" }}>
+                <Check size={16} />
+                Instagram connected{igConnect.username ? ` as @${igConnect.username}` : ""} — you&apos;re all set.
+              </div>
+            ) : (
+              <a
+                href={igConnect.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 9,
+                  padding: "14px 22px",
+                  borderRadius: 12,
+                  background: "var(--accent)",
+                  border: "1px solid rgba(201,169,110,0.4)",
+                  color: "#0c0c0c",
+                  fontSize: 15.5,
+                  fontWeight: 700,
+                  textDecoration: "none",
+                }}
+              >
+                <Instagram size={18} />
+                Connect Instagram
+                <ArrowUpRight size={16} />
+              </a>
+            )}
+            <PrimaryButton
+              saving={saving}
+              label={igConnect.connected ? (isLast ? "Finish" : "Continue") : "I've connected it — continue"}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onAdvance();
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            />
+            {!igConnect.connected && (
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                The connect page opens in a new tab. Once Meta says you&apos;re done, come back here and hit continue.
+              </div>
+            )}
+          </div>
+        )}
+
         {step.kind === "bank" && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             <a
