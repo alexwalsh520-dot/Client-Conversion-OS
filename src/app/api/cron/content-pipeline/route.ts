@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronBaseUrl } from "@/lib/cron-base-url";
 import { runPipelineSteps, checkPolledFreshness } from "@/lib/content-pipeline/run-steps";
 
 export const runtime = "nodejs";
@@ -16,7 +17,9 @@ export async function GET(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const origin = new URL(req.url).origin;
+  // Vercel runs scheduled crons against the Deployment-Protection-guarded deployment host,
+  // so sibling fetches must go through the public production alias. See cron-base-url.ts.
+  const origin = cronBaseUrl(req);
   const result = await runPipelineSteps("content-pipeline", origin, [
     // 1. Fathom calls FIRST (webhook handles real time; this catches gaps). Was step 4, behind the slow
     //    transcription that starved it. Now fast + first, so call ingestion can never be blocked.

@@ -1,19 +1,33 @@
 "use client";
 
 // Operator-only Content Calendar — the accountability grid. A week of Mon..Sun columns, each a stack
-// of small slot rectangles (reels, one carousel, one story with its theme). Green = done (detected
-// post or manual mark), red = the ET day is over and the slot is unfilled, neutral = today/future or
-// a rest day. Clicking any rectangle toggles a manual mark (overrides detection). A metrics panel on
-// the right (below on mobile) reads the visible week; a gear opens the editable cadence.
+// of slots: labeled reel rectangles ("Reel 1"..), one carousel, one story with its theme. Green =
+// done (detected post or manual mark), red = the ET day is over and the slot is unfilled, neutral =
+// today/future or a rest day. Clicking a REEL opens a popover to watch the post that filled it (with
+// its real numbers) or to override the mark; carousel/story toggle directly. A metrics panel on the
+// right (below on mobile) reads the visible week; a gear opens the editable cadence.
+//
+// Freshness is stated explicitly: red only means "missed" when the scrape is current, so a stale
+// sync raises an amber banner and the red slots are labeled unverified rather than implying absence.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle, AlertTriangle, Play, X, ExternalLink } from "lucide-react";
 import { etToday, shiftWeek, prettyDate, DOW, type StorySchedule } from "@/lib/content/calendar";
 
-type Slot = { slot_type: "reel" | "carousel" | "story"; slot_index: number; state: "done" | "missed" | "pending"; manual: boolean; label?: string };
+type SlotPost = {
+  ig_media_id: string; permalink: string | null; thumb: string | null; video: string | null;
+  taken_at: string | null; likes: number; comments: number; views: number; score: number | null;
+};
+type Slot = {
+  slot_type: "reel" | "carousel" | "story"; slot_index: number;
+  state: "done" | "missed" | "pending"; manual: boolean; label?: string; post?: SlotPost;
+};
 type Day = { date: string; dow: string; is_rest: boolean; slots: Slot[]; reels_posted: number; carousels_posted: number; reels_target: number; carousels_target: number; story_label: string | null };
 type Cadence = { reels_per_day: number; carousels_per_day: number; story_schedule: StorySchedule };
-type CalResp = { creator: string; week_start: string; today: string; cadence: Cadence; days: Day[] };
+type CalResp = {
+  creator: string; week_start: string; today: string; cadence: Cadence; days: Day[];
+  synced_at: string | null; sync_age_hours: number | null; sync_stale: boolean;
+};
 
 const GREEN = "#2f9e5f", GREEN_BG = "rgba(47,158,95,0.16)";
 const RED = "#d0512f", RED_BG = "rgba(208,81,47,0.14)";
@@ -31,6 +45,7 @@ export default function CalendarView({ creator }: { creator: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [openSlot, setOpenSlot] = useState<{ day: Day; slot: Slot } | null>(null);
 
   const load = useCallback(async (creatorKey: string, wk: string) => {
     setLoading(true);
@@ -118,6 +133,21 @@ export default function CalendarView({ creator }: { creator: string }) {
         <button onClick={() => setEditing(true)} title="Edit cadence" aria-label="Edit cadence" style={{ ...navBtn }}><Settings size={16} /></button>
       </div>
 
+      {/* Never let stale data read as absence: if ingest has stalled, say so loudly — a red slot
+          under this banner means "unverified", not "missed". */}
+      {data && data.sync_stale && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(214,158,46,0.45)", background: "rgba(214,158,46,0.12)" }}>
+          <AlertTriangle size={16} style={{ color: "#b7791f", flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            <strong style={{ color: "var(--text-primary)" }}>Posts haven&rsquo;t synced recently.</strong>{" "}
+            {data.synced_at
+              ? `Last successful sync ${data.sync_age_hours}h ago (${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET).`
+              : "No sync recorded."}{" "}
+            Red slots below are <em>unverified</em>, not confirmed misses.
+          </div>
+        </div>
+      )}
+
       {loading || !data ? (
         <div style={{ color: "var(--text-muted)", padding: 60, textAlign: "center" }}><Loader2 className="spin" /> Loading…</div>
       ) : (
@@ -138,11 +168,15 @@ export default function CalendarView({ creator }: { creator: string }) {
                     <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 11, padding: "18px 0" }}>Rest</div>
                   ) : (
                     <div style={{ display: "grid", gap: 6 }}>
-                      {/* reels row: small squares */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center" }}>
+                      {/* reels: labeled rectangles — click opens the slot popover (watch / override) */}
+                      <div style={{ display: "grid", gap: 3 }}>
                         {d.slots.filter((s) => s.slot_type === "reel").map((s) => (
-                          <button key={s.slot_index} onClick={() => toggle(d, s)} disabled={!!busy} title={`Reel ${s.slot_index} — ${s.state}${s.manual ? " (manual)" : ""}`}
-                            style={{ width: 16, height: 16, borderRadius: 4, border: "1px solid", cursor: "pointer", padding: 0, ...slotColor(s) }} />
+                          <button key={s.slot_index} onClick={() => setOpenSlot({ day: d, slot: s })} disabled={!!busy}
+                            title={`Reel ${s.slot_index} — ${s.state}${s.manual ? " (manual)" : ""}`}
+                            style={{ height: 20, borderRadius: 5, border: "1px solid", cursor: "pointer", padding: "0 6px", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, ...slotColor(s) }}>
+                            <span>Reel {s.slot_index}</span>
+                            {s.post && <Play size={8} style={{ marginLeft: "auto", opacity: 0.9 }} />}
+                          </button>
                         ))}
                       </div>
                       {/* carousel slot(s) */}
@@ -193,11 +227,27 @@ export default function CalendarView({ creator }: { creator: string }) {
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>day green streak</span>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, borderTop: "1px solid var(--border-primary)", paddingTop: 12 }}>
+                {/* Always state when the data is from — silence here is what let stale data pass as absence. */}
+                <div style={{ color: data.sync_stale ? "#b7791f" : "var(--text-muted)", fontWeight: data.sync_stale ? 700 : 400, marginBottom: 6 }}>
+                  {data.synced_at
+                    ? `Posts synced as of ${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET${data.sync_age_hours != null ? ` (${data.sync_age_hours}h ago)` : ""}`
+                    : "No post sync recorded yet"}
+                </div>
                 Reels &amp; carousels turn green within ~2h of posting (scrape cadence). Stories are manual-only — scrapers can&rsquo;t see them, so tap the story box once you post it.
               </div>
             </div>
           )}
         </div>
+      )}
+
+      {openSlot && (
+        <SlotPopover
+          day={openSlot.day}
+          slot={openSlot.slot}
+          busy={!!busy}
+          onClose={() => setOpenSlot(null)}
+          onToggle={async () => { await toggle(openSlot.day, openSlot.slot); setOpenSlot(null); }}
+        />
       )}
 
       {editing && data && (
@@ -274,6 +324,70 @@ function CadenceEditor({ creator, initial, onClose, onSaved }: { creator: string
           <button onClick={onClose} style={{ ...pillBtn }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{ ...pillBtn, background: "var(--accent)", color: "#1a1a1a", border: "none", fontWeight: 800 }}>{saving ? "Saving…" : "Save cadence"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+// One slot, opened from the grid: the reel that filled it (playable, with its real numbers) or the
+// empty-state, plus the manual override. Manual toggling for reel slots lives here rather than on the
+// rectangle, so a click can mean "show me this" instead of accidentally flipping the mark.
+function SlotPopover({ day, slot, busy, onClose, onToggle }: { day: Day; slot: Slot; busy: boolean; onClose: () => void; onToggle: () => void }) {
+  const p = slot.post;
+  const num = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "5vh 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, maxHeight: "90vh", overflowY: "auto", background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 16, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)", textTransform: "capitalize" }}>
+            {slot.slot_type} {slot.slot_index}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{prettyDate(day.date)}</div>
+          <span style={{ flex: 1 }} />
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "grid", placeItems: "center" }}><X size={16} /></button>
+        </div>
+
+        {p ? (
+          <>
+            {p.video ? (
+              <video src={p.video} poster={p.thumb || undefined} controls playsInline
+                style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 380, objectFit: "contain" }} />
+            ) : p.thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.thumb} alt="" style={{ width: "100%", borderRadius: 10, objectFit: "cover" }} />
+            ) : (
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 12.5, border: "1px dashed var(--border-primary)", borderRadius: 10 }}>
+                Post detected, but no media URL stored yet.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 14, alignItems: "center", margin: "12px 0 4px", fontSize: 12.5, color: "var(--text-secondary)", flexWrap: "wrap" }}>
+              {p.views > 0 && <span>{num(p.views)} views</span>}
+              <span>{num(p.likes)} likes</span>
+              <span>{num(p.comments)} comments</span>
+              {p.score != null && <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>ICP {p.score}</span>}
+            </div>
+            {p.permalink && (
+              <a href={p.permalink} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--accent)", textDecoration: "none" }}>
+                Open on Instagram <ExternalLink size={12} />
+              </a>
+            )}
+          </>
+        ) : (
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 4px" }}>
+            No {slot.slot_type} detected yet for this slot.
+            {slot.slot_type === "story" && " Stories can't be detected — mark it manually once posted."}
+          </p>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16, borderTop: "1px solid var(--border-primary)", paddingTop: 14 }}>
+          <button onClick={onToggle} disabled={busy} style={{ ...pillBtn, cursor: busy ? "default" : "pointer" }}>
+            {slot.state === "done" ? "Mark as missed" : "Mark done manually"}
+          </button>
+        </div>
+        {slot.manual && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, textAlign: "right" }}>Manually overridden</div>
+        )}
       </div>
     </div>
   );
