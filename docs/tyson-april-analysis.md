@@ -207,3 +207,50 @@ Read-only over Supabase (`sales_tracker_rows`, `ghl_appointments`, `creator_cont
 `buyer_dossiers`, `ads_meta_insights_daily`, `ads_keyword_events`), paginated with `.range()` to beat
 PostgREST's 1,000-row cap. LLM classification + buyer synthesis logged under `ai_usage.feature =
 'april-analysis'`. **Total LLM spend ≈ $0.21** (target was < $5).
+
+---
+
+## Addendum — post-backfill (April transcripts recovered)
+
+The original content-mix percentages were **[INFERENCE]** off just **14 analyzable April posts**. The
+April back-catalogue has since been transcribed: all 51 remaining April reels were downloaded
+successfully (their Instagram CDN URLs were still live — no re-scrape needed) and **45 April reels now
+carry a transcript**, taking the analyzable sample from **14 → 69 posts (5×)**.
+
+**A finding fell out of the backfill itself:** of the newly transcribed reels, **20 returned fewer than
+10 words** (median 9 words overall, 23 of 51 under 5 words). These are music/visual entertainment
+reels with little or no speech. That is *independent, mechanical corroboration* of the entertainment
+skew — it isn't a classifier judgement, it's the audio itself.
+
+### Same classifier, 5× the sample
+
+| Dimension | April (n=14, original) | **April (n=69, backfilled)** | June–July (n=49) | Held? |
+|---|---|---|---|---|
+| lifestyle/entertainment | 64% | **77%** | 45% | ✅ held, stronger |
+| talking-head | 21% | **16%** | 37% | ✅ held, stronger |
+| narrative = entertainment | 79% | **65%** | 51% | ✅ held |
+| in-content CTA | 0% | **1%** | 6% | ✅ held |
+| aimed at the ICP | 7% | **20%** | 10% | ⚠️ **revised up** |
+| Marine credibility | 7% | **25%** | 12% | ⚠️ **revised up** |
+
+**Verdict: the core inference held, and two numbers were wrong in an interesting direction.**
+- The central claim is **confirmed and strengthened**: April was overwhelmingly
+  entertainment/personality content (77% vs 45% now), *less* talking-head than today, and ran
+  essentially **no in-content CTA** (1%).
+- Two figures were **understated** by the thin original sample: April actually aimed at the
+  military-accountability buyer **20%** of the time (not 7% — double June–July's 10%) and invoked
+  **Marine credibility 25%** of the time (not 7% — also double today's 12%).
+
+**What that revision changes in the argument:** April was *not* un-targeted content that happened to
+work. It was **entertainment-first content that still carried the military identity** — the Marine
+credibility and the servicemember address were present at roughly twice today's rate, wrapped inside
+funny, personality-led reels rather than delivered as talking-head lectures. That is a more precise
+description of the organic engine than the original write-up gave, and it sharpens recommit item #2:
+keep the entertainment format, but keep the military identity visible inside it.
+
+Nothing in §1–3 (the funnel truth or the buyer attribution — both **[DIRECT]** tier) is affected;
+those never depended on transcripts.
+
+*Backfill cost: transcription of 51 reels + one re-classification pass ≈ **$0.06** in LLM spend
+(logged under `ai_usage.feature = 'april-analysis'`), well inside the $5 gate. No Apify re-scrape was
+required.*
