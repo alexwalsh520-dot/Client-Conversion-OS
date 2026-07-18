@@ -6,7 +6,7 @@
 // preview, thumbnails, and downloads are identical.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, Type, Plus, Trash2, Lock, Unlock, Download, Save, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { X, Type, Plus, Trash2, Lock, Unlock, Download, Check, Loader2, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import {
   renderSlide, defaultBlocks, newTextBlock, loadAvatar, ensureFonts, downloadSlide,
   CAROUSEL_FONTS, CANVAS_W, CANVAS_H, type SlideBlock, type Box,
@@ -28,7 +28,7 @@ export default function SlideEditor({ creator, filename, initialBlocks, initialT
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
   const [avatar, setAvatar] = useState<HTMLImageElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ id: string; startX: number; startY: number; bx: number; by: number } | null>(null);
 
@@ -39,6 +39,28 @@ export default function SlideEditor({ creator, filename, initialBlocks, initialT
     if (!canvasRef.current) return;
     setBoxes(renderSlide(canvasRef.current, blocks, creator, avatar));
   }, [blocks, avatar, creator]);
+
+  // Save-free editing: every change persists on its own after a short pause. There is no Save button.
+  // savedSig tracks what's on the server so we skip the initial mount and redundant writes; latest lets
+  // us flush a still-pending change when the editor closes.
+  const latest = useRef(blocks);
+  useEffect(() => { latest.current = blocks; }, [blocks]);
+  const savedSig = useRef<string | null>(null);
+  useEffect(() => {
+    const sig = JSON.stringify(blocks);
+    if (savedSig.current === null) { savedSig.current = sig; return; } // baseline — don't save on open
+    if (sig === savedSig.current) return;
+    const t = window.setTimeout(async () => {
+      setSaveState("saving");
+      try { await onSave(blocks); savedSig.current = sig; setSaveState("saved"); }
+      catch { setSaveState("idle"); }
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [blocks, onSave]);
+  useEffect(() => () => {
+    const sig = JSON.stringify(latest.current);
+    if (savedSig.current !== null && sig !== savedSig.current) onSave(latest.current).catch(() => {});
+  }, [onSave]);
 
   const sel = blocks.find((b) => b.id === selId) || null;
   const update = useCallback((id: string, patch: Partial<SlideBlock>) => setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b))), []);
@@ -65,7 +87,6 @@ export default function SlideEditor({ creator, filename, initialBlocks, initialT
   const addBlock = () => { const nb = newTextBlock(); setBlocks((bs) => [...bs, nb]); setSelId(nb.id); };
   const delBlock = (id: string) => { setBlocks((bs) => bs.filter((b) => b.id !== id)); setSelId(null); };
 
-  const save = async () => { setSaving(true); try { await onSave(blocks); } finally { setSaving(false); } };
   const exportPng = async () => { await downloadSlide(blocks, creator, filename.endsWith(".png") ? filename : `${filename}.png`); };
 
   const panel: React.CSSProperties = { background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 10, padding: 12 };
@@ -182,9 +203,11 @@ export default function SlideEditor({ creator, filename, initialBlocks, initialT
 
           {!sel && <div style={{ ...panel, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.5 }}>Click a block on the slide to style it, or add a new text block.</div>}
 
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            <button onClick={save} disabled={saving} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 12px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: saving ? 0.6 : 1 }}><Save size={14} /> {saving ? "Saving…" : "Save"}</button>
-            <button onClick={exportPng} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 12px", borderRadius: 9, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}><Download size={14} /> PNG</button>
+          <div style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "center" }}>
+            <span style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: saveState === "saved" ? "var(--success)" : "var(--text-muted)" }}>
+              {saveState === "saving" ? <><Loader2 size={13} className="spin" /> Saving…</> : saveState === "saved" ? <><Check size={13} /> All changes saved</> : "Changes save automatically"}
+            </span>
+            <button onClick={exportPng} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}><Download size={14} /> PNG</button>
           </div>
         </div>
       </div>

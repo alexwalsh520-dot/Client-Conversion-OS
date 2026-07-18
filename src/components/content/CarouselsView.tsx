@@ -1,18 +1,16 @@
 "use client";
 
-// Operator-only Carousels tab. Reader-first: one carousel at a time, one slide filling the view, copy
-// readable without zooming. Swipe / arrows / chevrons move through slides and flow across the day's 5
-// carousels; pills jump straight to any carousel. Edit + per-slide download stay one tap away; the
-// studio editor + PNG rendering are unchanged.
-//
-// Downloads are per carousel, never per day — a carousel is one post, so it comes down as one group.
-// The top-bar button always names the carousel in view, and every pill can grab its own carousel
-// without swiping to it first.
+// Operator-only Carousels tab. Reader-first: one slide fills the view, copy readable without zooming.
+// A calm vertical list on the side picks the carousel (replacing the old horizontal pill strip);
+// swipe / arrows / chevrons move through slides and flow across the day's carousels. Editing is
+// save-free — changes persist as you make them. Downloading goes through the Studio-2-style Export
+// picker (this slide / all / custom), so the studio editor + PNG rendering stay identical everywhere.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Pencil, Download, GalleryHorizontal, Sparkles } from "lucide-react";
 import SlideEditor from "./SlideEditor";
-import { renderSlide, blocksForSlide, loadAvatar, ensureFonts, downloadSlide, CANVAS_W, CANVAS_H, type SlideBlock } from "@/lib/content/carousel-render";
+import CarouselExport from "./CarouselExport";
+import { renderSlide, blocksForSlide, loadAvatar, ensureFonts, CANVAS_W, CANVAS_H, type SlideBlock } from "@/lib/content/carousel-render";
 
 type Slide = { text?: string; blocks?: SlideBlock[] };
 type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean };
@@ -20,6 +18,7 @@ type Row = { id: number; client_key: string; for_date: string; slot: number; top
 const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 const shiftDate = (d: string, delta: number) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + delta); return t.toISOString().slice(0, 10); };
 const prettyDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const cleanTopic = (t: string | null) => (t || "Carousel").replace(/^[a-z ]+:\s*/i, "");
 
 // One slide rendered large + responsive (the same canvas renderer used everywhere).
 function BigSlide({ blocks, creator }: { blocks: SlideBlock[]; creator: string }) {
@@ -30,14 +29,21 @@ function BigSlide({ blocks, creator }: { blocks: SlideBlock[]; creator: string }
   return <canvas ref={ref} style={{ width: "100%", aspectRatio: `${CANVAS_W} / ${CANVAS_H}`, display: "block", background: "#000", borderRadius: 12, boxShadow: "0 10px 40px rgba(0,0,0,.45)" }} />;
 }
 
+const LAYOUT_CSS = `
+.car-shell{display:grid;grid-template-columns:1fr;gap:18px;align-items:start}
+@media (min-width:860px){.car-shell{grid-template-columns:236px 1fr;gap:28px}}
+.car-list{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+@media (min-width:860px){.car-list{flex-direction:column;overflow:visible;padding-bottom:0;position:sticky;top:12px}}
+`;
+
 export default function CarouselsView({ creator }: { creator: string }) {
   const [date, setDate] = useState<string>(todayET);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState<{ carIdx: number; slideIdx: number } | null>(null);
+  const [exportCar, setExportCar] = useState<number | null>(null); // carousel index whose Export picker is open
   const [pos, setPos] = useState(0); // flat index across the day's slides
-  const [dling, setDling] = useState<number | null>(null); // slot currently being zipped
 
   useEffect(() => { ensureFonts(); }, []);
 
@@ -52,7 +58,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
   }, [creator]);
   useEffect(() => { load(date); }, [date, load]);
 
-  // Flat list of every slide across the 5 carousels → one continuous swipe through the whole day.
+  // Flat list of every slide across the carousels → one continuous swipe through the whole day.
   const flat = useMemo(() => {
     const out: { carIdx: number; slideIdx: number }[] = [];
     (rows || []).forEach((row, carIdx) => row.slides.forEach((_, slideIdx) => out.push({ carIdx, slideIdx })));
@@ -66,16 +72,16 @@ export default function CarouselsView({ creator }: { creator: string }) {
   const jumpToCar = (ci: number) => { const i = flat.findIndex((f) => f.carIdx === ci); if (i >= 0) setPos(i); };
   const jumpToSlide = (slideIdx: number) => { if (!cur) return; const i = flat.findIndex((f) => f.carIdx === cur.carIdx && f.slideIdx === slideIdx); if (i >= 0) setPos(i); };
 
-  // Keyboard arrows (paused while the editor is open).
+  // Keyboard arrows (paused while a modal is open).
   useEffect(() => {
-    if (!rows || rows.length === 0 || editing) return;
+    if (!rows || rows.length === 0 || editing || exportCar !== null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") { e.preventDefault(); next(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, editing, next, prev]);
+  }, [rows, editing, exportCar, next, prev]);
 
   // Trackpad horizontal swipe (one move per gesture).
   const wheelLock = useRef(0);
@@ -86,8 +92,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
     wheelLock.current = now;
     if (e.deltaX > 0) next(); else prev();
   };
-  // Drag swipe — mouse (trackpad/click-drag) + touch (phone). Horizontal move past the threshold moves
-  // one slide; small movements (taps on Edit/download) do nothing.
+  // Drag swipe — mouse + touch. Horizontal move past the threshold moves one slide; taps do nothing.
   const drag = useRef<number | null>(null);
   const startAt = (x: number) => { drag.current = x; };
   const endAt = (x: number) => { const s = drag.current; drag.current = null; if (s == null) return; const dx = x - s; if (dx < -45) next(); else if (dx > 45) prev(); };
@@ -98,58 +103,45 @@ export default function CarouselsView({ creator }: { creator: string }) {
     finally { setGenerating(false); }
   };
 
-  const saveSlide = async (carIdx: number, slideIdx: number, blocks: SlideBlock[]) => {
-    if (!rows) return;
-    const row = rows[carIdx];
+  // Save-free editing: persist each change as it happens, without closing the editor. A ref keeps the
+  // latest rows so this callback stays stable (the editor's auto-save effect depends on its identity).
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const persist = useCallback(async (carIdx: number, slideIdx: number, blocks: SlideBlock[]) => {
+    const rs = rowsRef.current;
+    if (!rs || !rs[carIdx]) return;
+    const row = rs[carIdx];
     const slides = row.slides.map((s, i) => (i === slideIdx ? { ...s, blocks } : s));
-    const res = await fetch("/api/content/carousels", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, slides }) });
-    if (res.ok) setRows((rs) => (rs ? rs.map((r, i) => (i === carIdx ? { ...r, slides, edited: true } : r)) : rs));
-    setEditing(null);
-  };
+    setRows((prev) => (prev ? prev.map((r, i) => (i === carIdx ? { ...r, slides, edited: true } : r)) : prev));
+    await fetch("/api/content/carousels", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, slides }) });
+  }, []);
 
-  const dlSlide = (row: Row, slideIdx: number) => downloadSlide(blocksForSlide(row.slides[slideIdx]), creator, `${creator}-${date}-c${row.slot + 1}-s${slideIdx + 1}.png`);
-
-  // One carousel = one post, so it downloads as one group: every slide rendered through the same
-  // canvas renderer (edited blocks when present, defaults otherwise) and zipped in posting order.
-  // The zip name carries the creator/date/carousel, so the slides inside are just s1..sN.
-  const dlCarousel = async (row: Row) => {
-    if (dling !== null) return;
-    setDling(row.slot);
-    try {
-      await ensureFonts();
-      const JSZip = (await import("jszip")).default;
-      const zip = new JSZip();
-      const avatar = await loadAvatar(creator);
-      for (let i = 0; i < row.slides.length; i++) {
-        const canvas = document.createElement("canvas");
-        renderSlide(canvas, blocksForSlide(row.slides[i]), creator, avatar);
-        const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/png"));
-        zip.file(`s${i + 1}.png`, blob);
-      }
-      const out = await zip.generateAsync({ type: "blob" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(out); a.download = `${creator}-${date}-c${row.slot + 1}.zip`; a.click();
-      URL.revokeObjectURL(a.href);
-    } finally { setDling(null); }
-  };
+  const editRef = useRef(editing);
+  useEffect(() => { editRef.current = editing; }, [editing]);
+  const onEditorSave = useCallback(async (blocks: SlideBlock[]) => {
+    const e = editRef.current;
+    if (e) await persist(e.carIdx, e.slideIdx, blocks);
+  }, [persist]);
 
   const curRow = rows && cur ? rows[cur.carIdx] : null;
   const curSlide = curRow && cur ? curRow.slides[cur.slideIdx] : null;
   const editRow = editing && rows ? rows[editing.carIdx] : null;
   const editSlide = editRow && editing ? editRow.slides[editing.slideIdx] : null;
+  const exportRow = exportCar !== null && rows ? rows[exportCar] : null;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {/* Top bar: date nav + download the carousel currently in view (never the whole day) */}
+      <style>{LAYOUT_CSS}</style>
+
+      {/* Top bar: date nav + export the carousel in view */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <button onClick={() => setDate((d) => shiftDate(d, -1))} style={navBtn}><ChevronLeft size={16} /></button>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", minWidth: 140, textAlign: "center" }}>{prettyDate(date)}{date === todayET() ? " · Today" : ""}</div>
         <button onClick={() => setDate((d) => shiftDate(d, 1))} disabled={date >= todayET()} style={{ ...navBtn, opacity: date >= todayET() ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <span style={{ flex: 1 }} />
         {curRow && cur && (
-          <button onClick={() => dlCarousel(curRow)} disabled={dling !== null} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", fontSize: 12.5, fontWeight: 700, cursor: dling !== null ? "default" : "pointer", opacity: dling !== null && dling !== curRow.slot ? 0.5 : 1 }}>
-            {dling === curRow.slot ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-            {dling === curRow.slot ? "Zipping…" : `Download carousel ${cur.carIdx + 1} (${curRow.slides.length} slides)`}
+          <button onClick={() => setExportCar(cur.carIdx)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
+            <Download size={14} /> Export
           </button>
         )}
       </div>
@@ -160,74 +152,72 @@ export default function CarouselsView({ creator }: { creator: string }) {
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 14, padding: 44, textAlign: "center" }}>
           <GalleryHorizontal size={26} style={{ color: "var(--text-muted)", marginBottom: 10 }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>No carousels for {prettyDate(date)} yet</div>
-          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 16px" }}>Five text carousels aimed at the buyer who pays — generated once, then read, edited, and downloaded here.</p>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 16px" }}>Text carousels aimed at the buyer who pays — generated once, then read, edited, and exported here.</p>
           <button onClick={generate} disabled={generating} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 13.5, fontWeight: 800, cursor: "pointer", opacity: generating ? 0.6 : 1 }}>
             {generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />} {generating ? "Generating…" : "Generate today's carousels"}
           </button>
         </div>
       ) : curRow && curSlide && cur ? (
-        <div style={{ display: "grid", gap: 12 }}>
-          {/* Topic pills — jump to any carousel, or grab it whole without swiping to it first */}
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+        <div className="car-shell">
+          {/* Vertical carousel picker (was a clunky horizontal strip) */}
+          <nav className="car-list" aria-label="Carousels">
             {rows.map((row, ci) => {
-              const activeCar = ci === cur.carIdx;
-              const tint = activeCar ? "var(--accent)" : "var(--text-muted)";
+              const active = ci === cur.carIdx;
               return (
-                <div key={row.id} style={{
-                  flexShrink: 0, maxWidth: 240, display: "inline-flex", alignItems: "center", borderRadius: 999, overflow: "hidden",
-                  border: `1px solid ${activeCar ? "var(--accent)" : "var(--border-primary)"}`, background: activeCar ? "var(--accent-soft)" : "var(--bg-glass)",
-                }}>
-                  <button onClick={() => jumpToCar(ci)} title={row.topic || `Carousel ${ci + 1}`} style={{
-                    minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 4px 6px 11px", cursor: "pointer",
-                    background: "none", border: "none", color: tint, fontSize: 12, fontWeight: 700, fontFamily: "inherit",
-                  }}>
-                    <span style={{ opacity: 0.8 }}>{ci + 1}</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(row.topic || "Carousel").replace(/^[a-z ]+:\s*/i, "")}</span>
-                    {row.edited && <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />}
-                  </button>
-                  <button onClick={() => dlCarousel(row)} disabled={dling !== null} title={`Download carousel ${ci + 1} (${row.slides.length} slides)`} aria-label={`Download carousel ${ci + 1}`} style={{
-                    flexShrink: 0, display: "grid", placeItems: "center", width: 24, height: 24, marginRight: 5, borderRadius: 999,
-                    background: "none", border: "none", color: tint, cursor: dling !== null ? "default" : "pointer", padding: 0,
-                    opacity: dling !== null && dling !== row.slot ? 0.4 : 0.75,
-                  }}>
-                    {dling === row.slot ? <Loader2 size={12} className="spin" /> : <Download size={12} />}
-                  </button>
-                </div>
+                <button
+                  key={row.id}
+                  onClick={() => jumpToCar(ci)}
+                  title={row.topic || `Carousel ${ci + 1}`}
+                  style={{
+                    flexShrink: 0, textAlign: "left", display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 13px", borderRadius: 11, cursor: "pointer", fontFamily: "inherit",
+                    border: `1px solid ${active ? "var(--accent)" : "var(--border-primary)"}`,
+                    background: active ? "var(--accent-soft)" : "var(--bg-card)",
+                    minWidth: 190, maxWidth: 260,
+                  }}
+                >
+                  <span style={{ flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: active ? "var(--accent)" : "var(--text-muted)", lineHeight: 1.5 }}>{ci + 1}</span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cleanTopic(row.topic)}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 11.5, color: "var(--text-muted)" }}>
+                      {row.slides.length} slides
+                      {row.edited && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "var(--accent)" }} /> edited</span>}
+                    </span>
+                  </span>
+                </button>
               );
             })}
-          </div>
+          </nav>
 
-          {/* Position + topic line */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
-            <span style={{ fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
-            <span>·</span>
-            <span style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
-            {curRow.edited && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", border: "1px solid var(--border-primary)", borderRadius: 999, padding: "1px 7px" }}>EDITED</span>}
-          </div>
-
-          {/* Slide + chevrons */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-            <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
-            <div style={{ position: "relative", width: "100%", maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
-              onMouseDown={(e) => startAt(e.clientX)} onMouseUp={(e) => endAt(e.clientX)}
-              onTouchStart={(e) => startAt(e.touches[0].clientX)} onTouchEnd={(e) => endAt(e.changedTouches[0].clientX)}>
-              <BigSlide blocks={blocksForSlide(curSlide)} creator={creator} />
-              {/* Two actions, minimal chrome */}
-              <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8 }}>
-                <button onClick={() => setEditing({ carIdx: cur.carIdx, slideIdx: cur.slideIdx })} style={overlayBtn} title="Edit slide"><Pencil size={15} /></button>
-                <button onClick={() => dlSlide(curRow, cur.slideIdx)} style={overlayBtn} title="Download this slide"><Download size={15} /></button>
-              </div>
+          {/* Reader */}
+          <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
+              <span style={{ fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
+              <span>·</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
             </div>
-            <button onClick={next} disabled={safePos === last} style={{ ...chevBtn, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
-          </div>
 
-          {/* Slide dots for the current carousel */}
-          <div style={{ display: "flex", gap: 7, justifyContent: "center", alignItems: "center" }}>
-            {curRow.slides.map((_, si) => (
-              <button key={si} onClick={() => jumpToSlide(si)} title={`Slide ${si + 1}`} style={{ width: si === cur.slideIdx ? 22 : 8, height: 8, borderRadius: 999, border: "none", cursor: "pointer", padding: 0, background: si === cur.slideIdx ? "var(--accent)" : "var(--border-hover)", transition: "width .15s" }} />
-            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+              <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
+              <div style={{ position: "relative", width: "100%", maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
+                onMouseDown={(e) => startAt(e.clientX)} onMouseUp={(e) => endAt(e.clientX)}
+                onTouchStart={(e) => startAt(e.touches[0].clientX)} onTouchEnd={(e) => endAt(e.changedTouches[0].clientX)}>
+                <BigSlide blocks={blocksForSlide(curSlide)} creator={creator} />
+                <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8 }}>
+                  <button onClick={() => setEditing({ carIdx: cur.carIdx, slideIdx: cur.slideIdx })} style={overlayBtn} title="Edit slide"><Pencil size={15} /></button>
+                  <button onClick={() => setExportCar(cur.carIdx)} style={overlayBtn} title="Export"><Download size={15} /></button>
+                </div>
+              </div>
+              <button onClick={next} disabled={safePos === last} style={{ ...chevBtn, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
+            </div>
+
+            {/* Slide dots for the current carousel */}
+            <div style={{ display: "flex", gap: 7, justifyContent: "center", alignItems: "center" }}>
+              {curRow.slides.map((_, si) => (
+                <button key={si} onClick={() => jumpToSlide(si)} title={`Slide ${si + 1}`} style={{ width: si === cur.slideIdx ? 22 : 8, height: 8, borderRadius: 999, border: "none", cursor: "pointer", padding: 0, background: si === cur.slideIdx ? "var(--accent)" : "var(--border-hover)", transition: "width .15s" }} />
+              ))}
+            </div>
+            <div style={{ textAlign: "center", fontSize: 11.5, color: "var(--text-muted)" }}>Swipe, use ← →, or the arrows · slide {cur.slideIdx + 1} of {curRow.slides.length}</div>
           </div>
-          <div style={{ textAlign: "center", fontSize: 11.5, color: "var(--text-muted)" }}>Swipe, use ← →, or the arrows · slide {cur.slideIdx + 1} of {curRow.slides.length}</div>
         </div>
       ) : null}
 
@@ -237,8 +227,19 @@ export default function CarouselsView({ creator }: { creator: string }) {
           filename={`${creator}-${date}-c${editRow.slot + 1}-s${editing.slideIdx + 1}`}
           initialBlocks={editSlide.blocks}
           initialText={editSlide.text || ""}
-          onSave={(blocks) => saveSlide(editing.carIdx, editing.slideIdx, blocks)}
+          onSave={onEditorSave}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {exportRow && exportCar !== null && (
+        <CarouselExport
+          creator={creator}
+          slot={exportRow.slot}
+          slides={exportRow.slides}
+          currentSlideIdx={cur && cur.carIdx === exportCar ? cur.slideIdx : 0}
+          defaultName={`${creator}-${date}-c${exportRow.slot + 1}`}
+          onClose={() => setExportCar(null)}
         />
       )}
     </div>
