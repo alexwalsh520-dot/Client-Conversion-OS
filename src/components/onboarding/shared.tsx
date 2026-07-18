@@ -163,6 +163,12 @@ export function SubmittedRow({
   const secretLabel = isMeta ? "Secret" : "Pass";
   const twofaLabel = isMeta ? "Token" : "2FA";
 
+  // For the Meta step, show whether we auto-extended the token to long-lived.
+  const tm = (isMeta ? cred?.tokenMeta : null) as
+    | { long_lived?: boolean; expires_at?: string | null; exchange_error?: string }
+    | null
+    | undefined;
+
   return (
     <div
       style={{
@@ -188,6 +194,16 @@ export function SubmittedRow({
           {cred.username && <CopyRow label={userLabel} value={cred.username} />}
           {cred.secret && <CopyRow label={secretLabel} value={cred.secret} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
           {cred.twofa && <CopyRow label={twofaLabel} value={cred.twofa} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
+          {tm?.long_lived && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "var(--success)" }}>
+              <Check size={12} /> Long-lived token{tm.expires_at ? ` · expires ${new Date(tm.expires_at).toLocaleDateString()}` : " · does not expire"}
+            </div>
+          )}
+          {tm?.exchange_error && (
+            <div style={{ fontSize: 12.5, color: "var(--warning)" }}>
+              Auto-extend didn&apos;t run: {tm.exchange_error}. Convert this token manually.
+            </div>
+          )}
           {cred.notes && <div style={{ color: "var(--text-secondary)" }}>Note: {cred.notes}</div>}
         </div>
       ) : progress?.value ? (

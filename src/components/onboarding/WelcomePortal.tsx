@@ -670,8 +670,8 @@ function StepStage({
             <MetaField label="App Secret" hint="Same page, click Show to reveal it">
               <input placeholder="Your app secret" type="password" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} style={inputStyle} />
             </MetaField>
-            <MetaField label="Long-lived access token" hint="The converted token from step 5">
-              <textarea placeholder="Paste your long-lived token (a long string starting with EAA…)" value={metaToken} onChange={(e) => setMetaToken(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical", minHeight: 74, fontFamily: "monospace", fontSize: 13 }} />
+            <MetaField label="Access token" hint="Short-lived is fine — we extend it for you">
+              <textarea placeholder="Paste the token from step 4 (a long string starting with EAA…)" value={metaToken} onChange={(e) => setMetaToken(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical", minHeight: 74, fontFamily: "monospace", fontSize: 13 }} />
             </MetaField>
             <input placeholder="Anything we should know? (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={inputStyle} />
             <PrimaryButton
@@ -740,7 +740,7 @@ function MetaTokenGuide() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <ShieldCheck size={16} style={{ color: "var(--accent)" }} />
         <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.02em", color: "var(--text-primary)" }}>
-          How to get these (about 10 minutes)
+          How to get these (about 5 minutes)
         </span>
       </div>
 
@@ -775,31 +775,12 @@ function MetaTokenGuide() {
             ads_management, ads_read, business_management, pages_show_list,
             pages_read_engagement, read_insights
           </code>
-          Copy the token it gives you. This first token is short-lived (it
-          expires in about an hour), so do the next step right away.
+          Copy the token it gives you and paste it below.
         </GuideStep>
 
         <GuideStep n={5}>
-          Make it long-lived so it does not expire. The easy way: paste this to
-          your Claude (or any AI), filling in your three values, and it will hand
-          back the long-lived token:
-          <code style={permsStyle}>
-            Convert this short-lived Meta token to a long-lived one and give me
-            just the long-lived token. App ID: [your app id]. App Secret: [your
-            app secret]. Short-lived token: [the token from step 4].
-          </code>
-          Prefer to do it yourself? Fill the three blanks into this link, open it
-          in your browser, and copy the <b>access_token</b> it returns:
-          <code style={permsStyle}>
-            https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&amp;client_id=APP_ID&amp;client_secret=APP_SECRET&amp;fb_exchange_token=SHORT_LIVED_TOKEN
-          </code>
-        </GuideStep>
-
-        <GuideStep n={6}>
-          Paste your <b>long-lived token</b> plus your <b>App ID</b> and{" "}
-          <b>App Secret</b> below. Not sure if your token is the long-lived one?
-          Paste what you have anyway. With your App ID and Secret we can finish
-          it on our end.
+          Hit save. That&apos;s it. We automatically extend your token so it does
+          not expire. You never have to convert anything yourself.
         </GuideStep>
       </ol>
     </div>

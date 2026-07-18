@@ -4,6 +4,7 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { encryptSecret, decryptSecret } from "@/lib/onboarding/crypto";
+import { exchangeMetaLongLived } from "@/lib/onboarding/meta-token";
 import { clearRegistryCache, slugifyClientName } from "@/lib/registry";
 import { buildInstagramSetupToken } from "@/lib/instagram-connections";
 import type {
@@ -252,11 +253,25 @@ export async function submitPublic(
         (sub.appSecret && sub.appSecret.trim()) ||
         (sub.token && sub.token.trim());
       if (hasData) {
+        // On the explicit "Save & continue" (not a background auto-save), and
+        // when we have all three pieces, extend the token to a long-lived one
+        // right here so neither the partner nor the team has to convert it.
+        let tokenToStore = sub.token;
+        let tokenMeta: Record<string, unknown> | undefined;
+        const complete = sub.appId?.trim() && sub.appSecret?.trim() && sub.token?.trim();
+        if (!sub.autosave && complete) {
+          const ex = await exchangeMetaLongLived(sub.appId, sub.appSecret, sub.token);
+          tokenToStore = ex.token;
+          tokenMeta = ex.ok
+            ? { long_lived: ex.longLived, expires_at: ex.expiresAt, exchanged_at: new Date().toISOString() }
+            : { long_lived: false, exchange_error: ex.error, exchanged_at: new Date().toISOString() };
+        }
         await upsertCredential(partner.id, step.id, platform, {
           username: sub.appId,
           secret: sub.appSecret,
-          twofa: sub.token,
+          twofa: tokenToStore,
           notes: sub.notes,
+          tokenMeta,
         });
         await markProgress(partner.id, step.id, true, null);
       }
@@ -463,12 +478,13 @@ async function upsertCredential(
     secret?: string;
     twofa?: string;
     notes?: string;
+    tokenMeta?: Record<string, unknown>;
   }
 ): Promise<void> {
   const db = getServiceSupabase();
   const { data: existing } = await db
     .from("onboarding_credentials")
-    .select("username, secret_encrypted, twofa_encrypted, notes")
+    .select("username, secret_encrypted, twofa_encrypted, notes, token_meta")
     .eq("partner_id", partnerId)
     .eq("platform", platform)
     .maybeSingle();
@@ -491,6 +507,8 @@ async function upsertCredential(
         ? encryptSecret(twofa)
         : (existing?.twofa_encrypted as string | null) ?? null,
       notes: notes || (existing?.notes as string | null) || null,
+      token_meta:
+        incoming.tokenMeta ?? (existing?.token_meta as Record<string, unknown> | null) ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "partner_id,platform" }
@@ -534,7 +552,7 @@ export async function getPartnerDetail(id: string): Promise<PartnerDetail | null
     getProgress(id),
     db
       .from("onboarding_credentials")
-      .select("id, step_id, platform, username, secret_encrypted, twofa_encrypted, notes")
+      .select("id, step_id, platform, username, secret_encrypted, twofa_encrypted, notes, token_meta")
       .eq("partner_id", id),
     getPartnerIgConnect(partner as OnboardingPartner),
   ]);
@@ -547,6 +565,7 @@ export async function getPartnerDetail(id: string): Promise<PartnerDetail | null
     secret: decryptSecret(c.secret_encrypted as string | null),
     twofa: decryptSecret(c.twofa_encrypted as string | null),
     notes: (c.notes as string) ?? null,
+    tokenMeta: (c.token_meta as Record<string, unknown> | null) ?? null,
   }));
 
   return { ...(partner as OnboardingPartner), progress, credentials, igConnect };

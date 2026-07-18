@@ -61,6 +61,12 @@ export interface PartnerCredential {
   secret: string | null;
   twofa: string | null;
   notes: string | null;
+  /**
+   * Extra status for the meta_token step: whether the pasted token was
+   * auto-extended to a long-lived one, its expiry, or the exchange error.
+   * `{ long_lived, expires_at, exchanged_at }` or `{ exchange_error, ... }`.
+   */
+  tokenMeta?: Record<string, unknown> | null;
 }
 
 /** What the public welcome page receives (no other partners' data, no raw creds). */
