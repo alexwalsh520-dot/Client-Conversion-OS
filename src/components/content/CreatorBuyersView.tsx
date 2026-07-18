@@ -8,28 +8,49 @@
 // for the recipe.
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { CreatorIdeaCard, byTrendScoreDesc } from "./CreatorIdeaCard";
 import type { BuyerIdeaSet } from "./BuyerIdeasView";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
-import { H, Section, Empty, INK, BODY, MUTED, RULE } from "./creator-ui";
+import { H, Section, SubLabel, Empty, INK, BODY, MUTED, RULE, ACCENT } from "./creator-ui";
 
 type BuyerVoiceView = BuyerVoice & { buyer_count?: number | null };
 
+// One buyer. Collapsed it's a single line; a right-aligned count + chevron makes it obvious there's
+// more to open. Opening reveals the content ideas built to reach more people like them — set off with
+// an accent rule, an inset, and a header so the revealed block reads as this buyer's detail, not a
+// second flat list bleeding into the next name.
 function Buyer({ buyer }: { buyer: BuyerIdeaSet }) {
   const [open, setOpen] = useState(false);
   const r = buyer.research || {};
   const summary = typeof r.summary === "string" ? r.summary : "";
   const ideas = [...(buyer.ideas || [])].sort(byTrendScoreDesc);
+  const expandable = ideas.length > 0;
+  const first = buyer.name.split(" ")[0];
   return (
-    <li style={{ borderTop: `1px solid ${RULE}`, padding: "16px 0" }}>
-      <div onClick={() => setOpen((v) => !v)} style={{ cursor: "pointer" }}>
-        <span style={{ fontSize: 17, color: INK, lineHeight: 1.5 }}>{buyer.name}</span>
-        {summary && <span style={{ fontSize: 17, color: MUTED, lineHeight: 1.5 }}> — {summary}</span>}
+    <li style={{ borderTop: `1px solid ${RULE}` }}>
+      <div
+        onClick={() => expandable && setOpen((v) => !v)}
+        style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 0", cursor: expandable ? "pointer" : "default" }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 17, color: INK, lineHeight: 1.5, fontWeight: 600 }}>{buyer.name}</span>
+          {summary && <span style={{ fontSize: 17, color: MUTED, lineHeight: 1.5 }}> — {summary}</span>}
+        </div>
+        {expandable && (
+          <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, fontSize: 12.5, fontWeight: 700, color: open ? ACCENT : MUTED, whiteSpace: "nowrap" }}>
+            {ideas.length} {ideas.length === 1 ? "idea" : "ideas"}
+            <ChevronDown size={15} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+          </span>
+        )}
       </div>
-      {open && ideas.length > 0 && (
-        <ul style={{ margin: "8px 0 0", padding: 0, listStyle: "none" }}>
-          {ideas.map((idea, i) => <CreatorIdeaCard key={i} idea={idea} />)}
-        </ul>
+      {open && expandable && (
+        <div style={{ margin: "2px 0 18px", paddingLeft: 16, borderLeft: `2px solid ${ACCENT}` }}>
+          <SubLabel>Ideas to reach more like {first}</SubLabel>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {ideas.map((idea, i) => <CreatorIdeaCard key={i} idea={idea} />)}
+          </ul>
+        </div>
       )}
     </li>
   );

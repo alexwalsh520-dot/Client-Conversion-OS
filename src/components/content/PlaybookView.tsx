@@ -132,7 +132,7 @@ export default function PlaybookView({
           <p style={{ fontSize: 17, color: INK, lineHeight: 1.6, margin: 0, maxWidth: MEASURE }}>{buyerLine}</p>
           {more && (
             <ul style={{ margin: "14px 0 0", padding: 0, listStyle: "none" }}>
-              <Row summary={<span style={{ color: MUTED }}>More on your buyer</span>} detail={more} />
+              <Row summary={<span style={{ fontSize: 13, fontWeight: 600, color: BODY }}>More on your buyer</span>} detail={more} />
             </ul>
           )}
         </Section>

@@ -103,10 +103,13 @@ export function Row({
   );
 }
 
-// A small muted label used to group things inside an expansion.
+// A small label that groups things inside a card or expansion. Sits one step
+// below the accent kicker (H): readable body-ink, uppercase and tracked so it
+// clearly reads as a header over the sentence-case body beneath it — not the
+// faint 11px grey it used to be, which vanished against the copy.
 export function SubLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: MUTED, margin: "0 0 6px" }}>
+    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: BODY, margin: "0 0 9px" }}>
       {children}
     </div>
   );
