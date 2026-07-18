@@ -2,6 +2,7 @@
 // opens /cmo-agent. Read-only against the money data; writes proposals only. Nothing executes.
 
 import { NextRequest, NextResponse } from "next/server";
+import { cronBaseUrl } from "@/lib/cron-base-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,8 +13,12 @@ export async function GET(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const origin = new URL(req.url).origin;
+  // Vercel runs scheduled crons against the Deployment-Protection-guarded deployment host,
+  // so sibling fetches must go through the public production alias. See cron-base-url.ts.
+  const origin = cronBaseUrl(req);
   let step: unknown = null;
+  // ok must reflect the child call, not merely that the try block completed.
+  let childOk = false;
   try {
     const r = await fetch(`${origin}/api/cmo-agent/run`, {
       method: "POST",
@@ -23,5 +28,6 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     step = { error: e instanceof Error ? e.message : "failed" };
   }
-  return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), step });
+  if (!childOk) console.error(`[cmo-agent] child call failed via ${origin}`);
+  return NextResponse.json({ ok: childOk, ranAt: new Date().toISOString(), step });
 }

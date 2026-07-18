@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronBaseUrl } from "@/lib/cron-base-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -15,12 +16,16 @@ export async function GET(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const origin = new URL(req.url).origin;
+  // Vercel runs scheduled crons against the Deployment-Protection-guarded deployment host,
+  // so sibling fetches must go through the public production alias. See cron-base-url.ts.
+  const origin = cronBaseUrl(req);
   const H = { Authorization: `Bearer ${process.env.CRON_SECRET}`, "Content-Type": "application/json" };
   const budgetMs = 270000;
   const started = Date.now();
   const batches: Array<Record<string, unknown>> = [];
   let totals = { transcribed: 0, requeued_junk: 0, gave_up_no_speech: 0, stored: 0, failed: 0 };
+  // A blitz whose very first batch is rejected (e.g. 401) did no work — say so.
+  let anyBatchOk = false;
 
   // Each batch is bounded by the worker's own maxDuration; we stop starting new ones near the budget.
   while (Date.now() - started < budgetMs - 130000) {
@@ -28,6 +33,7 @@ export async function GET(req: NextRequest) {
     try {
       const r = await fetch(`${origin}/api/content/transcribe?limit=20`, { method: "POST", headers: H, signal: AbortSignal.timeout(125000) });
       const body = (await r.json().catch(() => null)) as Record<string, number> | null;
+      if (r.ok) anyBatchOk = true;
       batches.push({ status: r.status, ms: Date.now() - s, ...(body || {}) });
       if (body) {
         for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] += Number(body[k] || 0);
@@ -39,5 +45,6 @@ export async function GET(req: NextRequest) {
       break;
     }
   }
-  return NextResponse.json({ ok: true, cron: "transcribe-blitz", total_ms: Date.now() - started, totals, batches });
+  if (!anyBatchOk) console.error(`[transcribe-blitz] no batch succeeded via ${origin}`);
+  return NextResponse.json({ ok: anyBatchOk, cron: "transcribe-blitz", total_ms: Date.now() - started, totals, batches });
 }
