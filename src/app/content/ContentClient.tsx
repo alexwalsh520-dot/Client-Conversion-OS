@@ -8,6 +8,7 @@ import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import PlaybookView from "@/components/content/PlaybookView";
 import CarouselsView from "@/components/content/CarouselsView";
+import CalendarView from "@/components/content/CalendarView";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
@@ -49,7 +50,7 @@ function defaultRange(): DateRange {
 
 export default function ContentClient() {
   const [active, setActive] = useState("tyson");
-  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels">("playbook");
+  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels" | "calendar">("playbook");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -64,7 +65,7 @@ export default function ContentClient() {
   }, []);
   useEffect(() => { load(active); }, [active, load]);
 
-  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"], ["carousels", "Carousels"]] as const;
+  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"], ["carousels", "Carousels"], ["calendar", "Calendar"]] as const;
 
   const toggleBtn = (activeState: boolean): React.CSSProperties => ({
     background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
@@ -93,7 +94,10 @@ export default function ContentClient() {
         />
         <Tabs tabs={tabs} active={page} onPick={setPage} />
 
-        {loading || !data ? (
+        {/* Calendar loads its own data, so it renders without waiting on the studio payload. */}
+        {page === "calendar" ? (
+          <CalendarView creator={active} />
+        ) : loading || !data ? (
           <p style={{ color: MUTED, fontSize: 16, margin: 0 }}>Loading…</p>
         ) : page === "playbook" ? (
           <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} icp={data.icp} buyerVoice={data.buyerVoice} />
