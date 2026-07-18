@@ -378,6 +378,8 @@ export default function WelcomePortal({ token }: Props) {
 // One step at a time
 // ---------------------------------------------------------------------------
 
+type SaveState = "idle" | "saving" | "saved";
+
 function StepStage({
   step,
   token,
@@ -401,24 +403,106 @@ function StepStage({
 }) {
   const [saving, setSaving] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const [text, setText] = useState(existingValue);
   const [username, setUsername] = useState("");
   const [secret, setSecret] = useState("");
   const [twofa, setTwofa] = useState("");
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [metaToken, setMetaToken] = useState("");
   const [notes, setNotes] = useState("");
 
   const sopHref = step.sop_slug ? `/sop/${step.sop_slug}` : step.sop_url || null;
 
-  async function submit(payload: Omit<PublicStepSubmission, "stepId">) {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/onboarding/public/${token}`, {
+  // The current answer for this step, or null when there's nothing worth saving.
+  const buildPayload = useCallback((): Omit<PublicStepSubmission, "stepId"> | null => {
+    switch (step.kind) {
+      case "text":
+      case "link": {
+        const v = text.trim();
+        return v ? { value: text } : null;
+      }
+      case "login":
+        if (!username.trim() && !secret.trim() && !notes.trim()) return null;
+        return { username, secret, notes };
+      case "twofa":
+        if (!twofa.trim() && !notes.trim()) return null;
+        return { twofa, notes };
+      case "meta_token":
+        if (!appId.trim() && !appSecret.trim() && !metaToken.trim() && !notes.trim()) return null;
+        return { appId, appSecret, token: metaToken, notes };
+      default:
+        return null;
+    }
+  }, [step.kind, text, username, secret, twofa, appId, appSecret, metaToken, notes]);
+
+  const post = useCallback(
+    (payload: Omit<PublicStepSubmission, "stepId">, keepalive = false) =>
+      fetch(`/api/onboarding/public/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ submissions: [{ stepId: step.id, ...payload }] }),
-      });
+        keepalive,
+      }),
+    [token, step.id]
+  );
+
+  // Latest unsaved answer + a signature of what we last persisted, so we can
+  // flush on leave and skip redundant saves.
+  const pendingRef = useRef<Omit<PublicStepSubmission, "stepId"> | null>(null);
+  const lastSavedRef = useRef<string>("");
+
+  // Debounced background auto-save. Nothing is lost even if they never tap
+  // Continue: a short pause in typing pushes their answer to the server.
+  useEffect(() => {
+    const payload = buildPayload();
+    pendingRef.current = payload;
+    if (!payload) return;
+    const signature = JSON.stringify(payload);
+    if (signature === lastSavedRef.current) return;
+    const timer = window.setTimeout(async () => {
+      setSaveState("saving");
+      try {
+        await post({ ...payload, autosave: true });
+        lastSavedRef.current = signature;
+        setSaveState("saved");
+      } catch {
+        setSaveState("idle");
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [buildPayload, post]);
+
+  // Flush on the way out — navigating to another step (unmount) or closing the
+  // tab / backgrounding (pagehide). keepalive lets the request finish after the
+  // page is gone.
+  useEffect(() => {
+    const flush = () => {
+      const payload = pendingRef.current;
+      if (!payload) return;
+      if (JSON.stringify(payload) === lastSavedRef.current) return;
+      try {
+        void post({ ...payload, autosave: true }, true);
+      } catch {
+        /* best effort */
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [post]);
+
+  async function submit(payload: Omit<PublicStepSubmission, "stepId">) {
+    setSaving(true);
+    try {
+      const res = await post(payload);
       if (!res.ok) throw new Error("save failed");
+      lastSavedRef.current = JSON.stringify(payload);
+      pendingRef.current = null;
       setCelebrating(true);
       await new Promise((r) => window.setTimeout(r, 750));
       await onAdvance();
@@ -446,6 +530,7 @@ function StepStage({
               <Check size={12} /> Done
             </span>
           )}
+          <SaveBadge state={saveState} />
         </div>
 
         <h2 style={{ fontSize: "clamp(22px, 4vw, 28px)", fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 10px" }}>
@@ -571,6 +656,33 @@ function StepStage({
           </Field>
         )}
 
+        {step.kind === "meta_token" && (
+          <Field>
+            <MetaTokenGuide />
+            {savedCredential && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--success)", marginTop: 4 }}>
+                <Lock size={12} /> Saved securely. Re-enter anything to update it.
+              </div>
+            )}
+            <MetaField label="App ID" hint="From App settings › Basic">
+              <input placeholder="e.g. 1234567890123456" value={appId} onChange={(e) => setAppId(e.target.value)} style={inputStyle} />
+            </MetaField>
+            <MetaField label="App Secret" hint="Same page, click Show to reveal it">
+              <input placeholder="Your app secret" type="password" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} style={inputStyle} />
+            </MetaField>
+            <MetaField label="Long-lived access token" hint="The converted token from step 5">
+              <textarea placeholder="Paste your long-lived token (a long string starting with EAA…)" value={metaToken} onChange={(e) => setMetaToken(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical", minHeight: 74, fontFamily: "monospace", fontSize: 13 }} />
+            </MetaField>
+            <input placeholder="Anything we should know? (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={inputStyle} />
+            <PrimaryButton
+              saving={saving}
+              disabled={!appId.trim() && !appSecret.trim() && !metaToken.trim()}
+              label={isLast ? "Save & finish" : "Save & continue"}
+              onClick={() => submit({ appId, appSecret, token: metaToken, notes })}
+            />
+          </Field>
+        )}
+
         {step.kind === "task" && (
           <PrimaryButton saving={saving} label={completed ? "Done ✓ — continue" : "Mark it done"} onClick={() => submit({ completed: true })} />
         )}
@@ -585,6 +697,172 @@ function StepStage({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Auto-save indicator — quietly reassures the partner their work is safe.
+// ---------------------------------------------------------------------------
+
+function SaveBadge({ state }: { state: SaveState }) {
+  if (state === "idle") return null;
+  const saving = state === "saving";
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 12,
+        fontWeight: 600,
+        color: saving ? "var(--text-muted)" : "var(--success)",
+      }}
+    >
+      {saving ? <Loader2 size={12} className="onb-spin" /> : <Check size={12} />}
+      {saving ? "Saving…" : "Saved"}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Meta (Facebook) API access — the walkthrough shown above the input fields.
+// ---------------------------------------------------------------------------
+
+function MetaTokenGuide() {
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        border: "1px solid var(--border-primary)",
+        background: "rgba(255,255,255,0.02)",
+        padding: "18px 18px 16px",
+        marginBottom: 4,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <ShieldCheck size={16} style={{ color: "var(--accent)" }} />
+        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.02em", color: "var(--text-primary)" }}>
+          How to get these (about 10 minutes)
+        </span>
+      </div>
+
+      <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 11 }}>
+        <GuideStep n={1}>
+          Open{" "}
+          <GuideLink href="https://developers.facebook.com/">Meta for Developers</GuideLink>{" "}
+          and log in with the Facebook account that owns your ad account. First
+          time here? Click <b>Get Started</b> to make your free developer
+          account.
+        </GuideStep>
+
+        <GuideStep n={2}>
+          Click <b>My Apps</b> then <b>Create App</b>. Pick the <b>Business</b>{" "}
+          type, give it any name (like &quot;My Ads Access&quot;), and create it.
+        </GuideStep>
+
+        <GuideStep n={3}>
+          In your app, open <b>App settings</b> then <b>Basic</b>. Copy the{" "}
+          <b>App ID</b>, then click <b>Show</b> next to <b>App Secret</b> and
+          copy that too. Paste both into the boxes below.
+        </GuideStep>
+
+        <GuideStep n={4}>
+          Open the{" "}
+          <GuideLink href="https://developers.facebook.com/tools/explorer/">
+            Graph API Explorer
+          </GuideLink>
+          . Pick your app in the top-right dropdown, click <b>Generate Access
+          Token</b>, and approve these permissions when asked:
+          <code style={permsStyle}>
+            ads_management, ads_read, business_management, pages_show_list,
+            pages_read_engagement, read_insights
+          </code>
+          Copy the token it gives you. This first token is short-lived (it
+          expires in about an hour), so do the next step right away.
+        </GuideStep>
+
+        <GuideStep n={5}>
+          Make it long-lived so it does not expire. The easy way: paste this to
+          your Claude (or any AI), filling in your three values, and it will hand
+          back the long-lived token:
+          <code style={permsStyle}>
+            Convert this short-lived Meta token to a long-lived one and give me
+            just the long-lived token. App ID: [your app id]. App Secret: [your
+            app secret]. Short-lived token: [the token from step 4].
+          </code>
+          Prefer to do it yourself? Fill the three blanks into this link, open it
+          in your browser, and copy the <b>access_token</b> it returns:
+          <code style={permsStyle}>
+            https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&amp;client_id=APP_ID&amp;client_secret=APP_SECRET&amp;fb_exchange_token=SHORT_LIVED_TOKEN
+          </code>
+        </GuideStep>
+
+        <GuideStep n={6}>
+          Paste your <b>long-lived token</b> plus your <b>App ID</b> and{" "}
+          <b>App Secret</b> below. Not sure if your token is the long-lived one?
+          Paste what you have anyway. With your App ID and Secret we can finish
+          it on our end.
+        </GuideStep>
+      </ol>
+    </div>
+  );
+}
+
+function GuideStep({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <li style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--text-secondary)" }}>
+      <span style={{ color: "var(--accent)", fontWeight: 700 }}>Step {n}. </span>
+      {children}
+    </li>
+  );
+}
+
+function GuideLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
+    >
+      {children}
+      <ArrowUpRight size={12} style={{ display: "inline", verticalAlign: "-1px", marginLeft: 1 }} />
+    </a>
+  );
+}
+
+function MetaField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{hint}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const permsStyle: React.CSSProperties = {
+  display: "block",
+  marginTop: 8,
+  padding: "9px 11px",
+  borderRadius: 9,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid var(--border-primary)",
+  color: "var(--text-primary)",
+  fontFamily: "monospace",
+  fontSize: 12,
+  lineHeight: 1.5,
+  wordBreak: "break-word",
+  whiteSpace: "pre-wrap",
+};
 
 // ---------------------------------------------------------------------------
 // Progress dots

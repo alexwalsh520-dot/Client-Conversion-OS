@@ -3,7 +3,15 @@
 export type StepAudience = "client" | "internal";
 // "ig_connect" is a virtual step the portal injects as step 1 (the client's
 // personal Instagram-connect link) — it never exists as an onboarding_steps row.
-export type StepKind = "task" | "login" | "twofa" | "link" | "text" | "bank" | "ig_connect";
+export type StepKind =
+  | "task"
+  | "login"
+  | "twofa"
+  | "link"
+  | "text"
+  | "bank"
+  | "ig_connect"
+  | "meta_token";
 
 /** The partner's personal Instagram-connect link + live status. */
 export interface PartnerIgConnect {
@@ -92,6 +100,16 @@ export interface PublicStepSubmission {
   secret?: string;
   twofa?: string;
   notes?: string;
+  /** For the meta_token step (Meta / Facebook API access). */
+  appId?: string;
+  appSecret?: string;
+  token?: string;
   /** Explicit completion toggle (e.g. bank/task steps). */
   completed?: boolean;
+  /**
+   * Auto-save (background) rather than an explicit "Continue" tap. Server treats
+   * it the same, but the client uses this to keep partial answers safe as the
+   * partner types without advancing the flow.
+   */
+  autosave?: boolean;
 }

@@ -156,6 +156,13 @@ export function SubmittedRow({
   const [reveal, setReveal] = useState(false);
   const hasData = progress?.completed || !!cred;
 
+  // The meta_token step reuses the credential slots (App ID / Secret / Token),
+  // so relabel them for the back office instead of User / Pass / 2FA.
+  const isMeta = step.kind === "meta_token";
+  const userLabel = isMeta ? "App ID" : "User";
+  const secretLabel = isMeta ? "Secret" : "Pass";
+  const twofaLabel = isMeta ? "Token" : "2FA";
+
   return (
     <div
       style={{
@@ -178,9 +185,9 @@ export function SubmittedRow({
       </div>
       {cred ? (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5 }}>
-          {cred.username && <CopyRow label="User" value={cred.username} />}
-          {cred.secret && <CopyRow label="Pass" value={cred.secret} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
-          {cred.twofa && <CopyRow label="2FA" value={cred.twofa} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
+          {cred.username && <CopyRow label={userLabel} value={cred.username} />}
+          {cred.secret && <CopyRow label={secretLabel} value={cred.secret} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
+          {cred.twofa && <CopyRow label={twofaLabel} value={cred.twofa} secret reveal={reveal} onReveal={() => setReveal((r) => !r)} />}
           {cred.notes && <div style={{ color: "var(--text-secondary)" }}>Note: {cred.notes}</div>}
         </div>
       ) : progress?.value ? (
@@ -209,7 +216,7 @@ export function CopyRow({
   const shown = secret ? (reveal ? value : "•".repeat(Math.min(value.length, 12))) : value;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ color: "var(--text-muted)", width: 38, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: "var(--text-muted)", width: 48, flexShrink: 0 }}>{label}</span>
       <code style={{ color: "var(--text-primary)", fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{shown}</code>
       {secret && (
         <button onClick={onReveal} style={iconBtn} title={reveal ? "Hide" : "Reveal"}>

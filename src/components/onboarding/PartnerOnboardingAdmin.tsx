@@ -401,6 +401,7 @@ function StepEditor({ step, newAudience, onChanged, onCancel }: { step?: Onboard
           <option value="login">Login (user + password)</option>
           <option value="twofa">2FA backup code</option>
           <option value="bank">Bank referral button</option>
+          <option value="meta_token">Meta API access (App ID + Secret + token)</option>
         </select>
       </div>
       <input placeholder="Link to an SOP in your SOP tab (slug, e.g. set-up-manychat)" value={sopSlug} onChange={(e) => setSopSlug(e.target.value)} style={fieldStyle} />

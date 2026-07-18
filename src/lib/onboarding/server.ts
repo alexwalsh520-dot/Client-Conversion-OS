@@ -232,19 +232,32 @@ export async function submitPublic(
         (sub.secret && sub.secret.trim()) ||
         (sub.twofa && sub.twofa.trim());
       if (hasData) {
-        await db.from("onboarding_credentials").upsert(
-          {
-            partner_id: partner.id,
-            step_id: step.id,
-            platform,
-            username: sub.username?.trim() || null,
-            secret_encrypted: encryptSecret(sub.secret),
-            twofa_encrypted: encryptSecret(sub.twofa),
-            notes: sub.notes?.trim() || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "partner_id,platform" }
-        );
+        await upsertCredential(partner.id, step.id, platform, {
+          username: sub.username,
+          secret: sub.secret,
+          twofa: sub.twofa,
+          notes: sub.notes,
+        });
+        await markProgress(partner.id, step.id, true, null);
+      }
+    } else if (step.kind === "meta_token") {
+      // Meta (Facebook) API access. Three parts map onto the credential slots:
+      //   App ID        -> username (not itself secret)
+      //   App Secret    -> secret_encrypted
+      //   Access token  -> twofa_encrypted
+      const platform =
+        (step.meta?.platform as string | undefined) || step.title;
+      const hasData =
+        (sub.appId && sub.appId.trim()) ||
+        (sub.appSecret && sub.appSecret.trim()) ||
+        (sub.token && sub.token.trim());
+      if (hasData) {
+        await upsertCredential(partner.id, step.id, platform, {
+          username: sub.appId,
+          secret: sub.appSecret,
+          twofa: sub.token,
+          notes: sub.notes,
+        });
         await markProgress(partner.id, step.id, true, null);
       }
     } else if (step.kind === "link" || step.kind === "text") {
@@ -429,6 +442,59 @@ async function retireClientForPartner(partnerId: string): Promise<void> {
   } catch {
     // Registry table missing — nothing to retire.
   }
+}
+
+/**
+ * Save a credential for (partner, platform), merging with anything already on
+ * file. Empty incoming fields are LEFT ALONE rather than overwritten with null.
+ *
+ * This is what makes background auto-save safe: the partner's secret/token
+ * fields come back blank after they navigate to another step (we never send
+ * secrets back to the browser), so a later auto-save could otherwise wipe a
+ * value they already saved. Merging means only the fields they actually typed
+ * get written.
+ */
+async function upsertCredential(
+  partnerId: string,
+  stepId: string,
+  platform: string,
+  incoming: {
+    username?: string;
+    secret?: string;
+    twofa?: string;
+    notes?: string;
+  }
+): Promise<void> {
+  const db = getServiceSupabase();
+  const { data: existing } = await db
+    .from("onboarding_credentials")
+    .select("username, secret_encrypted, twofa_encrypted, notes")
+    .eq("partner_id", partnerId)
+    .eq("platform", platform)
+    .maybeSingle();
+
+  const username = incoming.username?.trim();
+  const secret = incoming.secret?.trim();
+  const twofa = incoming.twofa?.trim();
+  const notes = incoming.notes?.trim();
+
+  await db.from("onboarding_credentials").upsert(
+    {
+      partner_id: partnerId,
+      step_id: stepId,
+      platform,
+      username: username || (existing?.username as string | null) || null,
+      secret_encrypted: secret
+        ? encryptSecret(secret)
+        : (existing?.secret_encrypted as string | null) ?? null,
+      twofa_encrypted: twofa
+        ? encryptSecret(twofa)
+        : (existing?.twofa_encrypted as string | null) ?? null,
+      notes: notes || (existing?.notes as string | null) || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "partner_id,platform" }
+  );
 }
 
 async function markProgress(
