@@ -354,6 +354,44 @@ function summarizeDates(dateFrom: string, dateTo: string, rows: AdsMetaInsightRo
   }));
 }
 
+/**
+ * Read back every stored row for this account+window.
+ *
+ * MUST page: PostgREST caps an unbounded select at 1000 rows, so a single
+ * select on a window that holds more than that returns an arbitrary 1000-row
+ * subset. The verification below compares totals, so an unpaged read made the
+ * comparison fail every run (and report a different "stored" total each time)
+ * even when the write was perfect.
+ */
+async function readStoredMetaSlice(
+  db: ReturnType<typeof getServiceSupabase>,
+  accountKey: string,
+  dateFrom: string,
+  dateTo: string
+): Promise<AdsMetaInsightRow[]> {
+  const out: AdsMetaInsightRow[] = [];
+  const pageSize = 1000;
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await db
+      .from("ads_meta_insights_daily")
+      .select("date,ad_id,spend_cents,impressions,link_clicks")
+      .eq("client_key", accountKey)
+      .gte("date", dateFrom)
+      .lte("date", dateTo)
+      .order("date", { ascending: true })
+      .order("ad_id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    const batch = (data || []) as AdsMetaInsightRow[];
+    out.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+
+  return out;
+}
+
 async function replaceStoredMetaSlice(
   db: ReturnType<typeof getServiceSupabase>,
   accountKey: string,
@@ -361,6 +399,22 @@ async function replaceStoredMetaSlice(
   dateTo: string,
   rows: AdsMetaInsightRow[]
 ) {
+  // A pull that came back completely empty for the whole window is a failed or
+  // throttled pull, never evidence that every ad in the account ceased to exist.
+  // The per-date delete below removes whatever is not in the fresh set, so an
+  // empty pull used to delete the entire window — silently, because the
+  // verification then compared 0 expected against 0 stored and passed. That is
+  // what wiped weeks of spend. Preserve what is stored and report zero fetched.
+  if (rows.length === 0) {
+    const storedRows = await readStoredMetaSlice(db, accountKey, dateFrom, dateTo);
+    const stored = summarizeRows(storedRows);
+    console.warn(
+      `[ads-tracker-sync] ${accountKey}: Meta returned 0 rows for ${dateFrom}..${dateTo}; ` +
+        `skipping replace and preserving ${stored.rowCount} stored rows.`
+    );
+    return { expected: stored, stored, dates: summarizeDates(dateFrom, dateTo, rows) };
+  }
+
   const freshRowsByDate = rowsByDate(rows);
 
   for (const date of datesInRange(dateFrom, dateTo)) {
@@ -382,17 +436,10 @@ async function replaceStoredMetaSlice(
     if (error) throw error;
   }
 
-  const { data: storedRows, error: storedError } = await db
-    .from("ads_meta_insights_daily")
-    .select("date,ad_id,spend_cents,impressions,link_clicks")
-    .eq("client_key", accountKey)
-    .gte("date", dateFrom)
-    .lte("date", dateTo);
-
-  if (storedError) throw storedError;
+  const storedRows = await readStoredMetaSlice(db, accountKey, dateFrom, dateTo);
 
   const expected = summarizeRows(rows);
-  const stored = summarizeRows((storedRows || []) as AdsMetaInsightRow[]);
+  const stored = summarizeRows(storedRows);
 
   if (
     expected.rowCount !== stored.rowCount ||
