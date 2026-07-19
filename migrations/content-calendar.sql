@@ -54,3 +54,7 @@ values
      "sun": null
    }'::jsonb)
 on conflict (client_key) do nothing;
+
+-- Stale-source alerting needs to remember when it last SHOUTED (not just when it observed), so the
+-- Slack notice fires once per cooldown window instead of every two hours.
+alter table source_freshness_alerts add column if not exists notified_at timestamptz;

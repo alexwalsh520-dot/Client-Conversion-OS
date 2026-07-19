@@ -7,8 +7,9 @@
 // its real numbers) or to override the mark; carousel/story toggle directly. A metrics panel on the
 // right (below on mobile) reads the visible week; a gear opens the editable cadence.
 //
-// Freshness is stated explicitly: red only means "missed" when the scrape is current, so a stale
-// sync raises an amber banner and the red slots are labeled unverified rather than implying absence.
+// Freshness answers two separate questions and never merges them: "did the pipeline run?" (the
+// ingest heartbeat — only this raises the amber unverified banner) and "did the creator post?"
+// (newest_post_at). A live pipeline that found nothing new means the reds are honest misses.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle, AlertTriangle, Play, X, ExternalLink } from "lucide-react";
@@ -26,7 +27,7 @@ type Day = { date: string; dow: string; is_rest: boolean; slots: Slot[]; reels_p
 type Cadence = { reels_per_day: number; carousels_per_day: number; story_schedule: StorySchedule };
 type CalResp = {
   creator: string; week_start: string; today: string; cadence: Cadence; days: Day[];
-  synced_at: string | null; sync_age_hours: number | null; sync_stale: boolean;
+  synced_at: string | null; sync_age_hours: number | null; sync_stale: boolean; newest_post_at: string | null;
 };
 
 const GREEN = "#2f9e5f", GREEN_BG = "rgba(47,158,95,0.16)";
@@ -133,16 +134,16 @@ export default function CalendarView({ creator }: { creator: string }) {
         <button onClick={() => setEditing(true)} title="Edit cadence" aria-label="Edit cadence" style={{ ...navBtn }}><Settings size={16} /></button>
       </div>
 
-      {/* Never let stale data read as absence: if ingest has stalled, say so loudly — a red slot
-          under this banner means "unverified", not "missed". */}
+      {/* The banner fires ONLY when the pipeline itself is behind. A healthy pipeline that found
+          nothing new means the creator didn't post — the red slots are honest, so we stay quiet. */}
       {data && data.sync_stale && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(214,158,46,0.45)", background: "rgba(214,158,46,0.12)" }}>
           <AlertTriangle size={16} style={{ color: "#b7791f", flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-            <strong style={{ color: "var(--text-primary)" }}>Posts haven&rsquo;t synced recently.</strong>{" "}
+            <strong style={{ color: "var(--text-primary)" }}>The post sync is behind.</strong>{" "}
             {data.synced_at
-              ? `Last successful sync ${data.sync_age_hours}h ago (${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET).`
-              : "No sync recorded."}{" "}
+              ? `The ingest last completed ${data.sync_age_hours}h ago (${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET).`
+              : "No successful ingest on record."}{" "}
             Red slots below are <em>unverified</em>, not confirmed misses.
           </div>
         </div>
@@ -228,10 +229,17 @@ export default function CalendarView({ creator }: { creator: string }) {
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, borderTop: "1px solid var(--border-primary)", paddingTop: 12 }}>
                 {/* Always state when the data is from — silence here is what let stale data pass as absence. */}
-                <div style={{ color: data.sync_stale ? "#b7791f" : "var(--text-muted)", fontWeight: data.sync_stale ? 700 : 400, marginBottom: 6 }}>
+                {/* Two separate facts, never conflated: when the pipeline last ran, and when the
+                    creator last posted. "Checked X ago, nothing new since Y" is the honest read. */}
+                <div style={{ color: data.sync_stale ? "#b7791f" : "var(--text-muted)", fontWeight: data.sync_stale ? 700 : 400, marginBottom: 4 }}>
                   {data.synced_at
-                    ? `Posts synced as of ${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET${data.sync_age_hours != null ? ` (${data.sync_age_hours}h ago)` : ""}`
-                    : "No post sync recorded yet"}
+                    ? `Instagram checked ${data.sync_age_hours}h ago (${new Date(data.synced_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET)`
+                    : "No successful ingest on record"}
+                </div>
+                <div style={{ marginBottom: 6 }}>
+                  {data.newest_post_at
+                    ? `Last post detected ${new Date(data.newest_post_at).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`
+                    : "No posts detected yet"}
                 </div>
                 Reels &amp; carousels turn green within ~2h of posting (scrape cadence). Stories are manual-only — scrapers can&rsquo;t see them, so tap the story box once you post it.
               </div>
