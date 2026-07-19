@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { resolveCalendarAccess, markedByLabel } from "@/lib/content/calendar-access";
-import { getCadence } from "@/lib/content/calendar-build";
+import { getCadence, TRIAL_REEL_SLOT } from "@/lib/content/calendar-build";
 import { todayIn } from "@/lib/content/calendar";
 
 export const runtime = "nodejs";
@@ -28,7 +28,11 @@ export async function PATCH(req: NextRequest) {
   const done = Boolean(body?.done);
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(for_date)) return NextResponse.json({ error: "Bad for_date" }, { status: 400 });
-  if (!["reel", "carousel", "story"].includes(slot_type)) return NextResponse.json({ error: "Bad slot_type" }, { status: 400 });
+  // 'trial_reel' rides the same mechanism but is a self-reported tally, not a slot: index N of the
+  // day's trial reels, done=true meaning "counted". Nothing downstream treats it as a quota slot.
+  if (!["reel", "carousel", "story", TRIAL_REEL_SLOT].includes(slot_type)) {
+    return NextResponse.json({ error: "Bad slot_type" }, { status: 400 });
+  }
   if (!Number.isInteger(slot_index) || slot_index < 1) return NextResponse.json({ error: "Bad slot_index" }, { status: 400 });
 
   const sb = getServiceSupabase();

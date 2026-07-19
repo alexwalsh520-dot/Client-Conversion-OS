@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getAdsTrackerDashboard } from "@/lib/ads-tracker/server";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,9 +10,12 @@ export const maxDuration = 300;
 // Daily guard for the fast engine: for every active account x window, run the fast engine and the
 // legacy engine and confirm the per-ad funnel money and the window coverage dollars match to within
 // $1. Any larger drift writes ok=false with the offending fields, so a divergence is caught the day
-// it appears instead of silently mispricing decisions. Active roster only (Tyson + Antwan + all);
-// Keith/Lucy are inactive. Resilient: a compute that errors/times out is recorded, never fatal.
-const ACCOUNTS = ["all", "tyson", "antwan"] as const;
+// it appears instead of silently mispricing decisions. Resilient: a compute that errors/times out
+// is recorded, never fatal.
+//
+// The roster is derived from the registry (creators.ts `active`) plus the "all" rollup, so a client
+// leaving is a one-line change there rather than an edit here.
+const ACCOUNTS = ["all", ...ACTIVE_CREATORS.map((c) => c.key)] as const;
 const WINDOWS = [7, 14, 30];
 const TOL_CENTS = 100; // $1
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getAdsTrackerDashboard } from "@/lib/ads-tracker/server";
 import { postRichMessage } from "@/lib/slack";
-import type { CreatorKey } from "@/lib/creators";
+import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 // Alex's daily CMO morning brief, posted to his Slack DM ~10:15 Bali (02:15 UTC).
 // Money comes only from the canonical getAdsTrackerDashboard + the sales tracker. Active ads only.
 const ALEX_DM = "U083ENKF9Q8";
-const CREATORS: CreatorKey[] = ["tyson", "antwan"];
+// Derived from the registry (creators.ts `active`), never hardcoded.
+const CREATORS: CreatorKey[] = ACTIVE_CREATORS.map((c) => c.key);
 
 function etDate(offsetDays = 0): string {
   const base = new Date(Date.now() + offsetDays * 86_400_000);

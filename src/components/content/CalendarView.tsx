@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle,
-  AlertTriangle, Play, X, ExternalLink, RefreshCw, Check, Lock,
+  AlertTriangle, Play, X, ExternalLink, RefreshCw, Check, Lock, FlaskConical, Minus,
 } from "lucide-react";
 import {
   todayIn, shiftWeek, prettyDate, DOW, COMMON_TIMEZONES, isComplete,
@@ -36,15 +36,18 @@ type Slot = {
 };
 type Day = {
   date: string; dow: string; story_rest: boolean; slots: Slot[];
+  trial_reels: number; // self-reported tally, not a slot — never counted in quota or streaks
   reels_posted: number; carousels_posted: number; reels_target: number; carousels_target: number;
   story_label: string | null; reconciled_at: string | null; finalized: boolean; day_ended: boolean;
 };
 type Cadence = { reels_per_day: number; carousels_per_day: number; story_schedule: StorySchedule; timezone: string };
 type CalResp = {
   creator: string; viewer: "operator" | "creator"; week_start: string; today: string; timezone: string;
-  cadence: Cadence; days: Day[];
+  cadence: Cadence; days: Day[]; trial_reels_week: number;
   synced_at: string | null; sync_age_hours: number | null; sync_stale: boolean; newest_post_at: string | null;
 };
+
+const TRIAL_NOTE = "Self-reported — trial reels aren't visible to the post sync.";
 
 const GREEN = "#2f9e5f", GREEN_BG = "rgba(47,158,95,0.16)";
 const AMBER = "#b7791f", AMBER_BG = "rgba(214,158,46,0.13)";
@@ -110,6 +113,29 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
           ...(token ? {} : { creator }),
           for_date: day.date, slot_type: slot.slot_type, slot_index: slot.slot_index,
           done: !isComplete(slot.state),
+        }),
+      });
+      await load(week);
+    } finally { setBusy(null); }
+  };
+
+  // Trial reels are a tally, not a slot: rows 1..N of slot_type 'trial_reel'. Incrementing marks
+  // row N+1 done, decrementing un-marks row N — both plain upserts, so nothing is ever deleted and
+  // a replayed click can't push the count negative.
+  const bumpTrial = async (day: Day, delta: 1 | -1) => {
+    if (!canToggle(day)) return;
+    const next = day.trial_reels + delta;
+    if (next < 0) return;
+    setBusy(`${day.date}|trial`);
+    try {
+      await fetch(`/api/content/calendar/mark${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(token ? {} : { creator }),
+          for_date: day.date, slot_type: "trial_reel",
+          slot_index: delta === 1 ? next : day.trial_reels,
+          done: delta === 1,
         }),
       });
       await load(week);
@@ -241,6 +267,22 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                     {d.story_rest && (
                       <div style={{ fontSize: 9.5, color: "var(--text-muted)", textAlign: "center", padding: "3px 0" }}>no story</div>
                     )}
+                    {/* Self-reported tally, visually separated from the slots above so it never
+                        reads as part of the quota. Tap to add, minus to correct. */}
+                    <div title={TRIAL_NOTE}
+                      style={{ marginTop: 3, paddingTop: 5, borderTop: "1px dashed var(--border-primary)", display: "flex", alignItems: "center", gap: 3 }}>
+                      <button disabled={!!busy || locked} onClick={() => bumpTrial(d, 1)}
+                        title={`Add a trial reel — ${TRIAL_NOTE}`}
+                        style={{ flex: 1, height: 18, borderRadius: 5, border: "1px dashed var(--border-primary)", background: "transparent", cursor: locked ? "default" : "pointer", fontSize: 9, fontWeight: 700, color: d.trial_reels > 0 ? "var(--text-secondary)" : "var(--text-muted)", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                        <FlaskConical size={8} />Trial: {d.trial_reels}
+                      </button>
+                      {d.trial_reels > 0 && !locked && (
+                        <button disabled={!!busy} onClick={() => bumpTrial(d, -1)} title="Remove one"
+                          style={{ width: 15, height: 18, borderRadius: 5, border: "1px dashed var(--border-primary)", background: "transparent", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          <Minus size={8} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -262,6 +304,13 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                     <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--text-primary)" }}>{metrics.tally[t][0]}/{metrics.tally[t][1]}</span>
                   </div>
                 ))}
+                {/* Below the quota rows and with no target, because it isn't one. */}
+                <div title={TRIAL_NOTE} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
+                  <FlaskConical size={13} />
+                  <span>Trial reels this week</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{data.trial_reels_week ?? 0}</span>
+                </div>
               </div>
               <div style={{ borderTop: "1px solid var(--border-primary)", paddingTop: 14 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 5 }}>Today</div>
@@ -282,6 +331,7 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                     : "No posts detected yet"}
                 </div>
                 <div>Stories are manual-only — tap the story box once you post it.</div>
+                <div>Trial reels are self-reported — they aren&apos;t visible to the post sync, so they don&apos;t count toward quota or streaks.</div>
               </div>
             </div>
           )}
