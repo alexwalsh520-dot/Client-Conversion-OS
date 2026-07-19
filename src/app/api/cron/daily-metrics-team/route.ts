@@ -16,6 +16,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildTeamReport, formatTeam } from "@/lib/daily-report/team";
 import { etHour } from "@/lib/daily-report/time";
 import { postAsCso } from "@/lib/slack";
+import { getServiceSupabase } from "@/lib/supabase";
+import { ACTIVE_CREATORS } from "@/lib/creators";
+import { complianceForDay, streakEndingOn } from "@/lib/content/calendar-reconcile";
+import { getCadence } from "@/lib/content/calendar-build";
+import { shiftDay, todayIn } from "@/lib/content/calendar";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -26,6 +31,34 @@ function isAuthed(req: NextRequest): boolean {
   if (req.headers.get("x-vercel-cron") === "true") return true;
   const auth = req.headers.get("authorization");
   return Boolean(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`);
+}
+
+
+// One calendar-compliance line per creator, appended to the daily team recap. Counts come from the
+// SAME derivation the Calendar grid uses, for the creator's own previous local day, so the number in
+// Slack and the number on the grid can never disagree.
+async function complianceLines(): Promise<string> {
+  try {
+    const sb = getServiceSupabase();
+    const lines: string[] = [];
+    for (const c of ACTIVE_CREATORS) {
+      const cadence = await getCadence(sb, c.key);
+      const day = shiftDay(todayIn(cadence.timezone), -1); // yesterday, locally
+      const [comp, streak] = await Promise.all([
+        complianceForDay(sb, c.key, day),
+        streakEndingOn(sb, c.key, day),
+      ]);
+      const bits = [`${comp.reels.done}/${comp.reels.target} reels ${comp.reels.done >= comp.reels.target ? "\u2713" : "\u2717"}`];
+      if (comp.carousels.target > 0) {
+        bits.push(`${comp.carousels.done}/${comp.carousels.target} carousels ${comp.carousels.done >= comp.carousels.target ? "\u2713" : "\u2717"}`);
+      }
+      if (comp.story) bits.push(`story ${comp.story.done ? "\u2713" : "\u2717"}`);
+      lines.push(`*${c.name} content:* ${bits.join(" \u00b7 ")} (streak ${streak})`);
+    }
+    return lines.length ? `\n\n${lines.join("\n")}` : "";
+  } catch {
+    return ""; // the recap must never fail because the calendar had a bad day
+  }
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -44,7 +77,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const report = await buildTeamReport(now);
-  const text = formatTeam(report);
+  const text = formatTeam(report) + (await complianceLines());
 
   if (dry) {
     return NextResponse.json({ dry: true, text, report });
