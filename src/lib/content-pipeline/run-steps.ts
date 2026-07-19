@@ -68,18 +68,21 @@ export async function checkPolledFreshness(): Promise<Array<{ source: string; ho
     top(sb.from("fathom_calls").select("created_at").order("created_at", { ascending: false }).limit(1), "created_at"),
     getIngestHeartbeat(sb),
   ]);
+  // Per-source thresholds. The ingest is a CLOCKED poller — 8h of silence means it is broken.
+  // fathom_calls is EVENT-DRIVEN (a call has to happen), so a quiet stretch is normal and only a
+  // multi-day gap is suspicious; verified Jul 19 that weekday calls are landing hourly.
   const checks = [
-    { source: "fathom_calls", last: fathom },
+    { source: "fathom_calls", last: fathom, staleAfterH: 72 },
     // NOT max(created_at): the heartbeat is "the ingest last ran and succeeded", so a quiet creator
     // never trips this and a dead pipeline always does.
-    { source: "creator_content", last: heartbeat.last_ok_at },
+    { source: "creator_content", last: heartbeat.last_ok_at, staleAfterH: 8 },
   ];
   const stale: Array<{ source: string; hours_stale: number }> = [];
   const alertRows: Record<string, unknown>[] = [];
   for (const c of checks) {
     if (!c.last) continue;
     const hours = Math.round(((now - new Date(String(c.last)).getTime()) / 3600000) * 10) / 10;
-    if (hours > 24) {
+    if (hours > c.staleAfterH) {
       stale.push({ source: c.source, hours_stale: hours });
       alertRows.push({ source: c.source, last_data_at: c.last, hours_stale: hours });
     }
