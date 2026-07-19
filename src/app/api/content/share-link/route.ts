@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
-import { isCreatorKey, CREATORS } from "@/lib/creators";
+import { isCreatorKey, CREATORS, ACTIVE_CREATORS } from "@/lib/creators";
+import { CONTENT_CREATORS } from "@/lib/instagram-content";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,10 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const creator = (req.nextUrl.searchParams.get("creator") || "").toLowerCase();
-  if (!isCreatorKey(creator) || !["tyson", "antwan"].includes(creator)) {
-    return NextResponse.json({ error: "Pick a single active creator (Tyson or Antwan)." }, { status: 400 });
+  // Active roster comes from the registry, so a dropped client stops being link-able automatically.
+  if (!isCreatorKey(creator) || !(CONTENT_CREATORS as readonly string[]).includes(creator)) {
+    const names = ACTIVE_CREATORS.map((c) => c.name).join(" or ");
+    return NextResponse.json({ error: `Pick a single active creator (${names}).` }, { status: 400 });
   }
 
   try {

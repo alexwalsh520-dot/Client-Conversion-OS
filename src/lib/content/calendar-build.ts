@@ -47,6 +47,10 @@ export type Day = {
   dow: string;
   story_rest: boolean; // no story expected (Sunday by default) — reels/carousels still are
   slots: Slot[];
+  // A self-reported tally, NOT a slot: trial reels are never ingested (they don't appear on the
+  // public grid, so the scraper cannot see them), so they can't be verified and must not touch
+  // quota %, streaks, or VERIFIED/CLAIMED logic. Counted, shown, and labelled as self-reported.
+  trial_reels: number;
   reels_posted: number;
   carousels_posted: number;
   reels_target: number;
@@ -153,6 +157,19 @@ export async function getMarks(sb: SupabaseClient, creator: string, fromDate: st
   return m;
 }
 
+// Trial reels for one day. Stored as rows 1..N of slot_type 'trial_reel' in the SAME marks table
+// (no new table): the tally is simply how many are done=true. That makes both directions plain
+// upserts — increment sets index N+1 true, decrement sets index N false — so a count can never go
+// negative, replaying a request is a no-op, and nothing is ever deleted.
+export const TRIAL_REEL_SLOT = "trial_reel";
+export function trialReelCount(marks: Map<string, boolean>, date: string): number {
+  let n = 0;
+  for (const [key, done] of marks) {
+    if (done && key.startsWith(`${date}|${TRIAL_REEL_SLOT}|`)) n += 1;
+  }
+  return n;
+}
+
 // Reconciliation bookkeeping. Absent table (pre-migration) degrades to "nothing reconciled yet",
 // which only costs the finalized lock — states still derive correctly from posts + marks.
 export async function getDayRecords(sb: SupabaseClient, creator: string, fromDate: string, toDate: string) {
@@ -220,6 +237,7 @@ export function buildDay(args: {
     dow,
     story_rest: storyRest,
     slots,
+    trial_reels: trialReelCount(marks, date),
     reels_posted: reelPosts.length,
     carousels_posted: carPosts.length,
     reels_target: cadence.reels_per_day,

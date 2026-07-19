@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { cronBaseUrl } from "@/lib/cron-base-url";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-const CREATORS = ["tyson", "antwan"] as const;
+// Derived from the registry (creators.ts `active`), never hardcoded — dropping a client is a
+// one-line change there, not an edit to every cron.
+const CREATORS = ACTIVE_CREATORS.map((c) => c.key);
 const TREND_MAX_AGE_MS = 6.5 * 24 * 60 * 60 * 1000; // ~a week
 
 // Single hourly orchestrator that keeps the Buyers + Playbook tabs current on their own, per creator:

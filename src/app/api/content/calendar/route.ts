@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
     timezone: tz,
     cadence,
     days,
+    // Self-reported, so it sits beside the quota numbers rather than inside them.
+    trial_reels_week: days.reduce((n, d) => n + d.trial_reels, 0),
     // Two separate facts, never merged: did the pipeline run, and did the creator post.
     synced_at: heartbeat.last_ok_at,
     sync_age_hours: heartbeat.age_hours,

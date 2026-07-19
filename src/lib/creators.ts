@@ -41,6 +41,13 @@ export interface Creator {
    * enough that they can't collide with another creator.
    */
   matchTokens: readonly string[];
+  /**
+   * Pull this creator's reels via the Apify public scrape instead of the IG Graph API. Set only
+   * when their Graph token is unusable (Tyson's is dead). Apify is metered, so this stays opt-in
+   * per creator rather than running for everyone — but it lives here, as data, so no cron ever
+   * has to name a creator.
+   */
+  usesApifyScrape?: boolean;
 }
 
 export const CREATORS: readonly Creator[] = [
@@ -53,6 +60,7 @@ export const CREATORS: readonly Creator[] = [
     tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
     defaultAdAccountId: "act_176726311",
     matchTokens: ["tyson", "sonnek", "(ts)"],
+    usesApifyScrape: true, // Graph token is dead; reels come from the public scrape.
   },
   {
     key: "keith",

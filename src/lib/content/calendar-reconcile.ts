@@ -116,6 +116,11 @@ export async function complianceForDay(sb: SupabaseClient, creator: string, date
     reels: { done: okCount("reel"), target: of("reel").length },
     carousels: { done: okCount("carousel"), target: of("carousel").length },
     story: of("story").length ? { done: okCount("story") > 0 } : null,
+    // Counted toward "done" above (a claim is believed), but surfaced separately so the recap can
+    // say how much of the day rests on the creator's word rather than a detected post.
+    claimed: day.slots.filter((s) => s.state === "claimed").length,
+    // Self-reported and never part of quota — reported alongside, never inside, the numbers.
+    trial_reels: day.trial_reels,
   };
 }
 

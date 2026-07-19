@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cronBaseUrl } from "@/lib/cron-base-url";
+import { ACTIVE_CREATORS } from "@/lib/creators";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-const CREATORS = ["tyson", "antwan"] as const;
+// Derived from the registry (creators.ts `active`), never hardcoded — dropping a client is a
+// one-line change there, not an edit to every cron.
+const CREATORS = ACTIVE_CREATORS.map((c) => c.key);
 
 // Just after midnight America/New_York, put today's 5 carousels in front of each creator so the tab is
 // full when the team opens it — rather than waiting on the hourly pipeline, which only reaches its
