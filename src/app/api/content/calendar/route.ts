@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { getIngestHeartbeat } from "@/lib/content/ingest-heartbeat";
 import {
   DEFAULT_STORY_SCHEDULE,
   type Cadence,
@@ -205,17 +206,22 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Freshness: the newest ingest timestamp for this creator. A red slot only means "missed" if the
-  // scrape is current — if ingest has stalled, the UI must say "unverified" rather than imply absence.
-  const { data: newest } = await sb
-    .from("creator_content")
-    .select("created_at")
-    .eq("client_key", creator)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const syncedAt = (newest as { created_at?: string } | null)?.created_at ?? null;
-  const ageHours = syncedAt ? (Date.now() - new Date(syncedAt).getTime()) / 3_600_000 : null;
+  // Freshness has to answer two DIFFERENT questions, and the first version conflated them:
+  //   1. is the pipeline alive?      -> the ingest heartbeat (a successful run, even if it found
+  //                                     nothing new). Only this may raise the "unverified" banner.
+  //   2. has the creator posted?     -> newest_post_at. Nothing here, with a live pipeline, means
+  //                                     the red slots are HONEST misses, not a broken scrape.
+  const [heartbeat, newestPost] = await Promise.all([
+    getIngestHeartbeat(sb),
+    sb
+      .from("creator_content")
+      .select("taken_at")
+      .eq("client_key", creator)
+      .order("taken_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const newestPostAt = (newestPost.data as { taken_at?: string } | null)?.taken_at ?? null;
 
   return NextResponse.json({
     creator,
@@ -223,9 +229,11 @@ export async function GET(req: NextRequest) {
     today: todayET,
     cadence,
     days,
-    synced_at: syncedAt,
-    sync_age_hours: ageHours == null ? null : Math.round(ageHours * 10) / 10,
-    sync_stale: ageHours == null ? true : ageHours > 6,
+    // synced_at now means "the pipeline last pulled successfully", not "we last saw a new post".
+    synced_at: heartbeat.last_ok_at,
+    sync_age_hours: heartbeat.age_hours,
+    sync_stale: heartbeat.stale,
+    newest_post_at: newestPostAt,
   });
 }
 
