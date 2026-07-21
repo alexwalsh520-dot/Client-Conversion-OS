@@ -477,7 +477,24 @@ export async function discoverInstagramAccount(config: MetaOAuthConfig, accessTo
     const url = new URL(`${instagramApiBase(config.graphVersion)}/me`);
     url.searchParams.set("fields", "user_id,username,account_type");
     url.searchParams.set("access_token", accessToken);
-    const data = await fetchJson<Record<string, unknown>>(url.toString());
+    let data: Record<string, unknown>;
+    try {
+      data = await fetchJson<Record<string, unknown>>(url.toString());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Dev-mode Meta app: Meta lets the person approve the dialog but then
+      // refuses API calls for accounts without an app role. Say what actually
+      // fixes it instead of surfacing Meta's cryptic "Unsupported request".
+      if (/unsupported request/i.test(msg)) {
+        throw new Error(
+          "Meta approved the login but won't share this account's data yet — this Instagram " +
+            "account needs to be added as an Instagram Tester on the CCOS Meta app first. " +
+            "Ask the CCOS team to send the tester invite, accept it in your Instagram settings " +
+            "(Settings → Website permissions → Tester invites), then open this link and connect again.",
+        );
+      }
+      throw err;
+    }
     const instagramUserId = String(data.user_id || data.id || "");
     if (!instagramUserId) throw new Error("No Instagram account was returned by Meta");
     return {
