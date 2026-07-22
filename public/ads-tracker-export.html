@@ -632,6 +632,19 @@
   .ad-preview-copy-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:3px}
   .ad-preview-copy-text{font-size:13px;line-height:1.35;color:var(--text-1);font-weight:500}
   .ad-preview-hint{margin-top:7px;font-size:10.5px;letter-spacing:.03em;color:var(--text-4);text-align:center}
+  .call-hover{position:fixed;z-index:90;width:min(440px,calc(100vw - 20px));max-height:calc(100vh - 20px);overflow:hidden;background:var(--bg-1);border:1px solid var(--border-2);border-radius:9px;box-shadow:0 18px 60px rgba(0,0,0,.72);padding:11px 12px 12px;pointer-events:none}
+  .call-hover-title{font-size:12px;font-weight:700;color:var(--text-1);margin-bottom:2px}
+  .call-hover-proof{font-size:11.5px;color:var(--gold);margin-bottom:9px;font-weight:600}
+  .call-hover-empty{font-size:12px;color:var(--text-4);font-style:italic;padding:6px 2px}
+  .call-hover .ch-tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+  .call-hover .ch-tbl th{text-align:left;color:var(--text-4);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:9.5px;padding:0 8px 5px 0;border-bottom:1px solid var(--border-2)}
+  .call-hover .ch-tbl td{padding:5px 8px 5px 0;color:var(--text-2);white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.05)}
+  .call-hover .ch-tbl td.nm{color:var(--text-1);font-weight:600}
+  .ch-pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700}
+  .ch-pill.showed{color:#3fbf7a;background:rgba(47,158,100,.13)}
+  .ch-pill.noshow{color:#e0708a;background:rgba(208,89,107,.13)}
+  .ch-pill.upcoming{color:var(--gold);background:rgba(201,169,110,.13)}
+  .ch-more{font-size:10.5px;color:var(--text-4);padding-top:7px}
   /* Messaging insights card */
   .msg-loading{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border-2);color:var(--text-3);font-size:13px;line-height:1.5}
   .msg-spin{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb, var(--gold) 35%, transparent);border-top-color:var(--gold);animation:msg-spin 0.8s linear infinite;flex-shrink:0}
@@ -3210,11 +3223,67 @@ const DEFAULT_COL_WIDTHS = {
 // Keys that are calculated (vs logged/imported)
 const CALC_KEYS = new Set(["cpm", "ctr", "cpc", "cpMsg", "cpCall", "cpTaken", "cpClient", "closing", "msgConv", "collectedRoi"]);
 const LOGGED_KEYS = new Set(["msgs", "calls", "taken", "clients", "collected"]);
+function fmtCallDay(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  return isNaN(d) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+function fmtCallDayTime(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  return isNaN(d) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function callStatusPill(st) {
+  const cls = st === "showed" ? "showed" : st === "no_show" ? "noshow" : "upcoming";
+  const label = st === "showed" ? "Showed" : st === "no_show" ? "No-show" : "Upcoming";
+  return /*#__PURE__*/React.createElement("span", { className: "ch-pill " + cls }, label);
+}
+// The one hover box shown over a Calls booked / Calls taken / Show rate cell.
+function renderCallHover(hover) {
+  if (!hover) return null;
+  const kind = hover.kind; // "calls" | "taken" | "showRate"
+  const c = hover.counts || { booked: 0, taken: 0, upcoming: 0 };
+  const kw = hover.keyword || "";
+  let list = Array.isArray(hover.details) ? hover.details : [];
+  if (kind === "taken") list = list.filter(d => d.status === "showed");
+  const withStatus = kind !== "taken";
+  const due = c.booked - c.upcoming;
+  const pct = due > 0 ? Math.round(Math.min(100, c.taken / due * 100)) : null;
+  const title = kind === "calls" ? c.booked + " booked — " + kw
+    : kind === "taken" ? c.taken + " taken — " + kw
+    : "Show rate — " + kw;
+  const shown = list.slice(0, 40);
+  const bodyRows = shown.map((d, i) => /*#__PURE__*/React.createElement("tr", { key: i },
+    /*#__PURE__*/React.createElement("td", { className: "nm" }, d.name || "Lead"),
+    /*#__PURE__*/React.createElement("td", null, fmtCallDay(d.dmedAt)),
+    /*#__PURE__*/React.createElement("td", null, fmtCallDay(d.bookedAt)),
+    /*#__PURE__*/React.createElement("td", null, fmtCallDayTime(d.callAt)),
+    withStatus && /*#__PURE__*/React.createElement("td", null, callStatusPill(d.status))));
+  const head = /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null,
+    /*#__PURE__*/React.createElement("th", null, "Name"),
+    /*#__PURE__*/React.createElement("th", null, "DMed"),
+    /*#__PURE__*/React.createElement("th", null, "Booked"),
+    /*#__PURE__*/React.createElement("th", null, "Call"),
+    withStatus && /*#__PURE__*/React.createElement("th", null, "Status")));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "call-hover",
+    style: { left: hover.pos.left, top: hover.pos.top }
+  },
+    /*#__PURE__*/React.createElement("div", { className: "call-hover-title" }, title),
+    kind === "showRate" && /*#__PURE__*/React.createElement("div", { className: "call-hover-proof" },
+      (pct == null ? "—" : pct + "%") + " · " + c.taken + " showed of " + Math.max(0, due) + " due · " + c.upcoming + " upcoming (not counted)"),
+    list.length === 0
+      ? /*#__PURE__*/React.createElement("div", { className: "call-hover-empty" },
+          kind === "taken" ? "No calls taken yet." : "No per-call detail for this ad yet.")
+      : /*#__PURE__*/React.createElement("table", { className: "ch-tbl" }, head, /*#__PURE__*/React.createElement("tbody", null, bodyRows)),
+    list.length > 40 && /*#__PURE__*/React.createElement("div", { className: "ch-more" }, "+ " + (list.length - 40) + " more"));
+}
 function CampaignTable({
   account,
   status,
   loggedTotals,
-  campaigns = CAMPAIGNS
+  campaigns = CAMPAIGNS,
+  dashboard
 }) {
   const [view, setView] = useState("campaign"); // 'campaign' | 'adset' | 'ad'
   const [selectedCampaignIds, setSelectedCampaignIds] = useState(() => new Set()); // Ads-Manager-style checkbox selection
@@ -3269,6 +3338,61 @@ function CampaignTable({
       url,
       position: adPreviewPosition(event)
     });
+  };
+  // ---- Per-call hover (Calls booked / Calls taken / Show rate cells) ----
+  // Look up the per-call story (name, DMed, booked, call time, status) that the
+  // server attached to each ad's row (dashboard.rows[].callDetails), keyed by ad id
+  // and by client:keyword. Headline counts stay canonical; the box shows the calls
+  // we have detail for.
+  const callDetailsIndex = useMemo(() => {
+    const byId = new Map();
+    const rows = dashboard && Array.isArray(dashboard.rows) ? dashboard.rows : [];
+    for (const r of rows) {
+      if (!r || !Array.isArray(r.callDetails) || r.callDetails.length === 0) continue;
+      if (r.adId) byId.set(String(r.adId), r.callDetails);
+      const kwKey = (r.clientKey || "") + ":" + String(r.keyword || "").toLowerCase();
+      if (!byId.has(kwKey)) byId.set(kwKey, r.callDetails);
+      else byId.set(kwKey, byId.get(kwKey).concat(r.callDetails));
+    }
+    return byId;
+  }, [dashboard]);
+  const gatherCallDetails = rowObj => {
+    if (!rowObj) return [];
+    if (rowObj.adId && callDetailsIndex.has(String(rowObj.adId))) return callDetailsIndex.get(String(rowObj.adId)) || [];
+    const ads = rowObj.ads || rowObj.adRows || [];
+    let out = [];
+    for (const a of ads) {
+      const adKey = a && (a.adId || a.id);
+      const d = adKey ? callDetailsIndex.get(String(adKey)) : null;
+      if (d) out = out.concat(d);
+    }
+    if (out.length === 0 && rowObj.keyword != null) {
+      const d = callDetailsIndex.get((rowObj.clientKey || "") + ":" + String(rowObj.keyword).toLowerCase());
+      if (d) out = d;
+    }
+    return out;
+  };
+  const [callHover, setCallHover] = useState(null);
+  const showCallHover = (event, metric, rowObj, kind, keyword) => {
+    const details = gatherCallDetails(rowObj);
+    setCallHover({
+      kind,
+      keyword: String(keyword || (rowObj && (rowObj.keyword || rowObj.name)) || "").toUpperCase(),
+      details,
+      counts: { booked: Number(metric.calls || 0), taken: Number(metric.taken || 0), upcoming: Number(metric.upcoming || 0) },
+      pos: {
+        left: Math.min(event.clientX + 14, window.innerWidth - 452),
+        top: Math.min(event.clientY + 14, Math.max(12, window.innerHeight - 380))
+      }
+    });
+  };
+  const callHoverProps = (colKey, metric, rowObj, keyword) => {
+    if (colKey !== "calls" && colKey !== "taken" && colKey !== "showRate") return {};
+    return {
+      onMouseEnter: e => showCallHover(e, metric, rowObj, colKey, keyword),
+      onMouseMove: e => showCallHover(e, metric, rowObj, colKey, keyword),
+      onMouseLeave: () => setCallHover(null)
+    };
   };
   const [sort, setSort] = useState({
     key: "date",
@@ -3630,6 +3754,7 @@ function CampaignTable({
       const cls = (col.cls ? col.cls(agg) : "") + (col.calc ? " calc" : "");
       return /*#__PURE__*/React.createElement("td", {
         key: col.k,
+            ...callHoverProps(col.k, agg, c),
         className: cls
       }, col.fmt(agg));
     })), isOpen && view === "ad" && (() => {
@@ -3689,6 +3814,7 @@ function CampaignTable({
           }
           return /*#__PURE__*/React.createElement("td", {
             key: col.k,
+            ...callHoverProps(col.k, adMetrics, ad),
             className: cls,
             style: {
               fontSize: 11.5
@@ -3769,6 +3895,7 @@ function CampaignTable({
           }
           return /*#__PURE__*/React.createElement("td", {
             key: col.k,
+            ...callHoverProps(col.k, asMetrics, as),
             className: cls,
             style: {
               fontSize: 12
@@ -3816,6 +3943,7 @@ function CampaignTable({
             }
             return /*#__PURE__*/React.createElement("td", {
               key: col.k,
+            ...callHoverProps(col.k, adMetrics, ad),
               className: cls,
               style: {
                 fontSize: 11.5
@@ -3915,6 +4043,7 @@ function CampaignTable({
           }
           return /*#__PURE__*/React.createElement("td", {
             key: col.k,
+            ...callHoverProps(col.k, adMetrics, ad),
             className: cls,
             style: {
               fontSize: 11.5
@@ -4055,7 +4184,7 @@ function CampaignTable({
     className: "ad-preview-image",
     src: preview.url,
     alt: ""
-  })));
+  })), callHover && renderCallHover(callHover));
 }
 
 // ------- Shared line chart (curvy, 2 lines, fade, hover tooltip)
@@ -15928,7 +16057,8 @@ function App() {
   }, loading ? "Loading…" : fetchedLabel)), /*#__PURE__*/React.createElement(CampaignTable, {
     account: account,
     status: status,
-    campaigns: scopedCampaigns
+    campaigns: scopedCampaigns,
+    dashboard: dashboard
   })), /*#__PURE__*/React.createElement(MetricCardBoard, {
     campaigns: metricCampaigns,
     dashboard: dashboard,

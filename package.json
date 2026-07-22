@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-ads-html.mjs && next build",
+    "check:ads": "node scripts/check-ads-html.mjs",
     "guard": "node scripts/ccos-guard.mjs",
     "start": "next start",
     "lint": "eslint",
