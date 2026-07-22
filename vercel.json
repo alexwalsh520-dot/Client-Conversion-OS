@@ -12,6 +12,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/fx-sync",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/content-pipeline-heavy",
       "schedule": "30 */2 * * *"
     },

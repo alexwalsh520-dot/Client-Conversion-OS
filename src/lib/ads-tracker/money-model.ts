@@ -13,6 +13,13 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { saleGrossProfit, MANAGER_MONTHLY_BASE } from "@/lib/economics";
 import { creatorKeyFromText, CREATORS, type CreatorKey } from "@/lib/creators";
 import { dedupeSalesRows } from "@/lib/ads-tracker/dedupe-sales";
+import {
+  loadUsdRateMap,
+  nonUsdCurrenciesForClients,
+  creatorCurrency,
+  convertDollarsToUsd,
+  USD,
+} from "@/lib/fx/rates";
 
 // Fixed monthly overhead tied to CAC (does NOT scale with sales volume):
 //   - sales manager base (WILL) ............ $4,000  (from economics.ts)
@@ -124,16 +131,22 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   // ~2× for the current, actively-tagged month. See dedupe-sales.
   const sales = dedupeSalesRows(salesRaw);
 
-  const spendRows = await fetchAll<{ client_key: string | null; spend_cents: number | null }>(
+  const spendRows = await fetchAll<{ client_key: string | null; spend_cents: number | null; date: string | null }>(
     (lo, hi) =>
       sb
         .from("ads_meta_insights_daily")
-        .select("client_key,spend_cents")
+        .select("client_key,spend_cents,date")
         .gte("date", from)
         .lte("date", to)
         .gt("spend_cents", 0)
         .range(lo, hi)
   );
+
+  // FX: convert any non-USD creator's money (spend + cash) to USD at each day's
+  // rate, so this model reads in one currency like the rest of the app. One rate
+  // load for the whole month; a no-op when every creator is USD.
+  const fxBases = nonUsdCurrenciesForClients(CREATORS.map((c) => c.key));
+  const fxRates = fxBases.length ? await loadUsdRateMap(sb, fxBases, from, to) : null;
 
   // ---- business totals ----
   let collected = 0;
@@ -143,8 +156,13 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   const nameByKey = new Map<string, string>(CREATORS.map((c) => [c.key, c.name]));
 
   for (const s of sales) {
-    const cash = (s.collected_revenue_cents || 0) / 100;
+    const key: CreatorKey | null = creatorKeyFromText(s.offer);
+    let cash = (s.collected_revenue_cents || 0) / 100;
     if (cash <= 0) continue;
+    const saleCur = creatorCurrency(key);
+    if (saleCur !== USD && fxRates) {
+      cash = convertDollarsToUsd(cash, saleCur, String(s.date || "").slice(0, 10), fxRates);
+    }
     const gp = saleGrossProfit({
       cashCollected: cash,
       closer: s.closer,
@@ -153,7 +171,6 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
     });
     collected += cash;
     contribution += gp;
-    const key: CreatorKey | null = creatorKeyFromText(s.offer);
     if (!key) {
       unattributedCollected += cash;
       continue;
@@ -167,9 +184,13 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
   let adSpend = 0;
   const spendByClient = new Map<string, number>();
   for (const r of spendRows) {
-    const spend = (r.spend_cents || 0) / 100;
-    adSpend += spend;
+    let spend = (r.spend_cents || 0) / 100;
     const key = String(r.client_key || "").trim();
+    const spendCur = creatorCurrency(key);
+    if (spendCur !== USD && fxRates) {
+      spend = convertDollarsToUsd(spend, spendCur, String(r.date || "").slice(0, 10), fxRates);
+    }
+    adSpend += spend;
     if (key) spendByClient.set(key, (spendByClient.get(key) || 0) + spend);
   }
 

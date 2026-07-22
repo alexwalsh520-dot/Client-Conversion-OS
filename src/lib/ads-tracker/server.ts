@@ -4,6 +4,14 @@ import { dedupeSalesRows } from "@/lib/ads-tracker/dedupe-sales";
 import { saleGrossProfit } from "@/lib/economics";
 import { displayKeyword, keywordFromAdName, normalizeKeyword, normalizePersonName } from "./normalize";
 import { creatorKeyFromText, CREATORS, type CreatorKey } from "@/lib/creators";
+import {
+  loadUsdRateMap,
+  nonUsdCurrenciesForClients,
+  creatorCurrency,
+  convertCentsToUsd,
+  convertDollarsToUsd,
+  USD,
+} from "@/lib/fx/rates";
 
 // Every creator the dashboard knows about — the single source for "all accounts".
 const ALL_CREATOR_KEYS: string[] = CREATORS.map((c) => c.key);
@@ -2501,7 +2509,50 @@ async function fetchMetaRowsForDateRange(
     if (page.length < SUPABASE_PAGE_SIZE) break;
   }
 
+  // Normalize every creator's spend to USD before it is summed anywhere. A
+  // non-USD creator (e.g. Jake / AUD) has raw native-currency spend in the DB;
+  // we convert each row at ITS OWN day's rate. USD creators are untouched (the
+  // whole block no-ops when the view is USD-only), so this is zero risk to them.
+  const bases = nonUsdCurrenciesForClients(clientFilter);
+  if (bases.length > 0) {
+    const rateMap = await loadUsdRateMap(db, bases, dateFrom, dateTo);
+    for (const row of rows) {
+      const cur = creatorCurrency(row.client_key);
+      if (cur === USD) continue;
+      row.spend_cents = convertCentsToUsd(row.spend_cents || 0, cur, row.date, rateMap);
+    }
+  }
+
   return rows;
+}
+
+// Convert a non-USD creator's sale cash (collected + contracted) into USD, each
+// sale at its own day's rate, so ROAS/CAC read in one currency. Mutates in place.
+// No-op (and no DB call) when the view has no non-USD creators.
+async function convertSalesRowsToUsd(
+  db: ReturnType<typeof getServiceSupabase>,
+  rows: SheetRow[],
+  clientFilter: string[]
+): Promise<void> {
+  const bases = nonUsdCurrenciesForClients(clientFilter);
+  if (bases.length === 0 || rows.length === 0) return;
+  let min = "9999-12-31";
+  let max = "0000-01-01";
+  for (const r of rows) {
+    const d = (r.date || "").slice(0, 10);
+    if (!d) continue;
+    if (d < min) min = d;
+    if (d > max) max = d;
+  }
+  if (max < min) return;
+  const rateMap = await loadUsdRateMap(db, bases, min, max);
+  for (const r of rows) {
+    const cur = creatorCurrency(clientFromOffer(r));
+    if (cur === USD) continue;
+    const day = (r.date || "").slice(0, 10);
+    if (r.cashCollected) r.cashCollected = convertDollarsToUsd(r.cashCollected, cur, day, rateMap);
+    if (r.revenue) r.revenue = convertDollarsToUsd(r.revenue, cur, day, rateMap);
+  }
 }
 
 async function fetchKeywordEvents(
@@ -3925,6 +3976,11 @@ export async function getAdsTrackerDashboard(
   mark("fetch");
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
+
+  // Money normalization: convert any non-USD creator's sale cash to USD before it
+  // feeds ROAS/CAC (spend is already converted at fetch). No-op for USD-only views.
+  await convertSalesRowsToUsd(db, salesRows, clientFilter);
+  if (!fast) await convertSalesRowsToUsd(db, alertSalesRows, alertClientFilter);
 
   const groups = new Map<string, Group>();
   const rows = metaRows;

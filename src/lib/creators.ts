@@ -42,6 +42,13 @@ export interface Creator {
    */
   matchTokens: readonly string[];
   /**
+   * The currency Meta bills this creator in (ISO 4217, e.g. "AUD"). Omitted means
+   * USD. Money for a non-USD creator (spend and revenue) is stored raw in their
+   * currency and converted to USD at read time, per the day it moved, so the ads
+   * tab shows every creator in one currency. See src/lib/fx/.
+   */
+  currency?: string;
+  /**
    * Pull this creator's reels via the Apify public scrape instead of the IG Graph API. Set only
    * when their Graph token is unusable (Tyson's is dead). Apify is metered, so this stays opt-in
    * per creator rather than running for everyone — but it lives here, as data, so no cron ever
@@ -99,6 +106,7 @@ export const CREATORS: readonly Creator[] = [
     // RRF V2 ad account reports in AUD on Sydney time. Spend/revenue values arrive
     // in AUD (the pipeline has no FX layer yet), so his figures are AUD until we add one.
     timezone: "Australia/Sydney",
+    currency: "AUD", // RRF V2 bills in AUD; converted to USD at read time (src/lib/fx)
     adAccountEnv: ["META_AD_ACCOUNT_JAKE_DIVLJAK", "META_AD_ACCOUNT_JAKE"],
     tokenEnv: ["META_ACCESS_TOKEN_JAKE_DIVLJAK", "META_ACCESS_TOKEN_JAKE"],
     defaultAdAccountId: "act_304988118349730", // RRF V2 (live lead-magnet campaign)
