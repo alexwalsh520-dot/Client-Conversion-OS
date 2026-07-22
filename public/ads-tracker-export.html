@@ -2246,6 +2246,7 @@ function buildAdRows(campaignId, dayRow, adRoster) {
       msgs: ad.msgs || 0,
       calls: ad.calls || 0,
       taken: ad.taken || 0,
+      upcoming: ad.upcoming || 0,
       clients: ad.clients || 0,
       mainClients: ad.mainClients ?? ad.clients ?? 0,
       subClients: ad.subClients || 0,
@@ -2269,6 +2270,7 @@ function aggregateAdRowsForCampaign(campaign) {
         msgs: 0,
         calls: 0,
         taken: 0,
+        upcoming: 0,
         clients: 0,
         mainClients: 0,
         subClients: 0,
@@ -2280,6 +2282,7 @@ function aggregateAdRowsForCampaign(campaign) {
       current.msgs += ad.msgs || 0;
       current.calls += ad.calls || 0;
       current.taken += ad.taken || 0;
+      current.upcoming = (current.upcoming || 0) + (ad.upcoming || 0);
       current.clients += ad.clients || 0;
       current.mainClients += ad.mainClients ?? ad.clients ?? 0;
       current.subClients += ad.subClients || 0;
@@ -2466,6 +2469,7 @@ function aggregate(rows) {
     msgs = sum("msgs"),
     calls = sum("calls"),
     taken = sum("taken"),
+    upcoming = sum("upcoming"),
     clients = sum("clients"),
     collected = sum("collected");
   return deriveRow({
@@ -2476,6 +2480,7 @@ function aggregate(rows) {
     msgs,
     calls,
     taken,
+    upcoming,
     clients,
     collected
   });
@@ -3155,6 +3160,7 @@ function aggregateAdSetRowsForCampaign(campaign) {
       msgs: 0,
       calls: 0,
       taken: 0,
+      upcoming: 0,
       clients: 0,
       mainClients: 0,
       subClients: 0,
@@ -3167,6 +3173,7 @@ function aggregateAdSetRowsForCampaign(campaign) {
     cur.msgs += ad.msgs || 0;
     cur.calls += ad.calls || 0;
     cur.taken += ad.taken || 0;
+    cur.upcoming = (cur.upcoming || 0) + (ad.upcoming || 0);
     cur.clients += ad.clients || 0;
     cur.mainClients += ad.mainClients || 0;
     cur.subClients += ad.subClients || 0;
@@ -3327,6 +3334,7 @@ function CampaignTable({
         msgs: r.msgs + (bump.msgs || 0),
         calls: r.calls + (bump.calls || 0),
         taken: (r.taken || 0) + (bump.taken || 0),
+        upcoming: (r.upcoming || 0) + (bump.upcoming || 0),
         clients: r.clients + (bump.clients || 0),
         mainClients: (r.mainClients ?? r.clients ?? 0) + (bump.clients || 0),
         subClients: r.subClients || 0,
@@ -3649,6 +3657,7 @@ function CampaignTable({
           calls: ad.calls,
           clients: ad.clients,
           taken: ad.taken,
+          upcoming: ad.upcoming,
           collected: ad.collected
         });
         return /*#__PURE__*/React.createElement("tr", {
@@ -3714,6 +3723,7 @@ function CampaignTable({
           calls: as.calls,
           clients: as.clients,
           taken: as.taken,
+          upcoming: as.upcoming,
           collected: as.collected
         });
         return /*#__PURE__*/React.createElement(React.Fragment, {
@@ -3774,6 +3784,7 @@ function CampaignTable({
             calls: ad.calls,
             clients: ad.clients,
             taken: ad.taken,
+            upcoming: ad.upcoming,
             collected: ad.collected
           });
           return /*#__PURE__*/React.createElement("tr", {
@@ -3872,6 +3883,7 @@ function CampaignTable({
           calls: ad.calls,
           clients: ad.clients,
           taken: ad.taken,
+          upcoming: ad.upcoming,
           collected: ad.collected
         });
         return /*#__PURE__*/React.createElement("tr", {
@@ -3921,6 +3933,7 @@ function CampaignTable({
       calls: as.calls,
       clients: as.clients,
       taken: as.taken,
+      upcoming: as.upcoming,
       collected: as.collected
     });
     return /*#__PURE__*/React.createElement("tr", {
@@ -3974,6 +3987,7 @@ function CampaignTable({
       calls: ad.calls,
       clients: ad.clients,
       taken: ad.taken,
+      upcoming: ad.upcoming,
       collected: ad.collected
     });
     return /*#__PURE__*/React.createElement("tr", {
@@ -6350,6 +6364,7 @@ function rowsForCsv(campaigns) {
           msgs: ad.msgs,
           calls: ad.calls,
           taken: ad.taken,
+          upcoming: ad.upcoming,
           clients: ad.clients,
           collected: ad.collected
         });
