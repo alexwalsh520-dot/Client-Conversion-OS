@@ -12,7 +12,7 @@
 // (they show "not configured" instead of erroring).
 // ─────────────────────────────────────────────────────────────────────────
 
-export type CreatorKey = "tyson" | "keith" | "lucy" | "antwan";
+export type CreatorKey = "tyson" | "keith" | "lucy" | "antwan" | "jake";
 
 export interface Creator {
   /** Short internal key used across the ads pipeline. */
@@ -91,6 +91,18 @@ export const CREATORS: readonly Creator[] = [
     tokenEnv: ["META_ACCESS_TOKEN_ANTWAN_RARCUS", "META_ACCESS_TOKEN_ANTWAN", "META_ACCESS_TOKEN"],
     defaultAdAccountId: "act_275999723846625", // Against All Odds Fitness (never-expire System User token)
     matchTokens: ["antwan", "rarcus", "against all odds", "(ar)"],
+  },
+  {
+    key: "jake",
+    name: "Jake",
+    active: true, // onboarded Jul 2026 (Jake Divljak — RecruitReady Fitness)
+    // RRF V2 ad account reports in AUD on Sydney time. Spend/revenue values arrive
+    // in AUD (the pipeline has no FX layer yet), so his figures are AUD until we add one.
+    timezone: "Australia/Sydney",
+    adAccountEnv: ["META_AD_ACCOUNT_JAKE_DIVLJAK", "META_AD_ACCOUNT_JAKE"],
+    tokenEnv: ["META_ACCESS_TOKEN_JAKE_DIVLJAK", "META_ACCESS_TOKEN_JAKE"],
+    defaultAdAccountId: "act_304988118349730", // RRF V2 (live lead-magnet campaign)
+    matchTokens: ["jake", "divljak", "recruit ready", "recruitready", "rrf"],
   },
 ];
 
