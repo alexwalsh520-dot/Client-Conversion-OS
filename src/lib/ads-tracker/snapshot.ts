@@ -132,7 +132,7 @@ const PAINT_DROP_FIELDS = ["dailyRows", "attribution", "eventsHistory", "calenda
 // The raw additive fields the client sums per row (metricRowFromApi/addMetric); every ratio the table
 // shows (CPM, ROI, cost-per-*) is recomputed client-side from these, so the derived fields in a row are
 // redundant weight. The identity/label fields the table groups by are carried through verbatim.
-const ROLLUP_SUM_FIELDS = ["adSpend", "impressions", "linkClicks", "messages", "bookedCalls", "callsTaken", "newClients", "mainOfferClients", "subscriptionClients", "collectedRevenue", "contractedRevenue", "grossProfit"] as const;
+const ROLLUP_SUM_FIELDS = ["adSpend", "impressions", "linkClicks", "messages", "bookedCalls", "callsTaken", "upcomingCalls", "newClients", "mainOfferClients", "subscriptionClients", "collectedRevenue", "contractedRevenue", "grossProfit"] as const;
 const ROLLUP_KEEP_FIELDS = ["clientKey", "campaignId", "campaignName", "adId", "adName", "adsetId", "adsetName", "keyword", "previewImageUrl", "previewThumbnailUrl", "attributionOnly", "id"] as const;
 
 // Collapse dailyRows (one row per ad per day) into one row per ad for the whole window, summing the raw

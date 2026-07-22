@@ -2619,6 +2619,7 @@ function metricRowFromApi(row, dateLabel) {
     msgs: Number(row.messages || 0),
     calls: Number(row.bookedCalls || 0),
     taken: Number(row.callsTaken || 0),
+    upcoming: Number(row.upcomingCalls || 0),
     clients: Number(row.newClients || 0),
     mainClients: Number(row.mainOfferClients ?? row.newClients ?? 0),
     subClients: Number(row.subscriptionClients || 0),
@@ -2632,6 +2633,7 @@ function addMetric(target, row) {
   target.msgs += row.msgs || 0;
   target.calls += row.calls || 0;
   target.taken += row.taken || 0;
+  target.upcoming = (target.upcoming || 0) + (row.upcoming || 0);
   target.clients += row.clients || 0;
   target.mainClients += row.mainClients ?? row.clients ?? 0;
   target.subClients += row.subClients || 0;
@@ -2646,6 +2648,7 @@ function emptyMetric(date) {
     msgs: 0,
     calls: 0,
     taken: 0,
+    upcoming: 0,
     clients: 0,
     mainClients: 0,
     subClients: 0,
@@ -2791,6 +2794,7 @@ function filterCampaignsBySearch(campaigns, search) {
         messages: ad.msgs,
         bookedCalls: ad.calls,
         callsTaken: ad.taken,
+        upcomingCalls: ad.upcoming,
         newClients: ad.clients,
         mainOfferClients: ad.mainClients,
         subscriptionClients: ad.subClients,
@@ -3441,6 +3445,22 @@ function CampaignTable({
     label: "Cost / call taken",
     fmt: r => r.cpTaken ? "$" + r.cpTaken.toFixed(0) : "—",
     cls: r => r.cpTaken && r.cpTaken <= 45 ? "pos" : r.cpTaken && r.cpTaken >= 70 ? "neg" : "",
+    calc: true
+  }, {
+    k: "showRate",
+    label: "Show rate",
+    // Shown / due, where due = booked minus still-upcoming. Upcoming calls never
+    // drag it down. A dash when nothing is due yet. Matches the server formula.
+    fmt: r => {
+      const due = (r.calls || 0) - (r.upcoming || 0);
+      return due > 0 ? Math.round(Math.min(100, r.taken / due * 100)) + "%" : "—";
+    },
+    cls: r => {
+      const due = (r.calls || 0) - (r.upcoming || 0);
+      if (due <= 0) return "";
+      const v = Math.min(100, r.taken / due * 100);
+      return v >= 50 ? "pos" : v < 30 ? "neg" : "";
+    },
     calc: true
   }, {
     k: "clients",

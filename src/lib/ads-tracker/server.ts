@@ -172,6 +172,9 @@ export interface AdsTrackerRow {
   costPerBookedCall: number | null;
   callsTaken: number;
   costPerCallTaken: number | null;
+  upcomingCalls: number;
+  showRate: number | null;
+  callDetails: CallDetail[];
   newClients: number;
   mainOfferClients: number;
   subscriptionClients: number;
@@ -242,6 +245,13 @@ interface Group {
   messages: number;
   bookedCalls: number;
   callsTaken: number;
+  // Booked calls whose scheduled time is still in the future (from the GHL
+  // calendar). Excluded from the show-rate denominator so a not-yet-happened
+  // call can never drag the rate down. Subset of bookedCalls.
+  upcomingCalls: number;
+  // Per-call story behind the booked/taken/show-rate cells (for the hover). Best
+  // effort from the live calendar + tracker; the headline counts stay canonical.
+  callDetails: CallDetail[];
   newClients: number;
   mainOfferClients: number;
   subscriptionClients: number;
@@ -249,6 +259,15 @@ interface Group {
   collectedRevenue: number;
   grossProfit: number;
   status: "active" | "finished";
+}
+
+// One booked call, with the timestamps and status the hover boxes show.
+interface CallDetail {
+  name: string;
+  dmedAt: string | null; // first DM/keyword-hit for this person
+  bookedAt: string | null; // when the call was booked
+  callAt: string | null; // when the call is/was scheduled
+  status: "showed" | "no_show" | "upcoming";
 }
 
 interface UnmatchedSale {
@@ -453,6 +472,8 @@ function emptyGroup(id: string, clientKey: string, name: string, keyword: string
     messages: 0,
     bookedCalls: 0,
     callsTaken: 0,
+    upcomingCalls: 0,
+    callDetails: [],
     newClients: 0,
     mainOfferClients: 0,
     subscriptionClients: 0,
@@ -484,6 +505,15 @@ function sumResolvedRevenue(
     .reduce((sum, alert) => sum + alert.amount, 0);
 }
 
+// Honest show rate: shown ÷ due, where "due" = booked calls whose time has passed
+// (booked minus still-upcoming). Returns null when nothing is due yet so the cell
+// shows a dash instead of a misleading 0%. Capped at 100 (can't show more than all).
+export function showRatePercent(booked: number, taken: number, upcoming: number): number | null {
+  const due = booked - upcoming;
+  if (due <= 0) return null;
+  return Math.min(100, (taken / due) * 100);
+}
+
 function finalizeGroup(group: Group): AdsTrackerRow {
   const adSpend = dollars(group.adSpendCents);
   const hasClientSplit = group.mainOfferClients > 0 || group.subscriptionClients > 0;
@@ -513,6 +543,11 @@ function finalizeGroup(group: Group): AdsTrackerRow {
     costPerBookedCall: group.bookedCalls > 0 ? adSpend / group.bookedCalls : null,
     callsTaken: group.callsTaken,
     costPerCallTaken: group.callsTaken > 0 ? adSpend / group.callsTaken : null,
+    upcomingCalls: group.upcomingCalls,
+    // Show rate = taken / (booked that are already due). Upcoming calls are left
+    // out of the denominator. Null when nothing is due yet (shows a dash, not 0%).
+    showRate: showRatePercent(group.bookedCalls, group.callsTaken, group.upcomingCalls),
+    callDetails: group.callDetails,
     newClients: group.newClients,
     mainOfferClients: hasClientSplit ? group.mainOfferClients : group.newClients,
     subscriptionClients: group.subscriptionClients,
@@ -2408,6 +2443,73 @@ function addKeywordBackfillRowsToGroups(
   }
 }
 
+// Fill each group's per-call story + upcoming count from the SAME GHL booking
+// events that drove bookedCalls, joined to the calendar (start/booked time) and
+// the sales tracker (who actually showed). Headline counts stay canonical; this
+// only ADDS the timing + status behind them. Over-counting upcoming can never
+// inflate the rate: finalizeGroup returns a dash when (booked - upcoming) <= 0.
+function attachCallDetails(
+  groups: Map<string, Group>,
+  ghlBookingEvents: KeywordEvent[],
+  appointments: GhlAppointmentRow[],
+  manychatEvents: KeywordEvent[],
+  salesRows: SheetRow[],
+  groupIdForEvent: (event: KeywordEvent, keyword: string) => string,
+  nowMs: number,
+  collectDetails = true
+) {
+  const apptById = new Map<string, GhlAppointmentRow>();
+  for (const a of appointments) if (a.appointment_id) apptById.set(a.appointment_id, a);
+
+  const firstDmBySub = new Map<string, string>();
+  for (const e of manychatEvents) {
+    const sub = (e.subscriber_id || "").trim();
+    if (!sub || !e.event_at) continue;
+    const prev = firstDmBySub.get(sub);
+    if (!prev || e.event_at < prev) firstDmBySub.set(sub, e.event_at);
+  }
+
+  const shownSubs = new Set<string>();
+  const shownNames = new Set<string>();
+  for (const r of salesRows) {
+    if (!r.callTaken || isNoShow(r)) continue;
+    if (r.manychatSubscriberId) shownSubs.add(String(r.manychatSubscriberId).trim());
+    const nm = normalizePersonName(r.name);
+    if (nm) shownNames.add(nm);
+  }
+
+  for (const event of ghlBookingEvents) {
+    const keyword = normalizeKeyword(event.keyword_normalized || event.keyword_raw);
+    if (!keyword) continue;
+    const group = groups.get(groupIdForEvent(event, keyword));
+    if (!group) continue;
+    const appt = event.appointment_id ? apptById.get(event.appointment_id) : undefined;
+    const callAt = appt?.start_time || null;
+    const upcoming = callAt ? new Date(callAt).getTime() > nowMs : false;
+    if (upcoming) group.upcomingCalls += 1;
+    if (!collectDetails) continue;
+    const sub = (event.subscriber_id || "").trim();
+    const name = appt?.contact_name || event.subscriber_name || "Lead";
+    const nm = normalizePersonName(name);
+    const showed = (!!sub && shownSubs.has(sub)) || (!!nm && shownNames.has(nm));
+    group.callDetails.push({
+      name,
+      dmedAt: sub ? firstDmBySub.get(sub) || null : null,
+      bookedAt: appt?.created_at || event.event_at || null,
+      callAt,
+      status: upcoming ? "upcoming" : showed ? "showed" : "no_show",
+    });
+  }
+
+  if (!collectDetails) return;
+  for (const group of groups.values()) {
+    if (group.callDetails.length > 60) {
+      group.callDetails.sort((a, b) => (b.callAt || "").localeCompare(a.callAt || ""));
+      group.callDetails.length = 60;
+    }
+  }
+}
+
 async function fetchKeywordBackfillRows(
   db: ReturnType<typeof getServiceSupabase>,
   query: AdsTrackerQuery,
@@ -4090,6 +4192,19 @@ export async function getAdsTrackerDashboard(
     ),
     ...originAdEvents.filter((event) => clientFilter.includes(event.client_key)),
   ];
+
+  // Attach the per-call story + upcoming count to each group, from the same GHL
+  // booking events that built bookedCalls, so the show rate and hover are accurate.
+  attachCallDetails(
+    groups,
+    events.filter((event) => event.source === "ghl"),
+    ghlAppointments,
+    manychatEvents,
+    salesRows,
+    (event, keyword) =>
+      periodAttributionGroupId(event, keyword, `${event.client_key}:keyword:${keyword}`),
+    Date.now()
+  );
   const alertBackfill = alertBackfillRows as KeywordBackfillRow[];
   const alertBackfilledDateKeys = new Set(
     alertBackfill.map((row) => `${row.client_key}:${row.date}`)
@@ -4425,6 +4540,25 @@ export async function getAdsTrackerDashboard(
     includeUnmatchedSales,
     manychatEvents,
   });
+
+  // Upcoming-call count on the per-day rows too, so the client's summed row (and
+  // the paint rollup) get an accurate show-rate denominator. Detail rides the
+  // period rows only (collectDetails=false here).
+  attachCallDetails(
+    dailyGroups,
+    events.filter((event) => event.source === "ghl"),
+    ghlAppointments,
+    manychatEvents,
+    attributionSalesRows,
+    (event, keyword) =>
+      dailyAttributionGroupId(
+        event,
+        keyword,
+        `${eventDateKey(event.event_at)}:${event.client_key}:keyword:${keyword}`
+      ),
+    Date.now(),
+    false
+  );
 
   const eventsHistory = buildAttributionEventsHistory({
     query,
