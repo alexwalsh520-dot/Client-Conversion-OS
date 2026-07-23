@@ -48,6 +48,22 @@
       "schedule": "*/2 * * * *"
     },
     {
+      "path": "/api/cron/transcribe-blitz",
+      "schedule": "17,47 * * * *"
+    },
+    {
+      "path": "/api/cron/video-ideas-pipeline",
+      "schedule": "50 * * * *"
+    },
+    {
+      "path": "/api/cron/time-to-eat-tick",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/buyer-dna-weekly",
+      "schedule": "0 13 * * 1"
+    },
+    {
       "path": "/api/ads/creative-copy/backfill-all",
       "schedule": "20 */2 * * *"
     },

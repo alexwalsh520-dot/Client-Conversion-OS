@@ -35,5 +35,20 @@ content-pipeline-heavy (30 */2), creative-copy backfill-all (20 */2),
 sales-quick-sync (*/10).
 
 ## Re-enable status (P0.6)
-See docs/ads-v2-piece1-report.md for the staggered re-enable log and the
+Re-enabled after the systemic fixes were live (service_role statement_timeout,
+singleton client, no request-path compute, no pg_cron HTTP), staggered so no two
+land on the same minute as the hot jobs (foundation :03, ads-tracker :05,
+ads-v2-sync :25):
+- /api/cron/transcribe-blitz  -> 17,47 * * * *  (was 8,23,38,53; halved + moved off the hot minutes).
+- /api/cron/video-ideas-pipeline -> 50 * * * *  (was 30; moved off content-pipeline-heavy :30).
+- /api/cron/time-to-eat-tick   -> */5 * * * *   (was */2; lighter cadence).
+- /api/cron/buyer-dna-weekly   -> 0 13 * * 1    (unchanged weekly slot).
+- /api/cron/foundation-sync stays hourly (3 * * * *), not restored to every 15 min.
+
+Every query these jobs make is now bounded by the role-level statement_timeout,
+so none can run unbounded the way they did during the incident. The doom-loop
+class (pg_cron making HTTP calls) is now caught by the nightly self-check
+(adsv2_audit_cron_jobs) and cannot be re-added silently.
+
+See docs/ads-v2-piece1-report.md for the fresh accuracy gates and the
 before/after interactive-route timings.
