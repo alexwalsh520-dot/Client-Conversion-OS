@@ -261,6 +261,14 @@ body {
   margin: 0;
 }
 
+/* Ads v2 fills the same width v1 used (v1 is a full-bleed iframe). Kill the
+   centered 1100px cap + padding; .adsv2 carries its own padding. */
+.main-content:has(.adsv2) {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;

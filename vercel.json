@@ -44,6 +44,10 @@
       "schedule": "45 7 * * *"
     },
     {
+      "path": "/api/cron/followup-drain",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/ads/creative-copy/backfill-all",
       "schedule": "20 */2 * * *"
     },

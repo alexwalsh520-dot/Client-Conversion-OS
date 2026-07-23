@@ -19,7 +19,21 @@ interface HoverState {
 
 const METRIC_COLUMNS = COLUMNS.filter((c) => !c.isLabel);
 
-export default function CampaignTable({ payload, level }: { payload: AdsV2Payload; level: AdsV2Level }) {
+const LEVELS: { id: AdsV2Level; label: string }[] = [
+  { id: "campaign", label: "Campaign level" },
+  { id: "adset", label: "Ad set level" },
+  { id: "ad", label: "Ad level" },
+];
+
+export default function CampaignTable({
+  payload,
+  level,
+  onLevelChange,
+}: {
+  payload: AdsV2Payload;
+  level: AdsV2Level;
+  onLevelChange: (l: AdsV2Level) => void;
+}) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -81,11 +95,43 @@ export default function CampaignTable({ payload, level }: { payload: AdsV2Payloa
   const firstColLabel =
     level === "ad" ? "Campaign / Ad set / Ad" : level === "adset" ? "Campaign / Ad set" : "Campaign";
 
+  const totalAdCount = useMemo(
+    () => payload.campaigns.reduce((n, c) => n + c.children.reduce((m, a) => m + a.children.length, 0), 0),
+    [payload],
+  );
+
   const moveHover = (e: React.MouseEvent, patch: Omit<HoverState, "x" | "y">) =>
     setHover({ ...patch, x: e.clientX, y: e.clientY });
 
+  const rowNoun = level === "ad" ? "ad" : level === "adset" ? "ad set" : "campaign";
+
   return (
     <div className="panel" onMouseLeave={() => setHover(null)}>
+      <div className="tbl-toolbar">
+        <div className="tbl-view-toggle">
+          {LEVELS.map((l) => (
+            <button
+              key={l.id}
+              className={`tvt-btn${level === l.id ? " active" : ""}`}
+              onClick={() => onLevelChange(l.id)}
+            >
+              {l.label}
+              {l.id === "ad" && <span className="tvt-count">{totalAdCount}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="tbl-toolbar-meta">
+          {selected.size > 0 && (
+            <span className="tbl-sel-chip">
+              {selected.size} {rowNoun}
+              {selected.size > 1 ? "s" : ""} selected
+              <button className="tbl-sel-clear" onClick={() => setSelected(new Set())} aria-label="Clear selection">
+                ×
+              </button>
+            </span>
+          )}
+        </div>
+      </div>
       <div className="tbl-scroll">
         <table className="ads">
           <thead>

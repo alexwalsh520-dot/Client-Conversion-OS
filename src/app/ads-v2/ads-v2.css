@@ -209,6 +209,98 @@ html.light .adsv2 {
   color: var(--text);
 }
 
+/* table view toggle (Campaign / Ad set / Ad level) - ported verbatim from v1
+   (.tbl-toolbar > .tbl-view-toggle > .tvt-btn), lives atop the table panel. */
+.adsv2 .tbl-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.adsv2 .tbl-view-toggle {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+.adsv2 .tvt-btn {
+  padding: 5px 11px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  border-radius: 4px;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.12s;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.adsv2 .tvt-btn:hover {
+  color: var(--text);
+}
+.adsv2 .tvt-btn.active {
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-2);
+}
+.adsv2 .tvt-count {
+  font-size: 9.5px;
+  color: var(--gold);
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 99px;
+  padding: 1px 6px;
+  letter-spacing: 0;
+}
+.adsv2 .tbl-toolbar-meta {
+  font-size: 11px;
+  color: var(--text-4);
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.adsv2 .tbl-sel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 99px;
+  padding: 3px 6px 3px 11px;
+}
+.adsv2 .tbl-sel-clear {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-3);
+  width: 16px;
+  height: 16px;
+  border-radius: 99px;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* preparing state (window has no snapshot yet; building in the background) */
+.adsv2 .preparing-state {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.adsv2 .preparing-state .dots {
+  color: var(--gold);
+}
+
 /* table */
 .adsv2 .panel {
   border: 1px solid var(--border);
@@ -811,6 +903,90 @@ html.light .adsv2 {
   color: var(--text-3);
 }
 .adsv2 .freshness .stale {
+  color: var(--red);
+}
+
+/* "How your numbers work" legend - real hierarchy, readable, skimmable. */
+.adsv2 .how-legend {
+  max-width: 640px;
+}
+.adsv2 .legend-intro {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 4px;
+}
+.adsv2 .legend-section {
+  margin-top: 26px;
+}
+.adsv2 .legend-h {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin: 0 0 6px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border-2);
+}
+.adsv2 .legend-row {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  gap: 20px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 .legend-row:last-child {
+  border-bottom: none;
+}
+.adsv2 .legend-term {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+.adsv2 .legend-def {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.adsv2 .legend-src {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 5px;
+}
+.adsv2 .legend-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.adsv2 .legend-chain li {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 .legend-chain li:last-child {
+  border-bottom: none;
+}
+.adsv2 .legend-note {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+.adsv2 .legend-fresh {
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.8;
+}
+.adsv2 .legend-fresh .stale {
   color: var(--red);
 }
 .adsv2 .notice-bar {

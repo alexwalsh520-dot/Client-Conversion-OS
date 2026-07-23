@@ -1,19 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────
-// SERVE — the request path. It reads ONE precomputed snapshot row and returns
-// it. On a cold custom window it builds the window from the already-computed
-// facts (indexed reads + set-based aggregation, a couple of seconds) and caches
-// it. It never fetches from an external API and never recomputes history.
+// SERVE — the request path, and ONLY a read path. It reads ONE precomputed
+// snapshot row and returns it. It never aggregates facts, never touches raw
+// tables, never calls an external API, and never recomputes history. A window
+// with no snapshot yet returns instantly with an honest "preparing" payload;
+// the actual build runs in the background (see prepareWindow), and the client
+// auto-refreshes when it lands.
 //
-// Cache invalidation is explicit, not vibes: every snapshot is stamped with the
-// current data_version. A sync bumps the version, so any stale snapshot is
-// ignored and rebuilt on next read. An identical request returns a byte-
-// identical payload.
+// Cache invalidation is explicit: every snapshot is stamped with the current
+// data_version. A sync bumps the version, so a stale snapshot is ignored and
+// rebuilt by the next background prepare. An identical request that hits a
+// snapshot returns a byte-identical payload.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { getDataVersion, type Db } from "./db";
 import { buildWindow } from "./windows";
-import type { AdsV2Payload, AdsV2Query } from "./types";
+import { EMPTY_BASE, type AdsV2Payload, type AdsV2Query } from "./types";
 
 // Level is a view concern (which rows are shown first); the data is the full
 // campaign tree, so snapshots are stored once per account/window/status.
@@ -23,23 +25,23 @@ function snapKey(q: AdsV2Query): string {
   return `${q.account}|${q.dateFrom}|${q.dateTo}|${q.status}`;
 }
 
-// De-dupe concurrent identical computes within a single server instance.
-const inFlight = new Map<string, Promise<AdsV2Payload>>();
+export interface ServeResult {
+  payload: AdsV2Payload;
+  /** True when a real snapshot was served; false when returning "preparing". */
+  prepared: boolean;
+}
 
-export async function serveWindow(query: AdsV2Query): Promise<AdsV2Payload> {
+/**
+ * THE READ PATH. One indexed SELECT. On a hit, return the snapshot. On a miss,
+ * return an instant "preparing" payload and let the caller schedule the build
+ * in the background. This function itself never builds anything.
+ */
+export async function serveWindow(query: AdsV2Query): Promise<ServeResult> {
   const db = getServiceSupabase();
   const version = await getDataVersion(db);
-
   const cached = await readSnapshot(db, query, version);
-  if (cached) return withLevel(cached, query);
-
-  const key = snapKey(query);
-  const running = inFlight.get(key);
-  if (running) return withLevel(await running, query);
-
-  const promise = computeAndStore(db, query, version).finally(() => inFlight.delete(key));
-  inFlight.set(key, promise);
-  return withLevel(await promise, query);
+  if (cached) return { payload: withLevel(cached, query), prepared: true };
+  return { payload: preparingPayload(query, version), prepared: false };
 }
 
 async function readSnapshot(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload | null> {
@@ -55,6 +57,33 @@ async function readSnapshot(db: Db, query: AdsV2Query, version: number): Promise
   if (!data) return null;
   if (Number(data.data_version) !== version) return null;
   return data.payload as AdsV2Payload;
+}
+
+// De-dupe concurrent identical builds within a single server instance so a
+// burst of misses for the same window only builds once.
+const inFlight = new Map<string, Promise<void>>();
+
+/**
+ * Background preparation. Builds a window from the ALREADY-COMPUTED facts store
+ * (indexed reads + set-based SQL) and stores the snapshot. Runs off the request
+ * path only: from the route's `after()` hook or the precompute cron. Safe to
+ * call repeatedly; it no-ops if the snapshot already exists at this version.
+ */
+export async function prepareWindow(query: AdsV2Query): Promise<void> {
+  const db = getServiceSupabase();
+  const version = await getDataVersion(db);
+  const existing = await readSnapshot(db, query, version);
+  if (existing) return;
+
+  const key = `${snapKey(query)}|${version}`;
+  const running = inFlight.get(key);
+  if (running) return running;
+
+  const promise = computeAndStore(db, query, version)
+    .then(() => undefined)
+    .finally(() => inFlight.delete(key));
+  inFlight.set(key, promise);
+  return promise;
 }
 
 export async function computeAndStore(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload> {
@@ -74,6 +103,24 @@ export async function computeAndStore(db: Db, query: AdsV2Query, version: number
     { onConflict: "account,date_from,date_to,level,status" },
   );
   return payload;
+}
+
+function preparingPayload(query: AdsV2Query, version: number): AdsV2Payload {
+  return {
+    account: query.account,
+    status: query.status,
+    level: query.level,
+    dateFrom: query.dateFrom,
+    dateTo: query.dateTo,
+    dataVersion: version,
+    campaigns: [],
+    total: { ...EMPTY_BASE },
+    freshness: {},
+    notices: ["Preparing this window. It will appear in a moment."],
+    generatedAt: new Date().toISOString(),
+    computeMs: 0,
+    preparing: true,
+  };
 }
 
 // The stored payload is level-agnostic; stamp the requested level on the way

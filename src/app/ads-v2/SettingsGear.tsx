@@ -140,44 +140,49 @@ function OrganicManager() {
 
 function HowItWorks({ payload }: { payload: AdsV2Payload | null }) {
   const how = buildHowItWorks();
+  const freshness = payload && !payload.preparing ? Object.entries(payload.freshness) : [];
   return (
-    <div>
-      <div className="how-note">{how.scopeNote}</div>
+    <div className="how-legend">
+      <p className="legend-intro">{how.scopeNote}</p>
 
-      <div className="sec-title">What each column means</div>
-      {how.columns.map((col) => (
-        <div className="how-col" key={col.key}>
-          <div className="h-label">{col.label}</div>
-          <div className="h-rule">{col.sentence}</div>
-          <div className="h-src">Source: {col.source}</div>
-        </div>
-      ))}
-
-      <div className="sec-title">How a sale is tied to a keyword</div>
-      <ol className="how-chain">
-        {how.revenueChain.map((step, i) => (
-          <li key={i}>{step}</li>
+      <section className="legend-section">
+        <h4 className="legend-h">What each column means</h4>
+        {how.columns.map((col) => (
+          <div className="legend-row" key={col.key}>
+            <div className="legend-term">{col.label}</div>
+            <div className="legend-def">
+              {col.sentence}
+              <span className="legend-src">Source: {col.source}</span>
+            </div>
+          </div>
         ))}
-      </ol>
+      </section>
 
-      <div className="sec-title">Time</div>
-      <div className="how-note">{how.etNote}</div>
+      <section className="legend-section">
+        <h4 className="legend-h">How revenue gets tied to an ad</h4>
+        <ol className="legend-chain">
+          {how.revenueChain.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      </section>
 
-      {payload && (
-        <>
-          <div className="sec-title">Freshness</div>
-          <div className="freshness">
-            {Object.entries(payload.freshness).map(([source, f]) => (
+      <section className="legend-section">
+        <h4 className="legend-h">Time and freshness</h4>
+        <p className="legend-note">{how.etNote}</p>
+        {freshness.length > 0 && (
+          <div className="legend-fresh">
+            {freshness.map(([source, f]) => (
               <div key={source}>
                 {source}: last data {f.lastEtDay || "unknown"}
                 {f.ageHours != null ? `, synced ${f.ageHours}h ago` : ""}
                 {f.stale ? <span className="stale"> (stale)</span> : ""}
               </div>
             ))}
-            <div>Data version {payload.dataVersion}</div>
+            {payload && <div>Data version {payload.dataVersion}</div>}
           </div>
-        </>
-      )}
+        )}
+      </section>
     </div>
   );
 }

@@ -1,17 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { rangeForPreset, rangeLabel, todayEt, type DayRange, type PresetId } from "@/lib/ads-v2/time";
+import { rangeForPreset, todayEt, type DayRange, type PresetId } from "@/lib/ads-v2/time";
 import type { AdsV2Account, AdsV2Level, AdsV2Payload, AdsV2Status } from "@/lib/ads-v2/types";
 import { AccountDropdown, DateDropdown, StatusSegmented } from "./controls";
 import CampaignTable from "./CampaignTable";
 import SettingsGear from "./SettingsGear";
-
-const LEVELS: { id: AdsV2Level; label: string }[] = [
-  { id: "campaign", label: "Campaign" },
-  { id: "adset", label: "Ad set" },
-  { id: "ad", label: "Ad" },
-];
 
 function keyOf(account: AdsV2Account, status: AdsV2Status, range: DayRange): string {
   return `${account}|${status}|${range.from}|${range.to}`;
@@ -40,7 +34,9 @@ export default function AdsV2Client() {
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const data = (await res.json()) as AdsV2Payload;
-        cache.current.set(key, data);
+        // Never cache a "preparing" placeholder as if it were the real numbers;
+        // that would pin the window to the placeholder on the instant-switch path.
+        if (!data.preparing) cache.current.set(key, data);
         // Only paint if this is still the selection the user is looking at.
         if (!opts?.background && activeKey.current === key) {
           setPayload(data);
@@ -97,6 +93,16 @@ export default function AdsV2Client() {
     return () => clearTimeout(timer);
   }, [loading, account, status, range, fetchWindow]);
 
+  // If the window is still preparing (no snapshot yet), poll until it lands.
+  // The background build was scheduled by the request; we just re-read.
+  useEffect(() => {
+    if (!payload?.preparing) return;
+    const timer = setTimeout(() => {
+      fetchWindow(account, status, range);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [payload, account, status, range, fetchWindow]);
+
   const applyDate = (p: PresetId, r: DayRange) => {
     setPreset(p);
     setRange(r);
@@ -109,7 +115,6 @@ export default function AdsV2Client() {
           <div className="av2-title">
             Ads<span className="av2-tag">v2</span>
           </div>
-          <div className="av2-sub">Paid ads only. {rangeLabel(range)}.</div>
         </div>
         <div className="av2-head-actions">
           <SettingsGear payload={payload} />
@@ -121,25 +126,15 @@ export default function AdsV2Client() {
         <StatusSegmented value={status} onChange={setStatus} />
         <span className="filter-divider" />
         <DateDropdown preset={preset} range={range} onApply={applyDate} />
-        <span className="filter-divider" />
-        <div className="segmented">
-          {LEVELS.map((l) => (
-            <button
-              key={l.id}
-              className={`seg${level === l.id ? " active" : ""}`}
-              onClick={() => setLevel(l.id)}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {payload?.notices?.map((n, i) => (
-        <div className="notice-bar" key={i}>
-          {n}
-        </div>
-      ))}
+      {payload && !payload.preparing
+        ? payload.notices?.map((n, i) => (
+            <div className="notice-bar" key={i}>
+              {n}
+            </div>
+          ))
+        : null}
 
       {loading ? (
         <div className="panel">
@@ -149,8 +144,16 @@ export default function AdsV2Client() {
         <div className="panel">
           <div className="empty-state">Could not load: {error}</div>
         </div>
+      ) : payload?.preparing ? (
+        <div className="panel">
+          <div className="preparing-state">
+            Preparing this window<span className="dots">...</span>
+            <br />
+            It will appear in a moment.
+          </div>
+        </div>
       ) : payload && payload.campaigns.length > 0 ? (
-        <CampaignTable payload={payload} level={level} />
+        <CampaignTable payload={payload} level={level} onLevelChange={setLevel} />
       ) : (
         <div className="panel">
           <div className="empty-state">

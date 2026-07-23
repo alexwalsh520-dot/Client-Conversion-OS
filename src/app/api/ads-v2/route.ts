@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/auth";
-import { serveWindow } from "@/lib/ads-v2/serve";
+import { serveWindow, prepareWindow } from "@/lib/ads-v2/serve";
 import { rangeForPreset, todayEt, type PresetId } from "@/lib/ads-v2/time";
 import type { AdsV2Account, AdsV2Level, AdsV2Query, AdsV2Status } from "@/lib/ads-v2/types";
 
-// Read path only: an indexed SELECT of one precomputed snapshot (or a fast
-// build of a cold custom window from already-computed facts). No external API
-// call, no historical recomputation. A serving timeout would be an architecture
-// bug, so the ceiling is generous but the real path is milliseconds to seconds.
+// Read path only: ONE indexed SELECT of a precomputed snapshot. It never
+// aggregates facts, never touches raw tables, never calls an external API, and
+// never recomputes history. A window with no snapshot returns instantly with a
+// "preparing" payload and the build is scheduled to run AFTER the response is
+// sent (never blocking the request). The response is milliseconds.
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const ACCOUNTS = new Set(["all", "tyson", "jake"]);
 const STATUSES = new Set(["active", "finished", "all"]);
@@ -55,13 +56,25 @@ export async function GET(req: NextRequest) {
   const query: AdsV2Query = { account, status, level, dateFrom, dateTo };
 
   try {
-    const payload = await serveWindow(query);
+    const { payload, prepared } = await serveWindow(query);
+    // On a miss, prepare the window AFTER the response is sent, so the request
+    // stays a pure read. The client sees `preparing: true` and auto-refreshes.
+    if (!prepared) {
+      after(async () => {
+        try {
+          await prepareWindow(query);
+        } catch {
+          // A failed background build is retried on the next request or cron;
+          // it never surfaces as a request error.
+        }
+      });
+    }
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to build window" },
+      { error: err instanceof Error ? err.message : "Failed to read window" },
       { status: 500 },
     );
   }

@@ -93,6 +93,12 @@ export interface AdsV2Payload {
   notices: string[];
   generatedAt: string;
   computeMs: number;
+  /**
+   * True when this window has no snapshot yet: the request path returns this
+   * instantly (never computing) and a background job prepares the real numbers.
+   * The client shows a one-line "preparing" state and auto-refreshes.
+   */
+  preparing?: boolean;
 }
 
 export const EMPTY_BASE: BaseMetrics = {

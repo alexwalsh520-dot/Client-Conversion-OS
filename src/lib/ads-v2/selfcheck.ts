@@ -137,6 +137,27 @@ export async function runSelfCheck(now: Date = new Date()): Promise<SelfCheckRep
       }
     }
 
+    // ── Gate: no pg_cron job makes HTTP calls or is unlisted (7/23 law) ─────
+    {
+      const { data: cronViolations, error: cronErr } = await db.rpc("adsv2_audit_cron_jobs");
+      const rows = (cronErr ? [] : (cronViolations as Array<{
+        jobid: number;
+        jobname: string | null;
+        schedule: string;
+        violation: string;
+      }> | null)) || [];
+      gates.cronViolations = rows.length;
+      for (const r of rows) {
+        findings.push({
+          type: "cron_law_violation",
+          severity: "error",
+          clientKey: null,
+          detail: { jobid: r.jobid, jobname: r.jobname, schedule: r.schedule, violation: r.violation },
+          dedupeKey: `cron_law|${r.jobid}|${etDay}`,
+        });
+      }
+    }
+
     // ── Gate: cross-window invariants (nested windows never shrink) ─────────
     {
       const violations = await checkInvariants(db, etDay);
