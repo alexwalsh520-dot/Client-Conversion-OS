@@ -2,6 +2,7 @@
 // cron both import this, so what the grid shows and what the cron finalizes can never drift.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CREATORS_BY_KEY, type CreatorKey } from "@/lib/creators";
 import {
   DEFAULT_STORY_SCHEDULE,
   DEFAULT_TZ,
@@ -61,6 +62,12 @@ export type Day = {
   day_ended: boolean;
 };
 
+// A creator's default calendar timezone before they've saved a cadence: their registry timezone if
+// they're a known creator, else New York. New creators onboard onto their own clock automatically.
+export function registryTimezone(creator: string): string {
+  return CREATORS_BY_KEY[creator as CreatorKey]?.timezone ?? DEFAULT_TZ;
+}
+
 export async function getCadence(sb: SupabaseClient, creator: string): Promise<Cadence> {
   const { data } = await sb.from("content_cadences").select("*").eq("client_key", creator).maybeSingle();
   const row = data as
@@ -71,8 +78,9 @@ export async function getCadence(sb: SupabaseClient, creator: string): Promise<C
     carousels_per_day: row?.carousels_per_day ?? 1,
     story_schedule:
       row?.story_schedule && Object.keys(row.story_schedule).length ? row.story_schedule : DEFAULT_STORY_SCHEDULE,
-    // `timezone` may not exist yet if the migration hasn't run — fall back rather than break.
-    timezone: safeTimezone(row?.timezone ?? DEFAULT_TZ),
+    // A creator with no saved timezone (never opened the editor) inherits their registry timezone —
+    // so a new creator's calendar buckets on their own clock from day one, not New York's.
+    timezone: safeTimezone(row?.timezone ?? registryTimezone(creator)),
   };
 }
 

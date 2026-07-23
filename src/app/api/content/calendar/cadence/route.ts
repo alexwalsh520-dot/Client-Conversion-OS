@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { DEFAULT_STORY_SCHEDULE, DOW, safeTimezone, type StorySchedule } from "@/lib/content/calendar";
+import { registryTimezone } from "@/lib/content/calendar-build";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,8 @@ export async function GET(req: NextRequest) {
     reels_per_day: row?.reels_per_day ?? 6,
     carousels_per_day: row?.carousels_per_day ?? 1,
     story_schedule: row?.story_schedule && Object.keys(row.story_schedule).length ? row.story_schedule : DEFAULT_STORY_SCHEDULE,
-    timezone: safeTimezone(row?.timezone),
+    // Unsaved timezone falls back to the creator's registry timezone (e.g. Sydney), not New York.
+    timezone: safeTimezone(row?.timezone ?? registryTimezone(creator)),
   });
 }
 
