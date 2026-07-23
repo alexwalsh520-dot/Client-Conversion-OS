@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle,
-  AlertTriangle, Play, X, ExternalLink, RefreshCw, Check, Lock, FlaskConical, Minus,
+  AlertTriangle, Play, X, ExternalLink, Check, Lock, FlaskConical, Minus, Copy, FileText,
 } from "lucide-react";
 import {
   todayIn, shiftWeek, prettyDate, DOW, COMMON_TIMEZONES, isComplete,
@@ -38,7 +38,7 @@ type Day = {
   date: string; dow: string; story_rest: boolean; slots: Slot[];
   trial_reels: number; // self-reported tally, not a slot — never counted in quota or streaks
   reels_posted: number; carousels_posted: number; reels_target: number; carousels_target: number;
-  story_label: string | null; reconciled_at: string | null; finalized: boolean; day_ended: boolean;
+  story_label: string | null; story_copy: string | null; reconciled_at: string | null; finalized: boolean; day_ended: boolean;
 };
 type Cadence = { reels_per_day: number; carousels_per_day: number; story_schedule: StorySchedule; timezone: string };
 type CalResp = {
@@ -69,14 +69,13 @@ const stateTitle = (s: Slot) =>
 
 export default function CalendarView({ creator, mode = "operator", token }: { creator: string; mode?: "operator" | "creator"; token?: string }) {
   const isCreator = mode === "creator";
-  const [tz, setTz] = useState<string>("America/New_York");
   const [week, setWeek] = useState<string>(() => todayIn("America/New_York"));
   const [data, setData] = useState<CalResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
   const [openSlot, setOpenSlot] = useState<{ day: Day; slot: Slot } | null>(null);
+  const [openStory, setOpenStory] = useState<Day | null>(null);
 
   const qs = useCallback(
     (wk: string) => (token ? `token=${encodeURIComponent(token)}&week=${wk}` : `creator=${creator}&week=${wk}`),
@@ -88,7 +87,7 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
     try {
       const res = await fetch(`/api/content/calendar?${qs(wk)}`, { cache: "no-store" });
       const j = await res.json();
-      if (Array.isArray(j?.days)) { setData(j); if (j.timezone) setTz(j.timezone); }
+      if (Array.isArray(j?.days)) setData(j);
       else setData(null);
     } catch { setData(null); } finally { setLoading(false); }
   }, [qs]);
@@ -142,12 +141,15 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
     } finally { setBusy(null); }
   };
 
-  const reconcileNow = async () => {
-    setReconciling(true);
-    try {
-      await fetch(`/api/content/calendar/reconcile?creator=${creator}`, { method: "POST" });
-      await load(week);
-    } finally { setReconciling(false); }
+  // Operator-only: write the day's story copy (session-authenticated route — a creator token can't
+  // reach it). Creators only ever read this on their own calendar.
+  const saveStoryCopy = async (day: Day, copy: string) => {
+    await fetch("/api/content/calendar/story-copy", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ creator, for_date: day.date, copy }),
+    });
+    await load(week);
   };
 
   const metrics = useMemo(() => {
@@ -191,17 +193,9 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
           {data ? `${prettyDate(data.days[0].date)} – ${prettyDate(data.days[6].date)}` : "…"}
         </div>
         <button onClick={() => setWeek((w) => shiftWeek(w, 1))} style={navBtn} title="Next week"><ChevronRight size={16} /></button>
-        <button onClick={() => setWeek(todayIn(tz))} style={{ ...pillBtn, fontSize: 12.5 }}>This week</button>
-        <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{tz.replace("_", " ")}</span>
         <span style={{ flex: 1 }} />
         {!isCreator && (
-          <>
-            <button onClick={reconcileNow} disabled={reconciling} title="Re-check posts and close finished days"
-              style={{ ...pillBtn, display: "inline-flex", alignItems: "center", gap: 6 }}>
-              {reconciling ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} {reconciling ? "Reconciling…" : "Reconcile now"}
-            </button>
-            <button onClick={() => setEditing(true)} title="Edit cadence" aria-label="Edit cadence" style={navBtn}><Settings size={16} /></button>
-          </>
+          <button onClick={() => setEditing(true)} title="Edit cadence" aria-label="Edit cadence" style={navBtn}><Settings size={16} /></button>
         )}
       </div>
 
@@ -255,11 +249,12 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                       </button>
                     ))}
                     {d.slots.filter((s) => s.slot_type === "story").map((s) => (
-                      <button key={s.slot_index} disabled={!!busy || locked} onClick={() => toggle(d, s)}
+                      <button key={s.slot_index} disabled={!!busy} onClick={() => setOpenStory(d)}
                         title={`Story — ${stateTitle(s)}`}
-                        style={{ borderRadius: 6, border: "1px solid", cursor: locked ? "default" : "pointer", padding: "5px 6px", textAlign: "left", ...slotColor(s) }}>
+                        style={{ borderRadius: 6, border: "1px solid", cursor: "pointer", padding: "5px 6px", textAlign: "left", ...slotColor(s) }}>
                         <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.85, display: "flex", alignItems: "center", gap: 3 }}>
                           Story {isComplete(s.state) && <Check size={8} />}
+                          {d.story_copy && <FileText size={8} style={{ marginLeft: "auto" }} />}
                         </div>
                         <div style={{ fontSize: 10, lineHeight: 1.25, color: "var(--text-secondary)" }}>{s.label}</div>
                       </button>
@@ -320,19 +315,6 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                 <span style={{ fontSize: 26, fontWeight: 800, color: metrics.streak > 0 ? GREEN : "var(--text-primary)" }}>{metrics.streak}</span>
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>day streak</span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, borderTop: "1px solid var(--border-primary)", paddingTop: 12, display: "grid", gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: AMBER_BG, border: `1px dashed ${AMBER}`, flexShrink: 0 }} />
-                  <span>Amber = checked off, no post found yet.</span>
-                </div>
-                <div>
-                  {data.newest_post_at
-                    ? `Last post detected ${new Date(data.newest_post_at).toLocaleString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                    : "No posts detected yet"}
-                </div>
-                <div>Stories are manual-only — tap the story box once you post it.</div>
-                <div>Trial reels are self-reported — they aren&apos;t visible to the post sync, so they don&apos;t count toward quota or streaks.</div>
-              </div>
             </div>
           )}
         </div>
@@ -342,6 +324,23 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
         <SlotPopover day={openSlot.day} slot={openSlot.slot} busy={!!busy} locked={!canToggle(openSlot.day)}
           onClose={() => setOpenSlot(null)}
           onToggle={async () => { await toggle(openSlot.day, openSlot.slot); setOpenSlot(null); }} />
+      )}
+
+      {openStory && (
+        <StoryModal
+          key={openStory.date}
+          day={openStory}
+          isCreator={isCreator}
+          canToggle={canToggle(openStory)}
+          busy={!!busy}
+          onClose={() => setOpenStory(null)}
+          onSave={async (copy) => { await saveStoryCopy(openStory, copy); setOpenStory(null); }}
+          onTogglePosted={async () => {
+            const s = openStory.slots.find((x) => x.slot_type === "story");
+            if (s) await toggle(openStory, s);
+            setOpenStory(null);
+          }}
+        />
       )}
 
       {editing && data && (
@@ -391,7 +390,8 @@ function CadenceEditor({ creator, initial, onClose, onSaved }: { creator: string
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "6vh 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 540, background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 16, padding: 22 }}>
+      {/* Fully opaque (--bg-secondary), so nothing behind the settings popup shows through. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 540, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 16, padding: 22 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", marginBottom: 16 }}>Cadence — {creator}</div>
         <div style={{ display: "flex", gap: 18, marginBottom: 16, flexWrap: "wrap" }}>
           <label style={{ fontSize: 13, color: "var(--text-secondary)" }}>Reels / day
@@ -488,6 +488,81 @@ function SlotPopover({ day, slot, busy, locked, onClose, onToggle }: { day: Day;
           </button>
         </div>
         {day.finalized && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, textAlign: "right" }}>This day is closed</div>}
+      </div>
+    </div>
+  );
+}
+
+// The story slot's panel. Operators author the day's story copy (textarea + Save). Creators see the
+// same copy READ-ONLY, with a "Copy text" button and the posted checkbox (the existing story mark).
+function StoryModal({
+  day, isCreator, canToggle, busy, onClose, onSave, onTogglePosted,
+}: {
+  day: Day; isCreator: boolean; canToggle: boolean; busy: boolean;
+  onClose: () => void; onSave: (copy: string) => Promise<void>; onTogglePosted: () => Promise<void>;
+}) {
+  const story = day.slots.find((s) => s.slot_type === "story");
+  const [copy, setCopy] = useState(day.story_copy || "");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const posted = story ? isComplete(story.state) : false;
+
+  const doCopy = async () => {
+    try { await navigator.clipboard.writeText(day.story_copy || ""); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "6vh 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 16, padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>Story</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{prettyDate(day.date)}</div>
+          <span style={{ flex: 1 }} />
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "grid", placeItems: "center" }}><X size={16} /></button>
+        </div>
+        {day.story_label && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>Theme: {day.story_label}</div>}
+
+        {isCreator ? (
+          <>
+            {day.story_copy ? (
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.6, color: "var(--text-primary)", background: "var(--bg-glass)", border: "1px solid var(--border-primary)", borderRadius: 10, padding: "12px 14px", maxHeight: "42vh", overflowY: "auto" }}>
+                {day.story_copy}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", padding: "10px 0" }}>Story copy coming from the team.</div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, borderTop: "1px solid var(--border-primary)", paddingTop: 14 }}>
+              {day.story_copy && (
+                <button onClick={doCopy} style={{ ...pillBtn, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Copy size={13} /> {copied ? "Copied" : "Copy text"}
+                </button>
+              )}
+              <span style={{ flex: 1 }} />
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, color: canToggle ? "var(--text-secondary)" : "var(--text-muted)", cursor: canToggle && !busy ? "pointer" : "default" }}>
+                <input type="checkbox" checked={posted} disabled={!canToggle || busy} onChange={onTogglePosted} /> Posted
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <textarea
+              value={copy}
+              onChange={(e) => setCopy(e.target.value)}
+              placeholder={day.story_label ? `Story copy for: ${day.story_label}` : "Write the story copy the creator will post…"}
+              rows={8}
+              style={{ width: "100%", resize: "vertical", padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 13.5, lineHeight: 1.6, fontFamily: "inherit" }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+              <button onClick={onClose} style={pillBtn}>Cancel</button>
+              <button
+                onClick={async () => { setSaving(true); try { await onSave(copy); } finally { setSaving(false); } }}
+                disabled={saving}
+                style={{ ...pillBtn, background: "var(--accent)", color: "#1a1a1a", border: "none", fontWeight: 800 }}>
+                {saving ? "Saving…" : "Save copy"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

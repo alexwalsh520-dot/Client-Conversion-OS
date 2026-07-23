@@ -57,6 +57,8 @@ export type Day = {
   reels_target: number;
   carousels_target: number;
   story_label: string | null;
+  // Team-written story copy for the day (operators write it; creators post it). Null until written.
+  story_copy: string | null;
   reconciled_at: string | null;
   finalized: boolean;
   day_ended: boolean;
@@ -178,6 +180,24 @@ export function trialReelCount(marks: Map<string, boolean>, date: string): numbe
   return n;
 }
 
+// Team-written story copy per day, keyed by for_date. Absent table (pre-migration) degrades to "no
+// copy" so the calendar keeps working; the copy simply doesn't show until the table exists.
+export async function getStoryCopy(sb: SupabaseClient, creator: string, fromDate: string, toDate: string) {
+  const out = new Map<string, string>();
+  try {
+    const { data } = await sb
+      .from("content_story_copy")
+      .select("for_date, copy")
+      .eq("client_key", creator)
+      .gte("for_date", fromDate)
+      .lte("for_date", toDate);
+    for (const r of (data || []) as { for_date: string; copy: string | null }[]) {
+      if (r.copy && r.copy.trim()) out.set(r.for_date, r.copy);
+    }
+  } catch { /* table not created yet */ }
+  return out;
+}
+
 // Reconciliation bookkeeping. Absent table (pre-migration) degrades to "nothing reconciled yet",
 // which only costs the finalized lock — states still derive correctly from posts + marks.
 export async function getDayRecords(sb: SupabaseClient, creator: string, fromDate: string, toDate: string) {
@@ -210,8 +230,9 @@ export function buildDay(args: {
   carPosts: SlotPost[];
   marks: Map<string, boolean>;
   record?: { reconciled_at: string | null; finalized: boolean };
+  storyCopy?: string | null;
 }): Day {
-  const { date, cadence, reelPosts, carPosts, marks, record } = args;
+  const { date, cadence, reelPosts, carPosts, marks, record, storyCopy } = args;
   const dow = dowKey(date);
   const story = cadence.story_schedule[dow];
   const storyRest = story == null;
@@ -251,6 +272,7 @@ export function buildDay(args: {
     reels_target: cadence.reels_per_day,
     carousels_target: cadence.carousels_per_day,
     story_label: storyRest ? null : story?.label ?? null,
+    story_copy: storyCopy ?? null,
     reconciled_at: record?.reconciled_at ?? null,
     finalized: record?.finalized ?? false,
     day_ended: dayEnded,

@@ -16,11 +16,9 @@ export const CAROUSEL_IDENTITY: Record<string, { name: string; handle: string; r
   jake: { name: "Jake Divljak", handle: "", ring: "#2f6f4f", avatar: "/carousel-avatars/jake.jpg" },
 };
 
-// Slide body defaults, exported so the generator can estimate wrapped line counts against the SAME
-// numbers the renderer draws with (see estimateWrappedLines) — never duplicate these downstream.
+// Slide body defaults for the default layout.
 export const SLIDE_BODY_FONT_SIZE = 56;
 export const SLIDE_BODY_MAXW = CANVAS_W - 280;
-export const SLIDE_MAX_LINES = 4;
 
 // Same free Google fonts /studio loads (do not add paid fonts / new vendors).
 export const CAROUSEL_FONTS = [
@@ -72,30 +70,6 @@ export function defaultBlocks(text: string): SlideBlock[] {
   ];
 }
 
-// Estimate how many wrapped lines a slide's text renders to, WITHOUT a canvas (the generator runs
-// server-side). Uses the same font size + max width the renderer draws with, and an average glyph
-// advance tuned to the body sans-serif. The ratio was calibrated against the REAL canvas
-// measureText over 80 live slides: 0.46 matches actual wrapping with zero false-negatives (it never
-// misses a true overflow) and only a couple of conservative false-positives.
-// Blank source lines are paragraph gaps, not text lines, so they don't count toward the cap.
-const AVG_CHAR_ADVANCE_RATIO = 0.46;
-export function estimateWrappedLines(text: string, fontSize = SLIDE_BODY_FONT_SIZE, maxWidth = SLIDE_BODY_MAXW): number {
-  const charsPerLine = Math.max(1, Math.floor(maxWidth / (fontSize * AVG_CHAR_ADVANCE_RATIO)));
-  let total = 0;
-  for (const src of (text || "").replace(/\*\*/g, "").split("\n")) {
-    const s = src.trim();
-    if (!s) continue;
-    let cur = 0;
-    let lines = 1;
-    for (const word of s.split(/\s+/)) {
-      const add = word.length + (cur > 0 ? 1 : 0);
-      if (cur + add > charsPerLine && cur > 0) { lines++; cur = word.length; }
-      else cur += add;
-    }
-    total += lines;
-  }
-  return total;
-}
 
 export function newTextBlock(): SlideBlock {
   return { id: nid(), kind: "text", x: 140, y: 500, text: "New text", fontSize: 48, fontFamily: BODY_FONT, fontWeight: 400, color: "#ffffff", align: "left", lineHeight: 1.4, maxWidth: CANVAS_W - 280 };
