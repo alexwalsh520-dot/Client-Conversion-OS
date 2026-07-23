@@ -10,6 +10,7 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
+import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -157,12 +158,14 @@ export async function generateCarouselSet(
   icp: Icp | null,
   anthropic: Anthropic,
 ): Promise<{ ok: true; carousels: Carousel[] } | { ok: false; reason: string }> {
-  const [voiceRow, briefs, avoid, playbookRow] = await Promise.all([
+  const [voiceRow, briefs, avoid, playbookRow, doc] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
     recentToAvoid(sb, client, forDate),
     getCurrentPlaybook(sb, client),
+    getMessagingDoc(sb, client),
   ]);
+  const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -175,6 +178,12 @@ export async function generateCarouselSet(
     .join("\n");
 
   const userMsg = [
+    // Leads when present. For a creator with no buyer voice or dossiers yet, the doc + ICP is the
+    // whole basis for the register and the pains — infer his voice from the document's tone.
+    docBlock,
+    docBlock
+      ? "Infer this creator's register and the buyer's pains from the messaging document above; mirror its exact phrasing and one-liners. Ground every carousel in the document — do not invent buyer quotes."
+      : "",
     `THE BUYER (write every carousel for this one person):\n${compactIcp(icp)}`,
     ranked
       ? `WHAT THEY ACTUALLY SAY, RANKED BY HOW OFTEN THEY SAY IT (anchor the carousels in the highest-ranked pains — the top of this list is what most of them are living):\n${ranked}`

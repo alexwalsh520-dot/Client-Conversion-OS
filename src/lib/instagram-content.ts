@@ -78,6 +78,10 @@ export interface IngestResult {
   pulled: number;
   upserted: number;
   error?: string;
+  // A creator with no IG connection at all isn't a failure — there is simply nothing to pull yet
+  // (e.g. a freshly-onboarded creator like Jake before his account is linked). Callers treat a
+  // skipped result as a clean no-op, so it never turns a cron red.
+  skipped?: boolean;
 }
 
 /** Pull + upsert all media for one creator. Returns a small summary. */
@@ -85,7 +89,8 @@ export async function ingestCreatorContent(slug: ContentCreator): Promise<Ingest
   try {
     const conn = await getConnection(slug);
     if (!conn || conn.status !== "connected") {
-      return { creator: slug, ok: false, pulled: 0, upserted: 0, error: "no connected IG account" };
+      // No source connected yet — a clean skip, not an error (see IngestResult.skipped).
+      return { creator: slug, ok: true, skipped: true, pulled: 0, upserted: 0, error: "no connected IG account" };
     }
     const token = await getDecryptedTokenForClient(conn.client_key as string);
     if (!token) return { creator: slug, ok: false, pulled: 0, upserted: 0, error: "token decrypt failed" };

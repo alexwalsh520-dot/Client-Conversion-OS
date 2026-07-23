@@ -162,6 +162,30 @@ export async function generateDerivedIcp(
   return { ok: true as const, version, buyerCount: briefs.length, icp: row };
 }
 
+// Doc path: distil a creator's Master Messaging document into the ICP schema, then lock it as
+// 'fixed' — like Antwan, but sourced from the DB document rather than anything hardcoded in the
+// repo. One LLM call. Used for creators onboarded from a messaging doc before they have any buyers.
+const DOC_SYS =
+  "You are distilling a fitness coach's own Master Messaging / ICP document into a structured Ideal Customer Profile. The document is the coach's ground truth about exactly who they sell to. EXTRACT, never invent: who the buyer is, their pains, limiting beliefs, desires, objections, triggers, the distinctive language and one-liners to mirror, and the disqualifiers. Use the document's own phrasing wherever you can. Return STRICT JSON:\n" +
+  '{"one_line":"who the ideal buyer is, one sentence","who_they_are":"2-4 sentences on life stage, identity, situation","top_pains":["pains named in the document"],"limiting_beliefs":["recurring beliefs holding them back"],"desires":["what they actually want"],"objections":["what they hesitate on before buying"],"triggers":["what was going on when they reached out"],"language":["distinctive words, phrases and one-liners from the document, to mirror in content"],"disqualifiers":["signs someone is NOT this buyer"]}\n' +
+  "4 to 8 items per list where the document supports it, ordered by emphasis in the document. Ground everything in the document. No invented traits. No prose outside the JSON." +
+  "\nNever include specific dollar amounts; describe money situations qualitatively (e.g. 'has the financial capacity to invest', 'tight monthly budget').";
+
+export async function seedIcpFromDoc(sb: SupabaseClient, client: string, docText: string, anthropic: Anthropic) {
+  const resp = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    system: DOC_SYS,
+    messages: [{ role: "user", content: `THE CREATOR'S MASTER MESSAGING DOCUMENT:\n\n${docText.slice(0, 60000)}\n\nReturn the ICP JSON.` }],
+  });
+  logAiUsage({ feature: "buyer-dna-icp-from-doc", model: MODEL, usage: resp.usage });
+  const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
+  const icp = parseIcp(tb?.text || "");
+  if (!icp || !icp.one_line) return { ok: false as const, reason: "Could not parse an ICP from the document." };
+  const res = await seedFixedIcp(sb, client, icp);
+  return { ok: true as const, version: res.version, icp: res.icp };
+}
+
 // Antwan path: store the chosen ICP as-is (fixed), no data derivation.
 export async function seedFixedIcp(sb: SupabaseClient, client: string, icp: Icp) {
   const version = await nextVersion(sb, client);

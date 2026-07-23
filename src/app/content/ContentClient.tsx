@@ -50,7 +50,7 @@ function defaultRange(): DateRange {
 
 export default function ContentClient() {
   const [active, setActive] = useState("tyson");
-  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels" | "calendar">("playbook");
+  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels" | "calendar">("calendar");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -65,7 +65,7 @@ export default function ContentClient() {
   }, []);
   useEffect(() => { load(active); }, [active, load]);
 
-  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"], ["carousels", "Carousels"], ["calendar", "Calendar"]] as const;
+  const tabs = [["calendar", "Calendar"], ["carousels", "Carousels"], ["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
 
   const toggleBtn = (activeState: boolean): React.CSSProperties => ({
     background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
