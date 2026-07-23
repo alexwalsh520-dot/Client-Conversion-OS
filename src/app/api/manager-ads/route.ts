@@ -2,17 +2,21 @@
  * Manager Ads View data.
  *
  * GET /api/manager-ads?from=YYYY-MM-DD&to=YYYY-MM-DD
- *   Per-influencer spend / messages / calls / clients / cash + cost-per-X and
- *   potential ROAS for the given ET date range. Any logged-in user with the
- *   /manager-ads tab can call it — tab access is granted per-user in Settings.
+ *   Per-influencer spend / messages / calls / clients / collected revenue +
+ *   cost-per-X and Collected ROI for the given ET date range.
+ *
+ *   SOURCE OF TRUTH: the Ads V2 tab. This serves the same precomputed v2 window
+ *   snapshot; on a miss it returns a "preparing" payload and schedules the v2
+ *   background build (same pattern as /api/ads-v2), never blocking the request.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/auth";
 import { buildManagerAdsReport } from "@/lib/manager-ads/metrics";
+import { prepareWindow } from "@/lib/ads-v2/serve";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 30;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,7 +37,18 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const report = await buildManagerAdsReport(from, to);
+    const { report, prepared, query } = await buildManagerAdsReport(from, to);
+    // On a v2 snapshot miss, build the window AFTER the response is sent, so the
+    // request stays a pure read. The client sees preparing:true and refetches.
+    if (!prepared) {
+      after(async () => {
+        try {
+          await prepareWindow(query);
+        } catch {
+          // A failed background build is retried on the next request or cron.
+        }
+      });
+    }
     return NextResponse.json(report, { headers: NO_STORE });
   } catch (err) {
     console.error("[manager-ads] failed:", err);

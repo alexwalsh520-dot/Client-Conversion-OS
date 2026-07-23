@@ -3,9 +3,13 @@
 // Manager Ads View — the sales manager's cut of the ads data. One scrollable
 // per-influencer overview table on top, big metric cards for the selected
 // influencer below. Intentionally minimal: spend → messages → calls → clients
-// → cash, with cost-per-X at every step and potential ROAS at the end.
+// → collected revenue, cost-per-X at each step, Collected ROI at the end.
+//
+// Source of truth: the Ads V2 tab. Every number here reads the same v2 window
+// snapshot the /ads-v2 tab reads, so the two always agree. Revenue and ROI are
+// keyword-attributed (matching v2), not an "all cash" figure.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, Loader2, Megaphone } from "lucide-react";
 import AdsDateDropdown, { rangeForPreset, type DateRange } from "./AdsDateDropdown";
 
@@ -21,8 +25,8 @@ interface Row {
   costPerTaken: number | null;
   newClients: number | null;
   costPerClient: number | null;
-  cashCollected: number | null;
-  potentialRoas: number | null;
+  collectedRevenue: number | null;
+  collectedRoi: number | null;
 }
 
 interface Report {
@@ -30,6 +34,8 @@ interface Report {
   to: string;
   rows: Row[];
   total: Row;
+  preparing?: boolean;
+  notices?: string[];
   warnings: string[];
 }
 
@@ -54,15 +60,21 @@ export default function ManagerAdsView() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>("total");
 
+  const prepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const load = useCallback(async () => {
     if (!range.dateFrom || !range.dateTo || range.dateFrom > range.dateTo) return;
     try {
-      setLoading(true);
       setError(null);
       const res = await fetch(`/api/manager-ads?from=${range.dateFrom}&to=${range.dateTo}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load ads data");
       setReport(data);
+      // v2 is still building this window's snapshot — poll until it lands.
+      if (data.preparing) {
+        if (prepTimer.current) clearTimeout(prepTimer.current);
+        prepTimer.current = setTimeout(() => load(), 2000);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -71,7 +83,11 @@ export default function ManagerAdsView() {
   }, [range.dateFrom, range.dateTo]);
 
   useEffect(() => {
+    setLoading(true);
     load();
+    return () => {
+      if (prepTimer.current) clearTimeout(prepTimer.current);
+    };
   }, [load]);
 
   const selectedRow: Row | null = useMemo(() => {
@@ -100,13 +116,20 @@ export default function ManagerAdsView() {
           Manager Ads View
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-          Ad spend → messages → calls → clients, per influencer. {report ? `${report.from} → ${report.to}` : ""}
+          Ad spend → messages → calls → clients, per influencer · sourced from the Ads V2 tab.
+          {report ? ` ${report.from} → ${report.to}` : ""}
         </p>
       </div>
 
       {/* ── Date range — same Meta-style dropdown as the /ads tab ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
         <AdsDateDropdown value={range} onChange={setRange} />
+        {report?.preparing && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+            Preparing this window…
+          </span>
+        )}
       </div>
 
       {loading ? (
@@ -139,8 +162,8 @@ export default function ManagerAdsView() {
                       <Th align="right">Cost/Taken</Th>
                       <Th align="right">New Clients</Th>
                       <Th align="right">Cost/Client</Th>
-                      <Th align="right">Cash</Th>
-                      <Th align="right">Pot. ROAS</Th>
+                      <Th align="right">Collected Rev</Th>
+                      <Th align="right">Collected ROI</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -165,8 +188,8 @@ export default function ManagerAdsView() {
                         <Td align="right">{usd(r.costPerTaken)}</Td>
                         <Td align="right">{num(r.newClients)}</Td>
                         <Td align="right">{usd(r.costPerClient)}</Td>
-                        <Td align="right">{usd(r.cashCollected)}</Td>
-                        <Td align="right">{roasFmt(r.potentialRoas)}</Td>
+                        <Td align="right">{usd(r.collectedRevenue)}</Td>
+                        <Td align="right">{roasFmt(r.collectedRoi)}</Td>
                       </tr>
                     ))}
                   </tbody>
@@ -200,14 +223,14 @@ export default function ManagerAdsView() {
                 <Metric label="Cost / Call Taken" value={usd(selectedRow.costPerTaken)} />
                 <Metric label="New Clients" value={num(selectedRow.newClients)} />
                 <Metric label="Cost / Client" value={usd(selectedRow.costPerClient)} />
-                <Metric label="Cash Collected" value={usd(selectedRow.cashCollected)} />
-                <Metric label="Potential ROAS" value={roasFmt(selectedRow.potentialRoas)} accent />
+                <Metric label="Collected Revenue" value={usd(selectedRow.collectedRevenue)} />
+                <Metric label="Collected ROI" value={roasFmt(selectedRow.collectedRoi)} accent />
               </div>
             )}
 
             <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14 }}>
-              Potential ROAS = cash collected ÷ ad spend. All tracked cash counts toward ads — anything unattributed
-              is treated as ad-driven.
+              Collected ROI = collected revenue ÷ ad spend. Every figure is sourced from the Ads V2 tab: revenue and
+              ROI are keyword-attributed to paid ads, so cash that can&apos;t be tied to an ad keyword is not counted.
             </p>
           </div>
 
