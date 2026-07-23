@@ -119,8 +119,6 @@ export async function complianceForDay(sb: SupabaseClient, creator: string, date
     // Counted toward "done" above (a claim is believed), but surfaced separately so the recap can
     // say how much of the day rests on the creator's word rather than a detected post.
     claimed: day.slots.filter((s) => s.state === "claimed").length,
-    // Self-reported and never part of quota — reported alongside, never inside, the numbers.
-    trial_reels: day.trial_reels,
   };
 }
 

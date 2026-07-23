@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
+import type { StudioPost } from "@/components/content/MyContentView";
 import PlaybookView from "@/components/content/PlaybookView";
 import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import CalendarView from "@/components/content/CalendarView";
@@ -9,7 +9,6 @@ import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
-import type { DateRange } from "@/components/content/CalendarRange";
 import { Column, PAPER, MUTED, PageHeader, Tabs } from "@/components/content/creator-ui";
 
 type Studio = {
@@ -30,18 +29,10 @@ type Studio = {
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
 
-function defaultRange(): DateRange {
-  const to = new Date();
-  const from = new Date(to.getTime() - 89 * 86_400_000);
-  const f = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { from: f(from), to: f(to) };
-}
-
 export default function PublicContentApp({ token, name }: { token: string; name: string }) {
-  const [page, setPage] = useState<"playbook" | "buyers" | "calendar" | "content">("calendar");
+  const [page, setPage] = useState<"playbook" | "buyers" | "calendar">("calendar");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<DateRange>(defaultRange);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,7 +49,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
     c.add("light");
   }, []);
 
-  const tabs = [["calendar", "Calendar"], ["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
+  const tabs = [["calendar", "Calendar"], ["playbook", "Playbook"], ["buyers", "Buyers"]] as const;
 
   return (
     <main style={{ minHeight: "100vh", background: PAPER, padding: "32px 18px 100px" }}>
@@ -72,12 +63,10 @@ export default function PublicContentApp({ token, name }: { token: string; name:
           <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} icp={data.icp} buyerVoice={data.buyerVoice} />
         ) : page === "buyers" ? (
           <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
-        ) : page === "calendar" ? (
+        ) : (
           // The creator's own checklist. The token decides whose calendar this is — the component
           // never sends a creator key, so this page can only ever read/write its own.
           <CalendarView creator={data.creator} mode="creator" token={token} />
-        ) : (
-          <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
         )}
       </Column>
     </main>
