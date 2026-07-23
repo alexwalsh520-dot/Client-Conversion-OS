@@ -8,18 +8,19 @@
 //                    Tap to check off today and the past; future days are locked.
 //
 // Slot truth (derived in lib/content/calendar-build.ts — this only paints it):
-//   VERIFIED  green         a post was actually found for that slot
+//   VERIFIED  green         a post was actually found for that slot (reels/carousels)
 //   CLAIMED   amber dashed  checked off, but no post found — believed, not proven
-//   DONE      green         a story, which no scraper can see, so checking it IS the record
-//   MISSED    red           the day is over and nothing filled it
+//   MISSED    red           the day is over and nothing filled it (reels/carousels only)
 //   PENDING   neutral       still to come
+//   DONE      a story's checkbox. Stories are fully manual — never verified, never red/green,
+//             never policed. The checkbox (creator or operator, both can set it) IS the record.
 //
 // Freshness never conflates "the pipeline is behind" with "the creator hasn't posted".
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2, ChevronLeft, ChevronRight, Settings, Film, LayoutGrid, Circle,
-  AlertTriangle, Play, X, ExternalLink, Check, Lock, FlaskConical, Minus, Copy, FileText,
+  AlertTriangle, Play, X, ExternalLink, Check, Lock, Copy, FileText,
 } from "lucide-react";
 import {
   todayIn, shiftWeek, prettyDate, DOW, COMMON_TIMEZONES, isComplete,
@@ -36,18 +37,15 @@ type Slot = {
 };
 type Day = {
   date: string; dow: string; story_rest: boolean; slots: Slot[];
-  trial_reels: number; // self-reported tally, not a slot — never counted in quota or streaks
   reels_posted: number; carousels_posted: number; reels_target: number; carousels_target: number;
   story_label: string | null; story_copy: string | null; reconciled_at: string | null; finalized: boolean; day_ended: boolean;
 };
 type Cadence = { reels_per_day: number; carousels_per_day: number; story_schedule: StorySchedule; timezone: string };
 type CalResp = {
   creator: string; viewer: "operator" | "creator"; week_start: string; today: string; timezone: string;
-  cadence: Cadence; days: Day[]; trial_reels_week: number;
+  cadence: Cadence; days: Day[];
   synced_at: string | null; sync_age_hours: number | null; sync_stale: boolean; newest_post_at: string | null;
 };
-
-const TRIAL_NOTE = "Self-reported — trial reels aren't visible to the post sync.";
 
 const GREEN = "#2f9e5f", GREEN_BG = "rgba(47,158,95,0.16)";
 const AMBER = "#b7791f", AMBER_BG = "rgba(214,158,46,0.13)";
@@ -64,8 +62,13 @@ function slotColor(s: Slot): React.CSSProperties {
 const stateTitle = (s: Slot) =>
   s.state === "verified" ? "posted — verified"
     : s.state === "claimed" ? "checked off, no post found"
-      : s.state === "done" ? "checked off (stories can't be auto-detected)"
+      : s.state === "done" ? "posted — checked off"
         : s.state === "missed" ? "missed" : "still to come";
+
+// Stories are manual-only: always neutral, never red/green. The check is the record.
+const storyChipStyle: React.CSSProperties = {
+  background: "var(--bg-glass)", borderColor: "var(--border-primary)", color: "var(--text-secondary)",
+};
 
 export default function CalendarView({ creator, mode = "operator", token }: { creator: string; mode?: "operator" | "creator"; token?: string }) {
   const isCreator = mode === "creator";
@@ -118,29 +121,6 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
     } finally { setBusy(null); }
   };
 
-  // Trial reels are a tally, not a slot: rows 1..N of slot_type 'trial_reel'. Incrementing marks
-  // row N+1 done, decrementing un-marks row N — both plain upserts, so nothing is ever deleted and
-  // a replayed click can't push the count negative.
-  const bumpTrial = async (day: Day, delta: 1 | -1) => {
-    if (!canToggle(day)) return;
-    const next = day.trial_reels + delta;
-    if (next < 0) return;
-    setBusy(`${day.date}|trial`);
-    try {
-      await fetch(`/api/content/calendar/mark${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(token ? {} : { creator }),
-          for_date: day.date, slot_type: "trial_reel",
-          slot_index: delta === 1 ? next : day.trial_reels,
-          done: delta === 1,
-        }),
-      });
-      await load(week);
-    } finally { setBusy(null); }
-  };
-
   // Operator-only: write the day's story copy (session-authenticated route — a creator token can't
   // reach it). Creators only ever read this on their own calendar.
   const saveStoryCopy = async (day: Day, copy: string) => {
@@ -157,17 +137,25 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
     const tally = { reel: [0, 0], carousel: [0, 0], story: [0, 0] } as Record<string, [number, number]>;
     let done = 0, due = 0, streak = 0;
     for (const d of data.days) {
+      // Reels count EVERY post found that day (extras included, so 4 posted against a target of 2
+      // shows as 4). Days stay independent — extras never roll into the next day's requirement.
+      tally.reel[0] += d.reels_posted;
+      tally.reel[1] += d.reels_target;
       for (const s of d.slots) {
-        tally[s.slot_type][1] += 1;
-        if (isComplete(s.state)) tally[s.slot_type][0] += 1;
-        if (s.state !== "pending") { due += 1; if (isComplete(s.state)) done += 1; }
+        if (s.slot_type !== "reel") {
+          tally[s.slot_type][1] += 1;
+          if (isComplete(s.state)) tally[s.slot_type][0] += 1;
+        }
+        // Stories are manual-only and never policed, so the enforced-quota % is reels + carousels.
+        if (s.slot_type !== "story" && s.state !== "pending") { due += 1; if (isComplete(s.state)) done += 1; }
       }
     }
     const past = data.days.filter((d) => d.date <= data.today);
     for (let i = past.length - 1; i >= 0; i--) {
       const d = past[i];
-      if (!d.slots.length) continue;
-      if (d.slots.every((s) => isComplete(s.state))) streak += 1; else break;
+      const enforced = d.slots.filter((s) => s.slot_type !== "story");
+      if (!enforced.length) continue;
+      if (enforced.every((s) => isComplete(s.state))) streak += 1; else break;
     }
     const today = data.days.find((d) => d.date === data.today);
     let todayLine = "";
@@ -251,7 +239,7 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                     {d.slots.filter((s) => s.slot_type === "story").map((s) => (
                       <button key={s.slot_index} disabled={!!busy} onClick={() => setOpenStory(d)}
                         title={`Story — ${stateTitle(s)}`}
-                        style={{ borderRadius: 6, border: "1px solid", cursor: "pointer", padding: "5px 6px", textAlign: "left", ...slotColor(s) }}>
+                        style={{ borderRadius: 6, border: "1px solid", cursor: "pointer", padding: "5px 6px", textAlign: "left", ...storyChipStyle }}>
                         <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.85, display: "flex", alignItems: "center", gap: 3 }}>
                           Story {isComplete(s.state) && <Check size={8} />}
                           {d.story_copy && <FileText size={8} style={{ marginLeft: "auto" }} />}
@@ -262,22 +250,6 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
                     {d.story_rest && (
                       <div style={{ fontSize: 9.5, color: "var(--text-muted)", textAlign: "center", padding: "3px 0" }}>no story</div>
                     )}
-                    {/* Self-reported tally, visually separated from the slots above so it never
-                        reads as part of the quota. Tap to add, minus to correct. */}
-                    <div title={TRIAL_NOTE}
-                      style={{ marginTop: 3, paddingTop: 5, borderTop: "1px dashed var(--border-primary)", display: "flex", alignItems: "center", gap: 3 }}>
-                      <button disabled={!!busy || locked} onClick={() => bumpTrial(d, 1)}
-                        title={`Add a trial reel — ${TRIAL_NOTE}`}
-                        style={{ flex: 1, height: 18, borderRadius: 5, border: "1px dashed var(--border-primary)", background: "transparent", cursor: locked ? "default" : "pointer", fontSize: 9, fontWeight: 700, color: d.trial_reels > 0 ? "var(--text-secondary)" : "var(--text-muted)", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                        <FlaskConical size={8} />Trial: {d.trial_reels}
-                      </button>
-                      {d.trial_reels > 0 && !locked && (
-                        <button disabled={!!busy} onClick={() => bumpTrial(d, -1)} title="Remove one"
-                          style={{ width: 15, height: 18, borderRadius: 5, border: "1px dashed var(--border-primary)", background: "transparent", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                          <Minus size={8} />
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
               );
@@ -292,20 +264,14 @@ export default function CalendarView({ creator, mode = "operator", token }: { cr
               </div>
               <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--border-primary)", paddingTop: 14 }}>
                 {(["reel", "carousel", "story"] as const).map((t) => (
-                  <div key={t} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}>
+                  <div key={t} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}
+                    title={t === "reel" ? "Every reel posted this week vs the week's target — extras count here but never carry into the next day" : undefined}>
                     {t === "reel" ? <Film size={13} /> : t === "carousel" ? <LayoutGrid size={13} /> : <Circle size={13} />}
-                    <span>{t === "reel" ? "Reels" : t === "carousel" ? "Carousels" : "Stories"}</span>
+                    <span>{t === "reel" ? "Reels posted" : t === "carousel" ? "Carousels" : "Stories"}</span>
                     <span style={{ flex: 1 }} />
                     <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--text-primary)" }}>{metrics.tally[t][0]}/{metrics.tally[t][1]}</span>
                   </div>
                 ))}
-                {/* Below the quota rows and with no target, because it isn't one. */}
-                <div title={TRIAL_NOTE} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
-                  <FlaskConical size={13} />
-                  <span>Trial reels this week</span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{data.trial_reels_week ?? 0}</span>
-                </div>
               </div>
               <div style={{ borderTop: "1px solid var(--border-primary)", paddingTop: 14 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 5 }}>Today</div>
@@ -493,8 +459,9 @@ function SlotPopover({ day, slot, busy, locked, onClose, onToggle }: { day: Day;
   );
 }
 
-// The story slot's panel. Operators author the day's story copy (textarea + Save). Creators see the
-// same copy READ-ONLY, with a "Copy text" button and the posted checkbox (the existing story mark).
+// The story slot's panel. Operators author the day's story copy (textarea + Save) and can set the
+// Posted mark themselves. Creators see the same copy READ-ONLY, with a "Copy text" button and the
+// same posted checkbox — both roles write the same manual mark; nothing verifies it.
 function StoryModal({
   day, isCreator, canToggle, busy, onClose, onSave, onTogglePosted,
 }: {
@@ -552,7 +519,12 @@ function StoryModal({
               rows={8}
               style={{ width: "100%", resize: "vertical", padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-primary)", fontSize: 13.5, lineHeight: 1.6, fontFamily: "inherit" }}
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+              {/* Admins can set the posted mark too — same record the creator's checkbox writes. */}
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, color: canToggle ? "var(--text-secondary)" : "var(--text-muted)", cursor: canToggle && !busy ? "pointer" : "default" }}>
+                <input type="checkbox" checked={posted} disabled={!canToggle || busy} onChange={onTogglePosted} /> Posted
+              </label>
+              <span style={{ flex: 1 }} />
               <button onClick={onClose} style={pillBtn}>Cancel</button>
               <button
                 onClick={async () => { setSaving(true); try { await onSave(copy); } finally { setSaving(false); } }}

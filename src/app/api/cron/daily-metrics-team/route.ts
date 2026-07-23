@@ -52,9 +52,9 @@ async function complianceLines(): Promise<string> {
       if (comp.carousels.target > 0) {
         bits.push(`${comp.carousels.done}/${comp.carousels.target} carousels ${comp.carousels.done >= comp.carousels.target ? "\u2713" : "\u2717"}`);
       }
-      if (comp.story) bits.push(`story ${comp.story.done ? "\u2713" : "\u2717"}`);
-      // Self-reported, so it reads as an extra rather than part of the tally above.
-      if (comp.trial_reels > 0) bits.push(`${comp.trial_reels} trial reel${comp.trial_reels > 1 ? "s" : ""}`);
+      // Stories are manual-only (never policed), so the recap reports checked ones and stays
+      // silent otherwise instead of implying a miss.
+      if (comp.story?.done) bits.push("story \u2713");
       // How much of that "done" rests on the creator's word with no post found to back it.
       const claimed = comp.claimed > 0 ? ` (${comp.claimed} claimed, unverified)` : "";
       lines.push(`*${c.name} content:* ${bits.join(" \u00b7 ")} (streak ${streak})${claimed}`);

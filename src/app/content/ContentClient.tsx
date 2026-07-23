@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Settings } from "lucide-react";
 import { ACTIVE_CREATORS } from "@/lib/creators";
-import MyContentView, { type StudioPost } from "@/components/content/MyContentView";
+import type { StudioPost } from "@/components/content/MyContentView";
 import CreatorBuyersView from "@/components/content/CreatorBuyersView";
 import type { BuyerIdeaSet } from "@/components/content/BuyerIdeasView";
 import PlaybookView from "@/components/content/PlaybookView";
@@ -13,7 +13,6 @@ import type { ShiftBrief } from "@/lib/buyer-dna/shift";
 import type { Playbook } from "@/lib/buyer-dna/playbook";
 import type { BuyerVoice } from "@/lib/buyer-dna/voice";
 import ShareSettings from "@/components/content/ShareSettings";
-import type { DateRange } from "@/components/content/CalendarRange";
 import { Column, PAPER, INK, MUTED, PageHeader, Tabs } from "@/components/content/creator-ui";
 
 const CREATORS = ACTIVE_CREATORS.map((c) => ({ slug: c.key, name: c.name }));
@@ -41,19 +40,11 @@ type Studio = {
   scoreboard: { streak: number; avg30: number | null; prevAvg30: number | null; best: number | null; onTargetMonth: number; totalScored: number; totalPosts: number };
 };
 
-function defaultRange(): DateRange {
-  const to = new Date();
-  const from = new Date(to.getTime() - 89 * 86_400_000);
-  const f = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { from: f(from), to: f(to) };
-}
-
 export default function ContentClient() {
   const [active, setActive] = useState("tyson");
-  const [page, setPage] = useState<"playbook" | "buyers" | "content" | "carousels" | "calendar">("calendar");
+  const [page, setPage] = useState<"playbook" | "buyers" | "carousels" | "calendar">("calendar");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<DateRange>(defaultRange);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async (creator: string) => {
@@ -65,7 +56,7 @@ export default function ContentClient() {
   }, []);
   useEffect(() => { load(active); }, [active, load]);
 
-  const tabs = [["calendar", "Calendar"], ["carousels", "Carousels"], ["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
+  const tabs = [["calendar", "Calendar"], ["carousels", "Carousels"], ["playbook", "Playbook"], ["buyers", "Buyers"]] as const;
 
   const toggleBtn = (activeState: boolean): React.CSSProperties => ({
     background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
@@ -103,8 +94,6 @@ export default function ContentClient() {
           <PlaybookView shiftBrief={data.shiftBrief} playbook={data.playbook} buyerLine={data.icp?.one_line} icp={data.icp} buyerVoice={data.buyerVoice} />
         ) : page === "buyers" ? (
           <CreatorBuyersView buyers={data.buyerIdeas || []} buyerVoice={data.buyerVoice} />
-        ) : page === "content" ? (
-          <MyContentView data={{ posts: data.posts, scoreboard: data.scoreboard }} range={range} setRange={setRange} />
         ) : (
           <CarouselsView creator={active} />
         )}
