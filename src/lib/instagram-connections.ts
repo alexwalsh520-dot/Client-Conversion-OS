@@ -755,6 +755,94 @@ export async function getDecryptedTokenForClient(clientKey: string): Promise<str
   }
 }
 
+const IG_GRAPH_HOST = `https://graph.instagram.com/${process.env.META_GRAPH_VERSION?.trim() || "v24.0"}`;
+
+// A creator's public IG profile (handle + avatar url) via their connected token. Used to save the
+// carousel avatar. Returns null if there's no usable connection.
+export async function getInstagramProfileForClient(
+  clientKey: string,
+): Promise<{ username: string | null; profile_picture_url: string | null; instagram_user_id: string | null } | null> {
+  try {
+    const sb = getServiceSupabase();
+    const { data } = await sb
+      .from("instagram_connections")
+      .select("token_encrypted, instagram_user_id, instagram_username")
+      .eq("client_key", clientKey)
+      .eq("status", "connected")
+      .maybeSingle();
+    const token = decryptToken((data as { token_encrypted?: string } | null)?.token_encrypted);
+    const igId = (data as { instagram_user_id?: string } | null)?.instagram_user_id;
+    if (!token || !igId) return null;
+    const url = `${IG_GRAPH_HOST}/${igId}?fields=username,profile_picture_url&access_token=${token}`;
+    const json = await fetchJson<{ username?: string; profile_picture_url?: string }>(url);
+    return {
+      username: json.username || (data as { instagram_username?: string } | null)?.instagram_username || null,
+      profile_picture_url: json.profile_picture_url || null,
+      instagram_user_id: igId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type TokenRefreshResult = { client_key: string; refreshed: boolean; skipped?: boolean; error?: string; expires_at?: string | null };
+
+// Refresh long-lived Instagram tokens before they expire. IG long-lived tokens last ~60 days and can
+// be refreshed (grant_type=ig_refresh_token) once they're at least 24h old, which resets them to ~60
+// days. We refresh any connected token whose remaining life has dropped below ~59 days — i.e. it is
+// more than ~a day old — so a token is never left to expire and we never hit Meta's "<24h old" refusal.
+// A failure is written to the row's subscription_error AND console.error so it surfaces before a stale
+// token silently breaks DM/reel ingestion. Re-encryption reuses the module-private key helpers.
+export async function refreshConnectedInstagramTokens(): Promise<{ results: TokenRefreshResult[]; refreshed: number; failed: number }> {
+  const sb = getServiceSupabase();
+  const { data } = await sb
+    .from("instagram_connections")
+    .select("client_key, token_encrypted, token_expires_at")
+    .eq("status", "connected");
+  const rows = (data || []) as { client_key: string; token_encrypted: string | null; token_expires_at: string | null }[];
+
+  const REFRESH_WHEN_UNDER_MS = 59 * 24 * 60 * 60 * 1000; // remaining life < ~59 days => token is >~24h old
+  const now = Date.now();
+  const results: TokenRefreshResult[] = [];
+
+  for (const row of rows) {
+    const remaining = row.token_expires_at ? new Date(row.token_expires_at).getTime() - now : 0;
+    if (row.token_expires_at && remaining > REFRESH_WHEN_UNDER_MS) {
+      results.push({ client_key: row.client_key, refreshed: false, skipped: true, expires_at: row.token_expires_at });
+      continue;
+    }
+    const token = decryptToken(row.token_encrypted);
+    if (!token) {
+      const error = "no decryptable token";
+      console.error(`[instagram-token-refresh] ${row.client_key}: ${error}`);
+      await sb.from("instagram_connections").update({ subscription_error: error, updated_at: new Date().toISOString() }).eq("client_key", row.client_key);
+      results.push({ client_key: row.client_key, refreshed: false, error });
+      continue;
+    }
+    try {
+      const url = `${IG_GRAPH_HOST}/refresh_access_token?grant_type=ig_refresh_token&access_token=${token}`;
+      const json = await fetchJson<TokenResponse>(url);
+      if (!json.access_token) throw new Error("refresh returned no access_token");
+      const encrypted = encryptToken(json.access_token);
+      if (!encrypted) throw new Error("token encryption unavailable");
+      const expiresAt = tokenExpiresAt(json);
+      const { error: upErr } = await sb
+        .from("instagram_connections")
+        .update({ token_encrypted: encrypted, token_expires_at: expiresAt, subscription_error: null, updated_at: new Date().toISOString() })
+        .eq("client_key", row.client_key);
+      if (upErr) throw new Error(upErr.message);
+      results.push({ client_key: row.client_key, refreshed: true, expires_at: expiresAt });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : "refresh failed";
+      console.error(`[instagram-token-refresh] ${row.client_key}: ${error}`);
+      await sb.from("instagram_connections").update({ subscription_error: error, updated_at: new Date().toISOString() }).eq("client_key", row.client_key);
+      results.push({ client_key: row.client_key, refreshed: false, error });
+    }
+  }
+
+  return { results, refreshed: results.filter((r) => r.refreshed).length, failed: results.filter((r) => r.error).length };
+}
+
 const usernameResolveCache = new Map<string, string | null>();
 
 /**

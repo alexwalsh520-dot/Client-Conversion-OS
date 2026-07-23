@@ -6,6 +6,15 @@ import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import type { Icp } from "@/lib/buyer-dna/icp";
 import { generateCarouselSet } from "@/lib/buyer-dna/carousels";
+import { getCadence } from "@/lib/content/calendar-build";
+
+// The external content worker owns midnight → 06:00 in the creator's own timezone; CCOS's automatic
+// generation only steps in AFTER 06:00 local, so a day is never left empty but the worker gets first
+// crack. force=1 (a deliberate human re-run) bypasses this. Hour 0-23 in the given IANA zone.
+function localHour(tz: string): number {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(new Date())) % 24;
+}
+const EXTERNAL_WINDOW_END_HOUR = 6;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +60,15 @@ export async function POST(req: NextRequest) {
     .order("slot", { ascending: true });
   if (!force && existing && existing.length >= 5) {
     return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: existing });
+  }
+
+  // Fallback window: before 06:00 in the creator's own timezone, leave the empty day to the external
+  // worker (it owns midnight-6am). Only automatic internal generation defers — force=1 always runs.
+  if (!force) {
+    const { timezone } = await getCadence(sb, slug);
+    if (localHour(timezone) < EXTERNAL_WINDOW_END_HOUR) {
+      return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, deferred: true, reason: `before ${EXTERNAL_WINDOW_END_HOUR}:00 ${timezone} — external worker window` });
+    }
   }
 
   const current = await getCurrentIcp(sb, slug);

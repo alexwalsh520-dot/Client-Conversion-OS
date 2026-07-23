@@ -89,12 +89,24 @@ export default function PlaybookView({
   icp?: IcpView | null;
   buyerVoice?: BuyerVoice | null;
 }) {
-  const hooks: PlaybookHook[] = playbook?.hooks || [];
+  // Hooks may arrive as {hook,present} (internal) or as plain strings (external) — normalize both.
+  const hooks: PlaybookHook[] = ((playbook?.hooks || []) as (string | PlaybookHook)[]).map((h) => (typeof h === "string" ? { hook: h } : h));
   const topics: PlaybookTopic[] = playbook?.topics || [];
   // Playbooks generated before the tier list existed simply have no `saying` — hide the section
   // entirely until the next weekly regen rather than showing an empty shell.
   const saying: PlaybookSaying[] = (playbook?.saying || []).filter((s) => s && s.theme);
-  const moves = (Array.isArray(shiftBrief?.shifts) ? shiftBrief!.shifts : []).filter((s) => s && s.move).slice(0, 3);
+  // Actions: prefer an external playbook's own actions (strings or {move,why}); else the shift brief's.
+  const externalActions = (playbook?.actions || [])
+    .map((a) => (typeof a === "string" ? { move: a } : a))
+    .filter((a) => a && a.move);
+  const moves = externalActions.length
+    ? externalActions.slice(0, 8)
+    : (Array.isArray(shiftBrief?.shifts) ? shiftBrief!.shifts : []).filter((s) => s && s.move).slice(0, 3);
+  // New external-only sections (rendered only when present).
+  const buyerLanguage = (playbook?.buyer_language || []).filter(Boolean);
+  const filmingConcepts = (playbook?.filming_concepts || [])
+    .map((c) => (typeof c === "string" ? { concept: c } : c))
+    .filter((c): c is { concept?: string; why?: string } => !!c && !!(c.concept || c.why));
   const more = moreOnBuyer(icp || null, buyerVoice || null);
 
   return (
@@ -156,6 +168,17 @@ export default function PlaybookView({
         )}
       </Section>
 
+      {buyerLanguage.length > 0 && (
+        <Section>
+          <H>Buyer language</H>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+            {buyerLanguage.map((x, i) => (
+              <li key={i} style={{ fontSize: 14.5, color: BODY, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{x}&rdquo;</li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       <Section>
         <H>Hooks</H>
         {hooks.length ? (
@@ -180,18 +203,33 @@ export default function PlaybookView({
         )}
       </Section>
 
-      <Section>
-        <H>Topics</H>
-        {topics.length ? (
+      {filmingConcepts.length > 0 && (
+        <Section>
+          <H>Filming concepts</H>
+          <ol style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {filmingConcepts.map((c, i) => (
+              <Row
+                key={i}
+                lead={i + 1}
+                summary={c.concept || ""}
+                truncate
+                detail={c.why ? <p style={{ fontSize: 14.5, color: BODY, lineHeight: 1.65, margin: 0 }}>{c.why}</p> : undefined}
+              />
+            ))}
+          </ol>
+        </Section>
+      )}
+
+      {topics.length > 0 && (
+        <Section>
+          <H>Topics</H>
           <div className="ccos-2col">
             {topics.map((t: PlaybookTopic, i: number) => (
               <div key={i} style={{ fontSize: 15, color: INK, lineHeight: 1.5 }}>{t.topic}</div>
             ))}
           </div>
-        ) : (
-          <Empty />
-        )}
-      </Section>
+        </Section>
+      )}
     </div>
   );
 }
