@@ -3,7 +3,8 @@
 // Manager Ads View — the sales manager's cut of the ads data. One scrollable
 // per-influencer overview table on top, big metric cards for the selected
 // influencer below. Intentionally minimal: spend → messages → calls → clients
-// → collected revenue, cost-per-X at each step, Collected ROI at the end.
+// → cash, cost-per-X at each step. Two returns at the end: ROAS (the Ads V2
+// ad-attributed number) and ROI (all sales-tracker cash ÷ spend).
 //
 // Source of truth: the Ads V2 tab. Every number here reads the same v2 window
 // snapshot the /ads-v2 tab reads, so the two always agree. Revenue and ROI are
@@ -25,8 +26,9 @@ interface Row {
   costPerTaken: number | null;
   newClients: number | null;
   costPerClient: number | null;
-  collectedRevenue: number | null;
-  collectedRoi: number | null;
+  cashCollected: number | null;
+  roas: number | null;
+  roi: number | null;
 }
 
 interface Report {
@@ -116,7 +118,7 @@ export default function ManagerAdsView() {
           Manager Ads View
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-          Ad spend → messages → calls → clients, per influencer · sourced from the Ads V2 tab.
+          Per influencer · ads data from the Ads V2 tab, ROI from all sales-tracker cash.
           {report ? ` ${report.from} → ${report.to}` : ""}
         </p>
       </div>
@@ -162,8 +164,9 @@ export default function ManagerAdsView() {
                       <Th align="right">Cost/Taken</Th>
                       <Th align="right">New Clients</Th>
                       <Th align="right">Cost/Client</Th>
-                      <Th align="right">Collected Rev</Th>
-                      <Th align="right">Collected ROI</Th>
+                      <Th align="right">Cash Collected</Th>
+                      <Th align="right">ROAS</Th>
+                      <Th align="right">ROI</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -188,8 +191,9 @@ export default function ManagerAdsView() {
                         <Td align="right">{usd(r.costPerTaken)}</Td>
                         <Td align="right">{num(r.newClients)}</Td>
                         <Td align="right">{usd(r.costPerClient)}</Td>
-                        <Td align="right">{usd(r.collectedRevenue)}</Td>
-                        <Td align="right">{roasFmt(r.collectedRoi)}</Td>
+                        <Td align="right">{usd(r.cashCollected)}</Td>
+                        <Td align="right">{roasFmt(r.roas)}</Td>
+                        <Td align="right">{roasFmt(r.roi)}</Td>
                       </tr>
                     ))}
                   </tbody>
@@ -223,14 +227,18 @@ export default function ManagerAdsView() {
                 <Metric label="Cost / Call Taken" value={usd(selectedRow.costPerTaken)} />
                 <Metric label="New Clients" value={num(selectedRow.newClients)} />
                 <Metric label="Cost / Client" value={usd(selectedRow.costPerClient)} />
-                <Metric label="Collected Revenue" value={usd(selectedRow.collectedRevenue)} />
-                <Metric label="Collected ROI" value={roasFmt(selectedRow.collectedRoi)} accent />
+                <Metric label="Cash Collected" value={usd(selectedRow.cashCollected)} />
+                <Metric label="ROAS" value={roasFmt(selectedRow.roas)} accent />
+                <Metric label="ROI" value={roasFmt(selectedRow.roi)} accent />
               </div>
             )}
 
             <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14 }}>
-              Collected ROI = collected revenue ÷ ad spend. Every figure is sourced from the Ads V2 tab: revenue and
-              ROI are keyword-attributed to paid ads, so cash that can&apos;t be tied to an ad keyword is not counted.
+              <strong>ROAS</strong> = the Ads V2 figure: ad-attributed collected revenue ÷ ad spend (only cash tied to
+              a paid ad keyword counts). <strong>ROI</strong> = <strong>all</strong> cash collected on the sales
+              tracker for this influencer ÷ ad spend. Cash Collected shown here is that all-cash number, so ROAS —
+              which uses the smaller ad-attributed figure — is normally lower than ROI. Spend, messages, calls and
+              clients come from the Ads V2 tab.
             </p>
           </div>
 

@@ -1,21 +1,29 @@
 // Manager Ads View — the sales manager's per-influencer cut of the ads data.
 //
-// SINGLE SOURCE OF TRUTH: the Ads V2 tab. This reads the exact same precomputed
-// snapshot the /ads-v2 tab reads (serveWindow), and derives every column with
-// the exact same derive() the v2 tab uses. So a manager-view number and the
-// corresponding Ads V2 number are the same value, never a parallel computation.
+// Two return metrics, by explicit request:
+//   • ROAS = whatever the Ads V2 tab says. This is v2's keyword-ATTRIBUTED
+//     collected revenue ÷ ad spend (only cash tied to a paid ad keyword).
+//   • ROI  = ALL cash collected from the sales tracker ÷ ad spend. This counts
+//     every sales-tracker row for the creator (via the `offer` column), not
+//     just ad-attributed cash.
 //
-// Consequences of that single source, both inherited from v2 (not choices made
-// here):
-//   * Influencers are whoever v2 serves (Tyson, Jake) — Antwan is inactive and
-//     not served by v2, so it does not appear.
-//   * Revenue and ROI are KEYWORD-ATTRIBUTED (cash tied to a paid ad keyword).
-//     Unattributed cash is not counted — this is "Collected revenue / Collected
-//     ROI", not the old "all cash / potential ROAS".
+// SOURCES:
+//   • Spend / messages / calls / clients / attributed-collected (→ ROAS) come
+//     from the exact v2 window snapshot the /ads-v2 tab reads (serveWindow +
+//     derive), so those numbers equal the Ads V2 tab by construction.
+//   • All-cash (→ ROI) comes from the SYNCED sales_tracker_rows table, summed
+//     per creator by the `offer` column and converted to USD per sale day with
+//     the same FX helper v2 uses for its collected figure.
+//
+// Influencers are whoever v2 serves (Tyson, Jake); the total is scoped to those
+// same influencers so the total row is the sum of its parts.
 
 import { serveWindow } from "@/lib/ads-v2/serve";
 import { derive } from "@/lib/ads-v2/metrics";
 import { addBase, EMPTY_BASE, type AdsV2Query, type BaseMetrics } from "@/lib/ads-v2/types";
+import { getServiceSupabase } from "@/lib/supabase";
+import { creatorKeyFromText } from "@/lib/creators";
+import { creatorCurrency, loadUsdRateMap, convertCentsToUsd } from "@/lib/fx/rates";
 
 export interface ManagerAdsRow {
   client: string; // creator key, or "total"
@@ -29,8 +37,12 @@ export interface ManagerAdsRow {
   costPerTaken: number | null;
   newClients: number | null;
   costPerClient: number | null;
-  collectedRevenue: number | null;
-  collectedRoi: number | null;
+  /** ALL cash collected from the sales tracker for this creator (USD). */
+  cashCollected: number | null;
+  /** Ads V2's ad-attributed collected ÷ spend. */
+  roas: number | null;
+  /** All sales-tracker cash ÷ spend. */
+  roi: number | null;
 }
 
 export interface ManagerAdsReport {
@@ -53,14 +65,58 @@ export interface BuildResult {
 }
 
 const centsToDollars = (c: number | null): number | null => (c == null ? null : c / 100);
+const ratio = (numer: number, denom: number): number | null => (denom ? numer / denom : null);
 
-/** Map one v2 base-metric bundle to a manager-view row, using v2's own derive(). */
-function rowFromBase(client: string, label: string, base: BaseMetrics): ManagerAdsRow {
+/**
+ * ALL cash collected per creator, from the SYNCED sales_tracker_rows table.
+ * Every row is assigned to a creator by its `offer` text (independent of ad
+ * attribution), bucketed by the sales-tracker date, and converted to USD per
+ * day — the same currency handling v2 uses for its collected figure.
+ * Returns USD cents keyed by creator key. Paged past PostgREST's 1000-row cap.
+ */
+async function allCashByCreator(from: string, to: string): Promise<Map<string, number>> {
+  const db = getServiceSupabase();
+
+  type Row = { date: string; offer: string | null; collected_revenue_cents: number | null };
+  const rows: Row[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await db
+      .from("sales_tracker_rows")
+      .select("date, offer, collected_revenue_cents")
+      .gte("date", from)
+      .lte("date", to)
+      .order("date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(`sales_tracker_rows read failed: ${error.message}`);
+    const batch = (data || []) as Row[];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+
+  // Rate map covers whatever currencies the matched creators bill in (Jake=AUD).
+  const currencies = [...new Set(rows.map((r) => creatorKeyFromText(r.offer || "")).filter(Boolean).map((k) => creatorCurrency(k)))];
+  const rateMap = await loadUsdRateMap(db, currencies, from, to);
+
+  const byCreator = new Map<string, number>();
+  for (const r of rows) {
+    const key = creatorKeyFromText(r.offer || "");
+    if (!key) continue; // unassignable rows (blank/foreign offer) belong to no creator
+    const usd = convertCentsToUsd(Number(r.collected_revenue_cents || 0), creatorCurrency(key), r.date, rateMap);
+    byCreator.set(key, (byCreator.get(key) || 0) + usd);
+  }
+  return byCreator;
+}
+
+/** Map v2 base metrics + this creator's all-cash into a manager-view row. */
+function buildRow(client: string, label: string, base: BaseMetrics, allCashCents: number): ManagerAdsRow {
   const d = derive(base);
+  const spendCents = base.spendCents;
   return {
     client,
     label,
-    spend: base.spendCents / 100,
+    spend: spendCents / 100,
     messages: base.messages,
     costPerMessage: centsToDollars(d.costPerMessageCents),
     callsBooked: base.booked,
@@ -69,28 +125,29 @@ function rowFromBase(client: string, label: string, base: BaseMetrics): ManagerA
     costPerTaken: centsToDollars(d.costPerTakenCents),
     newClients: base.newClients,
     costPerClient: centsToDollars(d.costPerClientCents),
-    collectedRevenue: base.collectedCents / 100,
-    collectedRoi: d.collectedRoi,
+    cashCollected: allCashCents / 100,
+    roas: d.collectedRoi, // v2 attributed collected ÷ spend (the Ads V2 number)
+    roi: ratio(allCashCents, spendCents), // all sales-tracker cash ÷ spend
   };
 }
 
 /**
- * Build the report from the Ads V2 "all accounts, all statuses" window.
- * One snapshot read (the v2 read path). On a miss it returns a `preparing`
- * report with prepared=false, so the caller can schedule the background build
- * exactly the way the /ads-v2 route does.
+ * Build the report. Spend/funnel/ROAS from the Ads V2 window snapshot (one read,
+ * same read path the /ads-v2 tab uses); all-cash/ROI from the synced sales
+ * tracker. On a v2 snapshot miss it returns a `preparing` report (prepared=false)
+ * so the caller can schedule the background build like the /ads-v2 route does.
  */
 export async function buildManagerAdsReport(from: string, to: string): Promise<BuildResult> {
-  // status:"all" = active + finished, so the window reflects every ad that had
-  // activity in the range, not only currently-live ads. level is a view concern
-  // for v2; the snapshot carries the whole tree regardless.
   const query: AdsV2Query = { account: "all", status: "all", level: "campaign", dateFrom: from, dateTo: to };
 
-  const { payload, prepared } = await serveWindow(query);
+  const [{ payload, prepared }, allCash] = await Promise.all([
+    serveWindow(query),
+    allCashByCreator(from, to),
+  ]);
 
-  // Roll the campaign tree up per client (v2 stamps clientKey/clientName on
-  // every node), so per-influencer rows are sums of the exact same nodes the
-  // v2 tab shows, and the total is v2's own total over the union.
+  // Roll the v2 campaign tree up per client (v2 stamps clientKey/clientName on
+  // every node), so per-influencer rows are sums of the exact nodes the v2 tab
+  // shows and the total is v2's own total over the union.
   const byClient = new Map<string, { label: string; base: BaseMetrics }>();
   for (const camp of payload.campaigns) {
     const entry = byClient.get(camp.clientKey) || { label: camp.clientName, base: { ...EMPTY_BASE } };
@@ -101,9 +158,12 @@ export async function buildManagerAdsReport(from: string, to: string): Promise<B
 
   const rows: ManagerAdsRow[] = [...byClient.entries()]
     .sort((a, b) => b[1].base.spendCents - a[1].base.spendCents)
-    .map(([key, { label, base }]) => rowFromBase(key, label, base));
+    .map(([key, { label, base }]) => buildRow(key, label, base, allCash.get(key) || 0));
 
-  const total = rowFromBase("total", "All Influencers", payload.total);
+  // Total is scoped to the influencers shown (so total = sum of rows). All-cash
+  // total sums only those creators' cash for the same reason.
+  const shownAllCash = [...byClient.keys()].reduce((s, k) => s + (allCash.get(k) || 0), 0);
+  const total = buildRow("total", "All Influencers", payload.total, shownAllCash);
 
   const report: ManagerAdsReport = {
     from,
