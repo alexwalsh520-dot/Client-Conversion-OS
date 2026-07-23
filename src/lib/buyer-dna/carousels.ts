@@ -67,7 +67,9 @@ const BASE =
   "THE JOB: each carousel hyper-targets ONE specific pain or situation of ONE ideal client (the ICP), articulates that pain BETTER than they could say it themselves so they feel read, then gives real value on it. The 5 carousels are 5 DIFFERENT pains or situations of the SAME ICP — never 5 different audiences.\n" +
   "SLIDE 1 MUST DIRECTLY CALL OUT THE ICP: name exactly who this is for, by their identity or their situation, in their own language, so the right person stops because it is unmistakably about THEM (the shape of 'If you're 28 and still chasing the entry test everyone says you missed...' — speak straight to that person). A hook that could belong to any fitness account is WRONG: broad openers like 'Here's what nobody tells you about fitness' or 'The truth about getting in shape' are FORBIDDEN. Call out the person, then articulate their pain.\n" +
   "Each carousel takes a different angle: pain articulated, personal story, myth broken, pattern observed, hard truth.\n" +
-  "KEEP SLIDES SHORT: at most ~20 words per slide, and no slide may exceed 4 short lines when it wraps. One thought per slide, punchy lines, deliberate line breaks are part of the writing. The slide-1 hook can be a single line. Occasional **bold** on the words that matter. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
+  "HARD SIZE LIMIT — this is not a style preference, it is a rule every slide must pass: each slide is ONE short thought, at most 20 words TOTAL and at most 4 short lines when it wraps. Not a paragraph. If a thought needs more than that, it becomes TWO slides — that is exactly why you get 7-8 slides instead of 5. A slide that runs 5+ lines is a failure; cut it or split it. Example of a correctly-sized slide (three short lines):\n" +
+  "  Passing is the floor.\n  Not the goal.\n  The bare minimum they let you through with.\n" +
+  "Punchy lines, deliberate line breaks, occasional **bold** on the words that matter. The slide-1 hook can be a single line. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
   '{"carousels":[{"topic":"a few words","slides":[{"text":"one short thought, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
   "Exactly 5 carousels; 7 to 8 slides each (never fewer than 6). No prose outside the JSON.";
 
@@ -242,7 +244,7 @@ export async function generateCarouselSet(
   if (violations.length) {
     const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.lines} lines)`).join("; ");
     const retry = await genOnce(
-      `Some slides render longer than the ${SLIDE_MAX_LINES}-line limit: ${named}. Rewrite ONLY those slides to at most ${SLIDE_MAX_LINES} short lines (≤ ~20 words), one thought each. Return the full corrected JSON.`,
+      `These slides break the ${SLIDE_MAX_LINES}-line limit — they are too long: ${named}. Rewrite them to at most ${SLIDE_MAX_LINES} short lines and ~20 words each, ONE thought per slide. If a slide has more than one idea, SPLIT it into two slides (a carousel may run up to 8 slides). Keep the other slides. Return the full corrected JSON.`,
     );
     if (retry.length >= 5) {
       const rv = overLongSlides(retry);
