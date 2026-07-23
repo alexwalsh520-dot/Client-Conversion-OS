@@ -182,7 +182,7 @@ export async function generateCarouselSet(
     // whole basis for the register and the pains — infer his voice from the document's tone.
     docBlock,
     docBlock
-      ? "Infer this creator's register and the buyer's pains from the messaging document above; mirror its exact phrasing and one-liners. Ground every carousel in the document — do not invent buyer quotes."
+      ? "GROUND EVERY CAROUSEL IN THE DOCUMENT ABOVE. Each carousel must be unmistakably about THIS creator's specific niche, buyer and offer as the document describes them — the buyer's actual situation, the specific outcome they are working toward, and the exact pains and one-liners in the document. Do NOT default to generic fitness, physique, muscle-building, bulking, macros/calories or weight-loss content: if the document's positioning is not general fitness, none of that belongs here. Honour the document's own 'what to avoid' guidance. Mirror its phrasing; do not invent buyer quotes. The STYLE REFERENCE below is for REGISTER ONLY — never borrow its subject matter."
       : "",
     `THE BUYER (write every carousel for this one person):\n${compactIcp(icp)}`,
     ranked

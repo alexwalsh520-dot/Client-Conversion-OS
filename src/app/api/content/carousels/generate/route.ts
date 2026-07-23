@@ -34,17 +34,22 @@ export async function POST(req: NextRequest) {
   if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   const dateParam = url.searchParams.get("date");
   const forDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "") ? (dateParam as string) : todayET();
+  // Opt-in override for a deliberate re-run (e.g. the day's first set came out off-brief). Off by
+  // default, so the daily cron and every existing caller behave exactly as before. Overwrites the
+  // day's rows IN PLACE via the same upsert below — it never deletes anything.
+  const force = url.searchParams.get("force") === "1";
 
   const sb = getServiceSupabase();
 
-  // No-regeneration guard: if the day's 5 rows already exist, return them as-is (no LLM call).
+  // No-regeneration guard: if the day's 5 rows already exist, return them as-is (no LLM call) —
+  // unless force=1 asks for a fresh set.
   const { data: existing } = await sb
     .from("content_carousels")
     .select("*")
     .eq("client_key", slug)
     .eq("for_date", forDate)
     .order("slot", { ascending: true });
-  if (existing && existing.length >= 5) {
+  if (!force && existing && existing.length >= 5) {
     return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: existing });
   }
 
