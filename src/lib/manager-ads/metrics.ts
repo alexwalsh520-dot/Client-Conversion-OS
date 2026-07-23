@@ -1,22 +1,21 @@
-// Manager Ads View — per-influencer ad performance over an arbitrary ET date
-// range. Same sources as the daily recap (nothing new is integrated here):
-//   • Ad spend    → ads_meta_insights_daily (synced, ET-bucketed)
-//   • Messages    → ManyChat `new_lead` tag events (getLeadHours)
-//   • Calls booked→ ghl_appointments (Strategy Session calendars, created_at)
-//   • Taken/wins/cash → sales tracker sheet (Call Taken / outcome=WIN / Cash Collected)
+// Manager Ads View — the sales manager's per-influencer cut of the ads data.
 //
-// ROAS is labelled "potential" because unattributed cash is counted toward ads —
-// per-client cash is everything on the tracker, not just keyword-tied sales.
+// SINGLE SOURCE OF TRUTH: the Ads V2 tab. This reads the exact same precomputed
+// snapshot the /ads-v2 tab reads (serveWindow), and derives every column with
+// the exact same derive() the v2 tab uses. So a manager-view number and the
+// corresponding Ads V2 number are the same value, never a parallel computation.
+//
+// Consequences of that single source, both inherited from v2 (not choices made
+// here):
+//   * Influencers are whoever v2 serves (Tyson, Jake) — Antwan is inactive and
+//     not served by v2, so it does not appear.
+//   * Revenue and ROI are KEYWORD-ATTRIBUTED (cash tied to a paid ad keyword).
+//     Unattributed cash is not counted — this is "Collected revenue / Collected
+//     ROI", not the old "all cash / potential ROAS".
 
-import { getLeadHours } from "@/lib/sales-hub/lead-hours";
-import { CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
-import { type SheetRow } from "@/lib/google-sheets";
-import { getServiceSupabase } from "@/lib/supabase";
-import {
-  REPORT_CLIENTS,
-  countAppointmentsForDays,
-  fetchDailySpend,
-} from "@/lib/daily-report/metrics";
+import { serveWindow } from "@/lib/ads-v2/serve";
+import { derive } from "@/lib/ads-v2/metrics";
+import { addBase, EMPTY_BASE, type AdsV2Query, type BaseMetrics } from "@/lib/ads-v2/types";
 
 export interface ManagerAdsRow {
   client: string; // creator key, or "total"
@@ -30,139 +29,92 @@ export interface ManagerAdsRow {
   costPerTaken: number | null;
   newClients: number | null;
   costPerClient: number | null;
-  cashCollected: number | null;
-  potentialRoas: number | null;
+  collectedRevenue: number | null;
+  collectedRoi: number | null;
 }
 
 export interface ManagerAdsReport {
   from: string;
   to: string;
   generatedAt: string;
-  rows: ManagerAdsRow[]; // one per influencer
+  rows: ManagerAdsRow[]; // one per influencer served by v2
   total: ManagerAdsRow;
+  /** True while v2 is still building this window's snapshot; UI auto-refreshes. */
+  preparing: boolean;
+  notices: string[];
   warnings: string[];
 }
 
-async function safe<T>(
-  label: string,
-  warnings: string[],
-  fn: () => Promise<T>,
-  fallback: T,
-): Promise<T> {
-  try {
-    return await fn();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "error";
-    warnings.push(`${label}: ${msg}`);
-    console.error(`[manager-ads] ${label} failed:`, e);
-    return fallback;
-  }
+export interface BuildResult {
+  report: ManagerAdsReport;
+  /** False when v2 had no snapshot yet — the caller should schedule prepareWindow. */
+  prepared: boolean;
+  query: AdsV2Query;
 }
 
-function ratio(numer: number | null, denom: number | null): number | null {
-  if (numer == null || !denom) return null;
-  return numer / denom;
-}
+const centsToDollars = (c: number | null): number | null => (c == null ? null : c / 100);
 
-function derive(row: Omit<ManagerAdsRow, "costPerMessage" | "costPerBooked" | "costPerTaken" | "costPerClient" | "potentialRoas">): ManagerAdsRow {
+/** Map one v2 base-metric bundle to a manager-view row, using v2's own derive(). */
+function rowFromBase(client: string, label: string, base: BaseMetrics): ManagerAdsRow {
+  const d = derive(base);
   return {
-    ...row,
-    costPerMessage: ratio(row.spend, row.messages),
-    costPerBooked: ratio(row.spend, row.callsBooked),
-    costPerTaken: ratio(row.spend, row.callsTaken),
-    costPerClient: ratio(row.spend, row.newClients),
-    potentialRoas: ratio(row.cashCollected, row.spend),
+    client,
+    label,
+    spend: base.spendCents / 100,
+    messages: base.messages,
+    costPerMessage: centsToDollars(d.costPerMessageCents),
+    callsBooked: base.booked,
+    costPerBooked: centsToDollars(d.costPerBookedCents),
+    callsTaken: base.taken,
+    costPerTaken: centsToDollars(d.costPerTakenCents),
+    newClients: base.newClients,
+    costPerClient: centsToDollars(d.costPerClientCents),
+    collectedRevenue: base.collectedCents / 100,
+    collectedRoi: d.collectedRoi,
   };
 }
 
-function sheetForClient(rows: SheetRow[], client: CreatorKey) {
-  const crows = rows.filter((r) => creatorKeyFromText(r.offer) === client);
-  return {
-    taken: crows.filter((r) => r.callTaken).length,
-    wins: crows.filter((r) => (r.outcome || "").toUpperCase() === "WIN").length,
-    cash: crows.reduce((s, r) => s + (r.cashCollected || 0), 0),
-  };
-}
+/**
+ * Build the report from the Ads V2 "all accounts, all statuses" window.
+ * One snapshot read (the v2 read path). On a miss it returns a `preparing`
+ * report with prepared=false, so the caller can schedule the background build
+ * exactly the way the /ads-v2 route does.
+ */
+export async function buildManagerAdsReport(from: string, to: string): Promise<BuildResult> {
+  // status:"all" = active + finished, so the window reflects every ad that had
+  // activity in the range, not only currently-live ads. level is a view concern
+  // for v2; the snapshot carries the whole tree regardless.
+  const query: AdsV2Query = { account: "all", status: "all", level: "campaign", dateFrom: from, dateTo: to };
 
-// Read the SAME synced sales copy the canonical Ads tab uses (sales_tracker_rows), NOT the live
-// Google Sheet. This is the fix for the Manager view disagreeing with the Ads tab: before, one read
-// the live sheet and the other a cached snapshot, so they drifted. Now both read one synced source,
-// so they agree to the same sync. Only the source changes; the metrics are computed exactly as before.
-async function fetchSyncedSales(from: string, to: string): Promise<SheetRow[]> {
-  const sb = getServiceSupabase();
-  const { data } = await sb
-    .from("sales_tracker_rows")
-    .select("offer, call_taken, outcome, collected_revenue_cents, date")
-    .gte("date", from)
-    .lte("date", to);
-  return (data || []).map((r) => {
-    const row = r as { offer: string; call_taken: boolean; outcome: string; collected_revenue_cents: number };
-    return {
-      offer: row.offer,
-      callTaken: !!row.call_taken,
-      outcome: row.outcome,
-      cashCollected: (Number(row.collected_revenue_cents) || 0) / 100,
-    } as unknown as SheetRow;
-  });
-}
+  const { payload, prepared } = await serveWindow(query);
 
-export async function buildManagerAdsReport(from: string, to: string): Promise<ManagerAdsReport> {
-  const warnings: string[] = [];
-
-  const [dailySpend, leadHours, sheet] = await Promise.all([
-    safe("spend", warnings, () => fetchDailySpend(from, to), {} as Record<string, Record<string, number>>),
-    safe("messages", warnings, () => getLeadHours({ client: "all", dateFrom: from, dateTo: to }), null),
-    safe("sheet", warnings, () => fetchSyncedSales(from, to), [] as SheetRow[]),
-  ]);
-
-  const messagesByClient: Record<string, number> = {};
-  for (const offer of leadHours?.offers ?? []) {
-    messagesByClient[offer.id] = offer.counts.reduce((a, b) => a + b, 0);
+  // Roll the campaign tree up per client (v2 stamps clientKey/clientName on
+  // every node), so per-influencer rows are sums of the exact same nodes the
+  // v2 tab shows, and the total is v2's own total over the union.
+  const byClient = new Map<string, { label: string; base: BaseMetrics }>();
+  for (const camp of payload.campaigns) {
+    const entry = byClient.get(camp.clientKey) || { label: camp.clientName, base: { ...EMPTY_BASE } };
+    entry.base = addBase(entry.base, camp);
+    entry.label = camp.clientName;
+    byClient.set(camp.clientKey, entry);
   }
 
-  const rows: ManagerAdsRow[] = [];
-  for (const client of REPORT_CLIENTS) {
-    const byDay = dailySpend[client];
-    const spend = byDay ? Object.values(byDay).reduce((s, n) => s + n, 0) : null;
-    const booked = await safe(`booked:${client}`, warnings, () => countAppointmentsForDays(client, "created_at", from, to), null);
-    const sales = sheetForClient(sheet, client);
+  const rows: ManagerAdsRow[] = [...byClient.entries()]
+    .sort((a, b) => b[1].base.spendCents - a[1].base.spendCents)
+    .map(([key, { label, base }]) => rowFromBase(key, label, base));
 
-    rows.push(
-      derive({
-        client,
-        label: CREATORS_BY_KEY[client].name,
-        spend,
-        messages: leadHours ? (messagesByClient[client] ?? 0) : null,
-        callsBooked: booked,
-        callsTaken: sales.taken,
-        newClients: sales.wins,
-        cashCollected: sales.cash,
-      }),
-    );
-  }
+  const total = rowFromBase("total", "All Influencers", payload.total);
 
-  const sum = (pick: (r: ManagerAdsRow) => number | null): number | null => {
-    const vals = rows.map(pick).filter((v): v is number => v != null);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
-  };
-
-  const total = derive({
-    client: "total",
-    label: "All Influencers",
-    spend: sum((r) => r.spend),
-    messages: sum((r) => r.messages),
-    callsBooked: sum((r) => r.callsBooked),
-    callsTaken: sum((r) => r.callsTaken),
-    newClients: sum((r) => r.newClients),
-    cashCollected: sum((r) => r.cashCollected),
-  });
-
-  return {
+  const report: ManagerAdsReport = {
     from,
     to,
     generatedAt: new Date().toISOString(),
     rows,
     total,
-    warnings,
+    preparing: !prepared || Boolean(payload.preparing),
+    notices: payload.notices || [],
+    warnings: [],
   };
+
+  return { report, prepared, query };
 }
