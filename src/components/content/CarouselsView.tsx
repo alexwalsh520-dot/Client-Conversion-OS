@@ -13,7 +13,17 @@ import CarouselExport from "./CarouselExport";
 import { renderSlide, blocksForSlide, loadAvatar, ensureFonts, CANVAS_W, CANVAS_H, type SlideBlock } from "@/lib/content/carousel-render";
 
 type Slide = { text?: string; blocks?: SlideBlock[] };
-type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean };
+type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean; origin?: string | null };
+
+// Small, unobtrusive marker for a set the external worker wrote (operator-only — this view isn't on
+// the creator's token page). Provenance is stamped on the row's origin column.
+function ExternalTag() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-muted)", background: "var(--bg-glass)", border: "1px solid var(--border-primary)", borderRadius: 5, padding: "1px 5px" }}>
+      external
+    </span>
+  );
+}
 
 const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 const shiftDate = (d: string, delta: number) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + delta); return t.toISOString().slice(0, 10); };
@@ -181,6 +191,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 11.5, color: "var(--text-muted)" }}>
                       {row.slides.length} slides
                       {row.edited && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "var(--accent)" }} /> edited</span>}
+                      {row.origin === "external" && <ExternalTag />}
                     </span>
                   </span>
                 </button>
@@ -194,6 +205,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
               <span style={{ fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
               <span>·</span>
               <span style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
+              {curRow.origin === "external" && <ExternalTag />}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
