@@ -760,14 +760,15 @@ const IG_GRAPH_HOST = `https://graph.instagram.com/${process.env.META_GRAPH_VERS
 // A creator's public IG profile (handle + avatar url) via their connected token. Used to save the
 // carousel avatar. Returns null if there's no usable connection.
 export async function getInstagramProfileForClient(
-  clientKey: string,
+  clientSlug: string,
 ): Promise<{ username: string | null; profile_picture_url: string | null; instagram_user_id: string | null } | null> {
   try {
     const sb = getServiceSupabase();
+    // Connections are keyed by client_slug (the registry key, e.g. "jake"), not client_key ("jake_divljak").
     const { data } = await sb
       .from("instagram_connections")
       .select("token_encrypted, instagram_user_id, instagram_username")
-      .eq("client_key", clientKey)
+      .eq("client_slug", clientSlug)
       .eq("status", "connected")
       .maybeSingle();
     const token = decryptToken((data as { token_encrypted?: string } | null)?.token_encrypted);

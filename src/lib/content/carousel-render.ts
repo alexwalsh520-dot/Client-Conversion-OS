@@ -12,8 +12,7 @@ export type CreatorSlug = "tyson" | "antwan" | "jake";
 export const CAROUSEL_IDENTITY: Record<string, { name: string; handle: string; ring: string; avatar: string }> = {
   tyson: { name: "Tyson Sonnek", handle: "@tysonnek", ring: "#7a8450", avatar: "/carousel-avatars/tyson.jpg" },
   antwan: { name: "Antwan Rarcus", handle: "@antwanrarcus", ring: "#d03325", avatar: "/carousel-avatars/antwan.jpg" },
-  // Handle left blank until Jake's IG is connected — no avatar file yet, so this renders "JD" initials.
-  jake: { name: "Jake Divljak", handle: "", ring: "#2f6f4f", avatar: "/carousel-avatars/jake.jpg" },
+  jake: { name: "Jake Divljak", handle: "@recruitreadyfitness", ring: "#2f6f4f", avatar: "/carousel-avatars/jake.jpg" },
 };
 
 // Slide body defaults for the default layout.

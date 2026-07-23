@@ -82,14 +82,23 @@ export async function POST(req: NextRequest) {
     slot: i,
     topic: c.topic || null,
     slides: c.slides.map((s) => ({ text: s.text || "" })),
+    // This is CCOS's own generation — stamp provenance so a force-regen over an external day
+    // correctly reclaims it as internal (and clears any external meta). The origin/meta columns
+    // arrive with a migration; if they're not there yet we retry without them below.
+    origin: "internal",
+    meta: null,
     model: MODEL,
     updated_at: new Date().toISOString(),
   }));
   // Upsert on the unique (client_key, for_date, slot) so a partial prior run can't collide.
-  const { data: inserted, error } = await sb
+  let { data: inserted, error } = await sb
     .from("content_carousels")
     .upsert(rows, { onConflict: "client_key,for_date,slot" })
     .select("*");
+  if (error && /origin|meta/i.test(error.message)) {
+    const bare = rows.map(({ origin: _o, meta: _m, ...rest }) => rest); // eslint-disable-line @typescript-eslint/no-unused-vars
+    ({ data: inserted, error } = await sb.from("content_carousels").upsert(bare, { onConflict: "client_key,for_date,slot" }).select("*"));
+  }
   if (error) return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: error.message }, { status: 200 });
 
   const ordered = (inserted || []).sort((a, b) => (a as { slot: number }).slot - (b as { slot: number }).slot);
