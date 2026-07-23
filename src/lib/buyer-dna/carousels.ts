@@ -11,6 +11,7 @@ import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
 import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
+import { estimateWrappedLines, SLIDE_MAX_LINES } from "@/lib/content/carousel-render";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -61,15 +62,21 @@ const STYLE_REFERENCE =
   "And in 2019, I lost my mom. She was 45. I'd spent my whole life around health, and I still couldn't save the person I loved most.\n" +
   "I signed her up for a gym the day before her stroke. One day too late.";
 
-const SYS =
-  "You write Instagram text carousels for a fitness creator, in the creator's first-person voice. Each carousel is ONE idea aimed at ONE specific premium buyer, articulating that buyer's pain better than they can say it themselves — they should feel read. Slide 1 must stop the scroll on its own (credibility opener, pattern-interrupt, or the pain said perfectly). Slides build one thought each — short paragraphs, generous line breaks, occasional **bold** on the words that matter. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. The 5 carousels must EACH take a different angle: pain articulated, personal story, myth broken, pattern observed, hard truth. Infer the creator's register from the buyer material below. Return STRICT JSON:\n" +
-  '{"carousels":[{"topic":"a few words","slides":[{"text":"paragraphs separated by blank lines, **bold** allowed"}]}]}\n' +
-  "Exactly 5 carousels, 6 to 8 slides each. No prose outside the JSON." +
-  VOICE +
-  BANNED_TELLS +
-  STYLE_REFERENCE +
-  JSON_HYGIENE +
-  NO_DOLLARS;
+const BASE =
+  "You write Instagram text carousels for a fitness creator, in the creator's first-person voice.\n" +
+  "THE JOB: each carousel hyper-targets ONE specific pain or situation of ONE ideal client (the ICP), articulates that pain BETTER than they could say it themselves so they feel read, then gives real value on it. The 5 carousels are 5 DIFFERENT pains or situations of the SAME ICP — never 5 different audiences.\n" +
+  "SLIDE 1 MUST DIRECTLY CALL OUT THE ICP: name exactly who this is for, by their identity or their situation, in their own language, so the right person stops because it is unmistakably about THEM (the shape of 'If you're 28 and still chasing the entry test everyone says you missed...' — speak straight to that person). A hook that could belong to any fitness account is WRONG: broad openers like 'Here's what nobody tells you about fitness' or 'The truth about getting in shape' are FORBIDDEN. Call out the person, then articulate their pain.\n" +
+  "Each carousel takes a different angle: pain articulated, personal story, myth broken, pattern observed, hard truth.\n" +
+  "KEEP SLIDES SHORT: at most ~20 words per slide, and no slide may exceed 4 short lines when it wraps. One thought per slide, punchy lines, deliberate line breaks are part of the writing. The slide-1 hook can be a single line. Occasional **bold** on the words that matter. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
+  '{"carousels":[{"topic":"a few words","slides":[{"text":"one short thought, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
+  "Exactly 5 carousels; 7 to 8 slides each (never fewer than 6). No prose outside the JSON.";
+
+// The style exemplars are Tyson/Antwan's physique world — useful register cues for a creator without
+// their own doc, but noise for one who has a messaging doc that already defines the register. So they
+// are dropped entirely when a doc is present (the doc is the register), and kept register-only otherwise.
+function buildSys(hasDoc: boolean): string {
+  return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + NO_DOLLARS;
+}
 
 function compactIcp(icp: Icp | null): string {
   if (!icp) return "A premium buyer who paid for 1:1 fitness coaching.";
@@ -150,6 +157,19 @@ function parse(text: string): Carousel[] {
     .filter((c) => c.slides.length >= 3);
 }
 
+// Slides whose text renders to more than SLIDE_MAX_LINES lines at the renderer's real body metrics.
+// Indices are 1-based (carousel #, slide #) for a readable retry message.
+function overLongSlides(carousels: Carousel[]): { c: number; s: number; lines: number }[] {
+  const out: { c: number; s: number; lines: number }[] = [];
+  carousels.forEach((car, ci) =>
+    (car.slides || []).forEach((sl, si) => {
+      const n = estimateWrappedLines(sl.text || "");
+      if (n > SLIDE_MAX_LINES) out.push({ c: ci + 1, s: si + 1, lines: n });
+    }),
+  );
+  return out;
+}
+
 // One LLM call: generate the 5 carousels for one creator for one day. Does not touch the DB.
 export async function generateCarouselSet(
   sb: SupabaseClient,
@@ -157,7 +177,7 @@ export async function generateCarouselSet(
   forDate: string,
   icp: Icp | null,
   anthropic: Anthropic,
-): Promise<{ ok: true; carousels: Carousel[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; carousels: Carousel[]; lineViolations: number } | { ok: false; reason: string }> {
   const [voiceRow, briefs, avoid, playbookRow, doc] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
@@ -165,7 +185,9 @@ export async function generateCarouselSet(
     getCurrentPlaybook(sb, client),
     getMessagingDoc(sb, client),
   ]);
+  const hasDoc = !!doc;
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
+  const sys = buildSys(hasDoc); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -182,7 +204,7 @@ export async function generateCarouselSet(
     // whole basis for the register and the pains — infer his voice from the document's tone.
     docBlock,
     docBlock
-      ? "GROUND EVERY CAROUSEL IN THE DOCUMENT ABOVE. Each carousel must be unmistakably about THIS creator's specific niche, buyer and offer as the document describes them — the buyer's actual situation, the specific outcome they are working toward, and the exact pains and one-liners in the document. Do NOT default to generic fitness, physique, muscle-building, bulking, macros/calories or weight-loss content: if the document's positioning is not general fitness, none of that belongs here. Honour the document's own 'what to avoid' guidance. Mirror its phrasing; do not invent buyer quotes. The STYLE REFERENCE below is for REGISTER ONLY — never borrow its subject matter."
+      ? "GROUND EVERY CAROUSEL IN THE DOCUMENT ABOVE, and take the creator's register from it. Each carousel must be unmistakably about THIS creator's specific niche, buyer and offer as the document describes them — the buyer's actual situation, the specific outcome they are working toward, and the exact pains and one-liners in the document. Slide 1 must name that exact buyer by their identity or situation. Do NOT default to generic fitness, physique, muscle-building, bulking, macros/calories or weight-loss content: if the document's positioning is not general fitness, none of that belongs here. Honour the document's own 'what to avoid' guidance. Mirror its phrasing; do not invent buyer quotes."
       : "",
     `THE BUYER (write every carousel for this one person):\n${compactIcp(icp)}`,
     ranked
@@ -191,12 +213,13 @@ export async function generateCarouselSet(
     voiceRow ? `HOW THIS BUYER TYPE ACTUALLY TALKS (the core material):\n${compactVoice(voiceRow.voice)}` : "",
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
-    "Return the carousels JSON: exactly 5 carousels, each 6 to 8 slides, each a different angle.",
+    "Return the carousels JSON: exactly 5 carousels, 7 to 8 short slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Keep every slide to at most 4 short lines.",
   ].filter(Boolean).join("\n\n");
 
-  const genOnce = async (): Promise<Carousel[]> => {
+  const genOnce = async (feedback?: string): Promise<Carousel[]> => {
     try {
-      const resp = await anthropic.messages.create({ model: MODEL, max_tokens: 8000, system: SYS, messages: [{ role: "user", content: userMsg }] });
+      const content = feedback ? `${userMsg}\n\n${feedback}` : userMsg;
+      const resp = await anthropic.messages.create({ model: MODEL, max_tokens: 8000, system: sys, messages: [{ role: "user", content }] });
       logAiUsage({ feature: "buyer-dna-carousels", model: MODEL, usage: resp.usage });
       const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
       return parse(tb?.text || "");
@@ -212,7 +235,23 @@ export async function generateCarouselSet(
   }
   if (carousels.length < 5) return { ok: false, reason: "Could not generate a full set of 5 carousels." };
 
-  // Normalize to exactly 5 carousels, each clamped to 6-8 slides.
+  // Enforce the ≤4-rendered-lines rule against the renderer's real metrics. If any slide overruns,
+  // one targeted retry naming the offenders; keep whichever set has fewer violations. We never
+  // truncate copy — an over-long slide is reported, not silently cut.
+  let violations = overLongSlides(carousels);
+  if (violations.length) {
+    const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.lines} lines)`).join("; ");
+    const retry = await genOnce(
+      `Some slides render longer than the ${SLIDE_MAX_LINES}-line limit: ${named}. Rewrite ONLY those slides to at most ${SLIDE_MAX_LINES} short lines (≤ ~20 words), one thought each. Return the full corrected JSON.`,
+    );
+    if (retry.length >= 5) {
+      const rv = overLongSlides(retry);
+      if (rv.length <= violations.length) { carousels = retry; violations = rv; }
+    }
+  }
+
+  // Normalize to exactly 5 carousels, each clamped to 8 slides max.
   const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, 8) }));
-  return { ok: true, carousels: set };
+  const lineViolations = overLongSlides(set).length;
+  return { ok: true, carousels: set, lineViolations };
 }

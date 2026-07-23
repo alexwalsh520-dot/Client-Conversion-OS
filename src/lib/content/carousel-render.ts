@@ -5,13 +5,22 @@
 export const CANVAS_W = 1080;
 export const CANVAS_H = 1350;
 
-export type CreatorSlug = "tyson" | "antwan";
+export type CreatorSlug = "tyson" | "antwan" | "jake";
 
 // Identity + accent ring per the visual spec. Avatars live in /public/carousel-avatars/<slug>.jpg.
+// A creator without an avatar file renders their initials in the ring instead.
 export const CAROUSEL_IDENTITY: Record<string, { name: string; handle: string; ring: string; avatar: string }> = {
   tyson: { name: "Tyson Sonnek", handle: "@tysonnek", ring: "#7a8450", avatar: "/carousel-avatars/tyson.jpg" },
   antwan: { name: "Antwan Rarcus", handle: "@antwanrarcus", ring: "#d03325", avatar: "/carousel-avatars/antwan.jpg" },
+  // Handle left blank until Jake's IG is connected — no avatar file yet, so this renders "JD" initials.
+  jake: { name: "Jake Divljak", handle: "", ring: "#2f6f4f", avatar: "/carousel-avatars/jake.jpg" },
 };
+
+// Slide body defaults, exported so the generator can estimate wrapped line counts against the SAME
+// numbers the renderer draws with (see estimateWrappedLines) — never duplicate these downstream.
+export const SLIDE_BODY_FONT_SIZE = 56;
+export const SLIDE_BODY_MAXW = CANVAS_W - 280;
+export const SLIDE_MAX_LINES = 4;
 
 // Same free Google fonts /studio loads (do not add paid fonts / new vendors).
 export const CAROUSEL_FONTS = [
@@ -56,9 +65,34 @@ const nid = () => `b${Date.now().toString(36)}${(_id++).toString(36)}`;
 // centered vertically below the header.
 export function defaultBlocks(text: string): SlideBlock[] {
   return [
-    { id: nid(), kind: "header", x: 90, y: 90, avatarSize: 110, nameSize: 46, handleSize: 36, locked: true },
-    { id: nid(), kind: "text", x: 140, y: 340, autoY: true, text: text || "", fontSize: 56, fontFamily: BODY_FONT, fontWeight: 400, color: "#ffffff", align: "left", lineHeight: 1.45, maxWidth: CANVAS_W - 280 },
+    // Header sits ~170px down (was ~90) so the avatar + name isn't crowding the top edge; the body
+    // block below auto-centers in the space that remains beneath it.
+    { id: nid(), kind: "header", x: 90, y: 170, avatarSize: 110, nameSize: 46, handleSize: 36, locked: true },
+    { id: nid(), kind: "text", x: 140, y: 420, autoY: true, text: text || "", fontSize: SLIDE_BODY_FONT_SIZE, fontFamily: BODY_FONT, fontWeight: 400, color: "#ffffff", align: "left", lineHeight: 1.45, maxWidth: SLIDE_BODY_MAXW },
   ];
+}
+
+// Estimate how many wrapped lines a slide's text renders to, WITHOUT a canvas (the generator runs
+// server-side). Uses the same font size + max width the renderer draws with, and an average glyph
+// advance tuned to the body sans-serif; slightly conservative so we flag rather than miss overflow.
+// Blank source lines are paragraph gaps, not text lines, so they don't count toward the cap.
+const AVG_CHAR_ADVANCE_RATIO = 0.52;
+export function estimateWrappedLines(text: string, fontSize = SLIDE_BODY_FONT_SIZE, maxWidth = SLIDE_BODY_MAXW): number {
+  const charsPerLine = Math.max(1, Math.floor(maxWidth / (fontSize * AVG_CHAR_ADVANCE_RATIO)));
+  let total = 0;
+  for (const src of (text || "").replace(/\*\*/g, "").split("\n")) {
+    const s = src.trim();
+    if (!s) continue;
+    let cur = 0;
+    let lines = 1;
+    for (const word of s.split(/\s+/)) {
+      const add = word.length + (cur > 0 ? 1 : 0);
+      if (cur + add > charsPerLine && cur > 0) { lines++; cur = word.length; }
+      else cur += add;
+    }
+    total += lines;
+  }
+  return total;
 }
 
 export function newTextBlock(): SlideBlock {
