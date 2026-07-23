@@ -11,7 +11,6 @@ import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
 import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
-import { estimateWrappedLines, SLIDE_MAX_LINES } from "@/lib/content/carousel-render";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -67,11 +66,9 @@ const BASE =
   "THE JOB: each carousel hyper-targets ONE specific pain or situation of ONE ideal client (the ICP), articulates that pain BETTER than they could say it themselves so they feel read, then gives real value on it. The 5 carousels are 5 DIFFERENT pains or situations of the SAME ICP — never 5 different audiences.\n" +
   "SLIDE 1 MUST DIRECTLY CALL OUT THE ICP: name exactly who this is for, by their identity or their situation, in their own language, so the right person stops because it is unmistakably about THEM (the shape of 'If you're 28 and still chasing the entry test everyone says you missed...' — speak straight to that person). A hook that could belong to any fitness account is WRONG: broad openers like 'Here's what nobody tells you about fitness' or 'The truth about getting in shape' are FORBIDDEN. Call out the person, then articulate their pain.\n" +
   "Each carousel takes a different angle: pain articulated, personal story, myth broken, pattern observed, hard truth.\n" +
-  "HARD SIZE LIMIT — this is not a style preference, it is a rule every slide must pass: each slide is ONE short thought, at most 20 words TOTAL and at most 4 short lines when it wraps. Not a paragraph. If a thought needs more than that, it becomes TWO slides — that is exactly why you get 7-8 slides instead of 5. A slide that runs 5+ lines is a failure; cut it or split it. Example of a correctly-sized slide (three short lines):\n" +
-  "  Passing is the floor.\n  Not the goal.\n  The bare minimum they let you through with.\n" +
-  "Punchy lines, deliberate line breaks, occasional **bold** on the words that matter. The slide-1 hook can be a single line. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
-  '{"carousels":[{"topic":"a few words","slides":[{"text":"one short thought, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
-  "Exactly 5 carousels; 7 to 8 slides each (never fewer than 6). No prose outside the JSON.";
+  "SLIDE LENGTH — write real, full sentences with room to breathe, NOT clipped fragments. Each slide is AT MOST 4 SENTENCES, written as short paragraphs separated by blank lines. A sentence can be as long as it naturally needs to be. The slide-1 hook is often just 1-2 sentences. Occasional **bold** on the words that matter. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
+  '{"carousels":[{"topic":"a few words","slides":[{"text":"up to 4 full sentences, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
+  "Exactly 5 carousels; 6 to 8 slides each. No prose outside the JSON.";
 
 // The style exemplars are Tyson/Antwan's physique world — useful register cues for a creator without
 // their own doc, but noise for one who has a messaging doc that already defines the register. So they
@@ -159,14 +156,23 @@ function parse(text: string): Carousel[] {
     .filter((c) => c.slides.length >= 3);
 }
 
-// Slides whose text renders to more than SLIDE_MAX_LINES lines at the renderer's real body metrics.
-// Indices are 1-based (carousel #, slide #) for a readable retry message.
-function overLongSlides(carousels: Carousel[]): { c: number; s: number; lines: number }[] {
-  const out: { c: number; s: number; lines: number }[] = [];
+const MAX_SENTENCES = 4;
+// Count sentences in a slide: terminators (. ! ?) that actually end a sentence. Ellipses and
+// decimals shouldn't inflate the count, and a slide with no terminator is still one sentence.
+function sentenceCount(text: string): number {
+  const t = (text || "").replace(/\.\.\.+/g, ".").replace(/\b\d+\.\d+\b/g, "0");
+  const matches = t.match(/[.!?]+(?=\s|$)/g);
+  const n = matches ? matches.length : 0;
+  return t.trim() ? Math.max(1, n) : 0;
+}
+
+// Slides carrying more than 4 sentences. Indices are 1-based (carousel #, slide #) for the retry.
+function overLongSlides(carousels: Carousel[]): { c: number; s: number; sentences: number }[] {
+  const out: { c: number; s: number; sentences: number }[] = [];
   carousels.forEach((car, ci) =>
     (car.slides || []).forEach((sl, si) => {
-      const n = estimateWrappedLines(sl.text || "");
-      if (n > SLIDE_MAX_LINES) out.push({ c: ci + 1, s: si + 1, lines: n });
+      const n = sentenceCount(sl.text || "");
+      if (n > MAX_SENTENCES) out.push({ c: ci + 1, s: si + 1, sentences: n });
     }),
   );
   return out;
@@ -179,7 +185,7 @@ export async function generateCarouselSet(
   forDate: string,
   icp: Icp | null,
   anthropic: Anthropic,
-): Promise<{ ok: true; carousels: Carousel[]; lineViolations: number } | { ok: false; reason: string }> {
+): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number } | { ok: false; reason: string }> {
   const [voiceRow, briefs, avoid, playbookRow, doc] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
@@ -215,7 +221,7 @@ export async function generateCarouselSet(
     voiceRow ? `HOW THIS BUYER TYPE ACTUALLY TALKS (the core material):\n${compactVoice(voiceRow.voice)}` : "",
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
-    "Return the carousels JSON: exactly 5 carousels, 7 to 8 short slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Keep every slide to at most 4 short lines.",
+    "Return the carousels JSON: exactly 5 carousels, 6 to 8 slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Write full sentences with room to breathe — at most 4 sentences per slide, never clipped fragments.",
   ].filter(Boolean).join("\n\n");
 
   const genOnce = async (feedback?: string): Promise<Carousel[]> => {
@@ -237,14 +243,14 @@ export async function generateCarouselSet(
   }
   if (carousels.length < 5) return { ok: false, reason: "Could not generate a full set of 5 carousels." };
 
-  // Enforce the ≤4-rendered-lines rule against the renderer's real metrics. If any slide overruns,
-  // one targeted retry naming the offenders; keep whichever set has fewer violations. We never
-  // truncate copy — an over-long slide is reported, not silently cut.
+  // Enforce the ≤4-sentences-per-slide rule. If any slide runs long, one targeted retry naming the
+  // offenders; keep whichever set has fewer violations. We never truncate copy — an over-long slide
+  // is reported, not silently cut.
   let violations = overLongSlides(carousels);
   if (violations.length) {
-    const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.lines} lines)`).join("; ");
+    const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`).join("; ");
     const retry = await genOnce(
-      `These slides break the ${SLIDE_MAX_LINES}-line limit — they are too long: ${named}. Rewrite them to at most ${SLIDE_MAX_LINES} short lines and ~20 words each, ONE thought per slide. If a slide has more than one idea, SPLIT it into two slides (a carousel may run up to 8 slides). Keep the other slides. Return the full corrected JSON.`,
+      `These slides run longer than ${MAX_SENTENCES} sentences: ${named}. Rewrite them to at most ${MAX_SENTENCES} full sentences each — keep them as real sentences with room to breathe, do NOT chop them into fragments. If a slide has more than 4 sentences of content, move the overflow into another slide (a carousel may run up to 8 slides). Keep the other slides. Return the full corrected JSON.`,
     );
     if (retry.length >= 5) {
       const rv = overLongSlides(retry);
@@ -254,6 +260,6 @@ export async function generateCarouselSet(
 
   // Normalize to exactly 5 carousels, each clamped to 8 slides max.
   const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, 8) }));
-  const lineViolations = overLongSlides(set).length;
-  return { ok: true, carousels: set, lineViolations };
+  const sentenceViolations = overLongSlides(set).length;
+  return { ok: true, carousels: set, sentenceViolations };
 }

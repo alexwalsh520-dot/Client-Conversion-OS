@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getIngestHeartbeat } from "@/lib/content/ingest-heartbeat";
 import { resolveCalendarAccess } from "@/lib/content/calendar-access";
-import { buildDay, getCadence, getDayRecords, getMarks, getPostsByDate, type Day } from "@/lib/content/calendar-build";
+import { buildDay, getCadence, getDayRecords, getMarks, getPostsByDate, getStoryCopy, type Day } from "@/lib/content/calendar-build";
 import { todayIn, weekDates } from "@/lib/content/calendar";
 
 export const runtime = "nodejs";
@@ -26,12 +26,13 @@ export async function GET(req: NextRequest) {
   const weekEnd = dates[6];
   const todayLocal = todayIn(tz);
 
-  const [{ reels, carousels }, marks, records, heartbeat, newestPost] = await Promise.all([
+  const [{ reels, carousels }, marks, records, heartbeat, newestPost, storyCopy] = await Promise.all([
     getPostsByDate(sb, creator, weekStart, weekEnd, tz),
     getMarks(sb, creator, weekStart, weekEnd),
     getDayRecords(sb, creator, weekStart, weekEnd),
     getIngestHeartbeat(sb),
     sb.from("creator_content").select("taken_at").eq("client_key", creator).order("taken_at", { ascending: false }).limit(1).maybeSingle(),
+    getStoryCopy(sb, creator, weekStart, weekEnd),
   ]);
 
   const days: Day[] = dates.map((date) =>
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
       carPosts: carousels.get(date) || [],
       marks,
       record: records.get(date),
+      storyCopy: storyCopy.get(date) ?? null,
     }),
   );
 

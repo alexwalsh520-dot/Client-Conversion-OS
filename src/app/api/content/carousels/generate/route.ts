@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: error.message }, { status: 200 });
 
   const ordered = (inserted || []).sort((a, b) => (a as { slot: number }).slot - (b as { slot: number }).slot);
-  // line_violations > 0 means the model couldn't get every slide under the line cap even after the
-  // retry; the copy is kept in full (never truncated) and the count is surfaced for visibility.
-  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, line_violations: res.lineViolations, carousels: ordered });
+  // sentence_violations > 0 means the model couldn't get every slide under the 4-sentence cap even
+  // after the retry; the copy is kept in full (never truncated) and the count is surfaced.
+  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, sentence_violations: res.sentenceViolations, carousels: ordered });
 }
