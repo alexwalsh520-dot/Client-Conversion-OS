@@ -24,10 +24,6 @@
       "schedule": "30 */2 * * *"
     },
     {
-      "path": "/api/cron/transcribe-blitz",
-      "schedule": "8,23,38,53 * * * *"
-    },
-    {
       "path": "/api/cron/attribution-reconcile",
       "schedule": "0 7 * * *"
     },
@@ -80,16 +76,8 @@
       "schedule": "*/10 * * * *"
     },
     {
-      "path": "/api/cron/time-to-eat-tick",
-      "schedule": "*/2 * * * *"
-    },
-    {
       "path": "/api/cron/content-pipeline",
       "schedule": "12 */2 * * *"
-    },
-    {
-      "path": "/api/cron/video-ideas-pipeline",
-      "schedule": "30 * * * *"
     },
     {
       "path": "/api/cron/carousels-daily",
@@ -109,15 +97,11 @@
     },
     {
       "path": "/api/cron/foundation-sync",
-      "schedule": "3,18,33,48 * * * *"
+      "schedule": "3 * * * *"
     },
     {
       "path": "/api/cron/cmo-agent",
       "schedule": "45 12 * * *"
-    },
-    {
-      "path": "/api/cron/buyer-dna-weekly",
-      "schedule": "0 13 * * 1"
     },
     {
       "path": "/api/cron/morning-cmo-report",
