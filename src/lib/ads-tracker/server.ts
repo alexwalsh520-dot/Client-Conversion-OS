@@ -1463,9 +1463,29 @@ function buildPayload(
 
   const totalGrossProfit = paidRows.reduce((sum, row) => sum + row.grossProfit, 0);
 
+  // Stable per-ad call-detail map for the hover, keyed by ad id AND by
+  // client:keyword AND bare keyword. Lives at the TOP LEVEL of the payload so the
+  // paint projection (which rebuilds `rows` from dailyRows and drops per-row
+  // callDetails) still carries it to the client. The hover reads from here.
+  const callDetailsByAd: Record<string, CallDetail[]> = {};
+  const addDetailKey = (key: string, d: CallDetail[]) => {
+    if (!key) return;
+    callDetailsByAd[key] = (callDetailsByAd[key] || []).concat(d);
+  };
+  for (const row of rows) {
+    if (!row.callDetails || row.callDetails.length === 0) continue;
+    if (row.adId) callDetailsByAd[String(row.adId)] = row.callDetails;
+    const kw = String(row.keyword || "").toLowerCase();
+    if (kw) {
+      addDetailKey(`${row.clientKey || ""}:${kw}`, row.callDetails);
+      addDetailKey(kw, row.callDetails); // bare keyword (client dedupes by call signature)
+    }
+  }
+
   return {
     mock,
     query,
+    callDetailsByAd,
     summary: {
       adSpend: totalSpend,
       collectedRevenue: totalCollected,

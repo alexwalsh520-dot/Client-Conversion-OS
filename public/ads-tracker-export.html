@@ -3346,31 +3346,49 @@ function CampaignTable({
   // we have detail for.
   const callDetailsIndex = useMemo(() => {
     const byId = new Map();
+    // Prefer the stable top-level map (survives the paint projection that rebuilds
+    // rows from dailyRows and drops per-row callDetails). Fall back to rows.
+    const map = dashboard && dashboard.callDetailsByAd;
+    if (map && typeof map === "object") {
+      Object.keys(map).forEach(function (k) {
+        if (Array.isArray(map[k]) && map[k].length) byId.set(String(k), map[k]);
+      });
+    }
     const rows = dashboard && Array.isArray(dashboard.rows) ? dashboard.rows : [];
     for (const r of rows) {
       if (!r || !Array.isArray(r.callDetails) || r.callDetails.length === 0) continue;
-      if (r.adId) byId.set(String(r.adId), r.callDetails);
+      if (r.adId && !byId.has(String(r.adId))) byId.set(String(r.adId), r.callDetails);
       const kwKey = (r.clientKey || "") + ":" + String(r.keyword || "").toLowerCase();
       if (!byId.has(kwKey)) byId.set(kwKey, r.callDetails);
-      else byId.set(kwKey, byId.get(kwKey).concat(r.callDetails));
     }
     return byId;
   }, [dashboard]);
   const gatherCallDetails = rowObj => {
     if (!rowObj) return [];
-    if (rowObj.adId && callDetailsIndex.has(String(rowObj.adId))) return callDetailsIndex.get(String(rowObj.adId)) || [];
+    const ck = String(rowObj.clientKey || "").toLowerCase();
+    const kwOf = o => { const k = o && (o.keyword || o.name || o.adName); return k ? String(k).toLowerCase() : null; };
+    const keys = new Set();
+    const addKey = k => { if (k) keys.add(String(k)); };
+    addKey(rowObj.adId);
+    const rk = kwOf(rowObj);
+    if (rk) { addKey(ck + ":" + rk); addKey(rk); }
     const ads = rowObj.ads || rowObj.adRows || [];
-    let out = [];
     for (const a of ads) {
-      const adKey = a && (a.adId || a.id);
-      const d = adKey ? callDetailsIndex.get(String(adKey)) : null;
-      if (d) out = out.concat(d);
+      if (!a) continue;
+      addKey(a.adId || a.id);
+      const ak = kwOf(a);
+      if (ak) { addKey(ck + ":" + ak); addKey(ak); }
     }
-    if (out.length === 0 && rowObj.keyword != null) {
-      const d = callDetailsIndex.get((rowObj.clientKey || "") + ":" + String(rowObj.keyword).toLowerCase());
-      if (d) out = d;
+    let out = [];
+    keys.forEach(k => { const d = callDetailsIndex.get(k); if (d) out = out.concat(d); });
+    // Dedupe by call signature (an ad-id key and a keyword key can point at the same calls).
+    const seen = new Set();
+    const uniq = [];
+    for (const d of out) {
+      const sig = (d.name || "") + "|" + (d.callAt || "") + "|" + (d.bookedAt || "");
+      if (!seen.has(sig)) { seen.add(sig); uniq.push(d); }
     }
-    return out;
+    return uniq;
   };
   const [callHover, setCallHover] = useState(null);
   const showCallHover = (event, metric, rowObj, kind, keyword) => {
