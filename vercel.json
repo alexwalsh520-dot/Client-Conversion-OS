@@ -40,6 +40,14 @@
       "schedule": "5 * * * *"
     },
     {
+      "path": "/api/cron/ads-v2-sync",
+      "schedule": "25 * * * *"
+    },
+    {
+      "path": "/api/cron/ads-v2-selfcheck",
+      "schedule": "45 7 * * *"
+    },
+    {
       "path": "/api/ads/creative-copy/backfill-all",
       "schedule": "20 */2 * * *"
     },

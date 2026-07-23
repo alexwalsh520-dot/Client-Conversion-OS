@@ -1,0 +1,137 @@
+-- ─────────────────────────────────────────────────────────────────────────
+-- Ads v2 aggregation functions. The DATABASE does every sum and distinct-count
+-- in set-based SQL; the serving code only assembles the small pre-aggregated
+-- result into the campaign tree. No request ever fetches raw rows to sum them.
+--
+-- The leaf unit is (client_key, keyword). An ad's name is its keyword, so a
+-- keyword maps to one paid ad. A leaf appears only when a real paid ad exists
+-- for it (INNER JOIN to identity) -> paid ads only, nothing organic or
+-- keywordless leaks in.
+-- ─────────────────────────────────────────────────────────────────────────
+
+create or replace function adsv2_window_leaves(p_clients text[], p_from date, p_to date)
+returns table (
+  client_key text,
+  keyword text,
+  ad_id text,
+  ad_name text,
+  campaign_id text,
+  campaign_name text,
+  adset_id text,
+  adset_name text,
+  ad_status text,
+  campaign_status text,
+  spend_cents bigint,
+  impressions bigint,
+  clicks bigint,
+  messages bigint,
+  booked bigint,
+  upcoming bigint,
+  taken_rows bigint,
+  taken_people bigint,
+  new_clients bigint,
+  collected_usd_cents bigint,
+  contracted_usd_cents bigint,
+  has_spend boolean
+)
+language sql
+stable
+as $$
+  with spend as (
+    select client_key, keyword_normalized as kw,
+      sum(spend_cents)::bigint as spend_cents,
+      sum(impressions)::bigint as impressions,
+      sum(link_clicks)::bigint as clicks
+    from ads_meta_insights_daily
+    where client_key = any(p_clients)
+      and raw_payload->>'reporting_timezone' = 'America/New_York'
+      and date >= p_from and date <= p_to
+      and keyword_normalized is not null and keyword_normalized <> ''
+    group by client_key, keyword_normalized
+  ),
+  ident as (
+    select distinct on (client_key, keyword_normalized)
+      client_key, keyword_normalized as kw, ad_id, ad_name, campaign_id, campaign_name,
+      adset_id, adset_name, ad_effective_status, campaign_effective_status
+    from ads_meta_insights_daily
+    where client_key = any(p_clients)
+      and keyword_normalized is not null and keyword_normalized <> ''
+      and date >= (p_from - 180)
+    order by client_key, keyword_normalized, date desc
+  ),
+  dm as (
+    select client_key, keyword_normalized as kw,
+      count(distinct subscriber_id) as messages
+    from adsv2_dm_facts
+    where client_key = any(p_clients) and et_day >= p_from and et_day <= p_to
+      and not is_organic and not awaiting_review
+      and keyword_normalized is not null and keyword_normalized <> ''
+    group by client_key, keyword_normalized
+  ),
+  booked as (
+    select client_key, keyword_normalized as kw,
+      count(distinct contact_id) as booked,
+      count(distinct contact_id) filter (where is_upcoming) as upcoming
+    from adsv2_booking_facts
+    where client_key = any(p_clients) and booked_et_day >= p_from and booked_et_day <= p_to
+      and not is_organic and not awaiting_review
+      and keyword_normalized is not null and keyword_normalized <> ''
+    group by client_key, keyword_normalized
+  ),
+  taken as (
+    select client_key, keyword_normalized as kw,
+      count(*) filter (where call_taken) as taken_rows,
+      count(distinct coalesce(subscriber_id, prospect_name)) filter (where call_taken) as taken_people,
+      count(*) filter (where is_win) as new_clients,
+      coalesce(sum(collected_usd_cents),0)::bigint as collected_usd_cents,
+      coalesce(sum(contracted_usd_cents),0)::bigint as contracted_usd_cents
+    from adsv2_sale_facts
+    where client_key = any(p_clients) and sale_et_day >= p_from and sale_et_day <= p_to
+      and not is_organic and not awaiting_review
+      and keyword_normalized is not null and keyword_normalized <> ''
+    group by client_key, keyword_normalized
+  ),
+  keys as (
+    select client_key, kw from spend
+    union select client_key, kw from dm
+    union select client_key, kw from booked
+    union select client_key, kw from taken
+  )
+  select
+    k.client_key, k.kw,
+    i.ad_id, i.ad_name, i.campaign_id, i.campaign_name, i.adset_id, i.adset_name,
+    i.ad_effective_status, i.campaign_effective_status,
+    coalesce(s.spend_cents,0), coalesce(s.impressions,0), coalesce(s.clicks,0),
+    coalesce(d.messages,0), coalesce(b.booked,0), coalesce(b.upcoming,0),
+    coalesce(t.taken_rows,0), coalesce(t.taken_people,0), coalesce(t.new_clients,0),
+    coalesce(t.collected_usd_cents,0), coalesce(t.contracted_usd_cents,0),
+    (s.kw is not null)
+  from keys k
+  join ident i on i.client_key = k.client_key and i.kw = k.kw
+  left join spend s on s.client_key = k.client_key and s.kw = k.kw
+  left join dm d on d.client_key = k.client_key and d.kw = k.kw
+  left join booked b on b.client_key = k.client_key and b.kw = k.kw
+  left join taken t on t.client_key = k.client_key and t.kw = k.kw
+$$;
+
+-- Budget configured as of the last day of the window (latest snapshot <= p_to).
+create or replace function adsv2_budget_asof(p_clients text[], p_to date)
+returns table (
+  entity_level text,
+  entity_id text,
+  campaign_id text,
+  daily_usd_cents bigint,
+  lifetime_usd_cents bigint,
+  holds boolean,
+  effective_status text
+)
+language sql
+stable
+as $$
+  select distinct on (entity_level, entity_id)
+    entity_level, entity_id, campaign_id,
+    daily_budget_usd_cents, lifetime_budget_usd_cents, holds_budget, effective_status
+  from adsv2_budget_snapshots
+  where client_key = any(p_clients) and et_day <= p_to
+  order by entity_level, entity_id, et_day desc
+$$;

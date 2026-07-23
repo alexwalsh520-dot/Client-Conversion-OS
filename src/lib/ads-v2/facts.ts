@@ -1,0 +1,453 @@
+// ─────────────────────────────────────────────────────────────────────────
+// FACTS PASS — the ONE deterministic attribution pass. It reads the source
+// tables over a rolling recent window, runs the pure attribution core on each
+// individual record, and writes one fact row per DM, booking, and sale into
+// the facts store. Requests never do this; only background sync does.
+//
+// Idempotent by construction: it replaces exactly the rolling window it just
+// recomputed (delete-then-insert per served client), so a re-run, a crash, or
+// an overlapping run can never duplicate or corrupt. Facts older than the
+// window are never touched, so history stays immutable.
+// ─────────────────────────────────────────────────────────────────────────
+
+import { getServiceSupabase } from "@/lib/supabase";
+import { creatorCurrency, loadUsdRateMap, convertCentsToUsd } from "@/lib/fx/rates";
+import { etDay, todayEt, shiftDay } from "./time";
+import { normalizeKeyword } from "./keyword";
+import { classifyKeyword, resolveSaleKeyword, type LinkMethod } from "./attribution";
+import {
+  ADSV2_SERVED_CLIENTS,
+  ALL_SALES_CALENDAR_IDS,
+  clientForSalesCalendar,
+  FACTS_LOOKBACK_DAYS,
+  FACTS_UPCOMING_DAYS,
+  SPEND_HISTORY_DAYS,
+} from "./config";
+import { fetchAllRows, startRun, finishRun, type Db } from "./db";
+
+interface FactsResult {
+  dm: number;
+  bookings: number;
+  sales: number;
+  windowFrom: string;
+  windowTo: string;
+}
+
+export async function runFactsPass(now: Date = new Date()): Promise<FactsResult> {
+  const db = getServiceSupabase();
+  const runId = await startRun(db, "facts");
+  const started = Date.now();
+  try {
+    const result = await computeAndWriteFacts(db, now);
+    await finishRun(db, runId, {
+      status: "ok",
+      rows: result.dm + result.bookings + result.sales,
+      durationMs: Date.now() - started,
+      detail: result,
+    });
+    return result;
+  } catch (err) {
+    await finishRun(db, runId, {
+      status: "error",
+      durationMs: Date.now() - started,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
+  const today = todayEt(now);
+  const factFrom = shiftDay(today, -FACTS_LOOKBACK_DAYS);
+  const saleTo = today;
+  const bookTo = shiftDay(today, FACTS_UPCOMING_DAYS);
+  const served = new Set<string>(ADSV2_SERVED_CLIENTS);
+  const spendFrom = shiftDay(today, -SPEND_HISTORY_DAYS);
+
+  // FX rates for any non-USD served client (Jake is AUD).
+  const rateMap = await loadUsdRateMap(
+    db,
+    ADSV2_SERVED_CLIENTS.map((k) => creatorCurrency(k)),
+    spendFrom,
+    bookTo,
+  );
+
+  // ── Reference data ───────────────────────────────────────────────────────
+
+  // Paid spend days per keyword (which keyword had real spend, and when).
+  const spendRows = await fetchAllRows<{
+    client_key: string;
+    keyword_normalized: string | null;
+    date: string;
+    spend_cents: number | null;
+  }>((from, to) =>
+    db
+      .from("ads_meta_insights_daily")
+      .select("client_key, keyword_normalized, date, spend_cents")
+      .in("client_key", [...served])
+      .gt("spend_cents", 0)
+      .eq("raw_payload->>reporting_timezone", "America/New_York")
+      .gte("date", spendFrom)
+      .order("date", { ascending: true })
+      .range(from, to),
+  );
+  // client -> keyword -> sorted unique spend days
+  const spendDays = new Map<string, Map<string, string[]>>();
+  const keywordToClient = new Map<string, string>();
+  for (const r of spendRows) {
+    const kw = normalizeKeyword(r.keyword_normalized);
+    if (!kw) continue;
+    keywordToClient.set(kw, r.client_key);
+    let byKw = spendDays.get(r.client_key);
+    if (!byKw) spendDays.set(r.client_key, (byKw = new Map()));
+    const list = byKw.get(kw);
+    if (list) {
+      if (list[list.length - 1] !== r.date) list.push(r.date);
+    } else byKw.set(kw, [r.date]);
+  }
+  const paidKeywordsAll = new Set<string>(keywordToClient.keys());
+
+  // Organic keyword marks per client.
+  const organicRows = await fetchAllRows<{ client_key: string; keyword_normalized: string }>((from, to) =>
+    db
+      .from("organic_keywords")
+      .select("client_key, keyword_normalized")
+      .in("client_key", [...served])
+      .order("keyword_normalized", { ascending: true })
+      .range(from, to),
+  );
+  const organicSet = new Map<string, Set<string>>();
+  for (const r of organicRows) {
+    const kw = normalizeKeyword(r.keyword_normalized);
+    if (!kw) continue;
+    if (!organicSet.has(r.client_key)) organicSet.set(r.client_key, new Set());
+    organicSet.get(r.client_key)!.add(kw);
+  }
+
+  const isOrganicMarked = (client: string, kw: string) =>
+    organicSet.get(client)?.has(kw) ?? false;
+  const spendDaysFor = (client: string, kw: string) => spendDays.get(client)?.get(kw) ?? [];
+
+  // GHL contact_id -> ManyChat subscriber_id bridge (served clients).
+  const bridgeRows = await fetchAllRows<{ ghl_contact_id: string | null; subscriber_id: string | null }>(
+    (from, to) =>
+      db
+        .from("manychat_contact_links")
+        .select("ghl_contact_id, subscriber_id")
+        .in("client", [...served])
+        .order("ghl_contact_id", { ascending: true })
+        .range(from, to),
+  );
+  const contactToSubscriber = new Map<string, string>();
+  for (const r of bridgeRows) {
+    if (r.ghl_contact_id && r.subscriber_id) contactToSubscriber.set(r.ghl_contact_id, r.subscriber_id);
+  }
+
+  // ── DM facts ─────────────────────────────────────────────────────────────
+  const dmRows = await fetchAllRows<{
+    id: string;
+    client_key: string;
+    subscriber_id: string | null;
+    subscriber_name: string | null;
+    keyword_normalized: string | null;
+    event_at: string;
+  }>((from, to) =>
+    db
+      .from("ads_keyword_events")
+      .select("id, client_key, subscriber_id, subscriber_name, keyword_normalized, event_at")
+      .in("client_key", [...served])
+      .eq("event_type", "dm_keyword")
+      .gte("event_at", `${shiftDay(factFrom, -1)}T00:00:00Z`)
+      .order("event_at", { ascending: true })
+      .range(from, to),
+  );
+
+  // subscriber -> sorted [(day, keyword)] for the sale DM-keyword lookup + dmEtDay.
+  const dmBySubscriber = new Map<string, { day: string; keyword: string }[]>();
+  const dmFacts: Record<string, unknown>[] = [];
+  for (const r of dmRows) {
+    const day = etDay(r.event_at);
+    if (!day || day < factFrom || day > today) continue;
+    const kw = normalizeKeyword(r.keyword_normalized);
+    const cls = classifyKeyword({
+      keyword: kw,
+      organicMarked: kw ? isOrganicMarked(r.client_key, kw) : false,
+      paidSpendDays: kw ? spendDaysFor(r.client_key, kw) : [],
+      eventDay: day,
+    });
+    dmFacts.push({
+      event_key: r.id,
+      client_key: r.client_key,
+      subscriber_id: r.subscriber_id,
+      subscriber_name: r.subscriber_name,
+      keyword_normalized: kw,
+      is_organic: cls === "organic",
+      awaiting_review: cls === "none",
+      et_day: day,
+      evidence: { source: "ads_keyword_events", event_type: "dm_keyword", classified: cls },
+    });
+    if (r.subscriber_id && kw) {
+      const list = dmBySubscriber.get(r.subscriber_id) || [];
+      list.push({ day, keyword: kw });
+      dmBySubscriber.set(r.subscriber_id, list);
+    }
+  }
+  for (const list of dmBySubscriber.values()) list.sort((a, b) => a.day.localeCompare(b.day));
+
+  // ── Booking facts ────────────────────────────────────────────────────────
+  const nowIso = now.toISOString();
+  const apptRows = ALL_SALES_CALENDAR_IDS.length
+    ? await fetchAllRows<{
+        appointment_id: string;
+        contact_id: string | null;
+        contact_name: string | null;
+        keyword_normalized: string | null;
+        calendar_id: string | null;
+        calendar_name: string | null;
+        start_time: string | null;
+        created_at: string | null;
+        status: string | null;
+      }>((from, to) =>
+        db
+          .from("ghl_appointments")
+          .select(
+            "appointment_id, contact_id, contact_name, keyword_normalized, calendar_id, calendar_name, start_time, created_at, status",
+          )
+          .in("calendar_id", [...ALL_SALES_CALENDAR_IDS])
+          .gte("start_time", `${shiftDay(factFrom, -1)}T00:00:00Z`)
+          .lte("start_time", `${shiftDay(bookTo, 1)}T00:00:00Z`)
+          .order("start_time", { ascending: true })
+          .range(from, to),
+      )
+    : [];
+
+  // subscriber -> booked keyword (via the bridge from contact_id).
+  const bookingKeywordBySubscriber = new Map<string, string>();
+  const bookingFacts: Record<string, unknown>[] = [];
+  for (const r of apptRows) {
+    const client = r.calendar_id ? clientForSalesCalendar(r.calendar_id) : null;
+    if (!client) continue;
+    const day = r.start_time ? etDay(r.start_time) : "";
+    if (!day || day < factFrom || day > bookTo) continue;
+    const kw = normalizeKeyword(r.keyword_normalized);
+    const subscriber = r.contact_id ? contactToSubscriber.get(r.contact_id) || null : null;
+    const dmDay = subscriber ? dmBySubscriber.get(subscriber)?.[0]?.day ?? null : null;
+    const cls = classifyKeyword({
+      keyword: kw,
+      organicMarked: kw ? isOrganicMarked(client, kw) : false,
+      paidSpendDays: kw ? spendDaysFor(client, kw) : [],
+      eventDay: day,
+    });
+    const isUpcoming = !!r.start_time && r.start_time > nowIso;
+    const cancelled = (r.status || "").toLowerCase().includes("cancel");
+    bookingFacts.push({
+      appointment_key: r.appointment_id,
+      client_key: client,
+      contact_id: r.contact_id,
+      person_name: r.contact_name,
+      keyword_normalized: kw,
+      is_organic: cls === "organic",
+      // A booking with no keyword (or an unattributable one) is awaiting review
+      // and never shown in the paid view; cancelled ones too.
+      awaiting_review: cls === "none" || cancelled,
+      calendar_id: r.calendar_id,
+      calendar_name: r.calendar_name,
+      booked_et_day: day,
+      dm_et_day: dmDay,
+      is_upcoming: isUpcoming,
+      status: r.status,
+      start_time: r.start_time,
+      created_time: r.created_at,
+      evidence: { source: "ghl_appointments", calendar_id: r.calendar_id, classified: cls, subscriber },
+    });
+    if (subscriber && kw && cls === "paid" && !bookingKeywordBySubscriber.has(subscriber)) {
+      bookingKeywordBySubscriber.set(subscriber, kw);
+    }
+  }
+
+  // ── Sale facts ───────────────────────────────────────────────────────────
+  const saleRows = await fetchAllRows<{
+    id: string;
+    sheet_row_key: string | null;
+    date: string;
+    prospect_name: string | null;
+    call_taken_status: string | null;
+    outcome: string | null;
+    closer: string | null;
+    contracted_revenue_cents: number | null;
+    collected_revenue_cents: number | null;
+    manychat_subscriber_id: string | null;
+  }>((from, to) =>
+    db
+      .from("sales_tracker_rows")
+      .select(
+        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id",
+      )
+      .gte("date", factFrom)
+      .lte("date", saleTo)
+      .order("date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+
+  // Origin-check keyword per subscriber (ad-origin evidence).
+  const originRows = await fetchAllRows<{
+    subscriber_id: string | null;
+    origin_keyword: string | null;
+    from_ad: boolean | null;
+    is_control: boolean | null;
+  }>((from, to) =>
+    db
+      .from("manychat_origin_checks")
+      .select("subscriber_id, origin_keyword, from_ad, is_control")
+      .eq("from_ad", true)
+      .order("subscriber_id", { ascending: true })
+      .range(from, to),
+  );
+  const originBySubscriber = new Map<string, string>();
+  for (const r of originRows) {
+    if (r.subscriber_id && !r.is_control && r.origin_keyword) {
+      const kw = normalizeKeyword(r.origin_keyword);
+      if (kw && !originBySubscriber.has(r.subscriber_id)) originBySubscriber.set(r.subscriber_id, kw);
+    }
+  }
+
+  const saleFacts: Record<string, unknown>[] = [];
+  for (const r of saleRows) {
+    const saleDay = r.date;
+    const pasted = (r.manychat_subscriber_id || "").trim() || null;
+    // DM keyword on or before the sale day, for this subscriber.
+    const dmKeywordBySubscriber = new Map<string, string>();
+    if (pasted) {
+      const list = dmBySubscriber.get(pasted);
+      if (list) {
+        const eligible = list.filter((e) => e.day <= saleDay);
+        const chosen = (eligible.length ? eligible : list).at(-1);
+        if (chosen) dmKeywordBySubscriber.set(pasted, chosen.keyword);
+      }
+    }
+    const resolved = resolveSaleKeyword({
+      humanResolution: null, // human workspace is a later piece; store supports it
+      pastedSubscriberId: pasted,
+      bridgeSubscriberId: null,
+      bookingKeywordBySubscriber,
+      dmKeywordBySubscriber,
+      originCheckKeyword: pasted ? originBySubscriber.get(pasted) ?? null : null,
+      paidKeywords: paidKeywordsAll,
+    });
+
+    let keyword = resolved.keyword ? normalizeKeyword(resolved.keyword) : null;
+    let method: LinkMethod = resolved.method;
+    const client = keyword ? keywordToClient.get(keyword) ?? null : null;
+    let isOrganic = false;
+    let awaiting = method === "none";
+
+    if (keyword && client) {
+      const cls = classifyKeyword({
+        keyword,
+        organicMarked: isOrganicMarked(client, keyword),
+        paidSpendDays: spendDaysFor(client, keyword),
+        eventDay: saleDay,
+      });
+      if (cls === "organic") {
+        isOrganic = true;
+        method = "organic";
+      } else if (cls === "none") {
+        // Resolved to a keyword with no paid spend and not organic: unprovable.
+        keyword = null;
+        method = "none";
+        awaiting = true;
+      }
+    } else if (keyword && !client) {
+      // Keyword has no paid spend anywhere -> cannot be a paid attribution.
+      keyword = null;
+      method = "none";
+      awaiting = true;
+    }
+
+    const currency = client ? creatorCurrency(client) : "USD";
+    const contracted = Number(r.contracted_revenue_cents || 0);
+    const collected = Number(r.collected_revenue_cents || 0);
+    saleFacts.push({
+      sale_key: r.sheet_row_key || r.id,
+      client_key: client,
+      keyword_normalized: keyword,
+      method,
+      is_organic: isOrganic,
+      awaiting_review: awaiting,
+      call_taken: (r.call_taken_status || "").toLowerCase() === "yes",
+      is_win: (r.outcome || "").toUpperCase() === "WIN",
+      currency,
+      collected_cents: collected,
+      contracted_cents: contracted,
+      collected_usd_cents: convertCentsToUsd(collected, currency, saleDay, rateMap),
+      contracted_usd_cents: convertCentsToUsd(contracted, currency, saleDay, rateMap),
+      prospect_name: r.prospect_name,
+      subscriber_id: pasted,
+      closer: r.closer,
+      sale_et_day: saleDay,
+      evidence: { source: "sales_tracker_rows", method, keyword, sale_day: saleDay },
+    });
+  }
+
+  // ── Replace the rolling window atomically per table ──────────────────────
+  // Delete the window we just recomputed, then insert fresh. Facts outside the
+  // window are never touched. Chunked inserts keep payloads small.
+  await replaceWindow(db, "adsv2_dm_facts", "et_day", factFrom, today, [...served], "client_key", dmFacts);
+  await replaceWindow(
+    db,
+    "adsv2_booking_facts",
+    "booked_et_day",
+    factFrom,
+    bookTo,
+    [...served],
+    "client_key",
+    bookingFacts,
+  );
+  // Sales are keyed on the resolved client (may be null), so replace the whole
+  // sale-day window regardless of client to avoid orphaning re-attributed rows.
+  await replaceWindowAllClients(db, "adsv2_sale_facts", "sale_et_day", factFrom, saleTo, saleFacts);
+
+  return {
+    dm: dmFacts.length,
+    bookings: bookingFacts.length,
+    sales: saleFacts.length,
+    windowFrom: factFrom,
+    windowTo: bookTo,
+  };
+}
+
+async function replaceWindow(
+  db: Db,
+  table: string,
+  dayColumn: string,
+  from: string,
+  to: string,
+  clients: string[],
+  clientColumn: string,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  await db.from(table).delete().in(clientColumn, clients).gte(dayColumn, from).lte(dayColumn, to);
+  await insertChunked(db, table, rows);
+}
+
+async function replaceWindowAllClients(
+  db: Db,
+  table: string,
+  dayColumn: string,
+  from: string,
+  to: string,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  await db.from(table).delete().gte(dayColumn, from).lte(dayColumn, to);
+  await insertChunked(db, table, rows);
+}
+
+async function insertChunked(db: Db, table: string, rows: Record<string, unknown>[]): Promise<void> {
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const { error } = await db.from(table).insert(slice);
+    if (error) throw new Error(`${table} insert failed: ${error.message}`);
+  }
+}
