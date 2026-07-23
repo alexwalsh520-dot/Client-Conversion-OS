@@ -38,21 +38,26 @@
 }
 
 html.light .adsv2 {
-  --bg: #fbfbfa;
-  --bg-1: #f4f4f2;
+  --bg: #f6f6f4;
+  --bg-1: #fbfbfa;
   --panel: #ffffff;
-  --panel-2: #f6f6f4;
-  --row-hover: #f6f6f4;
-  --border: #e6e6e2;
-  --border-2: #dcdcd6;
-  --focus: #cfcfc8;
-  --text: #1c1c1a;
+  --panel-2: #f0f0ee;
+  --row-hover: #f3f3f1;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-2: rgba(0, 0, 0, 0.16);
+  --focus: rgba(0, 0, 0, 0.26);
+  --text: #18181b;
   --text-1: #111110;
-  --text-2: #55554f;
-  --text-3: #86867e;
-  --text-4: #a9a9a1;
+  --text-2: #3f3f46;
+  --text-3: #71717a;
+  --text-4: #9a9aa3;
+  --green: #3f9e6b;
+  --green-dim: #6fae90;
+  --red: #c0504a;
+  --red-dim: #cf8b86;
   --gold: #a9823f;
-  --gold-dim: #b79a63;
+  --gold-dim: #b89a6a;
+  --blue: #4f7fb0;
 }
 
 .adsv2 * {
@@ -408,8 +413,21 @@ html.light .adsv2 {
   font-size: 10px;
   letter-spacing: 0.08em;
 }
+/* v1 renders table numbers in the body font (Inter) with tabular figures, NOT
+   a mono font. Match that: tabular-nums only, no font-family override. */
 .adsv2 .num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.adsv2 .filter-btn .caret {
+  color: var(--text-3);
+  font-size: 9px;
+  margin-left: 2px;
+  display: inline-flex;
+}
+.adsv2 .mono {
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 .adsv2 .pos {
   color: var(--green);
@@ -418,7 +436,7 @@ html.light .adsv2 {
   color: var(--red);
 }
 .adsv2 .dim {
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .adsv2 .campaign-cell {
@@ -461,25 +479,29 @@ html.light .adsv2 {
 .adsv2 .ad-row .camp-name {
   color: var(--text-2);
 }
+/* status pill - ported verbatim from v1: the base pill IS the green "active"
+   look (rounded 99px, green tint); finished/empty override to grey. */
 .adsv2 .status-pill {
   font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border-2);
-  color: var(--text-3);
-  flex: none;
-}
-.adsv2 .status-pill.active {
   color: var(--green);
-  border-color: var(--green-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border: 1px solid rgba(125, 211, 168, 0.18);
+  border-radius: 99px;
+  background: rgba(125, 211, 168, 0.045);
+  margin-left: 4px;
+  flex: 0 0 auto;
 }
 .adsv2 .status-pill.finished {
-  color: var(--text-3);
+  color: var(--text-4);
+  border-color: var(--border-2);
+  background: var(--panel);
 }
 .adsv2 .status-pill.empty {
   color: var(--text-4);
+  border-color: var(--border-2);
+  background: var(--bg);
 }
 .adsv2 .ad-count-chip {
   font-size: 10px;
@@ -642,107 +664,104 @@ html.light .adsv2 {
   background: var(--bg);
 }
 
-/* date calendar */
+/* date calendar - ported verbatim from v1 (.date-pop / MiniCalendar) */
 .adsv2 .date-pop {
+  width: 520px;
   display: grid;
-  grid-template-columns: 160px 1fr;
-  min-width: 520px;
+  grid-template-columns: 170px 1fr;
+  padding: 0;
 }
 .adsv2 .date-presets {
-  border-right: 1px solid var(--border-2);
-  padding-right: 6px;
-}
-.adsv2 .date-preset {
-  padding: 7px 10px;
-  border-radius: 5px;
-  font-size: 12px;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.adsv2 .date-preset:hover {
-  background: var(--panel-2);
-  color: var(--text);
-}
-.adsv2 .date-preset.active {
-  color: var(--gold);
+  border-right: 1px solid var(--border);
+  padding: 6px;
 }
 .adsv2 .date-cal {
-  padding-left: 10px;
+  padding: 12px 14px;
 }
 .adsv2 .cal-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  align-items: center;
   font-size: 12px;
-  color: var(--text);
+  color: var(--text-2);
+  margin-bottom: 10px;
 }
 .adsv2 .cal-nav {
-  cursor: pointer;
   color: var(--text-3);
-  padding: 2px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
 }
 .adsv2 .cal-nav:hover {
-  background: var(--panel-2);
   color: var(--text);
 }
 .adsv2 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
+  font-size: 11px;
 }
 .adsv2 .cal-dow {
-  text-align: center;
-  font-size: 9px;
   color: var(--text-4);
-  padding: 2px 0;
+  text-align: center;
+  padding: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 .adsv2 .cal-day {
   text-align: center;
-  font-size: 11px;
-  padding: 6px 0;
-  border-radius: 5px;
+  padding: 5px 0;
   color: var(--text-2);
+  border-radius: 4px;
   cursor: pointer;
-}
-.adsv2 .cal-day:hover {
-  background: var(--panel-2);
-  color: var(--text);
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 11px;
 }
 .adsv2 .cal-day.in-range {
   background: var(--panel-2);
+  color: var(--text);
 }
 .adsv2 .cal-day.endpoint {
   background: var(--gold);
-  color: #111;
+  color: var(--bg);
+  font-weight: 600;
 }
-.adsv2 .cal-day.today {
-  box-shadow: inset 0 0 0 1px var(--gold-dim);
+.adsv2 .cal-day.muted {
+  color: var(--text-4);
 }
 .adsv2 .cal-day.trail {
   visibility: hidden;
 }
 .adsv2 .date-foot {
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-2);
+  align-items: center;
   font-size: 11px;
   color: var(--text-3);
 }
 .adsv2 .apply-btn {
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 5px;
   background: var(--gold);
-  color: #111;
-  border: none;
+  color: var(--bg);
   font-weight: 600;
+  font-size: 11px;
+  border: none;
   cursor: pointer;
   font-family: inherit;
+}
+.adsv2 .apply-btn:hover {
+  filter: brightness(1.08);
 }
 .adsv2 .ghost-btn {
   padding: 6px 12px;

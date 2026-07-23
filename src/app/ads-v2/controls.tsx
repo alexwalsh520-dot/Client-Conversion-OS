@@ -5,12 +5,12 @@ import {
   PRESETS,
   rangeForPreset,
   rangeLabel,
-  shiftDay,
   todayEt,
   type DayRange,
   type PresetId,
 } from "@/lib/ads-v2/time";
 import type { AdsV2Account, AdsV2Status } from "@/lib/ads-v2/types";
+import { IcCal, IcCaret, IcCheck } from "./icons";
 
 // ── Account dropdown (All / Tyson / Jake) ─────────────────────────────────
 const ACCOUNT_OPTIONS: { id: AdsV2Account; label: string }[] = [
@@ -35,7 +35,9 @@ export function AccountDropdown({
       <button className={`filter-btn${open ? " open" : ""}`} onClick={() => setOpen((o) => !o)}>
         <span className="lbl">Account</span>
         <span className="val">{current}</span>
-        <span className="sort-arrow">▾</span>
+        <span className="caret">
+          <IcCaret />
+        </span>
       </button>
       {open && (
         <div className="pop">
@@ -49,7 +51,9 @@ export function AccountDropdown({
               }}
             >
               <span>{o.label}</span>
-              <span className="check">✓</span>
+              <span className="check">
+                <IcCheck />
+              </span>
             </div>
           ))}
         </div>
@@ -143,16 +147,23 @@ export function DateDropdown({
     }
   };
 
-  const monthCells = buildMonth(calMonth, draft, todayEt());
+  const cells = buildMonth(calMonth, draft, todayEt());
+  const dayCount = daysBetween(draft.from, draft.to);
 
   return (
     <div className="filter" ref={ref}>
       <button className={`filter-btn${open ? " open" : ""}`} onClick={() => setOpen((o) => !o)}>
-        <span className="lbl">Dates</span>
-        <span className="val">
-          {presetLabel} · {rangeLabel(range)}
+        <span style={{ color: "var(--text-3)", display: "inline-flex" }}>
+          <IcCal />
         </span>
-        <span className="sort-arrow">▾</span>
+        <span className="val">{presetLabel}</span>
+        <span className="dim" style={{ fontSize: 11 }}>
+          {" "}
+          &middot; {rangeLabel(range)}
+        </span>
+        <span className="caret">
+          <IcCaret />
+        </span>
       </button>
       {open && (
         <div className="pop date-pop">
@@ -160,51 +171,58 @@ export function DateDropdown({
             {PRESETS.map((p) => (
               <div
                 key={p.id}
-                className={`date-preset${draftPreset === p.id ? " active" : ""}`}
+                className={`pop-item${draftPreset === p.id ? " selected" : ""}`}
                 onClick={() => pickPreset(p.id)}
               >
-                {p.label}
+                <span>{p.label}</span>
+                <span className="check">
+                  <IcCheck />
+                </span>
               </div>
             ))}
           </div>
           <div className="date-cal">
             <div className="cal-head">
-              <span className="cal-nav" onClick={() => setCalMonth(shiftMonth(calMonth, -1))}>
-                ‹
-              </span>
+              <button className="cal-nav" onClick={() => setCalMonth(shiftMonth(calMonth, -1))}>
+                &lsaquo;
+              </button>
               <span>{monthLabel(calMonth)}</span>
-              <span className="cal-nav" onClick={() => setCalMonth(shiftMonth(calMonth, 1))}>
-                ›
-              </span>
+              <button className="cal-nav" onClick={() => setCalMonth(shiftMonth(calMonth, 1))}>
+                &rsaquo;
+              </button>
             </div>
             <div className="cal-grid">
               {DOW.map((d, i) => (
-                <div className="cal-dow" key={i}>
+                <div className="cal-dow" key={`h${i}`}>
                   {d}
                 </div>
               ))}
-              {monthCells.map((c, i) =>
-                c.trail ? (
-                  <div className="cal-day trail" key={i} />
+              {cells.map((c, i) =>
+                c.blank ? (
+                  <div className={`cal-day muted${c.trail ? " trail" : ""}`} key={i} />
                 ) : (
-                  <div
+                  <button
                     key={i}
-                    className={`cal-day${c.inRange ? " in-range" : ""}${c.endpoint ? " endpoint" : ""}${c.today ? " today" : ""}`}
+                    className={`cal-day${c.endpoint ? " endpoint" : c.inRange ? " in-range" : ""}${c.today ? " today" : ""}`}
                     onClick={() => pickDay(c.iso)}
                   >
                     {c.day}
-                  </div>
+                  </button>
                 ),
               )}
             </div>
           </div>
           <div className="date-foot">
-            <span>
-              {draft.from} → {draft.to}
-              {selectingEnd ? " · pick end date" : ""}
+            <span className="mono" style={{ fontSize: 11 }}>
+              {draft.from} &rarr; {draft.to} &middot; {dayCount} day{dayCount === 1 ? "" : "s"}
+              {draftPreset === "custom" && selectingEnd ? " · pick end date" : ""}
             </span>
-            <span style={{ display: "flex", gap: 6 }}>
-              <button className="ghost-btn" onClick={() => setOpen(false)}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                className="filter-btn"
+                style={{ padding: "4px 10px" }}
+                onClick={() => setOpen(false)}
+              >
                 Cancel
               </button>
               <button
@@ -216,7 +234,7 @@ export function DateDropdown({
               >
                 Apply
               </button>
-            </span>
+            </div>
           </div>
         </div>
       )}
@@ -245,8 +263,14 @@ function monthLabel(ym: string): string {
   const dt = new Date(Date.UTC(y, m - 1, 1));
   return `${dt.toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${y}`;
 }
+function daysBetween(from: string, to: string): number {
+  const a = Date.UTC(...(from.split("-").map(Number) as [number, number, number]));
+  const b = Date.UTC(...(to.split("-").map(Number) as [number, number, number]));
+  return Math.round((b - a) / 86_400_000) + 1;
+}
 
 interface Cell {
+  blank: boolean;
   trail: boolean;
   iso: string;
   day: number;
@@ -254,17 +278,27 @@ interface Cell {
   endpoint: boolean;
   today: boolean;
 }
+// Matches v1's MiniCalendar: leading blanks (muted), the days, then trailing
+// blanks (muted trail) to fill the last week.
 function buildMonth(ym: string, range: DayRange, today: string): Cell[] {
   const [y, m] = ym.split("-").map(Number);
   const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const cells: Cell[] = [];
-  for (let i = 0; i < firstDow; i++) {
-    cells.push({ trail: true, iso: "", day: 0, inRange: false, endpoint: false, today: false });
-  }
+  const blank = (trail: boolean): Cell => ({
+    blank: true,
+    trail,
+    iso: "",
+    day: 0,
+    inRange: false,
+    endpoint: false,
+    today: false,
+  });
+  for (let i = 0; i < firstDow; i++) cells.push(blank(false));
   for (let d = 1; d <= daysInMonth; d++) {
     const iso = `${ym}-${String(d).padStart(2, "0")}`;
     cells.push({
+      blank: false,
       trail: false,
       iso,
       day: d,
@@ -273,7 +307,6 @@ function buildMonth(ym: string, range: DayRange, today: string): Cell[] {
       today: iso === today,
     });
   }
+  while (cells.length % 7 !== 0) cells.push(blank(true));
   return cells;
 }
-
-export { shiftDay };
