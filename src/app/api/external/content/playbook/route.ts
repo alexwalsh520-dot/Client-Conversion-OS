@@ -4,6 +4,7 @@ import { externalKeyOk } from "@/lib/external/auth";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { getCurrentPlaybook } from "@/lib/buyer-dna/playbook";
 import { getCurrentIcp } from "@/lib/buyer-dna/icp";
+import { notifyPlaybookDelivery, notifyExternalRejected } from "@/lib/external/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
   const sections = (body?.sections || {}) as Record<string, unknown>;
 
   if (!(CONTENT_CREATORS as readonly string[]).includes(creator)) {
+    notifyExternalRejected("playbook", creator, "unknown or inactive creator");
     return NextResponse.json({ error: "Unknown or inactive creator" }, { status: 400 });
   }
 
@@ -34,6 +36,7 @@ export async function POST(req: NextRequest) {
     filming_concepts: arr(sections.filming_concepts),
   };
   if (!playbook.hooks.length && !playbook.actions.length && !playbook.buyer_language.length && !playbook.filming_concepts.length) {
+    notifyExternalRejected("playbook", creator, "no sections provided");
     return NextResponse.json({ error: "No sections provided" }, { status: 422 });
   }
 
@@ -51,6 +54,10 @@ export async function POST(req: NextRequest) {
     model: "external",
     generated_at: new Date().toISOString(),
   });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    notifyExternalRejected("playbook", creator, `write failed: ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  notifyPlaybookDelivery(creator, version);
   return NextResponse.json({ ok: true, creator, version });
 }

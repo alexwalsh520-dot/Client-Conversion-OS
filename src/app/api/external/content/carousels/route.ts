@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { externalKeyOk } from "@/lib/external/auth";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { validateCarousels, type IncomingCarousel } from "@/lib/external/validate-carousels";
+import { notifyCarouselDelivery, notifyExternalRejected } from "@/lib/external/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,13 +20,18 @@ export async function POST(req: NextRequest) {
   const carousels = body?.carousels;
 
   if (!(CONTENT_CREATORS as readonly string[]).includes(creator)) {
+    notifyExternalRejected("carousels", creator, "unknown or inactive creator");
     return NextResponse.json({ error: "Unknown or inactive creator" }, { status: 400 });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(forDate)) {
+    notifyExternalRejected("carousels", creator, "bad for_date");
     return NextResponse.json({ error: "Bad for_date (YYYY-MM-DD)" }, { status: 400 });
   }
   const problems = validateCarousels(carousels);
-  if (problems.length) return NextResponse.json({ error: "Validation failed", problems }, { status: 422 });
+  if (problems.length) {
+    notifyExternalRejected("carousels", creator, `validation failed (${problems.length}): ${problems.slice(0, 3).join("; ")}`);
+    return NextResponse.json({ error: "Validation failed", problems }, { status: 422 });
+  }
 
   const sb = getServiceSupabase();
 
@@ -68,8 +74,12 @@ export async function POST(req: NextRequest) {
     error = (await sb.from("content_carousels").upsert(bare, { onConflict: "client_key,for_date,slot" })).error;
     degraded = true;
   }
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    notifyExternalRejected("carousels", creator, `write failed: ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
+  notifyCarouselDelivery(creator, forDate, rows.length, list.map((c) => c.topic || "").filter(Boolean));
   return NextResponse.json({
     ok: true,
     creator,
