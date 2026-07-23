@@ -232,14 +232,6 @@ export default function ManagerAdsView() {
                 <Metric label="ROI" value={roasFmt(selectedRow.roi)} accent />
               </div>
             )}
-
-            <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14 }}>
-              <strong>ROAS</strong> = the Ads V2 figure: ad-attributed collected revenue ÷ ad spend (only cash tied to
-              a paid ad keyword counts). <strong>ROI</strong> = <strong>all</strong> cash collected on the sales
-              tracker for this influencer ÷ ad spend. Cash Collected shown here is that all-cash number, so ROAS —
-              which uses the smaller ad-attributed figure — is normally lower than ROI. Spend, messages, calls and
-              clients come from the Ads V2 tab.
-            </p>
           </div>
 
           {report.warnings.length > 0 && (
