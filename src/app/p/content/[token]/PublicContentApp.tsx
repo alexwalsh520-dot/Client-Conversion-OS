@@ -38,7 +38,7 @@ function defaultRange(): DateRange {
 }
 
 export default function PublicContentApp({ token, name }: { token: string; name: string }) {
-  const [page, setPage] = useState<"playbook" | "buyers" | "calendar" | "content">("playbook");
+  const [page, setPage] = useState<"playbook" | "buyers" | "calendar" | "content">("calendar");
   const [data, setData] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -58,7 +58,7 @@ export default function PublicContentApp({ token, name }: { token: string; name:
     c.add("light");
   }, []);
 
-  const tabs = [["playbook", "Playbook"], ["buyers", "Buyers"], ["calendar", "Calendar"], ["content", "My Content"]] as const;
+  const tabs = [["calendar", "Calendar"], ["playbook", "Playbook"], ["buyers", "Buyers"], ["content", "My Content"]] as const;
 
   return (
     <main style={{ minHeight: "100vh", background: PAPER, padding: "32px 18px 100px" }}>

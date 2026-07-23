@@ -14,6 +14,7 @@ import { extractJson, salvageObjects } from "./json";
 import { compactTrendBrief, getCurrentTrendBrief } from "./trends";
 import { getCurrentShiftBrief } from "./shift";
 import { getCurrentVoice } from "./voice";
+import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
 import type { Research } from "./dossier";
 
 const MODEL = "claude-sonnet-4-6";
@@ -209,14 +210,16 @@ export async function refreshPlaybook(
   anthropic: Anthropic,
   opts: { canProceed?: () => boolean } = {},
 ): Promise<{ ok: true; version: number; saying: number; hooks: number; topics: number } | { ok: false; reason: string }> {
-  const [briefs, trend, shift, voc, voice, ads] = await Promise.all([
+  const [briefs, trend, shift, voc, voice, ads, doc] = await Promise.all([
     buyerBriefs(sb, client),
     getCurrentTrendBrief(sb, client),
     getCurrentShiftBrief(sb, client),
     vocQuotes(sb, client),
     getCurrentVoice(sb, client),
     adResponse(sb, client),
+    getMessagingDoc(sb, client),
   ]);
+  const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
 
   const shiftAim = shift
     ? [
@@ -248,6 +251,14 @@ export async function refreshPlaybook(
     : "";
 
   const userMsg = [
+    // The messaging doc leads when present: it is the creator's own ground truth. For a creator
+    // with no buyers/calls/DMs yet, this plus the ICP and trend brief is the whole basis — so the
+    // saying tier list draws its themes and quotes FROM THE DOC, labelled source "messaging doc",
+    // and never fabricates call/DM quotes that don't exist.
+    docBlock,
+    docBlock
+      ? "Because this creator has no buyer calls, DMs or ad data yet, build the SAYING tier list from the messaging document above: each item's theme and quotes must come from that document (use its exact one-liners and pain phrasing), and set source to \"messaging doc\". Do NOT invent call or DM quotes. Ground every hook and topic in the document's pains and language."
+      : "",
     `THE BUYER (write everything for this one person):\n${compactIcp(icp)}`,
     voc ? `VERBATIM VOICE FROM SALES CALLS + DMs (their exact words — quote from here):\n${voc}` : "",
     voiceSummary ? `WHAT EVERYONE WHO ACTUALLY PAID KEEPS SAYING (the payer signal):\n${voiceSummary}` : "",
