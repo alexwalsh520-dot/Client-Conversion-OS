@@ -30,7 +30,17 @@ export type PlaybookTopic = { topic?: string; type?: string; why?: string };
 // The ranked "what they're saying" tier list. Optional: playbook rows generated before this section
 // existed simply have no `saying`, and the view hides it until the next weekly regen.
 export type PlaybookSaying = { rank?: number; theme?: string; quotes?: string[]; how_common?: string; source?: string };
-export type Playbook = { saying?: PlaybookSaying[]; hooks: PlaybookHook[]; topics: PlaybookTopic[] };
+export type Playbook = {
+  saying?: PlaybookSaying[];
+  hooks: PlaybookHook[];
+  topics: PlaybookTopic[];
+  // Fields an EXTERNAL playbook (the content worker) may add. Internally-generated playbooks never set
+  // these, so the view renders them only when present — old-shape versions are unaffected.
+  origin?: string;
+  actions?: (string | { move?: string; why?: string })[];
+  buyer_language?: string[];
+  filming_concepts?: (string | { concept?: string; why?: string })[];
+};
 
 const SYS =
   "You write the weekly content playbook for a fitness creator. Everything is a TALKING-HEAD video, 30 to 90 seconds, filmed same-day, posted 3 times per day, aimed at ONE specific premium buyer. Two jobs: ATTRACTION (pulls more of that buyer in) and CONNECTION (makes the ones already watching trust the creator). Ground every hook in the buyers' real pains, beliefs, triggers, and exact words; make the buyer feel seen; never generic fitness content.\n\n" +
