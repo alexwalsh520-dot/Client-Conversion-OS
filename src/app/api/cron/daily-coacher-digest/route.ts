@@ -65,6 +65,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const db = getServiceSupabase();
   const startedAt = Date.now();
   const now = new Date();
+  // Start of the current UTC day — used as the idempotency boundary so a coach
+  // is DM'd at most once per calendar day even if the cron fires from more than
+  // one deployment (this repo is deployed by two Vercel projects, and both run
+  // the cron on the same schedule).
+  const dayStartUtcIso = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString();
   const summary: Record<string, unknown> = { started_at: now.toISOString() };
 
   // -----------------------------------------------------------------------
@@ -169,22 +176,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
+    // Atomically claim today's send for this coach. The conditional update
+    // only matches a row not already stamped for today, so if two deployments
+    // run the cron at once, exactly one wins the row and the other skips —
+    // no duplicate DM. We claim before posting (rather than stamping after)
+    // precisely so the claim is the single source of truth.
+    const { data: claimed } = await db
+      .from("daily_coacher_recipients")
+      .update({ last_sent_at: now.toISOString() })
+      .eq("coach_name", coach_name)
+      .or(`last_sent_at.is.null,last_sent_at.lt.${dayStartUtcIso}`)
+      .select("coach_name");
+    if (!claimed || claimed.length === 0) {
+      sendResults.push({ coach: coach_name, ok: true, reason: "already_sent_today" });
+      continue;
+    }
+
     const blocks = [
       {
         type: "section",
-        text: { type: "mrkdwn", text: `:sparkles: Morning <@${slackUserId}>! Here's today's coaching tip.` },
+        text: { type: "mrkdwn", text: `:sparkles: Morning <@${slackUserId}>! Here's a message you can send straight to your clients today.` },
       },
       ...tipToSlackBlocks(topic, body),
     ];
-    const res = await postBlocks(dmChannel, blocks, `Daily Coach Tip: ${topic}`);
+    const res = await postBlocks(dmChannel, blocks, `Daily client message: ${topic}`);
 
     if (res.ok) {
-      await db
-        .from("daily_coacher_recipients")
-        .update({ last_sent_at: now.toISOString() })
-        .eq("coach_name", coach_name);
       sendResults.push({ coach: coach_name, ok: true });
     } else {
+      // Claim already stamped, so we won't retry today; surface the failure.
       sendResults.push({ coach: coach_name, ok: false, reason: res.error ?? "post_failed" });
     }
   }

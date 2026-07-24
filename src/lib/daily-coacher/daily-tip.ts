@@ -69,17 +69,17 @@ export function stripDashes(text: string): string {
   return text.replace(/[—–]/g, ", ");
 }
 
-const SYSTEM_PROMPT = `You write daily educational tips for online fitness coaches. Each tip covers ONE concept that a coach can teach a client today.
+const SYSTEM_PROMPT = `You write short daily messages that an online fitness coach sends DIRECTLY to a client, word for word, with no editing. Each message teaches ONE concept and tells the client exactly what to do with it.
 
 Rules:
-- Exactly ONE paragraph. About 90 to 130 words.
-- Plain, direct language. No fluff, no motivational filler, no rhetorical questions, no headings, no bullet points.
-- Explain the concept AND give a concrete way the coach can apply it with a client this week.
+- Write TO the client, in warm, plain second person ("you"). This is a text message from their coach, not an article and not advice for the coach.
+- Exactly ONE paragraph. About 70 to 110 words.
+- No greeting that assumes a name (never "Hey [name]"), no placeholders, no square brackets. It must read naturally when sent as-is to any client.
+- Explain the concept in everyday language, then give ONE concrete, doable action they can take today or this week.
+- No jargon, no headings, no bullet points, no motivational filler, no rhetorical questions.
 - Never use em-dashes or en-dashes. Use commas, colons, or periods instead.
 - Do not start with the topic name or a title. Start with the substance.
-- Do not sign off. No "hope this helps" or similar.
-- Speak to the coach, not the client.
-- No emojis.`;
+- Do not sign off. No coach name, no "hope this helps", no emojis.`;
 
 export async function generateDailyTip(
   now: Date = new Date(),
@@ -97,7 +97,7 @@ export async function generateDailyTip(
     messages: [
       {
         role: "user",
-        content: `Write today's tip. Topic: ${topic}.`,
+        content: `Write today's client message. Topic: ${topic}.`,
       },
     ],
   });
@@ -124,15 +124,28 @@ function headlineFromTopic(topic: string): string {
     .join(" ");
 }
 
-/** Build the Slack blocks for a tip. Single section, mrkdwn body. */
+/**
+ * Build the Slack blocks for the daily client message. A coach-facing header
+ * names the topic and states the message is ready to send, then the message
+ * itself sits in a code block so Slack shows a one-click copy affordance.
+ */
 export function tipToSlackBlocks(topic: string, body: string): unknown[] {
   const headline = headlineFromTopic(topic);
+  // Triple backticks in the body would close the code block early. Guard it.
+  const safeBody = body.replace(/```/g, "ʼʼʼ");
   return [
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `:books: *Daily Coach Tip: ${headline}*\n\n${body}`,
+        text: `:speech_balloon: *Today's client message: ${headline}*\nReady to send as-is. Copy below:`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "```\n" + safeBody + "\n```",
       },
     },
   ];
