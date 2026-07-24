@@ -1480,3 +1480,92 @@ html.light .adsv2 {
   cursor: pointer;
   font-family: inherit;
 }
+
+/* ── Ad video preview hovercard (pin + play, loads video only on click) ──── */
+.adsv2 .ad-name-preview {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-2);
+  text-underline-offset: 2px;
+}
+.adsv2 .ad-name-preview:hover {
+  text-decoration-color: var(--gold);
+}
+.adprev-card {
+  position: fixed;
+  z-index: 1000;
+  width: 340px;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.adprev-card.pinned {
+  border-color: var(--gold-dim, #a9823f);
+}
+.adprev-thumbwrap {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.adprev-media {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #000;
+}
+.adprev-nothumb {
+  padding: 48px 0;
+  text-align: center;
+  color: #8a8a90;
+  font-size: 12px;
+}
+.adprev-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.adprev-play:hover {
+  background: rgba(0, 0, 0, 0.72);
+}
+.adprev-play-tri {
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 17px solid #fff;
+  margin-left: 4px;
+}
+.adprev-note {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: #d8d8dc;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.adprev-name {
+  margin-top: 8px;
+  padding: 0 2px 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c8c8ce;
+  word-break: break-word;
+}

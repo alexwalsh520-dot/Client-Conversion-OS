@@ -14,6 +14,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { runBudgetSnapshot } from "./budget-sync";
 import { runFactsPass } from "./facts";
+import { runMediaSync } from "./media-sync";
 import { precomputeStandard } from "./precompute";
 import { bumpDataVersion, type Db } from "./db";
 
@@ -51,6 +52,8 @@ export interface SyncResult {
   factsError?: string;
   version?: number;
   precompute?: unknown;
+  media?: unknown;
+  mediaError?: string;
 }
 
 export async function runAdsV2Sync(now: Date = new Date()): Promise<SyncResult> {
@@ -81,6 +84,15 @@ export async function runAdsV2Sync(now: Date = new Date()): Promise<SyncResult> 
 
     // 4. Warm the standard matrix.
     result.precompute = await precomputeStandard(now);
+
+    // 5. Video media (isolated + budgeted). Downloads active video ads' durable
+    //    thumbnail + video file into our storage. Best-effort: a failure here
+    //    never affects the numbers already served, and it resumes next run.
+    try {
+      result.media = await runMediaSync(now);
+    } catch (err) {
+      result.mediaError = err instanceof Error ? err.message : String(err);
+    }
 
     return result;
   } finally {

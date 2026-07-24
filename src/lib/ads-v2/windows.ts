@@ -40,6 +40,8 @@ interface LeafRow {
   ad_status: string | null;
   campaign_status: string | null;
   preview_url: string | null;
+  video_url: string | null;
+  is_video: boolean;
   spend_cents: number;
   impressions: number;
   clicks: number;
@@ -304,6 +306,8 @@ function buildTree(
       status: l.has_spend ? (adActive ? "active" : "finished") : "empty",
       hasSpend: l.has_spend,
       previewImageUrl: l.preview_url || null,
+      videoUrl: l.video_url || null,
+      hasVideo: Boolean(l.is_video),
       callDetails: callDetailsByLeaf.get(leafKey) || null,
     };
     adset.children.push(adNode);
@@ -409,6 +413,8 @@ function makeNode(input: {
     hasSpend: false,
     budget: input.budget,
     previewImageUrl: null,
+    videoUrl: null,
+    hasVideo: false,
     callDetails: null,
     children: [],
   };

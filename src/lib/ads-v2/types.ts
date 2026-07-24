@@ -71,6 +71,11 @@ export interface AdsV2Node extends BaseMetrics {
   hasSpend: boolean;
   budget: BudgetInfo | null;
   previewImageUrl: string | null;
+  // The durable video file URL for a video ad (our storage), and whether this
+  // ad is a video at all. The table never preloads the video; it loads only on
+  // play. A video ad with no stored file yet shows its thumbnail + a note.
+  videoUrl: string | null;
+  hasVideo: boolean;
   /** Named records behind the call metrics, for hovers. */
   callDetails: { booked: CallDetail[]; taken: CallDetail[] } | null;
   children: AdsV2Node[];

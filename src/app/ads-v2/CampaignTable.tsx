@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
 import { EMPTY_BASE, addBase, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
 import { formatCell, sortValue, fmtMD } from "./format";
@@ -427,16 +428,8 @@ function NodeRows({
               <span className="chevron" />
             )}
             <span className={`camp-dot ${dotClass}`} />
-            {node.level === "ad" && node.previewImageUrl ? (
-              <span
-                className="camp-name ad-name-preview"
-                title={node.name}
-                onMouseEnter={(e) => onHover(e, { kind: "preview", imageUrl: node.previewImageUrl! })}
-                onMouseMove={(e) => onHover(e, { kind: "preview", imageUrl: node.previewImageUrl! })}
-                onMouseLeave={onClearHover}
-              >
-                {node.shortName || node.name}
-              </span>
+            {node.level === "ad" && (node.previewImageUrl || node.hasVideo) ? (
+              <AdNamePreview node={node} />
             ) : (
               <span className="camp-name" title={node.name}>
                 {node.shortName || node.name}
@@ -488,6 +481,133 @@ function NodeRows({
             onClearHover={onClearHover}
           />
         ))}
+    </>
+  );
+}
+
+// The ad-name video preview. The card stays open while the pointer is over the
+// name OR the card, with a short grace while traveling between them. Clicking
+// the name pins the card and reveals a play button; Escape or a click outside
+// closes it. The video file loads ONLY when play is clicked; an uncached video
+// shows the high-res thumbnail plus a "video not cached yet" note.
+const PREVIEW_GRACE_MS = 250;
+
+function AdNamePreview({ node }: { node: AdsV2Node }) {
+  const nameRef = useRef<HTMLSpanElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const thumb = node.previewImageUrl;
+  const video = node.videoUrl;
+  const isVideo = node.hasVideo;
+
+  const place = () => {
+    const r = nameRef.current?.getBoundingClientRect();
+    if (r) setPos({ left: Math.min(r.left, window.innerWidth - 380), top: r.bottom + 8 });
+  };
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    if (pinned) return;
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), PREVIEW_GRACE_MS);
+  };
+  const openNow = () => {
+    cancelClose();
+    place();
+    setOpen(true);
+  };
+  const pin = () => {
+    place();
+    setOpen(true);
+    setPinned(true);
+  };
+  const close = () => {
+    cancelClose();
+    setOpen(false);
+    setPinned(false);
+    setPlaying(false);
+  };
+
+  // Escape + click-outside close the pinned card.
+  useEffect(() => {
+    if (!pinned) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (nameRef.current?.contains(t)) return;
+      const card = document.getElementById(`adprev-${node.id}`);
+      if (card?.contains(t)) return;
+      close();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned, node.id]);
+
+  useEffect(() => () => cancelClose(), []);
+
+  const card =
+    open && pos
+      ? createPortal(
+          <div
+            id={`adprev-${node.id}`}
+            className={`adprev-card${pinned ? " pinned" : ""}`}
+            style={{ left: pos.left, top: pos.top }}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+          >
+            {playing && video ? (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video className="adprev-media" src={video} controls autoPlay />
+            ) : (
+              <div className="adprev-thumbwrap">
+                {thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="adprev-media" src={thumb} alt="Ad creative" />
+                ) : (
+                  <div className="adprev-nothumb">No preview</div>
+                )}
+                {isVideo && video && (
+                  <button className="adprev-play" onClick={() => setPlaying(true)} aria-label="Play video">
+                    <span className="adprev-play-tri" />
+                  </button>
+                )}
+                {isVideo && !video && <div className="adprev-note">Video not cached yet</div>}
+              </div>
+            )}
+            <div className="adprev-name">{node.name}</div>
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
+      <span
+        ref={nameRef}
+        className="camp-name ad-name-preview"
+        title={node.name}
+        onMouseEnter={openNow}
+        onMouseLeave={scheduleClose}
+        onClick={pin}
+      >
+        {node.shortName || node.name}
+      </span>
+      {card}
     </>
   );
 }
