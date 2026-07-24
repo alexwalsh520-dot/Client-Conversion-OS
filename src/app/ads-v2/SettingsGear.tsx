@@ -21,9 +21,13 @@ export default function SettingsGear({ payload }: { payload: AdsV2Payload | null
 
   return (
     <>
-      <button className="icon-btn" title="Settings" onClick={() => setOpen(true)}>
-        <span className="lbl">Settings</span>
-        <span>⚙</span>
+      <button
+        className="icon-btn gear-btn"
+        title="Settings"
+        aria-label="Settings"
+        onClick={() => setOpen(true)}
+      >
+        ⚙
       </button>
       {open && (
         <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>

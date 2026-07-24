@@ -126,6 +126,14 @@ html.light .adsv2 {
 .adsv2 .icon-btn:hover {
   background: var(--panel-2);
 }
+/* Settings is a plain square gear button, no label. */
+.adsv2 .gear-btn {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--text-2);
+}
 .adsv2 .filter-btn.open {
   background: var(--panel-2);
   border-color: var(--focus);
@@ -318,11 +326,28 @@ html.light .adsv2 {
   overflow-y: visible;
 }
 .adsv2 table.ads {
-  width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
-  min-width: 2000px;
+  /* Fixed layout so per-column widths are honored exactly: dragging a column
+     narrower clips its text (cells are nowrap + ellipsis), never wraps it. The
+     overall width is set inline from the sum of the column widths. */
+  table-layout: fixed;
+}
+/* draggable column resize handle on every header, ported from v1 */
+.adsv2 .col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 4;
+}
+.adsv2 .col-resize:hover,
+.adsv2 table.ads thead th .col-resize.active {
+  background: linear-gradient(90deg, transparent, var(--gold) 50%, transparent);
 }
 .adsv2 table.ads thead th {
   position: sticky;
@@ -336,6 +361,7 @@ html.light .adsv2 {
   color: var(--text-3);
   font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
   border-bottom: 1px solid var(--border-2);
   z-index: 2;
 }
@@ -364,6 +390,25 @@ html.light .adsv2 {
   color: var(--gold-dim);
 }
 .adsv2 table.ads tbody td.calc {
+  background: var(--bg-1);
+}
+/* Per-row calc backgrounds, ported verbatim from v1. The calc tint only shows
+   on campaign rows; ad, ad-set, and total rows keep the plain row background,
+   so at ad level the derived columns are not darker than the rest. */
+.adsv2 table.ads tbody tr.campaign-row td.calc {
+  background: var(--bg-1);
+}
+.adsv2 table.ads tbody tr.adset-row td.calc,
+.adsv2 table.ads tbody tr.ad-row td.calc,
+.adsv2 table.ads tbody tr.total-row td.calc {
+  background: var(--bg);
+}
+.adsv2 table.ads tbody tr:hover td.calc,
+.adsv2 table.ads tbody tr.campaign-row:hover td.calc,
+.adsv2 table.ads tbody tr.adset-row:hover td.calc {
+  background: var(--panel);
+}
+.adsv2 table.ads tbody tr.ad-row:hover td.calc {
   background: var(--bg-1);
 }
 .adsv2 table.ads tbody td {

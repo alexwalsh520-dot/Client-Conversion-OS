@@ -25,6 +25,34 @@ const LEVELS: { id: AdsV2Level; label: string }[] = [
   { id: "ad", label: "Ad level" },
 ];
 
+// Starting column widths (px). Users can drag any header (including the first)
+// to resize; dragging narrower clips the text rather than wrapping it.
+const DEFAULT_WIDTHS: Record<string, number> = {
+  name: 300,
+  budget: 110,
+  spend: 110,
+  impressions: 120,
+  cpm: 90,
+  clicks: 110,
+  ctr: 90,
+  cpc: 90,
+  messages: 110,
+  costPerMessage: 130,
+  booked: 130,
+  costPerBooked: 150,
+  taken: 130,
+  costPerTaken: 150,
+  showRate: 110,
+  newClients: 120,
+  closeRate: 120,
+  msgToCall: 120,
+  collected: 150,
+  costPerClient: 130,
+  collectedRoi: 140,
+};
+const ALL_COL_KEYS: string[] = ["name", ...METRIC_COLUMNS.map((c) => c.key)];
+const MIN_COL_WIDTH = 60;
+
 export default function CampaignTable({
   payload,
   level,
@@ -39,6 +67,29 @@ export default function CampaignTable({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [widths, setWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS);
+  const [resizingKey, setResizingKey] = useState<string | null>(null);
+
+  // Drag a header's right edge to resize that column (v1's behavior).
+  const startResize = (key: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widths[key] ?? DEFAULT_WIDTHS[key] ?? 120;
+    setResizingKey(key);
+    const onMove = (ev: MouseEvent) => {
+      const newW = Math.max(MIN_COL_WIDTH, startW + (ev.clientX - startX));
+      setWidths((w) => ({ ...w, [key]: newW }));
+    };
+    const onUp = () => {
+      setResizingKey(null);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  const tableWidth = ALL_COL_KEYS.reduce((sum, k) => sum + (widths[k] ?? DEFAULT_WIDTHS[k] ?? 120), 0);
 
   // Top-level rows depend on the chosen level. The tree itself is always
   // campaign -> ad set -> ad; the level just picks the starting grain.
@@ -133,7 +184,12 @@ export default function CampaignTable({
         </div>
       </div>
       <div className="tbl-scroll">
-        <table className="ads">
+        <table className="ads" style={{ width: tableWidth }}>
+          <colgroup>
+            {ALL_COL_KEYS.map((k) => (
+              <col key={k} style={{ width: widths[k] ?? DEFAULT_WIDTHS[k] ?? 120 }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th>
@@ -147,6 +203,11 @@ export default function CampaignTable({
                   />
                   {firstColLabel}
                 </span>
+                <span
+                  className={`col-resize${resizingKey === "name" ? " active" : ""}`}
+                  onMouseDown={(e) => startResize("name", e)}
+                  onClick={(e) => e.stopPropagation()}
+                />
               </th>
               {METRIC_COLUMNS.map((col) => {
                 const sorted = sortKey === col.key;
@@ -168,6 +229,11 @@ export default function CampaignTable({
                       ⓘ
                     </span>
                     <span className="sort-arrow">{arrow}</span>
+                    <span
+                      className={`col-resize${resizingKey === col.key ? " active" : ""}`}
+                      onMouseDown={(e) => startResize(col.key, e)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
                 );
               })}
