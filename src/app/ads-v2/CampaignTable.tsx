@@ -254,17 +254,19 @@ function NodeRows({
               <span className="chevron" />
             )}
             <span className={`camp-dot ${dotClass}`} />
-            <span className="camp-name" title={node.name}>
-              {node.shortName || node.name}
-            </span>
-            {node.level === "ad" && node.previewImageUrl && (
+            {node.level === "ad" && node.previewImageUrl ? (
               <span
-                className="ad-preview-trigger"
+                className="camp-name ad-name-preview"
+                title={node.name}
                 onMouseEnter={(e) => onHover(e, { kind: "preview", imageUrl: node.previewImageUrl! })}
                 onMouseMove={(e) => onHover(e, { kind: "preview", imageUrl: node.previewImageUrl! })}
                 onMouseLeave={onClearHover}
               >
-                🖼
+                {node.shortName || node.name}
+              </span>
+            ) : (
+              <span className="camp-name" title={node.name}>
+                {node.shortName || node.name}
               </span>
             )}
             {hasChildren && <span className="ad-count-chip">{childCount(node)} ads</span>}

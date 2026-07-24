@@ -203,8 +203,8 @@ export const COLUMNS: readonly ColumnDef[] = [
   },
   {
     key: "collectedRoi",
-    label: "Collected ROI",
-    sentence: "The cash collected for every dollar of ad spend.",
+    label: "Collected ROAS",
+    sentence: "The cash collected for every dollar of ad spend, shown as a multiple.",
     source: "Collected revenue divided by ad spend.",
     format: "ratio2",
     calc: true,

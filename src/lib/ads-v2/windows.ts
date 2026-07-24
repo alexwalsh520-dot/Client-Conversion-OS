@@ -12,10 +12,7 @@ import { creatorCurrency } from "@/lib/fx/rates";
 import { displayKeyword } from "./keyword";
 import { groupBookingsByPerson, type BookingRecord } from "./attribution";
 import { fetchAllRows, type Db } from "./db";
-import {
-  ADSV2_SERVED_CLIENTS,
-  salesCalendarIdsForClient,
-} from "./config";
+import { ADSV2_SERVED_CLIENTS } from "./config";
 import {
   EMPTY_BASE,
   addBase,
@@ -467,19 +464,10 @@ async function loadHoverDetails(
   return callDetailsByLeaf;
 }
 
-function buildNotices(clients: CreatorKey[], leaves: LeafRow[]): string[] {
-  const notices: string[] = [];
-  for (const client of clients) {
-    const name = CREATORS_BY_KEY[client]?.name || client;
-    const rows = leaves.filter((l) => l.client_key === client);
-    const hasSpend = rows.some((l) => l.has_spend);
-    const hasFunnel = rows.some((l) => l.messages || l.booked || l.taken_rows || l.collected_usd_cents);
-    const hasCalendar = salesCalendarIdsForClient(client).length > 0;
-    if (hasSpend && !hasFunnel && !hasCalendar) {
-      notices.push(`${name}: ad spend is flowing, but no booking or sales tracking is connected yet.`);
-    }
-  }
-  return notices;
+function buildNotices(_clients: CreatorKey[], _leaves: LeafRow[]): string[] {
+  // No explanatory banners. Every account's rows render from whatever data
+  // exists; missing funnel data simply shows as zeros and dashes.
+  return [];
 }
 
 async function loadFreshness(db: Db, clients: CreatorKey[]): Promise<AdsV2Payload["freshness"]> {

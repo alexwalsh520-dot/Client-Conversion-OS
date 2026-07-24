@@ -36,22 +36,23 @@ export async function runSelfCheck(now: Date = new Date()): Promise<SelfCheckRep
   const factFloor = rangeForPreset("last30", etDay).from;
 
   try {
-    // ── Gate: zero unmarked (non-ET) spend rows in any served window ────────
+    // ── Gate: ZERO unmarked (non-ET) spend rows for any served client, ever ─
+    // Uses `is distinct from` under the hood (adsv2_unmarked_served_spend) so a
+    // NULL marker is caught too; a plain <> would silently skip NULL rows. This
+    // covers all served rows, not just the last 30 days, so any window a served
+    // client can select is guaranteed ET-clean.
     {
-      const { count } = await db
-        .from("ads_meta_insights_daily")
-        .select("id", { count: "exact", head: true })
-        .in("client_key", clients)
-        .neq("raw_payload->>reporting_timezone", "America/New_York")
-        .gte("date", factFloor);
-      const unmarked = count || 0;
+      const { data: unmarkedCount } = await db.rpc("adsv2_unmarked_served_spend", {
+        p_clients: clients,
+      });
+      const unmarked = Number(unmarkedCount ?? 0);
       gates.unmarkedSpendRows = unmarked;
       if (unmarked > 0) {
         findings.push({
           type: "unmarked_spend",
           severity: "error",
           clientKey: null,
-          detail: { rows: unmarked, since: factFloor },
+          detail: { rows: unmarked, note: "served-client spend rows lacking the America/New_York marker" },
           dedupeKey: `unmarked_spend|${etDay}`,
         });
       }

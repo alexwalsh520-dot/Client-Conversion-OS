@@ -30,21 +30,69 @@ function int(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-// Green/red/dim thresholds in the spirit of v1: healthy vs costly.
-function classFor(key: string, base: BaseMetrics): CellClass {
-  const d = derive(base);
+// Per-column color thresholds ported verbatim from v1's `cols` array (the cls
+// functions in public/ads-tracker-export.html), converted to v2 units:
+// v1 dollars -> cents, v1 percent (0-100) -> fraction (0-1), ROAS multiple as-is.
+// So every column's text color matches v1 at every level.
+function classFor(key: string, node: AdsV2Node): CellClass {
+  const d = derive(node);
   switch (key) {
-    case "cpm":
-      return d.cpmCents == null ? "dim" : d.cpmCents <= 700 ? "pos" : d.cpmCents >= 1000 ? "neg" : "";
-    case "cpc":
-      return d.cpcCents == null ? "dim" : d.cpcCents <= 150 ? "pos" : d.cpcCents >= 400 ? "neg" : "";
-    case "collectedRoi":
-      return d.collectedRoi == null ? "dim" : d.collectedRoi >= 2 ? "pos" : d.collectedRoi < 1 ? "neg" : "";
-    case "showRate":
-      return d.showRate == null ? "dim" : d.showRate >= 0.6 ? "pos" : d.showRate < 0.4 ? "neg" : "";
-    case "closeRate":
-      return d.closeRate == null ? "dim" : d.closeRate >= 0.3 ? "pos" : "";
-    default:
+    case "cpm": // v1: <=$7 pos, >=$10 neg, else dim
+      return d.cpmCents == null ? "dim" : d.cpmCents <= 700 ? "pos" : d.cpmCents >= 1000 ? "neg" : "dim";
+    case "ctr": // v1: >=2% pos, <1.7% neg
+      return d.ctr == null ? "" : d.ctr >= 0.02 ? "pos" : d.ctr < 0.017 ? "neg" : "";
+    case "cpc": // v1: <=$0.35 pos, >=$0.45 neg
+      return d.cpcCents == null ? "" : d.cpcCents <= 35 ? "pos" : d.cpcCents >= 45 ? "neg" : "";
+    case "costPerMessage": // v1 cpMsg: <=$5 pos, >=$6.5 neg
+      return d.costPerMessageCents == null
+        ? ""
+        : d.costPerMessageCents <= 500
+          ? "pos"
+          : d.costPerMessageCents >= 650
+            ? "neg"
+            : "";
+    case "costPerBooked": // v1 cpCall: <=$30 pos, >=$40 neg (only when set)
+      return d.costPerBookedCents
+        ? d.costPerBookedCents <= 3000
+          ? "pos"
+          : d.costPerBookedCents >= 4000
+            ? "neg"
+            : ""
+        : "";
+    case "costPerTaken": // v1 cpTaken: <=$45 pos, >=$70 neg (only when set)
+      return d.costPerTakenCents
+        ? d.costPerTakenCents <= 4500
+          ? "pos"
+          : d.costPerTakenCents >= 7000
+            ? "neg"
+            : ""
+        : "";
+    case "showRate": {
+      // v1: due = booked - upcoming; if due<=0 return ""; v = min(100, taken/due*100)
+      const due = node.booked - node.upcoming;
+      if (due <= 0) return "";
+      const v = Math.min(1, node.takenPeople / due);
+      return v >= 0.5 ? "pos" : v < 0.3 ? "neg" : "";
+    }
+    case "newClients": // v1 clients: >=5 pos, <=2 neg
+      return node.newClients >= 5 ? "pos" : node.newClients <= 2 ? "neg" : "";
+    case "closeRate": // v1 closing: >=40% pos, <=25% neg
+      return d.closeRate == null ? "" : d.closeRate >= 0.4 ? "pos" : d.closeRate <= 0.25 ? "neg" : "";
+    case "msgToCall": // v1 msgConv: >=15% pos, <=12% neg
+      return d.msgToCall == null ? "" : d.msgToCall >= 0.15 ? "pos" : d.msgToCall <= 0.12 ? "neg" : "";
+    case "collected": // v1: always green
+      return "pos";
+    case "costPerClient": // v1 cpClient: <=$80 pos, >=$120 neg (only when set)
+      return d.costPerClientCents
+        ? d.costPerClientCents <= 8000
+          ? "pos"
+          : d.costPerClientCents >= 12000
+            ? "neg"
+            : ""
+        : "";
+    case "collectedRoi": // v1 collectedRoi: >=20 pos, <=10 neg
+      return d.collectedRoi == null ? "" : d.collectedRoi >= 20 ? "pos" : d.collectedRoi <= 10 ? "neg" : "";
+    default: // spend, impressions, clicks, messages, booked, taken, budget, name
       return "";
   }
 }
@@ -129,7 +177,9 @@ export function formatCell(key: string, node: AdsV2Node): Cell {
       text = DASH;
   }
 
-  const cls = text === DASH ? "dim" : classFor(key, base);
+  // v1 applies each column's cls regardless of whether the value is a dash, so
+  // the color logic (which already handles nulls per column) decides directly.
+  const cls = classFor(key, node);
   return { text, cls, isCalc };
 }
 

@@ -518,14 +518,12 @@ html.light .adsv2 {
   cursor: pointer;
   flex: none;
 }
-.adsv2 .ad-preview-trigger {
+/* ad name doubles as the creative-preview trigger at ad level */
+.adsv2 .ad-name-preview {
   cursor: zoom-in;
-  font-size: 12px;
-  opacity: 0.7;
-  flex: none;
 }
-.adsv2 .ad-preview-trigger:hover {
-  opacity: 1;
+.adsv2 .ad-name-preview:hover {
+  color: var(--text-1);
 }
 .adsv2 .budget-cell {
   color: var(--text);

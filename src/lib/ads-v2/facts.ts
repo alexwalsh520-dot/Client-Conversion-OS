@@ -128,13 +128,16 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     organicSet.get(client)?.has(kw) ?? false;
   const spendDaysFor = (client: string, kw: string) => spendDays.get(client)?.get(kw) ?? [];
 
-  // GHL contact_id -> ManyChat subscriber_id bridge (served clients).
+  // GHL contact_id -> ManyChat subscriber_id bridge. NOT filtered by client:
+  // manychat_contact_links.client is stored in the long form (tyson_sonnek,
+  // jake_...), not the short key, so filtering by ['tyson','jake'] matched
+  // nothing and left dm_et_day null on every booking. A ghl_contact_id is
+  // globally unique, so we bridge on it directly.
   const bridgeRows = await fetchAllRows<{ ghl_contact_id: string | null; subscriber_id: string | null }>(
     (from, to) =>
       db
         .from("manychat_contact_links")
         .select("ghl_contact_id, subscriber_id")
-        .in("client", [...served])
         .order("ghl_contact_id", { ascending: true })
         .range(from, to),
   );
