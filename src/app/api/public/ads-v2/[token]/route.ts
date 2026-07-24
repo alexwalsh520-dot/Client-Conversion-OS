@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { isCreatorKey } from "@/lib/creators";
-import { serveWindow, prepareWindow } from "@/lib/ads-v2/serve";
+import { serveWindow, serveMetrics, prepareWindow } from "@/lib/ads-v2/serve";
 import { rangeForPreset, todayEt, type PresetId } from "@/lib/ads-v2/time";
 import type { AdsV2Account, AdsV2Query, AdsV2Status } from "@/lib/ads-v2/types";
 import { ADSV2_SERVED_CLIENTS } from "@/lib/ads-v2/config";
@@ -130,6 +130,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     dateFrom,
     dateTo,
   };
+
+  // The Metrics slice (charts + cards), same token-scoped snapshot path.
+  if (sp.get("section") === "metrics") {
+    try {
+      const { payload, prepared } = await serveMetrics(query);
+      if (!prepared) {
+        after(async () => {
+          try {
+            await prepareWindow(query);
+          } catch {
+            /* retried on next request or cron */
+          }
+        });
+      }
+      return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed" },
+        { status: 500, headers: NO_STORE_HEADERS },
+      );
+    }
+  }
 
   try {
     const { payload, prepared } = await serveWindow(query);

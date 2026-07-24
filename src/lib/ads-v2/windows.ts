@@ -18,12 +18,14 @@ import {
   EMPTY_BASE,
   addBase,
   type AdsV2Account,
+  type AdsV2MetricsPayload,
   type AdsV2Node,
   type AdsV2Payload,
   type AdsV2Query,
   type BaseMetrics,
   type BudgetInfo,
   type CallDetail,
+  type MetricsDay,
 } from "./types";
 
 interface LeafRow {
@@ -137,6 +139,76 @@ export async function buildWindow(query: AdsV2Query, dataVersion: number): Promi
     notices,
     generatedAt: new Date().toISOString(),
     computeMs: Date.now() - started,
+  };
+}
+
+interface DayRow {
+  et_day: string;
+  spend_cents: number;
+  impressions: number;
+  clicks: number;
+  messages: number;
+  booked: number;
+  taken: number;
+  new_clients: number;
+  collected_usd_cents: number;
+}
+
+// The Metrics-card day series. Same account/window/status filters and the same
+// DB (set-based) work as the table; run in the precompute job, never a request.
+// Its total equals the table payload's total by construction.
+export async function buildDaySeries(
+  query: AdsV2Query,
+  dataVersion: number,
+): Promise<AdsV2MetricsPayload> {
+  const db = getServiceSupabase();
+  const clients = clientsForAccount(query.account);
+  let days: MetricsDay[] = [];
+  if (clients.length > 0) {
+    const { data, error } = await db.rpc("adsv2_window_days", {
+      p_clients: clients,
+      p_from: query.dateFrom,
+      p_to: query.dateTo,
+      p_currency: currencyMap(clients),
+    });
+    if (error) throw new Error(`adsv2_window_days failed: ${error.message}`);
+    days = ((data || []) as DayRow[]).map((d) => ({
+      day: d.et_day,
+      spendCents: d.spend_cents,
+      impressions: d.impressions,
+      clicks: d.clicks,
+      messages: d.messages,
+      booked: d.booked,
+      taken: d.taken,
+      newClients: d.new_clients,
+      collectedCents: d.collected_usd_cents,
+    }));
+  }
+  // Total over the union of days (base sums), so the cards' big numbers derive
+  // exactly like the table's TOTAL row.
+  let total: BaseMetrics = EMPTY_BASE;
+  for (const d of days) {
+    total = addBase(total, {
+      ...EMPTY_BASE,
+      spendCents: d.spendCents,
+      impressions: d.impressions,
+      clicks: d.clicks,
+      messages: d.messages,
+      booked: d.booked,
+      taken: d.taken,
+      newClients: d.newClients,
+      collectedCents: d.collectedCents,
+    });
+  }
+  return {
+    account: query.account,
+    status: query.status,
+    dateFrom: query.dateFrom,
+    dateTo: query.dateTo,
+    dataVersion,
+    days,
+    total,
+    generatedAt: new Date().toISOString(),
   };
 }
 

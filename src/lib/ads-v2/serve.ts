@@ -14,8 +14,8 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { getDataVersion, type Db } from "./db";
-import { buildWindow } from "./windows";
-import { EMPTY_BASE, type AdsV2Payload, type AdsV2Query } from "./types";
+import { buildWindow, buildDaySeries } from "./windows";
+import { EMPTY_BASE, type AdsV2MetricsPayload, type AdsV2Payload, type AdsV2Query } from "./types";
 
 // Level is a view concern (which rows are shown first); the data is the full
 // campaign tree, so snapshots are stored once per account/window/status.
@@ -88,6 +88,12 @@ export async function prepareWindow(query: AdsV2Query): Promise<void> {
 
 export async function computeAndStore(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload> {
   const payload = await buildWindow(query, version);
+  // The Metrics slice is built and stored in the SAME row at the SAME version,
+  // so the cards and the table can never disagree. Its total is the table's
+  // total (window-distinct people), so every card's big number matches the
+  // table's TOTAL row; the day series drives only the chart shape.
+  const metrics = await buildDaySeries(query, version);
+  metrics.total = payload.total;
   await db.from("adsv2_window_snapshots").upsert(
     {
       account: query.account,
@@ -97,12 +103,50 @@ export async function computeAndStore(db: Db, query: AdsV2Query, version: number
       status: query.status,
       data_version: version,
       payload: payload as unknown as object,
+      metrics_payload: metrics as unknown as object,
       compute_ms: payload.computeMs,
       computed_at: new Date().toISOString(),
     },
     { onConflict: "account,date_from,date_to,level,status" },
   );
   return payload;
+}
+
+/**
+ * THE METRICS READ PATH. One indexed SELECT of the metrics slice stored beside
+ * the table snapshot. On a hit at the current version, return it; on a miss,
+ * return a "preparing" slice and schedule the same background build the table
+ * uses (computeAndStore builds both). Never computes on the request path.
+ */
+export async function serveMetrics(query: AdsV2Query): Promise<{ payload: AdsV2MetricsPayload; prepared: boolean }> {
+  const db = getServiceSupabase();
+  const version = await getDataVersion(db);
+  const { data } = await db
+    .from("adsv2_window_snapshots")
+    .select("metrics_payload, data_version")
+    .eq("account", query.account)
+    .eq("date_from", query.dateFrom)
+    .eq("date_to", query.dateTo)
+    .eq("level", SNAPSHOT_LEVEL)
+    .eq("status", query.status)
+    .maybeSingle();
+  if (data?.metrics_payload && Number(data.data_version) === version) {
+    return { payload: data.metrics_payload as AdsV2MetricsPayload, prepared: true };
+  }
+  return {
+    payload: {
+      account: query.account,
+      status: query.status,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      dataVersion: version,
+      days: [],
+      total: { ...EMPTY_BASE },
+      generatedAt: new Date().toISOString(),
+      preparing: true,
+    },
+    prepared: false,
+  };
 }
 
 function preparingPayload(query: AdsV2Query, version: number): AdsV2Payload {

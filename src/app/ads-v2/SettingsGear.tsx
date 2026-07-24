@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { buildHowItWorks } from "@/lib/ads-v2/definitions";
+import { CARD_DEFS } from "@/lib/ads-v2/cards";
 import type { AdsV2Payload } from "@/lib/ads-v2/types";
 import { IcGear } from "./icons";
 
@@ -349,6 +350,19 @@ function HowItWorks({ payload }: { payload: AdsV2Payload | null }) {
             <div className="legend-def">
               {col.sentence}
               <span className="legend-src">Source: {col.source}</span>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section className="legend-section">
+        <h4 className="legend-h">What each metrics card means</h4>
+        {CARD_DEFS.map((card) => (
+          <div className="legend-row" key={card.id}>
+            <div className="legend-term">{card.label}</div>
+            <div className="legend-def">
+              {card.sentence}
+              <span className="legend-src">Source: {card.source}</span>
             </div>
           </div>
         ))}

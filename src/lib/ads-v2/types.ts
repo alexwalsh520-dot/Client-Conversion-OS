@@ -107,6 +107,35 @@ export interface AdsV2Payload {
   preparing?: boolean;
 }
 
+/** One Eastern-time day of the metrics-card series. Base counts only; every
+ *  chart's derived value is a formula over these, matching the table. */
+export interface MetricsDay {
+  day: string; // ET day YYYY-MM-DD
+  spendCents: number;
+  impressions: number;
+  clicks: number;
+  messages: number;
+  booked: number;
+  taken: number;
+  newClients: number;
+  collectedCents: number;
+}
+
+/** The Metrics section's slice, stored beside the table snapshot at the SAME
+ *  data_version. Fetched lazily after the table paints; its `total` equals the
+ *  table payload's total by construction, so the cards and table always agree. */
+export interface AdsV2MetricsPayload {
+  account: AdsV2Account;
+  status: AdsV2Status;
+  dateFrom: string;
+  dateTo: string;
+  dataVersion: number;
+  days: MetricsDay[];
+  total: BaseMetrics;
+  generatedAt: string;
+  preparing?: boolean;
+}
+
 export const EMPTY_BASE: BaseMetrics = {
   spendCents: 0,
   impressions: 0,

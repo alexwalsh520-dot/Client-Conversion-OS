@@ -5,6 +5,7 @@ import { rangeForPreset, todayEt, type DayRange, type PresetId } from "@/lib/ads
 import type { AdsV2Account, AdsV2Level, AdsV2Payload, AdsV2Status } from "@/lib/ads-v2/types";
 import { AccountDropdown, DateDropdown, StatusSegmented } from "./controls";
 import CampaignTable from "./CampaignTable";
+import MetricsBoard from "./MetricsBoard";
 import SettingsGear from "./SettingsGear";
 
 function keyOf(account: AdsV2Account, status: AdsV2Status, range: DayRange): string {
@@ -168,7 +169,17 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
           </div>
         </div>
       ) : payload && payload.campaigns.length > 0 ? (
-        <CampaignTable payload={payload} level={level} onLevelChange={setLevel} />
+        <>
+          <CampaignTable payload={payload} level={level} onLevelChange={setLevel} />
+          <MetricsBoard
+            publicToken={publicToken}
+            account={account}
+            status={status}
+            dateFrom={range.from}
+            dateTo={range.to}
+            tableVersion={payload.dataVersion}
+          />
+        </>
       ) : (
         <div className="panel">
           <div className="empty-state">
