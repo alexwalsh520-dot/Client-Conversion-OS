@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
-import { EMPTY_BASE, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
+import { EMPTY_BASE, addBase, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
 import { formatCell, sortValue, fmtMD } from "./format";
 
 type SortDir = "asc" | "desc" | null;
@@ -53,6 +53,52 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const ALL_COL_KEYS: string[] = ["name", ...METRIC_COLUMNS.map((c) => c.key)];
 const MIN_COL_WIDTH = 60;
 
+// Name column auto-fit bounds: never narrower than this, never wider than the
+// sane max (past which we let the drag handle take over).
+const NAME_MIN_WIDTH = 180;
+const NAME_MAX_WIDTH = 560;
+// Fixed chrome in the name cell (checkbox, chevron, dot, ads chip, status pill,
+// cell padding) that sits beside the name text, plus the deepest indent.
+const NAME_CHROME = 132;
+
+// Measure text width once, with a canvas, in the table's body font. Deterministic
+// and viewer-independent (no layout thrash), so auto-fit is stable.
+let _measureCtx: CanvasRenderingContext2D | null = null;
+function measureText(text: string): number {
+  if (typeof document === "undefined") return text.length * 7;
+  if (!_measureCtx) {
+    const c = document.createElement("canvas");
+    _measureCtx = c.getContext("2d");
+    if (_measureCtx) _measureCtx.font = "500 13px Inter, system-ui, sans-serif";
+  }
+  return _measureCtx ? _measureCtx.measureText(text).width : text.length * 7;
+}
+
+// Every name that can appear at this level (the level's rows plus the children
+// that expand under them), so auto-fit fits the longest visible name.
+function namesForLevel(campaigns: AdsV2Node[], level: AdsV2Level): string[] {
+  const out: string[] = [];
+  const push = (n: AdsV2Node) => out.push(n.shortName || n.name || "");
+  if (level === "campaign") {
+    for (const c of campaigns) {
+      push(c);
+      for (const a of c.children) {
+        push(a);
+        for (const ad of a.children) push(ad);
+      }
+    }
+  } else if (level === "adset") {
+    for (const c of campaigns)
+      for (const a of c.children) {
+        push(a);
+        for (const ad of a.children) push(ad);
+      }
+  } else {
+    for (const c of campaigns) for (const a of c.children) for (const ad of a.children) push(ad);
+  }
+  return out;
+}
+
 export default function CampaignTable({
   payload,
   level,
@@ -69,17 +115,41 @@ export default function CampaignTable({
   const [hover, setHover] = useState<HoverState | null>(null);
   const [widths, setWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS);
   const [resizingKey, setResizingKey] = useState<string | null>(null);
+  // The name column defaults to auto-fit (full text) per level. A manual drag
+  // pins a chosen width for THAT level; double-clicking the handle clears it and
+  // auto-fit takes over again. Auto-fit re-runs on level/filter change unless a
+  // level was manually sized.
+  const [nameWidthByLevel, setNameWidthByLevel] = useState<Partial<Record<AdsV2Level, number>>>({});
 
-  // Drag a header's right edge to resize that column (v1's behavior).
+  // Auto-fit width for the current level: the longest visible name plus chrome,
+  // clamped to sane bounds. Re-computed when the level or the data changes.
+  const nameAutoFit = useMemo(() => {
+    const names = namesForLevel(payload.campaigns, level);
+    let longest = 0;
+    for (const n of names) longest = Math.max(longest, measureText(n));
+    const indent = level === "ad" ? 44 : level === "adset" ? 22 : 0;
+    return Math.min(NAME_MAX_WIDTH, Math.max(NAME_MIN_WIDTH, Math.ceil(longest) + NAME_CHROME + indent));
+  }, [payload.campaigns, level]);
+
+  const nameWidth = nameWidthByLevel[level] ?? nameAutoFit;
+  const widthFor = useCallback(
+    (k: string) => (k === "name" ? nameWidth : widths[k] ?? DEFAULT_WIDTHS[k] ?? 120),
+    [nameWidth, widths],
+  );
+
+  // Drag a header's right edge to resize that column (v1's behavior). Resizing
+  // the name column pins that width for the current level (manual override).
   const startResize = (key: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startW = widths[key] ?? DEFAULT_WIDTHS[key] ?? 120;
+    const startW = widthFor(key);
     setResizingKey(key);
     const onMove = (ev: MouseEvent) => {
-      const newW = Math.max(MIN_COL_WIDTH, startW + (ev.clientX - startX));
-      setWidths((w) => ({ ...w, [key]: newW }));
+      const minW = key === "name" ? MIN_COL_WIDTH : MIN_COL_WIDTH;
+      const newW = Math.max(minW, startW + (ev.clientX - startX));
+      if (key === "name") setNameWidthByLevel((m) => ({ ...m, [level]: newW }));
+      else setWidths((w) => ({ ...w, [key]: newW }));
     };
     const onUp = () => {
       setResizingKey(null);
@@ -89,15 +159,40 @@ export default function CampaignTable({
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
-  const tableWidth = ALL_COL_KEYS.reduce((sum, k) => sum + (widths[k] ?? DEFAULT_WIDTHS[k] ?? 120), 0);
+  // Double-click the name handle resets that level back to auto-fit.
+  const resetNameWidth = () =>
+    setNameWidthByLevel((m) => {
+      const next = { ...m };
+      delete next[level];
+      return next;
+    });
+  const tableWidth = ALL_COL_KEYS.reduce((sum, k) => sum + widthFor(k), 0);
 
-  // Top-level rows depend on the chosen level. The tree itself is always
-  // campaign -> ad set -> ad; the level just picks the starting grain.
+  // Top-level rows depend on the chosen level AND the current selection. The
+  // tree is always campaign -> ad set -> ad; the level picks the starting grain.
+  // A selection at a higher grain SCOPES the lower levels to the selected
+  // parents (selecting campaigns then opening ad-set level shows only those
+  // campaigns' ad sets, and the ad level only their ads). Clearing selection
+  // restores the full view. Because the tree's parents are exact sums of their
+  // children, the scoped TOTAL equals the selected parent rows' numbers.
   const topRows = useMemo<AdsV2Node[]>(() => {
-    if (level === "campaign") return payload.campaigns;
-    if (level === "adset") return payload.campaigns.flatMap((c) => c.children);
-    return payload.campaigns.flatMap((c) => c.children.flatMap((a) => a.children));
-  }, [payload, level]);
+    const camps = payload.campaigns;
+    const allAdsets = camps.flatMap((c) => c.children);
+    const selCampIds = new Set(camps.filter((c) => selected.has(c.id)).map((c) => c.id));
+    const selAdsetIds = new Set(allAdsets.filter((a) => selected.has(a.id)).map((a) => a.id));
+
+    if (level === "campaign") return camps;
+    if (level === "adset") {
+      const src = selCampIds.size > 0 ? camps.filter((c) => selCampIds.has(c.id)) : camps;
+      return src.flatMap((c) => c.children);
+    }
+    // ad level: ad-set selection is most specific, else campaign selection, else all
+    if (selAdsetIds.size > 0)
+      return allAdsets.filter((a) => selAdsetIds.has(a.id)).flatMap((a) => a.children);
+    if (selCampIds.size > 0)
+      return camps.filter((c) => selCampIds.has(c.id)).flatMap((c) => c.children.flatMap((a) => a.children));
+    return camps.flatMap((c) => c.children.flatMap((a) => a.children));
+  }, [payload, level, selected]);
 
   const sortedTop = useMemo(() => {
     if (!sortKey || !sortDir) return topRows;
@@ -142,7 +237,14 @@ export default function CampaignTable({
       return next;
     });
 
-  const totalNode: AdsV2Node = { ...EMPTY_BASE, ...payload.total } as unknown as AdsV2Node;
+  // The TOTAL is a formula over the union of the DISPLAYED rows, so a scoped
+  // lower level totals exactly to its selected parents. Unscoped, this equals
+  // payload.total (the tree is built as exact sums), so nothing changes there.
+  const totalBase = useMemo(
+    () => topRows.reduce<typeof EMPTY_BASE>((acc, r) => addBase(acc, r), EMPTY_BASE),
+    [topRows],
+  );
+  const totalNode: AdsV2Node = { ...EMPTY_BASE, ...totalBase } as unknown as AdsV2Node;
   const firstColLabel =
     level === "ad" ? "Campaign / Ad set / Ad" : level === "adset" ? "Campaign / Ad set" : "Campaign";
 
@@ -187,7 +289,7 @@ export default function CampaignTable({
         <table className="ads" style={{ width: tableWidth }}>
           <colgroup>
             {ALL_COL_KEYS.map((k) => (
-              <col key={k} style={{ width: widths[k] ?? DEFAULT_WIDTHS[k] ?? 120 }} />
+              <col key={k} style={{ width: widthFor(k) }} />
             ))}
           </colgroup>
           <thead>
@@ -205,7 +307,12 @@ export default function CampaignTable({
                 </span>
                 <span
                   className={`col-resize${resizingKey === "name" ? " active" : ""}`}
+                  title="Drag to resize. Double-click to auto-fit the full name."
                   onMouseDown={(e) => startResize("name", e)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    resetNameWidth();
+                  }}
                   onClick={(e) => e.stopPropagation()}
                 />
               </th>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { buildHowItWorks } from "@/lib/ads-v2/definitions";
 import type { AdsV2Payload } from "@/lib/ads-v2/types";
+import { IcGear } from "./icons";
 
 interface OrganicKeyword {
   id: number;
@@ -27,7 +28,7 @@ export default function SettingsGear({ payload }: { payload: AdsV2Payload | null
         aria-label="Settings"
         onClick={() => setOpen(true)}
       >
-        ⚙
+        <IcGear />
       </button>
       {open && (
         <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>

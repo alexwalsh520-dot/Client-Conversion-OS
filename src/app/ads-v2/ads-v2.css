@@ -126,13 +126,23 @@ html.light .adsv2 {
 .adsv2 .icon-btn:hover {
   background: var(--panel-2);
 }
-/* Settings is a plain square gear button, no label. */
+/* Settings is a plain square gear button, no label. Sized to match the
+   sidebar's bottom-left settings gear: an 18px glyph in a comfortable hit area
+   (the sidebar link box is ~20px icon + 10px/12px padding), radius 8px. */
 .adsv2 .gear-btn {
-  width: 30px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
   padding: 0;
   justify-content: center;
-  font-size: 14px;
+  border-radius: 8px;
   color: var(--text-2);
+}
+.adsv2 .gear-btn:hover {
+  color: var(--text);
+}
+.adsv2 .gear-btn .i {
+  display: block;
 }
 .adsv2 .filter-btn.open {
   background: var(--panel-2);
@@ -483,11 +493,37 @@ html.light .adsv2 {
 .adsv2 .dim {
   color: var(--text-3);
 }
+/* Threshold colors must win at EVERY level in the base state (mouse untouched),
+   exactly like v1. The row-type selectors (tr.ad-row td, tr.total-row td) set a
+   neutral text color at higher specificity than a plain `.pos`, which was
+   swallowing the green/red on ad-set, ad, and total rows. These table-scoped
+   rules match that specificity and, coming later in source, win. Row hover only
+   changes the cell background (above), never these hues, so a colored cell reads
+   the same hue hovered or not. */
+.adsv2 table.ads tbody tr td.pos {
+  color: var(--green);
+}
+.adsv2 table.ads tbody tr td.neg {
+  color: var(--red);
+}
+.adsv2 table.ads tbody tr td.dim {
+  color: var(--text-3);
+}
 
 .adsv2 .campaign-cell {
   display: flex;
   align-items: center;
   gap: 10px;
+  max-width: 100%;
+}
+/* Only the name text flexes; the checkbox, chevron, dot, ads chip, and status
+   pill keep their size so the name is what ellipsizes when the column narrows. */
+.adsv2 .campaign-cell > .camp-check,
+.adsv2 .campaign-cell > .chevron,
+.adsv2 .campaign-cell > .camp-dot,
+.adsv2 .campaign-cell > .ad-count-chip,
+.adsv2 .campaign-cell > .status-pill {
+  flex: 0 0 auto;
 }
 .adsv2 .indent-1 {
   padding-left: 22px;
@@ -519,7 +555,11 @@ html.light .adsv2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 340px;
+  /* No fixed cap: the name column auto-fits to the longest visible name, so the
+     full text shows by default. min-width:0 lets it ellipsize (not overflow)
+     only when the drag handle narrows the column. */
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .adsv2 .ad-row .camp-name {
   color: var(--text-2);
@@ -690,6 +730,11 @@ html.light .adsv2 {
 .adsv2 .ch-status.upcoming {
   color: var(--gold);
   border-color: var(--gold-dim);
+}
+/* Time passed, no record either way. Neutral grey; never reads as a show. */
+.adsv2 .ch-status.no_outcome {
+  color: var(--text-3);
+  border-color: var(--border-2);
 }
 
 /* image preview */
