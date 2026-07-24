@@ -338,3 +338,104 @@ never silently excluded from any count.
   (outside the v2 surface); bounded by the global statement_timeout instead.
 - The Vercel error-count drop over the following hours is the owner-visible
   confirmation; the DB is calm now (1 active backend, 0 idle-in-transaction).
+
+---
+
+# Fix round 2 (2026-07-24) — owner UI feedback + audit findings
+
+Platform note: the outage class stayed resolved throughout (DB calm: 1 active
+backend, 0 idle-in-transaction). Manager Ads still sources ROAS from Ads V2
+(its internal field keeps the name collectedRoi, so that wiring is untouched).
+
+## Owner feedback
+
+1. Derived-column text colors. v1 colors each derived column by threshold
+   (pos=green, neg=red, dim=muted, else default). v2 was leaving most of them the
+   default dark, so they looked darker than v1. Ported v1's exact per-column cls
+   thresholds verbatim (from the `cols` array in the export), converted to v2
+   units: dollars to cents, percent to fraction, ROAS as a multiple. Now every
+   column (CPM, CTR, Cost/msg, Cost/booked, Cost/taken, Show rate, New clients,
+   Close rate, DM to call, Collected, Cost/client, Collected ROAS) matches v1 at
+   campaign, ad set, and ad level.
+
+2. Ad creative preview. Removed the painting emoji. The ad NAME is now the hover
+   trigger (cursor zoom-in). The preview serves our DURABLE stored image
+   (ad_creative_image.stored_image_url in the public ad-creatives bucket), not the
+   expiring Facebook CDN url that made it break (migration 060). Coverage: all 140
+   active Tyson+Jake ads have a stored image; the fresh Tyson 7d snapshot carries
+   164 ad leaves with a stored URL, e.g.
+   https://<project>.supabase.co/storage/v1/object/public/ad-creatives/<ad_id>.jpg
+
+3. Collected ROI renamed to Collected ROAS in the definitions registry (label +
+   one-sentence definition). The gear panel and the column hovers render from that
+   registry, so they update automatically. Manager Ads keeps the internal field
+   name collectedRoi, so its ROAS and ROI figures are unaffected.
+
+4. Deleted the "Jake: ad spend is flowing..." banner entirely. buildNotices now
+   returns no notices; accounts render from whatever data exists.
+
+5. DMed column was empty on every row. Root cause: manychat_contact_links.client
+   is stored in the long form (tyson_sonnek, jake_...), so the fact builder's
+   filter `client in ('tyson','jake')` matched nothing and the GHL-to-ManyChat
+   bridge was empty. Fixed by bridging on ghl_contact_id directly (globally
+   unique, no client filter needed) and never on names. Backfilled existing facts.
+   Before: 0 of 210 booking facts had dm_et_day. After: 78 of 210 (77 after the
+   next full rebuild; one subscriber's DM aged out of the fact window). Last 14
+   days: 11 of 58 resolve via a hard key; the other 47 have no hard key and stay
+   honestly null, so the popup shows a dash.
+
+## Audit findings
+
+6. ET homogenization finished. The 662 unmarked rows dated 2026-06-18..2026-07-16
+   are ALL Antwan, whose ad account reports in America/New_York
+   (account_timezone = 'America/New_York'). An ET account's daily rows are already
+   bucketed by ET days, so these were never Pacific-bucketed; they only lacked the
+   marker a side path failed to write, and they carry no hourly data to rebucket.
+   Migration 061 stamps the America/New_York marker on rows proven ET
+   (account_timezone = America/New_York) — the ET-native result, additive only.
+   Counts: unmarked rows in the 6/18..7/16 span 662 -> 0; unmarked non-ET-account
+   rows in that span 0; unmarked served-client rows all-time 0. The nightly
+   self-check now asserts this every run via adsv2_unmarked_served_spend(clients),
+   which uses `is distinct from` so a NULL marker is caught too (a plain <> would
+   have silently skipped NULL-marker rows). Live self-check gate unmarkedSpendRows
+   = 0.
+
+7. adsv2_alerts triage (12 rows, all reported-for-humans, none error-severity):
+   - 11 x anomaly_call_before_booking (warn): the GHL appointment record's own
+     creation time is after the call's scheduled start (verified: Tyler Klein
+     start 15:45 vs record created 17:41; Cameron Land, Devin Novoa, Zack Davis,
+     etc.). These are real source patterns (reschedules, late logging, and in
+     Zack Davis's case a garbage 2025 date_created in GHL). Per the build law
+     "report, never referee — count what the sources say, keep every record
+     visible, list anomalies for the humans to clean at the source," they STAND
+     as warnings by design; v2 does not silently drop them. The fix is at the GHL
+     source, not in v2.
+   - 1 x keywordless_bookings (info): a count of sales-calendar bookings with no
+     keyword (a capture gap). Informational; it stands as the flag it is meant to
+     be. The durable fix is forward capture at booking time.
+
+## Accuracy gates, re-run fresh (after items 5 and 6, serving path unchanged)
+
+Data version 18; 72 current snapshots; facts dm 2201 / bookings 206 / sales 350;
+370 budget rows.
+
+- Spend reconciliation across the formerly-mixed period (last30 = 2026-06-25..
+  2026-07-24, which spans 6/18..7/16): EXACT.
+  Tyson snapshot 1329128c == raw SQL sum 1329128c (impressions 916218 == 916218,
+  clicks 8664 == 8664). Jake snapshot 258048c == raw 258048c after AUD->USD
+  (impressions 243534 == 243534, clicks 2223 == 2223). Zero unmarked rows in the
+  window.
+- Booked distinct-people (Tyson last7 = 2026-07-18..07-24): snapshot 17 == facts
+  distinct-people 17 == raw scoped-calendar distinct-people-with-keyword 17.
+- Sales subset reconciliation: v2 attributed collected is a subset of the tracker
+  total every window (last7 $6,999.00 of $8,998.00; last30 $35,829.00 of
+  $64,825.00). Never exceeds.
+- Nested-window invariants: 0 violations.
+- Determinism: the Tyson 7d snapshot hashes identically on repeated reads
+  (md5 f644da577805cde95807f4b54356bd01); the serve path is a pure snapshot read.
+- Budget spot-check: unchanged by this round (budgets live in a separate table).
+  Tyson ABO ad sets (top $350/day) + CBO campaigns (top $1,200/day), 27 campaigns
+  showing a dash; Jake AUD $100/day -> USD $69.94; ads never hold budgets.
+
+Self-check ran green end-to-end on the live deploy: unmarkedSpendRows 0,
+cronViolations 0, invariantViolations 0, both reconciliations within bound.
