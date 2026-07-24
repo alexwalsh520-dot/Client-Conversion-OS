@@ -1173,3 +1173,50 @@ html.light .adsv2 {
   color: var(--red);
   border-color: var(--red-dim);
 }
+
+/* ── "How this app protects itself" panel (live proofs, read-only) ───────── */
+.adsv2 .protects {
+  display: flex;
+  flex-direction: column;
+}
+.adsv2 .protect-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 .protect-row:last-child {
+  border-bottom: none;
+}
+.adsv2 .protect-sentence {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  flex: 1 1 auto;
+}
+.adsv2 .protect-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+.adsv2 .protect-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--green-dim);
+  flex: 0 0 auto;
+}
+.adsv2 .protect-status.warn {
+  color: var(--red);
+}
+.adsv2 .protect-status.warn .protect-dot {
+  background: var(--red);
+}

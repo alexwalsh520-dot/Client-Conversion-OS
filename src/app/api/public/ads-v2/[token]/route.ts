@@ -20,6 +20,7 @@ import { serveWindow, prepareWindow } from "@/lib/ads-v2/serve";
 import { rangeForPreset, todayEt, type PresetId } from "@/lib/ads-v2/time";
 import type { AdsV2Account, AdsV2Query, AdsV2Status } from "@/lib/ads-v2/types";
 import { ADSV2_SERVED_CLIENTS } from "@/lib/ads-v2/config";
+import { buildProtections } from "@/lib/ads-v2/protections";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -94,6 +95,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   }
 
   const sp = req.nextUrl.searchParams;
+
+  // The "How this app protects itself" panel reads the same non-sensitive
+  // health records the authed gear shows. Safe to expose to the share link.
+  if (sp.get("section") === "protections") {
+    try {
+      const report = await buildProtections(getServiceSupabase());
+      return NextResponse.json(report, { headers: NO_STORE_HEADERS });
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed" },
+        { status: 500, headers: NO_STORE_HEADERS },
+      );
+    }
+  }
+
   const status = (STATUSES.has(sp.get("status") || "") ? sp.get("status") : "active") as AdsV2Status;
   let dateFrom = sp.get("dateFrom");
   let dateTo = sp.get("dateTo");

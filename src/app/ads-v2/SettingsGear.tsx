@@ -16,19 +16,21 @@ const CLIENTS = [
   { key: "jake", name: "Jake" },
 ];
 
-type GearTab = "organic" | "how" | "share";
+type GearTab = "organic" | "how" | "share" | "protects";
 
 export default function SettingsGear({
   payload,
   publicMode = false,
+  publicToken,
 }: {
   payload: AdsV2Payload | null;
   publicMode?: boolean;
+  publicToken?: string;
 }) {
   const [open, setOpen] = useState(false);
-  // Public (share-link) mode opens ONLY "How your numbers work". No organic
-  // keywords, no share management: the token locks the client, so there is
-  // nothing here that could reach another client's data or mint a link.
+  // Public (share-link) mode gets "How your numbers work" and "How this app
+  // protects itself" only. No organic keywords, no share management: the token
+  // locks the client, so nothing here can reach another client's data.
   const [tab, setTab] = useState<GearTab>(publicMode ? "how" : "organic");
 
   return (
@@ -51,29 +53,39 @@ export default function SettingsGear({
               </button>
             </div>
             <div className="modal-body">
-              {!publicMode && (
-                <div className="gear-tabs">
+              <div className="gear-tabs">
+                {!publicMode && (
                   <button
                     className={`gear-tab${tab === "organic" ? " active" : ""}`}
                     onClick={() => setTab("organic")}
                   >
                     Organic keywords
                   </button>
-                  <button className={`gear-tab${tab === "how" ? " active" : ""}`} onClick={() => setTab("how")}>
-                    How your numbers work
-                  </button>
+                )}
+                <button className={`gear-tab${tab === "how" ? " active" : ""}`} onClick={() => setTab("how")}>
+                  How your numbers work
+                </button>
+                <button
+                  className={`gear-tab${tab === "protects" ? " active" : ""}`}
+                  onClick={() => setTab("protects")}
+                >
+                  How this app protects itself
+                </button>
+                {!publicMode && (
                   <button
                     className={`gear-tab${tab === "share" ? " active" : ""}`}
                     onClick={() => setTab("share")}
                   >
                     Share links
                   </button>
-                </div>
-              )}
+                )}
+              </div>
               {!publicMode && tab === "organic" ? (
                 <OrganicManager />
               ) : !publicMode && tab === "share" ? (
                 <ShareManager />
+              ) : tab === "protects" ? (
+                <Protections publicToken={publicToken} />
               ) : (
                 <HowItWorks payload={payload} />
               )}
@@ -82,6 +94,52 @@ export default function SettingsGear({
         </div>
       )}
     </>
+  );
+}
+
+interface Protection {
+  key: string;
+  sentence: string;
+  statusLabel: string;
+  ok: boolean;
+}
+
+// Live proofs, never promises. Each protection is one sentence with a live
+// status read from the app's real records. Read-only in every view.
+function Protections({ publicToken }: { publicToken?: string }) {
+  const [items, setItems] = useState<Protection[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const url = publicToken
+      ? `/api/public/ads-v2/${publicToken}?section=protections`
+      : "/api/ads-v2/protections";
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setItems(d.protections || []))
+      .catch(() => setError(true));
+  }, [publicToken]);
+
+  return (
+    <div className="protects">
+      <div className="how-note">
+        These are not promises. Each line is checked against the app&apos;s own
+        records, with the live result on the right.
+      </div>
+      {error && <div className="freshness">Could not load the live status right now.</div>}
+      {items?.map((p) => (
+        <div className="protect-row" key={p.key}>
+          <div className="protect-sentence">{p.sentence}</div>
+          <div className={`protect-status${p.ok ? " ok" : " warn"}`}>
+            <span className="protect-dot" />
+            {p.statusLabel}
+          </div>
+        </div>
+      ))}
+      {items && items.length === 0 && !error && (
+        <div className="freshness">Live status is warming up. Check back shortly.</div>
+      )}
+    </div>
   );
 }
 

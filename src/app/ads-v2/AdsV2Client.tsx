@@ -132,7 +132,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
           </div>
         </div>
         <div className="av2-head-actions">
-          <SettingsGear payload={payload} publicMode={isPublic} />
+          <SettingsGear payload={payload} publicMode={isPublic} publicToken={publicToken} />
         </div>
       </div>
 
