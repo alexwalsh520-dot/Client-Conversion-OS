@@ -16,15 +16,26 @@ const CLIENTS = [
   { key: "jake", name: "Jake" },
 ];
 
-export default function SettingsGear({ payload }: { payload: AdsV2Payload | null }) {
+type GearTab = "organic" | "how" | "share";
+
+export default function SettingsGear({
+  payload,
+  publicMode = false,
+}: {
+  payload: AdsV2Payload | null;
+  publicMode?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"organic" | "how">("organic");
+  // Public (share-link) mode opens ONLY "How your numbers work". No organic
+  // keywords, no share management: the token locks the client, so there is
+  // nothing here that could reach another client's data or mint a link.
+  const [tab, setTab] = useState<GearTab>(publicMode ? "how" : "organic");
 
   return (
     <>
       <button
         className="icon-btn gear-btn"
-        title="Settings"
+        title="How your numbers work"
         aria-label="Settings"
         onClick={() => setOpen(true)}
       >
@@ -34,24 +45,38 @@ export default function SettingsGear({ payload }: { payload: AdsV2Payload | null
         <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
           <div className="modal">
             <div className="modal-head">
-              <div className="modal-title">Ads v2 settings</div>
+              <div className="modal-title">{publicMode ? "How your numbers work" : "Ads v2 settings"}</div>
               <button className="modal-close" onClick={() => setOpen(false)}>
                 ×
               </button>
             </div>
             <div className="modal-body">
-              <div className="gear-tabs">
-                <button
-                  className={`gear-tab${tab === "organic" ? " active" : ""}`}
-                  onClick={() => setTab("organic")}
-                >
-                  Organic keywords
-                </button>
-                <button className={`gear-tab${tab === "how" ? " active" : ""}`} onClick={() => setTab("how")}>
-                  How your numbers work
-                </button>
-              </div>
-              {tab === "organic" ? <OrganicManager /> : <HowItWorks payload={payload} />}
+              {!publicMode && (
+                <div className="gear-tabs">
+                  <button
+                    className={`gear-tab${tab === "organic" ? " active" : ""}`}
+                    onClick={() => setTab("organic")}
+                  >
+                    Organic keywords
+                  </button>
+                  <button className={`gear-tab${tab === "how" ? " active" : ""}`} onClick={() => setTab("how")}>
+                    How your numbers work
+                  </button>
+                  <button
+                    className={`gear-tab${tab === "share" ? " active" : ""}`}
+                    onClick={() => setTab("share")}
+                  >
+                    Share links
+                  </button>
+                </div>
+              )}
+              {!publicMode && tab === "organic" ? (
+                <OrganicManager />
+              ) : !publicMode && tab === "share" ? (
+                <ShareManager />
+              ) : (
+                <HowItWorks payload={payload} />
+              )}
             </div>
           </div>
         </div>
@@ -139,6 +164,114 @@ function OrganicManager() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface ShareLink {
+  clientKey: string;
+  clientName: string;
+  url: string | null;
+  token: string | null;
+}
+
+// Operator-only. One share link per client (Tyson, Jake): view + copy, Rotate
+// (revoke + mint a fresh token, confirmed), Revoke. The owner never touches
+// tokens by hand; this is the only place they are minted or killed.
+function ShareManager() {
+  const [links, setLinks] = useState<ShareLink[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const load = async () => {
+    const res = await fetch("/api/ads-v2/share-link");
+    if (res.ok) {
+      const data = await res.json();
+      setLinks(data.links || []);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const mint = async (client: string) => {
+    setBusy(true);
+    await fetch("/api/ads-v2/share-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mint", client }),
+    });
+    await load();
+    setBusy(false);
+  };
+
+  const rotate = async (client: string) => {
+    if (!confirm("Rotate this link? The current link stops working immediately and a new one is created.")) return;
+    setBusy(true);
+    await fetch("/api/ads-v2/share-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "rotate", client }),
+    });
+    await load();
+    setBusy(false);
+  };
+
+  const revoke = async (client: string) => {
+    if (!confirm("Revoke this link? Anyone with it loses access immediately.")) return;
+    setBusy(true);
+    await fetch("/api/ads-v2/share-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "revoke", client }),
+    });
+    await load();
+    setBusy(false);
+  };
+
+  const copy = async (url: string, client: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(client);
+      setTimeout(() => setCopied((c) => (c === client ? null : c)), 1500);
+    } catch {
+      /* clipboard blocked; the link is visible to copy by hand */
+    }
+  };
+
+  return (
+    <div>
+      <div className="how-note">
+        A share link lets a client see only their own Ads v2 numbers, with no
+        login and no access to anything else. Rotate if a link leaks; revoke to
+        cut access. The link always shows the client this button is next to.
+      </div>
+      {links.map((l) => (
+        <div key={l.clientKey}>
+          <div className="sec-title">{l.clientName}</div>
+          {l.url ? (
+            <div className="share-row">
+              <input className="share-url" readOnly value={l.url} onFocus={(e) => e.currentTarget.select()} />
+              <button className="ghost-btn" onClick={() => copy(l.url!, l.clientKey)} disabled={busy}>
+                {copied === l.clientKey ? "Copied" : "Copy"}
+              </button>
+              <button className="ghost-btn" onClick={() => rotate(l.clientKey)} disabled={busy}>
+                Rotate
+              </button>
+              <button className="ghost-btn danger" onClick={() => revoke(l.clientKey)} disabled={busy}>
+                Revoke
+              </button>
+            </div>
+          ) : (
+            <div className="share-row">
+              <span className="freshness">No active link.</span>
+              <button className="ghost-btn" onClick={() => mint(l.clientKey)} disabled={busy}>
+                Create link
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

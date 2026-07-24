@@ -1117,3 +1117,59 @@ html.light .adsv2 {
   color: var(--text-4);
   font-size: 12px;
 }
+
+/* ── Public share view + operator share manager ─────────────────────────── */
+/* The public page has no sidebar/layout padding, so the tab provides its own. */
+.pub-ads-v2-page {
+  min-height: 100vh;
+  background: var(--bg);
+  padding: 28px 32px 64px;
+}
+.pub-unavailable {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 24px;
+}
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 28px 26px;
+  background: var(--panel);
+}
+.pub-unavailable-card h1 {
+  font-size: 18px;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.pub-unavailable-card p {
+  font-size: 13px;
+  color: var(--text-3);
+  margin: 0;
+}
+.adsv2 .share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 14px;
+  flex-wrap: wrap;
+}
+.adsv2 .share-url {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  padding: 7px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--text-2);
+}
+.adsv2 .ghost-btn.danger {
+  color: var(--red);
+  border-color: var(--red-dim);
+}

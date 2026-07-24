@@ -11,8 +11,18 @@ function keyOf(account: AdsV2Account, status: AdsV2Status, range: DayRange): str
   return `${account}|${status}|${range.from}|${range.to}`;
 }
 
-export default function AdsV2Client() {
-  const [account, setAccount] = useState<AdsV2Account>("all");
+// In public (share-link) mode the token locks the client server-side, so there
+// is no account dropdown and every fetch goes through the token-scoped public
+// API. Everything else (table, levels, sorting, hovers, popups, colors, speed)
+// is identical to the authed tab.
+export interface AdsV2ClientProps {
+  publicToken?: string;
+  lockedAccount?: AdsV2Account;
+}
+
+export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientProps = {}) {
+  const isPublic = !!publicToken;
+  const [account, setAccount] = useState<AdsV2Account>(lockedAccount ?? "all");
   const [status, setStatus] = useState<AdsV2Status>("active");
   const [level, setLevel] = useState<AdsV2Level>("campaign");
   const [preset, setPreset] = useState<PresetId>("last7");
@@ -29,7 +39,11 @@ export default function AdsV2Client() {
   const fetchWindow = useCallback(
     async (acc: AdsV2Account, st: AdsV2Status, r: DayRange, opts?: { background?: boolean }) => {
       const key = keyOf(acc, st, r);
-      const url = `/api/ads-v2?account=${acc}&status=${st}&dateFrom=${r.from}&dateTo=${r.to}`;
+      // Public mode: the token derives the client server-side, so we send no
+      // account. Authed mode: the account is a request param as before.
+      const url = isPublic
+        ? `/api/public/ads-v2/${publicToken}?status=${st}&dateFrom=${r.from}&dateTo=${r.to}`
+        : `/api/ads-v2?account=${acc}&status=${st}&dateFrom=${r.from}&dateTo=${r.to}`;
       try {
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
@@ -52,7 +66,7 @@ export default function AdsV2Client() {
         return null;
       }
     },
-    [],
+    [isPublic, publicToken],
   );
 
   // Load on selection change: cached shows instantly + revalidates; else loads.
@@ -76,7 +90,8 @@ export default function AdsV2Client() {
   useEffect(() => {
     if (loading) return;
     const timer = setTimeout(() => {
-      const accounts: AdsV2Account[] = ["all", "tyson", "jake"];
+      // Public mode is locked to one client, so only warm presets (no accounts).
+      const accounts: AdsV2Account[] = isPublic ? [] : ["all", "tyson", "jake"];
       for (const acc of accounts) {
         if (acc !== account) {
           const k = keyOf(acc, status, range);
@@ -91,7 +106,7 @@ export default function AdsV2Client() {
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [loading, account, status, range, fetchWindow]);
+  }, [loading, account, status, range, fetchWindow, isPublic]);
 
   // If the window is still preparing (no snapshot yet), poll until it lands.
   // The background build was scheduled by the request; we just re-read.
@@ -117,12 +132,12 @@ export default function AdsV2Client() {
           </div>
         </div>
         <div className="av2-head-actions">
-          <SettingsGear payload={payload} />
+          <SettingsGear payload={payload} publicMode={isPublic} />
         </div>
       </div>
 
       <div className="filter-bar">
-        <AccountDropdown value={account} onChange={setAccount} />
+        {!isPublic && <AccountDropdown value={account} onChange={setAccount} />}
         <StatusSegmented value={status} onChange={setStatus} />
         <span className="filter-divider" />
         <DateDropdown preset={preset} range={range} onApply={applyDate} />
