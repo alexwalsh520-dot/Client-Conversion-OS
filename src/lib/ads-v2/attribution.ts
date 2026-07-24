@@ -106,23 +106,38 @@ export interface BookingRecord {
   startTime: string | null; // ISO
   createdTime: string | null; // ISO
   dmEtDay: string | null;
-  bookedEtDay: string;
+  createdEtDay?: string | null; // ET day the booking was made
+  bookedEtDay: string; // ET day the call is scheduled for
   isUpcoming: boolean;
-  taken: boolean; // did this person's call happen (for the hover status)
+  taken: boolean; // hard-key-linked taken record (drives "showed")
+  ghlStatus?: string | null; // GoHighLevel appointment status (drives "no show")
 }
+
+export type PersonCallStatus = "showed" | "noshow" | "upcoming" | "no_outcome";
 
 export interface GroupedPerson {
   name: string;
   dmEtDay: string | null;
   bookedEtDay: string | null;
   callEtDay: string | null;
-  status: "showed" | "noshow" | "upcoming";
+  status: PersonCallStatus;
   records: number;
+}
+
+function isNoShowStatus(status: string | null | undefined): boolean {
+  const s = (status || "").toLowerCase().replace(/[\s_-]/g, "");
+  return s.includes("noshow");
 }
 
 /**
  * Group booking records by person so reschedules collapse to one person, with
  * the record count preserved for the hover. One person = one booked call.
+ *
+ * Status, cohort-true and hard-key only:
+ *   upcoming    the call is in the future (excluded from the show-rate denominator)
+ *   showed      a hard-key-linked taken record exists
+ *   noshow      GoHighLevel marked it a no-show and there is no taken record
+ *   no_outcome  the call day passed with no record either way (NEVER a show)
  */
 export function groupBookingsByPerson(records: readonly BookingRecord[]): GroupedPerson[] {
   const byPerson = new Map<string, BookingRecord[]>();
@@ -142,24 +157,30 @@ export function groupBookingsByPerson(records: readonly BookingRecord[]): Groupe
     const latest = sorted[sorted.length - 1];
     const anyUpcoming = list.some((r) => r.isUpcoming);
     const anyTaken = list.some((r) => r.taken);
-    const status: GroupedPerson["status"] = anyUpcoming
-      ? "upcoming"
-      : anyTaken
-        ? "showed"
-        : "noshow";
+    const anyNoShow = list.some((r) => isNoShowStatus(r.ghlStatus));
+    const status: PersonCallStatus = anyTaken
+      ? "showed"
+      : anyUpcoming
+        ? "upcoming"
+        : anyNoShow
+          ? "noshow"
+          : "no_outcome";
+    const callDay = latest.bookedEtDay; // ET day of the scheduled call
     out.push({
       name: latest.personName || "Unknown",
       dmEtDay: latest.dmEtDay,
-      bookedEtDay: latest.bookedEtDay,
-      callEtDay: latest.startTime ? latest.startTime.slice(0, 10) : null,
+      // "Booked" = the day the booking was made; fall back to the call day when
+      // the created time is unknown so the column is never blank on a real call.
+      bookedEtDay: latest.createdEtDay || callDay,
+      callEtDay: callDay,
       status,
       records: list.length,
     });
   }
-  // Deterministic ordering: most recent booked day first, then name.
+  // Deterministic ordering: most recent call day first, then name.
   out.sort(
     (a, b) =>
-      (b.bookedEtDay || "").localeCompare(a.bookedEtDay || "") ||
+      (b.callEtDay || "").localeCompare(a.callEtDay || "") ||
       a.name.localeCompare(b.name),
   );
   return out;

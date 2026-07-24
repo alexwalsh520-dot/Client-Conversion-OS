@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
 import { EMPTY_BASE, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
-import { formatCell, sortValue } from "./format";
+import { formatCell, sortValue, fmtMD } from "./format";
 
 type SortDir = "asc" | "desc" | null;
 
@@ -443,9 +443,13 @@ function CallHover({
   } else if (kind === "showRate") {
     rows = details.booked;
     title = `Show rate - ${kw}`;
-    const due = node.booked - node.upcoming;
-    const pct = due > 0 ? Math.round((node.takenPeople / due) * 100) : 0;
-    proof = `${pct}% - ${node.takenPeople} showed of ${due} due - ${node.upcoming} upcoming (not counted)`;
+    // Header comes from EXACTLY the displayed rows (same cohort as the cell):
+    // showed = hard-key taken; due = everyone booked except upcoming.
+    const showed = rows.filter((d) => d.status === "showed").length;
+    const upcoming = rows.filter((d) => d.status === "upcoming").length;
+    const due = rows.length - upcoming;
+    const pct = due > 0 ? Math.round((showed / due) * 100) : 0;
+    proof = `${showed} of ${due} showed  ·  ${pct}%${upcoming ? `  ·  ${upcoming} upcoming (not counted)` : ""}`;
   } else {
     rows = details.booked;
     title = `${node.booked} booked - ${kw}`;
@@ -475,13 +479,19 @@ function CallHover({
                 {d.name}
                 {d.records > 1 ? ` (${d.records})` : ""}
               </td>
-              <td>{d.dmEtDay || "-"}</td>
-              <td>{d.bookedEtDay || "-"}</td>
-              <td>{d.callEtDay || "-"}</td>
+              <td>{fmtMD(d.dmEtDay)}</td>
+              <td>{fmtMD(d.bookedEtDay)}</td>
+              <td>{fmtMD(d.callEtDay)}</td>
               {showStatus && (
                 <td>
                   <span className={`ch-status ${d.status}`}>
-                    {d.status === "showed" ? "Showed" : d.status === "noshow" ? "No-show" : "Upcoming"}
+                    {d.status === "showed"
+                      ? "Showed"
+                      : d.status === "noshow"
+                        ? "No-show"
+                        : d.status === "upcoming"
+                          ? "Upcoming"
+                          : "No outcome yet"}
                   </span>
                 </td>
               )}

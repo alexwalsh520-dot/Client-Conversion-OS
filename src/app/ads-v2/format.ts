@@ -17,6 +17,16 @@ export interface Cell {
 
 const DASH = "-";
 
+// Month/day, no year, no leading zeros: "2026-07-23" -> "7/23". Formats
+// directly from the stored Eastern-time day STRING by splitting the text, never
+// through a Date object (which would shift the day by the viewer's timezone).
+export function fmtMD(etDay: string | null | undefined): string {
+  if (!etDay) return DASH;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(etDay);
+  if (!m) return etDay;
+  return `${Number(m[2])}/${Number(m[3])}`;
+}
+
 function pct(v: number | null): string {
   return v == null ? DASH : `${(v * 100).toFixed(1)}%`;
 }
@@ -68,10 +78,10 @@ function classFor(key: string, node: AdsV2Node): CellClass {
             : ""
         : "";
     case "showRate": {
-      // v1: due = booked - upcoming; if due<=0 return ""; v = min(100, taken/due*100)
+      // v1: due = booked - upcoming; if due<=0 return ""; v = min(100, showed/due*100)
       const due = node.booked - node.upcoming;
       if (due <= 0) return "";
-      const v = Math.min(1, node.takenPeople / due);
+      const v = Math.min(1, (node.showedPeople ?? 0) / due);
       return v >= 0.5 ? "pos" : v < 0.3 ? "neg" : "";
     }
     case "newClients": // v1 clients: >=5 pos, <=2 neg

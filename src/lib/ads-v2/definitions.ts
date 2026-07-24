@@ -139,8 +139,10 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     key: "taken",
     label: "Calls taken",
-    sentence: "How many of the booked strategy calls actually happened.",
-    source: "The sales tracker, which only lists calls that took place.",
+    sentence:
+      "How many strategy calls took place in this window, counted on the day the call happened, including ones booked earlier.",
+    source:
+      "The sales tracker, which only lists calls that took place. Counted by call day, so this can differ from the show-rate group, which counts people booked in this window.",
     format: "int",
     logged: true,
   },
@@ -156,8 +158,9 @@ export const COLUMNS: readonly ColumnDef[] = [
     key: "showRate",
     label: "Show rate",
     sentence:
-      "The share of due booked calls that were taken. It can pass 100% when calls booked earlier are taken in this window.",
-    source: "People taken divided by people booked minus upcoming, same window.",
+      "Of the people who booked a call in this window, the share who actually showed up. Upcoming calls are set aside, not counted for or against it.",
+    source:
+      "People booked in this window who have a matching taken record, divided by people booked in this window minus upcoming. The same people the popup lists, so the cell and the popup always agree. It never passes 100%.",
     format: "pct",
     calc: true,
   },

@@ -26,6 +26,9 @@ function div(n: number, d: number): number | null {
 
 export function derive(b: BaseMetrics): DerivedMetrics {
   const due = b.booked - b.upcoming;
+  // Guard the numerator so a snapshot written before showed_people existed shows
+  // 0% (rebuilt correct on the next sync) rather than NaN.
+  const showed = b.showedPeople ?? 0;
   return {
     cpmCents: b.impressions ? Math.round((b.spendCents / b.impressions) * 1000) : null,
     ctr: div(b.clicks, b.impressions),
@@ -33,8 +36,11 @@ export function derive(b: BaseMetrics): DerivedMetrics {
     costPerMessageCents: b.messages ? Math.round(b.spendCents / b.messages) : null,
     costPerBookedCents: b.booked ? Math.round(b.spendCents / b.booked) : null,
     costPerTakenCents: b.taken ? Math.round(b.spendCents / b.taken) : null,
-    // Show rate uses distinct PEOPLE taken over people booked minus upcoming.
-    showRate: due > 0 ? b.takenPeople / due : null,
+    // Cohort-true show rate: of the people BOOKED in this window (minus
+    // upcoming), the share with a hard-key-linked taken record. Numerator and
+    // denominator come from the same booked-in-window cohort as the popup, so
+    // the cell and its hover always agree. It cannot exceed 100%.
+    showRate: due > 0 ? showed / due : null,
     closeRate: div(b.newClients, b.taken),
     msgToCall: div(b.booked, b.messages),
     costPerClientCents: b.newClients ? Math.round(b.spendCents / b.newClients) : null,

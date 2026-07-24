@@ -25,7 +25,10 @@ export interface CallDetail {
   dmEtDay: string | null;
   bookedEtDay: string | null;
   callEtDay: string | null;
-  status: "showed" | "noshow" | "upcoming";
+  // showed = hard-key-linked taken record; noshow = GHL no-show status and no
+  // taken record; upcoming = future appointment (excluded from show rate);
+  // no_outcome = the call day passed with no record either way (never a show).
+  status: "showed" | "noshow" | "upcoming" | "no_outcome";
   /** How many appointment records this one person had (reschedules). */
   records: number;
 }
@@ -38,7 +41,10 @@ export interface BaseMetrics {
   messages: number; // distinct DM people (per keyword)
   booked: number; // distinct booked people (per keyword)
   taken: number; // sales-tracker calls taken (rows) -> the "Calls taken" column
-  takenPeople: number; // distinct people taken -> the show-rate numerator
+  takenPeople: number; // distinct people taken in the sale window (sale cohort)
+  // Cohort-true show-rate numerator: distinct people BOOKED in this window (not
+  // upcoming) who have a hard-key-linked taken record. Same cohort as the popup.
+  showedPeople: number;
   upcoming: number; // distinct upcoming people (subset of booked)
   newClients: number;
   collectedCents: number;
@@ -109,6 +115,7 @@ export const EMPTY_BASE: BaseMetrics = {
   booked: 0,
   taken: 0,
   takenPeople: 0,
+  showedPeople: 0,
   upcoming: 0,
   newClients: 0,
   collectedCents: 0,
@@ -124,6 +131,7 @@ export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
     booked: a.booked + b.booked,
     taken: a.taken + b.taken,
     takenPeople: a.takenPeople + b.takenPeople,
+    showedPeople: a.showedPeople + b.showedPeople,
     upcoming: a.upcoming + b.upcoming,
     newClients: a.newClients + b.newClients,
     collectedCents: a.collectedCents + b.collectedCents,

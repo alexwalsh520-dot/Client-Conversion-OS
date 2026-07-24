@@ -411,6 +411,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // sale-day window regardless of client to avoid orphaning re-attributed rows.
   await replaceWindowAllClients(db, "adsv2_sale_facts", "sale_et_day", factFrom, saleTo, saleFacts);
 
+  // Stamp DMed dates + the hard-key taken link on the bookings we just wrote,
+  // set-based in the database (hard-key ladder + all-time earliest DM). This is
+  // authoritative for dm_et_day and `taken`; it must run after both booking and
+  // sale facts exist for the window.
+  await db.rpc("adsv2_stamp_booking_links", { p_from: factFrom, p_to: bookTo });
+
   return {
     dm: dmFacts.length,
     bookings: bookingFacts.length,

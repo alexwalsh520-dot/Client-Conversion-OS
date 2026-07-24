@@ -174,6 +174,42 @@ export async function runSelfCheck(now: Date = new Date()): Promise<SelfCheckRep
       }
     }
 
+    // ── Gate: show-rate cell/popup parity (A2) ──────────────────────────────
+    // The show-rate cell and its popup must be the same cohort. Recompute the
+    // booked-in-window person cohort independently and assert it equals the
+    // leaves numbers the cell renders from, for every keyword and window.
+    {
+      const violations = await checkShowRateParity(db, etDay, clients);
+      gates.showRateParityViolations = violations.length;
+      for (const v of violations.slice(0, 50)) {
+        findings.push({
+          type: "showrate_parity",
+          severity: "error",
+          clientKey: v.clientKey,
+          detail: v as unknown as Record<string, unknown>,
+          dedupeKey: `showrate_parity|${v.clientKey}|${v.keyword}|${v.window}|${etDay}`,
+        });
+      }
+    }
+
+    // ── Gate: children always sum to their parent (A3) ──────────────────────
+    // For every snapshot, the sum of a campaign's ad sets equals the campaign,
+    // and the sum of an ad set's ads equals the ad set, for every additive
+    // metric. This is how the tree is built; the gate proves it stayed true.
+    {
+      const violations = await checkParentChildSums(db, etDay);
+      gates.parentChildViolations = violations.length;
+      for (const v of violations.slice(0, 50)) {
+        findings.push({
+          type: "parent_child_sum",
+          severity: "error",
+          clientKey: v.account,
+          detail: v as unknown as Record<string, unknown>,
+          dedupeKey: `parent_child|${v.account}|${v.status}|${v.parentId}|${v.metric}|${etDay}`,
+        });
+      }
+    }
+
     // Write alert rows (idempotent by dedupe_key).
     if (findings.length) {
       await db.from("adsv2_alerts").upsert(
@@ -273,6 +309,152 @@ async function checkInvariants(db: Db, etDay: string): Promise<InvariantViolatio
     }
   }
   return out;
+}
+
+// ── Show-rate parity: the cell equals the popup, per keyword and window ─────
+interface ShowRateParityViolation {
+  clientKey: string;
+  keyword: string;
+  window: string;
+  cellShowed: number;
+  cohortShowed: number;
+  cellDue: number;
+  cohortDue: number;
+}
+
+async function checkShowRateParity(
+  db: Db,
+  etDay: string,
+  clients: string[],
+): Promise<ShowRateParityViolation[]> {
+  const out: ShowRateParityViolation[] = [];
+  for (const preset of ["last7", "last30"] as const) {
+    const r = rangeForPreset(preset, etDay);
+    // The cell numbers, straight from the serving function.
+    const { data: leaves } = await db.rpc("adsv2_window_leaves", {
+      p_clients: clients,
+      p_from: r.from,
+      p_to: r.to,
+    });
+    // The popup cohort, recomputed INDEPENDENTLY from the booking facts.
+    const { data: cohort } = await db.rpc("adsv2_showrate_cohort", {
+      p_clients: clients,
+      p_from: r.from,
+      p_to: r.to,
+    });
+    const cohortByKey = new Map<string, { showed: number; due: number }>();
+    for (const c of (cohort || []) as Array<{
+      client_key: string;
+      keyword: string;
+      showed: number;
+      due: number;
+    }>) {
+      cohortByKey.set(`${c.client_key}|${c.keyword}`, {
+        showed: Number(c.showed),
+        due: Number(c.due),
+      });
+    }
+    for (const l of (leaves || []) as Array<{
+      client_key: string;
+      keyword: string;
+      booked: number;
+      upcoming: number;
+      showed_people: number;
+    }>) {
+      const cellDue = Number(l.booked) - Number(l.upcoming);
+      const cellShowed = Number(l.showed_people);
+      const c = cohortByKey.get(`${l.client_key}|${l.keyword}`) || { showed: 0, due: 0 };
+      if (cellShowed !== c.showed || cellDue !== c.due) {
+        out.push({
+          clientKey: l.client_key,
+          keyword: l.keyword,
+          window: preset,
+          cellShowed,
+          cohortShowed: c.showed,
+          cellDue,
+          cohortDue: c.due,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// ── Children always sum to their parent, every additive metric ──────────────
+interface ParentChildViolation {
+  account: string;
+  status: string;
+  parentId: string;
+  metric: string;
+  parent: number;
+  childrenSum: number;
+}
+
+const ADDITIVE_NODE_METRICS = [
+  "spendCents",
+  "impressions",
+  "clicks",
+  "messages",
+  "booked",
+  "taken",
+  "takenPeople",
+  "showedPeople",
+  "upcoming",
+  "newClients",
+  "collectedCents",
+  "contractedCents",
+] as const;
+
+async function checkParentChildSums(db: Db, etDay: string): Promise<ParentChildViolation[]> {
+  const out: ParentChildViolation[] = [];
+  const accounts = ["all", "tyson", "jake"];
+  const statuses = ["active", "finished", "all"];
+  const r = rangeForPreset("last30", etDay);
+
+  for (const account of accounts) {
+    for (const status of statuses) {
+      const { data } = await db
+        .from("adsv2_window_snapshots")
+        .select("payload")
+        .eq("account", account)
+        .eq("status", status)
+        .eq("level", "tree")
+        .eq("date_from", r.from)
+        .eq("date_to", r.to)
+        .maybeSingle();
+      const campaigns = (data?.payload as { campaigns?: TreeNode[] } | undefined)?.campaigns;
+      if (!campaigns) continue;
+      for (const camp of campaigns) {
+        collectSumViolations(camp, account, status, out);
+      }
+    }
+  }
+  return out;
+}
+
+interface TreeNode {
+  id: string;
+  children?: TreeNode[];
+  [k: string]: unknown;
+}
+
+function collectSumViolations(
+  node: TreeNode,
+  account: string,
+  status: string,
+  out: ParentChildViolation[],
+): void {
+  const children = node.children || [];
+  if (children.length > 0) {
+    for (const m of ADDITIVE_NODE_METRICS) {
+      const parent = Number(node[m] ?? 0);
+      const sum = children.reduce((s, c) => s + Number(c[m] ?? 0), 0);
+      if (Math.abs(parent - sum) > 1e-6) {
+        out.push({ account, status, parentId: node.id, metric: m, parent, childrenSum: sum });
+      }
+    }
+    for (const c of children) collectSumViolations(c, account, status, out);
+  }
 }
 
 export const SELFCHECK_LOOKBACK = FACTS_LOOKBACK_DAYS;

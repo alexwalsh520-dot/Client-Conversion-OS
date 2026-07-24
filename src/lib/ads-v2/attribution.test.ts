@@ -194,8 +194,10 @@ test("two different people stay separate; ordering is deterministic", () => {
   ];
   const grouped = groupBookingsByPerson(recs);
   assert.equal(grouped.length, 2);
-  // Most recent booked day first.
+  // Most recent call day first.
   assert.equal(grouped[0].name, "Bea");
-  assert.equal(grouped[0].status, "noshow");
+  // Bea's call day passed with no taken record and no GHL no-show status, so she
+  // is "no outcome yet" (never counted as a show), not a no-show.
+  assert.equal(grouped[0].status, "no_outcome");
   assert.equal(grouped[1].status, "upcoming");
 });

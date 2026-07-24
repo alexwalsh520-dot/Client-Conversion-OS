@@ -9,6 +9,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { CREATORS_BY_KEY, type CreatorKey } from "@/lib/creators";
 import { creatorCurrency } from "@/lib/fx/rates";
+import { etDay } from "./time";
 import { displayKeyword } from "./keyword";
 import { groupBookingsByPerson, type BookingRecord } from "./attribution";
 import { fetchAllRows, type Db } from "./db";
@@ -43,6 +44,7 @@ interface LeafRow {
   messages: number;
   booked: number;
   upcoming: number;
+  showed_people: number;
   taken_rows: number;
   taken_people: number;
   new_clients: number;
@@ -147,6 +149,7 @@ function leafBase(l: LeafRow): BaseMetrics {
     booked: l.booked,
     taken: l.taken_rows,
     takenPeople: l.taken_people,
+    showedPeople: l.showed_people,
     upcoming: l.upcoming,
     newClients: l.new_clients,
     collectedCents: l.collected_usd_cents,
@@ -289,6 +292,7 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     booked: n.booked,
     taken: n.taken,
     takenPeople: n.takenPeople,
+    showedPeople: n.showedPeople,
     upcoming: n.upcoming,
     newClients: n.newClients,
     collectedCents: n.collectedCents,
@@ -304,6 +308,7 @@ function assignBase(n: AdsV2Node, b: BaseMetrics): void {
   n.booked = b.booked;
   n.taken = b.taken;
   n.takenPeople = b.takenPeople;
+  n.showedPeople = b.showedPeople;
   n.upcoming = b.upcoming;
   n.newClients = b.newClients;
   n.collectedCents = b.collectedCents;
@@ -347,21 +352,26 @@ async function loadHoverDetails(
   clients: CreatorKey[],
   query: AdsV2Query,
 ): Promise<Map<string, { booked: CallDetail[]; taken: CallDetail[] }>> {
-  // Booked people in the window (bounded: tens per client per month).
+  // Booked people in the window (bounded: tens per client per month). `taken` is
+  // the hard-key-linked taken record stamped on the fact; `status` is the raw
+  // GoHighLevel appointment status. Both drive the cohort-true show-rate popup.
   const bookings = await fetchAllRows<{
     client_key: string;
     keyword_normalized: string | null;
     contact_id: string | null;
     person_name: string | null;
     start_time: string | null;
+    created_time: string | null;
     booked_et_day: string;
     dm_et_day: string | null;
     is_upcoming: boolean;
+    taken: boolean;
+    status: string | null;
     evidence: { subscriber?: string | null } | null;
   }>((from, to) =>
     db
       .from("adsv2_booking_facts")
-      .select("client_key, keyword_normalized, contact_id, person_name, start_time, booked_et_day, dm_et_day, is_upcoming, evidence")
+      .select("client_key, keyword_normalized, contact_id, person_name, start_time, created_time, booked_et_day, dm_et_day, is_upcoming, taken, status, evidence")
       .in("client_key", clients)
       .gte("booked_et_day", query.dateFrom)
       .lte("booked_et_day", query.dateTo)
@@ -371,8 +381,7 @@ async function loadHoverDetails(
       .range(from, to),
   );
 
-  // Taken sales in the window, to mark booked people as showed and to list the
-  // "taken" hover directly.
+  // Taken sales in the window, to list the "taken" hover directly.
   const takenSales = await fetchAllRows<{
     client_key: string;
     keyword_normalized: string | null;
@@ -393,21 +402,10 @@ async function loadHoverDetails(
       .range(from, to),
   );
 
-  const takenSubsByLeaf = new Map<string, Set<string>>();
-  const takenNamesByLeaf = new Map<string, Set<string>>();
   const takenDetailByLeaf = new Map<string, CallDetail[]>();
   for (const s of takenSales) {
     if (!s.keyword_normalized) continue;
     const key = `${s.client_key}:${s.keyword_normalized}`;
-    if (s.subscriber_id) {
-      if (!takenSubsByLeaf.has(key)) takenSubsByLeaf.set(key, new Set());
-      takenSubsByLeaf.get(key)!.add(s.subscriber_id);
-    }
-    const nm = (s.prospect_name || "").trim().toLowerCase();
-    if (nm) {
-      if (!takenNamesByLeaf.has(key)) takenNamesByLeaf.set(key, new Set());
-      takenNamesByLeaf.get(key)!.add(nm);
-    }
     const list = takenDetailByLeaf.get(key) || [];
     list.push({
       name: s.prospect_name || "Unknown",
@@ -420,24 +418,24 @@ async function loadHoverDetails(
     takenDetailByLeaf.set(key, list);
   }
 
+  // Booked rows carry their OWN hard-key taken flag + GHL status, so the
+  // show-rate popup is the same cohort as the cell. No name matching.
   const bookingsByLeaf = new Map<string, BookingRecord[]>();
   for (const b of bookings) {
     if (!b.keyword_normalized) continue;
     const key = `${b.client_key}:${b.keyword_normalized}`;
-    const subscriber = b.evidence?.subscriber || null;
-    const nm = (b.person_name || "").trim().toLowerCase();
-    const takenBySub = subscriber ? takenSubsByLeaf.get(key)?.has(subscriber) : false;
-    const takenByName = nm ? takenNamesByLeaf.get(key)?.has(nm) : false;
     const rec: BookingRecord = {
       contactId: b.contact_id,
       personName: b.person_name,
       keyword: b.keyword_normalized,
       startTime: b.start_time,
-      createdTime: null,
+      createdTime: b.created_time,
       dmEtDay: b.dm_et_day,
+      createdEtDay: b.created_time ? etDay(b.created_time) : null,
       bookedEtDay: b.booked_et_day,
       isUpcoming: b.is_upcoming,
-      taken: Boolean(takenBySub || takenByName),
+      taken: Boolean(b.taken),
+      ghlStatus: b.status,
     };
     const list = bookingsByLeaf.get(key) || [];
     list.push(rec);

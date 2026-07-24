@@ -16,6 +16,7 @@ test("derive computes calc columns from base sums", () => {
     booked: 10,
     taken: 8,
     takenPeople: 8,
+    showedPeople: 6,
     upcoming: 2,
     newClients: 4,
     collectedCents: 400_00,
@@ -26,7 +27,7 @@ test("derive computes calc columns from base sums", () => {
   assert.equal(d.cpcCents, 100); // $1.00 CPC
   assert.equal(d.costPerMessageCents, 200);
   assert.equal(d.costPerBookedCents, 1000);
-  assert.equal(d.showRate, 8 / (10 - 2)); // taken people / (booked - upcoming)
+  assert.equal(d.showRate, 6 / (10 - 2)); // showed people (booked cohort) / (booked - upcoming)
   assert.equal(d.closeRate, 4 / 8);
   assert.equal(d.msgToCall, 10 / 50);
   assert.equal(d.collectedRoi, 4); // $400 collected / $100 spend
@@ -40,10 +41,13 @@ test("zero denominators return null, never NaN or Infinity", () => {
   assert.equal(d.collectedRoi, null);
 });
 
-test("show rate can exceed 100% via carryover", () => {
-  // 10 taken but only 6 due (booked 8, upcoming 2) -> 166%.
-  const d = derive(make({ booked: 8, upcoming: 2, taken: 10, takenPeople: 10 }));
-  assert.ok(d.showRate !== null && d.showRate > 1);
+test("cohort-true show rate never exceeds 100%", () => {
+  // The numerator is people BOOKED in the window (not upcoming) who were taken,
+  // so it can never be larger than (booked - upcoming). Carryover sale-cohort
+  // counts (the old bug) can no longer push it past 100%.
+  const d = derive(make({ booked: 8, upcoming: 2, taken: 10, takenPeople: 10, showedPeople: 6 }));
+  assert.ok(d.showRate !== null && d.showRate <= 1);
+  assert.equal(d.showRate, 6 / (8 - 2));
 });
 
 test("TOTAL derives from summed bases, not from summed ratios", () => {
