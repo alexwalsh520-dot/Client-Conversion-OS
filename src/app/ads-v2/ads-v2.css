@@ -402,24 +402,20 @@ html.light .adsv2 {
 .adsv2 table.ads tbody td.calc {
   background: var(--bg-1);
 }
-/* Per-row calc backgrounds, ported verbatim from v1. The calc tint only shows
-   on campaign rows; ad, ad-set, and total rows keep the plain row background,
-   so at ad level the derived columns are not darker than the rest. */
+/* Per-row calc backgrounds, a line-for-line mirror of v1 (lines 395-400 of
+   public/ads-tracker-export.html). Flat rows set NO background of their own, so
+   the calc columns keep the --bg-1 tint at every level, at rest and on hover. */
 .adsv2 table.ads tbody tr.campaign-row td.calc {
   background: var(--bg-1);
 }
-.adsv2 table.ads tbody tr.adset-row td.calc,
-.adsv2 table.ads tbody tr.ad-row td.calc,
-.adsv2 table.ads tbody tr.total-row td.calc {
-  background: var(--bg);
-}
-.adsv2 table.ads tbody tr:hover td.calc,
-.adsv2 table.ads tbody tr.campaign-row:hover td.calc,
-.adsv2 table.ads tbody tr.adset-row:hover td.calc {
+.adsv2 table.ads tbody tr.campaign-row:hover td.calc {
   background: var(--panel);
 }
-.adsv2 table.ads tbody tr.ad-row:hover td.calc {
-  background: var(--bg-1);
+.adsv2 table.ads tbody tr:hover td.calc {
+  background: var(--panel);
+}
+.adsv2 table.ads tbody tr.total-row td.calc {
+  background: var(--bg);
 }
 .adsv2 table.ads tbody td {
   padding: 11px 14px;
@@ -447,15 +443,14 @@ html.light .adsv2 {
   border-bottom: 1px solid var(--border-2);
   font-weight: 500;
 }
-.adsv2 table.ads tbody tr.adset-row td {
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+.adsv2 table.ads tbody tr.campaign-row td:first-child {
+  background: var(--panel);
 }
-.adsv2 table.ads tbody tr.ad-row td {
-  background: var(--bg);
-  border-bottom: 1px solid var(--panel);
-  color: var(--text-2);
-  font-size: 11.5px;
+.adsv2 table.ads tbody tr.campaign-row:hover td {
+  background: var(--panel);
+}
+.adsv2 table.ads tbody tr.campaign-row:hover td:first-child {
+  background: var(--panel);
 }
 .adsv2 table.ads tbody tr.total-row td {
   background: var(--bg-1);
@@ -464,9 +459,56 @@ html.light .adsv2 {
   color: var(--text-2);
 }
 .adsv2 table.ads tbody tr.total-row td:first-child {
+  background: var(--bg-1);
+  color: var(--text-2);
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.08em;
+}
+/* Flat level rows (v1 lines 427-437). NOTE: no td background overrides at all,
+   so the cells inherit the defaults and the calc tint always shows through. */
+.adsv2 .flat-row:hover {
+  background: var(--panel-2);
+}
+.adsv2 .flat-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.adsv2 .flat-camp {
+  color: var(--text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.adsv2 .flat-sep {
+  color: var(--text-4);
+}
+.adsv2 .flat-name {
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* v2 only: the name column is drag-resizable, so the fixed chrome in a flat cell
+   must not shrink. Only the campaign and name text ellipsize. */
+.adsv2 .flat-cell > .camp-check,
+.adsv2 .flat-cell > .chevron,
+.adsv2 .flat-cell > .camp-dot,
+.adsv2 .flat-cell > .flat-sep,
+.adsv2 .flat-cell > .ad-count-chip,
+.adsv2 .flat-cell > .status-pill {
+  flex: 0 0 auto;
+}
+.adsv2 .flat-cell > .flat-camp,
+.adsv2 .flat-cell > .flat-name {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 /* v1 renders table numbers in the body font (Inter) with tabular figures, NOT
    a mono font. Match that: tabular-nums only, no font-family override. */
@@ -494,12 +536,12 @@ html.light .adsv2 {
   color: var(--text-3);
 }
 /* Threshold colors must win at EVERY level in the base state (mouse untouched),
-   exactly like v1. The row-type selectors (tr.ad-row td, tr.total-row td) set a
-   neutral text color at higher specificity than a plain `.pos`, which was
-   swallowing the green/red on ad-set, ad, and total rows. These table-scoped
-   rules match that specificity and, coming later in source, win. Row hover only
-   changes the cell background (above), never these hues, so a colored cell reads
-   the same hue hovered or not. */
+   exactly like v1. The row-type selector tr.total-row td sets a neutral text
+   color at higher specificity than a plain `.pos`, which was swallowing the
+   green/red on total rows. These table-scoped rules match that specificity and,
+   coming later in source, win. Row hover only changes the cell background
+   (above), never these hues, so a colored cell reads the same hue hovered or
+   not. */
 .adsv2 table.ads tbody tr td.pos {
   color: var(--green);
 }
@@ -561,9 +603,6 @@ html.light .adsv2 {
   min-width: 0;
   flex: 0 1 auto;
 }
-.adsv2 .ad-row .camp-name {
-  color: var(--text-2);
-}
 /* status pill - ported verbatim from v1: the base pill IS the green "active"
    look (rounded 99px, green tint); finished/empty override to grey. */
 .adsv2 .status-pill {
@@ -589,12 +628,14 @@ html.light .adsv2 {
   background: var(--bg);
 }
 .adsv2 .ad-count-chip {
-  font-size: 10px;
-  color: var(--text-3);
-  border: 1px solid var(--border-2);
-  border-radius: 10px;
+  font-size: 9.5px;
+  color: var(--text-4);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
   padding: 1px 7px;
-  flex: none;
+  margin-left: 4px;
+  letter-spacing: 0.02em;
 }
 .adsv2 .camp-check {
   width: 13px;
@@ -1221,19 +1262,39 @@ html.light .adsv2 {
   background: var(--red);
 }
 
-/* ── Metrics section (cards + charts) ────────────────────────────────────── */
-.adsv2 .metric-board {
-  margin-top: 30px;
+/* ── Metrics section: a verbatim port of v1's metric + chart CSS
+      (public/ads-tracker-export.html, lines 499-608). Values copied exactly;
+      only the .adsv2 scope and multi-line formatting differ. ─────────────── */
+.adsv2 .grid-charts {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 18px;
+  margin-top: 28px;
+  align-items: start;
+}
+.adsv2 .chart-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .adsv2 .grid-charts {
+    grid-template-columns: 1fr;
+  }
+}
+.adsv2 .chart-actions-cell {
+  min-width: 0;
 }
 .adsv2 .metric-board-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 28px 0 10px;
 }
 .adsv2 .metric-board-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 0;
@@ -1241,6 +1302,7 @@ html.light .adsv2 {
 }
 .adsv2 .metric-board-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .adsv2 .metric-board-btn {
@@ -1248,111 +1310,333 @@ html.light .adsv2 {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 0 12px;
+  padding: 0 11px;
   border: 1px solid var(--border-2);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--panel);
   color: var(--text-2);
   font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
+  /* v2 only: these are <button>s, so they need the app font and a pointer. */
   font-family: inherit;
+  cursor: pointer;
 }
 .adsv2 .metric-board-btn:hover {
+  background: var(--panel-2);
   color: var(--text);
 }
 .adsv2 .metric-board-btn.active {
   background: var(--panel-2);
   color: var(--text);
-  border-color: var(--focus);
-}
-.adsv2 .metric-loading {
-  color: var(--text-3);
-  font-size: 13px;
-  padding: 24px 4px;
+  box-shadow: inset 0 0 0 1px var(--focus);
 }
 .adsv2 .metric-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
+  margin-top: 0;
 }
-@media (max-width: 1100px) {
-  .adsv2 .metric-grid {
-    grid-template-columns: 1fr;
-  }
+.adsv2 .metric-support-grid {
+  margin-top: 18px;
 }
-.adsv2 .metric-col {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.adsv2 .metric-card-shell {
+  position: relative;
   min-width: 0;
 }
-.adsv2 .metric-card {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel);
-  padding: 16px 18px 12px;
-  display: flex;
-  flex-direction: column;
-}
-.adsv2 .metric-grid.editing .metric-card {
+.adsv2 .metric-card-shell.editing .panel {
   cursor: grab;
-  border-style: dashed;
-  border-color: var(--border-2);
+  transition:
+    border-color 0.14s,
+    box-shadow 0.14s,
+    transform 0.32s cubic-bezier(0.22, 0.72, 0.2, 1),
+    opacity 0.14s,
+    background-color 0.14s;
 }
-.adsv2 .metric-card.dragging {
-  opacity: 0.55;
+.adsv2 .metric-card-shell.editing:hover .panel {
+  border-color: var(--focus);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.035),
+    0 12px 30px rgba(0, 0, 0, 0.28);
+}
+.adsv2 .metric-card-shell.dragging {
+  pointer-events: auto;
+}
+.adsv2 .metric-drag-placeholder {
+  height: 100%;
+  min-height: 240px;
+  border: 1px dashed var(--focus);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+}
+.adsv2 .metric-card-shell.drop-target .panel {
+  border-color: var(--gold-dim);
+  box-shadow: 0 0 0 1px rgba(212, 178, 122, 0.18);
+}
+.adsv2 .metric-floating-card {
+  position: fixed;
+  z-index: 220;
+  pointer-events: none;
+  filter: drop-shadow(0 22px 40px rgba(0, 0, 0, 0.55));
+  transform: scale(1.01);
+  transform-origin: top left;
+}
+.adsv2 .metric-floating-card .panel {
+  border-color: var(--focus);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 24px 60px rgba(0, 0, 0, 0.58);
+}
+body.metric-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 .adsv2 .metric-delete {
   position: absolute;
   top: 9px;
   right: 10px;
-  z-index: 3;
-  width: 24px;
-  height: 24px;
+  z-index: 4;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--border-2);
   border-radius: 999px;
   background: var(--panel);
   color: var(--text-3);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* v2 only: <button> reset. */
+  font-family: inherit;
   cursor: pointer;
 }
 .adsv2 .metric-delete:hover {
-  color: var(--red);
-  border-color: var(--red-dim);
+  background: var(--panel-2);
+  color: var(--text);
 }
-.adsv2 .metric-card-head {
-  margin-bottom: 8px;
+.adsv2 .metric-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 58vh;
+  overflow: auto;
+  padding-right: 2px;
 }
-.adsv2 .metric-card-title {
-  position: relative;
+.adsv2 .metric-pick-card {
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  background: var(--bg);
+  text-align: left;
+  color: var(--text-2);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  /* v2 only: <button> reset. */
+  font-family: inherit;
+  cursor: pointer;
+}
+.adsv2 .metric-pick-card:hover {
+  background: var(--panel);
+  border-color: var(--focus);
+  color: var(--text);
+}
+.adsv2 .metric-pick-card.selected {
+  border-color: var(--border-2);
+  background: var(--panel);
+  color: var(--text);
+}
+.adsv2 .metric-pick-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+.adsv2 .metric-pick-meta {
+  font-size: 10px;
+  color: var(--text-4);
+  margin-top: 5px;
+  line-height: 1.35;
+}
+.adsv2 .metric-pick-icon {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.adsv2 .metric-pick-card.selected .metric-pick-icon {
+  border-color: var(--border-2);
+  color: var(--gold);
+}
+@media (max-width: 700px) {
+  .adsv2 .metric-add-grid {
+    grid-template-columns: 1fr;
+  }
+  .adsv2 .metric-board-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Chart cards */
+.adsv2 .chart-card {
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.adsv2 .chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.adsv2 .chart-title {
   font-size: 11px;
   color: var(--text-3);
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   margin-bottom: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
 }
-.adsv2 .metric-card-big {
-  font-size: 25px;
+.adsv2 .chart-subtitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adsv2 .chart-big {
+  font-size: 26px;
   font-weight: 500;
   color: var(--text);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
-.adsv2 .metric-card-meta {
+.adsv2 .chart-delta {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.adsv2 .chart-delta.pos {
+  color: var(--green);
+}
+.adsv2 .chart-delta.neg {
+  color: var(--red);
+}
+.adsv2 .chart-sub-label {
   font-size: 11px;
   color: var(--text-4);
-  margin-top: 3px;
+}
+.adsv2 .chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.adsv2 .chart-select {
+  font-size: 11px;
+  padding: 5px 8px;
+  max-width: 210px;
+}
+.adsv2 .chart-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.adsv2 .chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.adsv2 .chart-sw {
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* Line chart */
+.adsv2 .lc-wrap {
+  position: relative;
+  width: 100%;
+}
+.adsv2 .lc-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: crosshair;
+}
+.adsv2 .lc-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -6px);
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  min-width: 150px;
+  max-width: 240px;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+.adsv2 .lc-tt-date {
+  font-size: 10px;
+  color: var(--text-4);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  font-family: "JetBrains Mono", monospace;
+}
+.adsv2 .lc-tt-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+}
+.adsv2 .lc-tt-sw {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.adsv2 .lc-tt-name {
+  color: var(--text-3);
+  font-size: 10.5px;
+  flex: 1;
+}
+.adsv2 .lc-tt-val {
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* v2 only: pieces v1's metrics section has no equivalent for. Styled with v1's
+   tokens so they blend: the loading line, the info hover on a card title, and
+   the picker footer. */
+.adsv2 .metric-loading {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 24px 4px;
+}
+.adsv2 .chart-title-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 .adsv2 .metric-tip {
   position: absolute;
-  top: 20px;
+  top: 18px;
   left: 0;
   z-index: 5;
   width: 240px;
@@ -1372,95 +1656,10 @@ html.light .adsv2 {
   margin-top: 5px;
   color: var(--text-4);
 }
-.adsv2 .lc-wrap {
-  position: relative;
-  margin-top: 8px;
-}
-.adsv2 .lc-svg {
-  width: 100%;
-  height: 84px;
-  display: block;
-}
-.adsv2 .lc-tip {
-  position: absolute;
-  top: -2px;
-  right: 0;
-  display: flex;
-  gap: 8px;
-  font-size: 10px;
+.adsv2 .modal-sub {
+  font-size: 11px;
   color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-.adsv2 .lc-tip-val {
-  color: var(--text);
-}
-/* Add-metric modal: corrected selection states. SELECTED = darker fill + gold
-   accent border + a visible checkmark; unselected = neutral subtle outline;
-   hover distinct from both. Selected always looks MORE committed than hover. */
-.adsv2 .metric-add-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-  max-height: 56vh;
-  overflow: auto;
-  padding-right: 2px;
-}
-.adsv2 .metric-pick {
-  min-height: 74px;
-  padding: 12px;
-  border: 1px solid var(--border-2);
-  border-radius: 9px;
-  background: var(--bg);
-  text-align: left;
-  color: var(--text-2);
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-  cursor: pointer;
-  font-family: inherit;
-}
-.adsv2 .metric-pick:hover {
-  background: var(--panel);
-  border-color: var(--border-2);
-  color: var(--text);
-}
-.adsv2 .metric-pick.selected {
-  background: var(--panel-2);
-  border-color: var(--gold);
-  box-shadow: inset 0 0 0 1px var(--gold);
-  color: var(--text);
-}
-.adsv2 .metric-pick-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.2;
-}
-.adsv2 .metric-pick-meta {
-  font-size: 10px;
-  color: var(--text-4);
-  margin-top: 5px;
-  line-height: 1.35;
-  display: block;
-}
-.adsv2 .metric-pick-icon {
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--border-2);
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  flex: 0 0 auto;
-  font-size: 15px;
-}
-.adsv2 .metric-pick.selected .metric-pick-icon {
-  border-color: var(--gold);
-  background: var(--gold);
-  color: #1a1408;
+  margin-top: 3px;
 }
 .adsv2 .metric-add-foot {
   display: flex;

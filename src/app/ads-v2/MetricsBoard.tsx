@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// The Metrics section, rebuilt to v1's structure (public/ads-tracker-export.html):
+// metric-board-head, a grid-charts metric-grid of two chart-columns, each card a
+// metric-card-shell wrapping a panel chart-card, and v1's pointer-drag reorder
+// with a floating card and a drop placeholder. The data wiring is unchanged: same
+// API payload, same CARD_DEFS, same storage key and format.
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CARD_BY_ID, CARD_DEFS, DEFAULT_CARD_IDS, type CardDef, type CardFormat } from "@/lib/ads-v2/cards";
 import type { AdsV2MetricsPayload, BaseMetrics, MetricsDay } from "@/lib/ads-v2/types";
-import { IcCheck } from "./icons";
+import { IcCheck, IcEdit, IcPlus } from "./icons";
 import { fmtMD } from "./format";
+import LineChart from "./LineChart";
 
 const STORE_KEY = "ccos.adsv2.metricCards.v1";
 
@@ -48,6 +55,42 @@ function formatValue(v: number | null, fmt: CardFormat): string {
   }
 }
 
+// Axis ticks are the same number in the same format as the big number, kept
+// short so four of them fit the gutter.
+function axisFormat(fmt: CardFormat) {
+  return (v: number) => {
+    if (!Number.isFinite(v)) return "";
+    if (fmt === "usd") {
+      const abs = Math.abs(v);
+      if (abs >= 1000) return `$${Math.round((v / 1000) * 10) / 10}k`;
+      return `$${Math.round(v)}`;
+    }
+    return formatValue(v, fmt);
+  };
+}
+
+interface DragInfo {
+  id: string;
+  pointerId: number;
+  x: number;
+  y: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+}
+
+interface SlotRect {
+  id: string;
+  index: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+}
+
 export default function MetricsBoard({
   publicToken,
   account,
@@ -68,7 +111,9 @@ export default function MetricsBoard({
   const [metrics, setMetrics] = useState<AdsV2MetricsPayload | null>(null);
   const [layout, setLayout] = useState<string[]>(() => loadLayout());
   const [editing, setEditing] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const cache = useRef<Map<string, AdsV2MetricsPayload>>(new Map());
 
   const key = `${account}|${status}|${dateFrom}|${dateTo}`;
@@ -107,277 +152,402 @@ export default function MetricsBoard({
   const total: BaseMetrics | null = ready ? metrics!.total : null;
   const days: MetricsDay[] = ready ? metrics!.days : [];
 
-  // ── Drag to rearrange. Reorder live during the drag for feel, but PERSIST
-  //    only once, on drop. ────────────────────────────────────────────────
-  const dragId = useRef<string | null>(null);
-  const onCardPointerDown = (id: string) => (e: React.PointerEvent) => {
-    if (!editing) return;
-    e.preventDefault();
-    dragId.current = id;
-  };
-  const onCardPointerEnter = (overId: string) => () => {
-    const from = dragId.current;
-    if (!from || from === overId) return;
-    setLayout((prev) => {
-      const a = prev.indexOf(from);
-      const b = prev.indexOf(overId);
-      if (a < 0 || b < 0) return prev;
-      const next = [...prev];
-      next.splice(a, 1);
-      next.splice(b, 0, from);
-      return next;
-    });
-  };
+  const visibleLayout = useMemo(() => layout.filter((id) => CARD_BY_ID[id]), [layout]);
+  const visibleLayoutKey = visibleLayout.join("|");
+  const leftLayout = visibleLayout.filter((_, i) => i % 2 === 0);
+  const rightLayout = visibleLayout.filter((_, i) => i % 2 === 1);
+
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingRects = useRef<Record<string, { left: number; top: number }> | null>(null);
+  const visibleLayoutRef = useRef(visibleLayout);
+  const dragInfoRef = useRef<DragInfo | null>(null);
+  const dragSlotRectsRef = useRef<SlotRect[]>([]);
+  const draggingId = dragInfo?.id || null;
+
+  useLayoutEffect(() => {
+    visibleLayoutRef.current = visibleLayout;
+  }, [visibleLayout]);
+
   useEffect(() => {
-    const onUp = () => {
-      if (dragId.current) {
-        dragId.current = null;
-        setLayout((cur) => {
-          saveLayout(cur); // the ONE write, on drop
-          return cur;
-        });
+    dragInfoRef.current = dragInfo;
+  }, [dragInfo]);
+
+  // Persist the chosen cards and their order. Same key, same format as before.
+  useEffect(() => {
+    saveLayout(visibleLayoutRef.current);
+  }, [visibleLayoutKey]);
+
+  useEffect(() => {
+    document.body.classList.toggle("metric-dragging", Boolean(dragInfo));
+    return () => document.body.classList.remove("metric-dragging");
+  }, [dragInfo]);
+
+  const measureCards = () => {
+    const rects: Record<string, { left: number; top: number }> = {};
+    visibleLayoutRef.current.forEach((id) => {
+      const node = cardRefs.current[id];
+      if (node) {
+        const rect = node.getBoundingClientRect();
+        rects[id] = { left: rect.left, top: rect.top };
       }
-    };
-    window.addEventListener("pointerup", onUp);
-    return () => window.removeEventListener("pointerup", onUp);
-  }, []);
-
-  const removeCard = (id: string) =>
-    setLayout((prev) => {
-      const next = prev.filter((x) => x !== id);
-      saveLayout(next);
-      return next;
     });
-
-  const applyAdd = (ids: string[]) => {
-    setLayout(ids);
-    saveLayout(ids);
-    setAdding(false);
+    return rects;
   };
 
-  const visible = layout.filter((id) => CARD_BY_ID[id]);
-  const left = visible.filter((_, i) => i % 2 === 0);
-  const right = visible.filter((_, i) => i % 2 === 1);
+  const setLayoutWithAnimation = (updater: (prev: string[]) => string[]) => {
+    pendingRects.current = measureCards();
+    setLayout((prev) => {
+      const next = updater(prev);
+      visibleLayoutRef.current = next.filter((id) => CARD_BY_ID[id]);
+      return next;
+    });
+  };
+
+  // FLIP: cards slide from where they were to where they now are.
+  useLayoutEffect(() => {
+    const before = pendingRects.current;
+    if (!before) return;
+    pendingRects.current = null;
+    visibleLayout.forEach((id) => {
+      if (id === draggingId) return;
+      const node = cardRefs.current[id];
+      const prev = before[id];
+      if (!node || !prev) return;
+      const rect = node.getBoundingClientRect();
+      const dx = prev.left - rect.left;
+      const dy = prev.top - rect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      node.style.transition = "none";
+      node.style.transform = `translate(${dx}px, ${dy}px)`;
+      node.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        node.style.transition = "transform 320ms cubic-bezier(.22,.72,.2,1)";
+        node.style.transform = "";
+        window.setTimeout(() => {
+          node.style.transition = "";
+        }, 370);
+      });
+    });
+  }, [visibleLayoutKey, draggingId, visibleLayout]);
+
+  const deleteCard = (id: string) => setLayout((prev) => prev.filter((cardId) => cardId !== id));
+
+  const applyPicker = (next: string[]) => {
+    setLayout(next.filter((id) => CARD_BY_ID[id]));
+    setPickerOpen(false);
+  };
+
+  const registerRef = (id: string, node: HTMLDivElement | null) => {
+    if (node) cardRefs.current[id] = node;
+    else delete cardRefs.current[id];
+  };
+
+  const beginPointerDrag = (event: React.PointerEvent, id: string) => {
+    if (!editing || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("button,input,select,textarea")) return;
+    const node = cardRefs.current[id];
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    event.preventDefault();
+    setDropTargetId(null);
+    dragSlotRectsRef.current = visibleLayoutRef.current
+      .map((cardId, index) => {
+        const slotNode = cardRefs.current[cardId];
+        if (!slotNode) return null;
+        const r = slotNode.getBoundingClientRect();
+        return {
+          id: cardId,
+          index,
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          centerX: r.left + r.width / 2,
+          centerY: r.top + r.height / 2,
+        };
+      })
+      .filter(Boolean) as SlotRect[];
+    const nextDrag: DragInfo = {
+      id,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+    dragInfoRef.current = nextDrag;
+    setDragInfo(nextDrag);
+  };
+
+  const reorderTowardPointer = (clientX: number, clientY: number) => {
+    const activeDrag = dragInfoRef.current;
+    if (!activeDrag) return;
+    const candidates = dragSlotRectsRef.current
+      .map((slot) => {
+        if (clientX < slot.left || clientX > slot.right || clientY < slot.top || clientY > slot.bottom)
+          return null;
+        return { ...slot, distance: Math.hypot(clientX - slot.centerX, clientY - slot.centerY) };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a!.distance - b!.distance);
+    const targetSlot = candidates[0];
+    if (!targetSlot) {
+      setDropTargetId(null);
+      return;
+    }
+    const currentLayout = visibleLayoutRef.current;
+    if (currentLayout.indexOf(activeDrag.id) === targetSlot.index) return;
+    setDropTargetId(currentLayout[targetSlot.index]);
+    setLayoutWithAnimation((prev) => moveCardToIndex(prev, activeDrag.id, targetSlot.index));
+  };
+
+  useEffect(() => {
+    if (!dragInfo) return;
+    const onMove = (event: PointerEvent) => {
+      const activeDrag = dragInfoRef.current;
+      if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+      const nextDrag = { ...activeDrag, x: event.clientX, y: event.clientY };
+      dragInfoRef.current = nextDrag;
+      setDragInfo(nextDrag);
+      reorderTowardPointer(event.clientX, event.clientY);
+    };
+    const onUp = (event: PointerEvent) => {
+      const activeDrag = dragInfoRef.current;
+      if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+      dragInfoRef.current = null;
+      dragSlotRectsRef.current = [];
+      setDragInfo(null);
+      setDropTargetId(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(dragInfo)]);
+
+  const floatingDef = dragInfo ? CARD_BY_ID[dragInfo.id] : null;
+  const floatingStyle = dragInfo
+    ? { left: dragInfo.x - dragInfo.offsetX, top: dragInfo.y - dragInfo.offsetY, width: dragInfo.width }
+    : undefined;
 
   const renderCard = (id: string) => {
     const def = CARD_BY_ID[id];
     if (!def) return null;
     return (
-      <MetricCard
+      <MetricCardShell
         key={id}
-        def={def}
-        total={total}
-        days={days}
+        id={id}
         editing={editing}
-        onRemove={() => removeCard(id)}
-        onPointerDown={onCardPointerDown(id)}
-        onPointerEnter={onCardPointerEnter(id)}
-        dragging={dragId.current === id}
-      />
+        draggingId={draggingId}
+        dropTargetId={dropTargetId}
+        dragHeight={dragInfo?.id === id ? dragInfo.height : null}
+        onDelete={deleteCard}
+        onPointerDown={beginPointerDrag}
+        registerRef={registerRef}
+      >
+        <MetricChartCard def={def} total={total} days={days} />
+      </MetricCardShell>
     );
   };
 
   return (
-    <div className="metric-board">
+    <>
       <div className="metric-board-head">
         <h2 className="metric-board-title">Metrics</h2>
         <div className="metric-board-actions">
-          <button className="metric-board-btn" onClick={() => setAdding(true)}>
-            + Add
+          <button className="metric-board-btn" onClick={() => setPickerOpen(true)}>
+            <IcPlus /> Add
           </button>
           <button
-            className={`metric-board-btn${editing ? " active" : ""}`}
-            onClick={() => setEditing((e) => !e)}
+            className={`metric-board-btn ${editing ? "active" : ""}`}
+            onClick={() => setEditing((v) => !v)}
           >
-            {editing ? "Done" : "Edit"}
+            <IcEdit /> {editing ? "Done" : "Edit"}
           </button>
         </div>
       </div>
-      {!ready ? (
-        <div className="metric-loading">Loading metrics...</div>
-      ) : (
-        <div className={`metric-grid${editing ? " editing" : ""}`}>
-          <div className="metric-col">{left.map(renderCard)}</div>
-          <div className="metric-col">{right.map(renderCard)}</div>
+      <div className={`grid-charts metric-grid ${editing ? "editing" : ""}`}>
+        <div className="chart-column">{leftLayout.map(renderCard)}</div>
+        <div className="chart-column">{rightLayout.map(renderCard)}</div>
+      </div>
+      {floatingDef && (
+        <div className="metric-floating-card" style={floatingStyle}>
+          <MetricChartCard def={floatingDef} total={total} days={days} />
         </div>
       )}
-      {adding && (
-        <AddModal current={visible} onApply={applyAdd} onClose={() => setAdding(false)} />
+      {pickerOpen && (
+        <MetricAddModal
+          layout={visibleLayout}
+          onApply={applyPicker}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function moveCardToIndex(layout: string[], id: string, index: number): string[] {
+  const from = layout.indexOf(id);
+  if (from < 0 || from === index) return layout;
+  const next = [...layout];
+  next.splice(from, 1);
+  next.splice(index, 0, id);
+  return next;
+}
+
+function MetricCardShell({
+  id,
+  editing,
+  draggingId,
+  dropTargetId,
+  dragHeight,
+  onDelete,
+  onPointerDown,
+  registerRef,
+  children,
+}: {
+  id: string;
+  editing: boolean;
+  draggingId: string | null;
+  dropTargetId: string | null;
+  dragHeight: number | null;
+  onDelete: (id: string) => void;
+  onPointerDown: (e: React.PointerEvent, id: string) => void;
+  registerRef: (id: string, node: HTMLDivElement | null) => void;
+  children: React.ReactNode;
+}) {
+  const isDragging = draggingId === id;
+  const isDropTarget = dropTargetId === id && draggingId !== id;
+  return (
+    <div
+      ref={(node) => registerRef(id, node)}
+      className={
+        "metric-card-shell " +
+        (editing ? "editing " : "") +
+        (isDragging ? "dragging " : "") +
+        (isDropTarget ? "drop-target" : "")
+      }
+      onPointerDown={(e) => onPointerDown(e, id)}
+      style={isDragging && dragHeight ? { height: dragHeight } : undefined}
+    >
+      {isDragging ? (
+        <div className="metric-drag-placeholder" />
+      ) : (
+        <>
+          {editing && (
+            <button
+              className="metric-delete"
+              title="Delete card"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(id);
+              }}
+            >
+              ×
+            </button>
+          )}
+          {children}
+        </>
       )}
     </div>
   );
 }
 
-function MetricCard({
+// One card: v1's panel chart-card shape. The big number is the window total and
+// the line is the day series, exactly as before.
+function MetricChartCard({
   def,
   total,
   days,
-  editing,
-  dragging,
-  onRemove,
-  onPointerDown,
-  onPointerEnter,
 }: {
   def: CardDef;
   total: BaseMetrics | null;
   days: MetricsDay[];
-  editing: boolean;
-  dragging: boolean;
-  onRemove: () => void;
-  onPointerDown: (e: React.PointerEvent) => void;
-  onPointerEnter: () => void;
 }) {
   const [tip, setTip] = useState(false);
   const value = total ? def.value(total) : null;
-  const points = days.map((d) => def.point(d));
+  const values = days.map((d) => def.point(d));
   const labels = days.map((d) => fmtMD(d.day));
+  const axisFmt = axisFormat(def.format);
 
   return (
-    <div
-      className={`metric-card${editing ? " editing" : ""}${dragging ? " dragging" : ""}`}
-      onPointerDown={onPointerDown}
-      onPointerEnter={onPointerEnter}
-    >
-      {editing && (
-        <button className="metric-delete" onClick={onRemove} aria-label="Remove card">
-          ×
-        </button>
-      )}
-      <div className="metric-card-head">
-        <div className="metric-card-title">
-          {def.label}
-          <span
-            className="info-dot"
-            onMouseEnter={() => setTip(true)}
-            onMouseLeave={() => setTip(false)}
-          >
-            ⓘ
-          </span>
-          {tip && (
-            <span className="metric-tip">
-              {def.sentence}
-              <span className="metric-tip-src">Source: {def.source}</span>
+    <div className="panel chart-card">
+      <div className="chart-head">
+        <div>
+          <div className="chart-title">
+            {def.label}
+            <span
+              className="chart-title-info"
+              onMouseEnter={() => setTip(true)}
+              onMouseLeave={() => setTip(false)}
+            >
+              <span className="info-dot">ⓘ</span>
+              {tip && (
+                <span className="metric-tip">
+                  {def.sentence}
+                  <span className="metric-tip-src">Source: {def.source}</span>
+                </span>
+              )}
             </span>
-          )}
+          </div>
+          <div className="chart-subtitle">
+            <span className="chart-big">{formatValue(value, def.format)}</span>
+            <span className="chart-sub-label">{def.meta}</span>
+          </div>
         </div>
-        <div className="metric-card-big">{formatValue(value, def.format)}</div>
-        <div className="metric-card-meta">{def.meta}</div>
       </div>
-      <LineChart points={points} labels={labels} format={def.format} />
+      <LineChart
+        idBase={def.id}
+        labels={labels}
+        series={[
+          {
+            name: def.label,
+            values,
+            color: "var(--gold)",
+            isPrimary: true,
+            fmt: (v) => formatValue(v, def.format),
+          },
+        ]}
+        fmt={axisFmt}
+      />
+      <div className="chart-legend">
+        <span className="chart-legend-item">
+          <span className="chart-sw" style={{ background: "var(--gold)" }} />
+          {def.label}
+        </span>
+      </div>
     </div>
   );
 }
 
-// Inline SVG line chart: a smoothed line with a soft gradient fill and a hover
-// readout, ported from v1's LineChart (no chart library).
-function LineChart({ points, labels, format }: { points: number[]; labels: string[]; format: CardFormat }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const W = 640;
-  const H = 150;
-  const PAD = 6;
-  const n = points.length;
-  const max = Math.max(1, ...points);
-  const min = Math.min(0, ...points);
-  const span = max - min || 1;
-  const x = (i: number) => (n <= 1 ? W / 2 : PAD + (i / (n - 1)) * (W - PAD * 2));
-  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2);
-
-  const pts = points.map((v, i) => [x(i), y(v)] as const);
-  const line = smoothPath(pts);
-  const area = n > 0 ? `${line} L ${x(n - 1)},${H} L ${x(0)},${H} Z` : "";
-  const gid = useMemo(() => `g${Math.round(labels.length * 97 + max)}`, [labels.length, max]);
-
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const rel = ((e.clientX - rect.left) / rect.width) * W;
-    let best = 0;
-    let bd = Infinity;
-    for (let i = 0; i < n; i++) {
-      const d = Math.abs(x(i) - rel);
-      if (d < bd) {
-        bd = d;
-        best = i;
-      }
-    }
-    setHover(best);
-  };
-
-  return (
-    <div className="lc-wrap">
-      <svg
-        className="lc-svg"
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
-      >
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.20" />
-            <stop offset="100%" stopColor="var(--gold)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {area && <path d={area} fill={`url(#${gid})`} />}
-        {line && <path d={line} fill="none" stroke="var(--gold)" strokeWidth="1.6" />}
-        {hover != null && n > 0 && (
-          <>
-            <line x1={x(hover)} y1={PAD} x2={x(hover)} y2={H - PAD} stroke="var(--border-2)" strokeDasharray="3 3" />
-            <circle cx={x(hover)} cy={y(points[hover])} r="3" fill="var(--gold)" />
-          </>
-        )}
-      </svg>
-      {hover != null && n > 0 && (
-        <div className="lc-tip">
-          <span className="lc-tip-day">{labels[hover]}</span>
-          <span className="lc-tip-val">{formatValue(points[hover], format)}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Catmull-Rom -> cubic Bezier smoothing (v1's smoothPath).
-function smoothPath(pts: readonly (readonly [number, number])[]): string {
-  if (pts.length === 0) return "";
-  if (pts.length === 1) return `M ${pts[0][0]},${pts[0][1]}`;
-  let d = `M ${pts[0][0]},${pts[0][1]}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-    d += ` C ${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
-  }
-  return d;
-}
-
-// Add-metric modal. Selection states corrected from v1's inversion:
-// SELECTED = darker fill + gold accent border + a visible checkmark; unselected
-// = a neutral subtle outline; hover is distinct from both. Selected always looks
-// more committed. Apply keeps existing-selected order, then appends new ones.
-function AddModal({
-  current,
+// v1's picker: a metric-add-grid of metric-pick-card tiles. Apply keeps the
+// existing-selected order, then appends the newly picked ones.
+function MetricAddModal({
+  layout,
   onApply,
   onClose,
 }: {
-  current: string[];
+  layout: string[];
   onApply: (ids: string[]) => void;
   onClose: () => void;
 }) {
-  const [sel, setSel] = useState<Set<string>>(new Set(current));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(layout));
   const toggle = (id: string) =>
-    setSel((prev) => {
+    setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   const apply = () => {
-    const kept = current.filter((id) => sel.has(id));
-    const added = CARD_DEFS.filter((c) => sel.has(c.id) && !current.includes(c.id)).map((c) => c.id);
+    const kept = layout.filter((id) => selected.has(id));
+    const added = CARD_DEFS.map((def) => def.id).filter((id) => selected.has(id) && !kept.includes(id));
     onApply([...kept, ...added]);
   };
 
@@ -385,7 +555,10 @@ function AddModal({
     <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          <div className="modal-title">Add or remove metrics</div>
+          <div>
+            <div className="modal-title">Add cards</div>
+            <div className="modal-sub">Choose which campaign metrics are visible in this chart section.</div>
+          </div>
           <button className="modal-close" onClick={onClose}>
             ×
           </button>
@@ -393,18 +566,18 @@ function AddModal({
         <div className="modal-body">
           <div className="metric-add-grid">
             {CARD_DEFS.map((def) => {
-              const on = sel.has(def.id);
+              const isSelected = selected.has(def.id);
               return (
                 <button
                   key={def.id}
-                  className={`metric-pick${on ? " selected" : ""}`}
+                  className={`metric-pick-card ${isSelected ? "selected" : ""}`}
                   onClick={() => toggle(def.id)}
                 >
-                  <span className="metric-pick-text">
-                    <span className="metric-pick-label">{def.label}</span>
-                    <span className="metric-pick-meta">{def.meta}</span>
+                  <span>
+                    <div className="metric-pick-label">{def.label}</div>
+                    <div className="metric-pick-meta">{def.meta}</div>
                   </span>
-                  <span className="metric-pick-icon">{on ? <IcCheck /> : "+"}</span>
+                  <span className="metric-pick-icon">{isSelected ? <IcCheck /> : <IcPlus />}</span>
                 </button>
               );
             })}

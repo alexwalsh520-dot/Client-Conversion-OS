@@ -53,6 +53,32 @@ export function IcCheck() {
   return <Icon d={<path d="M20 6L9 17l-5-5" />} />;
 }
 
+export function IcPlus() {
+  return (
+    <Icon
+      d={
+        <>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </>
+      }
+    />
+  );
+}
+
+export function IcEdit() {
+  return (
+    <Icon
+      d={
+        <>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </>
+      }
+    />
+  );
+}
+
 // The settings gear, matched to the sidebar's line-icon Settings glyph (lucide,
 // rendered at 18px there) so the v2 header gear is the same visual weight/size.
 export function IcGear({ size = 18 }: { size?: number }) {

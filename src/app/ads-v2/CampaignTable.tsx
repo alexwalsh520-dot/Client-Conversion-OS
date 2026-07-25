@@ -257,6 +257,21 @@ export default function CampaignTable({
   const moveHover = (e: React.MouseEvent, patch: Omit<HoverState, "x" | "y">) =>
     setHover({ ...patch, x: e.clientX, y: e.clientY });
 
+  // Ad set and Ad levels are FLAT views (one sorted list, campaign shown inline),
+  // so their top rows need the owning campaign's name. Built from the tree we
+  // already have; no data change.
+  const campaignNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of payload.campaigns) {
+      const label = c.shortName || c.name;
+      for (const a of c.children) {
+        map.set(a.id, label);
+        for (const ad of a.children) map.set(ad.id, label);
+      }
+    }
+    return map;
+  }, [payload]);
+
   const rowNoun = level === "ad" ? "ad" : level === "adset" ? "ad set" : "campaign";
 
   return (
@@ -353,6 +368,7 @@ export default function CampaignTable({
                 key={node.id}
                 node={node}
                 depth={0}
+                flatCampaign={level === "campaign" ? null : campaignNameById.get(node.id) ?? null}
                 expanded={expanded}
                 selected={selected}
                 onToggleExpand={toggleExpand}
@@ -385,6 +401,7 @@ export default function CampaignTable({
 function NodeRows({
   node,
   depth,
+  flatCampaign,
   expanded,
   selected,
   onToggleExpand,
@@ -394,6 +411,8 @@ function NodeRows({
 }: {
   node: AdsV2Node;
   depth: number;
+  /** Owning campaign name when this row is a FLAT top row; null when nested. */
+  flatCampaign: string | null;
   expanded: Set<string>;
   selected: Set<string>;
   onToggleExpand: (id: string) => void;
@@ -403,14 +422,30 @@ function NodeRows({
 }) {
   const isOpen = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
-  const rowClass = node.level === "campaign" ? "campaign-row" : node.level === "adset" ? "adset-row" : "ad-row";
+  // Campaign rows are v1's campaign-row. Every other row is v1's flat-row, which
+  // sets NO background of its own, so the calc tint shows at every level.
+  const rowClass = node.level === "campaign" ? "campaign-row" : "flat-row";
+  const isFlat = flatCampaign !== null;
   const dotClass = node.clientKey === "jake" ? "jake" : "tyson";
+
+  const nameEl =
+    node.level === "ad" && (node.previewImageUrl || node.hasVideo) ? (
+      <AdNamePreview node={node} className={isFlat ? "flat-name" : "camp-name"} />
+    ) : (
+      <span className={isFlat ? "flat-name" : "camp-name"} title={node.name}>
+        {node.shortName || node.name}
+      </span>
+    );
+
+  const cellClass = isFlat
+    ? "flat-cell"
+    : `campaign-cell${depth === 1 ? " indent-1" : depth === 2 ? " indent-2" : ""}`;
 
   return (
     <>
       <tr className={rowClass}>
         <td>
-          <span className={`campaign-cell${depth === 1 ? " indent-1" : depth === 2 ? " indent-2" : ""}`}>
+          <span className={cellClass}>
             {depth === 0 && (
               <input
                 type="checkbox"
@@ -428,13 +463,13 @@ function NodeRows({
               <span className="chevron" />
             )}
             <span className={`camp-dot ${dotClass}`} />
-            {node.level === "ad" && (node.previewImageUrl || node.hasVideo) ? (
-              <AdNamePreview node={node} />
-            ) : (
-              <span className="camp-name" title={node.name}>
-                {node.shortName || node.name}
-              </span>
+            {isFlat && (
+              <>
+                <span className="flat-camp">{flatCampaign}</span>
+                <span className="flat-sep">·</span>
+              </>
             )}
+            {nameEl}
             {hasChildren && <span className="ad-count-chip">{childCount(node)} ads</span>}
             <span className={`status-pill ${node.status}`}>
               {node.status === "active" ? "Active" : node.status === "finished" ? "Finished" : "empty"}
@@ -473,6 +508,7 @@ function NodeRows({
             key={child.id}
             node={child}
             depth={depth + 1}
+            flatCampaign={null}
             expanded={expanded}
             selected={selected}
             onToggleExpand={onToggleExpand}
@@ -492,7 +528,7 @@ function NodeRows({
 // shows the high-res thumbnail plus a "video not cached yet" note.
 const PREVIEW_GRACE_MS = 250;
 
-function AdNamePreview({ node }: { node: AdsV2Node }) {
+function AdNamePreview({ node, className }: { node: AdsV2Node; className: string }) {
   const nameRef = useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -599,7 +635,7 @@ function AdNamePreview({ node }: { node: AdsV2Node }) {
     <>
       <span
         ref={nameRef}
-        className="camp-name ad-name-preview"
+        className={`${className} ad-name-preview`}
         title={node.name}
         onMouseEnter={openNow}
         onMouseLeave={scheduleClose}
