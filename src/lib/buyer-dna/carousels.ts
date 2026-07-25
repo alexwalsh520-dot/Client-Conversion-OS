@@ -10,7 +10,7 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
-import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock } from "./messaging-doc";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -70,10 +70,29 @@ const BASE =
   '{"carousels":[{"topic":"a few words","slides":[{"text":"up to 4 full sentences, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
   "Exactly 5 carousels; 6 to 8 slides each. No prose outside the JSON.";
 
+// When the house writing framework is installed, IT governs voice, structure, slide composition, CTA
+// placement and angle selection — so the hardcoded versions of those rules are dropped rather than
+// left to argue with it. All that stays here is the mechanical contract the API and renderer depend
+// on: the JSON shape, exactly 5 carousels, the slide bounds, the sentence cap and no dollar figures.
+const MECHANICAL_BASE =
+  "You write Instagram text carousels for a fitness creator, in the creator's first-person voice. Follow the AUTHORITATIVE WRITING FRAMEWORK in the user message for everything about how to write: voice, hooks, slide structure, angles, and how a carousel ends. The rules below are only the output contract.\n" +
+  "OUTPUT CONTRACT (non-negotiable):\n" +
+  "- Exactly 5 carousels. Each carousel 5 to 10 slides.\n" +
+  "- At most 4 sentences per slide, written as real sentences with room to breathe (never clipped fragments).\n" +
+  "- Plain text only. No markdown, no ** bold markers, no emojis, no hashtags.\n" +
+  "- Never include a specific dollar amount; describe money qualitatively.\n" +
+  "Return STRICT JSON and nothing else:\n" +
+  '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"up to 4 full sentences; blank lines between paragraphs"}]}]}\n' +
+  "\nDo not use double-quote characters inside JSON string values.";
+
 // The style exemplars are Tyson/Antwan's physique world — useful register cues for a creator without
 // their own doc, but noise for one who has a messaging doc that already defines the register. So they
 // are dropped entirely when a doc is present (the doc is the register), and kept register-only otherwise.
-function buildSys(hasDoc: boolean): string {
+//
+// hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
+// prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
+function buildSys(hasDoc: boolean, hasPack: boolean): string {
+  if (hasPack) return MECHANICAL_BASE + NO_DOLLARS;
   return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + NO_DOLLARS;
 }
 
@@ -157,6 +176,9 @@ function parse(text: string): Carousel[] {
 }
 
 const MAX_SENTENCES = 4;
+// Slide ceiling. The framework prescribes 5-10 slides per carousel (was 6-8 before it was installed);
+// the external API validator already accepts that range, so this keeps both paths on one contract.
+const MAX_SLIDES = 10;
 // Count sentences in a slide: terminators (. ! ?) that actually end a sentence. Ellipses and
 // decimals shouldn't inflate the count, and a slide with no terminator is still one sentence.
 function sentenceCount(text: string): number {
@@ -186,16 +208,18 @@ export async function generateCarouselSet(
   icp: Icp | null,
   anthropic: Anthropic,
 ): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number } | { ok: false; reason: string }> {
-  const [voiceRow, briefs, avoid, playbookRow, doc] = await Promise.all([
+  const [voiceRow, briefs, avoid, playbookRow, doc, pack] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
     recentToAvoid(sb, client, forDate),
     getCurrentPlaybook(sb, client),
     getMessagingDoc(sb, client),
+    getGlobalFrameworkDoc(sb),
   ]);
   const hasDoc = !!doc;
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
-  const sys = buildSys(hasDoc); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  const packBlock = frameworkBlock(pack); // "" when no framework installed — generator runs as before.
+  const sys = buildSys(hasDoc, !!pack); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -208,11 +232,14 @@ export async function generateCarouselSet(
     .join("\n");
 
   const userMsg = [
-    // Leads when present. For a creator with no buyer voice or dossiers yet, the doc + ICP is the
-    // whole basis for the register and the pains — infer his voice from the document's tone.
+    // The house framework leads: it governs HOW to write. The creator's own material follows and
+    // governs WHAT to write about (their niche, buyer, offer and language).
+    packBlock,
+    // Leads when there's no framework. For a creator with no buyer voice or dossiers yet, the doc +
+    // ICP is the whole basis for the register and the pains — infer his voice from the doc's tone.
     docBlock,
     docBlock
-      ? "GROUND EVERY CAROUSEL IN THE DOCUMENT ABOVE, and take the creator's register from it. Each carousel must be unmistakably about THIS creator's specific niche, buyer and offer as the document describes them — the buyer's actual situation, the specific outcome they are working toward, and the exact pains and one-liners in the document. Slide 1 must name that exact buyer by their identity or situation. Do NOT default to generic fitness, physique, muscle-building, bulking, macros/calories or weight-loss content: if the document's positioning is not general fitness, none of that belongs here. Honour the document's own 'what to avoid' guidance. Mirror its phrasing; do not invent buyer quotes."
+      ? `GROUND EVERY CAROUSEL IN THE CREATOR'S DOCUMENT ABOVE${packBlock ? " (it governs the subject matter; the writing framework governs the craft)" : ", and take the creator's register from it"}. Each carousel must be unmistakably about THIS creator's specific niche, buyer and offer as the document describes them — the buyer's actual situation, the specific outcome they are working toward, and the exact pains and one-liners in the document.${packBlock ? "" : " Slide 1 must name that exact buyer by their identity or situation."} Do NOT default to generic fitness, physique, muscle-building, bulking, macros/calories or weight-loss content: if the document's positioning is not general fitness, none of that belongs here. Honour the document's own 'what to avoid' guidance. Mirror its phrasing; do not invent buyer quotes.`
       : "",
     `THE BUYER (write every carousel for this one person):\n${compactIcp(icp)}`,
     ranked
@@ -221,7 +248,9 @@ export async function generateCarouselSet(
     voiceRow ? `HOW THIS BUYER TYPE ACTUALLY TALKS (the core material):\n${compactVoice(voiceRow.voice)}` : "",
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
-    "Return the carousels JSON: exactly 5 carousels, 6 to 8 slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Write full sentences with room to breathe — at most 4 sentences per slide, never clipped fragments.",
+    packBlock
+      ? "Now write today's carousels as the writing framework above directs, for this specific creator and buyer. Return the JSON: exactly 5 carousels, 5 to 10 slides each, at most 4 sentences per slide, plain text, no dollar figures."
+      : "Return the carousels JSON: exactly 5 carousels, 6 to 8 slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Write full sentences with room to breathe — at most 4 sentences per slide, never clipped fragments.",
   ].filter(Boolean).join("\n\n");
 
   const genOnce = async (feedback?: string): Promise<Carousel[]> => {
@@ -250,7 +279,7 @@ export async function generateCarouselSet(
   if (violations.length) {
     const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`).join("; ");
     const retry = await genOnce(
-      `These slides run longer than ${MAX_SENTENCES} sentences: ${named}. Rewrite them to at most ${MAX_SENTENCES} full sentences each — keep them as real sentences with room to breathe, do NOT chop them into fragments. If a slide has more than 4 sentences of content, move the overflow into another slide (a carousel may run up to 8 slides). Keep the other slides. Return the full corrected JSON.`,
+      `These slides run longer than ${MAX_SENTENCES} sentences: ${named}. Rewrite them to at most ${MAX_SENTENCES} full sentences each — keep them as real sentences with room to breathe, do NOT chop them into fragments. If a slide has more than 4 sentences of content, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides). Keep the other slides. Return the full corrected JSON.`,
     );
     if (retry.length >= 5) {
       const rv = overLongSlides(retry);
@@ -258,8 +287,8 @@ export async function generateCarouselSet(
     }
   }
 
-  // Normalize to exactly 5 carousels, each clamped to 8 slides max.
-  const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, 8) }));
+  // Normalize to exactly 5 carousels, each clamped to the slide ceiling.
+  const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
   const sentenceViolations = overLongSlides(set).length;
   return { ok: true, carousels: set, sentenceViolations };
 }
