@@ -10,7 +10,7 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
-import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock, frameworkProhibitions } from "./messaging-doc";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -81,13 +81,9 @@ const MECHANICAL_BASE =
   "- At most 4 sentences per slide, written as real sentences with room to breathe (never clipped fragments).\n" +
   "- Plain text only. No markdown, no ** bold markers, no emojis, no hashtags.\n" +
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
-  // The framework states these as ABSOLUTE. They are restated here — not to override it, but because
-  // a ban buried deep in a long reference block does not survive contact with generation; in the
-  // system prompt it does. These are checked after parsing and drive a targeted retry.
-  "- Never use an em dash. Use a period, a comma, or restructure the sentence.\n" +
-  "- Never use these openers or fillers: here's the thing, let's be real, let me break this down, real talk, it's important to note, it's worth mentioning, in today's.\n" +
-  "- Never use these words: delve, leverage, utilize, navigate, landscape, realm, tapestry, elevate, unlock, seamless, robust, game-changer, revolutionary, cutting-edge.\n" +
-  "- No call to action anywhere, including the final slide. The last slide lands the point and stops.\n" +
+  // The framework's own absolute prohibitions are appended at runtime (buildSys) rather than copied
+  // into this file: a ban buried deep in a long reference block does not survive contact with
+  // generation, but restated near the top of the system prompt it does.
   "Return STRICT JSON and nothing else:\n" +
   '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"up to 4 full sentences; blank lines between paragraphs"}]}]}\n' +
   "\nDo not use double-quote characters inside JSON string values.";
@@ -98,8 +94,14 @@ const MECHANICAL_BASE =
 //
 // hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
 // prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
-function buildSys(hasDoc: boolean, hasPack: boolean): string {
-  if (hasPack) return MECHANICAL_BASE + NO_DOLLARS;
+function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = []): string {
+  if (hasPack) {
+    const absolutes = prohibitions.length
+      ? "\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
+        prohibitions.map((l) => `- ${l}`).join("\n")
+      : "";
+    return MECHANICAL_BASE + absolutes + NO_DOLLARS;
+  }
   return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + NO_DOLLARS;
 }
 
@@ -210,19 +212,17 @@ function overLongSlides(carousels: Carousel[]): { c: number; s: number; sentence
 // The framework's absolute bans, checked mechanically so a violation triggers the same targeted
 // retry the sentence cap does. Copy is never rewritten in place — an offending slide is named and
 // regenerated, and anything that survives is reported rather than silently shipped.
-const BANNED_PHRASES = [
-  "here's the thing", "let's be real", "let me break this down", "real talk",
-  "it's important to note", "it's worth mentioning", "in today's",
-  "delve", "leverage", "utilize", "tapestry", "seamless", "robust", "game-changer", "revolutionary", "cutting-edge",
-];
-function styleViolations(carousels: Carousel[]): { c: number; s: number; issue: string }[] {
+// Checked mechanically so a violation triggers the same targeted retry the sentence cap does. The
+// phrase list is supplied by the framework at runtime (frameworkProhibitions) — none of its
+// vocabulary lives in this file. The em-dash check is punctuation, so it stands on its own.
+function styleViolations(carousels: Carousel[], bannedTerms: string[] = []): { c: number; s: number; issue: string }[] {
   const out: { c: number; s: number; issue: string }[] = [];
   carousels.forEach((car, ci) =>
     (car.slides || []).forEach((sl, si) => {
       const text = sl.text || "";
       const low = text.toLowerCase();
       if (text.includes("—")) out.push({ c: ci + 1, s: si + 1, issue: "em dash" });
-      const hit = BANNED_PHRASES.find((p) => low.includes(p));
+      const hit = bannedTerms.find((p) => low.includes(p));
       if (hit) out.push({ c: ci + 1, s: si + 1, issue: `banned phrase "${hit}"` });
     }),
   );
@@ -248,7 +248,10 @@ export async function generateCarouselSet(
   const hasDoc = !!doc;
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
   const packBlock = frameworkBlock(pack); // "" when no framework installed — generator runs as before.
-  const sys = buildSys(hasDoc, !!pack); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  // The framework's own absolute bans, read out of the stored doc: restated in the system prompt and
+  // checked after parsing. Nothing framework-specific is hardcoded here.
+  const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(pack);
+  const sys = buildSys(hasDoc, !!pack, packRules); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -305,11 +308,11 @@ export async function generateCarouselSet(
   // breaks, one targeted retry naming the offenders; keep whichever set has fewer total violations.
   // We never rewrite copy in place — an offender is named and regenerated, and whatever survives is
   // reported rather than silently shipped.
-  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs).length;
+  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs, bannedTerms).length;
   let total = score(carousels);
   if (total) {
     const longNamed = overLongSlides(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`);
-    const styleNamed = styleViolations(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.issue})`);
+    const styleNamed = styleViolations(carousels, bannedTerms).map((v) => `carousel ${v.c} slide ${v.s} (${v.issue})`);
     const feedback = [
       longNamed.length
         ? `These slides run longer than ${MAX_SENTENCES} sentences: ${longNamed.join("; ")}. Rewrite them to at most ${MAX_SENTENCES} full sentences each, keeping real sentences with room to breathe (do NOT chop them into fragments). If a slide holds more than that, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides).`
@@ -326,6 +329,6 @@ export async function generateCarouselSet(
   // Normalize to exactly 5 carousels, each clamped to the slide ceiling.
   const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
   const sentenceViolations = overLongSlides(set).length;
-  const styleIssues = styleViolations(set).length;
+  const styleIssues = styleViolations(set, bannedTerms).length;
   return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues };
 }
