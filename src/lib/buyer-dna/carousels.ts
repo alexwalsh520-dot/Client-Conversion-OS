@@ -81,6 +81,13 @@ const MECHANICAL_BASE =
   "- At most 4 sentences per slide, written as real sentences with room to breathe (never clipped fragments).\n" +
   "- Plain text only. No markdown, no ** bold markers, no emojis, no hashtags.\n" +
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
+  // The framework states these as ABSOLUTE. They are restated here — not to override it, but because
+  // a ban buried deep in a long reference block does not survive contact with generation; in the
+  // system prompt it does. These are checked after parsing and drive a targeted retry.
+  "- Never use an em dash. Use a period, a comma, or restructure the sentence.\n" +
+  "- Never use these openers or fillers: here's the thing, let's be real, let me break this down, real talk, it's important to note, it's worth mentioning, in today's.\n" +
+  "- Never use these words: delve, leverage, utilize, navigate, landscape, realm, tapestry, elevate, unlock, seamless, robust, game-changer, revolutionary, cutting-edge.\n" +
+  "- No call to action anywhere, including the final slide. The last slide lands the point and stops.\n" +
   "Return STRICT JSON and nothing else:\n" +
   '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"up to 4 full sentences; blank lines between paragraphs"}]}]}\n' +
   "\nDo not use double-quote characters inside JSON string values.";
@@ -200,6 +207,28 @@ function overLongSlides(carousels: Carousel[]): { c: number; s: number; sentence
   return out;
 }
 
+// The framework's absolute bans, checked mechanically so a violation triggers the same targeted
+// retry the sentence cap does. Copy is never rewritten in place — an offending slide is named and
+// regenerated, and anything that survives is reported rather than silently shipped.
+const BANNED_PHRASES = [
+  "here's the thing", "let's be real", "let me break this down", "real talk",
+  "it's important to note", "it's worth mentioning", "in today's",
+  "delve", "leverage", "utilize", "tapestry", "seamless", "robust", "game-changer", "revolutionary", "cutting-edge",
+];
+function styleViolations(carousels: Carousel[]): { c: number; s: number; issue: string }[] {
+  const out: { c: number; s: number; issue: string }[] = [];
+  carousels.forEach((car, ci) =>
+    (car.slides || []).forEach((sl, si) => {
+      const text = sl.text || "";
+      const low = text.toLowerCase();
+      if (text.includes("—")) out.push({ c: ci + 1, s: si + 1, issue: "em dash" });
+      const hit = BANNED_PHRASES.find((p) => low.includes(p));
+      if (hit) out.push({ c: ci + 1, s: si + 1, issue: `banned phrase "${hit}"` });
+    }),
+  );
+  return out;
+}
+
 // One LLM call: generate the 5 carousels for one creator for one day. Does not touch the DB.
 export async function generateCarouselSet(
   sb: SupabaseClient,
@@ -207,7 +236,7 @@ export async function generateCarouselSet(
   forDate: string,
   icp: Icp | null,
   anthropic: Anthropic,
-): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number } | { ok: false; reason: string }> {
+): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number; styleViolations: number } | { ok: false; reason: string }> {
   const [voiceRow, briefs, avoid, playbookRow, doc, pack] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
@@ -272,23 +301,31 @@ export async function generateCarouselSet(
   }
   if (carousels.length < 5) return { ok: false, reason: "Could not generate a full set of 5 carousels." };
 
-  // Enforce the ≤4-sentences-per-slide rule. If any slide runs long, one targeted retry naming the
-  // offenders; keep whichever set has fewer violations. We never truncate copy — an over-long slide
-  // is reported, not silently cut.
-  let violations = overLongSlides(carousels);
-  if (violations.length) {
-    const named = violations.map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`).join("; ");
-    const retry = await genOnce(
-      `These slides run longer than ${MAX_SENTENCES} sentences: ${named}. Rewrite them to at most ${MAX_SENTENCES} full sentences each — keep them as real sentences with room to breathe, do NOT chop them into fragments. If a slide has more than 4 sentences of content, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides). Keep the other slides. Return the full corrected JSON.`,
-    );
-    if (retry.length >= 5) {
-      const rv = overLongSlides(retry);
-      if (rv.length <= violations.length) { carousels = retry; violations = rv; }
-    }
+  // Enforce the ≤4-sentences-per-slide cap AND the framework's absolute style bans. If anything
+  // breaks, one targeted retry naming the offenders; keep whichever set has fewer total violations.
+  // We never rewrite copy in place — an offender is named and regenerated, and whatever survives is
+  // reported rather than silently shipped.
+  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs).length;
+  let total = score(carousels);
+  if (total) {
+    const longNamed = overLongSlides(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`);
+    const styleNamed = styleViolations(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.issue})`);
+    const feedback = [
+      longNamed.length
+        ? `These slides run longer than ${MAX_SENTENCES} sentences: ${longNamed.join("; ")}. Rewrite them to at most ${MAX_SENTENCES} full sentences each, keeping real sentences with room to breathe (do NOT chop them into fragments). If a slide holds more than that, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides).`
+        : "",
+      styleNamed.length
+        ? `These slides break the framework's absolute style rules: ${styleNamed.join("; ")}. Rewrite them without the em dash or banned phrase — restructure the sentence rather than swapping in a synonym.`
+        : "",
+      "Keep every other slide as it is. Return the full corrected JSON.",
+    ].filter(Boolean).join(" ");
+    const retry = await genOnce(feedback);
+    if (retry.length >= 5 && score(retry) <= total) { carousels = retry; total = score(retry); }
   }
 
   // Normalize to exactly 5 carousels, each clamped to the slide ceiling.
   const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
   const sentenceViolations = overLongSlides(set).length;
-  return { ok: true, carousels: set, sentenceViolations };
+  const styleIssues = styleViolations(set).length;
+  return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues };
 }
