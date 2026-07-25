@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
 import type { Icp } from "./icp";
 import { extractJson, salvageObjects } from "./json";
+import { marketDirective } from "@/lib/content/market";
 import { compactTrendBrief, getCurrentTrendBrief } from "./trends";
 import { getCurrentShiftBrief } from "./shift";
 import { getCurrentVoice } from "./voice";
@@ -331,7 +332,7 @@ export async function refreshPlaybook(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: packBlock ? MECHANICAL_SYS : SYS,
+        system: (packBlock ? MECHANICAL_SYS : SYS) + marketDirective(client),
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-playbook", model: MODEL, usage: resp.usage });

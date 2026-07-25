@@ -7,6 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
+import { marketDirective } from "@/lib/content/market";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -175,7 +176,7 @@ export async function seedIcpFromDoc(sb: SupabaseClient, client: string, docText
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 4000,
-    system: DOC_SYS,
+    system: DOC_SYS + marketDirective(client),
     messages: [{ role: "user", content: `THE CREATOR'S MASTER MESSAGING DOCUMENT:\n\n${docText.slice(0, 60000)}\n\nReturn the ICP JSON.` }],
   });
   logAiUsage({ feature: "buyer-dna-icp-from-doc", model: MODEL, usage: resp.usage });

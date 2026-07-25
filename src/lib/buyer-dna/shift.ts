@@ -6,6 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
+import { marketDirective } from "@/lib/content/market";
 import type { Icp } from "./icp";
 import { extractJson, salvageObjects } from "./json";
 
@@ -127,7 +128,7 @@ export async function refreshShiftBrief(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 2500,
-        system: SYS,
+        system: SYS + marketDirective(client),
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-shift", model: MODEL, usage: resp.usage });

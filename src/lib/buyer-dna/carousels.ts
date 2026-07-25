@@ -16,6 +16,7 @@ import {
   MAX_SENTENCES_PER_SLIDE, MAX_WORDS_PER_SENTENCE,
 } from "@/lib/content/carousel-config";
 import { extractJson, salvageObjects } from "./json";
+import { marketDirective } from "@/lib/content/market";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -100,7 +101,7 @@ const MECHANICAL_BASE =
 //
 // hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
 // prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
-function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = ""): string {
+function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = "", market = ""): string {
   if (hasPack) {
     // The framework's own voice rules are hoisted here from the stored document. They live in the
     // system prompt because that is where a rule actually changes the output — the same words buried
@@ -110,9 +111,9 @@ function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = []
       ? "\n\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
         prohibitions.map((l) => `- ${l}`).join("\n")
       : "";
-    return MECHANICAL_BASE + voice + absolutes + NO_DOLLARS;
+    return MECHANICAL_BASE + voice + absolutes + market + NO_DOLLARS;
   }
-  return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + NO_DOLLARS;
+  return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + market + NO_DOLLARS;
 }
 
 function compactIcp(icp: Icp | null): string {
@@ -307,7 +308,7 @@ export async function generateCarouselSet(
   // checked after parsing. Nothing framework-specific is hardcoded here.
   const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(pack);
   const packVoice = frameworkVoiceSection(pack);
-  const sys = buildSys(hasDoc, !!pack, packRules, packVoice); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  const sys = buildSys(hasDoc, !!pack, packRules, packVoice, marketDirective(client)); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
