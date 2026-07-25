@@ -14,7 +14,14 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { creatorCurrency, loadUsdRateMap, convertCentsToUsd } from "@/lib/fx/rates";
 import { etDay, todayEt, shiftDay } from "./time";
 import { normalizeKeyword } from "./keyword";
-import { classifyKeyword, resolveSaleKeyword, type LinkMethod } from "./attribution";
+import {
+  classifyKeyword,
+  resolveSaleKeyword,
+  stampDm,
+  stampBooking,
+  stampSale,
+  type LinkMethod,
+} from "./attribution";
 import {
   ADSV2_SERVED_CLIENTS,
   ALL_SALES_CALENDAR_IDS,
@@ -154,10 +161,11 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     subscriber_name: string | null;
     keyword_normalized: string | null;
     event_at: string;
+    setter_name: string | null;
   }>((from, to) =>
     db
       .from("ads_keyword_events")
-      .select("id, client_key, subscriber_id, subscriber_name, keyword_normalized, event_at")
+      .select("id, client_key, subscriber_id, subscriber_name, keyword_normalized, event_at, setter_name")
       .in("client_key", [...served])
       .eq("event_type", "dm_keyword")
       .gte("event_at", `${shiftDay(factFrom, -1)}T00:00:00Z`)
@@ -165,8 +173,15 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       .range(from, to),
   );
 
-  // subscriber -> sorted [(day, keyword)] for the sale DM-keyword lookup + dmEtDay.
-  const dmBySubscriber = new Map<string, { day: string; keyword: string }[]>();
+  // subscriber -> sorted [(day, at, keyword, setter)]. The exact `at` matters:
+  // the bare-link rule compares against the MOMENT a booking was made, not the
+  // day, and those give different answers (see stampBooking below).
+  const dmBySubscriber = new Map<
+    string,
+    { day: string; at: string; keyword: string; setter: string | null }[]
+  >();
+  // subscriber -> the setter who handled them, from the authoritative source.
+  const setterBySubscriber = new Map<string, string>();
   const dmFacts: Record<string, unknown>[] = [];
   for (const r of dmRows) {
     const day = etDay(r.event_at);
@@ -178,6 +193,10 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       paidSpendDays: kw ? spendDaysFor(r.client_key, kw) : [],
       eventDay: day,
     });
+    const setter = (r.setter_name || "").trim() || null;
+    // A DM's proof is the ManyChat keyword event itself: their subscriber id
+    // and the word they sent. No keyword means it was never an ad reply.
+    const stamp = stampDm(cls, kw, r.subscriber_id, r.event_at);
     dmFacts.push({
       event_key: r.id,
       client_key: r.client_key,
@@ -187,15 +206,24 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       is_organic: cls === "organic",
       awaiting_review: cls === "none",
       et_day: day,
+      setter_name: setter,
       evidence: { source: "ads_keyword_events", event_type: "dm_keyword", classified: cls },
+      evidence_key: stamp.evidenceKey,
+      evidence_detail: stamp.evidenceDetail,
+      blank_reason: stamp.blankReason,
     });
-    if (r.subscriber_id && kw) {
-      const list = dmBySubscriber.get(r.subscriber_id) || [];
-      list.push({ day, keyword: kw });
-      dmBySubscriber.set(r.subscriber_id, list);
+    if (r.subscriber_id) {
+      if (setter && !setterBySubscriber.has(r.subscriber_id)) {
+        setterBySubscriber.set(r.subscriber_id, setter);
+      }
+      if (kw) {
+        const list = dmBySubscriber.get(r.subscriber_id) || [];
+        list.push({ day, at: r.event_at, keyword: kw, setter });
+        dmBySubscriber.set(r.subscriber_id, list);
+      }
     }
   }
-  for (const list of dmBySubscriber.values()) list.sort((a, b) => a.day.localeCompare(b.day));
+  for (const list of dmBySubscriber.values()) list.sort((a, b) => a.at.localeCompare(b.at));
 
   // ── Booking facts ────────────────────────────────────────────────────────
   const nowIso = now.toISOString();
@@ -210,11 +238,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
         start_time: string | null;
         created_at: string | null;
         status: string | null;
+        raw_payload: { contact?: { attributionSource?: { url?: string } } } | null;
       }>((from, to) =>
         db
           .from("ghl_appointments")
           .select(
-            "appointment_id, contact_id, contact_name, keyword_normalized, calendar_id, calendar_name, start_time, created_at, status",
+            "appointment_id, contact_id, contact_name, keyword_normalized, calendar_id, calendar_name, start_time, created_at, status, raw_payload",
           )
           .in("calendar_id", [...ALL_SALES_CALENDAR_IDS])
           .gte("start_time", `${shiftDay(factFrom, -1)}T00:00:00Z`)
@@ -243,16 +272,56 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     });
     const isUpcoming = !!r.start_time && r.start_time > nowIso;
     const cancelled = (r.status || "").toLowerCase().includes("cancel");
+
+    // Stamp it: the hard key that proved the match, or the written reason there
+    // is none. This is also where a bare booking link can legitimately recover
+    // its keyword, but only when the answer is the only possible one.
+    const personKeywords = subscriber ? dmBySubscriber.get(subscriber) ?? [] : [];
+    const stamp = stampBooking({
+      keyword: kw,
+      cls,
+      subscriberId: subscriber,
+      createdTime: r.created_at,
+      personKeywords,
+      attributionUrl: r.raw_payload?.contact?.attributionSource?.url ?? null,
+    });
+
+    // A recovered keyword must clear the same paid/organic test as any other,
+    // so recovery can never smuggle in a word with no spend behind it.
+    let finalKeyword = stamp.keyword;
+    let finalCls = cls;
+    let finalStamp = stamp;
+    if (stamp.evidenceKey === "subscriber_single_prebooking_keyword" && finalKeyword) {
+      finalCls = classifyKeyword({
+        keyword: finalKeyword,
+        organicMarked: isOrganicMarked(client, finalKeyword),
+        paidSpendDays: spendDaysFor(client, finalKeyword),
+        eventDay: day,
+      });
+      if (finalCls !== "paid") {
+        finalKeyword = null;
+        finalStamp = {
+          keyword: null,
+          evidenceKey: null,
+          evidenceDetail: {
+            ...(stamp.evidenceDetail || {}),
+            why: "the only pre-booking keyword has no paid spend behind it",
+          },
+          blankReason: finalCls === "organic" ? "organic_dm" : "unknown",
+        };
+      }
+    }
+
     bookingFacts.push({
       appointment_key: r.appointment_id,
       client_key: client,
       contact_id: r.contact_id,
       person_name: r.contact_name,
-      keyword_normalized: kw,
-      is_organic: cls === "organic",
+      keyword_normalized: finalKeyword,
+      is_organic: finalCls === "organic",
       // A booking with no keyword (or an unattributable one) is awaiting review
       // and never shown in the paid view; cancelled ones too.
-      awaiting_review: cls === "none" || cancelled,
+      awaiting_review: !finalKeyword || finalCls === "none" || cancelled,
       calendar_id: r.calendar_id,
       calendar_name: r.calendar_name,
       booked_et_day: day,
@@ -261,10 +330,14 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       status: r.status,
       start_time: r.start_time,
       created_time: r.created_at,
-      evidence: { source: "ghl_appointments", calendar_id: r.calendar_id, classified: cls, subscriber },
+      setter_name: subscriber ? setterBySubscriber.get(subscriber) ?? null : null,
+      evidence: { source: "ghl_appointments", calendar_id: r.calendar_id, classified: finalCls, subscriber },
+      evidence_key: finalStamp.evidenceKey,
+      evidence_detail: finalStamp.evidenceDetail,
+      blank_reason: finalStamp.blankReason,
     });
-    if (subscriber && kw && cls === "paid" && !bookingKeywordBySubscriber.has(subscriber)) {
-      bookingKeywordBySubscriber.set(subscriber, kw);
+    if (subscriber && finalKeyword && finalCls === "paid" && !bookingKeywordBySubscriber.has(subscriber)) {
+      bookingKeywordBySubscriber.set(subscriber, finalKeyword);
     }
   }
 
@@ -280,11 +353,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     contracted_revenue_cents: number | null;
     collected_revenue_cents: number | null;
     manychat_subscriber_id: string | null;
+    setter: string | null;
   }>((from, to) =>
     db
       .from("sales_tracker_rows")
       .select(
-        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id",
+        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter",
       )
       .gte("date", factFrom)
       .lte("date", saleTo)
@@ -389,7 +463,16 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       subscriber_id: pasted,
       closer: r.closer,
       sale_et_day: saleDay,
+      // A sale inherits its setter and closer from the sales tracker, which is
+      // where a human wrote them down; the DM-side setter is a fallback when
+      // the sheet is blank but their ManyChat id is known.
+      setter_name:
+        (r.setter || "").trim() || (pasted ? setterBySubscriber.get(pasted) ?? null : null) || null,
       evidence: { source: "sales_tracker_rows", method, keyword, sale_day: saleDay },
+      ...(() => {
+        const s = stampSale(method, keyword, pasted);
+        return { evidence_key: s.evidenceKey, evidence_detail: s.evidenceDetail, blank_reason: s.blankReason };
+      })(),
     });
   }
 

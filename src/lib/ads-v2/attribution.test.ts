@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  stampDm,
+  stampBooking,
+  stampSale,
   classifyKeyword,
   resolveSaleKeyword,
   groupBookingsByPerson,
@@ -200,4 +203,150 @@ test("two different people stay separate; ordering is deterministic", () => {
   // is "no outcome yet" (never counted as a show), not a no-show.
   assert.equal(grouped[0].status, "no_outcome");
   assert.equal(grouped[1].status, "upcoming");
+});
+
+// ── Evidence stamps and blank reasons (Build 2, Phase 3) ──────────────────
+
+test("a DM with no keyword is misc chat, not a mystery", () => {
+  const s = stampDm("none", null, "sub_1", "2026-07-01T10:00:00Z");
+  assert.equal(s.evidenceKey, null);
+  assert.equal(s.blankReason, "misc_chat");
+});
+
+test("a paid DM is stamped with the subscriber hard key", () => {
+  const s = stampDm("paid", "fit", "sub_1", "2026-07-01T10:00:00Z");
+  assert.equal(s.evidenceKey, "subscriber_id");
+  assert.equal(s.blankReason, null);
+  assert.equal((s.evidenceDetail as Record<string, unknown>).keyword, "fit");
+});
+
+test("an organic DM says organic rather than going blank", () => {
+  assert.equal(stampDm("organic", "grow", "sub_1", "2026-07-01T10:00:00Z").blankReason, "organic_dm");
+});
+
+test("a booking whose link carried the keyword is stamped utm_content", () => {
+  const s = stampBooking({
+    keyword: "fit",
+    cls: "paid",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [],
+  });
+  assert.equal(s.evidenceKey, "utm_content");
+  assert.equal(s.keyword, "fit");
+});
+
+// THE RULE THAT PROTECTS THE MONEY. On the live data these two cases are the
+// difference between 0 recovered bookings and 32 falsely credited ones.
+test("a bare link recovers the ONE keyword sent before the booking moment", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [{ at: "2026-07-10T09:30:00Z", keyword: "fit" }],
+  });
+  assert.equal(s.evidenceKey, "subscriber_single_prebooking_keyword");
+  assert.equal(s.keyword, "fit");
+});
+
+test("a keyword sent AFTER booking never earns credit for that booking", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    // Real shape: booked first, replied to an ad two days later.
+    personKeywords: [{ at: "2026-07-12T18:00:00Z", keyword: "loaded" }],
+  });
+  assert.equal(s.keyword, null);
+  assert.equal(s.evidenceKey, null);
+  assert.equal(s.blankReason, "keyword_after_booking");
+});
+
+test("a keyword sent LATER THE SAME DAY still does not count", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [{ at: "2026-07-10T23:59:00Z", keyword: "loaded" }],
+  });
+  assert.equal(s.blankReason, "keyword_after_booking");
+});
+
+test("two possible keywords before booking is never guessed between", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [
+      { at: "2026-07-08T09:00:00Z", keyword: "fit" },
+      { at: "2026-07-09T09:00:00Z", keyword: "focus" },
+    ],
+  });
+  assert.equal(s.keyword, null);
+  assert.equal(s.blankReason, "no_utm_on_booking_link");
+  assert.deepEqual((s.evidenceDetail as { candidates: string[] }).candidates, ["fit", "focus"]);
+});
+
+test("the same person sending one keyword twice before booking still recovers it", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: "sub_1",
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [
+      { at: "2026-07-08T09:00:00Z", keyword: "fit" },
+      { at: "2026-07-09T09:00:00Z", keyword: "fit" },
+    ],
+  });
+  assert.equal(s.evidenceKey, "subscriber_single_prebooking_keyword");
+  assert.equal(s.keyword, "fit");
+});
+
+test("no ManyChat match keeps the GHL landing URL as the proof", () => {
+  const s = stampBooking({
+    keyword: null,
+    cls: "none",
+    subscriberId: null,
+    createdTime: "2026-07-10T12:00:00Z",
+    personKeywords: [],
+    attributionUrl: "https://link.tysonsonnek.com/widget/booking/abc",
+  });
+  assert.equal(s.blankReason, "no_utm_on_booking_link");
+  assert.equal(
+    (s.evidenceDetail as { attribution_url: string }).attribution_url,
+    "https://link.tysonsonnek.com/widget/booking/abc",
+  );
+});
+
+test("a sale linked by subscriber is stamped, an unprovable one gives a reason", () => {
+  assert.equal(stampSale("link_booking", "fit", "sub_1").evidenceKey, "subscriber_id");
+  assert.equal(stampSale("organic", "grow", "sub_1").blankReason, "organic_dm");
+  assert.equal(stampSale("none", null, null).blankReason, "no_keyword_ever");
+  assert.equal(stampSale("none", null, "sub_1").blankReason, "unknown");
+});
+
+test("every stamp gives exactly one of: evidence key, or blank reason", () => {
+  const stamps = [
+    stampDm("paid", "fit", "s", "2026-07-01T00:00:00Z"),
+    stampDm("none", null, "s", "2026-07-01T00:00:00Z"),
+    stampDm("organic", "g", "s", "2026-07-01T00:00:00Z"),
+    stampSale("human", "fit", "s"),
+    stampSale("link_dm", "fit", "s"),
+    stampSale("origin_check", "fit", "s"),
+    stampSale("none", null, "s"),
+    stampBooking({ keyword: "fit", cls: "paid", subscriberId: "s", createdTime: null, personKeywords: [] }),
+    stampBooking({ keyword: null, cls: "none", subscriberId: null, createdTime: null, personKeywords: [] }),
+    stampBooking({ keyword: null, cls: "none", subscriberId: "s", createdTime: null, personKeywords: [{ at: "2026-07-01T00:00:00Z", keyword: "fit" }] }),
+  ];
+  for (const s of stamps) {
+    assert.equal(
+      (s.evidenceKey === null) !== (s.blankReason === null),
+      true,
+      `a stamp must have a key OR a reason, never both and never neither: ${JSON.stringify(s)}`,
+    );
+  }
 });

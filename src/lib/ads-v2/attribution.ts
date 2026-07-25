@@ -99,6 +99,250 @@ export function resolveSaleKeyword(params: {
   return { keyword: null, method: "none" };
 }
 
+// ── Evidence stamps and blank reasons ────────────────────────────────────
+//
+// Every fact row must end up carrying EITHER the hard key that proved its
+// match or the written reason there is none. Never neither. These functions
+// decide which, from evidence alone, and are pure so they can be tested.
+
+export type EvidenceKey =
+  | "subscriber_id"
+  | "utm_content"
+  | "share_url_token"
+  | "attendee_email"
+  | "meeting_url"
+  | "subscriber_single_prebooking_keyword"
+  | "human_resolution";
+
+export type BlankReason =
+  | "misc_chat"
+  | "organic_dm"
+  | "keyword_after_booking"
+  | "no_utm_on_booking_link"
+  | "no_keyword_ever"
+  | "unknown";
+
+export interface Stamp {
+  evidenceKey: EvidenceKey | null;
+  evidenceDetail: Record<string, unknown> | null;
+  blankReason: BlankReason | null;
+}
+
+/**
+ * A DM's proof is the ManyChat keyword event itself: the subscriber id that
+ * identifies the person and the word they sent that identifies the ad.
+ */
+export function stampDm(
+  cls: KeywordClass,
+  keyword: string | null,
+  subscriberId: string | null,
+  eventAt: string,
+): Stamp {
+  if (!keyword) {
+    return { evidenceKey: null, evidenceDetail: null, blankReason: "misc_chat" };
+  }
+  if (cls === "organic") {
+    return {
+      evidenceKey: null,
+      evidenceDetail: { keyword, subscriber_id: subscriberId, event_at: eventAt },
+      blankReason: "organic_dm",
+    };
+  }
+  if (cls === "none") {
+    // A word with no paid spend behind it and no organic mark: unprovable.
+    return {
+      evidenceKey: null,
+      evidenceDetail: { keyword, subscriber_id: subscriberId, event_at: eventAt },
+      blankReason: "unknown",
+    };
+  }
+  return {
+    evidenceKey: "subscriber_id",
+    evidenceDetail: {
+      source: "ads_keyword_events",
+      subscriber_id: subscriberId,
+      keyword,
+      event_at: eventAt,
+    },
+    blankReason: null,
+  };
+}
+
+export interface BookingStampInput {
+  /** The keyword carried on the booking link itself (utm_content), if any. */
+  keyword: string | null;
+  cls: KeywordClass;
+  /** The person's ManyChat id, only when a hard key matched them. */
+  subscriberId: string | null;
+  /** The MOMENT the booking was made. Not the day of the call. */
+  createdTime: string | null;
+  /** Every keyword this person ever sent, with the exact time they sent it. */
+  personKeywords: readonly { at: string; keyword: string }[];
+  /** GoHighLevel's recorded landing URL, the proof a link carried no keyword. */
+  attributionUrl?: string | null;
+}
+
+/**
+ * Decide a booking's stamp, including the bare-link recovery.
+ *
+ * The recovery rule, exactly: when the booking link carried NO keyword but the
+ * person is a hard subscriber match AND they sent exactly ONE distinct keyword
+ * BEFORE the moment they booked, that keyword is the only possible answer, so
+ * it is stamped. Zero or several: no stamp, a written reason instead. We never
+ * choose between two candidates.
+ *
+ * "Before the moment they booked" is load-bearing and is why createdTime is
+ * used rather than the call day. On the live data (2026-07-25) the strict rule
+ * recovers 0 bookings while ignoring the timing entirely would have "recovered"
+ * 32, every one of them a person who booked FIRST and replied to an ad days
+ * later. Those 32 would have been false credit to an ad that did not earn it.
+ */
+export function stampBooking(input: BookingStampInput): Stamp & { keyword: string | null } {
+  const { keyword, cls, subscriberId, createdTime, personKeywords } = input;
+
+  if (keyword) {
+    if (cls === "organic") {
+      return {
+        keyword,
+        evidenceKey: null,
+        evidenceDetail: { keyword, source: "utm_content" },
+        blankReason: "organic_dm",
+      };
+    }
+    if (cls === "none") {
+      return {
+        keyword: null,
+        evidenceKey: null,
+        evidenceDetail: { rejected_keyword: keyword, why: "no paid spend and not marked organic" },
+        blankReason: "unknown",
+      };
+    }
+    return {
+      keyword,
+      evidenceKey: "utm_content",
+      evidenceDetail: { keyword, source: "ghl_appointments.keyword_normalized", via: "booking link" },
+      blankReason: null,
+    };
+  }
+
+  // No keyword on the booking link. Everything below is the recovery attempt.
+  const proof = input.attributionUrl ? { attribution_url: input.attributionUrl } : {};
+
+  if (!subscriberId) {
+    return {
+      keyword: null,
+      evidenceKey: null,
+      evidenceDetail: { ...proof, why: "no ManyChat id matched this person" },
+      blankReason: "no_utm_on_booking_link",
+    };
+  }
+
+  if (!personKeywords.length) {
+    return {
+      keyword: null,
+      evidenceKey: null,
+      evidenceDetail: { ...proof, subscriber_id: subscriberId },
+      blankReason: "no_keyword_ever",
+    };
+  }
+
+  if (!createdTime) {
+    return {
+      keyword: null,
+      evidenceKey: null,
+      evidenceDetail: { ...proof, subscriber_id: subscriberId, why: "booking moment unknown" },
+      blankReason: "no_utm_on_booking_link",
+    };
+  }
+
+  const before = personKeywords.filter((k) => k.at < createdTime);
+  const distinct = [...new Set(before.map((k) => k.keyword))];
+
+  if (distinct.length === 1) {
+    const first = before.find((k) => k.keyword === distinct[0])!;
+    return {
+      keyword: distinct[0],
+      evidenceKey: "subscriber_single_prebooking_keyword",
+      evidenceDetail: {
+        subscriber_id: subscriberId,
+        keyword: distinct[0],
+        keyword_sent_at: first.at,
+        booked_at: createdTime,
+        why: "the only keyword this person sent before they booked",
+      },
+      blankReason: null,
+    };
+  }
+
+  if (distinct.length === 0) {
+    const soonestAfter = personKeywords[0];
+    return {
+      keyword: null,
+      evidenceKey: null,
+      evidenceDetail: {
+        ...proof,
+        subscriber_id: subscriberId,
+        booked_at: createdTime,
+        first_keyword_at: soonestAfter.at,
+        first_keyword: soonestAfter.keyword,
+        why: "every keyword this person sent arrived after they had already booked",
+      },
+      blankReason: "keyword_after_booking",
+    };
+  }
+
+  return {
+    keyword: null,
+    evidenceKey: null,
+    evidenceDetail: {
+      ...proof,
+      subscriber_id: subscriberId,
+      booked_at: createdTime,
+      candidates: distinct,
+      why: "more than one keyword before booking, so the answer is not provable",
+    },
+    blankReason: "no_utm_on_booking_link",
+  };
+}
+
+/** Turn a resolved sale's link method into its stamp. */
+export function stampSale(
+  method: LinkMethod,
+  keyword: string | null,
+  subscriberId: string | null,
+): Stamp {
+  switch (method) {
+    case "human":
+      return {
+        evidenceKey: "human_resolution",
+        evidenceDetail: { keyword, decided_by: "person" },
+        blankReason: null,
+      };
+    case "link_booking":
+    case "link_dm":
+    case "origin_check":
+      return {
+        evidenceKey: "subscriber_id",
+        evidenceDetail: { subscriber_id: subscriberId, keyword, matched_by: method },
+        blankReason: null,
+      };
+    case "organic":
+      return {
+        evidenceKey: null,
+        evidenceDetail: { keyword, subscriber_id: subscriberId },
+        blankReason: "organic_dm",
+      };
+    default:
+      return {
+        evidenceKey: null,
+        evidenceDetail: subscriberId
+          ? { subscriber_id: subscriberId, why: "their id matched nothing we can prove an ad from" }
+          : { why: "no ManyChat id was pasted on this sale, so there is no hard key to follow" },
+        blankReason: subscriberId ? "unknown" : "no_keyword_ever",
+      };
+  }
+}
+
 export interface BookingRecord {
   contactId: string | null;
   personName: string | null;

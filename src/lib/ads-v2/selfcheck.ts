@@ -210,6 +210,42 @@ export async function runSelfCheck(now: Date = new Date()): Promise<SelfCheckRep
       }
     }
 
+    // ── Gate: every fact row explains itself (Build 2, Phase 3) ────────────
+    // A row must carry EITHER the hard key that proved its match or the
+    // written reason there is none. A row with neither is exactly the silent
+    // blank this whole build exists to abolish, so it is an error, not a note.
+    {
+      const unexplained = await checkEveryRowExplainsItself(db);
+      gates.unexplainedFactRows = unexplained.reduce((s, u) => s + u.rows, 0);
+      for (const u of unexplained) {
+        findings.push({
+          type: "fact_row_unexplained",
+          severity: "error",
+          clientKey: null,
+          detail: u as unknown as Record<string, unknown>,
+          dedupeKey: `unexplained|${u.table}|${etDay}`,
+        });
+      }
+    }
+
+    // ── Gate: the setter is not silently lost (Build 2, Phase 3) ───────────
+    // If the keyword event knows who set the appointment but the fact row does
+    // not, we have dropped it in the middle. That is a half-picture, and a
+    // half-picture is what made a real miss on 2026-07-25.
+    {
+      const dropped = await checkSetterNotDropped(db);
+      gates.factRowsMissingSetter = dropped.reduce((s, d) => s + d.rows, 0);
+      for (const d of dropped) {
+        findings.push({
+          type: "fact_row_missing_setter",
+          severity: "warn",
+          clientKey: null,
+          detail: d as unknown as Record<string, unknown>,
+          dedupeKey: `missing_setter|${d.table}|${etDay}`,
+        });
+      }
+    }
+
     // Write alert rows (idempotent by dedupe_key).
     if (findings.length) {
       await db.from("adsv2_alerts").upsert(
@@ -458,3 +494,39 @@ function collectSumViolations(
 }
 
 export const SELFCHECK_LOOKBACK = FACTS_LOOKBACK_DAYS;
+
+// ── Build 2, Phase 3 gates ────────────────────────────────────────────────
+
+/**
+ * Count fact rows carrying NEITHER an evidence stamp NOR a blank reason.
+ * The answer must always be zero: every row explains itself, or the promise
+ * this build makes is not being kept.
+ */
+async function checkEveryRowExplainsItself(
+  db: Db,
+): Promise<{ table: string; rows: number }[]> {
+  const out: { table: string; rows: number }[] = [];
+  for (const table of ["adsv2_dm_facts", "adsv2_booking_facts", "adsv2_sale_facts"]) {
+    const { count, error } = await db
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .is("evidence_key", null)
+      .is("blank_reason", null);
+    if (error) throw new Error(`${table} stamp check failed: ${error.message}`);
+    if (count && count > 0) out.push({ table, rows: count });
+  }
+  return out;
+}
+
+/**
+ * Count fact rows with no setter whose own keyword event DOES name one, which
+ * means we dropped it rather than never having it. Rows where the source is
+ * genuinely blank are not flagged; that is a gap in ManyChat, not in us.
+ */
+async function checkSetterNotDropped(db: Db): Promise<{ table: string; rows: number }[]> {
+  const { data, error } = await db.rpc("adsv2_count_facts_missing_setter");
+  if (error) throw new Error(`setter check failed: ${error.message}`);
+  return ((data || []) as { table_name: string; rows: number }[])
+    .filter((r) => Number(r.rows) > 0)
+    .map((r) => ({ table: r.table_name, rows: Number(r.rows) }));
+}

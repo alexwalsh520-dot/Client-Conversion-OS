@@ -16,7 +16,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const result = await runAdsV2Sync();
+    // ?factsOnly=1 rebuilds the facts without touching the snapshots the tab
+    // reads. Used to compare new attribution against the live numbers before
+    // letting anything the owner sees change.
+    const factsOnly = new URL(req.url).searchParams.get("factsOnly") === "1";
+    const result = await runAdsV2Sync(new Date(), { factsOnly });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

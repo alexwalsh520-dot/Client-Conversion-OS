@@ -113,12 +113,24 @@ export interface SyncResult {
   activityError?: string;
 }
 
-export async function runAdsV2Sync(now: Date = new Date()): Promise<SyncResult> {
+export async function runAdsV2Sync(
+  now: Date = new Date(),
+  opts: { factsOnly?: boolean } = {},
+): Promise<SyncResult> {
   const db = getServiceSupabase();
   if (!(await acquireLock(db))) return { ran: false };
 
   const result: SyncResult = { ran: true };
   try {
+    // Dry-run mode: rebuild the facts, but do NOT bump the version or
+    // precompute. The tab keeps serving the snapshots it already has, so the
+    // new facts can be compared against the old numbers before anything the
+    // owner looks at is allowed to change.
+    if (opts.factsOnly) {
+      result.facts = await runFactsPass(now);
+      return result;
+    }
+
     // 1. Budget (isolated).
     try {
       result.budget = await runBudgetSnapshot(now);
