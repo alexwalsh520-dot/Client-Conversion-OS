@@ -7,6 +7,7 @@ import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import type { Icp } from "@/lib/buyer-dna/icp";
 import { generateCarouselSet } from "@/lib/buyer-dna/carousels";
 import { getCadence } from "@/lib/content/calendar-build";
+import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
 
 // An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
 // timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     .eq("client_key", slug)
     .eq("for_date", forDate)
     .order("slot", { ascending: true });
-  if (!force && existing && existing.length >= 5) {
+  if (!force && existing && existing.length >= CAROUSELS_PER_DAY) {
     return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: existing });
   }
 

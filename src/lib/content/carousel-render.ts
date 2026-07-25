@@ -131,6 +131,25 @@ function blockHeight(ctx: CanvasRenderingContext2D, block: SlideBlock): number {
   return lines.reduce((h, ln) => h + (ln.length ? lh : lh * 0.55), 0);
 }
 
+// Auto-fit. A slide's copy must never run off the canvas, so before drawing we measure the wrapped
+// block and step the font size down until it fits the space it actually has. The floor exists so a
+// pathological slide degrades to small-but-readable rather than to nothing; if even the floor
+// overflows we draw at the floor and report it, never clipping silently.
+export const SLIDE_MIN_FONT_SIZE = 36;
+const FIT_STEP = 2;
+
+function fitFontSize(
+  ctx: CanvasRenderingContext2D,
+  block: SlideBlock,
+  availableHeight: number,
+): { fontSize: number; fits: boolean } {
+  const base = block.fontSize || 48;
+  for (let fs = base; fs >= SLIDE_MIN_FONT_SIZE; fs -= FIT_STEP) {
+    if (blockHeight(ctx, { ...block, fontSize: fs }) <= availableHeight) return { fontSize: fs, fits: true };
+  }
+  return { fontSize: SLIDE_MIN_FONT_SIZE, fits: false };
+}
+
 function drawInitials(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, name: string, ring: string) {
   ctx.save();
   ctx.fillStyle = "#1c1c1c";
@@ -200,7 +219,15 @@ export type Box = { x: number; y: number; w: number; h: number };
 
 // Render a full slide to a provided canvas (must be 1080×1350). Returns each block's bounding box (in
 // canvas px) so the editor can draw selection/drag handles from the same render pass. Avatar preloaded.
-export function renderSlide(canvas: HTMLCanvasElement, blocks: SlideBlock[], creator: string, avatar: HTMLImageElement | null): Record<string, Box> {
+export function renderSlide(
+  canvas: HTMLCanvasElement,
+  blocks: SlideBlock[],
+  creator: string,
+  avatar: HTMLImageElement | null,
+  // Optional: collects the ids of blocks that still overflow at the minimum font size, for callers
+  // that want to surface it. Overflow is always console.warn'd regardless.
+  report?: { overflow: string[] },
+): Record<string, Box> {
   canvas.width = CANVAS_W; canvas.height = CANVAS_H;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#000000";
@@ -221,19 +248,29 @@ export function renderSlide(canvas: HTMLCanvasElement, blocks: SlideBlock[], cre
       continue;
     }
 
-    // Text block
-    const fs = block.fontSize || 48;
+    // Text block. Auto-fit first: shrink the type until the wrapped copy fits the space available,
+    // so a long slide is never drawn off the bottom of the canvas.
+    const regionTop = headerBottom + 60;
+    const regionBottom = CANVAS_H - 80;
+    const availableHeight = block.autoY ? regionBottom - regionTop : Math.max(0, regionBottom - block.y);
+    const fit = fitFontSize(ctx, block, availableHeight);
+    if (!fit.fits) {
+      // Drawn at the floor rather than clipped — surfaced so it can be fixed at the source.
+      report?.overflow.push(block.id);
+      console.warn(`[carousel-render] slide text overflows even at ${SLIDE_MIN_FONT_SIZE}px (block ${block.id})`);
+    }
+    const eff: SlideBlock = { ...block, fontSize: fit.fontSize };
+
+    const fs = fit.fontSize;
     const fam = block.fontFamily || BODY_FONT;
     const baseW = block.fontWeight || 400;
     const lh = fs * (block.lineHeight || 1.45);
     const maxW = block.maxWidth || CANVAS_W - 280;
-    const lines = wrapBlock(ctx, block);
+    const lines = wrapBlock(ctx, eff);
 
     let startY: number;
     if (block.autoY) {
-      const regionTop = headerBottom + 60;
-      const regionBottom = CANVAS_H - 80;
-      const h = blockHeight(ctx, block);
+      const h = blockHeight(ctx, eff);
       startY = Math.max(regionTop, regionTop + (regionBottom - regionTop - h) / 2);
     } else {
       startY = block.y;

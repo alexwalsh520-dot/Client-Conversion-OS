@@ -10,7 +10,11 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
-import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock, frameworkProhibitions } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock, frameworkProhibitions, frameworkVoiceSection } from "./messaging-doc";
+import {
+  CAROUSELS_PER_DAY, MIN_SLIDES_PER_CAROUSEL, MAX_SLIDES_PER_CAROUSEL,
+  MAX_SENTENCES_PER_SLIDE, MAX_WORDS_PER_SENTENCE,
+} from "@/lib/content/carousel-config";
 import { extractJson, salvageObjects } from "./json";
 
 const MODEL = "claude-sonnet-4-6";
@@ -68,24 +72,26 @@ const BASE =
   "Each carousel takes a different angle: pain articulated, personal story, myth broken, pattern observed, hard truth.\n" +
   "SLIDE LENGTH — write real, full sentences with room to breathe, NOT clipped fragments. Each slide is AT MOST 4 SENTENCES, written as short paragraphs separated by blank lines. A sentence can be as long as it naturally needs to be. The slide-1 hook is often just 1-2 sentences. Occasional **bold** on the words that matter. Final slide lands the takeaway and a soft invitation to follow or DM — never a hard pitch, never hashtags, never emojis. Infer the creator's register from the material below. Return STRICT JSON:\n" +
   '{"carousels":[{"topic":"a few words","slides":[{"text":"up to 4 full sentences, blank lines between paragraphs, **bold** allowed"}]}]}\n' +
-  "Exactly 5 carousels; 6 to 8 slides each. No prose outside the JSON.";
+  `Exactly ${CAROUSELS_PER_DAY} carousels; ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each. No prose outside the JSON.`;
 
 // When the house writing framework is installed, IT governs voice, structure, slide composition, CTA
 // placement and angle selection — so the hardcoded versions of those rules are dropped rather than
 // left to argue with it. All that stays here is the mechanical contract the API and renderer depend
-// on: the JSON shape, exactly 5 carousels, the slide bounds, the sentence cap and no dollar figures.
+// on: the JSON shape, the daily carousel count, the slide bounds, the sentence cap and no dollar figures.
 const MECHANICAL_BASE =
-  "You write Instagram text carousels for a fitness creator, in the creator's first-person voice. Follow the AUTHORITATIVE WRITING FRAMEWORK in the user message for everything about how to write: voice, hooks, slide structure, angles, and how a carousel ends. The rules below are only the output contract.\n" +
+  "You write Instagram text carousels for a fitness creator, in the creator's first-person voice. Follow the AUTHORITATIVE WRITING FRAMEWORK for everything about how to write: voice, hooks, slide structure, angles, and how a carousel ends. The rules below are the output contract and the sentence discipline that makes the copy readable on the canvas.\n" +
   "OUTPUT CONTRACT (non-negotiable):\n" +
-  "- Exactly 5 carousels. Each carousel 5 to 10 slides.\n" +
-  "- At most 4 sentences per slide, written as real sentences with room to breathe (never clipped fragments).\n" +
+  `- Exactly ${CAROUSELS_PER_DAY} carousels, each dismantling a DIFFERENT objection. Each carousel ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides.\n` +
+  `- At most ${MAX_SENTENCES_PER_SLIDE} sentences per slide.\n` +
   "- Plain text only. No markdown, no ** bold markers, no emojis, no hashtags.\n" +
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
-  // The framework's own absolute prohibitions are appended at runtime (buildSys) rather than copied
-  // into this file: a ban buried deep in a long reference block does not survive contact with
-  // generation, but restated near the top of the system prompt it does.
+  "\nSENTENCE DISCIPLINE — this is what stops the copy reading as a wall of run-on text:\n" +
+  "- PUT EVERY SENTENCE ON ITS OWN LINE, with a blank line between them. One sentence, blank line, next sentence. Never run two sentences together in the same paragraph.\n" +
+  `- Keep sentences short and punchy. Most under 12 words. NEVER more than ${MAX_WORDS_PER_SENTENCE} words.\n` +
+  "- Do not chain clauses with commas to get around that. A comma splice is not a sentence break: if you are joining two thoughts with a comma or an 'and', write two sentences instead.\n" +
+  "- Vary the rhythm. A short punch, then a slightly longer beat. Never three sentences of the same length in a row.\n" +
   "Return STRICT JSON and nothing else:\n" +
-  '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"up to 4 full sentences; blank lines between paragraphs"}]}]}\n' +
+  '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"one sentence per line, blank line between them"}]}]}\n' +
   "\nDo not use double-quote characters inside JSON string values.";
 
 // The style exemplars are Tyson/Antwan's physique world — useful register cues for a creator without
@@ -94,13 +100,17 @@ const MECHANICAL_BASE =
 //
 // hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
 // prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
-function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = []): string {
+function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = ""): string {
   if (hasPack) {
+    // The framework's own voice rules are hoisted here from the stored document. They live in the
+    // system prompt because that is where a rule actually changes the output — the same words buried
+    // in the reference block below did not hold.
+    const voice = voiceRules ? `\n\nTHE FRAMEWORK'S VOICE RULES (authoritative):\n${voiceRules}` : "";
     const absolutes = prohibitions.length
-      ? "\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
+      ? "\n\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
         prohibitions.map((l) => `- ${l}`).join("\n")
       : "";
-    return MECHANICAL_BASE + absolutes + NO_DOLLARS;
+    return MECHANICAL_BASE + voice + absolutes + NO_DOLLARS;
   }
   return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + NO_DOLLARS;
 }
@@ -174,7 +184,7 @@ async function recentToAvoid(sb: SupabaseClient, client: string, forDate: string
 function parse(text: string): Carousel[] {
   const p = extractJson<{ carousels?: Carousel[] }>(text);
   let carousels = p && Array.isArray(p.carousels) ? p.carousels : [];
-  if (carousels.length < 5) {
+  if (carousels.length < CAROUSELS_PER_DAY) {
     // Broken JSON — recover carousel objects individually (each has a slides array).
     const salvaged = salvageObjects<Carousel>(text, ["slides"]);
     if (salvaged.length > carousels.length) carousels = salvaged;
@@ -184,10 +194,9 @@ function parse(text: string): Carousel[] {
     .filter((c) => c.slides.length >= 3);
 }
 
-const MAX_SENTENCES = 4;
-// Slide ceiling. The framework prescribes 5-10 slides per carousel (was 6-8 before it was installed);
-// the external API validator already accepts that range, so this keeps both paths on one contract.
-const MAX_SLIDES = 10;
+const MAX_SENTENCES = MAX_SENTENCES_PER_SLIDE;
+// Slide ceiling — shared with the external API validator so both paths hold one contract.
+const MAX_SLIDES = MAX_SLIDES_PER_CAROUSEL;
 // Count sentences in a slide: terminators (. ! ?) that actually end a sentence. Ellipses and
 // decimals shouldn't inflate the count, and a slide with no terminator is still one sentence.
 function sentenceCount(text: string): number {
@@ -195,6 +204,52 @@ function sentenceCount(text: string): number {
   const matches = t.match(/[.!?]+(?=\s|$)/g);
   const n = matches ? matches.length : 0;
   return t.trim() ? Math.max(1, n) : 0;
+}
+
+// Split a slide's text so EVERY sentence sits on its own line with a blank line between. The model
+// is told to write this way; this guarantees it, so the renderer always receives the airy format
+// regardless of how the copy came back. Purely structural — no word is added, removed or reordered.
+function sentencesOf(text: string): string[] {
+  const out: string[] = [];
+  for (const para of (text || "").split(/\n+/)) {
+    const t = para.trim();
+    if (!t) continue;
+    // Break after . ! ? when followed by whitespace + a capital/quote/digit; keeps decimals and
+    // common abbreviations intact.
+    const parts = t
+      .replace(/([.!?])\s+(?=["'“]?[A-Z0-9])/g, "$1\u0000")
+      .split("\u0000")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    out.push(...parts);
+  }
+  return out;
+}
+function toSentencePerLine(text: string): string {
+  return sentencesOf(text).join("\n\n");
+}
+function normalizeCarousels(cs: Carousel[]): Carousel[] {
+  return cs.map((c) => ({
+    ...c,
+    slides: (c.slides || []).map((sl) => ({ ...sl, text: toSentencePerLine(sl.text || "") })),
+  }));
+}
+
+// A sentence past the word cap reads as a run-on once it wraps on the canvas. Flagged for the one
+// retry alongside the sentence-count and style checks; never rewritten in place.
+function longSentences(carousels: Carousel[]): { c: number; s: number; words: number }[] {
+  const out: { c: number; s: number; words: number }[] = [];
+  carousels.forEach((car, ci) =>
+    (car.slides || []).forEach((sl, si) => {
+      let worst = 0;
+      for (const sen of sentencesOf(sl.text || "")) {
+        const n = sen.split(/\s+/).filter(Boolean).length;
+        if (n > worst) worst = n;
+      }
+      if (worst > MAX_WORDS_PER_SENTENCE) out.push({ c: ci + 1, s: si + 1, words: worst });
+    }),
+  );
+  return out;
 }
 
 // Slides carrying more than 4 sentences. Indices are 1-based (carousel #, slide #) for the retry.
@@ -251,7 +306,8 @@ export async function generateCarouselSet(
   // The framework's own absolute bans, read out of the stored doc: restated in the system prompt and
   // checked after parsing. Nothing framework-specific is hardcoded here.
   const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(pack);
-  const sys = buildSys(hasDoc, !!pack, packRules); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  const packVoice = frameworkVoiceSection(pack);
+  const sys = buildSys(hasDoc, !!pack, packRules, packVoice); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -281,8 +337,8 @@ export async function generateCarouselSet(
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
     packBlock
-      ? "Now write today's carousels as the writing framework above directs, for this specific creator and buyer. Return the JSON: exactly 5 carousels, 5 to 10 slides each, at most 4 sentences per slide, plain text, no dollar figures."
-      : "Return the carousels JSON: exactly 5 carousels, 6 to 8 slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Write full sentences with room to breathe — at most 4 sentences per slide, never clipped fragments.",
+      ? `Now write today's carousels as the writing framework above directs, for this specific creator and buyer. Return the JSON: exactly ${CAROUSELS_PER_DAY} carousels, each on a DIFFERENT objection, ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each. Every sentence on its own line with a blank line between. Short sentences, most under 12 words, none over ${MAX_WORDS_PER_SENTENCE}. Plain text, no dollar figures.`
+      : `Return the carousels JSON: exactly ${CAROUSELS_PER_DAY} carousels, ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Put every sentence on its own line with a blank line between, and keep sentences under ${MAX_WORDS_PER_SENTENCE} words.`,
   ].filter(Boolean).join("\n\n");
 
   const genOnce = async (feedback?: string): Promise<Carousel[]> => {
@@ -291,28 +347,29 @@ export async function generateCarouselSet(
       const resp = await anthropic.messages.create({ model: MODEL, max_tokens: 8000, system: sys, messages: [{ role: "user", content }] });
       logAiUsage({ feature: "buyer-dna-carousels", model: MODEL, usage: resp.usage });
       const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-      return parse(tb?.text || "");
+      return normalizeCarousels(parse(tb?.text || ""));
     } catch {
       return [];
     }
   };
 
   let carousels = await genOnce();
-  if (carousels.length < 5) {
+  if (carousels.length < CAROUSELS_PER_DAY) {
     const retry = await genOnce();
     if (retry.length > carousels.length) carousels = retry;
   }
-  if (carousels.length < 5) return { ok: false, reason: "Could not generate a full set of 5 carousels." };
+  if (carousels.length < CAROUSELS_PER_DAY) return { ok: false, reason: `Could not generate a full set of ${CAROUSELS_PER_DAY} carousels.` };
 
   // Enforce the ≤4-sentences-per-slide cap AND the framework's absolute style bans. If anything
   // breaks, one targeted retry naming the offenders; keep whichever set has fewer total violations.
   // We never rewrite copy in place — an offender is named and regenerated, and whatever survives is
   // reported rather than silently shipped.
-  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs, bannedTerms).length;
+  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs, bannedTerms).length + longSentences(cs).length;
   let total = score(carousels);
   if (total) {
     const longNamed = overLongSlides(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`);
     const styleNamed = styleViolations(carousels, bannedTerms).map((v) => `carousel ${v.c} slide ${v.s} (${v.issue})`);
+    const longNamedWords = longSentences(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.words}-word sentence)`);
     const feedback = [
       longNamed.length
         ? `These slides run longer than ${MAX_SENTENCES} sentences: ${longNamed.join("; ")}. Rewrite them to at most ${MAX_SENTENCES} full sentences each, keeping real sentences with room to breathe (do NOT chop them into fragments). If a slide holds more than that, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides).`
@@ -320,15 +377,18 @@ export async function generateCarouselSet(
       styleNamed.length
         ? `These slides break the framework's absolute style rules: ${styleNamed.join("; ")}. Rewrite them without the em dash or banned phrase — restructure the sentence rather than swapping in a synonym.`
         : "",
+      longNamedWords.length
+        ? `These slides contain a sentence that is too long: ${longNamedWords.join("; ")}. Break each one into two or more short sentences, each on its own line. Do NOT join them back with a comma or an 'and'.`
+        : "",
       "Keep every other slide as it is. Return the full corrected JSON.",
     ].filter(Boolean).join(" ");
     const retry = await genOnce(feedback);
-    if (retry.length >= 5 && score(retry) <= total) { carousels = retry; total = score(retry); }
+    if (retry.length >= CAROUSELS_PER_DAY && score(retry) <= total) { carousels = retry; total = score(retry); }
   }
 
-  // Normalize to exactly 5 carousels, each clamped to the slide ceiling.
-  const set = carousels.slice(0, 5).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
+  // Normalize to exactly CAROUSELS_PER_DAY carousels, each clamped to the slide ceiling.
+  const set = carousels.slice(0, CAROUSELS_PER_DAY).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
   const sentenceViolations = overLongSlides(set).length;
-  const styleIssues = styleViolations(set, bannedTerms).length;
+  const styleIssues = styleViolations(set, bannedTerms).length + longSentences(set).length;
   return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues };
 }

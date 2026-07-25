@@ -38,6 +38,20 @@ export function getGlobalFrameworkDoc(sb: SupabaseClient): Promise<MessagingDoc 
   return getMessagingDoc(sb, GLOBAL_DOC_KEY);
 }
 
+// The framework's voice rules, lifted out of the stored document and hoisted into the SYSTEM prompt.
+// Position is the whole point: the same rules sitting deep inside a 20k-char reference block do not
+// survive contact with generation, but at the top of the system prompt they do. Returns "" when the
+// section can't be found, so nothing is invented — the full framework still ships in the user block.
+export function frameworkVoiceSection(doc: MessagingDoc | null, maxChars = 3500): string {
+  if (!doc) return "";
+  const t = doc.doc_text;
+  const start = t.search(/^PART\s*1\s*:/im);
+  if (start < 0) return "";
+  const rest = t.slice(start);
+  const end = rest.search(/^PART\s*2\s*:/im);
+  return (end > 0 ? rest.slice(0, end) : rest).trim().slice(0, maxChars);
+}
+
 // The framework's own absolute prohibitions, read back OUT of the stored document at runtime.
 // Nothing from the framework — including its vocabulary — is written into this repo, and an updated
 // framework changes what gets enforced without a code change.
