@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { cronBaseUrl } from "@/lib/cron-base-url";
 import { ACTIVE_CREATORS } from "@/lib/creators";
+import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
 
     // 2d. Daily carousels — generate today's 5 if they don't exist yet. The generate route is a no-op
     //     (no LLM call) once the day's rows exist, so this fires exactly one LLM op/day/creator.
-    if ((carCounts.get(creator) ?? 0) < 5) {
+    if ((carCounts.get(creator) ?? 0) < CAROUSELS_PER_DAY) {
       steps.push(await hit(`/api/content/carousels/generate?creator=${creator}&date=${todayET}`));
     }
 

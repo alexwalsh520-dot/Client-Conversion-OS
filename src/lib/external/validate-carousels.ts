@@ -1,13 +1,15 @@
-// Validation for externally-submitted carousels. Mirrors the internal contract: exactly 5 carousels,
+import { CAROUSELS_PER_DAY, MIN_SLIDES_PER_CAROUSEL, MAX_SLIDES_PER_CAROUSEL, MAX_SENTENCES_PER_SLIDE } from "@/lib/content/carousel-config";
+
+// Validation for externally-submitted carousels. Mirrors the internal contract: the daily count,
 // 5-10 slides each, at most 4 sentences per slide, and never a concrete dollar figure. Returns a list
 // of human-readable problems (empty = valid) so the API can 422 with a precise reason.
 
 export type IncomingSlide = { text?: string };
 export type IncomingCarousel = { topic?: string; objection?: string; source?: string; slides?: IncomingSlide[] };
 
-const MAX_SENTENCES = 4;
-const MIN_SLIDES = 5;
-const MAX_SLIDES = 10;
+const MAX_SENTENCES = MAX_SENTENCES_PER_SLIDE;
+const MIN_SLIDES = MIN_SLIDES_PER_CAROUSEL;
+const MAX_SLIDES = MAX_SLIDES_PER_CAROUSEL;
 const DOLLAR_DIGIT = /\$\s?\d/;
 
 // Same sentence count the internal generator validates against: terminators that actually end a
@@ -21,7 +23,7 @@ export function sentenceCount(text: string): number {
 export function validateCarousels(carousels: unknown): string[] {
   const problems: string[] = [];
   if (!Array.isArray(carousels)) return ["`carousels` must be an array"];
-  if (carousels.length !== 5) problems.push(`expected exactly 5 carousels, got ${carousels.length}`);
+  if (carousels.length !== CAROUSELS_PER_DAY) problems.push(`expected exactly ${CAROUSELS_PER_DAY} carousels, got ${carousels.length}`);
 
   carousels.forEach((c, ci) => {
     const car = c as IncomingCarousel;

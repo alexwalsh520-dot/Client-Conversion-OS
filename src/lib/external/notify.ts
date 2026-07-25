@@ -4,6 +4,7 @@
 // never affects the API response, and if Slack isn't configured this is a no-op.
 
 import { postToSlack, getSalesManagerChannel } from "@/lib/slack";
+import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
 
 function fire(text: string): void {
   const channel = getSalesManagerChannel();
@@ -13,8 +14,8 @@ function fire(text: string): void {
 }
 
 export function notifyCarouselDelivery(creator: string, forDate: string, written: number, topics: string[]): void {
-  const list = topics.filter(Boolean).slice(0, 5).join(", ");
-  fire(`✅ Jeremy delivered ${written}/5 carousels for *${creator}* (${forDate})${list ? ` — ${list}` : ""}`);
+  const list = topics.filter(Boolean).slice(0, CAROUSELS_PER_DAY).join(", ");
+  fire(`✅ Jeremy delivered ${written}/${CAROUSELS_PER_DAY} carousels for *${creator}* (${forDate})${list ? ` — ${list}` : ""}`);
 }
 
 export function notifyPlaybookDelivery(creator: string, version: number): void {
