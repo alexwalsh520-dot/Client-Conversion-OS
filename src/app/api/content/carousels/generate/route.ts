@@ -8,13 +8,16 @@ import type { Icp } from "@/lib/buyer-dna/icp";
 import { generateCarouselSet } from "@/lib/buyer-dna/carousels";
 import { getCadence } from "@/lib/content/calendar-build";
 
-// The external content worker owns midnight → 06:00 in the creator's own timezone; CCOS's automatic
-// generation only steps in AFTER 06:00 local, so a day is never left empty but the worker gets first
-// crack. force=1 (a deliberate human re-run) bypasses this. Hour 0-23 in the given IANA zone.
+// An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
+// timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
+// actually wired up: with no EXTERNAL_CONTENT_API_KEY set there is nothing to wait for, so internal
+// generation owns midnight again and the day populates on the first tick after local midnight.
+// force=1 (a deliberate human re-run) bypasses the window either way.
 function localHour(tz: string): number {
   return Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(new Date())) % 24;
 }
 const EXTERNAL_WINDOW_END_HOUR = 6;
+const externalWorkerConfigured = () => !!process.env.EXTERNAL_CONTENT_API_KEY?.trim();
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,9 +65,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: existing });
   }
 
-  // Fallback window: before 06:00 in the creator's own timezone, leave the empty day to the external
-  // worker (it owns midnight-6am). Only automatic internal generation defers — force=1 always runs.
-  if (!force) {
+  // Fallback window: only when an external worker is actually configured. Otherwise there is nobody
+  // to hand midnight to, and deferring would just leave the day empty until 06:00.
+  if (!force && externalWorkerConfigured()) {
     const { timezone } = await getCadence(sb, slug);
     if (localHour(timezone) < EXTERNAL_WINDOW_END_HOUR) {
       return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, deferred: true, reason: `before ${EXTERNAL_WINDOW_END_HOUR}:00 ${timezone} — external worker window` });

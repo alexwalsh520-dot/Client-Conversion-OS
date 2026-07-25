@@ -14,7 +14,7 @@ import { extractJson, salvageObjects } from "./json";
 import { compactTrendBrief, getCurrentTrendBrief } from "./trends";
 import { getCurrentShiftBrief } from "./shift";
 import { getCurrentVoice } from "./voice";
-import { getMessagingDoc, messagingDocBlock } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock } from "./messaging-doc";
 import type { Research } from "./dossier";
 
 const MODEL = "claude-sonnet-4-6";
@@ -53,6 +53,20 @@ const SYS =
   '{"saying":[{"rank":1,"theme":"what they keep saying, in their words","quotes":["short verbatim quote"],"how_common":"qualitative frequency","source":"calls / dms / ads"}],"hooks":[{"hook":"the exact spoken opening line","present":"one short statement on how to show up: clothing, background, tonality"}],"topics":[{"topic":"the topic in a few words","type":"attraction|connection","why":"one sentence on why this hits the buyer"}]}\n' +
   "Up to 10 ranked saying items (fewer only if honestly unsupported), exactly 20 hooks — each unique, spread across different pains/triggers/angles, no two alike — and 10 to 14 topics with a healthy mix of both types. No prose outside the JSON." +
   JSON_HYGIENE +
+  NO_DOLLARS;
+
+// When the house writing framework is installed it prescribes the playbook's shape (four sections)
+// and how each one is written, so the hardcoded tier-list/topics brief above is replaced by the
+// mechanical contract plus the framework itself. PlaybookView already renders these four.
+const MECHANICAL_SYS =
+  "You write the content playbook for a fitness creator. Follow the AUTHORITATIVE WRITING FRAMEWORK in the user message for what each section is and how to write it. The rules below are only the output contract.\n" +
+  "OUTPUT CONTRACT (non-negotiable):\n" +
+  "- Plain text only. No markdown, no ** bold markers, no emojis.\n" +
+  "- Never include a specific dollar amount; describe money qualitatively.\n" +
+  "- Ground everything in the evidence supplied below. Never invent a quote or a buyer phrase.\n" +
+  "Return STRICT JSON and nothing else:\n" +
+  '{"hooks":["a phrase or question a buyer actually said"],"buyer_language":["exact phrase from a call or DM"],"actions":["a specific action the creator should take"],"filming_concepts":[{"concept":"what to film","why":"which objection it addresses and what it signals"}]}\n' +
+  "\nDo not use double-quote characters inside JSON string values." +
   NO_DOLLARS;
 
 function compactIcp(icp: Icp | null): string {
@@ -190,6 +204,26 @@ export async function getCurrentPlaybook(sb: SupabaseClient, client: string) {
   return data && data[0] ? (data[0] as { version: number; icp_version: number | null; trend_version: number | null; playbook: Playbook; generated_at: string }) : null;
 }
 
+// Framework-shaped playbook: the four sections the house framework prescribes. Strings are kept as
+// strings (the view normalizes both shapes), and empty sections simply don't render.
+function parseFramework(text: string): Playbook {
+  const p = extractJson<{
+    hooks?: unknown[]; buyer_language?: unknown[]; actions?: unknown[];
+    filming_concepts?: { concept?: string; why?: string }[];
+  }>(text);
+  const strs = (v: unknown[] | undefined): string[] =>
+    (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? x : String((x as { hook?: string })?.hook ?? ""))).filter(Boolean);
+  let concepts = Array.isArray(p?.filming_concepts) ? p!.filming_concepts! : [];
+  if (!concepts.length) concepts = salvageObjects<{ concept?: string; why?: string }>(text, ["concept"]);
+  return {
+    hooks: strs(p?.hooks).map((h) => ({ hook: h })),
+    topics: [],
+    buyer_language: strs(p?.buyer_language),
+    actions: strs(p?.actions),
+    filming_concepts: concepts.filter((c) => c && (c.concept || c.why)),
+  };
+}
+
 function parse(text: string): Playbook {
   const p = extractJson<{ saying?: PlaybookSaying[]; hooks?: PlaybookHook[]; topics?: PlaybookTopic[] }>(text);
   const saying = p && Array.isArray(p.saying) ? p.saying : [];
@@ -220,7 +254,7 @@ export async function refreshPlaybook(
   anthropic: Anthropic,
   opts: { canProceed?: () => boolean } = {},
 ): Promise<{ ok: true; version: number; saying: number; hooks: number; topics: number } | { ok: false; reason: string }> {
-  const [briefs, trend, shift, voc, voice, ads, doc] = await Promise.all([
+  const [briefs, trend, shift, voc, voice, ads, doc, pack] = await Promise.all([
     buyerBriefs(sb, client),
     getCurrentTrendBrief(sb, client),
     getCurrentShiftBrief(sb, client),
@@ -228,7 +262,9 @@ export async function refreshPlaybook(
     getCurrentVoice(sb, client),
     adResponse(sb, client),
     getMessagingDoc(sb, client),
+    getGlobalFrameworkDoc(sb),
   ]);
+  const packBlock = frameworkBlock(pack); // "" when no framework — the generator runs as before.
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
 
   const shiftAim = shift
@@ -261,13 +297,18 @@ export async function refreshPlaybook(
     : "";
 
   const userMsg = [
-    // The messaging doc leads when present: it is the creator's own ground truth. For a creator
-    // with no buyers/calls/DMs yet, this plus the ICP and trend brief is the whole basis — so the
-    // saying tier list draws its themes and quotes FROM THE DOC, labelled source "messaging doc",
+    // The house framework leads: it defines the sections and the craft. The creator's own material
+    // follows and supplies the substance.
+    packBlock,
+    // The messaging doc leads when there's no framework: it is the creator's own ground truth. For a
+    // creator with no buyers/calls/DMs yet, this plus the ICP and trend brief is the whole basis — so
+    // the saying tier list draws its themes and quotes FROM THE DOC, labelled source "messaging doc",
     // and never fabricates call/DM quotes that don't exist.
     docBlock,
     docBlock
-      ? "Because this creator has no buyer calls, DMs or ad data yet, build the SAYING tier list from the messaging document above: each item's theme and quotes must come from that document (use its exact one-liners and pain phrasing), and set source to \"messaging doc\". Do NOT invent call or DM quotes. Ground every hook and topic in the document's pains and language."
+      ? packBlock
+        ? "Where this creator has no buyer calls, DMs or ad data yet, draw the buyer language and hooks from the messaging document above rather than inventing them — use its exact one-liners and pain phrasing. Never fabricate a call or DM quote."
+        : "Because this creator has no buyer calls, DMs or ad data yet, build the SAYING tier list from the messaging document above: each item's theme and quotes must come from that document (use its exact one-liners and pain phrasing), and set source to \"messaging doc\". Do NOT invent call or DM quotes. Ground every hook and topic in the document's pains and language."
       : "",
     `THE BUYER (write everything for this one person):\n${compactIcp(icp)}`,
     voc ? `VERBATIM VOICE FROM SALES CALLS + DMs (their exact words — quote from here):\n${voc}` : "",
@@ -278,7 +319,9 @@ export async function refreshPlaybook(
     briefs ? `REAL BUYER NOTES (patterns to mine for hooks):\n${briefs}` : "",
     trend ? `WHAT IS WORKING ON SOCIAL RIGHT NOW:\n${compactTrendBrief(trend.brief)}` : "",
     shiftAim ? `WHERE THIS CREATOR'S CONTENT NEEDS TO SHIFT:\n${shiftAim}` : "",
-    "Return the playbook JSON: the ranked saying tier list (up to 10, ranked by real recurrence, never padded), exactly 20 unique hooks (each with a present note), and 10 to 14 topics.",
+    packBlock
+      ? "Now write today's playbook as the writing framework above directs, grounded in this creator's evidence. Return the JSON with the four sections."
+      : "Return the playbook JSON: the ranked saying tier list (up to 10, ranked by real recurrence, never padded), exactly 20 unique hooks (each with a present note), and 10 to 14 topics.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -288,28 +331,44 @@ export async function refreshPlaybook(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: SYS,
+        system: packBlock ? MECHANICAL_SYS : SYS,
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-playbook", model: MODEL, usage: resp.usage });
       const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
-      return parse(tb?.text || "");
+      return packBlock ? parseFramework(tb?.text || "") : parse(tb?.text || "");
     } catch {
       return { saying: [], hooks: [], topics: [] };
     }
   };
 
+  // Framework playbooks don't have a fixed hook count (the framework asks for the hooks the day's
+  // research actually surfaced), so the "short hook set" retry only applies to the legacy shape.
+  const minHooks = packBlock ? 1 : 20;
   let result = await genOnce();
-  // One retry if the hook set came back short, but only if the caller's time budget allows it.
-  if (result.hooks.length < 20 && (opts.canProceed?.() ?? true)) {
+  if (result.hooks.length < minHooks && (opts.canProceed?.() ?? true)) {
     const retry = await genOnce();
     if (retry.hooks.length > result.hooks.length) result = retry;
   }
-  if (result.hooks.length < 10) return { ok: false, reason: "Could not parse a usable playbook from the model." };
+  // A framework playbook is usable as soon as any section came back; the legacy shape needs its
+  // hook set to have survived parsing.
+  const usable = packBlock
+    ? result.hooks.length > 0 || (result.buyer_language?.length ?? 0) > 0 || (result.actions?.length ?? 0) > 0 || (result.filming_concepts?.length ?? 0) > 0
+    : result.hooks.length >= 10;
+  if (!usable) return { ok: false, reason: "Could not parse a usable playbook from the model." };
 
   // Rank is authoritative from the model's ordering; renumber so the stored list is always 1..N.
   const saying = (result.saying || []).slice(0, 10).map((s, i) => ({ ...s, rank: i + 1 }));
-  const playbook: Playbook = { saying, hooks: result.hooks.slice(0, 20), topics: result.topics.slice(0, 14) };
+  const playbook: Playbook = packBlock
+    ? {
+        origin: "framework",
+        hooks: result.hooks.slice(0, 30),
+        topics: [],
+        buyer_language: (result.buyer_language || []).slice(0, 40),
+        actions: (result.actions || []).slice(0, 12),
+        filming_concepts: (result.filming_concepts || []).slice(0, 12),
+      }
+    : { saying, hooks: result.hooks.slice(0, 20), topics: result.topics.slice(0, 14) };
 
   const current = await getCurrentPlaybook(sb, client);
   const version = current ? Number(current.version) + 1 : 1;
