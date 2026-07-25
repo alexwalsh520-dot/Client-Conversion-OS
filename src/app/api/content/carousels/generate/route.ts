@@ -105,6 +105,17 @@ export async function POST(req: NextRequest) {
   }
   if (error) return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: error.message }, { status: 200 });
 
+  // The day's set is a replacement, not a merge. If the daily count has shrunk since this day was
+  // last generated, the higher slots are superseded copy from the old cadence — left in place they
+  // would render alongside the new set in the old format. Scoped strictly to the one creator+date we
+  // just wrote; every other day keeps whatever it was generated with.
+  await sb
+    .from("content_carousels")
+    .delete()
+    .eq("client_key", slug)
+    .eq("for_date", forDate)
+    .gte("slot", rows.length);
+
   const ordered = (inserted || []).sort((a, b) => (a as { slot: number }).slot - (b as { slot: number }).slot);
   // sentence_violations > 0 means the model couldn't get every slide under the 4-sentence cap even
   // after the retry; the copy is kept in full (never truncated) and the count is surfaced.
