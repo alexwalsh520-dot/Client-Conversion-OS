@@ -500,6 +500,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // sale facts exist for the window.
   await db.rpc("adsv2_stamp_booking_links", { p_from: factFrom, p_to: bookTo });
 
+  // Fill any booking setter the in-memory lookup could not see. That lookup is
+  // built from keyword events inside the rolling window, so a person who first
+  // messaged BEFORE the window and booked inside it would otherwise lose their
+  // setter. Done in the database, the window stops mattering.
+  await db.rpc("adsv2_stamp_facts_setters", { p_from: factFrom, p_to: bookTo });
+
   return {
     dm: dmFacts.length,
     bookings: bookingFacts.length,
