@@ -169,6 +169,79 @@ test("the same event fingerprints the same, a different one differently", () => 
   assert.notEqual(mapActivity(sibling, CTX)!.change_uid, mapActivity(base, CTX)!.change_uid);
 });
 
+// REGRESSION (2026-07-25). The first version of this file hashed Meta's raw
+// extra_data. Re-fetching windows we already held then added 712 rows that
+// were all changes we already had, because Meta re-signs its CDN URLs and
+// recomputes last_learning_exit between calls. The fingerprint now hashes only
+// the stable part of the payload. These two tests are the proof.
+
+test("the same event re-fetched with a re-signed URL keeps its fingerprint", () => {
+  const first = mapActivity(
+    {
+      event_type: "update_ad_creative",
+      event_time: "2026-07-10T11:00:00+0000",
+      object_id: "52581887118264",
+      object_name: "GOOD",
+      object_type: "ADGROUP",
+      extra_data: JSON.stringify({
+        new_value: ["https://scontent.xx.fbcdn.net/v/t45.1600-4/716974499_279.png?oh=00_AQAAAA&oe=6A6A58F4&_nc_gid=aaa"],
+      }),
+    },
+    CTX,
+  )!;
+  const refetched = mapActivity(
+    {
+      event_type: "update_ad_creative",
+      event_time: "2026-07-10T11:00:00+0000",
+      object_id: "52581887118264",
+      object_name: "GOOD",
+      object_type: "ADGROUP",
+      // Same asset, freshly signed by Meta on the next call.
+      extra_data: JSON.stringify({
+        new_value: ["https://scontent.xx.fbcdn.net/v/t45.1600-4/716974499_279.png?oh=00_ZZZZZZ&oe=7B7B99A1&_nc_gid=bbb"],
+      }),
+    },
+    CTX,
+  )!;
+  assert.equal(refetched.change_uid, first.change_uid);
+});
+
+test("the same event re-fetched with a recomputed last_learning_exit keeps its fingerprint", () => {
+  const make = (exit: number) =>
+    mapActivity(
+      {
+        event_type: "update_ad_run_status",
+        event_time: "2026-07-24T16:47:06+0000",
+        object_id: "52581821002664",
+        object_type: "ADGROUP",
+        extra_data: JSON.stringify({
+          old_value: "Pending Process",
+          new_value: "Inactive",
+          campaign_id: 52581820968064,
+          last_learning_exit: exit,
+        }),
+      },
+      CTX,
+    )!;
+  assert.equal(make(1784012400).change_uid, make(1784098800).change_uid);
+});
+
+test("account-level billing and image events are not ad changes and are skipped", () => {
+  assert.equal(
+    mapActivity(
+      {
+        event_type: "ad_account_billing_charge",
+        event_time: "2026-07-01T00:00:00+0000",
+        object_id: "202269756469193",
+        object_type: "ACCOUNT",
+        extra_data: '{"currency":"USD","new_value":95200}',
+      },
+      CTX,
+    ),
+    null,
+  );
+});
+
 test("an object type we have never seen is skipped, not guessed", () => {
   assert.equal(
     mapActivity(

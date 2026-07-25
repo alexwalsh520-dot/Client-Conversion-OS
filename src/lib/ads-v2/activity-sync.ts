@@ -34,13 +34,50 @@ const GRAPH = "https://graph.facebook.com/v21.0";
 const FIELDS =
   "event_type,event_time,object_id,object_name,object_type,extra_data,actor_id,actor_name,translated_event_type";
 
-/** Meta's legacy object_type -> what the thing actually is. */
-const LEVEL_BY_OBJECT_TYPE: Record<string, "campaign" | "adset" | "ad" | "account"> = {
+/**
+ * Meta's legacy object_type -> what the thing actually is.
+ *
+ * ACCOUNT-level records (billing charges, image-library adds) are deliberately
+ * NOT here. They are not changes to an ad, ad set, or campaign, and their
+ * payloads carry freshly-signed CDN URLs that differ on every single fetch,
+ * so they can never be recognised as "already seen".
+ */
+const LEVEL_BY_OBJECT_TYPE: Record<string, "campaign" | "adset" | "ad"> = {
   CAMPAIGN_GROUP: "campaign",
   CAMPAIGN: "adset",
   ADGROUP: "ad",
-  ACCOUNT: "account",
 };
+
+/**
+ * Fields Meta recomputes between fetches, so the SAME historical event comes
+ * back looking different. They must never reach the fingerprint.
+ *   last_learning_exit — a moving timestamp Meta recalculates
+ *   image_url          — a CDN link signed per request (oh=, oe=, _nc_gid)
+ */
+const VOLATILE_KEYS = new Set(["last_learning_exit", "image_url"]);
+
+/**
+ * Rewrite a Meta payload into the part of it that is genuinely stable: drop
+ * the recomputed fields and strip the signed query string off any URL, keeping
+ * the path (which identifies the asset) but not the signature (which does not).
+ * Keys are emitted in sorted order so serialisation is deterministic.
+ */
+function stablePayload(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.includes("://") ? value.split("?")[0] : value;
+  }
+  if (Array.isArray(value)) return value.map(stablePayload);
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(o).sort()) {
+      if (VOLATILE_KEYS.has(k)) continue;
+      out[k] = stablePayload(o[k]);
+    }
+    return out;
+  }
+  return value;
+}
 
 /** Meta event names that mean "this thing was created". */
 const CREATED_EVENTS = new Set(["create_ad", "create_ad_set", "create_campaign_group"]);
@@ -80,7 +117,7 @@ export interface AdChangeRow {
   change_uid: string;
   client_key: string;
   account_id: string | null;
-  level: "campaign" | "adset" | "ad" | "account";
+  level: "campaign" | "adset" | "ad";
   entity_id: string;
   entity_name: string | null;
   campaign_id: string | null;
@@ -177,15 +214,20 @@ function classifyChange(
 }
 
 /**
- * Fingerprint a change so a repeat sync adds nothing. Includes the payload
- * because Meta legitimately emits several different events for one entity in
- * the same second (a status flip logs both the review state and the run state).
+ * Fingerprint a change so a repeat sync adds nothing.
+ *
+ * The payload is part of the fingerprint because Meta legitimately emits
+ * several different events for one entity in the same second (flipping an ad
+ * on logs both the review state and the run state, one second apart or less).
+ * But it is the STABLE payload, not the raw one: hashing Meta's raw text made
+ * every re-fetch look new, because Meta re-signs its URLs and recomputes
+ * last_learning_exit between calls. Caught by the re-fetch gate on 2026-07-25,
+ * which added 712 rows that were all changes we already had.
  */
 function fingerprint(clientKey: string, a: MetaActivity): string {
+  const stable = JSON.stringify(stablePayload(parseExtra(a.extra_data)));
   const h = createHash("sha1");
-  h.update(
-    [clientKey, a.event_type || "", a.object_id || "", a.event_time || "", a.extra_data || ""].join("|"),
-  );
+  h.update([clientKey, a.event_type || "", a.object_id || "", a.event_time || "", stable].join("|"));
   return h.digest("hex");
 }
 
