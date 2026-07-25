@@ -38,6 +38,35 @@ export function getGlobalFrameworkDoc(sb: SupabaseClient): Promise<MessagingDoc 
   return getMessagingDoc(sb, GLOBAL_DOC_KEY);
 }
 
+// The framework's own absolute prohibitions, read back OUT of the stored document at runtime.
+// Nothing from the framework — including its vocabulary — is written into this repo, and an updated
+// framework changes what gets enforced without a code change.
+//
+// Two things are derived: `lines` (the framework's own wording, restated near the top of the system
+// prompt where a prohibition actually survives generation) and `terms` (lowercased phrases the
+// generator checks for after parsing, to drive a targeted retry).
+export function frameworkProhibitions(doc: MessagingDoc | null): { lines: string[]; terms: string[] } {
+  if (!doc) return { lines: [], terms: [] };
+  const lines: string[] = [];
+  const terms: string[] = [];
+  for (const raw of doc.doc_text.split("\n")) {
+    const line = raw.replace(/^[•\-\s]+/, "").trim();
+    if (!/^NO\b/i.test(line)) continue;
+    lines.push(line);
+    // Quoted phrases: NO "Here's the thing" / "Let's be real" ...
+    for (const m of line.matchAll(/"([^"]{2,60})"/g)) terms.push(m[1].toLowerCase());
+    // Bare comma lists after a colon: NO these words: a, b, c
+    const after = line.split(":").slice(1).join(":");
+    if (after && !after.includes('"')) {
+      for (const part of after.split(",")) {
+        const w = part.trim().replace(/[.•].*$/, "").trim();
+        if (w && w.length <= 24 && /^[a-zA-Z][a-zA-Z' -]*$/.test(w)) terms.push(w.toLowerCase());
+      }
+    }
+  }
+  return { lines: [...new Set(lines)], terms: [...new Set(terms)] };
+}
+
 // The framework block. Sits ABOVE per-creator grounding and explicitly outranks the generator's own
 // hardcoded stylistic rules, so a framework update changes the writing without a code change.
 // Returns "" when no framework doc exists — generators then run exactly as they did before.
