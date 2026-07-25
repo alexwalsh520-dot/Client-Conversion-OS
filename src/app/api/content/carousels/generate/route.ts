@@ -107,5 +107,5 @@ export async function POST(req: NextRequest) {
   const ordered = (inserted || []).sort((a, b) => (a as { slot: number }).slot - (b as { slot: number }).slot);
   // sentence_violations > 0 means the model couldn't get every slide under the 4-sentence cap even
   // after the retry; the copy is kept in full (never truncated) and the count is surfaced.
-  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, sentence_violations: res.sentenceViolations, carousels: ordered });
+  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, sentence_violations: res.sentenceViolations, style_violations: res.styleViolations, carousels: ordered });
 }
