@@ -5,6 +5,20 @@
 // day. With ABO the budget sits on the ad set; with CBO on the campaign; ads
 // never hold a budget. Raising a budget today only writes today's row, so past
 // days stay exactly as they were, like spend.
+//
+// CHANGED 2026-07-25 (Build 2, Phase 2). It used to photograph every entity
+// every day: about 370 rows daily when only 9 were actually live, so 97% of
+// each day's writes were an unchanged dead campaign repeating itself. Now:
+//
+//   * an ACTIVE campaign or ad set is photographed every day, because what a
+//     live dial is set to on a given day is a fact we want per day;
+//   * anything else is photographed only on a day when one of its dials
+//     actually moved (daily budget, lifetime budget, or status).
+//
+// Nothing already written is deleted or rewritten. Reading history is
+// unchanged in meaning: to know what a paused ad set's budget was on some day,
+// take its most recent photo on or before that day, which is exactly how you
+// would read it before, since the skipped rows were identical repeats.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { getServiceSupabase } from "@/lib/supabase";
@@ -55,6 +69,32 @@ interface BudgetResult {
   rows: number;
   skipped: { client: string; reason: string }[];
   etDay: string;
+  /** How many entities Meta reported, before the active-or-changed filter. */
+  seen?: number;
+  /** Why each written row was written, so the reduction is auditable. */
+  written?: { active: number; changed: number; firstSeen: number };
+}
+
+interface LatestBudgetState {
+  entity_level: string;
+  entity_id: string;
+  daily_budget_cents: number | null;
+  lifetime_budget_cents: number | null;
+  effective_status: string | null;
+}
+
+function isActive(status: string | null | undefined): boolean {
+  return (status || "").trim().toUpperCase() === "ACTIVE";
+}
+
+/** Did any dial we track actually move since the last photo of this entity? */
+function dialMoved(now: Record<string, unknown>, last: LatestBudgetState | undefined): boolean {
+  if (!last) return true; // never photographed before: record it once
+  return (
+    (now.daily_budget_cents ?? null) !== (last.daily_budget_cents ?? null) ||
+    (now.lifetime_budget_cents ?? null) !== (last.lifetime_budget_cents ?? null) ||
+    (now.effective_status ?? null) !== (last.effective_status ?? null)
+  );
 }
 
 export async function runBudgetSnapshot(now: Date = new Date()): Promise<BudgetResult> {
@@ -85,6 +125,8 @@ async function snapshotBudgets(db: Db, now: Date): Promise<BudgetResult> {
   const clientsDone: string[] = [];
   const skipped: { client: string; reason: string }[] = [];
   let totalRows = 0;
+  let totalSeen = 0;
+  const written = { active: 0, changed: 0, firstSeen: 0 };
 
   const rateMap = await loadUsdRateMap(
     db,
@@ -103,8 +145,12 @@ async function snapshotBudgets(db: Db, now: Date): Promise<BudgetResult> {
       continue;
     }
     try {
-      const rows = await snapshotOneClient(db, creator, normalizeAdAccountId(account), token, etToday, rateMap);
-      totalRows += rows;
+      const res = await snapshotOneClient(db, creator, normalizeAdAccountId(account), token, etToday, rateMap);
+      totalRows += res.rows;
+      totalSeen += res.seen;
+      written.active += res.written.active;
+      written.changed += res.written.changed;
+      written.firstSeen += res.written.firstSeen;
       clientsDone.push(creator.key);
     } catch (err) {
       // Failure containment: one creator failing never blocks the others.
@@ -112,7 +158,7 @@ async function snapshotBudgets(db: Db, now: Date): Promise<BudgetResult> {
     }
   }
 
-  return { clients: clientsDone, rows: totalRows, skipped, etDay: etToday };
+  return { clients: clientsDone, rows: totalRows, skipped, etDay: etToday, seen: totalSeen, written };
 }
 
 async function snapshotOneClient(
@@ -122,7 +168,7 @@ async function snapshotOneClient(
   token: string,
   etDayStr: string,
   rateMap: ReturnType<typeof loadUsdRateMap> extends Promise<infer R> ? R : never,
-): Promise<number> {
+): Promise<{ rows: number; seen: number; written: { active: number; changed: number; firstSeen: number } }> {
   const currency = creatorCurrency(creator.key);
   const campaigns = await graphAll(
     `${account}/campaigns`,
@@ -135,11 +181,39 @@ async function snapshotOneClient(
     token,
   );
 
+  // What we already hold for this creator, so an unchanged dead campaign is
+  // recognised and skipped rather than re-photographed identically.
+  const { data: latestRows, error: latestError } = await db.rpc("adsv2_latest_budget_state", {
+    p_client: creator.key,
+  });
+  if (latestError) throw new Error(`latest budget state failed for ${creator.key}: ${latestError.message}`);
+  const latest = new Map<string, LatestBudgetState>();
+  for (const r of (latestRows || []) as LatestBudgetState[]) {
+    latest.set(`${r.entity_level}|${r.entity_id}`, r);
+  }
+
   const rows: Record<string, unknown>[] = [];
+  let seen = 0;
+  const written = { active: 0, changed: 0, firstSeen: 0 };
 
   const push = (level: "campaign" | "adset", e: MetaBudgetEntity) => {
+    seen++;
     const daily = centsFrom(e.daily_budget);
     const lifetime = centsFrom(e.lifetime_budget);
+    const status = e.effective_status ?? null;
+
+    // Active every day; everything else only on a day its dial actually moved.
+    const last = latest.get(`${level}|${e.id}`);
+    const active = isActive(status);
+    const moved = dialMoved(
+      { daily_budget_cents: daily, lifetime_budget_cents: lifetime, effective_status: status },
+      last,
+    );
+    if (!active && !moved) return;
+    if (active) written.active++;
+    else if (!last) written.firstSeen++;
+    else written.changed++;
+
     rows.push({
       client_key: creator.key,
       entity_level: level,
@@ -154,7 +228,7 @@ async function snapshotOneClient(
       lifetime_budget_usd_cents:
         lifetime == null ? null : convertCentsToUsd(lifetime, currency, etDayStr, rateMap),
       holds_budget: daily != null || lifetime != null,
-      effective_status: e.effective_status ?? null,
+      effective_status: status,
       raw: e as unknown as object,
       synced_at: new Date().toISOString(),
     });
@@ -171,5 +245,5 @@ async function snapshotOneClient(
       .upsert(rows, { onConflict: "entity_level,entity_id,et_day" });
     if (error) throw new Error(`budget upsert failed for ${creator.key}: ${error.message}`);
   }
-  return rows.length;
+  return { rows: rows.length, seen, written };
 }
