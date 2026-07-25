@@ -1,14 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────
 // SYNC ORCHESTRATOR — the one background job the cron calls. In order:
-//   1. Snapshot today's Meta budget settings (the only new external fetch).
+//   1. Snapshot today's Meta budget settings.
 //   2. Run the deterministic facts pass over the rolling window.
 //   3. Bump the data version (invalidates cached snapshots).
 //   4. Precompute the standard matrix so the page opens instantly.
+//   5. Store durable copies of video creative.
+//   6. Append the ad change log from Meta's activity feed.
+//   7. Refresh the merged warehouse tables.
 //
 // Each source runs isolated: budget failing never blocks facts, and facts is
 // what the version bump depends on, so a facts failure leaves the last good
 // snapshots served (stale, never corrupt). A lightweight lock prevents two runs
 // from overlapping.
+//
+// Steps 5 to 7 feed nothing the tab reads, so they run AFTER the numbers are
+// already served, each under its own wall-clock budget with its own try/catch
+// (see runIsolatedStep). A slow Meta or a slow refresh can therefore never
+// delay, corrupt, or take down the spend sync.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { getServiceSupabase } from "@/lib/supabase";
@@ -16,6 +24,7 @@ import { runBudgetSnapshot } from "./budget-sync";
 import { runFactsPass } from "./facts";
 import { runMediaSync } from "./media-sync";
 import { runActivitySync } from "./activity-sync";
+import { runWarehouseRefresh } from "./warehouse-sync";
 import { precomputeStandard } from "./precompute";
 import { todayEt } from "./time";
 import { bumpDataVersion, type Db } from "./db";
@@ -111,6 +120,8 @@ export interface SyncResult {
   mediaError?: string;
   activity?: unknown;
   activityError?: string;
+  warehouse?: unknown;
+  warehouseError?: string;
 }
 
 export async function runAdsV2Sync(
@@ -170,6 +181,15 @@ export async function runAdsV2Sync(
     const activity = await runIsolatedStep(db, "activity_sync", 90_000, () => runActivitySync(now));
     if (activity.ok) result.activity = activity.value;
     else result.activityError = activity.error;
+
+    // 7. Warehouse merged tables (isolated + budgeted). Nothing reads these
+    //    yet, so a failure here cannot affect a single number on the tab. It is
+    //    last on purpose, for the same reason.
+    const warehouse = await runIsolatedStep(db, "warehouse_refresh", 60_000, () =>
+      runWarehouseRefresh(),
+    );
+    if (warehouse.ok) result.warehouse = warehouse.value;
+    else result.warehouseError = warehouse.error;
 
     return result;
   } finally {
