@@ -506,6 +506,17 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // setter. Done in the database, the window stops mattering.
   await db.rpc("adsv2_stamp_facts_setters", { p_from: factFrom, p_to: bookTo });
 
+  // Correct sale origins, windowless and set-based in the database: sales whose
+  // keyword came through a page outside the active roster get the honest label
+  // 'former_creator_ad' instead of 'unknown', and a sale whose subscriber sent
+  // exactly ONE keyword through exactly ONE active-roster page before buying is
+  // stamped with that evidence no matter how long ago the keyword was sent.
+  await db.rpc("adsv2_label_sale_origins", {
+    p_from: factFrom,
+    p_to: saleTo,
+    p_active_clients: [...served],
+  });
+
   return {
     dm: dmFacts.length,
     bookings: bookingFacts.length,
