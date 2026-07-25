@@ -6,6 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
+import { marketDirective } from "@/lib/content/market";
 import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { extractJson, salvageObjects } from "./json";
@@ -110,7 +111,7 @@ export async function refreshVoice(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: SYS,
+        system: SYS + marketDirective(client),
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-voice", model: MODEL, usage: resp.usage });

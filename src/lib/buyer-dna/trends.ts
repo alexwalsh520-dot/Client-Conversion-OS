@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAiUsage } from "@/lib/ai-usage";
+import { marketDirective } from "@/lib/content/market";
 import type { Icp } from "./icp";
 import { extractJson } from "./json";
 
@@ -83,7 +84,7 @@ export async function refreshTrendBrief(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 3000,
-        system: SYS,
+        system: SYS + marketDirective(client),
         // Server-side web search tool; the API runs the searches itself.
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 } as unknown as Anthropic.Tool],
         messages: [{ role: "user", content: userMsg }],
@@ -98,7 +99,7 @@ export async function refreshTrendBrief(
         const resp = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 3000,
-          system: SYS.replace("Use web search to find", "From your knowledge, describe"),
+          system: SYS.replace("Use web search to find", "From your knowledge, describe") + marketDirective(client),
           messages: [{ role: "user", content: userMsg }],
         });
         logAiUsage({ feature: "buyer-dna-trends", model: MODEL, usage: resp.usage });

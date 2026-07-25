@@ -27,6 +27,13 @@ export interface Creator {
   active: boolean;
   /** The ad account's reporting timezone (controls day-boundary bucketing). */
   timezone: string;
+  /**
+   * The market this creator SELLS TO — a separate axis from `timezone`, which is only where they
+   * happen to live. Jake is in Sydney but sells to Americans, so his timezone is Australia/Sydney
+   * and his market is "US": scheduling follows the clock, content follows the market. Drives the
+   * localization directive every generator injects (see lib/content/market.ts).
+   */
+  market?: "US" | "AU" | string;
   /** Env var names that may hold the Meta ad account id, in priority order. */
   adAccountEnv: readonly string[];
   /** Env var names that may hold the Meta access token, in priority order. */
@@ -63,6 +70,7 @@ export const CREATORS: readonly Creator[] = [
     name: "Tyson",
     active: true,
     timezone: "America/Los_Angeles",
+    market: "US",
     adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
     tokenEnv: ["META_ACCESS_TOKEN_TYSON", "META_ADS_TOKEN", "META_ACCESS_TOKEN"],
     defaultAdAccountId: "act_176726311",
@@ -106,6 +114,8 @@ export const CREATORS: readonly Creator[] = [
     // RRF V2 ad account reports in AUD on Sydney time. Spend/revenue values arrive
     // in AUD (the pipeline has no FX layer yet), so his figures are AUD until we add one.
     timezone: "Australia/Sydney",
+    // Sydney-based, but the audience he sells to is American — content must read US-native.
+    market: "US",
     currency: "AUD", // RRF V2 bills in AUD; converted to USD at read time (src/lib/fx)
     adAccountEnv: ["META_AD_ACCOUNT_JAKE_DIVLJAK", "META_AD_ACCOUNT_JAKE"],
     tokenEnv: ["META_ACCESS_TOKEN_JAKE_DIVLJAK", "META_ACCESS_TOKEN_JAKE"],
